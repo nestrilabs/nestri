@@ -12,7 +12,7 @@ export const HomeNavBar = component$(() => {
     );
 //
     return (
-        <nav class={cn("fixed w-full justify-between top-0 z-50 px-2 sm:px-6 text-xs sm:text-sm leading-[1] text-gray-950/70 dark:text-gray-50/70 h-[66px] before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full flex items-center", hasScrolled.value && "shadow-[0_2px_20px_1px] shadow-gray-700")} >
+        <nav class={cn("fixed w-full justify-between top-0 z-50 px-2 sm:px-6 text-xs sm:text-sm leading-[1] text-gray-950/70 dark:text-gray-50/70 h-[66px] before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full flex items-center", hasScrolled.value && "shadow-[0_2px_100px_1px] shadow-gray-700")} >
             <div class="flex flex-row justify-center items-center top-0 bottom-0">
                 <div class="flex-shrink-0 gap-2 flex justify-center items-center">
                     <svg
