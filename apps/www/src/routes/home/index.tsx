@@ -59,7 +59,7 @@ export default component$(() => {
             </section> */}
             <section class="w-full top-[70px] relative">
                 <div class="max-w-xl mx-auto">
-                    <div class="aspect-square bg-white rounded-3xl relative overflow-hidden" >
+                    <div class="aspect-square bg-white rounded-3xl relative overflow-hidden size-[300px]" >
                         <img src="https://assets-prd.ignimgs.com/2020/07/16/cyberpunk-2077-button-fin-1594877291453.jpg" alt="Cyberpunk 2077" height={40} width={40} class="p-4 size-full rounded-[2rem]" />
                         <div class="bg-white size-[120%] absolute z-[1] top-1/2 -left-[9%] rounded-full ring-2 ring-gray-200">
 
