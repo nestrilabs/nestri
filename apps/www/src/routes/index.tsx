@@ -90,10 +90,10 @@ export default component$(() => {
           ))}
 
         </section>
-        <section class="w-full max-w-[70%] px-1 py-2">
-          <div class="w-full grid grid-cols-[repeat(auto-fit,minmax(280px,.5fr))] auto-cols-[1fr] place-items-start mb-2 gap-6">
+        <section class="w-full md:max-w-[70%] px-1 py-2">
+          <div class="w-full grid grid-cols-2 md:grid-cols-[repeat(auto-fit,minmax(280px,.5fr))] auto-cols-[1fr] place-items-start mb-2 md:gap-6 gap-3">
             {games.map((game, key) => (
-              <button key={key} class="hover:shadow-2xl hover:shadow-gray-800 dark:hover:shadow-gray-200 hover:ring-primary-500 transition-all duration-200 w-full rounded-[20px] relative ring-[.4375em] ring-gray-300 dark:ring-gray-700 overflow-hidden bg-gradient-to-b from-gray-300 dark:from-gray-700 to-white dark:to-black">
+              <button key={key} class="hover:shadow-2xl hover:shadow-gray-800 dark:hover:shadow-gray-200 hover:ring-primary-500 transition-all duration-200 w-full rounded-[20px] relative md:ring-[.4375em] ring-[.275em] ring-gray-300 dark:ring-gray-700 overflow-hidden bg-gradient-to-b from-gray-300 dark:from-gray-700 to-white dark:to-black">
                 <div class="py-[50%] w-full relative min-w-full min-h-full flex items-center justify-center overflow-visible">
                   <img src={game} class="mx-auto w-full absolute" height={80} width={80} />
                 </div>
