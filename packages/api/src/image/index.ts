@@ -29,7 +29,6 @@ app.use(
     })
 )
 
-
 app.route('/cover', Cover)
 
 app.route('/avatar', Avatar)

@@ -6,6 +6,9 @@ send_metrics = false
 binding = "nexus"
 id = "e21527f9f1ed4adbaca1fa23d7f147c9"
 
+[observability.logs]
+enabled = true
+
 # [vars]
 # MY_VAR = "my-variable"
 

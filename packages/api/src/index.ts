@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import Image from "./image"
+import Relay from "./relay"
 
 const app = new Hono()
 
@@ -14,5 +15,7 @@ app.get('/favicon.ico', (c) => {
 })
 
 app.route("/image", Image)
+
+app.route("/relay", Relay)
 
 export default app

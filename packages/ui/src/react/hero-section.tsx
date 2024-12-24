@@ -1,9 +1,9 @@
 /* eslint-disable qwik/no-react-props */
 /** @jsxImportSource react */
-import { qwikify$ } from "@builder.io/qwik-react";
+import * as React from "react"
 import { motion } from "framer-motion"
 import { ReactDisplay } from "./display"
-import * as React from "react"
+import { qwikify$ } from "@builder.io/qwik-react";
 
 const transition = {
     type: "spring",
