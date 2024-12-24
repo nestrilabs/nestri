@@ -101,18 +101,13 @@ export default component$(() => {
       <HeroSection client:load>
         <Modal.Root class="w-full">
           <Modal.Trigger class="w-full max-w-xl focus:ring-primary-500 duration-200 outline-none rounded-xl flex items-center justify-between hover:bg-gray-200 dark:hover:bg-gray-800 transition-all gap-2 px-4 py-3 h-[45px] ring-2 ring-gray-300 dark:ring-gray-700 mx-auto text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black">
-            <span class="flex items-center gap-3 h-max justify-center overflow-hidden overflow-ellipsis whitespace-nowrap">
-              <svg xmlns="http://www.w3.org/2000/svg" class="size-[18] flex-shrink-0" height="18" width="18" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="11.5" cy="11.5" r="9.5" /><path stroke-linecap="round" d="M18.5 18.5L22 22" /></g></svg>
-              Search for a game to play...
+            <span class="flex items-center font-bold tracking-tighter gap-3 h-max justify-center overflow-hidden overflow-ellipsis whitespace-nowrap font-mono">
+              <svg xmlns="http://www.w3.org/2000/svg" class="size-[20px] flex-shrink-0" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M3.464 3.464C2 4.93 2 7.286 2 12s0 7.071 1.464 8.535C4.93 22 7.286 22 12 22s7.071 0 8.535-1.465C22 19.072 22 16.714 22 12s0-7.071-1.465-8.536C19.072 2 16.714 2 12 2S4.929 2 3.464 3.464m2.96 6.056a.75.75 0 0 1 1.056-.096l.277.23c.605.504 1.12.933 1.476 1.328c.379.42.674.901.674 1.518s-.295 1.099-.674 1.518c-.356.395-.871.824-1.476 1.328l-.277.23a.75.75 0 1 1-.96-1.152l.234-.195c.659-.55 1.09-.91 1.366-1.216c.262-.29.287-.427.287-.513s-.025-.222-.287-.513c-.277-.306-.707-.667-1.366-1.216l-.234-.195a.75.75 0 0 1-.096-1.056M17.75 15a.75.75 0 0 1-.75.75h-5a.75.75 0 0 1 0-1.5h5a.75.75 0 0 1 .75.75" clip-rule="evenodd" /></svg>
+              curl -fsSL https://nestri.io/install | bash
             </span>
             <span class="flex items-center gap-2">
               <div class="flex items-center gap-2 text-base font-title font-bold">
-                <kbd class="ring-2 ring-gray-300 dark:ring-gray-700 px-2 py-1 rounded-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="size-5 flex-shrink-0" width="20" height="20" viewBox="0 0 256 256"><path fill="currentColor" d="M180 144h-20v-32h20a36 36 0 1 0-36-36v20h-32V76a36 36 0 1 0-36 36h20v32H76a36 36 0 1 0 36 36v-20h32v20a36 36 0 1 0 36-36m-20-68a20 20 0 1 1 20 20h-20ZM56 76a20 20 0 0 1 40 0v20H76a20 20 0 0 1-20-20m40 104a20 20 0 1 1-20-20h20Zm16-68h32v32h-32Zm68 88a20 20 0 0 1-20-20v-20h20a20 20 0 0 1 0 40" /></svg>
-                </kbd>
-                <span class="px-2 py-0.5 rounded-md ring-2 ring-gray-300 dark:ring-gray-700">
-                  K
-                </span>
+                  <svg xmlns="http://www.w3.org/2000/svg" class="size-6 flex-shrink-0" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M15.24 2h-3.894c-1.764 0-3.162 0-4.255.148c-1.126.152-2.037.472-2.755 1.193c-.719.721-1.038 1.636-1.189 2.766C3 7.205 3 8.608 3 10.379v5.838c0 1.508.92 2.8 2.227 3.342c-.067-.91-.067-2.185-.067-3.247v-5.01c0-1.281 0-2.386.118-3.27c.127-.948.413-1.856 1.147-2.593s1.639-1.024 2.583-1.152c.88-.118 1.98-.118 3.257-.118h3.07c1.276 0 2.374 0 3.255.118A3.6 3.6 0 0 0 15.24 2" /><path fill="currentColor" d="M6.6 11.397c0-2.726 0-4.089.844-4.936c.843-.847 2.2-.847 4.916-.847h2.88c2.715 0 4.073 0 4.917.847S21 8.671 21 11.397v4.82c0 2.726 0 4.089-.843 4.936c-.844.847-2.202.847-4.917.847h-2.88c-2.715 0-4.073 0-4.916-.847c-.844-.847-.844-2.21-.844-4.936z" /></svg>
               </div>
             </span>
           </Modal.Trigger>

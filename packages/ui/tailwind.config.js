@@ -49,6 +49,17 @@ export default {
           "Segoe UI Symbol",
           "Noto Color Emoji",
         ],
+        mono: [
+          "Geist Mono",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "Consolas",
+          "Liberation Mono",
+          "Courier New",
+          "monospace"
+        ],
         title: [
           "Bricolage Grotesque",
           "-apple-system",
