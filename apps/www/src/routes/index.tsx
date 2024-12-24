@@ -68,7 +68,15 @@ export default component$(() => {
           </p>
         </div>
       </HeroSection>
-      <div class="items-center justify-center w-full flex py-8 px-4 flex-col">
+      <MotionComponent
+        initial={{ opacity: 0, y: 100 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={transition}
+        client:load
+        class="items-center justify-center w-full flex py-8 px-4 flex-col"
+        as="div"
+      >
         <section class="sticky w-full max-w-4xl px-1 mx-auto py-3 md:overflow-hidden overflow-x-scroll flex gap-1.5">
           <button class="bg-transparent text-gray-900/70 focus:ring-primary-500 outline-none dark:text-gray-100/70 ring-2 mt-[1px] ring-gray-300 dark:ring-gray-700 w-48 h-max py-2 rounded-full flex text-sm px-4 items-center gap-1 hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200">
             <svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 24 24" class="size-[14px] -mt-[1px] flex-shrink-0"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="11.5" cy="11.5" r="9.5"></circle><path stroke-linecap="round" d="M18.5 18.5L22 22"></path></g></svg>
@@ -90,17 +98,10 @@ export default component$(() => {
                   <img src={game} class="mx-auto w-full absolute" height={80} width={80} />
                 </div>
               </button>
-              // <div class="w-full rounded-[2.5rem] flex justify-center items-stretch relative bg-gradient-to-b from-gray-300 to-white ring-2 ring-gray-300 " key={`game-${key}`}>
-              //   <div class="min-w-full min-h-full py-[60%] relative flex items-center justify-center overflow-visible">
-              //     <div class="mx-auto w-full max-w-[60%] absolute overflow-hidden aspect-square rounded-[12px] inset-auto ring-[.4375em] ring-gray-400/30">
-              //       <img src={game} class="aspect-square w-full" height={80} width={80} />
-              //     </div>
-              //   </div>
-              // </div>
             ))}
           </div>
         </section>
-      </div>
+      </MotionComponent>
       {/* <MotionComponent
         initial={{ opacity: 0, y: 100 }}
         whileInView={{ opacity: 1, y: 0 }}
