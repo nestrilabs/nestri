@@ -19,17 +19,9 @@ const navLinks = [
 
 export const NavBar = component$(() => {
     const location = useLocation()
-    const hasScrolled = useSignal(false);
-
-    useOnDocument(
-        'scroll',
-        $(() => {
-            hasScrolled.value = window.scrollY > 0;
-        })
-    );
-
+    
     return (
-        <nav class={cn("w-full sticky top-0 z-50 px-4 text-sm font-extrabold bg-gray-100/70 dark:bg-gray-900/70 before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full", hasScrolled.value && "shadow-[0_2px_20px_1px] shadow-gray-300 dark:shadow-gray-700")} >
+        <nav class={cn("w-full relative top-0 z-50 px-4 text-sm font-extrabold bg-gray-100/70 dark:bg-gray-900/70 before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full")} >
             <div class="mx-auto flex max-w-xl items-center border-b-2 dark:border-gray-50/50 border-gray-950/50" >
                 <Link class="outline-none focus:ring-2 py-1 px-3 -ml-3 rounded-lg focus:ring-primary-500 duration-200 transition-all" href="/" >
                     <h1 class="text-lg font-title" >
