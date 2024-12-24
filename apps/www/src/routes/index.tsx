@@ -63,7 +63,7 @@ export default component$(() => {
               <svg xmlns="http://www.w3.org/2000/svg" class="group-focus:block hidden text-green-500 size-6 flex-shrink-0" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="m9.55 15.15l8.475-8.475q.3-.3.7-.3t.7.3t.3.713t-.3.712l-9.175 9.2q-.3.3-.7.3t-.7-.3L4.55 13q-.3-.3-.288-.712t.313-.713t.713-.3t.712.3z" /></svg>
             </div>
           </button>
-          <p class="w-full max-w-xl py-3 font-title px-2 text-gray-600 justify-start text-sm items-center flex">
+          <p class="w-full max-w-xl py-3 font-title px-2 text-gray-600 dark:text-gray-400 justify-start text-sm items-center flex">
             <span class="font-semibold">System requirements:</span>&nbsp;Docker 27.3.1 or newer
           </p>
         </div>
@@ -75,7 +75,7 @@ export default component$(() => {
         transition={transition}
         client:load
         class="items-center justify-center w-full flex py-8 px-4 flex-col"
-        as="div"
+          as="div"
       >
         <section class="sticky w-full max-w-4xl px-1 mx-auto py-3 md:overflow-hidden overflow-x-scroll flex gap-1.5">
           <button class="bg-transparent text-gray-900/70 focus:ring-primary-500 outline-none dark:text-gray-100/70 ring-2 mt-[1px] ring-gray-300 dark:ring-gray-700 w-48 h-max py-2 rounded-full flex text-sm px-4 items-center gap-1 hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200">
@@ -83,7 +83,7 @@ export default component$(() => {
             Search...
           </button>
           {tags.map((tag, key) => (
-            <button key={`tags-${key}`} class={cn("bg-white dark:bg-black text-gray-900/70 hover:ring-primary-500 outline-none dark:text-gray-100/70 ring-2 text-sm h-max ring-gray-300 py-2 px-4 rounded-full flex items-center hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200 focus:bg-primary-100 focus:text-primary-500 focus:ring-primary-500 focus:!bg-[url:none]", key == 1 && "bg-[url:linear-gradient(135deg,theme(colors.gray.100),theme(colors.gray.300)_20%,theme(colors.gray.100)_40%,theme(colors.gray.300)_60%,theme(colors.gray.100)_80%,theme(colors.gray.300))]")}>
+            <button key={`tags-${key}`} class={cn("bg-white dark:bg-black text-gray-900/70 hover:ring-primary-500 outline-none dark:text-gray-100/70 ring-2 text-sm h-max ring-gray-300 dark:ring-gray-700 py-2 px-4 rounded-full flex items-center hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200 focus:bg-primary-100 dark:focus:bg-primary-900 focus:text-primary-500 focus:ring-primary-500 focus:!bg-[url:none]", key == 1 && "bg-[url:linear-gradient(135deg,theme(colors.gray.100),theme(colors.gray.300)_20%,theme(colors.gray.100)_40%,theme(colors.gray.300)_60%,theme(colors.gray.100)_80%,theme(colors.gray.300))] dark:bg-[url:linear-gradient(135deg,theme(colors.gray.900),theme(colors.gray.700)_20%,theme(colors.gray.900)_40%,theme(colors.gray.700)_60%,theme(colors.gray.900)_80%,theme(colors.gray.700))]")}>
               <p class="whitespace-nowrap"> {tag.name}</p>
               {tag.total && <sup class="pl-1 font-title" >{tag.total}</sup>}
             </button>
@@ -93,7 +93,7 @@ export default component$(() => {
         <section class="w-full max-w-[70%] px-1 py-2">
           <div class="w-full grid grid-cols-[repeat(auto-fit,minmax(280px,.5fr))] auto-cols-[1fr] place-items-start mb-2 gap-6">
             {games.map((game, key) => (
-              <button key={key} class="hover:shadow-2xl hover:shadow-gray-800 hover:ring-primary-500 transition-all duration-200 w-full rounded-[20px] relative ring-[.4375em] ring-gray-300 overflow-hidden bg-gradient-to-b from-gray-300 to-white">
+              <button key={key} class="hover:shadow-2xl hover:shadow-gray-800 dark:hover:shadow-gray-200 hover:ring-primary-500 transition-all duration-200 w-full rounded-[20px] relative ring-[.4375em] ring-gray-300 dark:ring-gray-700 overflow-hidden bg-gradient-to-b from-gray-300 dark:from-gray-700 to-white dark:to-black">
                 <div class="py-[50%] w-full relative min-w-full min-h-full flex items-center justify-center overflow-visible">
                   <img src={game} class="mx-auto w-full absolute" height={80} width={80} />
                 </div>
