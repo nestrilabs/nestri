@@ -20,7 +20,7 @@ type Props = {
 export function ReactHeroSection({ children }: Props) {
     return (
         <>
-            <section className="px-4" >
+            <section className="px-4 w-screen" >
                 <header className="mx-auto max-w-xl pt-20 pb-1">
                     <motion.img
                         initial={{
