@@ -30,12 +30,12 @@ const convertToCss = (value: any) => {
 
 export default component$(() => {
     const priceValue = useSignal(3)
-    useVisibleTask$(() => {
-        // This is to fix the issue where the price input takes a long time, before it becomes responsive
-        // This looks to be a potential bug in Qwik
-        // new issue, (but it is okay), the page load time has now increased :/
-        console.log("loaded on client")
-    })
+    // useVisibleTask$(() => {
+    //     // This is to fix the issue where the price input takes a long time, before it becomes responsive
+    //     // This looks to be a potential bug in Qwik
+    //     // new issue, (but it is okay), the page load time has now increased :/
+    //     console.log("loaded on client")
+    // })
     return (
         <>
             <NavBar />
