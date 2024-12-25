@@ -1,11 +1,11 @@
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { TeamCounter, NavBar, Footer } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
 
 //FIXME: Add a FAQ section
-// FIXME: Takes too long for the price input radio input to become "activated"
+// FIXME: Takes too long for the price input radio input to become responsive
 const w = 280
 const two = (.25 * w) + 14
 const three = .5 * w
@@ -30,10 +30,16 @@ const convertToCss = (value: any) => {
 
 export default component$(() => {
     const priceValue = useSignal(3)
+    useVisibleTask$(() => {
+        // This is to fix the issue where the price input takes a long time, before it becomes responsive
+        // This looks to be a potential bug in Qwik
+        // new issue, (but it is okay), the page load time has now increased :/
+        console.log("loaded on client")
+    })
     return (
         <>
             <NavBar />
-            <TitleSection client:load title="Pricing" description={["We're growing at the speed of trust.", "Start free, then choose a price that feels right for you."]} />
+            <TitleSection client:load title="Pricing" description={["We're growing at the speed of trust.", "Choose a price that feels right for you."]} />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -200,7 +206,7 @@ export default component$(() => {
                                         <p class="text-5xl font-medium font-title">$20<span class="text-lg">/month </span></p>
                                         <div class="relative h-12  w-[280px]">
                                             <div
-                                                class="flex  cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 px-3 w-full grow">
+                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 px-3 w-full grow ring-2 ring-gray-400">
                                                 <span
                                                     style={{
                                                         right: `${100 - ((priceValue.value - 1) * 25)}%`
@@ -225,7 +231,7 @@ export default component$(() => {
                                                 onClick$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
                                                 //@ts-expect-error
                                                 onChange$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
-                                                class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full accent-red-500 w-full"
+                                                class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full w-full"
                                             />
                                         </div>
                                         <p class="font-title text-lg font-bold text-center w-full py-2">Choose what feels right.</p>
@@ -344,7 +350,7 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </div>
-                                    <button class="my-4 focus:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 bg-gray-300/70 dark:bg-primary-900 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
+                                    <button class="my-4 focus:ring-primary-500 hover:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 focus:dark:bg-primary-900 bg-gray-300/70 dark:bg-gray-700/30 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
                                         Start Playing with Family
                                         <div class="size-5 relative">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
