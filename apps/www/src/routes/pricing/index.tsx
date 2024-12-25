@@ -1,6 +1,6 @@
 import { component$ } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
-import { TitleSection, MotionComponent, transition  } from "@nestri/ui/react";
+import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { TeamCounter, NavBar, Footer } from "@nestri/ui"
 
 //FIXME: Add a FAQ section
@@ -16,20 +16,19 @@ export default component$(() => {
                 viewport={{ once: true }}
                 transition={transition}
                 client:load
-                class="flex items-center justify-center w-full"
+                class="flex items-center justify-center w-screen"
                 as="div"
             >
                 <div class="px-2" >
-                    <section class="flex flex-col gap-4 justify-center items-center mx-auto w-full text-left max-w-xl pb-4">
+                    <section class="flex flex-col gap-4 justify-center items-center mx-auto w-full text-left max-w-2xl pb-4">
                         <div class="flex flex-col gap-4 justify-center items-center">
-                            <div class="flex sm:flex-row flex-col w-[90%] sm:w-full h-min p-1.5 overflow-hidden bg-gray-200/70 ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-gray-800/70 rounded-xl gap-4">
-                                <div class="gap-3 w-full p-6 flex flex-col rounded-lg bg-white dark:bg-black">
+                            <div class="flex sm:flex-row flex-col w-[90%] sm:w-full h-min p-1.5 overflow-hidden bg-gray-200/70 ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-gray-800/70 rounded-xl">
+                                <div class="gap-3 w-full p-6 flex flex-col rounded-lg ">
                                     <div class="flex items-center font-title h-min w-full justify-between">
                                         <div class="flex items-center justify-center gap-2 ">
                                             <div class="bg-gradient-to-t from-[#d596ff] to-[rgb(145,147,255)] rounded-full h-4 w-4" />
-                                            <p class="text-base font-semibold">Basic</p>
+                                            <p class="text-base font-semibold">Individual</p>
                                         </div>
-                                        <p class="text-base font-medium">Free</p>
                                     </div>
                                     <div class="break-words [word-break:break-word] [text-wrap:balance] [word-wrap:break-word] w-full relative whitespace-pre-wrap">
                                         <p class="text-base text-gray-950/70 dark:text-gray-50/70">
@@ -37,24 +36,9 @@ export default component$(() => {
                                         </p>
                                     </div>
                                     <div class="flex flex-col w-full gap-1.5">
-                                        <p class="text-base font-medium font-title"> Your Team </p>
-                                        <div class="flex items-center gap-1.5">
-                                            <div class="bg-primary-200/70 dark:bg-primary-800/70 flex rounded-full py-[3px] pr-4 pl-[3px] justify-center items-center gap-2">
-                                                <div class="bg-gradient-to-t from-primary-400 to-primary-600 rounded-full aspect-square relative overflow-hidden flex justify-center items-center" >
-                                                    <p class="text-sm font-medium text-primary-50 text-center p-2">
-                                                        Y
-                                                    </p>
-                                                </div>
-                                                <p class="text-sm font-medium text-primary-500">
-                                                    You
-                                                </p>
-                                            </div>
-                                            <div class="bg-gray-200/70 dark:bg-gray-800 flex rounded-full relative size-[32px] overflow-hidden items-center justify-center">
-                                                <p class="text-lg font-normal font-title">+1</p>
-                                            </div>
-                                        </div>
+                                        <p class="text-5xl font-medium font-title"> Free </p>
                                     </div>
-                                    <hr class="h-[2px] bg-gray-200 dark:bg-gray-800" />
+                                    <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full relative sm:text-sm text-base gap-3 flex flex-col">
                                         {/* <div class="flex item-center flex-col gap-2 w-full">
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
@@ -165,15 +149,21 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </div>
+                                    <button class="bg-white my-4 dark:bg-black text-gray-900/70 hover:ring-primary-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max ring-gray-300 dark:ring-gray-700 py-2 px-4 flex items-center hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200 focus:bg-primary-100 dark:focus:bg-primary-900 focus:text-primary-500 focus:ring-primary-500 font-title font-bold justify-between">
+                                        Start Playing
+                                        <div class="size-5 relative">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
+                                                <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </div>
+                                    </button>
                                 </div>
-                                <div class="gap-3 w-full p-6 flex flex-col rounded-lg">
+                                <div class="gap-3 w-full p-6 flex flex-col rounded-lg bg-white dark:bg-black">
                                     <div class="flex items-center font-title h-min w-full justify-between">
                                         <div class="flex items-center justify-center gap-2 ">
                                             <div class="bg-gradient-to-t from-[#685fea] to-[rgb(153,148,224)] rounded-full h-4 w-4" />
-                                            <h1 class="text-base font-semibold">Pro</h1>
+                                            <h1 class="text-base font-semibold">Family</h1>
                                         </div>
-                                        {/**FIXME: Add a ticker for pricing, when we figure it out */}
-                                        <h2 class="text-base font-medium">TBD</h2>
                                     </div>
                                     <div class="break-words [word-break:break-word] [text-wrap:balance] [word-wrap:break-word] w-full relative whitespace-pre-wrap">
                                         <p class="text-base text-gray-950/70 dark:text-gray-50/70">
@@ -181,10 +171,9 @@ export default component$(() => {
                                         </p>
                                     </div>
                                     <div class="flex flex-col w-full gap-1.5">
-                                        <p class="text-base font-medium font-title">Your Team </p>
-                                        <div class="flex items-center gap-1.5">
+                                        <p class="text-5xl font-medium font-title">$20<span class="text-lg">/month </span></p>
+                                        {/* <div class="flex items-center gap-1.5">
                                             <div class="bg-primary-200/70 dark:bg-primary-800/70 flex rounded-full py-[3px] pr-4 pl-[3px] justify-center items-center gap-2">
-                                                {/** Avatar Placeholder*/}
                                                 <div class="bg-gradient-to-t from-primary-400 to-primary-600 rounded-full aspect-square relative overflow-hidden flex justify-center items-center" >
                                                     <p class="text-sm font-medium text-primary-50 text-center p-2">
                                                         Y
@@ -195,9 +184,9 @@ export default component$(() => {
                                                 </p>
                                             </div>
                                             <TeamCounter class="h-[30px]" />
-                                        </div>
+                                        </div> */}
                                     </div>
-                                    <hr class="h-[2px] bg-gray-300 dark:bg-gray-700" />
+                                    <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full sm:text-sm text-base relative gap-3 flex flex-col">
                                         {/* <div class="flex item-center flex-col gap-2 w-full">
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
@@ -311,6 +300,14 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </div>
+                                    <button class="my-4 focus:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 bg-gray-300/70 dark:bg-primary-900 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
+                                        Start Playing with Family
+                                        <div class="size-5 relative">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
+                                                <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
+                                            </svg>
+                                        </div>
+                                    </button>
                                 </div>
                             </div>
                         </div>
