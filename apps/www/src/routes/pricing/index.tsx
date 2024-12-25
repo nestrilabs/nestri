@@ -1,11 +1,35 @@
-import { component$ } from "@builder.io/qwik";
+import { component$, useSignal } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { TeamCounter, NavBar, Footer } from "@nestri/ui"
+import { cn } from "@nestri/ui/design";
 
 //FIXME: Add a FAQ section
+// FIXME: Takes too long for the price input radio input to become "activated"
+const w = 280
+const two = (.25 * w) + 14
+const three = .5 * w
+const four = (.75 * w) - 14
+const five = w - 28
+const convertToCss = (value: any) => {
+    switch (value) {
+        case 1:
+            return 28
+        case 2:
+            return two
+        case 3:
+            return three
+        case 4:
+            return four
+        case 5:
+            return five
+        default:
+            return three;
+    }
+}
 
 export default component$(() => {
+    const priceValue = useSignal(3)
     return (
         <>
             <NavBar />
@@ -37,6 +61,8 @@ export default component$(() => {
                                     </div>
                                     <div class="flex flex-col w-full gap-1.5">
                                         <p class="text-5xl font-medium font-title"> Free </p>
+                                        <span class="h-12 hidden sm:block" />
+                                        <span class="h-11 hidden sm:block" />
                                     </div>
                                     <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full relative sm:text-sm text-base gap-3 flex flex-col">
@@ -170,21 +196,39 @@ export default component$(() => {
                                             Ideal for dedicated gamers who crave more power, flexibility, and social gaming experiences.
                                         </p>
                                     </div>
-                                    <div class="flex flex-col w-full gap-1.5">
+                                    <div class="flex flex-col w-full gap-1.5 ">
                                         <p class="text-5xl font-medium font-title">$20<span class="text-lg">/month </span></p>
-                                        {/* <div class="flex items-center gap-1.5">
-                                            <div class="bg-primary-200/70 dark:bg-primary-800/70 flex rounded-full py-[3px] pr-4 pl-[3px] justify-center items-center gap-2">
-                                                <div class="bg-gradient-to-t from-primary-400 to-primary-600 rounded-full aspect-square relative overflow-hidden flex justify-center items-center" >
-                                                    <p class="text-sm font-medium text-primary-50 text-center p-2">
-                                                        Y
-                                                    </p>
+                                        <div class="relative h-12  w-[280px]">
+                                            <div
+                                                class="flex  cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 px-3 w-full grow">
+                                                <span
+                                                    style={{
+                                                        right: `${100 - ((priceValue.value - 1) * 25)}%`
+                                                    }}
+                                                    class="rounded-l-full absolute h-full bg-gray-400 left-0 pointer-events-none transition-all" />
+                                                <div class="w-full h-full items-center flex justify-between rounded-full left-0 right-0 overflow-hidden relative px-3 pointer-events-none">
+                                                    {new Array(5).fill(0).map((_, key) => (
+                                                        <div key={`tab-${key}`} class={cn("size-6 relative z-10 rounded-full", priceValue.value >= key + 1 ? "bg-gray-500" : "bg-gray-400")} />
+                                                    ))}
                                                 </div>
-                                                <p class="text-sm font-medium text-primary-500">
-                                                    You
-                                                </p>
                                             </div>
-                                            <TeamCounter class="h-[30px]" />
-                                        </div> */}
+                                            <div
+                                                style={{
+                                                    left: convertToCss(priceValue.value),
+                                                }}
+                                                class="absolute transition-all duration-200 pointer-events-none w-full -top-1 z-20 right-0 left-[--left] ">
+                                                <span class="left-0 border-[0.625rem] border-gray-200 shadow-sm shadow-gray-500 size-14 block z-20 bg-gray-500 rounded-full -translate-x-1/2" />
+                                            </div>
+                                            <input
+                                                type="range" id="snap" min={1} max={5} step={1}
+                                                //@ts-expect-error
+                                                onClick$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
+                                                //@ts-expect-error
+                                                onChange$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
+                                                class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full accent-red-500 w-full"
+                                            />
+                                        </div>
+                                        <p class="font-title text-lg font-bold text-center w-full py-2">Choose what feels right.</p>
                                     </div>
                                     <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full sm:text-sm text-base relative gap-3 flex flex-col">
