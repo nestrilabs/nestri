@@ -222,3 +222,23 @@
         }
     }
 }
+
+.marquee-animation {
+    -webkit-animation: loop-animate 60s linear infinite;
+    animation: loop-animate 60s linear infinite;
+}
+
+@keyframes loop-animate {
+    0% {
+        -webkit-transform: translateX(0);
+        -ms-transform: translateX(0);
+        transform: translateX(0);
+    }
+
+    100% {
+        -webkit-transform: translateX(-50%);
+        -ms-transform: translateX(-50%);
+        transform: translateX(-50%);
+    }
+}
+
