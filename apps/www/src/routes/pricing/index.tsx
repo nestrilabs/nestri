@@ -45,13 +45,30 @@ const convertToPrice = (value: any) => {
     }
 }
 
+const convertToTitle = (value: any) => {
+    switch (value) {
+        case 1:
+            return "No sweat. Pay what you can and enjoy Nestri."
+        case 2:
+            return "You've got a deal."
+        case 3:
+            return "Choose what feels right."
+        case 4:
+            return "Our hero. Thank you."
+        case 5:
+            return "Omg! You have no idea how much your support means to us."
+        default:
+            return "Choose what feels right.";
+    }
+}
+
 export default component$(() => {
     const priceValue = useSignal(3)
 
     return (
         <>
             <NavBar />
-            <TitleSection client:load title="Pricing" description={["We're growing at the speed of trust.", "Choose a price that feels right for you."]} />
+            <TitleSection client:load title="Pricing" description={["We're growing at the speed of trust. Choose a price that feels right for you and help support Nestri"]} />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
                 whileInView={{ opacity: 1, y: 0 }}
@@ -80,7 +97,7 @@ export default component$(() => {
                                     <div class="flex flex-col w-full gap-1.5">
                                         <p class="text-[4rem] leading-[1] font-medium font-title"> Free </p>
                                         <span class="h-12 hidden sm:block" />
-                                        <span class="h-11 hidden sm:block" />
+                                        <span class="h-[82px] hidden sm:block" />
                                     </div>
                                     <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full relative sm:text-sm text-base gap-3 flex flex-col">
@@ -271,7 +288,9 @@ export default component$(() => {
                                                 class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full w-full"
                                             />
                                         </div>
-                                        <p class="font-title text-lg font-bold text-center w-full py-2">Choose what feels right.</p>
+                                        <div class="flex justify-center items-center w-full h-[72px] mt-2.5">
+                                            <p class="font-title text-lg font-bold text-center h-max">{convertToTitle(priceValue.value)}</p>
+                                        </div>
                                     </div>
                                     <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full sm:text-sm text-base relative gap-3 flex flex-col">
