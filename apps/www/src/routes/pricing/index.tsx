@@ -28,14 +28,26 @@ const convertToCss = (value: any) => {
     }
 }
 
+const convertToPrice = (value: any) => {
+    switch (value) {
+        case 1:
+            return [1, 0]
+        case 2:
+            return [1, 5]
+        case 3:
+            return [2, 0]
+        case 4:
+            return [3, 0]
+        case 5:
+            return [5, 0]
+        default:
+            return [2, 0];
+    }
+}
+
 export default component$(() => {
     const priceValue = useSignal(3)
-    // useVisibleTask$(() => {
-    //     // This is to fix the issue where the price input takes a long time, before it becomes responsive
-    //     // This looks to be a potential bug in Qwik
-    //     // new issue, (but it is okay), the page load time has now increased :/
-    //     console.log("loaded on client")
-    // })
+
     return (
         <>
             <NavBar />
@@ -66,7 +78,7 @@ export default component$(() => {
                                         </p>
                                     </div>
                                     <div class="flex flex-col w-full gap-1.5">
-                                        <p class="text-5xl font-medium font-title"> Free </p>
+                                        <p class="text-[4rem] leading-[1] font-medium font-title"> Free </p>
                                         <span class="h-12 hidden sm:block" />
                                         <span class="h-11 hidden sm:block" />
                                     </div>
@@ -203,7 +215,32 @@ export default component$(() => {
                                         </p>
                                     </div>
                                     <div class="flex flex-col w-full gap-1.5 ">
-                                        <p class="text-5xl font-medium font-title">$20<span class="text-lg">/month </span></p>
+                                        <div style={{ "--line-height": "4rem" }} class="flex items-end text-[4rem] font-medium font-title">
+                                            <div class="flex leading-[1]" >
+                                                <span>$</span>
+                                                {new Array(2).fill(0).map((_, key) => {
+                                                    const [digitOne, digitTwo] = convertToPrice(priceValue.value)
+                                                    return (
+                                                        <div style={{ "--digit-one": digitOne, "--digit-two": digitTwo }} key={`digit-${key}`} class={cn("h-16 overflow-hidden", key == 0 ? "first-of-type:[--v:var(--digit-one)]" : "last-of-type:[--v:var(--digit-two)]")} >
+                                                            <div class={cn("digit_timing flex flex-col", key == 0 ? "items-end" : "items-start")}>
+                                                                <div>9</div>
+                                                                <div>0</div>
+                                                                <div>1</div>
+                                                                <div>2</div>
+                                                                <div>3</div>
+                                                                <div>4</div>
+                                                                <div>5</div>
+                                                                <div>6</div>
+                                                                <div>7</div>
+                                                                <div>8</div>
+                                                                <div>9</div>
+                                                                <div>0</div>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                            <span class="text-lg">/month </span></div>
                                         <div class="relative h-12  w-[280px]">
                                             <div
                                                 class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 dark:bg-gray-700 px-3 w-full grow ring-2 ring-gray-400 dark:ring-gray-600">
