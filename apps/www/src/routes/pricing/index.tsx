@@ -284,7 +284,7 @@ export default component$(() => {
                                                 class="absolute transition-all duration-200 pointer-events-none w-full -top-1 z-20 right-0 left-[--left] ">
                                                 <span class="left-0 border-[0.625rem] border-gray-600 dark:border-gray-400 shadow-sm shadow-gray-500 size-14 block z-20 bg-gray-400 dark:bg-gray-600 rounded-full -translate-x-1/2" />
                                             </div>
-                                            <audio ref={v => audio.value = v} src={audioUrl} autoplay={true} />
+                                            <audio ref={v => audio.value = v} src={audioUrl} autoplay={false} class="hidden" />
                                             <input
                                                 type="range" id="snap" min={1} max={5} step={1}
                                                 //@ts-expect-error
