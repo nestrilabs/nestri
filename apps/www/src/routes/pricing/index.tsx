@@ -351,7 +351,7 @@ export default component$(() => {
                                         </div>
                                     </div>
                                     <button class="my-4 focus:ring-primary-500 hover:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 focus:dark:bg-primary-900 bg-gray-300/70 dark:bg-gray-700/30 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
-                                        Start Playing with Family
+                                        Start Playing with Family Now
                                         <div class="size-5 relative">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
                                                 <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
@@ -361,17 +361,25 @@ export default component$(() => {
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-gray-200/70 dark:bg-gray-800/70 ring-2 ring-gray-300 dark:ring-gray-700 rounded-xl p-6 w-[90%] sm:w-full" >
-                            <div class="flex gap-3 relative w-full flex-col" >
+                        <div class="bg-gray-200/70 dark:bg-gray-800/70 ring-2 ring-gray-300 dark:ring-gray-700 rounded-xl w-[90%] sm:w-full overflow-hidden" >
+                            <div class="flex gap-3 relative w-full flex-col px-6 pt-6" >
                                 <div class="w-full flex items-center gap-2" >
                                     <div class="rounded-full size-4 overflow-hidden bg-gradient-to-tr from-[#a0f906] to-[#e60d0d]" />
                                     <p class="text-base font-medium">Enterprise</p>
                                 </div>
                                 <p class="text-neutral-900/70 dark:text-neutral-100/70 text-base" >
-                                    Looking for a custom cloud gaming platform? Use Nestri as your own on our servers or yours. Flexible licensing and white-glove onboarding included.
+                                    Looking for something else? Use Nestri as your own on our servers or yours. Flexible licensing and white-glove onboarding included.
                                 </p>
-                                <div class="underline underline-offset-2 font-medium font-title">
-                                    Nestri Studio is coming soon
+                                <button class="underline underline-offset-2 font-medium font-title hover:opacity-70 w-max">
+                                    Contact Sales
+                                </button>
+                            </div>
+                            <div class="w-full text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm mt-2 py-3">
+                                <div class="flex relative">
+                                    <span class="whitespace-pre marquee-animation">
+                                        Organization Account · Security Restrictions · Custom Events · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·
+                                        Organization Account · Security Restrictions · Custom Events · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·
+                                    </span>
                                 </div>
                             </div>
                         </div>
