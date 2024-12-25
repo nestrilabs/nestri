@@ -46,6 +46,8 @@ const games = [
 
 // FIXME: Change up the copy
 //TODO: Use a db to query all this
+//TODO: Add the search modal
+// TODO: Add the game modal
 
 export default component$(() => {
   return (
