@@ -206,15 +206,15 @@ export default component$(() => {
                                         <p class="text-5xl font-medium font-title">$20<span class="text-lg">/month </span></p>
                                         <div class="relative h-12  w-[280px]">
                                             <div
-                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 px-3 w-full grow ring-2 ring-gray-400">
+                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 dark:bg-gray-700 px-3 w-full grow ring-2 ring-gray-400 dark:ring-gray-600">
                                                 <span
                                                     style={{
                                                         right: `${100 - ((priceValue.value - 1) * 25)}%`
                                                     }}
-                                                    class="rounded-l-full absolute h-full bg-gray-400 left-0 pointer-events-none transition-all" />
+                                                    class="rounded-l-full absolute h-full bg-gray-400 dark:bg-gray-600 left-0 pointer-events-none transition-all" />
                                                 <div class="w-full h-full items-center flex justify-between rounded-full left-0 right-0 overflow-hidden relative px-3 pointer-events-none">
                                                     {new Array(5).fill(0).map((_, key) => (
-                                                        <div key={`tab-${key}`} class={cn("size-6 relative z-10 rounded-full", priceValue.value >= key + 1 ? "bg-gray-500" : "bg-gray-400")} />
+                                                        <div key={`tab-${key}`} class={cn("size-6 relative z-10 rounded-full", priceValue.value >= key + 1 ? "bg-gray-500" : "bg-gray-400 dark:bg-gray-600")} />
                                                     ))}
                                                 </div>
                                             </div>
@@ -223,7 +223,7 @@ export default component$(() => {
                                                     left: convertToCss(priceValue.value),
                                                 }}
                                                 class="absolute transition-all duration-200 pointer-events-none w-full -top-1 z-20 right-0 left-[--left] ">
-                                                <span class="left-0 border-[0.625rem] border-gray-200 shadow-sm shadow-gray-500 size-14 block z-20 bg-gray-500 rounded-full -translate-x-1/2" />
+                                                <span class="left-0 border-[0.625rem] border-gray-600 dark:border-gray-400 shadow-sm shadow-gray-500 size-14 block z-20 bg-gray-400 dark:bg-gray-600 rounded-full -translate-x-1/2" />
                                             </div>
                                             <input
                                                 type="range" id="snap" min={1} max={5} step={1}
