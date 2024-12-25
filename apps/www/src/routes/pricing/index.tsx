@@ -3,6 +3,7 @@ import { Link } from "@builder.io/qwik-city";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { TeamCounter, NavBar, Footer } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
+import audio from "./cash.mp3"
 
 //FIXME: Add a FAQ section
 // FIXME: Takes too long for the price input radio input to become responsive
@@ -64,7 +65,11 @@ const convertToTitle = (value: any) => {
 
 export default component$(() => {
     const priceValue = useSignal(3)
-
+    const audioUrl = new URL('./cash.mp3', import.meta.url).href
+    const audio = useSignal<HTMLAudioElement | undefined>()
+    // useVisibleTask$(() => {
+    //     audio.value = new Audio(audioUrl)
+    // })
     return (
         <>
             <NavBar />
@@ -279,10 +284,11 @@ export default component$(() => {
                                                 class="absolute transition-all duration-200 pointer-events-none w-full -top-1 z-20 right-0 left-[--left] ">
                                                 <span class="left-0 border-[0.625rem] border-gray-600 dark:border-gray-400 shadow-sm shadow-gray-500 size-14 block z-20 bg-gray-400 dark:bg-gray-600 rounded-full -translate-x-1/2" />
                                             </div>
+                                            <audio ref={v => audio.value = v} src={audioUrl} autoplay={true} />
                                             <input
                                                 type="range" id="snap" min={1} max={5} step={1}
                                                 //@ts-expect-error
-                                                onClick$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
+                                                onClick$={async (v) => { priceValue.value = Number(v.target?.value) as number; await audio.value?.play() }}
                                                 //@ts-expect-error
                                                 onChange$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
                                                 class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full w-full"
