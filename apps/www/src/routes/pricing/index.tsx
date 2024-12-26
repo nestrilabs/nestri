@@ -3,8 +3,7 @@ import { Link } from "@builder.io/qwik-city";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { TeamCounter, NavBar, Footer } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
-import audio from "./cash.mp3"
-
+import Book from "./book"
 //FIXME: Add a FAQ section
 // FIXME: Takes too long for the price input radio input to become responsive
 const w = 280
@@ -448,6 +447,7 @@ export default component$(() => {
                     </section>
                 </div>
             </MotionComponent>
+            <Book />
             <Footer />
         </>
     )
