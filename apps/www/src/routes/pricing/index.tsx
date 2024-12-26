@@ -80,11 +80,11 @@ export default component$(() => {
                 class="flex items-center justify-center w-screen"
                 as="div"
             >
-                <div class="px-2" >
+                <div class="px-4 w-full" >
                     <section class="flex flex-col gap-4 justify-center items-center mx-auto w-full text-left max-w-2xl pb-4">
                         <div class="flex flex-col gap-4 justify-center items-center">
-                            <div class="flex sm:flex-row flex-col w-[90%] sm:w-full h-min p-1.5 overflow-hidden bg-gray-200/70 ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-gray-800/70 rounded-xl">
-                                <div class="gap-3 w-full p-6 flex flex-col rounded-lg ">
+                            <div class="flex sm:flex-row flex-col w-full h-min p-1.5 overflow-hidden bg-gray-200/70 ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-gray-800/70 rounded-xl">
+                                <div class="gap-3 w-full p-3 sm:p-6 flex flex-col rounded-lg ">
                                     <div class="flex items-center font-title h-min w-full justify-between">
                                         <div class="flex items-center justify-center gap-2 ">
                                             <div class="bg-gradient-to-t from-[#d596ff] to-[rgb(145,147,255)] rounded-full h-4 w-4" />
@@ -216,12 +216,11 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </div>
-                                    <button class="bg-white my-4 dark:bg-black text-gray-900/70 hover:ring-primary-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max ring-gray-300 dark:ring-gray-700 py-2 px-4 flex items-center hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200 focus:bg-primary-100 dark:focus:bg-primary-900 focus:text-primary-500 focus:ring-primary-500 font-title font-bold justify-between">
-                                        Start Playing
-                                        <div class="size-5 relative">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
-                                                <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
-                                            </svg>
+                                    <button class="bg-white group my-4 max-w-full dark:bg-black text-gray-900/70 hover:ring-primary-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max ring-gray-300 dark:ring-gray-700 py-2 px-4 flex items-center hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200 focus:bg-primary-100 dark:focus:bg-primary-900 focus:text-primary-500 focus:ring-primary-500 font-title font-bold justify-between">
+                                        <p class="overflow-hidden overflow-ellipsis max-w-[210px] text-left whitespace-nowrap font-mono">curl -fsSL https://nestri.io/install | bash</p>
+                                        <div class="ml-auto flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="group-focus:hidden size-6 flex-shrink-0" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="M15.24 2h-3.894c-1.764 0-3.162 0-4.255.148c-1.126.152-2.037.472-2.755 1.193c-.719.721-1.038 1.636-1.189 2.766C3 7.205 3 8.608 3 10.379v5.838c0 1.508.92 2.8 2.227 3.342c-.067-.91-.067-2.185-.067-3.247v-5.01c0-1.281 0-2.386.118-3.27c.127-.948.413-1.856 1.147-2.593s1.639-1.024 2.583-1.152c.88-.118 1.98-.118 3.257-.118h3.07c1.276 0 2.374 0 3.255.118A3.6 3.6 0 0 0 15.24 2" /><path fill="currentColor" d="M6.6 11.397c0-2.726 0-4.089.844-4.936c.843-.847 2.2-.847 4.916-.847h2.88c2.715 0 4.073 0 4.917.847S21 8.671 21 11.397v4.82c0 2.726 0 4.089-.843 4.936c-.844.847-2.202.847-4.917.847h-2.88c-2.715 0-4.073 0-4.916-.847c-.844-.847-.844-2.21-.844-4.936z" /></svg>
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="group-focus:block hidden text-green-500 size-6 flex-shrink-0" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="m9.55 15.15l8.475-8.475q.3-.3.7-.3t.7.3t.3.713t-.3.712l-9.175 9.2q-.3.3-.7.3t-.7-.3L4.55 13q-.3-.3-.288-.712t.313-.713t.713-.3t.712.3z" /></svg>
                                         </div>
                                     </button>
                                 </div>
@@ -266,7 +265,7 @@ export default component$(() => {
                                             <span class="text-lg">/month </span></div>
                                         <div class="relative h-12  w-[280px]">
                                             <div
-                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-primary-300 dark:bg-gray-700 px-3 w-full grow ring-2 ring-gray-400 dark:ring-gray-600">
+                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 dark:bg-gray-700 px-3 w-full grow ring-2 ring-gray-400 dark:ring-gray-600">
                                                 <span
                                                     style={{
                                                         right: `${100 - ((priceValue.value - 1) * 25)}%`
@@ -424,7 +423,7 @@ export default component$(() => {
                                 </div>
                             </div>
                         </div>
-                        <div class="bg-gray-200/70 dark:bg-gray-800/70 ring-2 ring-gray-300 dark:ring-gray-700 rounded-xl w-[90%] sm:w-full overflow-hidden" >
+                        <div class="bg-gray-200/70 dark:bg-gray-800/70 ring-2 ring-gray-300 dark:ring-gray-700 rounded-xl w-full overflow-hidden" >
                             <div class="flex gap-3 relative w-full flex-col px-6 pt-6" >
                                 <div class="w-full flex items-center gap-2" >
                                     <div class="rounded-full size-4 overflow-hidden bg-gradient-to-tr from-[#a0f906] to-[#e60d0d]" />
