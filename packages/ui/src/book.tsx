@@ -29,7 +29,7 @@ export default component$(({ bgColor = "hsla(0,0%,89%,1)", textColor = "#000", t
                                 class="leading-[1.7rem] text-left font-semibold text-[1.7rem] tracking-[-.02em] text-balance text-[--book-text-color]">{title}</span>
                         </div>
                     </div>
-                    <div class="bg-[url(https://assets.vercel.com/image/upload/v1720554484/front/design/book-texture.avif)] bg-cover absolute inset-0 mix-blend-hard-light rounded-[6px_4px_4px_6px] bg-no-repeat opacity-50 pointer-events-none [filter:brightness(1.1)]" />
+                    <div class="bg-[url(/images/book-texture.avif)] bg-cover absolute inset-0 mix-blend-hard-light rounded-[6px_4px_4px_6px] bg-no-repeat opacity-50 pointer-events-none [filter:brightness(1.1)]" />
                 </div>
                 <div
                     class="h-[calc(100%-2*3px)] w-[calc(var(--book-depth)-2px)] top-[3px] rounded-[6px_4px_4px_6px] overflow-hidden absolute [transform:translateX(calc(var(--book-width)*1px-var(--book-depth)/2-3px))_rotateY(90deg)_translateX(calc(var(--book-depth)_/_2))]"

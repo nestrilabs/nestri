@@ -1,7 +1,7 @@
 import { component$ } from "@builder.io/qwik";
 import { type DocumentHead } from "@builder.io/qwik-city";
-import { HeroSection, Cursor, MotionComponent, transition } from "@nestri/ui/react"
-import { NavBar, Footer, Modal, Card } from "@nestri/ui"
+import { HeroSection, MotionComponent, transition } from "@nestri/ui/react"
+import { NavBar, Footer } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
 
 const tags = [
