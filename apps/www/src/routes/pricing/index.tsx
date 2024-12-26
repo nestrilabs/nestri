@@ -1,9 +1,7 @@
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
-import { Link } from "@builder.io/qwik-city";
+import { component$, useSignal } from "@builder.io/qwik";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
-import { TeamCounter, NavBar, Footer } from "@nestri/ui"
+import { NavBar, Footer, Book } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
-import Book from "./book"
 //FIXME: Add a FAQ section
 // FIXME: Takes too long for the price input radio input to become responsive
 const w = 280
@@ -98,12 +96,16 @@ export default component$(() => {
                                             Perfect for casual gamers and those new to Nestri. Dive into cloud gaming without spending a dime.
                                         </p>
                                     </div>
-                                    <div class="flex flex-col w-full gap-1.5">
+                                    <div class="flex flex-col w-full">
                                         <p class="text-[4rem] leading-[1] font-medium font-title"> Free </p>
-                                        <span class="h-12 hidden sm:block" />
-                                        <span class="h-[82px] hidden sm:block" />
+                                        {/**FIXME: Add the link to the docs here */}
+                                        <button class="h-[154px] w-full flex items-start pt-4 justify-center overflow-hidden">
+                                            <Book textColor="#FFF"
+                                                bgColor="#FF4F01"
+                                                title="Getting started with Nestri" class="shadow-lg shadow-gray-900 dark:shadow-none" />
+                                        </button>
+                                        <hr class="h-[2px] bg-gray-400 text-gray-300 dark:bg-gray-600 " />
                                     </div>
-                                    <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
                                     <div class="w-full relative sm:text-sm text-base gap-3 flex flex-col">
                                         {/* <div class="flex item-center flex-col gap-2 w-full">
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
@@ -447,7 +449,6 @@ export default component$(() => {
                     </section>
                 </div>
             </MotionComponent>
-            <Book />
             <Footer />
         </>
     )
