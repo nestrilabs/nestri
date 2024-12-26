@@ -222,3 +222,32 @@
         }
     }
 }
+
+.marquee-animation {
+    -webkit-animation: loop-animate 60s linear infinite;
+    animation: loop-animate 60s linear infinite;
+}
+
+@keyframes loop-animate {
+    0% {
+        -webkit-transform: translateX(0);
+        -ms-transform: translateX(0);
+        transform: translateX(0);
+    }
+
+    100% {
+        -webkit-transform: translateX(-50%);
+        -ms-transform: translateX(-50%);
+        transform: translateX(-50%);
+    }
+}
+
+.digit_timing{
+    transition: translate 1s linear( 0, 0.0009 8.51%, -0.0047 19.22%, 0.0016 22.39%, 0.023 27.81%,
+    0.0237 30.08%, 0.0144 31.81%, -0.0051 33.48%, -0.1116 39.25%, -0.1181 40.59%,
+    -0.1058 41.79%, -0.0455, 0.0701 45.34%, 0.9702 55.19%, 1.0696 56.97%,
+    1.0987 57.88%, 1.1146 58.82%, 1.1181 59.83%, 1.1092 60.95%, 1.0057 66.48%,
+    0.986 68.14%, 0.9765 69.84%, 0.9769 72.16%, 0.9984 77.61%, 1.0047 80.79%,
+    0.9991 91.48%, 1 );
+    translate: 0 calc((var(--v) + 1) * (var(--line-height) * -1));
+}
