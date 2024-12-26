@@ -29,13 +29,13 @@ export const GithubBanner = component$(() => {
             viewport={{ once: true }}
             transition={transition}
             client:load
-            class="flex items-center justify-center w-full px-4 py-10"
+            class="flex items-center justify-center w-screen px-4 py-10"
             as="div"
         >
             <section class="w-full flex flex-col items-center justify-center">
                 <div class="w-full max-w-2xl mx-auto">
                     <div class="z-[2] h-max md:flex-row flex-col relative overflow-hidden flex justify-between md:items-center gap-6 px-6 pt-6 bg-white dark:bg-black ring-2 ring-gray-300 dark:ring-gray-700 rounded-xl">
-                        <div class="w-full h-max pb-6">
+                        <div class="w-full h-max md:pb-6">
                             <div class="gap-3 w-full flex flex-col">
                                 <div class="flex w-full flex-col text-neutral-900/70 dark:text-neutral-100/70 gap-1" >
                                     <p class="text-lg font-medium text-balance tracking-tight leading-tight">
@@ -44,7 +44,7 @@ export const GithubBanner = component$(() => {
                                         Dive into the documentation or unlock premium features with <u class="font-bold [text-decoration:none]" >Nestri Family</u>
                                     </p>
                                 </div>
-                                <div class="flex w-full gap-2 h-max items-center">
+                                <div class="flex md:flex-row flex-col w-full gap-2 h-max md:items-center">
                                     <button class="h-max w-max relative overflow-hidden rounded-lg flex justify-center text-gray-500 dark:text-gray-100/70 font-title font-bold items-center group py-2 px-4">
                                         <span class="invisible"> Get Nestri Family</span>
                                         <div class="animate-multicolor before:-z-[1] -z-[2] absolute -right-full left-0 bottom-0 h-full w-[1000px] [background:linear-gradient(90deg,rgb(232,23,98)_1.26%,rgb(30,134,248)_18.6%,rgb(91,108,255)_34.56%,rgb(52,199,89)_49.76%,rgb(245,197,5)_64.87%,rgb(236,62,62)_85.7%)_0%_0%/50%_100%_repeat-x]" />
@@ -65,7 +65,7 @@ export const GithubBanner = component$(() => {
                                 </div>
                             </div>
                         </div>
-                        <button ref={v => bookRef.value = v} class="h-full max-h-[160px] pt-4 w-[65%] flex items-start justify-center overflow-hidden outline-none">
+                        <button ref={v => bookRef.value = v} class="h-full max-h-[160px] pt-4 md:w-[65%] w-full flex items-start justify-center overflow-hidden outline-none">
                             <Book
                                 textColor="#FFF"
                                 bgColor="#FF4F01"
