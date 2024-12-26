@@ -1,4 +1,4 @@
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal } from "@builder.io/qwik";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { NavBar, Footer, Book } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
@@ -68,7 +68,7 @@ export default component$(() => {
     return (
         <>
             <NavBar />
-            <TitleSection client:load title="Pricing" description={["We're growing at the speed of trust. Choose a price that feels right for you and help support Nestri"]} />
+            <TitleSection client:load title="Pricing" description={"We're growing at the speed of trust. Choose a price that feels right for you and help support Nestri"} />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
                 whileInView={{ opacity: 1, y: 0 }}
