@@ -26,9 +26,7 @@ self.addEventListener('fetch', (event) => {
   if (event.request.destination === 'image') {
     event.respondWith(
       caches.open(IMAGE_CACHE_NAME).then((cache) => {
-        console.log('cache', cache);
         return cache.match(event.request).then((response) => {
-          console.log('response', response);
           if (response) {
             // If image is in cache, return it
             return response;
