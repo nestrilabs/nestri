@@ -1,4 +1,4 @@
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { NavBar, Footer, Book } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
@@ -64,9 +64,7 @@ export default component$(() => {
     const priceValue = useSignal(3)
     const audioUrl = new URL('./cash.mp3', import.meta.url).href
     const audio = useSignal<HTMLAudioElement | undefined>()
-    // useVisibleTask$(() => {
-    //     audio.value = new Audio(audioUrl)
-    // })
+
     return (
         <>
             <NavBar />
@@ -102,7 +100,7 @@ export default component$(() => {
                                         <button class="h-[154px] w-full flex items-start pt-4 justify-center overflow-hidden">
                                             <Book textColor="#FFF"
                                                 bgColor="#FF4F01"
-                                                title="Getting started with Nestri" class="shadow-lg shadow-gray-900 dark:shadow-none" />
+                                                title="Getting started with Nestri" class="shadow-lg shadow-gray-900 dark:shadow-gray-300" />
                                         </button>
                                         <hr class="h-[2px] bg-gray-400 text-gray-300 dark:bg-gray-600 " />
                                     </div>
@@ -436,7 +434,7 @@ export default component$(() => {
                                     Contact Sales
                                 </button>
                             </div>
-                            <div class="w-full text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm mt-2 py-3">
+                            <div class="w-full text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm mt-6 py-3">
                                 <div class="flex relative">
                                     <span class="whitespace-pre marquee-animation">
                                         Organization Account · Security Restrictions · Custom Events · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·

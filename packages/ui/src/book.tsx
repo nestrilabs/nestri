@@ -5,13 +5,13 @@ type Props = {
     bgColor?: string;
     textColor?: string;
     title?: string;
-    class?: string
+    class?: string;
 }
 export default component$(({ bgColor = "hsla(0,0%,89%,1)", textColor = "#000", title = "Design Engineering at Vercel", class: className }: Props) => {
     return (
-        <div style={{ "--book-width": 196, "--book-default-width": 196, "--book-color": bgColor, "--book-text-color": textColor, "--book-depth": "29cqw", "--hover-rotate": "-20deg", "--hover-scale": 1.066, "--hover-translate-x": "-8px" }} class={cn("[perspective:900px] inline-block w-fit group rounded-[6px_4px_4px_6px]", className)}>
+        <div style={{ "--book-width": 196, "--book-default-width": 196, "--book-color": bgColor, "--book-text-color": textColor, "--book-depth": "29cqw", "--hover-rotate": "-20deg", "--hover-scale": 1.066, "--hover-translate-x": "-8px" }} class={cn("[perspective:900px] inline-block w-fit rounded-[6px_4px_4px_6px] group", className)}>
             <div class="aspect-[49/60] w-fit rotate-0 relative [transform-style:preserve-3d] min-w-[calc(var(--book-width)*1px)] [transition:transform_.25s_ease-out] [container-type:inline-size]
-            group-hover:[transform:rotateY(var(--hover-rotate))_scale(var(--hover-scale))_translateX(var(--hover-translate-x))]">
+            group-hover:[transform:rotateY(var(--hover-rotate))_scale(var(--hover-scale))_translateX(var(--hover-translate-x))] [.flip_&]:[transform:rotateY(var(--hover-rotate))_scale(var(--hover-scale))_translateX(var(--hover-translate-x))]">
                 <div class="bg-[--book-color] absolute min-w-[calc(var(--book-width)*1px)] w-[calc(var(--book-width)*1px)] h-full overflow-hidden rounded-[6px_4px_4px_6px] [box-shadow:0_1px_1px_0_rgba(0,0,0,.02),0_4px_8px_-4px_rgba(0,0,0,.1),0_16px_24px_-8px_rgba(0,0,0,.03)] [transform:translateZ(0)]
                 after:absolute after:inset-0 after:border after:border-black/[.08] after:w-full after:h-full after:rounded-[inherit] after:[box-shadow:inset_0_1px_2px_0_hsla(0,0%,100%,.3)] after:pointer-events-none">
                     <div
