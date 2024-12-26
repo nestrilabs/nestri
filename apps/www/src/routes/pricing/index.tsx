@@ -266,7 +266,7 @@ export default component$(() => {
                                             <span class="text-lg">/month </span></div>
                                         <div class="relative h-12  w-[280px]">
                                             <div
-                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-gray-300 dark:bg-gray-700 px-3 w-full grow ring-2 ring-gray-400 dark:ring-gray-600">
+                                                class="flex cursor-pointer h-full relative overflow-hidden items-center justify-between rounded-full bg-primary-300 dark:bg-gray-700 px-3 w-full grow ring-2 ring-gray-400 dark:ring-gray-600">
                                                 <span
                                                     style={{
                                                         right: `${100 - ((priceValue.value - 1) * 25)}%`
