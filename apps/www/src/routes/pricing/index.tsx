@@ -46,15 +46,15 @@ const convertToPrice = (value: any) => {
 const convertToTitle = (value: any) => {
     switch (value) {
         case 1:
-            return "No sweat. Pay what you can and enjoy Nestri."
+            return "No sweat. Pay what you can\n and enjoy Nestri."
         case 2:
             return "You've got a deal."
         case 3:
             return "Choose what feels right."
         case 4:
-            return "Our hero. Thank you."
+            return "Our hero. We see you!\n We thank you."
         case 5:
-            return "Omg! You have no idea how much your support means to us."
+            return "Omg! You have no idea\n how much your support\n means to us."
         default:
             return "Choose what feels right.";
     }
@@ -293,7 +293,7 @@ export default component$(() => {
                                             />
                                         </div>
                                         <div class="flex justify-center items-center w-full h-[72px] mt-2.5">
-                                            <p class="font-title text-lg font-bold text-center h-max">{convertToTitle(priceValue.value)}</p>
+                                            <p class="font-title text-lg font-bold text-center h-max break-words whitespace-pre-line">{convertToTitle(priceValue.value)}</p>
                                         </div>
                                     </div>
                                     <hr class="h-[2px] bg-gray-400 dark:bg-gray-600" />
