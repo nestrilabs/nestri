@@ -191,6 +191,14 @@ export default component$(() => {
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6c0-1.886 0-2.828.586-3.414S4.114 2 6 2h5c1.886 0 2.828 0 3.414.586S15 4.114 15 6s0 2.828-.586 3.414S12.886 10 11 10H6c-1.886 0-2.828 0-3.414-.586S2 7.886 2 6Zm8 12c0-1.886 0-2.828.586-3.414S12.114 14 14 14h3c1.886 0 2.828 0 3.414.586S21 16.114 21 18s0 2.828-.586 3.414S18.886 22 17 22h-3c-1.886 0-2.828 0-3.414-.586S10 19.886 10 18Z" /><path stroke-linecap="round" d="M6 2.5V10m7.5 4.5V22M11 2.5V10m6.5 4.5V22M2.5 6H6m9 0h-4m0 12h2.5m7.5 0h-3.5" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 11v-1c0-.932 0-2.398-.152-2.765a2 2 0 0 0-1.083-1.083C19.398 6 18.932 6 18 6m3 5l1-1m-1 1l-1-1M3 13v1c0 .932 0 2.398.152 2.765a2 2 0 0 0 1.083 1.083C4.602 18 5.068 18 6 18m-3-5l-1 1m1-1l1 1" /></g></svg>
+                                                </div>
+                                                <p>50GB bandwidth limit per month <sup>2</sup></p>
+                                            </div>
+                                        </div>
+                                        <div class="gap-2.5 flex relative items-center w-full" >
+                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
+                                                <div class="size-5 relative">
                                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
                                                         <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
                                                     </svg>
@@ -380,6 +388,14 @@ export default component$(() => {
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6c0-1.886 0-2.828.586-3.414S4.114 2 6 2h5c1.886 0 2.828 0 3.414.586S15 4.114 15 6s0 2.828-.586 3.414S12.886 10 11 10H6c-1.886 0-2.828 0-3.414-.586S2 7.886 2 6Zm8 12c0-1.886 0-2.828.586-3.414S12.114 14 14 14h3c1.886 0 2.828 0 3.414.586S21 16.114 21 18s0 2.828-.586 3.414S18.886 22 17 22h-3c-1.886 0-2.828 0-3.414-.586S10 19.886 10 18Z" /><path stroke-linecap="round" d="M6 2.5V10m7.5 4.5V22M11 2.5V10m6.5 4.5V22M2.5 6H6m9 0h-4m0 12h2.5m7.5 0h-3.5" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 11v-1c0-.932 0-2.398-.152-2.765a2 2 0 0 0-1.083-1.083C19.398 6 18.932 6 18 6m3 5l1-1m-1 1l-1-1M3 13v1c0 .932 0 2.398.152 2.765a2 2 0 0 0 1.083 1.083C4.602 18 5.068 18 6 18m-3-5l-1 1m1-1l1 1" /></g></svg>
+                                                </div>
+                                                <p>Unlimited bandwidth</p>
+                                            </div>
+                                        </div>
+                                        <div class="gap-2.5 flex relative items-center w-full" >
+                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
+                                                <div class="size-5 relative">
                                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
                                                         <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
                                                     </svg>
@@ -426,8 +442,13 @@ export default component$(() => {
                                             </svg>
                                         </div>
                                     </button>
-                                    <div class="text-neutral-900/70 dark:text-neutral-100/70 text-xs">
-                                        <sup>1</sup> Feature is in development
+                                    <div class="flex flex-col gap-0.5">
+                                        <div class="text-neutral-900/70 dark:text-neutral-100/70 text-xs">
+                                            <sup>1</sup> Feature is in development
+                                        </div>
+                                        <div class="text-neutral-900/70 dark:text-neutral-100/70 text-xs">
+                                            <sup>2</sup> Approximately 33 hours of 1080p streaming
+                                        </div>
                                     </div>
                                 </div>
                             </div>
