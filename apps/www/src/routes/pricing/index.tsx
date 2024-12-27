@@ -69,8 +69,7 @@ export default component$(() => {
     const audio = useSignal<NoSerialize<Howl> | undefined>()
 
     useVisibleTask$(() => {
-        audio.value = noSerialize(new Howl({ src: ["/audio/cash.mp3"] }))
-        audio.value?.volume(0.5)
+        audio.value = noSerialize(new Howl({ src: ["/audio/cash.mp3"], volume: 0.5 }))
 
         buttonRef.value?.addEventListener("mouseenter", () => {
             bookRef.value?.classList.add('flip')
@@ -314,12 +313,9 @@ export default component$(() => {
                                                 class="absolute transition-all duration-200 pointer-events-none w-full -top-1 z-20 right-0 left-[--left] ">
                                                 <span class="left-0 border-[0.625rem] border-gray-600 dark:border-gray-400 shadow-sm shadow-gray-500 size-14 block z-20 bg-gray-400 dark:bg-gray-600 rounded-full -translate-x-1/2" />
                                             </div>
-                                            {/* <audio ref={v => audio.value = v} src={audioUrl} autoplay={false} class="hidden" /> */}
                                             <input
                                                 type="range" id="snap" min={1} max={5} step={1}
                                                 onClick$={onClick}
-                                                //@ts-expect-error
-                                                onChange$={(v) => { priceValue.value = Number(v.target?.value) as number; }}
                                                 class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full w-full"
                                             />
                                         </div>
