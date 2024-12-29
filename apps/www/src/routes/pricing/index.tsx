@@ -37,7 +37,7 @@ const convertToPrice = (value: any) => {
         case 3:
             return [2, 0]
         case 4:
-            return [3, 0]
+            return [3, 5]
         case 5:
             return [5, 0]
         default:
