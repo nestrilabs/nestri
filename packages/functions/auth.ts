@@ -115,6 +115,8 @@ export default {
                             name,
                         };
                     },
+                    // TODO: Use a route to send auth code to the email given
+                    // TODO: And another one is distinguish between login and signup
                     init() { },
                 } as Adapter<{
                     email: string;
