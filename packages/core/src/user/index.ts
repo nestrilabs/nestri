@@ -23,18 +23,9 @@ export module User {
         });
 
     export const fromEmail = fn(z.string(), async (email) => {
-        const query = {
-            "$users": {
-                $: {
-                    where: {
-                        email: email,
-                    },
-                },
-            },
-        };
         const db = databaseClient()
-        const res = await db.query(query)
-        return res.$users
+        const res = await db.auth.getUser({ email })
+        return res
     })
 
     export const create = fn(z.string(), async (email) => {

@@ -136,10 +136,10 @@ export default {
 
                 if (value.provider === "ssh") {
                     // Register the machine if it is not already registered
-                    const matchingUsers = await User.fromEmail(email);
+                    const matchingUser = await User.fromEmail(email);
                     const matchingMachines = await Machine.fromFingerprint(value.fingerprint)
                     if (matchingMachines.length === 0) {
-                        await Machine.create({ fingerprint: value.fingerprint, owner: matchingUsers[0].id, name: value.name, location })
+                        await Machine.create({ fingerprint: value.fingerprint, owner: matchingUser.id, name: value.name, location })
                     }
                 }
 
