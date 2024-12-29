@@ -1,5 +1,5 @@
 {
-  "name": "auth",
+  "name": "@nestri/functions",
   "module": "index.ts",
   "type": "module",
   "devDependencies": {

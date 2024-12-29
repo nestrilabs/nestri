@@ -2,11 +2,13 @@ import {
     type ExecutionContext,
     type KVNamespace,
 } from "@cloudflare/workers-types"
-import { subjects } from "./subjects.js"
-import { Resource } from "sst"
+import { subjects } from "./subjects"
+import { Resource } from "sst/resource"
 import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index"
+// import { Team } from "@nestri/core/team/index"
 import { authorizer } from "@openauthjs/openauth"
+import { Machine } from "@nestri/core/machine/index"
 import { CodeUI } from "@openauthjs/openauth/ui/code";
 import { Select } from "@openauthjs/openauth/ui/select";
 import { PasswordUI } from "@openauthjs/openauth/ui/password"
@@ -15,19 +17,29 @@ import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
 
-
 interface Env {
     CloudflareAuthKV: KVNamespace
 }
-
-async function getUser(email: string) {
-    // Get user from database
-    // Return user ID
-    return "123"
+interface CloudflareCF {
+    colo: string;
+    continent: string;
+    country: string,
+    city: string;
+    region: string;
+    longitude: number;
+    latitude: number;
+    metroCode: string;
+    postalCode: string;
+    timezone: string;
+    regionCode: number;
+}
+interface CFRequest extends Request {
+    cf: CloudflareCF
 }
 
 export default {
-    async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    async fetch(request: CFRequest, env: Env, ctx: ExecutionContext) {
+        const location = `${request.cf.country},${request.cf.continent}`
         return authorizer({
             select: Select({
                 providers: {
@@ -62,7 +74,7 @@ export default {
                 code: CodeAdapter<{ email: string }>(
                     CodeUI({
                         sendCode: async (claims, code) => {
-                            console.log(code, claims.email);
+                            console.log("emails & code:", claims.email, code);
                             await Email.send(claims.email, code)
                         },
                     }),
@@ -93,25 +105,21 @@ export default {
                         }
 
                         const name = input.params.name;
-                        if (!email) {
-                            throw new Error("Name is required");
+                        if (!name) {
+                            throw new Error("Name of the machine is required");
                         }
 
-                        const plan = input.params.plan;
-                        if (!email) {
-                            throw new Error("Subscription plan is required");
-                        }
                         return {
                             fingerprint,
                             email,
                             name,
-                            plan
                         };
                     },
                     init() { },
                 } as Adapter<{
                     email: string;
                     fingerprint: string;
+                    name: string;
                 }>,
             },
             allow: async (input) => {
@@ -122,30 +130,23 @@ export default {
                 return false;
             },
             success: async (ctx, value) => {
-                let email = undefined as string | undefined;
-                if (value.provider === "code") {
-                    email = value.claims.email;
-                } else {
-                    email = value.email
-                }
+                const email = value.provider === "code" ? value.claims.email : value.email;
                 
-                if (email) {
+                const token = await User.create(email);
+
+                if (value.provider === "ssh") {
+                    // Register the machine if it is not already registered
                     const matchingUsers = await User.fromEmail(email);
-                    if (matchingUsers.length === 0) {
-                        const token = await User.createToken({
-                            email,
-                        });
-
-                        console.log("token", token)
-
-                        return ctx.subject("user", {
-                            accessToken: token,
-                        });
+                    const matchingMachines = await Machine.fromFingerprint(value.fingerprint)
+                    if (matchingMachines.length === 0) {
+                        await Machine.create({ fingerprint: value.fingerprint, owner: matchingUsers[0].id, name: value.name, location })
                     }
-
                 }
-                throw new Error("Invalid provider")
+
+                return ctx.subject("user", {
+                    accessToken: token,
+                });
             },
         }).fetch(request, env, ctx)
-    },
+    }
 }
