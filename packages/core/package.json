@@ -1,13 +1,19 @@
 {
     "name": "@nestri/core",
     "version": "0.0.0",
-    "private": true,
     "sideEffects": false,
-    "exports":{
-        ".":"./index.ts"
+    "type": "module",
+    "exports": {
+        "./*": "./src/*.ts"
     },
     "devDependencies": {
-      "@cloudflare/workers-types": "^4.20240529.0",
-      "wrangler": "^3.57.2"
+        "@tsconfig/node20": "^20.1.4",
+        "loops": "^3.4.1",
+        "ulid": "^2.3.0",
+        "zod": "^3.24.1",
+        "zod-openapi": "^4.2.2"
+    },
+    "dependencies": {
+        "@instantdb/admin": "^0.17.3"
     }
-  }
+}

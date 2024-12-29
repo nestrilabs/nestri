@@ -1,5 +1,7 @@
 export const secret = {
-    CloudflareAccountIdSecret: new sst.Secret("CloudflareAccountId"),
-};
-
-export const allSecrets = Object.values(secret);
+    InstantAdminToken: new sst.Secret("InstantAdminToken"),
+    InstantAppId: new sst.Secret("InstantAppId"),
+    LoopsApiKey: new sst.Secret("LoopsApiKey")
+  };
+  
+  export const allSecrets = Object.values(secret);
