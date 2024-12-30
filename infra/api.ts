@@ -24,11 +24,28 @@ export const auth = new sst.cloudflare.Worker("Auth", {
         secret.InstantAppId,
         secret.LoopsApiKey
     ],
-    handler: "./packages/functions/auth.ts",
+    handler: "./packages/functions/src/auth.ts",
     url: true,
     domain: "auth." + domain
 });
 
+const urls = new sst.Linkable("Urls", {
+    properties: {
+      api: "https://api." + domain,
+      auth: "https://auth." + domain,
+    },
+  });
+
+export const api = new sst.cloudflare.Worker("Api", {
+    link: [
+        urls
+    ],
+    url: true,
+    handler: "./packages/functions/src/api/index.ts",
+    domain: "api." + domain
+})
+
 export const outputs = {
-    auth: auth.url
+    auth: auth.url,
+    api: api.url
 }

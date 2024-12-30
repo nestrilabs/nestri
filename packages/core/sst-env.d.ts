@@ -6,6 +6,10 @@ import "sst"
 export {}
 declare module "sst" {
   export interface Resource {
+    "Api": {
+      "type": "sst.cloudflare.Worker"
+      "url": string
+    }
     "Auth": {
       "type": "sst.cloudflare.Worker"
       "url": string
@@ -28,6 +32,11 @@ declare module "sst" {
     "LoopsApiKey": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "Urls": {
+      "api": string
+      "auth": string
+      "type": "sst.sst.Linkable"
     }
   }
 }

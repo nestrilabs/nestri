@@ -23,12 +23,18 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Urls": {
+      "api": string
+      "auth": string
+      "type": "sst.sst.Linkable"
+    }
   }
 }
 // cloudflare 
 import * as cloudflare from "@cloudflare/workers-types";
 declare module "sst" {
   export interface Resource {
+    "Api": cloudflare.Service
     "Auth": cloudflare.Service
     "CloudflareAuthKV": cloudflare.KVNamespace
   }
