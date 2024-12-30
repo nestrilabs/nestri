@@ -1,119 +1,84 @@
 import { component$ } from "@builder.io/qwik";
-import { HomeNavBar, Card } from "@nestri/ui";
+import { HomeNavBar } from "@nestri/ui";
 
-function getGreeting(): string {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return "Good Morning";
-    if (hour >= 12 && hour < 18) return "Good Afternoon";
-    return "Good Evening";
-}
+const icons = [
+    // {
+    //     icon: "https://framerusercontent.com/images/tvMz2bcYNcZtI2YPD2blDNogzDA.png",
+    //     label: "Finder"
+    // },
+    // {
+    //     icon: "https://framerusercontent.com/images/lykOj3xsaQWFncrRJf0PQaJC0.png",
+    //     label: "Multi"
+    // }, 
+    {
+        icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/8/83/Steam_icon_logo.svg/480px-Steam_icon_logo.svg.png",
+        // icon: "https://cdn-1.webcatalog.io/catalog/steam-web-store/steam-web-store-icon-filled-256.webp?v=1714775986747",
+        label: "Steam"
+    },
+    {
+        icon: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1091500/3d642f225dfb69962f5d8d36f7868caf9febf90d.ico",
+        label: "Cyberpunk 2077"
+    }, {
+        icon: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1568400/f954b5bd7c6a041a73ab8362dd207e4b79d57a37.ico",
+        label: "Sheepy: A Short Adventure"
+    }, {
+        icon: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1174180/5bf6edd7efb1110b457da905e7ac696c6c619ed1.ico",
+        label: "Red Dead Redemption 2"
+    }, {
+        icon: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1663220/0c54ad0aa052c7218540416512c71a860a382388.ico",
+        label: "Coffee Talk Episode 2: Hibiscus & Butterfly"
+    },
+    // {
+    //     icon: "https://framerusercontent.com/images/L5EHzir7oVTY67QVRBnRAjAugXk.png",
+    //     label: "Sally's Xcode"
+    // }, {
+    //     icon: "https://framerusercontent.com/images/CWJH4LdVKLxfs83b5rUDcjSHM.png",
+    //     label: "Kim's Diagram"
+    // }, 
+    // {
+    //     icon: "https://framerusercontent.com/images/lhfyHPlKFxlLMSiIJMr053Ewd0.png",
+    //     label: "Bin"
+    // },
+
+]
 
 export default component$(() => {
     return (
         <>
             <HomeNavBar />
-            {/* <div class="bg-red-500 h-[66px] w-screen"></div> */}
-            {/* <section class="absolute flex mx-auto my-0 inset-[0_0_20%] overflow-hidden -z-[1] before:inset-0 before:absolute before:z-[1] after:absolute after:inset-0 after:[background:linear-gradient(180deg,transparent_60%,#000)] before:[background:linear-gradient(90deg,transparent_85%,#000),linear-gradient(-90deg,transparent_85%,#000)]" >
-                <img src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1172470/library_hero_2x.jpg" height={200} width={300} class="max-w-full min-w-full max-h-full min-h-full object-cover absolute top-0 bottom-0 left-0 right-0 w-0 h-0"/>
-            </section> */}
-
-            <section class="w-full top-[70px] pb-5 ring-gray-300 ring-2 max-w-3xl rounded-xl overflow-hidden relative h-auto shadow-xl">
+            {/* <section class="w-full top-[70px] pb-5 ring-gray-300 ring-2 max-w-3xl rounded-xl overflow-hidden relative h-auto shadow-xl">
                 <div class="w-full h-auto relative">
                     <img src="https://media.rawg.io/media/games/511/5118aff5091cb3efec399c808f8c598f.jpg" height={200} width={300} class="w-full aspect-[16/9]  object-cover" />
                     <img src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/logo_2x.png?t=1671484934" height={200} width={300} class="w-[40%] aspect-[16/9] absolute bottom-4 left-1/2 -translate-x-1/2  object-cover" />
                 </div>
                 <div class="px-6 pt-2">
                     <div class="flex  gap-2 items-center h-max">
-                        {/* <img src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1174180/5bf6edd7efb1110b457da905e7ac696c6c619ed1.ico" height={20} width={20} class="size-10 bg-black aspect-square rounded-xl ring-2 ring-gray-700" /> */}
                         <p class="text-2xl font-title font-bold">Red Dead Redemption 2</p>
                     </div>
                 </div>
-            </section>
-            {/* <section class="w-full before:inset-0 before:absolute before:z-[1] relative after:bg-gradient-to-b after:from-transparent after:from-60% after:to-black before:[background:linear-gradient(90deg,transparent_70%,#000),linear-gradient(-90deg,transparent_70%,#000)]" >
-                <img src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/359550/library_hero_2x.jpg" height={200} width={300} class="w-full aspect-[96/31]"/>
-            </section><section class="w-full before:inset-0 before:absolute before:z-[1] relative after:bg-gradient-to-b after:from-transparent after:from-60% after:to-black before:[background:linear-gradient(90deg,transparent_70%,#000),linear-gradient(-90deg,transparent_70%,#000)]" >
-                <img src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/359550/library_hero_2x.jpg" height={200} width={300} class="w-full aspect-[96/31]"/>
-            </section><section class="w-full before:inset-0 before:absolute before:z-[1] relative after:bg-gradient-to-b after:from-transparent after:from-60% after:to-black before:[background:linear-gradient(90deg,transparent_70%,#000),linear-gradient(-90deg,transparent_70%,#000)]" >
-                <img src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/359550/library_hero_2x.jpg" height={200} width={300} class="w-full aspect-[96/31]"/>
-            </section><section class="w-full before:inset-0 before:absolute before:z-[1] relative after:bg-gradient-to-b after:from-transparent after:from-60% after:to-black before:[background:linear-gradient(90deg,transparent_70%,#000),linear-gradient(-90deg,transparent_70%,#000)]" >
-                <img src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/359550/library_hero_2x.jpg" height={200} width={300} class="w-full aspect-[96/31]"/>
             </section> */}
-            {/* <section class="flex flex-col gap-4 justify-center pt-20 items-center w-full text-left pb-4">
-                <div class="flex flex-col gap-4 mx-auto max-w-2xl w-full">
-                    <h1 class="text-5xl font-bold font-title">{getGreeting()},&nbsp;<span>Wanjohi</span></h1>
-                    <p class="dark:text-gray-50/70 text-gray-950/70 text-xl">What will you play today?</p>
+            <section class="w-full top-[70px] relative">
+                <div class="max-w-xl mx-auto">
+                    <div class="aspect-square bg-white rounded-3xl relative overflow-hidden size-[300px]" >
+                        <img src="https://assets-prd.ignimgs.com/2020/07/16/cyberpunk-2077-button-fin-1594877291453.jpg" alt="Cyberpunk 2077" height={40} width={40} class="p-4 size-full rounded-[2rem]" />
+                        <div class="bg-white size-[120%] absolute z-[1] top-1/2 -left-[9%] rounded-full ring-2 ring-gray-200">
+
+                        </div>
+                    </div>
                 </div>
-            </section> */}
-            {/* <section class="flex flex-col gap-4 justify-center pt-10 items-center w-full text-left pb-4">
-                <ul class="gap-4 relative list-none w-full max-w-xl lg:max-w-4xl grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 after:pointer-events-none after:select-none after:bg-gradient-to-b after:from-transparent after:dark:to-gray-900 after:to-gray-100 after:fixed after:left-0 after:-bottom-[1px] after:z-10 after:backdrop-blur-sm after:h-[100px] after:w-full after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.primary.100)_50%,transparent)] after:dark:[-webkit-mask-image:linear-gradient(to_top,theme(colors.primary.900)_50%,transparent)]">
-                    <li class="col-span-full">
-                        <Card
-                            size="large"
-                            titleWidth={55.61}
-                            titleHeight={100}
-                            game={{
-                                name: 'Control Ultimate Edition',
-                                id: 870780
-                            }}
-                        />
-                    </li>
-                    <li>
-                        <Card
-                            size="small"
-                            titleWidth={56.30}
-                            titleHeight={69.79}
-                            game={{
-                                name: 'Black Myth: Wukong',
-                                id: 2358720,
-                            }}
-                        />
-                    </li>
-                    <li>
-                        <Card
-                            size="small"
-                            titleWidth={34.09}
-                            titleHeight={98.26}
-                            game={{
-                                name: 'The Lord of the Rings: Return to Moria™',
-                                id: 2933130,
-                            }}
-                        />
-                    </li>
-                    <li>
-                        <Card
-                            size="small"
-                            titleWidth={48.77}
-                            titleHeight={100}
-                            game={{
-                                name: 'Grand Theft Auto V',
-                                id: 271590,
-                            }}
-                        />
-                    </li>
-                    <li>
-                        <Card
-                            titleWidth={31.65}
-                            titleHeight={82.87}
-                            size="small"
-                            game={{
-                                name: 'Apex Legends',
-                                id: 1172470,
-                            }}
-                        />
-                    </li>
-                    <li>
-                        <Card
-                            size="small"
-                            titleHeight={99.75}
-                            titleWidth={73.44}
-                            game={{
-                                name: "Tom Clancy's Rainbow Six Siege",
-                                id: 359550,
-                            }}
-                        />
-                    </li>
-                </ul>
-            </section> */}
+            </section>
+            <div class="absolute bottom-0 w-full">
+                <div class="mx-auto w-max h-[64px] gap-1 items-end  z-50 relative justify-center py-1 px-1.5 flex-row -translate-y-2 flex border backdrop-blur-xl bg-black/30 rounded-2xl [box-shadow:rgba(0,0,0,0.15)_0px_0px_29p_0px,rgba(255,255,255,0.08)_0px_0px_0px_1px] ">
+                    {icons.map((icon, key) => (
+                        <div key={`icon-${key}`} class="relative size-[56px] group flex items-center justify-center hover:cursor-pointer hover:size-[80px] transition-all duration-200 rounded-3xl">
+                            <img draggable={false} src={icon.icon} height={56} width={56} class="w-full h-full rounded-2xl group-hover:rounded-2xl" alt="Icon" />
+                            <div class="hidden group-hover:block absolute text-white text-center w-max px-4 py-1 bottom-[90px] bg-gray-800 rounded-md transition-opacity duration-[.6s] after:top-full after:absolute after:border-[7px] after:-ml-[5px] after:left-1/2 after:[border-color:theme(colors.gray.800)_transparent_transparent_transparent] font-title">
+                                {icon.label}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </>
     )
 })

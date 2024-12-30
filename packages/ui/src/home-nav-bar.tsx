@@ -12,8 +12,8 @@ export const HomeNavBar = component$(() => {
     );
 //
     return (
-        <nav class={cn("fixed w-full justify-between top-0 z-50 px-2 sm:px-6 text-xs sm:text-sm leading-[1] text-gray-950/70 dark:text-gray-50/70 h-[66px] before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full flex items-center", hasScrolled.value && "shadow-[0_2px_20px_1px] shadow-gray-700")} >
-            <div class="flex flex-row justify-center absolute items-center top-0 bottom-0">
+        <nav class={cn("fixed w-full justify-between top-0 z-50 px-2 sm:px-6 text-xs sm:text-sm leading-[1] text-gray-950/70 dark:text-gray-50/70 h-[66px] before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full flex items-center", hasScrolled.value && "shadow-[0_2px_100px_1px] shadow-gray-700")} >
+            <div class="flex flex-row justify-center items-center top-0 bottom-0">
                 <div class="flex-shrink-0 gap-2 flex justify-center items-center">
                     <svg
                         class="size-8 "
@@ -38,7 +38,7 @@ export const HomeNavBar = component$(() => {
                     </svg>
                 </div>
             </div>
-            <div class="h-10 rounded-md gap-[1px] px-1 flex flex-row justify-center mx-auto items-center ">
+            {/* <div class="h-10 rounded-md gap-[1px] px-1 flex flex-row justify-center mx-auto items-center ">
                 <button class="focus:ring-primary-500 focus:ring-2 p-2 flex flex-row gap-1 justify-center items-center outline-none rounded-md transition-all duration-200 select-none cursor-pointer bg-gray-300/70 dark:hover:bg-gray-700/70">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M2 21.25a.75.75 0 0 0 0 1.5h20a.75.75 0 0 0 0-1.5h-5V16c0-1.886 0-2.828-.586-3.414S14.886 12 13 12h-2c-1.886 0-2.828 0-3.414.586S7 14.114 7 16v5.25zM9.25 15a.75.75 0 0 1 .75-.75h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1-.75-.75m0 3a.75.75 0 0 1 .75-.75h4a.75.75 0 0 1 0 1.5h-4a.75.75 0 0 1-.75-.75" clip-rule="evenodd" /><path fill="currentColor" d="M8 4.5c.943 0 1.414 0 1.707.293S10 5.557 10 6.5v1.792q.234.114.414.294c.404.404.53.978.569 1.914V12c-1.874 0-2.813.002-3.397.586C7 13.172 7 14.114 7 16v5.25H3V12c0-1.886 0-2.828.586-3.414A1.5 1.5 0 0 1 4 8.292V6.5c0-.943 0-1.414.293-1.707S5.057 4.5 6 4.5h.25V3a.75.75 0 0 1 1.5 0v1.5zm12.644.747c-.356-.514-.984-.75-2.24-1.22c-2.455-.921-3.682-1.381-4.543-.785C13 3.84 13 5.15 13 7.772V12c1.886 0 2.828 0 3.414.586S17 14.114 17 16v5.25h4V7.772c0-1.34 0-2.011-.356-2.525" opacity=".5" /></svg>
                     Home
@@ -47,7 +47,7 @@ export const HomeNavBar = component$(() => {
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M4.035 11.573c.462-2.309.693-3.463 1.522-4.143s2.007-.68 4.362-.68h4.162c2.355 0 3.532 0 4.361.68c.83.68 1.06 1.834 1.523 4.143l.6 3c.664 3.32.996 4.98.096 6.079s-2.594 1.098-5.98 1.098H9.32c-3.386 0-5.08 0-5.98-1.098s-.568-2.758.096-6.079z" opacity=".5" /><circle cx="15" cy="9.75" r="1" fill="currentColor" /><circle cx="9" cy="9.75" r="1" fill="currentColor" /><path fill="currentColor" d="M9.75 5.75a2.25 2.25 0 0 1 4.5 0v1h.431q.565 0 1.069.002V5.75a3.75 3.75 0 1 0-7.5 0v1.002q.504-.003 1.069-.002h.431z" /></svg>
                     Store
                 </button>
-            </div>
+            </div> */}
             <div class="gap-4 flex flex-row justify-center h-full items-center">
                 <button class="focus:ring-primary-500 focus:ring-2 outline-none rounded-full transition-all flex items-center duration-200 select-none cursor-pointer hover:bg-gray-300/70 dark:hover:bg-gray-700/70" >
                     <img src="https://avatars.githubusercontent.com/u/71614375?v=4" height={24} width={24} class="size-[28px] rounded-full" alt="Avatar" />
