@@ -5,7 +5,8 @@ import schema from "../instant.schema";
 const databaseClient = () => init({
     appId: Resource.InstantAppId.value,
     adminToken: Resource.InstantAdminToken.value,
-    schema: schema
-});
+    schema
+})
+
 
 export default databaseClient

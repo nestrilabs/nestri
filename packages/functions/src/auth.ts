@@ -133,8 +133,9 @@ export default {
             },
             success: async (ctx, value) => {
                 const email = value.provider === "code" ? value.claims.email : value.email;
-                
+
                 const token = await User.create(email);
+                const user = await User.fromEmail(email);
 
                 if (value.provider === "ssh") {
                     // Register the machine if it is not already registered
@@ -147,6 +148,7 @@ export default {
 
                 return ctx.subject("user", {
                     accessToken: token,
+                    userID: user.id
                 });
             },
         }).fetch(request, env, ctx)

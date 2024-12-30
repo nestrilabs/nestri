@@ -3,7 +3,10 @@ import { ulid } from "ulid";
 export const prefixes = {
   user: "usr",
   machine: "mchn",
-  team:"tm"
+  team: "tm",
+  subscription: 'sub',
+  product: 'prd',
+  productVariant: 'var'
 } as const;
 
 export function createID(prefix: keyof typeof prefixes): string {

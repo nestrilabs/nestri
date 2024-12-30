@@ -1,17 +1,54 @@
 import "zod-openapi/extend";
-import { Hono, type MiddlewareHandler } from "hono";
 import { Resource } from "sst";
-import { logger } from "hono/logger";
-import { subjects } from "../subjects";
-import { createClient } from "@openauthjs/openauth/client";
 import { ZodError } from "zod";
+import { logger } from "hono/logger";
 import { VisibleError } from "./error";
+import { subjects } from "../subjects";
+import { ActorContext } from '@nestri/core/actor';
+import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { createClient } from "@openauthjs/openauth/client";
 
-// const client = createClient({
-//     clientID: "api",
-//     issuer: Resource.Auth.url,
-// });
+const client = () => createClient({
+    clientID: "api",
+    issuer: Resource.Urls.auth
+});
+
+const auth: MiddlewareHandler = async (c, next) => {
+    const authHeader =
+        c.req.query("authorization") ?? c.req.header("authorization");
+    if (authHeader) {
+        const match = authHeader.match(/^Bearer (.+)$/);
+        if (!match || !match[1]) {
+            throw new VisibleError(
+                "input",
+                "auth.token",
+                "Bearer token not found or improperly formatted",
+            );
+        }
+        const bearerToken = match[1];
+
+        const result = await client().verify(subjects, bearerToken!);
+        if (result.err)
+            throw new VisibleError("input", "auth.invalid", "Invalid bearer token");
+        if (result.subject.type === "user") {
+            return ActorContext.with(
+                {
+                    type: "user",
+                    properties: {
+                        accessToken: result.subject.properties.accessToken,
+                        userID: result.subject.properties.userID,
+                        auth: {
+                            type: "oauth",
+                            clientID: result.aud,
+                        },
+                    },
+                },
+                next,
+            );
+        }
+    }
+}
 
 const app = new Hono();
 app
@@ -19,10 +56,10 @@ app
         c.header("Cache-Control", "no-store");
         return next();
     })
-//   .use(auth);
+    .use(auth);
 
 const routes = app
-    .get("/", (c) => c.text("Hello there 👋🏾"))
+    // .get("/", (c) => c.text("Hello there 👋🏾"))
     .onError((error, c) => {
         console.error(error);
         if (error instanceof VisibleError) {

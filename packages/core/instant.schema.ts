@@ -12,21 +12,31 @@ const _schema = i.schema({
     profiles: i.entity({
       name: i.string(),
       location: i.string(),
-      createdAt: i.number(),
-      deletedAt: i.string().optional()
+      createdAt: i.date(),
+      deletedAt: i.date().optional()
     }),
     machines: i.entity({
       name: i.string(),
       fingerprint: i.string().indexed(),
       location: i.string(),
-      createdAt: i.number(),
-      deletedAt: i.string().optional()
+      createdAt: i.date(),
+      deletedAt: i.date().optional()
     }),
     teams: i.entity({
       name: i.string(),
       type: i.string(), // "Personal" or "Family"
-      createdAt: i.number(),
-      deletedAt: i.string().optional()
+      createdAt: i.date(),
+      deletedAt: i.date().optional()
+    }),
+    subscriptions: i.entity({
+      quantity: i.number(),
+      polarOrderID: i.string(),
+      frequency: i.string(),
+      next: i.date().optional(),
+    }),
+    productVariants: i.entity({
+      name: i.string(),
+      price: i.number()
     })
   },
   links: {
@@ -49,6 +59,14 @@ const _schema = i.schema({
     teamMembers: {
       forward: { on: 'teams', has: 'many', label: 'members' },
       reverse: { on: '$users', has: 'many', label: 'teams' },
+    },
+    subscribedProduct: {
+      forward: { on: "subscriptions", has: "one", label: "productVariant" },
+      reverse: { on: "productVariants", has: "many", label: "subscriptions" }
+    },
+    subscribedUser: {
+      forward: { on: "subscriptions", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "subscriptions" }
     }
   }
 });

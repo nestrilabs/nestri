@@ -38,7 +38,8 @@ const urls = new sst.Linkable("Urls", {
 
 export const api = new sst.cloudflare.Worker("Api", {
     link: [
-        urls
+        urls,
+        // auth
     ],
     url: true,
     handler: "./packages/functions/src/api/index.ts",

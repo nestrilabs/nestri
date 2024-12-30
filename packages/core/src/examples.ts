@@ -20,4 +20,27 @@ export module Examples {
         type: "Family"
     }
 
+    export const ProductVariant = {
+        id: Id("productVariant"),
+        name: "FamilySM",
+        price: 10,
+      };
+
+      export const Product = {
+        id: Id("product"),
+        name: "Family",
+        description:"The ideal subscription tier for dedicated gamers who crave more flexibility and social gaming experiences.",
+        variants: [ProductVariant],
+        subscription: "allowed" as const,
+      };
+
+    export const Subscription = {
+        id: Id("subscription"),
+        productVariantID: ProductVariant.id,
+        quantity: 1,
+        polarOrderID: "00000000-0000-0000-0000-000000000000",
+        frequency: "monthly" as const,
+        next: new Date("2024-02-01 19:36:19.000").getTime(),
+      };
+
 }
