@@ -36,11 +36,12 @@ export module Examples {
 
     export const Subscription = {
         id: Id("subscription"),
-        productVariantID: ProductVariant.id,
+        productVariant: ProductVariant,
         quantity: 1,
         polarOrderID: "00000000-0000-0000-0000-000000000000",
         frequency: "monthly" as const,
         next: new Date("2024-02-01 19:36:19.000").getTime(),
+        owner: User
       };
 
 }

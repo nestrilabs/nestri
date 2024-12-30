@@ -59,7 +59,7 @@ export module SubscriptionApi {
             }),
             validator(
                 "json",
-                Subscription.Info.omit({ id: true }).openapi({
+                Subscription.Info.omit({ id: true, owner: true, productVariant: true }).openapi({
                     description: "Subscription information.",
                     //@ts-expect-error
                     example: { ...Examples.Subscription, id: undefined, next: undefined },

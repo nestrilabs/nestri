@@ -4,6 +4,8 @@ import { Examples } from "../examples";
 import databaseClient from "../database"
 import { useCurrentUser } from "../actor";
 import { createID, fn } from "../utils";
+import { Product } from "../product";
+import { User } from "../user";
 
 export const SubscriptionFrequency = z.enum([
     "monthly",
@@ -17,9 +19,9 @@ export module Subscription {
                 description: Common.IdDescription,
                 example: Examples.Subscription.id,
             }),
-            productVariantID: z.string().openapi({
+            productVariant: Product.Variant.openapi({
                 description: "ID of the product variant being subscribed to.",
-                example: Examples.Subscription.productVariantID,
+                example: Examples.ProductVariant,
             }),
             quantity: z.number().int().openapi({
                 description: "Quantity of the subscription.",
@@ -37,6 +39,10 @@ export module Subscription {
                 description: "Next billing date for the subscription.",
                 example: Examples.Subscription.next,
             }),
+            owner: User.Info.openapi({
+                description: "The user who has this subscription",
+                example: Examples.User
+            })
         })
         .openapi({
             ref: "Subscription",
@@ -63,18 +69,18 @@ export module Subscription {
         return res.subscriptions
     }
 
-    export const create = fn(Info.omit({ id: true }), async (input) => {
+    export const create = fn(Info.omit({ id: true, owner: true, productVariant: true }), async (input) => {
         const user = useCurrentUser();
 
         const id = createID("subscription");
-        const db = databaseClient().asUser({ token: user.token });
+        // const db = databaseClient().asUser({ token: user.token });
 
-        db.transact(db.tx.subscriptions[id]!.update({
-            polarOrderID: input.polarOrderID,
-            frequency: input.frequency,
-            next: input.next,
-            quantity: input.quantity
-        }).link({ owner: user.id, productVariant: input.productVariantID }))
+        // db.transact(db.tx.subscriptions[id]!.update({
+        //     polarOrderID: input.polarOrderID,
+        //     frequency: input.frequency,
+        //     next: input.next,
+        //     quantity: input.quantity
+        // }).link({ owner: user.id, productVariant: input.productVariantID }))
 
         return id
     })
