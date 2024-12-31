@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	"nestrilabs/cli/internal/auth"
-	"nestrilabs/cli/internal/machine"
 	"nestrilabs/cli/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +31,7 @@ var signUpCmd = &cobra.Command{
 		accessible, _ := strconv.ParseBool(os.Getenv("ACCESSIBLE"))
 		var onboarding = Onboarding{}
 		spinner := ui.NewSpinner()
-		mch := machine.NewMachine()
+		// mch := machine.NewMachine()
 
 		form := huh.NewForm(
 			huh.NewGroup(
@@ -87,13 +86,13 @@ var signUpCmd = &cobra.Command{
 
 		spinner.RunSpinner(func() tea.Msg {
 			// arch := mch.Architecture()
-			machineID, err := mch.MachineID()
-			if err != nil {
-				fmt.Println("Error getting the machine id", err)
-				os.Exit(1)
-			}
+			// machineID, err := mch.MachineID()
+			// if err != nil {
+			// 	fmt.Println("Error getting the machine id", err)
+			// 	os.Exit(1)
+			// }
 
-			credentials, err := auth.FetchUserToken(machineID)
+			credentials, err := auth.FetchUserToken()
 			if err != nil {
 				fmt.Println("Error logging you in", err)
 			}

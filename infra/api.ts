@@ -14,11 +14,19 @@ export const authFingerprintKey = new random.RandomString(
     },
 );
 
+export const urls = new sst.Linkable("Urls", {
+    properties: {
+      api: "https://api." + domain,
+      auth: "https://auth." + domain,
+    },
+  });
+
 export const kv = new sst.cloudflare.Kv("CloudflareAuthKV")
 
 export const auth = new sst.cloudflare.Worker("Auth", {
     link: [
         kv,
+        urls,
         authFingerprintKey,
         secret.InstantAdminToken,
         secret.InstantAppId,
@@ -28,13 +36,6 @@ export const auth = new sst.cloudflare.Worker("Auth", {
     url: true,
     domain: "auth." + domain
 });
-
-const urls = new sst.Linkable("Urls", {
-    properties: {
-      api: "https://api." + domain,
-      auth: "https://auth." + domain,
-    },
-  });
 
 export const api = new sst.cloudflare.Worker("Api", {
     link: [

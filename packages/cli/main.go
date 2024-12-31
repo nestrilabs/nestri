@@ -1,10 +1,7 @@
 package main
 
 import (
-	"nestrilabs/cli/cmd"
-	"os"
-
-	"github.com/charmbracelet/log"
+	"nestrilabs/cli/internal/auth"
 )
 
 func main() {
@@ -38,9 +35,11 @@ func main() {
 	// fmt.Println("Machine", "cpu", cpuSize, cpuType)
 	// fmt.Println("Machine", "gpu", gpuSize, gpuType)
 
-	err := cmd.Execute()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
+	// err := cmd.Execute()
+	// if err != nil {
+	// 	log.Error("Failed to start the cmd", "err", err)
+	// 	os.Exit(1)
+	// }
+
+	auth.FetchUserToken()
 }
