@@ -3,39 +3,17 @@ import {
     type KVNamespace,
 } from "@cloudflare/workers-types"
 import { subjects } from "./subjects"
-import { Resource } from "sst/resource"
 import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index"
-// import { Team } from "@nestri/core/team/index"
 import { authorizer } from "@openauthjs/openauth"
-import { createClient } from "@openauthjs/openauth/client";
 import { CodeUI } from "@openauthjs/openauth/ui/code";
 import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import { CodeAdapter } from "@openauthjs/openauth/adapter/code";
-// import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
-import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
-// import { generateUnbiasedDigits, timingSafeCompare } from "@openauthjs/openauth/random"
-// import { ApiAdapter } from "./adapter"
+import { type CFRequest } from "@nestri/core/types"
 interface Env {
     CloudflareAuthKV: KVNamespace
-}
-interface CloudflareCF {
-    colo: string;
-    continent: string;
-    country: string,
-    city: string;
-    region: string;
-    longitude: number;
-    latitude: number;
-    metroCode: string;
-    postalCode: string;
-    timezone: string;
-    regionCode: number;
-}
-interface CFRequest extends Request {
-    cf: CloudflareCF
 }
 
 export type CodeAdapterState =

@@ -8,6 +8,8 @@ import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { createClient } from "@openauthjs/openauth/client";
+import { MachineApi } from "./machine";
+import { openAPISpecs } from "hono-openapi";
 
 const client = () => createClient({
     clientID: "api",
@@ -56,10 +58,11 @@ app
         c.header("Cache-Control", "no-store");
         return next();
     })
-    .use(auth);
+    // .use(auth);
 
 const routes = app
-    // .get("/", (c) => c.text("Hello there 👋🏾"))
+    .get("/", (c) => c.text("Hello there 👋🏾"))
+    .route("/machine", MachineApi.route)
     .onError((error, c) => {
         console.error(error);
         if (error instanceof VisibleError) {
@@ -100,6 +103,33 @@ const routes = app
             500,
         );
     });
+
+app.get(
+    "/doc",
+    openAPISpecs(routes, {
+        documentation: {
+            info: {
+                title: "Nestri API",
+                description:
+                    "The Nestri API gives you the power to run your own customized cloud gaming platform.",
+                version: "0.0.3",
+            },
+            components: {
+                securitySchemes: {
+                    Bearer: {
+                        type: "http",
+                        scheme: "bearer",
+                        bearerFormat: "JWT",
+                    },
+                },
+            },
+            security: [{ Bearer: [] }],
+            servers: [
+                { description: "Production", url: "https://api.nestri.io" },
+            ],
+        },
+    }),
+);
 
 export type Routes = typeof routes;
 export default app

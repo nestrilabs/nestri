@@ -10,8 +10,9 @@ export module Examples {
 
     export const Machine = {
         id: Id("machine"),
-        name: "Main machine",
+        hostname: "DESKTOP-EUO8VSF",
         fingerprint: "183ded44-24d0-480e-9908-c022eff8d111",
+        location: "KE, AF"
     }
 
     export const Team = {
@@ -24,15 +25,15 @@ export module Examples {
         id: Id("productVariant"),
         name: "FamilySM",
         price: 10,
-      };
+    };
 
-      export const Product = {
+    export const Product = {
         id: Id("product"),
         name: "Family",
-        description:"The ideal subscription tier for dedicated gamers who crave more flexibility and social gaming experiences.",
+        description: "The ideal subscription tier for dedicated gamers who crave more flexibility and social gaming experiences.",
         variants: [ProductVariant],
         subscription: "allowed" as const,
-      };
+    };
 
     export const Subscription = {
         id: Id("subscription"),
@@ -42,6 +43,6 @@ export module Examples {
         frequency: "monthly" as const,
         next: new Date("2024-02-01 19:36:19.000").getTime(),
         owner: User
-      };
+    };
 
 }

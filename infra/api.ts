@@ -40,7 +40,6 @@ export const auth = new sst.cloudflare.Worker("Auth", {
 export const api = new sst.cloudflare.Worker("Api", {
     link: [
         urls,
-        // auth
     ],
     url: true,
     handler: "./packages/functions/src/api/index.ts",

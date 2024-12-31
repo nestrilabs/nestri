@@ -17,12 +17,8 @@ const _schema = i.schema({
     }),
     machines: i.entity({
       hostname: i.string(),
-      fingerprint: i.string().indexed(),
       location: i.string(),
-      virtualisation: i.string(),
-      operatingSystem: i.string(),
-      kernel: i.string(),
-      architecture: i.string(),
+      fingerprint: i.string().indexed(),
       createdAt: i.date(),
       deletedAt: i.date().optional()
     }),
