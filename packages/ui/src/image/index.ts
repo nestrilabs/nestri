@@ -1,2 +1,2 @@
-export * from "./image-loader.tsx"
-export * from "./basic-image-loader.tsx"
+export * from "./image-loader"
+export * from "./basic-image-loader"
