@@ -29,7 +29,6 @@
     "@fontsource/geist-sans": "^5.1.0",
     "@modular-forms/qwik": "0.26.1",
     "@nestri/core": "*",
-    "@nestri/config": "*",
     "@types/eslint": "^8.56.5",
     "@typescript-eslint/eslint-plugin": "latest",
     "@typescript-eslint/parser": "latest",
