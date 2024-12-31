@@ -1,5 +1,5 @@
 {
-  "extends": "@nestri/typescript-config/base.json",
+  "extends": "@nestri/config/base.json",
   "compilerOptions": {
     "allowJs": true,
     "target": "ES2022",
@@ -40,6 +40,5 @@
     "./*.d.ts",
     "./*.config.ts",
     "./*.config.js",
-    "content-collections.ts"
-, "../../packages/input/src/webrtc-stream.ts"  ]
+  ]
 }

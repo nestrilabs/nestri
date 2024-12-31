@@ -1,16 +1,15 @@
 {
-  "name": "@nestri/eslint-config",
+  "name": "@nestri/config",
   "version": "0.0.0",
   "private": true,
   "files": [
-    "library.js",
-    "next.js",
-    "qwik.js",
-    "react-internal.js"
+    "qwik.js"
   ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
-    "@vercel/style-guide": "^5.2.0",
-    "eslint-config-turbo": "^2.0.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-only-warn": "^1.1.0",
     "@types/eslint": "8.56.10",

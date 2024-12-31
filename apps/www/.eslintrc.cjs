@@ -1,7 +1,7 @@
 module.exports = {
   root: true,
   extends: [
-    "@nestri/eslint-config/qwik.js",
+    "@nestri/config/qwik.js",
   ],
   parser: "@typescript-eslint/parser",
   parserOptions: {

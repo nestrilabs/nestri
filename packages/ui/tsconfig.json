@@ -1,5 +1,5 @@
 {
-  "extends": "@nestri/typescript-config/base.json",
+  "extends": "@nestri/config/base.json",
   "compilerOptions": {
     "outDir": "tmp",
     "rootDir": ".",
