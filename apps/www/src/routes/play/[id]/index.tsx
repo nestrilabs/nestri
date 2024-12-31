@@ -1,12 +1,13 @@
-import {useLocation} from "@builder.io/qwik-city";
-import {Keyboard, Mouse, WebRTCStream} from "@nestri/input"
-import {component$, useSignal, useVisibleTask$} from "@builder.io/qwik";
+import { useLocation } from "@builder.io/qwik-city";
+import { Keyboard, Mouse, WebRTCStream } from "@nestri/input"
+import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 
 export default component$(() => {
   const id = useLocation().params.id;
   const canvas = useSignal<HTMLCanvasElement>();
 
-  useVisibleTask$(({track}) => {
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(({ track }) => {
     track(() => canvas.value);
 
     if (!canvas.value) return; // Ensure canvas is available
@@ -66,9 +67,9 @@ export default component$(() => {
               // @ts-ignore
               if (document.pointerLockElement && !window.nestrimouse && !window.nestrikeyboard) {
                 // @ts-ignore
-                window.nestrimouse = new Mouse({canvas: canvas.value, webrtc});
+                window.nestrimouse = new Mouse({ canvas: canvas.value, webrtc });
                 // @ts-ignore
-                window.nestrikeyboard = new Keyboard({canvas: canvas.value, webrtc});
+                window.nestrikeyboard = new Keyboard({ canvas: canvas.value, webrtc });
                 // @ts-ignore
               } else if (!document.pointerLockElement && window.nestrimouse && window.nestrikeyboard) {
                 // @ts-ignore
@@ -180,7 +181,7 @@ export default component$(() => {
         }
       }}
       //TODO: go full screen, then lock on "landscape" screen-orientation on mobile
-      class="aspect-video h-full w-full object-contain max-h-screen"/>
+      class="aspect-video h-full w-full object-contain max-h-screen" />
   )
 })
 

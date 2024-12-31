@@ -30,7 +30,8 @@ export default component$(() => {
         const { url } = await client.authorize("http://localhost:5173/login", "token", { pkce: true })
         window.location.href = url
     })
-
+    
+    // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(async () => {
         const urlObj = new URL(window.location.href);
         const params = getHashParams(urlObj)

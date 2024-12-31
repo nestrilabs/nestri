@@ -1,12 +1,5 @@
 import { component$ } from "@builder.io/qwik";
-import { HomeNavBar, Card } from "@nestri/ui";
-
-function getGreeting(): string {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return "Good Morning";
-    if (hour >= 12 && hour < 18) return "Good Afternoon";
-    return "Good Evening";
-}
+import { HomeNavBar } from "@nestri/ui";
 
 export default component$(() => {
     return (
