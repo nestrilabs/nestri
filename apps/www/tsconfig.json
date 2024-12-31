@@ -1,22 +1,15 @@
 {
-  "extends": "@nestri/config/base.json",
   "compilerOptions": {
     "allowJs": true,
-    "target": "ES2022",
+    "target": "ES2017",
     "module": "ES2022",
-    "lib": [
-      "es2022",
-      "DOM",
-      "WebWorker",
-      "DOM.Iterable"
-    ],
+    "lib": ["es2022", "DOM", "WebWorker", "DOM.Iterable"],
     "jsx": "react-jsx",
     "jsxImportSource": "@builder.io/qwik",
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "incremental": true,
@@ -24,21 +17,9 @@
     "outDir": "tmp",
     "noEmit": true,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ],
-      "content-collections": [
-        "./.content-collections/generated"
-      ]
+      "@/*": ["./src/*"]
     }
   },
-  "files": [
-    ".eslintrc.cjs"
-  ],
-  "include": [
-    "src",
-    "./*.d.ts",
-    "./*.config.ts",
-    "./*.config.js",
-  ]
+  "files": ["./.eslintrc.cjs"],
+  "include": ["src", "./*.d.ts", "./*.config.ts"]
 }
