@@ -1,6 +1,7 @@
 package party
 
 import (
+	"fmt"
 	"net/url"
 
 	"github.com/charmbracelet/log"
@@ -13,11 +14,11 @@ func NewParty() *Party {
 	return &Party{}
 }
 
-func (p *Party) Connect(fingerprint string) {
-	baseURL := "ws://localhost:1999/parties/main/machines"
+func (p *Party) Connect(fingerprint string, hostname string) {
+	baseURL := fmt.Sprintf("ws://localhost:1999/parties/main/%s", fingerprint) //[:7])
 
 	params := url.Values{}
-	params.Add("_pk", fingerprint)
+	params.Add("_pk", hostname)
 
 	wsURL := baseURL + "?" + params.Encode()
 	log.Info("Connecting to party url", "url", wsURL)

@@ -1,14 +1,13 @@
 package auth
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"nestrilabs/cli/internal/resource"
 	"net/http"
 	"net/url"
 
-	"github.com/google/uuid"
+	"github.com/charmbracelet/log"
 )
 
 type UserCredentials struct {
@@ -16,33 +15,29 @@ type UserCredentials struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func FetchUserToken() (*UserCredentials, error) {
+func FetchUserToken() error {
 	data := url.Values{}
-	redirect := fmt.Sprintf("%s%s", resource.Resource.Auth.Url, "/device/callback")
-	// data.Set("grant_type", "client_credentials")
-	data.Set("grant_type", "authorization_code")
-	data.Set("client_id", "device")
-	data.Set("redirect_uri", redirect)
-	data.Set("response_type", "code")
-	data.Set("state", uuid.New().String())
-	// data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	// data.Set("fingerprint", machineID)
-	data.Set("provider", "code")
-	// data.Set("code", "318597")
-	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)
+	redirect := "http://localhost:1999/parties/main/fc27f428f9ca47d4b41b707ae0c62090"
+	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
+	data.Set("redirect_url", redirect)
+	resp, err := http.PostForm(resource.Resource.Auth.Url+"/device/callback", data)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		fmt.Println(string(body))
-		return nil, fmt.Errorf("failed to auth: " + string(body))
+		return fmt.Errorf("failed to auth: " + string(body))
 	}
-	credentials := UserCredentials{}
-	err = json.NewDecoder(resp.Body).Decode(&credentials)
-	if err != nil {
-		return nil, err
-	}
-	return &credentials, nil
+	// credentials := UserCredentials{}
+	body, _ := io.ReadAll(resp.Body)
+	// fmt.Println(string(body))
+	// err = json.NewDecoder(resp.Body).Decode(&credentials)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	log.Info("Body returned", "body", string(body))
+	return nil
 }

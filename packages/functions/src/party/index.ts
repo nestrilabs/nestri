@@ -26,6 +26,14 @@ export default class Server implements Party.Server {
       [sender.id]
     );
   }
+
+  onRequest(req: Party.Request): Response | Promise<Response> {
+    const continent = req.cf?.continent
+    const message = req.url
+    this.room.broadcast(`$http: ${continent}:${message}`)
+    return new Response("Hello world", { status: 200 })
+  }
+
 }
 
 Server satisfies Party.Worker;

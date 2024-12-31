@@ -1,3 +1,4 @@
+import { Resource } from "sst"
 import {
     type ExecutionContext,
     type KVNamespace,
@@ -6,12 +7,14 @@ import { subjects } from "./subjects"
 import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index"
 import { authorizer } from "@openauthjs/openauth"
-import { CodeUI } from "@openauthjs/openauth/ui/code";
+import { type CFRequest } from "@nestri/core/types"
+import { Select } from "@openauthjs/openauth/ui/select";
+import { createClient } from "@openauthjs/openauth/client"
 import { PasswordUI } from "@openauthjs/openauth/ui/password"
-import { CodeAdapter } from "@openauthjs/openauth/adapter/code";
+import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
-import { type CFRequest } from "@nestri/core/types"
+
 interface Env {
     CloudflareAuthKV: KVNamespace
 }
@@ -29,8 +32,14 @@ export type CodeAdapterState =
 
 export default {
     async fetch(request: CFRequest, env: Env, ctx: ExecutionContext) {
-        const location = `${request.cf.country},${request.cf.continent}`
         return authorizer({
+            select: Select({
+                providers: {
+                    device: {
+                        hide: true,
+                    },
+                },
+            }),
             theme: {
                 title: "Nestri | Auth",
                 primary: "#FF4F01",
@@ -54,14 +63,6 @@ export default {
             }),
             subjects,
             providers: {
-                code: CodeAdapter<{ email: string }>(
-                    CodeUI({
-                        sendCode: async (claims, code) => {
-                            console.log("emails & code:", claims.email, code);
-                            await Email.send(claims.email, code)
-                        },
-                    }),
-                ),
                 password: PasswordAdapter(
                     PasswordUI({
                         sendCode: async (email, code) => {
@@ -70,118 +71,46 @@ export default {
                         },
                     }),
                 ),
-                // device: {
-                //     type: "device",
-                // async client(input) {
-                //     if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
-                //         throw new Error("Invalid authorization token");
-                //     }
+                device: {
+                    type: "device",
+                    init(routes, ctx) {
+                        routes.post("/callback", async (c) => {
+                            const data = await c.req.formData();
+                            const secret = data?.get("client_secret")
+                            if (!secret || secret.toString() !== Resource.AuthFingerprintKey.value) {
+                                return c.newResponse("Invalid authorization token", 401)
+                            }
 
-                //     const fingerprint = input.params.fingerprint;
-                //     if (!fingerprint) {
-                //         throw new Error("Fingerprint is required");
-                //     }
+                            const redirectUrl = data?.get("redirect_url")
+                            if (!redirectUrl) {
+                                return c.newResponse("Invalid redirect url", 400)
+                            }
 
-                //     const hostname = input.params.hostname;
-                //     if (!hostname) {
-                //         throw new Error("Hostname of the machine is required");
-                //     }
+                            const client = createClient({
+                                clientID: "device",
+                                issuer: Resource.Urls.auth,
+                            })
 
-                //     return {
-                //         fingerprint,
-                //         hostname,
-                //         email: undefined
-                //     };
-                // },
-                // init(route, ctx) {
-                //     route.post("/callback", async (c) => {
-                //         const code = c.req.query("code")
-                //         const authClient = () => createClient({
-                //             clientID: "device",
-                //             issuer: Resource.Urls.auth, // this is the url for your auth server
-                //         })
+                            const { url } = await client.authorize(redirectUrl.toString(), "code", { pkce: true })
 
-                //         if (code) {
-                //             const tokens = await authClient().exchange(code, Resource.Urls.auth + "/device/callback")
-                //             console.log("tokens", tokens)
-                //             c.newResponse("tokens are alright", 200)
-                //         }
-                //         c.newResponse("Something went wrong", 500)
-                // const fd = await c.req.formData()
-                // const clientSecret = fd.get("clientSecret")?.toString()
-                // if (clientSecret !== Resource.AuthFingerprintKey.value) {
-                //     return c.newResponse("Invalid authorization token", 401);
-                // }
-                // const action = fd.get("action")?.toString()
-                // if (!action) {
-                //     return c.newResponse("Invalid action type", 400);
-                // }
-
-                // const digits = fd.get("code")?.toString()
-
-                // if (action === "request" || typeof action === undefined) {
-                //     const digits = generateUnbiasedDigits(6)
-
-                //     await ctx.storage.set(["device"], { code: digits, verified: false }, new Date(new Date().getTime() + 60 * 60 * 24 * 1000))
-
-                //     return c.newResponse(digits, 200)
-                // } else if (action === "verify") {
-                //     const compare = await ctx.storage.get(["device"])
-                //     if (
-                //         !digits ||
-                //         !compare?.digits ||
-                //         !timingSafeCompare(digits, compare?.digits)
-                //     ) {
-                //         return c.newResponse("Code error", 501)
-                //     }
-
-                //     await ctx.storage.set(["device"], { code: digits, verified: true }, new Date(new Date().getTime() + 60 * 60 * 1000))
-                //     return c.newResponse("You can return to the CLI now", 200)
-                // }
-                // })
-
-                // For polling
-                // route.post("/token", async (c) => {
-                //     const fd = await c.req.formData()
-                //     const clientSecret = fd.get("clientSecret")?.toString()
-                //     if (clientSecret !== Resource.AuthFingerprintKey.value) {
-                //         return c.newResponse("Invalid authorization token", 401);
-                //     }
-
-                // })
-
-                // Entering the machine code and verifying the machine
-                // route.get("/authorize", async (c) => {
-
-                // })
-                // },
-                // } as Adapter<{
-                //     fingerprint: string;
-                //     hostname: string;
-                //     email: undefined
-                // }>,
+                            return c.newResponse(url, 200)
+                        })
+                    }
+                } as Adapter<{}>,
             },
             allow: async (input) => {
-                // const url = new URL(input.redirectURI);
-                // const hostname = url.hostname;
-                // if (hostname.endsWith("nestri.io")) return true;
-                // if (hostname === "localhost") return true;
-                // if (input.clientID === "machine") return true;
+                const url = new URL(input.redirectURI);
+                const hostname = url.hostname;
+                if (hostname.endsWith("nestri.io")) return true;
+                if (hostname === "localhost") return true;
                 return true;
             },
             success: async (ctx, value) => {
-                let email = undefined as string | undefined;
+                if (value.provider == "device") {
+                    throw new Error("Device has no success");
+                }
 
-                // if (value.provider === "device") {
-                //     // Register the machine if it is not already registered
-                //     const matchingUser = await User.fromEmail(email);
-                //     const matchingMachines = await Machine.fromFingerprint(value.fingerprint)
-                //     if (matchingMachines.length === 0) {
-                //         await Machine.create({ fingerprint: value.fingerprint, owner: matchingUser.id, name: value.name, location })
-                //     }
-                // }
-
-                email = value.provider === "code" ? value.claims.email : value.email;
+                const email = value.email;
 
                 if (email) {
                     const token = await User.create(email);

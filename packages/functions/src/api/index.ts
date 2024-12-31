@@ -58,7 +58,7 @@ app
         c.header("Cache-Control", "no-store");
         return next();
     })
-    // .use(auth);
+    .use(auth);
 
 const routes = app
     .get("/", (c) => c.text("Hello there 👋🏾"))
