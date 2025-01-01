@@ -49,6 +49,5 @@ func FetchUserUrl() string {
 	}
 	body, _ := io.ReadAll(resp.Body)
 
-	log.Info("Body returned", "body", string(body))
 	return string(body)
 }
