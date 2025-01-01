@@ -5,6 +5,10 @@ import { describeRoute } from "hono-openapi";
 import type * as Party from "partykit/server";
 import { validator, resolver } from "hono-openapi/zod";
 
+const paramsObj = z.object({
+    code: z.string(),
+    state: z.string()
+})
 
 export module AuthApi {
     export const route = new Hono()
@@ -32,23 +36,35 @@ export module AuthApi {
                     },
                 },
             }),
+            validator(
+                "param",
+                z.object({
+                    connection: z.string().openapi({
+                        description: "The hostname of the device to login to.",
+                        example: "desktopeuo8vsf",
+                    }),
+                }),
+            ),
             async (c) => {
-                const params = c.req.param();
+                const param = c.req.valid("param");
                 const env = c.env as any
                 const room = env.room as Party.Room
 
-                const connection = room.getConnection(params.connection)
+                const connection = room.getConnection(param.connection)
                 if (!connection) {
                     return c.json({ error: "This device does not exist." }, 404);
                 }
 
                 const authParams = getUrlParams(new URL(c.req.url))
-                // const urlParams = new URLSearchParams(c.req.url)
-                // const auth = {} as any
-                // for (const [key, value] of urlParams) {
-                //     auth[key] = value
-                // }
-                return c.text(`Code: ${JSON.stringify(authParams)}`)
+                const res = paramsObj.safeParse(authParams)
+                if (res.error) {
+                    return c.json({ error: "Expected url params are missing" })
+                }
+
+                connection.send(JSON.stringify({ ...authParams, type: "auth" }))
+
+                // FIXME:We just assume the authentication was successful, might wanna do some questioning in the future
+                return c.text("Device authenticated successfully")
             }
         )
 }
@@ -56,12 +72,10 @@ export module AuthApi {
 function getUrlParams(url: URL) {
     const urlString = url.toString()
     const hash = urlString.substring(urlString.indexOf('?') + 1); // Extract the part after the #
-    console.log("url", hash)
     const params = new URLSearchParams(hash);
     const paramsObj = {} as any;
     for (const [key, value] of params.entries()) {
         paramsObj[key] = decodeURIComponent(value);
     }
-    console.log(paramsObj)
     return paramsObj;
 }
