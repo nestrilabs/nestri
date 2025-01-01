@@ -3,6 +3,8 @@ package party
 import (
 	"fmt"
 	"net/url"
+	"regexp"
+	"strings"
 
 	"github.com/charmbracelet/log"
 	"github.com/gorilla/websocket"
@@ -18,7 +20,7 @@ func (p *Party) Connect(fingerprint string, hostname string) {
 	baseURL := fmt.Sprintf("ws://localhost:1999/parties/main/%s", fingerprint) //[:7])
 
 	params := url.Values{}
-	params.Add("_pk", hostname)
+	params.Add("_pk", cleanString(hostname))
 
 	wsURL := baseURL + "?" + params.Encode()
 	log.Info("Connecting to party url", "url", wsURL)
@@ -46,4 +48,13 @@ func (p *Party) Connect(fingerprint string, hostname string) {
 		log.Info("Received message from party server", "message", string(message))
 	}
 
+}
+
+func cleanString(s string) string {
+	// 1. Lowercase the string
+	s = strings.ToLower(s)
+
+	// 2. Use a regular expression to remove non-alphanumeric characters
+	reg := regexp.MustCompile("[^a-z0-9]+") // Matches one or more non-alphanumeric characters
+	return reg.ReplaceAllString(s, "")
 }

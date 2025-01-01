@@ -2,21 +2,21 @@ import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
 import { logger } from "hono/logger";
-import { VisibleError } from "./error";
 import { subjects } from "../subjects";
+import { VisibleError } from "../error";
+import { MachineApi } from "./machine";
+import { openAPISpecs } from "hono-openapi";
 import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { createClient } from "@openauthjs/openauth/client";
-import { MachineApi } from "./machine";
-import { openAPISpecs } from "hono-openapi";
-
-const client = () => createClient({
-    clientID: "api",
-    issuer: Resource.Urls.auth
-});
 
 const auth: MiddlewareHandler = async (c, next) => {
+    const client = createClient({
+        clientID: "api",
+        issuer: Resource.Urls.auth
+    });
+
     const authHeader =
         c.req.query("authorization") ?? c.req.header("authorization");
     if (authHeader) {
@@ -30,7 +30,7 @@ const auth: MiddlewareHandler = async (c, next) => {
         }
         const bearerToken = match[1];
 
-        const result = await client().verify(subjects, bearerToken!);
+        const result = await client.verify(subjects, bearerToken!);
         if (result.err)
             throw new VisibleError("input", "auth.invalid", "Invalid bearer token");
         if (result.subject.type === "user") {

@@ -3,12 +3,26 @@ import app from "./hono"
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) { }
 
-  static async onBeforeRequest(request: Party.Request) {
-    return app.fetch(request as any)
+  onRequest(request: Party.Request): Response | Promise<Response> {
+
+    return app.fetch(request as any, { room: this.room, connections:this.room.getConnections() })
+  }
+
+  getConnectionTags(
+    conn: Party.Connection,
+    ctx: Party.ConnectionContext
+  ) {
+    console.log("Tagging", conn.id)
+    // const country = (ctx.request.cf?.country as string) ?? "unknown";
+    // return [country];
+    return [conn.id]
+    // return ["AF"]
   }
 
   onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     // A websocket just connected!
+    this.getConnectionTags(conn, ctx)
+
     console.log(
       `Connected:
   id: ${conn.id}
@@ -23,6 +37,10 @@ export default class Server implements Party.Server {
   onMessage(message: string, sender: Party.Connection) {
     // let's log the message
     console.log(`connection ${sender.id} sent message: ${message}`);
+    // console.log("tags", this.room.getConnections())
+    for (const british of this.room.getConnections(sender.id)) {
+      british.send(`Pip-pip!`);
+    }
     // as well as broadcast it to all the other connections in the room...
     this.room.broadcast(
       `${sender.id}: ${message}`,

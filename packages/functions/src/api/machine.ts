@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Result } from "./common";
+import { Result } from "../common";
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { validator, resolver } from "hono-openapi/zod";

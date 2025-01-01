@@ -4,10 +4,10 @@
   "type": "module",
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241224.0",
-    "@types/bun": "latest",
-    "valibot": "^1.0.0-beta.9",
     "@nestri/core": "*",
-    "partykit": "0.0.111"
+    "@types/bun": "latest",
+    "partykit": "^0.0.111",
+    "valibot": "^1.0.0-beta.9"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

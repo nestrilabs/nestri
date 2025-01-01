@@ -38,6 +38,9 @@ export default {
                     device: {
                         hide: true,
                     },
+                    party: {
+                        hide: true
+                    }
                 },
             }),
             theme: {
@@ -97,7 +100,34 @@ export default {
                         })
                     }
                 } as Adapter<{}>,
+                party: {
+                    type: "party",
+                    init(routes, ctx) {
+                        routes.post("/callback", async (c) => {
+                            const data = await c.req.formData();
+                            const secret = data?.get("client_secret")
+                            if (!secret || secret.toString() !== Resource.AuthFingerprintKey.value) {
+                                return c.newResponse("Invalid authorization token", 401)
+                            }
+
+                            // const redirectUrl = data?.get("redirect_url")
+                            // if (!redirectUrl) {
+                            //     return c.newResponse("Invalid redirect url", 400)
+                            // }
+
+                            // const client = createClient({
+                            //     clientID: "party",
+                            //     issuer: Resource.Urls.auth,
+                            // })
+
+                            // const { url } = await client.authorize(redirectUrl.toString(), "code", { pkce: true })
+
+                            return c.newResponse("Allowed", 200)
+                        })
+                    }
+                } as Adapter<{}>,
             },
+
             allow: async (input) => {
                 const url = new URL(input.redirectURI);
                 const hostname = url.hostname;
@@ -106,7 +136,7 @@ export default {
                 return true;
             },
             success: async (ctx, value) => {
-                if (value.provider == "device") {
+                if (value.provider == "device" || value.provider == "party") {
                     throw new Error("Device has no success");
                 }
 
