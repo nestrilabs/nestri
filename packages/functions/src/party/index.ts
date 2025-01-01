@@ -1,7 +1,11 @@
 import type * as Party from "partykit/server";
-
+import app from "./hono"
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) { }
+
+  static async onBeforeRequest(request: Party.Request) {
+    return app.fetch(request as any)
+  }
 
   onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     // A websocket just connected!
@@ -26,14 +30,6 @@ export default class Server implements Party.Server {
       [sender.id]
     );
   }
-
-  onRequest(req: Party.Request): Response | Promise<Response> {
-    const continent = req.cf?.continent
-    const message = req.url
-    this.room.broadcast(`$http: ${continent}:${message}`)
-    return new Response("Hello world", { status: 200 })
-  }
-
 }
 
 Server satisfies Party.Worker;
