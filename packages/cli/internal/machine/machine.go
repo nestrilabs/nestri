@@ -63,7 +63,7 @@ func (m *Machine) StaticHostname() (string, error) {
 	re := regexp.MustCompile(`Static hostname:\s+(.*)`)
 	match := re.FindStringSubmatch(string(output))
 	if len(match) > 1 {
-		return match[1], nil
+		return cleanString(match[1]), nil
 	}
 	return "", fmt.Errorf("static hostname not found")
 }
@@ -157,4 +157,11 @@ func (m *Machine) RAMSize() (string, error) {
 	}
 
 	return ramSize, nil
+}
+
+func cleanString(s string) string {
+	s = strings.ToLower(s)
+
+	reg := regexp.MustCompile("[^a-z0-9]+") // Matches one or more non-alphanumeric characters
+	return reg.ReplaceAllString(s, "")
 }

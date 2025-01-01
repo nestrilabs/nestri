@@ -38,11 +38,30 @@ export module AuthApi {
                 const room = env.room as Party.Room
 
                 const connection = room.getConnection(params.connection)
-                if(!connection){
+                if (!connection) {
                     return c.json({ error: "This device does not exist." }, 404);
                 }
 
-                return c.text(`Connections: ${connection.id}`)
+                const authParams = getUrlParams(new URL(c.req.url))
+                // const urlParams = new URLSearchParams(c.req.url)
+                // const auth = {} as any
+                // for (const [key, value] of urlParams) {
+                //     auth[key] = value
+                // }
+                return c.text(`Code: ${JSON.stringify(authParams)}`)
             }
         )
+}
+
+function getUrlParams(url: URL) {
+    const urlString = url.toString()
+    const hash = urlString.substring(urlString.indexOf('?') + 1); // Extract the part after the #
+    console.log("url", hash)
+    const params = new URLSearchParams(hash);
+    const paramsObj = {} as any;
+    for (const [key, value] of params.entries()) {
+        paramsObj[key] = decodeURIComponent(value);
+    }
+    console.log(paramsObj)
+    return paramsObj;
 }

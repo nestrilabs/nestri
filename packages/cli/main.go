@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	// auth.FetchUserToken()
+	// auth.FetchUserUrl()
 	runMachine()
 }
 
