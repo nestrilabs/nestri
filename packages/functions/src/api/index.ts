@@ -38,8 +38,23 @@ const auth: MiddlewareHandler = async (c, next) => {
                 {
                     type: "user",
                     properties: {
-                        accessToken: result.subject.properties.accessToken,
                         userID: result.subject.properties.userID,
+                        accessToken: result.subject.properties.accessToken,
+                        auth: {
+                            type: "oauth",
+                            clientID: result.aud,
+                        },
+                    },
+                },
+                next,
+            );
+        } else if (result.subject.type === "device") {
+            return ActorContext.with(
+                {
+                    type: "device",
+                    properties: {
+                        fingerprint: result.subject.properties.fingerprint,
+                        id: result.subject.properties.id,
                         auth: {
                             type: "oauth",
                             clientID: result.aud,
@@ -50,7 +65,10 @@ const auth: MiddlewareHandler = async (c, next) => {
             );
         }
     }
-}
+
+    return ActorContext.with({ type: "public", properties: {} }, next);
+};
+
 
 const app = new Hono();
 app

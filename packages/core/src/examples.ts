@@ -1,13 +1,12 @@
-import { createID } from "./utils";
 export module Examples {
 
     export const User = {
-        id: createID(),
+        id: "0bfcc712-df13-4454-81a8-fbee66eddca4",
         email: "john@example.com",
     };
 
     export const Machine = {
-        id: createID(),
+        id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "desktopeuo8vsf",
         fingerprint: "fc27f428f9ca47d4b41b70889ae0c62090",
         location: "KE, AF"
