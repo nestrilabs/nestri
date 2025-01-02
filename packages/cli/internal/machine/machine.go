@@ -53,7 +53,7 @@ func NewMachine() *Machine {
 	host := regexp.MustCompile(`Static hostname:\s+(.*)`)
 	matchingHost := host.FindStringSubmatch(string(output))
 	if len(matchingHost) > 1 {
-		hostname = cleanString(matchingHost[1])
+		hostname = matchingHost[1]
 	}
 
 	return &Machine{
@@ -194,9 +194,9 @@ func (m *Machine) GetRAMSize() (string, error) {
 	return ramSize, nil
 }
 
-func cleanString(s string) string {
-	s = strings.ToLower(s)
+// func cleanString(s string) string {
+// 	s = strings.ToLower(s)
 
-	reg := regexp.MustCompile("[^a-z0-9]+") // Matches one or more non-alphanumeric characters
-	return reg.ReplaceAllString(s, "")
-}
+// 	reg := regexp.MustCompile("[^a-z0-9]+") // Matches one or more non-alphanumeric characters
+// 	return reg.ReplaceAllString(s, "")
+// }
