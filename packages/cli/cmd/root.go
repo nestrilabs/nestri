@@ -34,7 +34,7 @@ var (
 )
 
 func init() {
-	rootCmd.AddCommand(signUpCmd)
+	rootCmd.AddCommand(runCmd)
 	if len(CommitSHA) >= 7 { //nolint:gomnd
 		vt := rootCmd.VersionTemplate()
 		rootCmd.SetVersionTemplate(vt[:len(vt)-1] + " (" + CommitSHA[0:7] + ")\n")

@@ -1,9 +1,10 @@
 import databaseClient from "../database"
 import { z } from "zod"
 import { Common } from "../common";
-import { createID, fn } from "../utils";
+import { fn } from "../utils";
 import { Examples } from "../examples";
 import { useCurrentUser } from "../actor";
+import { id as createID } from "@instantdb/admin";
 
 export module Machine {
     export const Info = z
@@ -36,29 +37,33 @@ export module Machine {
         hostname: z.string(),
         location: z.string()
     }), async (input) => {
-        const id = createID("machine")
+        const id = createID()
         const now = new Date().getTime()
-        const user = useCurrentUser()
-        const db = databaseClient().asUser({ token: user.token })
+        const db = databaseClient()//.asUser({ email: "elviswanjohi47@gmail.com" })
+        await db.transact(
+            db.tx.machines[id]!.update({
+                fingerprint: input.fingerprint,
+                hostname: input.hostname,
+                location: input.location,
+                createdAt: now,
+            })
+        )
 
-        await db.transact(db.tx.machines[id]!.update({
-            fingerprint: input.fingerprint,
-            hostname: input.hostname,
-            createdAt: now,
-            location: input.location
-        }).link({
-            owner: user.id
-        }))
-
-        return "ok"
+        return id
     })
 
     export const remove = fn(z.string(), async (id) => {
         const now = new Date().getTime()
+        // const device = useCurrentDevice()
+        // const db = databaseClient()
+
+        // if (device.id) { // the machine can delete itself
+        //     await db.transact(db.tx.machines[device.id]!.update({ deletedAt: now }))
+        // } else {// the user can delete it manually
         const user = useCurrentUser()
         const db = databaseClient().asUser({ token: user.token })
-
         await db.transact(db.tx.machines[id]!.update({ deletedAt: now }))
+        // }
 
         return "ok"
     })
@@ -72,6 +77,25 @@ export module Machine {
                 $: {
                     where: {
                         id: id,
+                        deletedAt: { $isNull: true }
+                    }
+                }
+            }
+        }
+
+        const res = await db.query(query)
+
+        return res.machines[0]
+    })
+
+    export const fromFingerprint = fn(z.string(), async (input) => {
+        const db = databaseClient()
+
+        const query = {
+            machines: {
+                $: {
+                    where: {
+                        fingerprint: input,
                         deletedAt: { $isNull: true }
                     }
                 }
@@ -103,4 +127,14 @@ export module Machine {
         return res.$users[0]?.machines
     }
 
+    export const link = fn(z.object({
+        machineId: z.string()
+    }), async (input) => {
+        const user = useCurrentUser()
+        const db = databaseClient()
+
+        await db.transact(db.tx.machines[input.machineId]!.link({ owner: user.id }))
+
+        return "ok"
+    })
 }

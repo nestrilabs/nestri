@@ -6,4 +6,8 @@ export const subjects = createSubjects({
     accessToken: v.string(),
     userID: v.string(),
   }),
+  device: v.object({
+    fingerprint: v.string(),
+    id: v.string()
+  })
 })

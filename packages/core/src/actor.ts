@@ -18,12 +18,29 @@ export interface UserActor {
     };
 }
 
+export interface DeviceActor {
+    type: "device";
+    properties: {
+        fingerprint: string;
+        id: string;
+        auth?:
+        | {
+            type: "personal";
+            token: string;
+        }
+        | {
+            type: "oauth";
+            clientID: string;
+        };
+    };
+}
+
 export interface PublicActor {
     type: "public";
     properties: {};
 }
 
-type Actor = UserActor | PublicActor;
+type Actor = UserActor | PublicActor | DeviceActor;
 export const ActorContext = createContext<Actor>();
 
 export function useCurrentUser() {
@@ -31,6 +48,19 @@ export function useCurrentUser() {
     if (actor.type === "user") return {
       id:actor.properties.userID,
       token: actor.properties.accessToken
+    };
+    throw new VisibleError(
+        "auth",
+        "unauthorized",
+        `You don't have permission to access this resource`,
+    );
+}
+
+export function useCurrentDevice() {
+    const actor = ActorContext.use();
+    if (actor.type === "device") return {
+      fingerprint:actor.properties.fingerprint,
+      id: actor.properties.id
     };
     throw new VisibleError(
         "auth",

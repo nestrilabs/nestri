@@ -15,16 +15,16 @@ type UserCredentials struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func FetchUserToken() (*UserCredentials, error) {
+func FetchUserCredentials() (*UserCredentials, error) {
 	m := machine.NewMachine()
 	fingerprint := m.GetMachineID()
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
 	data.Set("client_id", "device")
-	data.Set("provider", "device")
 	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
 	data.Set("hostname", m.Hostname)
 	data.Set("fingerprint", fingerprint)
+	data.Set("provider", "device")
 	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)
 	if err != nil {
 		return nil, err

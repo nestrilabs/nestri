@@ -9,11 +9,11 @@ import { Email } from "@nestri/core/email/index"
 import { authorizer } from "@openauthjs/openauth"
 import { type CFRequest } from "@nestri/core/types"
 import { Select } from "@openauthjs/openauth/ui/select";
-import { createClient } from "@openauthjs/openauth/client"
 import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
+import { Machine } from "@nestri/core/machine/index"
 
 interface Env {
     CloudflareAuthKV: KVNamespace
@@ -32,15 +32,13 @@ export type CodeAdapterState =
 
 export default {
     async fetch(request: CFRequest, env: Env, ctx: ExecutionContext) {
+        const location = `${request.cf.country},${request.cf.continent}`
         return authorizer({
             select: Select({
                 providers: {
                     device: {
                         hide: true,
                     },
-                    party: {
-                        hide: true
-                    }
                 },
             }),
             theme: {
@@ -76,58 +74,28 @@ export default {
                 ),
                 device: {
                     type: "device",
-                    init(routes, ctx) {
-                        routes.post("/callback", async (c) => {
-                            const data = await c.req.formData();
-                            const secret = data?.get("client_secret")
-                            if (!secret || secret.toString() !== Resource.AuthFingerprintKey.value) {
-                                return c.newResponse("Invalid authorization token", 401)
-                            }
+                    async client(input) {
+                        if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
+                            throw new Error("Invalid authorization token");
+                        }
 
-                            const redirectUrl = data?.get("redirect_url")
-                            if (!redirectUrl) {
-                                return c.newResponse("Invalid redirect url", 400)
-                            }
+                        const fingerprint = input.params.fingerprint;
+                        if (!fingerprint) {
+                            throw new Error("Fingerprint is required");
+                        }
 
-                            const client = createClient({
-                                clientID: "device",
-                                issuer: Resource.Urls.auth,
-                            })
-
-                            const { url } = await client.authorize(redirectUrl.toString(), "code", { pkce: true })
-
-                            return c.newResponse(url, 200)
-                        })
-                    }
-                } as Adapter<{}>,
-                party: {
-                    type: "party",
-                    init(routes, ctx) {
-                        routes.post("/callback", async (c) => {
-                            const data = await c.req.formData();
-                            const secret = data?.get("client_secret")
-                            if (!secret || secret.toString() !== Resource.AuthFingerprintKey.value) {
-                                return c.newResponse("Invalid authorization token", 401)
-                            }
-
-                            // const redirectUrl = data?.get("redirect_url")
-                            // if (!redirectUrl) {
-                            //     return c.newResponse("Invalid redirect url", 400)
-                            // }
-
-                            // const client = createClient({
-                            //     clientID: "party",
-                            //     issuer: Resource.Urls.auth,
-                            // })
-
-                            // const { url } = await client.authorize(redirectUrl.toString(), "code", { pkce: true })
-
-                            return c.newResponse("Allowed", 200)
-                        })
-                    }
-                } as Adapter<{}>,
+                        const hostname = input.params.hostname;
+                        if (!hostname) {
+                            throw new Error("Hostname is required");
+                        }
+                        return {
+                            fingerprint,
+                            hostname
+                        };
+                    },
+                    init() { }
+                } as Adapter<{ fingerprint: string; hostname: string }>,
             },
-
             allow: async (input) => {
                 const url = new URL(input.redirectURI);
                 const hostname = url.hostname;
@@ -136,8 +104,21 @@ export default {
                 return true;
             },
             success: async (ctx, value) => {
-                if (value.provider == "device" || value.provider == "party") {
-                    throw new Error("Device has no success");
+                if (value.provider === "device") {
+                    let machineID = await Machine.fromFingerprint(value.fingerprint).then((x) => x?.id);
+
+                    if (!machineID) {
+                        machineID = await Machine.create({
+                            fingerprint: value.fingerprint,
+                            hostname: value.hostname,
+                            location,
+                        });
+                    }
+
+                    return await ctx.subject("device", {
+                        id: machineID,
+                        fingerprint: value.fingerprint
+                    })
                 }
 
                 const email = value.email;
@@ -146,7 +127,7 @@ export default {
                     const token = await User.create(email);
                     const user = await User.fromEmail(email);
 
-                    return ctx.subject("user", {
+                    return await ctx.subject("user", {
                         accessToken: token,
                         userID: user.id
                     });

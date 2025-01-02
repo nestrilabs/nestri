@@ -5,6 +5,7 @@ import { describeRoute } from "hono-openapi";
 import { validator, resolver } from "hono-openapi/zod";
 import { Examples } from "@nestri/core/examples";
 import { Machine } from "@nestri/core/machine/index";
+import { useCurrentUser } from "@nestri/core/actor";
 
 export module MachineApi {
   export const route = new Hono()
@@ -40,7 +41,7 @@ export module MachineApi {
       }),
       async (c) => {
         const machines = await Machine.list();
-        if(!machines) return c.json({ error: "This user has no machines." }, 404);
+        if (!machines) return c.json({ error: "This user has no machines." }, 404);
         return c.json({ data: machines }, 200);
       },
     )
@@ -91,11 +92,11 @@ export module MachineApi {
       },
     )
     .post(
-      "/",
+      "/:id",
       describeRoute({
         tags: ["Machine"],
-        summary: "Create machine",
-        description: "Create a machine.",
+        summary: "Link a machine to a user",
+        description: "Link a machine to the owner.",
         responses: {
           200: {
             content: {
@@ -103,21 +104,24 @@ export module MachineApi {
                 schema: Result(z.literal("ok"))
               },
             },
-            description: "Machine was created successfully.",
+            description: "Machine was linked successfully.",
           },
         },
       }),
       validator(
-        "json",
-        Machine.Info.omit({ id: true, location: true }).openapi({
-          description: "Basic machine information.",
-          example: Examples.Machine
+        "param",
+        z.object({
+          id: Machine.Info.shape.fingerprint.openapi({
+            description: "Fingerprint of the machine to link to.",
+            example: Examples.Machine.id,
+          }),
         }),
       ),
       async (c) => {
-        const request = c.req as any
-        const location = `${request.cf.country},${request.cf.continent}`
-        await Machine.create({ ...c.req.valid("json"), location });
+        const request = c.req.valid("param")
+        const machine = await Machine.fromFingerprint(request.id)
+        if (!machine) return c.json({ error: "Machine not found." }, 404);
+        await Machine.link({machineId:machine.id })
         return c.json({ data: "ok" as const }, 200);
       },
     )
