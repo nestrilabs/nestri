@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"nestrilabs/cli/internal/api"
 	"nestrilabs/cli/internal/auth"
 	"nestrilabs/cli/internal/party"
 	"time"
@@ -61,9 +62,12 @@ var signUpCmd = &cobra.Command{
 		s.Stop()
 
 		// Use the result
-		log.Info("Auth codes found!", "access_token", result.Code)
+		log.Info("\n Auth codes found!", "access_token", result.Code, "\n")
+		api.RegisterMachine(result.Code)
 
-		fmt.Println("\n✅ Successfully logged in!")
+		auth.FetchUserCredentials(result.Code)
+
+		fmt.Printf("\n✅ Successfully logged in!\n")
 		return nil
 	},
 }
