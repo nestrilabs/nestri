@@ -6,74 +6,109 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/charmbracelet/log"
 )
 
-type Machine struct{}
+type Machine struct {
+	OperatingSystem string
+	Arch            string
+	Kernel          string
+	Virtualization  string
+	Hostname        string
+}
 
 func NewMachine() *Machine {
-	return &Machine{}
+	var OS string
+	var architecture string
+	var kernel string
+	var virtualisation string
+	var hostname string
+
+	output, _ := exec.Command("hostnamectl", "status").Output()
+	os := regexp.MustCompile(`Operating System:\s+(.*)`)
+	matchingOS := os.FindStringSubmatch(string(output))
+	if len(matchingOS) > 1 {
+		OS = matchingOS[1]
+	}
+
+	arch := regexp.MustCompile(`Architecture:\s+(\w+)`)
+	matchingArch := arch.FindStringSubmatch(string(output))
+	if len(matchingArch) > 1 {
+		architecture = matchingArch[1]
+	}
+
+	kern := regexp.MustCompile(`Kernel:\s+(.*)`)
+	matchingKernel := kern.FindStringSubmatch(string(output))
+	if len(matchingKernel) > 1 {
+		kernel = matchingKernel[1]
+	}
+
+	virt := regexp.MustCompile(`Virtualization:\s+(\w+)`)
+	matchingVirt := virt.FindStringSubmatch(string(output))
+	if len(matchingVirt) > 1 {
+		virtualisation = matchingVirt[1]
+	}
+
+	host := regexp.MustCompile(`Static hostname:\s+(.*)`)
+	matchingHost := host.FindStringSubmatch(string(output))
+	if len(matchingHost) > 1 {
+		hostname = cleanString(matchingHost[1])
+	}
+
+	return &Machine{
+		OperatingSystem: OS,
+		Arch:            architecture,
+		Kernel:          kernel,
+		Virtualization:  virtualisation,
+		Hostname:        hostname,
+	}
 }
 
-func (m *Machine) OS() string {
-	output, _ := exec.Command("hostnamectl", "status").Output()
-	re := regexp.MustCompile(`Operating System:\s+(.*)`)
-	match := re.FindStringSubmatch(string(output))
-	if len(match) > 1 {
-		return match[1]
+func (m *Machine) GetOS() string {
+	if m.OperatingSystem != "" {
+		return m.OperatingSystem
 	}
 	return "unknown"
 }
 
-func (m *Machine) Architecture() string {
-	output, _ := exec.Command("hostnamectl", "status").Output()
-	re := regexp.MustCompile(`Architecture:\s+(\w+)`)
-	match := re.FindStringSubmatch(string(output))
-	if len(match) > 1 {
-		return match[1]
+func (m *Machine) GetArchitecture() string {
+
+	if m.Arch != "" {
+		return m.Arch
 	}
 	return "unknown"
 
 }
 
-func (m *Machine) Kernel() string {
-	output, _ := exec.Command("hostnamectl", "status").Output()
-	re := regexp.MustCompile(`Kernel:\s+(.*)`)
-	match := re.FindStringSubmatch(string(output))
-	if len(match) > 1 {
-		return match[1]
+func (m *Machine) GetKernel() string {
+	if m.Kernel != "" {
+		return m.Kernel
 	}
 	return "unknown"
 }
 
-func (m *Machine) Virtualization() string {
-	output, _ := exec.Command("hostnamectl", "status").Output()
-	re := regexp.MustCompile(`Virtualization:\s+(\w+)`)
-	match := re.FindStringSubmatch(string(output))
-	if len(match) > 1 {
-		return match[1]
+func (m *Machine) GetVirtualization() string {
+	if m.Virtualization != "" {
+		return m.Virtualization
 	}
 	return "none"
 }
 
-func (m *Machine) StaticHostname() (string, error) {
-	output, err := exec.Command("hostnamectl", "status").Output()
-	if err != nil {
-		return "", err
+func (m *Machine) GetHostname() string {
+	if m.Hostname != "" {
+		return m.Hostname
 	}
-	re := regexp.MustCompile(`Static hostname:\s+(.*)`)
-	match := re.FindStringSubmatch(string(output))
-	if len(match) > 1 {
-		return cleanString(match[1]), nil
-	}
-	return "", fmt.Errorf("static hostname not found")
+	return "unknown"
 }
 
-func (m *Machine) MachineID() (string, error) {
+func (m *Machine) GetMachineID() string {
 	id, err := os.ReadFile("/etc/machine-id")
 	if err != nil {
-		return "", err
+		log.Error("Error getting your machine's ID", "err", err)
+		os.Exit(1)
 	}
-	return strings.TrimSpace(string(id)), nil
+	return strings.TrimSpace(string(id))
 }
 
 func (m *Machine) GPUInfo() (string, string, error) {
@@ -109,7 +144,7 @@ func (m *Machine) GPUInfo() (string, string, error) {
 	return gpuType, gpuSize, nil
 }
 
-func (m *Machine) CPUInfo() (string, string, error) {
+func (m *Machine) GetCPUInfo() (string, string, error) {
 	output, err := exec.Command("lscpu").Output()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get CPU information: %w", err)
@@ -139,7 +174,7 @@ func (m *Machine) CPUInfo() (string, string, error) {
 
 }
 
-func (m *Machine) RAMSize() (string, error) {
+func (m *Machine) GetRAMSize() (string, error) {
 	output, err := exec.Command("free", "-h", "--si").Output() // Using -h for human-readable and --si for base-10 units
 	if err != nil {
 		return "", fmt.Errorf("failed to get RAM information: %w", err)

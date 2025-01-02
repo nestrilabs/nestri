@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"nestrilabs/cli/internal/machine"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -29,22 +28,11 @@ type Party struct {
 
 func NewParty() *Party {
 	m := machine.NewMachine()
-
-	hostname, err := m.StaticHostname()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
-
-	fingerprint, err := m.MachineID()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
+	fingerpint := m.GetMachineID()
 	return &Party{
 		done:        make(chan struct{}),
-		fingerprint: fingerprint,
-		hostname:    hostname,
+		fingerprint: fingerpint,
+		hostname:    m.Hostname,
 	}
 }
 

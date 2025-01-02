@@ -1,15 +1,13 @@
 package auth
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"nestrilabs/cli/internal/machine"
 	"nestrilabs/cli/internal/resource"
 	"net/http"
 	"net/url"
-	"os"
-
-	"github.com/charmbracelet/log"
 )
 
 type UserCredentials struct {
@@ -17,80 +15,30 @@ type UserCredentials struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func FetchUserCredentials(code string) {
-	data := url.Values{}
+func FetchUserToken() (*UserCredentials, error) {
 	m := machine.NewMachine()
-
-	hostname, err := m.StaticHostname()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
-
-	fingerprint, err := m.MachineID()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
-
-	redirect := fmt.Sprintf("http://localhost:1999/parties/main/%s/auth/%s", fingerprint, hostname)
-
-	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	data.Set("redirect_url", redirect)
-	data.Set("auth_type", "verify")
-	data.Set("code", code)
-	resp, err := http.PostForm(resource.Resource.Auth.Url+"/device/callback", data)
-
-	if err != nil {
-		log.Error("Error trying to request a login url", "err", err)
-		os.Exit(1)
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		log.Error("Error trying to request a login url", "err", string(body))
-		os.Exit(1)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-
-	log.Info("Body recieved", "info", string(body))
-}
-
-func FetchUserUrl() string {
+	fingerprint := m.GetMachineID()
 	data := url.Values{}
-	m := machine.NewMachine()
-
-	hostname, err := m.StaticHostname()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
-
-	fingerprint, err := m.MachineID()
-	if err != nil {
-		log.Error("Failed to start the cmd", "err", err)
-		os.Exit(1)
-	}
-
-	redirect := fmt.Sprintf("http://localhost:1999/parties/main/%s/auth/%s", fingerprint, hostname)
+	data.Set("grant_type", "client_credentials")
+	data.Set("client_id", "device")
+	data.Set("provider", "device")
 	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	data.Set("redirect_url", redirect)
-	data.Set("auth_type", "request")
-	resp, err := http.PostForm(resource.Resource.Auth.Url+"/device/callback", data)
+	data.Set("hostname", m.Hostname)
+	data.Set("fingerprint", fingerprint)
+	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)
 	if err != nil {
-		log.Error("Error trying to request a login url", "err", err)
-		os.Exit(1)
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		log.Error("Error trying to request a login url", "err", string(body))
-		os.Exit(1)
+		fmt.Println(string(body))
+		return nil, fmt.Errorf("failed to auth: " + string(body))
 	}
-	body, _ := io.ReadAll(resp.Body)
-
-	return string(body)
+	credentials := UserCredentials{}
+	err = json.NewDecoder(resp.Body).Decode(&credentials)
+	if err != nil {
+		return nil, err
+	}
+	return &credentials, nil
 }

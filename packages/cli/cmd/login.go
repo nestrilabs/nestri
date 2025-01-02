@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"nestrilabs/cli/internal/api"
 	"nestrilabs/cli/internal/auth"
-	"nestrilabs/cli/internal/party"
+	"os"
+	"regexp"
 	"time"
 
 	"github.com/briandowns/spinner"
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 )
@@ -19,55 +23,105 @@ type GameStart struct {
 	State string `json:"state"`
 }
 
+type Action int
+
+const (
+	Cancel Action = iota
+	Continue
+)
+
 var signUpCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate this device to Nestri",
 	Long:  "Authenticate this device to Nestri right from your terminal",
 	Args:  cobra.NoArgs,
 	RunE: func(_ *cobra.Command, _ []string) error {
+		var action bool
+		var emailAddress string
+		theme := huh.ThemeBase16()
+		theme.FieldSeparator = lipgloss.NewStyle().SetString("\n")
+		theme.Help.FullKey.MarginTop(1)
+
+		form := huh.NewForm(
+			huh.NewGroup(
+				huh.NewConfirm().
+					Description("Welcome to _Nestri_.\n\nBy pressing 'continue'  you agree to\n\nNestri's Terms of Service and Privacy Policy\n").
+					Title("\nNestri login\n").
+					Affirmative("Continue").
+					Negative("Cancel.").
+					Value(&action),
+			),
+		).WithTheme(theme)
+
+		err := form.Run()
+		if err != nil {
+			log.Error("Error requesting for the email address", "err", err)
+			os.Exit(1)
+		}
+
+		if !action {
+			os.Exit(0)
+		}
+
+		fmt.Printf("\n")
+
+		f := huh.NewForm(
+			huh.NewGroup(
+				huh.NewInput().
+					Title("Please enter your email address ").
+					Prompt("").
+					Validate(func(s string) error {
+						if s == "" {
+							return errors.New("please enter a valid email address")
+						}
+						if len(s) < 3 {
+							return errors.New("please enter a valid email address")
+						}
+
+						validEmail := isValidEmail(s)
+						if !validEmail {
+							return errors.New("please enter a valid email address")
+						}
+						return nil
+					}).
+					Value(&emailAddress).
+					Inline(true),
+			),
+		).WithTheme(theme)
+
+		err = f.Run()
+		if err != nil {
+			log.Error("Error requesting for the email address", "err", err)
+			os.Exit(1)
+		}
+
 		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-		s.Suffix = " Generating login link..."
+		s.Suffix = " Registering machine..."
 		s.Start()
 
 		// Simulate link generation (replace with actual implementation)
 		time.Sleep(2 * time.Second)
-		authLink := auth.FetchUserUrl()
+		authTokens, err := auth.FetchUserToken()
 		s.Stop()
-
-		fmt.Printf("\n🔐 Your authentication link is ready:\n%s\n\n", authLink)
-		fmt.Printf("Open this link in your default browser...\n\n")
-
-		s.Suffix = " Waiting for authentication..."
-		s.Start()
-		// Create a handler that checks for the message you want
-		handler := func(msg GameStart) bool {
-			return msg.Type == "auth"
-		}
-
-		// Create the listener
-		listener := party.NewTypeListener(handler)
-
-		// Optionally customize retry behavior
-		listener.SetRetryConfig(party.RetryConfig{
-			InitialDelay:  2 * time.Second,
-			MaxDelay:      1 * time.Minute,
-			BackoffFactor: 1.5,
-			MaxAttempts:   0, // Set to 0 for infinite retries
-		})
-
-		result, err := listener.ConnectUntilMessage()
 		if err != nil {
-			log.Fatal("Error in connection", "err", err)
+			log.Error("Error while requesting for tokens", "err", err)
 		}
-		s.Stop()
 
-		// Use the result
-		log.Info("\n Auth codes found!", "access_token", result.Code, "\n")
-		api.RegisterMachine(result.Code)
+		api.RegisterMachine(authTokens.AccessToken)
 
-		auth.FetchUserCredentials(result.Code)
-
-		fmt.Printf("\n✅ Successfully logged in!\n")
+		// log.Info("Got auth tokens", "access_token", authTokens.AccessToken)
+		// log.Info("Got auth tokens", "refresh_token", authTokens.RefreshToken)
+		fmt.Printf("✅ Successfully logged in!\n")
 		return nil
 	},
+}
+
+func isValidEmail(email string) bool {
+	// Regular expression pattern for validating email addresses
+	// This is a simple pattern and may not cover all edge cases
+	pattern := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+
+	regex := regexp.MustCompile(pattern)
+
+	return regex.MatchString(email)
 }

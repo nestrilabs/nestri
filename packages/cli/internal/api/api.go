@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"nestrilabs/cli/internal/resource"
 
 	"github.com/nestrilabs/nestri-go-sdk"
 	"github.com/nestrilabs/nestri-go-sdk/option"
@@ -11,9 +12,12 @@ import (
 func RegisterMachine(token string) {
 	client := nestri.NewClient(
 		option.WithBearerToken(token),
-		option.WithBaseURL("https://api.lauryn.dev.nestri.io/"),
+		option.WithBaseURL(resource.Resource.Api.Url),
 	)
-	machine, err := client.Machines.List(context.TODO()) //Get(context.TODO(), "REPLACE_ME")
+
+	machine, err := client.Machines.New(
+		context.TODO(),
+		nestri.MachineNewParams{})
 
 	if err != nil {
 		panic(err.Error())

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"nestrilabs/cli/internal/machine"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -76,24 +75,13 @@ type TypeListener[T any] struct {
 
 func NewTypeListener[T any](handler MessageHandler[T]) *TypeListener[T] {
 	m := machine.NewMachine()
-
-	hostname, err := m.StaticHostname()
-	if err != nil {
-		log.Error("Failed to get the Machine's Hostname", "err", err)
-		os.Exit(1)
-	}
-
-	fingerprint, err := m.MachineID()
-	if err != nil {
-		log.Error("Failed to get the Machine's ID", "err", err)
-		os.Exit(1)
-	}
+	fingerprint := m.GetMachineID()
 
 	return &TypeListener[T]{
 		retryConfig: DefaultRetryConfig,
 		handler:     handler,
 		fingerprint: fingerprint,
-		hostname:    hostname,
+		hostname:    m.Hostname,
 	}
 }
 
