@@ -1,10 +1,10 @@
 import databaseClient from "../database"
 import { z } from "zod"
 import { Common } from "../common";
-import { fn } from "../utils";
+import { createID, fn } from "../utils";
 import { Examples } from "../examples";
 import { useCurrentUser } from "../actor";
-import { id as createID } from "@instantdb/admin";
+// import { id as createID } from "@instantdb/admin";
 
 export module Machine {
     export const Info = z
@@ -39,7 +39,7 @@ export module Machine {
     }), async (input) => {
         const id = createID()
         const now = new Date().getTime()
-        const db = databaseClient()//.asUser({ email: "elviswanjohi47@gmail.com" })
+        const db = databaseClient()
         await db.transact(
             db.tx.machines[id]!.update({
                 fingerprint: input.fingerprint,

@@ -19,17 +19,17 @@ const rules = {
    *   bind: ["isOwner", "auth.id != null && auth.id == data.ownerId"],
    * },
    */
-  // "$default": {
-  //   "allow": {
-  //     "$default": "false"
-  //   }
-  // },
-  // machines: {
-  //   allow: {
-  //     "$default": "isOwner",
-  //   },
-  //   bind: ["isOwner", "auth.id != null && auth.id == data.ownerID"],
-  // }
+  "$default": {
+    "allow": {
+      "$default": "false"
+    }
+  },
+  machines: {
+    allow: {
+      "$default": "isOwner",
+    },
+    bind: ["isOwner", "auth.id != null && auth.id == data.ownerID"],
+  }
 } satisfies InstantRules;
 
 export default rules;

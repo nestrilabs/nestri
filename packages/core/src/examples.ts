@@ -1,48 +1,46 @@
-import { prefixes } from "./utils";
+import { createID } from "./utils";
 export module Examples {
-    export const Id = (prefix: keyof typeof prefixes) =>
-        `${prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
 
     export const User = {
-        id: "e7c432f2-2f00-423a-8cec-c4179c2aab8a",
+        id: createID(),
         email: "john@example.com",
     };
 
     export const Machine = {
-        id: Id("machine"),
-        hostname: "DESKTOP-EUO8VSF",
-        fingerprint: "183ded44-24d0-480e-9908-c022eff8d111",
+        id: createID(),
+        hostname: "desktopeuo8vsf",
+        fingerprint: "fc27f428f9ca47d4b41b70889ae0c62090",
         location: "KE, AF"
     }
 
-    export const Team = {
-        id: Id("team"),
-        name: "Jane's Family",
-        type: "Family"
-    }
+    // export const Team = {
+    //     id: createID(),
+    //     name: "Jane's Family",
+    //     type: "Family"
+    // }
 
-    export const ProductVariant = {
-        id: Id("productVariant"),
-        name: "FamilySM",
-        price: 10,
-    };
+    // export const ProductVariant = {
+    //     id: createID(),
+    //     name: "FamilySM",
+    //     price: 10,
+    // };
 
-    export const Product = {
-        id: Id("product"),
-        name: "Family",
-        description: "The ideal subscription tier for dedicated gamers who crave more flexibility and social gaming experiences.",
-        variants: [ProductVariant],
-        subscription: "allowed" as const,
-    };
+    // export const Product = {
+    //     id: createID(),
+    //     name: "Family",
+    //     description: "The ideal subscription tier for dedicated gamers who crave more flexibility and social gaming experiences.",
+    //     variants: [ProductVariant],
+    //     subscription: "allowed" as const,
+    // };
 
-    export const Subscription = {
-        id: Id("subscription"),
-        productVariant: ProductVariant,
-        quantity: 1,
-        polarOrderID: "00000000-0000-0000-0000-000000000000",
-        frequency: "monthly" as const,
-        next: new Date("2024-02-01 19:36:19.000").getTime(),
-        owner: User
-    };
+    // export const Subscription = {
+    //     id: createID(),
+    //     productVariant: ProductVariant,
+    //     quantity: 1,
+    //     polarOrderID: createID(),
+    //     frequency: "monthly" as const,
+    //     next: new Date("2024-02-01 19:36:19.000").getTime(),
+    //     owner: User
+    // };
 
 }
