@@ -72,6 +72,9 @@ FROM ${BASE_IMAGE} AS runtime
 RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
     sed -i "s/#Color/Color/" /etc/pacman.conf && \
     pacman --noconfirm -Syu archlinux-keyring && \
+    dirmngr </dev/null > /dev/null 2>&1 && \
+    # Install Steam
+    pacman --noconfirm -S steam && \
     pacman -Syu --noconfirm --needed \
     # Graphics packages
     sudo xorg-xwayland labwc wlr-randr mangohud \
@@ -84,14 +87,11 @@ RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /et
     # Other requirements
     supervisor jq chwd lshw pacman-contrib && \
     # Clean up pacman cache
-    paccache -rk1
-
-# Install steam
-RUN dirmngr </dev/null > /dev/null 2>&1 && \
-    pacman --noconfirm -S steam && \
+    paccache -rk1 && \
     rm -rf /usr/share/info/* && \
     rm -rf /usr/share/man/* && \
     rm -rf /usr/share/doc/*
+    
 
 ## User ##
 # Create and setup user #
