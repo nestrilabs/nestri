@@ -50,3 +50,6 @@ id_*
 
 #Rust
 target
+
+tmp
+.partykit

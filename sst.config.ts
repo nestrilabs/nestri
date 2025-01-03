@@ -5,11 +5,12 @@ export default $config({
     return {
       name: "nestri",
       removal: input?.stage === "production" ? "retain" : "remove",
-      home: "aws",
+      home: "cloudflare",
       providers: {
         cloudflare: "5.37.1",
         docker: "4.5.5",
         "@pulumi/command": "1.0.1",
+        random: "4.16.8",
       },
     };
   },

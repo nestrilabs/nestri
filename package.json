@@ -4,6 +4,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "sst": "sst dev",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "lint": "turbo lint"
   },
@@ -29,6 +30,6 @@
     "workerd"
   ],
   "dependencies": {
-    "sst": "3.0.94"
+    "sst": "^3.4.32"
   }
 }

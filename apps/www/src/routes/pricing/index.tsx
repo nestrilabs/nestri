@@ -1,8 +1,8 @@
-import { $, component$, noSerialize, NoSerialize, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { $, component$, noSerialize, type NoSerialize, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
 import { NavBar, Footer, Book } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
-import { Howl, Howler } from 'howler';
+import { Howl } from 'howler';
 
 //FIXME: Add a FAQ section
 // FIXME: Takes too long for the price input radio input to become responsive
@@ -68,6 +68,7 @@ export default component$(() => {
     const bookRef = useSignal<HTMLButtonElement | undefined>()
     const audio = useSignal<NoSerialize<Howl> | undefined>()
 
+    // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(() => {
         audio.value = noSerialize(new Howl({ src: ["/audio/cash.mp3"], volume: 0.5 }))
 
