@@ -80,6 +80,8 @@ RUN pacman -Syu --noconfirm --needed \
     pipewire pipewire-pulse pipewire-alsa wireplumber \
     # Other requirements
     supervisor jq chwd lshw pacman-contrib && \
+    # Steam
+    steam && \
     # Clean up pacman cache
     paccache -rk1
 
