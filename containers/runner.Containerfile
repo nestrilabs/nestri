@@ -80,10 +80,17 @@ RUN pacman -Syu --noconfirm --needed \
     pipewire pipewire-pulse pipewire-alsa wireplumber \
     # Other requirements
     supervisor jq chwd lshw pacman-contrib && \
-    # Steam
-    steam && \
     # Clean up pacman cache
     paccache -rk1
+
+# Install steam
+RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
+    dirmngr </dev/null > /dev/null 2>&1 && \
+    sed -i "s/#Color/Color/" /etc/pacman.conf && \
+    pacman --noconfirm -Syu archlinux-keyring && pacman --noconfirm -S steam && \
+    rm -rf /usr/share/info/* && \
+    rm -rf /usr/share/man/* && \
+    rm -rf /usr/share/doc/*
 
 ## User ##
 # Create and setup user #
