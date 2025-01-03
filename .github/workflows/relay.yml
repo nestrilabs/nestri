@@ -7,8 +7,6 @@ on:
             - "containers/relay.Containerfile"
             - "packages/relay/**"
             - ".github/workflows/relay.yml"
-    schedule:
-        - cron: 0 0 * * * # At the end of everyday to keep that build cache warm
     push:
         branches: [main]
         paths:

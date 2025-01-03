@@ -9,7 +9,7 @@ on:
             - "packages/server/**"
             - ".github/workflows/runner.yml"
     schedule:
-        - cron: 0 0 * * * # At the end of everyday to keep that build cache warm
+        - cron: 7 0 * * 1,3,6 # Regularly to keep that build cache warm
     push:
         branches: [main]
         paths:
