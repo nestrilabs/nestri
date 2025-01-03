@@ -7,8 +7,6 @@ on:
             - "containers/relay.Containerfile"
             - "packages/relay/**"
             - ".github/workflows/relay.yml"
-    schedule:
-        - cron: 0 0 * * * # At the end of everyday
     push:
         branches: [main]
         paths:
@@ -49,7 +47,7 @@ jobs:
     
     build-docker-main:
         name: Build image on main
-        if: ${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        if: ${{  github.ref == 'refs/heads/main' }}
         runs-on: ubuntu-latest
         permissions:
             contents: read
