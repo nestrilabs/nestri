@@ -99,30 +99,21 @@ func (s *Session) Start(ctx context.Context) error {
 		Env: []string{
 			fmt.Sprintf("NESTRI_ROOM=%s", s.config.Room),
 			fmt.Sprintf("RESOLUTION=%s", s.config.Resolution),
+			fmt.Sprintf("NESTRI_PARAMS=%s", s.config.Params),
 			fmt.Sprintf("FRAMERATE=%s", s.config.Framerate),
 			fmt.Sprintf("RELAY_URL=%s", s.config.RelayURL),
-			fmt.Sprintf("NESTRI_PARAMS=%s", s.config.Params),
 		},
 	}, &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/mnt/game/", s.config.GamePath),
+			fmt.Sprintf("%s:/home/nestri/.steam/", s.config.GamePath),
 		},
 		Resources: container.Resources{
 			DeviceRequests: deviceRequests,
 			Devices:        devices,
 		},
-		// Resources: container.Resources{
-		// 	DeviceRequests: []container.DeviceRequest{
-		// 		{
-		// 			Driver:       "nvidia",
-		// 			Count:        1,
-		// 			DeviceIDs:    []string{"0"},
-		// 			Capabilities: [][]string{{"gpu"}},
-		// 		},
-		// 	},
-		// },
 		SecurityOpt: []string{"label=disable"},
-		ShmSize:     1073741824, // 1GB
+		ShmSize:     5368709120, // 5GB
+		// ShmSize:     1073741824, // 1GB
 	}, nil, nil, "")
 	if err != nil {
 		return fmt.Errorf("failed to create container: %v", err)

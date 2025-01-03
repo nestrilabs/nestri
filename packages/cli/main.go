@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"nestrilabs/cli/internal/session"
-	"time"
 
 	"github.com/charmbracelet/log"
 )
@@ -50,7 +49,7 @@ func main() {
 	}
 
 	// Let it run for a while
-	time.Sleep(time.Second * 50)
+	// time.Sleep(time.Second * 50)
 
 	// Stop the session
 	if err := sess.Stop(ctx); err != nil {
