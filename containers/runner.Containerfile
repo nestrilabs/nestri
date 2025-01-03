@@ -69,7 +69,10 @@ RUN --mount=type=cache,target=/builder/gst-wayland-display/target/  \
 FROM ${BASE_IMAGE} AS runtime
 
 ## Install Graphics, Media, and Audio packages ##
-RUN pacman -Syu --noconfirm --needed \
+RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
+    sed -i "s/#Color/Color/" /etc/pacman.conf && \
+    pacman --noconfirm -Syu archlinux-keyring && \
+    pacman -Syu --noconfirm --needed \
     # Graphics packages
     sudo xorg-xwayland labwc wlr-randr mangohud \
     # GStreamer and plugins
@@ -84,10 +87,8 @@ RUN pacman -Syu --noconfirm --needed \
     paccache -rk1
 
 # Install steam
-RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
-    dirmngr </dev/null > /dev/null 2>&1 && \
-    sed -i "s/#Color/Color/" /etc/pacman.conf && \
-    pacman --noconfirm -Syu archlinux-keyring && pacman --noconfirm -S steam && \
+RUN dirmngr </dev/null > /dev/null 2>&1 && \
+    pacman --noconfirm -S steam && \
     rm -rf /usr/share/info/* && \
     rm -rf /usr/share/man/* && \
     rm -rf /usr/share/doc/*
