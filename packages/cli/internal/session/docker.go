@@ -1,8 +1,7 @@
-package docker
+package session
 
 import (
 	"context"
-	"io"
 	"os"
 
 	"github.com/docker/docker/api/types/container"
@@ -11,7 +10,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 )
 
-func main() {
+func ContainerStart() {
 	ctx := context.Background()
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -40,7 +39,7 @@ func main() {
 	// cli.ImagePull is asynchronous.
 	// The reader needs to be read completely for the pull operation to complete.
 	// If stdout is not required, consider using io.Discard instead of os.Stdout.
-	io.Copy(os.Stdout, reader)
+	// io.Copy(os.Stdout, reader)
 
 	resp, err := cli.ContainerCreate(ctx, &container.Config{
 		Image: "hello-world",
