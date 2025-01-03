@@ -35,6 +35,9 @@ jobs:
     build-docker-pr:
         name: Build image on PR
         runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
         if: ${{ github.event_name == 'pull_request' }}
         steps:
             -
