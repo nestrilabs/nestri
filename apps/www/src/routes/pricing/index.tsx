@@ -175,6 +175,14 @@ export default component$(() => {
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6c0-1.886 0-2.828.586-3.414S4.114 2 6 2h5c1.886 0 2.828 0 3.414.586S15 4.114 15 6s0 2.828-.586 3.414S12.886 10 11 10H6c-1.886 0-2.828 0-3.414-.586S2 7.886 2 6Zm8 12c0-1.886 0-2.828.586-3.414S12.114 14 14 14h3c1.886 0 2.828 0 3.414.586S21 16.114 21 18s0 2.828-.586 3.414S18.886 22 17 22h-3c-1.886 0-2.828 0-3.414-.586S10 19.886 10 18Z" /><path stroke-linecap="round" d="M6 2.5V10m7.5 4.5V22M11 2.5V10m6.5 4.5V22M2.5 6H6m9 0h-4m0 12h2.5m7.5 0h-3.5" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 11v-1c0-.932 0-2.398-.152-2.765a2 2 0 0 0-1.083-1.083C19.398 6 18.932 6 18 6m3 5l1-1m-1 1l-1-1M3 13v1c0 .932 0 2.398.152 2.765a2 2 0 0 0 1.083 1.083C4.602 18 5.068 18 6 18m-3-5l-1 1m1-1l1 1" /></g></svg>
+                                                </div>
+                                                <p>50GB bandwidth limit per month <sup>2</sup></p>
+                                            </div>
+                                        </div>
+                                        <div class="gap-2.5 flex relative items-center w-full" >
+                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
+                                                <div class="size-5 relative">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 14 14"><g fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.179 6.011L4.114.881l3.653 1.04l-1.062 5.38a2.362 2.362 0 1 1-4.526-1.29m1.563 3.104l-1.074 3.766m-1.484-.424l2.967.846" /><path d="m3.148 3.438l4.086 1.175" /><path stroke-linecap="round" stroke-linejoin="round" d="M8.567 8.963a2.362 2.362 0 0 0 3.255-2.952L9.885.881l-.576.163m.949 8.071l1.074 3.766m1.484-.424l-2.967.846m1.003-9.853l-1.669.48" /></g></svg>
                                                 </div>
                                                 <p>Public parties only</p>
@@ -203,14 +211,6 @@ export default component$(() => {
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16.574 19.2l-3.938-3.938l-1.203 1.202c-1.23 1.232-1.846 1.847-2.508 1.702s-.963-.963-1.565-2.596l-2.007-5.45C4.152 6.861 3.55 5.232 4.39 4.392s2.47-.24 5.73.962l5.45 2.006c1.633.602 2.45.903 2.596 1.565s-.47 1.277-1.702 2.508l-1.202 1.203l3.938 3.938c.408.408.612.612.706.84c.125.303.125.643 0 .947c-.094.227-.298.431-.706.839s-.612.612-.84.706a1.24 1.24 0 0 1-.947 0c-.227-.094-.43-.298-.839-.706" /></svg>
                                                 </div>
                                                 <p>Basic analytics <sup>1</sup></p>
-                                            </div>
-                                        </div>
-                                        <div class="gap-2.5 flex relative items-center w-full" >
-                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
-                                                <div class="size-5 relative">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6c0-1.886 0-2.828.586-3.414S4.114 2 6 2h5c1.886 0 2.828 0 3.414.586S15 4.114 15 6s0 2.828-.586 3.414S12.886 10 11 10H6c-1.886 0-2.828 0-3.414-.586S2 7.886 2 6Zm8 12c0-1.886 0-2.828.586-3.414S12.114 14 14 14h3c1.886 0 2.828 0 3.414.586S21 16.114 21 18s0 2.828-.586 3.414S18.886 22 17 22h-3c-1.886 0-2.828 0-3.414-.586S10 19.886 10 18Z" /><path stroke-linecap="round" d="M6 2.5V10m7.5 4.5V22M11 2.5V10m6.5 4.5V22M2.5 6H6m9 0h-4m0 12h2.5m7.5 0h-3.5" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 11v-1c0-.932 0-2.398-.152-2.765a2 2 0 0 0-1.083-1.083C19.398 6 18.932 6 18 6m3 5l1-1m-1 1l-1-1M3 13v1c0 .932 0 2.398.152 2.765a2 2 0 0 0 1.083 1.083C4.602 18 5.068 18 6 18m-3-5l-1 1m1-1l1 1" /></g></svg>
-                                                </div>
-                                                <p>50GB bandwidth limit per month <sup>2</sup></p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
@@ -364,7 +364,7 @@ export default component$(() => {
                                                 <div class="size-5 relative">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 10c0-1.414 0-2.121.44-2.56C7.878 7 8.585 7 10 7h4c1.414 0 2.121 0 2.56.44c.44.439.44 1.146.44 2.56v4c0 1.414 0 2.121-.44 2.56c-.439.44-1.146.44-2.56.44h-4c-1.414 0-2.121 0-2.56-.44C7 16.122 7 15.415 7 14z" /><path stroke-linecap="round" stroke-linejoin="round" d="M12.429 10L11 12h2l-1.429 2" /><path d="M4 12c0-3.771 0-5.657 1.172-6.828S8.229 4 12 4s5.657 0 6.828 1.172S20 8.229 20 12s0 5.657-1.172 6.828S15.771 20 12 20s-5.657 0-6.828-1.172S4 15.771 4 12Z" /><path stroke-linecap="round" d="M4 12H2m20 0h-2M4 9H2m20 0h-2M4 15H2m20 0h-2m-8 5v2m0-20v2M9 20v2M9 2v2m6 16v2m0-20v2" /></g></svg>
                                                 </div>
-                                                <p>Install on multiple rigs <sup>1</sup></p>
+                                                <p>Install on multiple rigs </p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
@@ -372,6 +372,14 @@ export default component$(() => {
                                                 <div class="size-5 relative">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M20.972 11.291a9 9 0 1 0-8.322 9.686M3.6 9h16.8M3.6 15h8.9" /><path d="M11.5 3a17 17 0 0 0 0 18m1-18a17 17 0 0 1 2.578 9.018m6.043 8.103a3 3 0 1 0-4.242 0Q17.506 20.749 19 22q1.577-1.335 2.121-1.879M19 18v.01" /></g></svg>                                                </div>
                                                 <p>Dedicated multi-region relays</p>
+                                            </div>
+                                        </div>
+                                        <div class="gap-2.5 flex relative items-center w-full" >
+                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
+                                                <div class="size-5 relative">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6c0-1.886 0-2.828.586-3.414S4.114 2 6 2h5c1.886 0 2.828 0 3.414.586S15 4.114 15 6s0 2.828-.586 3.414S12.886 10 11 10H6c-1.886 0-2.828 0-3.414-.586S2 7.886 2 6Zm8 12c0-1.886 0-2.828.586-3.414S12.114 14 14 14h3c1.886 0 2.828 0 3.414.586S21 16.114 21 18s0 2.828-.586 3.414S18.886 22 17 22h-3c-1.886 0-2.828 0-3.414-.586S10 19.886 10 18Z" /><path stroke-linecap="round" d="M6 2.5V10m7.5 4.5V22M11 2.5V10m6.5 4.5V22M2.5 6H6m9 0h-4m0 12h2.5m7.5 0h-3.5" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 11v-1c0-.932 0-2.398-.152-2.765a2 2 0 0 0-1.083-1.083C19.398 6 18.932 6 18 6m3 5l1-1m-1 1l-1-1M3 13v1c0 .932 0 2.398.152 2.765a2 2 0 0 0 1.083 1.083C4.602 18 5.068 18 6 18m-3-5l-1 1m1-1l1 1" /></g></svg>
+                                                </div>
+                                                <p>Unlimited bandwidth</p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
@@ -404,14 +412,6 @@ export default component$(() => {
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16.574 19.2l-3.938-3.938l-1.203 1.202c-1.23 1.232-1.846 1.847-2.508 1.702s-.963-.963-1.565-2.596l-2.007-5.45C4.152 6.861 3.55 5.232 4.39 4.392s2.47-.24 5.73.962l5.45 2.006c1.633.602 2.45.903 2.596 1.565s-.47 1.277-1.702 2.508l-1.202 1.203l3.938 3.938c.408.408.612.612.706.84c.125.303.125.643 0 .947c-.094.227-.298.431-.706.839s-.612.612-.84.706a1.24 1.24 0 0 1-.947 0c-.227-.094-.43-.298-.839-.706" /></svg>
                                                 </div>
                                                 <p>Advanced analytics <sup>1</sup></p>
-                                            </div>
-                                        </div>
-                                        <div class="gap-2.5 flex relative items-center w-full" >
-                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
-                                                <div class="size-5 relative">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 6c0-1.886 0-2.828.586-3.414S4.114 2 6 2h5c1.886 0 2.828 0 3.414.586S15 4.114 15 6s0 2.828-.586 3.414S12.886 10 11 10H6c-1.886 0-2.828 0-3.414-.586S2 7.886 2 6Zm8 12c0-1.886 0-2.828.586-3.414S12.114 14 14 14h3c1.886 0 2.828 0 3.414.586S21 16.114 21 18s0 2.828-.586 3.414S18.886 22 17 22h-3c-1.886 0-2.828 0-3.414-.586S10 19.886 10 18Z" /><path stroke-linecap="round" d="M6 2.5V10m7.5 4.5V22M11 2.5V10m6.5 4.5V22M2.5 6H6m9 0h-4m0 12h2.5m7.5 0h-3.5" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 11v-1c0-.932 0-2.398-.152-2.765a2 2 0 0 0-1.083-1.083C19.398 6 18.932 6 18 6m3 5l1-1m-1 1l-1-1M3 13v1c0 .932 0 2.398.152 2.765a2 2 0 0 0 1.083 1.083C4.602 18 5.068 18 6 18m-3-5l-1 1m1-1l1 1" /></g></svg>
-                                                </div>
-                                                <p>Unlimited bandwidth</p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
