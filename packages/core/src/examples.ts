@@ -9,7 +9,8 @@ export module Examples {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "DESKTOP-EUO8VSF",
         fingerprint: "fc27f428f9ca47d4b41b70889ae0c62090",
-        createdAt: '2025-01-04T11:56:23.902Z'
+        createdAt: '2025-01-04T11:56:23.902Z',
+        deletedAt: '2025-01-09T01:56:23.902Z'
     }
 
     export const Game = {
