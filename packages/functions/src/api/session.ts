@@ -42,7 +42,7 @@ export module SessionApi {
         },
       }),
       async (c) => {
-        assertActor("user")
+        // assertActor("user")
         const res = await Sessions.list();
         if (!res) return c.json({ error: "No gaming sessions found for this user" }, 404);
         return c.json({ data: res }, 200);
@@ -116,7 +116,7 @@ export module SessionApi {
         },
       }),
       async (c) => {
-        assertActor("user")
+        // assertActor("user")
         const res = await Sessions.getPublicActive();
         if (!res) return c.json({ error: "No publicly active gaming sessions found" }, 404);
         return c.json({ data: res }, 200);

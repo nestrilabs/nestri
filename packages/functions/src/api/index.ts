@@ -4,9 +4,9 @@ import { ZodError } from "zod";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
 import { SessionApi } from "./session";
-import { VisibleError } from "../error";
 import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
+import { VisibleError } from "@nestri/core/error";
 import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -17,8 +17,6 @@ const auth: MiddlewareHandler = async (c, next) => {
         clientID: "api",
         issuer: Resource.Urls.auth
     });
-
-    //FIXME: 
 
     const authHeader =
         c.req.query("authorization") ?? c.req.header("authorization");
@@ -85,7 +83,7 @@ const routes = app
     .route("/machines", MachineApi.route)
     .route("/sessions", SessionApi.route)
     .onError((error, c) => {
-        console.error(error);
+        console.warn(error);
         if (error instanceof VisibleError) {
             return c.json(
                 {

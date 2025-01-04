@@ -6,6 +6,7 @@ import { validator, resolver } from "hono-openapi/zod";
 import { Examples } from "@nestri/core/examples";
 import { Machines } from "@nestri/core/machine/index";
 import { assertActor } from "@nestri/core/actor";
+import { Resource } from "sst";
 export module MachineApi {
   export const route = new Hono()
     .get(
@@ -40,7 +41,6 @@ export module MachineApi {
         },
       }),
       async (c) => {
-        assertActor("user")
         const machines = await Machines.list();
         if (!machines) return c.json({ error: "No machines found for this user" }, 404);
         return c.json({ data: machines }, 200);
@@ -86,7 +86,6 @@ export module MachineApi {
         }),
       ),
       async (c) => {
-        assertActor("user")
         const params = c.req.valid("param");
         const machine = await Machines.fromFingerprint(params.fingerprint);
         if (!machine) return c.json({ error: "Machine not found" }, 404);
@@ -128,7 +127,6 @@ export module MachineApi {
         }),
       ),
       async (c) => {
-        assertActor("user")
         const params = c.req.valid("param")
         const machine = await Machines.fromFingerprint(params.fingerprint)
         if (!machine) return c.json({ error: "Machine not found" }, 404);
@@ -171,7 +169,6 @@ export module MachineApi {
         }),
       ),
       async (c) => {
-        assertActor("user")
         const params = c.req.valid("param");
         const res = await Machines.unLinkFromCurrentUser({ fingerprint: params.fingerprint })
         if (!res) return c.json({ error: "Machine not found for this user" }, 404);

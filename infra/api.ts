@@ -40,6 +40,10 @@ export const auth = new sst.cloudflare.Worker("Auth", {
 export const api = new sst.cloudflare.Worker("Api", {
     link: [
         urls,
+        authFingerprintKey,
+        secret.InstantAdminToken,
+        secret.InstantAppId,
+        secret.LoopsApiKey
     ],
     url: true,
     handler: "./packages/functions/src/api/index.ts",
