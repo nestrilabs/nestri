@@ -110,8 +110,83 @@ export module Sessions {
         return null
     }
 
+    export const getActive = async () => {
+        const user = useCurrentUser()
+        const db = databaseClient()
+
+        const query = {
+            $users: {
+                $: { where: { id: user.id } },
+                sessions: {
+                    $: {
+                        where: {
+                            endedAt: { $isNull: true }
+                        }
+                    }
+                }
+            },
+        }
+
+        const res = await db.query(query)
+
+        const sessions = res.$users[0]?.sessions
+        if (sessions && sessions.length > 0) {
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                    name: group[0].name
+                }))
+            )
+            return result
+        }
+        return null
+    }
+
+    export const getPublicActive = async () => {
+        const db = databaseClient()
+        useCurrentUser()
+
+        const query = {
+            sessions: {
+                $: {
+                    where: {
+                        endedAt: { $isNull: true },
+                        public: true
+                    }
+                }
+            }
+        }
+
+        const res = await db.query(query)
+
+        const sessions = res.sessions
+        if (sessions && sessions.length > 0) {
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                    name: group[0].name
+                }))
+            )
+            return result
+        }
+        return null
+    }
+
     export const fromID = fn(z.string(), async (id) => {
         const db = databaseClient()
+        useCurrentUser()
 
         const query = {
             sessions: {

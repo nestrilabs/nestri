@@ -80,7 +80,6 @@ app
     .use(auth);
 
 const routes = app
-    .get("/", (c) => c.text("Hello there 👋🏾"))
     .route("/machines", MachineApi.route)
     .route("/sessions", SessionApi.route)
     .onError((error, c) => {

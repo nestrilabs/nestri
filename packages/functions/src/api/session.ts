@@ -23,7 +23,7 @@ export module SessionApi {
                 schema: Result(
                   Sessions.Info.array().openapi({
                     description: "A list of gaming sessions associated with the user",
-                    example: [Examples.Session],
+                    example: [{ ...Examples.Session, public: false }],
                   }),
                 ),
               },
@@ -43,6 +43,78 @@ export module SessionApi {
       async (c) => {
         const res = await Sessions.list();
         if (!res) return c.json({ error: "No gaming sessions found for this user" }, 404);
+        return c.json({ data: res }, 200);
+      },
+    )
+    .get(
+      "/active",
+      describeRoute({
+        tags: ["Session"],
+        summary: "Retrieve all active gaming sessions",
+        description: "Returns a list of all active gaming sessions associated with the authenticated user",
+        responses: {
+          200: {
+            content: {
+              "application/json": {
+                schema: Result(
+                  Sessions.Info.array().openapi({
+                    description: "A list of active gaming sessions associated with the user",
+                    example: [{ ...Examples.Session, public: false, endedAt: undefined }],
+                  }),
+                ),
+              },
+            },
+            description: "Successfully retrieved the list of active gaming sessions",
+          },
+          404: {
+            content: {
+              "application/json": {
+                schema: resolver(z.object({ error: z.string() })),
+              },
+            },
+            description: "No active gaming sessions found for the authenticated user",
+          },
+        },
+      }),
+      async (c) => {
+        const res = await Sessions.getActive();
+        if (!res) return c.json({ error: "No active gaming sessions found for this user" }, 404);
+        return c.json({ data: res }, 200);
+      },
+    )
+    .get(
+      "/active/public",
+      describeRoute({
+        tags: ["Session"],
+        summary: "Retrieve all publicly active gaming sessions",
+        description: "Returns a list of all publicly active gaming sessions associated",
+        responses: {
+          200: {
+            content: {
+              "application/json": {
+                schema: Result(
+                  Sessions.Info.array().openapi({
+                    description: "A list of publicly active gaming sessions",
+                    example: [{ ...Examples.Session, public: true, endedAt: undefined }],
+                  }),
+                ),
+              },
+            },
+            description: "Successfully retrieved the list of all publicly active gaming sessions",
+          },
+          404: {
+            content: {
+              "application/json": {
+                schema: resolver(z.object({ error: z.string() })),
+              },
+            },
+            description: "No publicly active gaming sessions found",
+          },
+        },
+      }),
+      async (c) => {
+        const res = await Sessions.getPublicActive();
+        if (!res) return c.json({ error: "No publicly active gaming sessions found" }, 404);
         return c.json({ data: res }, 200);
       },
     )
