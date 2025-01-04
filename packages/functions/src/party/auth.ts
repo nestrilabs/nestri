@@ -50,18 +50,19 @@ export module AuthApi {
                 const env = c.env as any
                 const room = env.room as Party.Room
 
-                const connection = room.getConnection(param.connection)
-                if (!connection) {
-                    return c.json({ error: "This device does not exist." }, 404);
-                }
 
-                const authParams = getUrlParams(new URL(c.req.url))
-                const res = paramsObj.safeParse(authParams)
-                if (res.error) {
-                    return c.json({ error: "Expected url params are missing" })
-                }
+                // const connection = room.getConnection(param.connection)
+                // if (!connection) {
+                //     return c.json({ error: "This device does not exist." }, 404);
+                // }
 
-                connection.send(JSON.stringify({ ...authParams, type: "auth" }))
+                // const authParams = getUrlParams(new URL(c.req.url))
+                // const res = paramsObj.safeParse(authParams)
+                // if (res.error) {
+                //     return c.json({ error: "Expected url params are missing" })
+                // }
+
+                // connection.send(JSON.stringify({ ...authParams, type: "auth" }))
 
                 // FIXME:We just assume the authentication was successful, might wanna do some questioning in the future
                 return c.text("Device authenticated successfully")
