@@ -2,11 +2,12 @@ import { z } from "zod"
 import { fn } from "../utils";
 import { Common } from "../common";
 import { Examples } from "../examples";
-import databaseClient from "../database"
 import { useCurrentUser } from "../actor";
+import databaseClient from "../database"
 import { id as createID } from "@instantdb/admin";
-
-export module Machine {
+import { groupBy, map, pipe, values } from "remeda"
+import { Games } from "../game"
+export module Machines {
     export const Info = z
         .object({
             id: z.string().openapi({
@@ -14,63 +15,45 @@ export module Machine {
                 example: Examples.Machine.id,
             }),
             hostname: z.string().openapi({
-                description: "Hostname of the machine",
+                description: "The Linux hostname that identifies this machine",
                 example: Examples.Machine.hostname,
             }),
             fingerprint: z.string().openapi({
-                description: "The machine's fingerprint, derived from the machine's Linux machine ID.",
+                description: "A unique identifier derived from the machine's Linux machine ID.",
                 example: Examples.Machine.fingerprint,
             }),
-            location: z.string().openapi({
-                description: "The machine's approximate location; country and continent.",
-                example: Examples.Machine.location,
+            createdAt: z.string().or(z.number()).openapi({
+                description: "Represents a machine running on the Nestri network, containing its identifying information and metadata.",
+                example: Examples.Machine.createdAt,
             })
         })
         .openapi({
             ref: "Machine",
-            description: "A machine running on the Nestri network.",
+            description: "Represents a a physical or virtual machine connected to the Nestri network..",
             example: Examples.Machine,
         });
 
-    export const create = fn(z.object({
-        fingerprint: z.string(),
-        hostname: z.string(),
-        location: z.string()
-    }), async (input) => {
+    export type Info = z.infer<typeof Info>;
+
+    export const create = fn(Info.pick({ fingerprint: true, hostname: true }), async (input) => {
         const id = createID()
-        const now = new Date().getTime()
+        const now = new Date().toISOString()
         const db = databaseClient()
         await db.transact(
             db.tx.machines[id]!.update({
                 fingerprint: input.fingerprint,
                 hostname: input.hostname,
-                location: input.location,
                 createdAt: now,
+                //Just in case it had been previously deleted
+                deletedAt: undefined
             })
         )
 
         return id
     })
 
-    export const remove = fn(z.string(), async (id) => {
-        const now = new Date().getTime()
-        // const device = useCurrentDevice()
-        // const db = databaseClient()
-
-        // if (device.id) { // the machine can delete itself
-        //     await db.transact(db.tx.machines[device.id]!.update({ deletedAt: now }))
-        // } else {// the user can delete it manually
-        const user = useCurrentUser()
-        const db = databaseClient().asUser({ token: user.token })
-        await db.transact(db.tx.machines[id]!.update({ deletedAt: now }))
-        // }
-
-        return "ok"
-    })
-
     export const fromID = fn(z.string(), async (id) => {
-        const user = useCurrentUser()
-        const db = databaseClient().asUser({ token: user.token })
+        const db = databaseClient()
 
         const query = {
             machines: {
@@ -84,8 +67,53 @@ export module Machine {
         }
 
         const res = await db.query(query)
+        const machines = res.machines
 
-        return res.machines[0]
+        if (machines && machines.length > 0) {
+            const result = pipe(
+                machines,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    fingerprint: group[0].fingerprint,
+                    hostname: group[0].hostname,
+                    createdAt: group[0].createdAt
+                }))
+            )
+            return result
+        }
+
+        return null
+    })
+
+    export const installedGames = fn(z.string(), async (id) => {
+        const db = databaseClient()
+
+        const query = {
+            machines: {
+                $: {
+                    where: {
+                        id: id,
+                        deletedAt: { $isNull: true }
+                    }
+                },
+                games: {}
+            }
+        }
+
+        const res = await db.query(query)
+        const machines = res.machines
+
+        if (machines && machines.length > 0) {
+            const games = machines[0]?.games as any
+            if (games.length > 0) {
+                return games as Games.Info[]
+            }
+            return null
+        }
+
+        return null
     })
 
     export const fromFingerprint = fn(z.string(), async (input) => {
@@ -104,19 +132,38 @@ export module Machine {
 
         const res = await db.query(query)
 
-        return res.machines[0]
+        const machines = res.machines
+
+        if (machines.length > 0) {
+            const result = pipe(
+                machines,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    fingerprint: group[0].fingerprint,
+                    hostname: group[0].hostname,
+                    createdAt: group[0].createdAt
+                }))
+            )
+            return result[0]
+        }
+
+        return null
     })
 
     export const list = async () => {
         const user = useCurrentUser()
-        const db = databaseClient().asUser({ token: user.token })
+        const db = databaseClient()
 
         const query = {
             $users: {
                 $: { where: { id: user.id } },
                 machines: {
                     $: {
-                        deletedAt: { $isNull: true }
+                        where: {
+                            deletedAt: { $isNull: true }
+                        }
                     }
                 }
             },
@@ -124,17 +171,62 @@ export module Machine {
 
         const res = await db.query(query)
 
-        return res.$users[0]?.machines
+        const machines = res.$users[0]?.machines
+        if (machines && machines.length > 0) {
+            const result = pipe(
+                machines,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    fingerprint: group[0].fingerprint,
+                    hostname: group[0].hostname,
+                    createdAt: group[0].createdAt
+                }))
+            )
+            return result
+        }
+        return null
     }
 
-    export const link = fn(z.object({
-        machineId: z.string()
-    }), async (input) => {
+    export const linkToCurrentUser = fn(z.string(), async (id) => {
         const user = useCurrentUser()
         const db = databaseClient()
 
-        await db.transact(db.tx.machines[input.machineId]!.link({ owner: user.id }))
+        await db.transact(db.tx.machines[id]!.link({ owner: user.id }))
 
         return "ok"
     })
+
+    export const unLinkFromCurrentUser = fn(z.string(), async (id) => {
+        const user = useCurrentUser()
+        const db = databaseClient()
+        const now = new Date().toISOString()
+
+        const query = {
+            $users: {
+                $: { where: { id: user.id } },
+                machines: {
+                    $: {
+                        where: {
+                            id,
+                            deletedAt: { $isNull: true }
+                        }
+                    }
+                }
+            },
+        }
+
+        const res = await db.query(query)
+        const machines = res.$users[0]?.machines
+        if (machines && machines.length > 0) {
+            const machine = machines[0] as Info
+            await db.transact(db.tx.machines[machine.id]!.update({ deletedAt: now }))
+
+            return "ok"
+        }
+
+        return null
+    })
+
 }

@@ -1,11 +1,13 @@
 import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
+import { GameApi } from "./game";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
-import { VisibleError } from "../error";
+import { SessionApi } from "./session";
 import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
+import { VisibleError } from "@nestri/core/error";
 import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -79,10 +81,11 @@ app
     .use(auth);
 
 const routes = app
-    .get("/", (c) => c.text("Hello there 👋🏾"))
-    .route("/machine", MachineApi.route)
+    .route("/games", GameApi.route)
+    .route("/machines", MachineApi.route)
+    .route("/sessions", SessionApi.route)
     .onError((error, c) => {
-        console.error(error);
+        console.warn(error);
         if (error instanceof VisibleError) {
             return c.json(
                 {

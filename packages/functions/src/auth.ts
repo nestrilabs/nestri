@@ -13,7 +13,7 @@ import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
-import { Machine } from "@nestri/core/machine/index"
+import { Machines } from "@nestri/core/machine/index"
 
 interface Env {
     CloudflareAuthKV: KVNamespace
@@ -32,7 +32,7 @@ export type CodeAdapterState =
 
 export default {
     async fetch(request: CFRequest, env: Env, ctx: ExecutionContext) {
-        const location = `${request.cf.country},${request.cf.continent}`
+        // const location = `${request.cf.country},${request.cf.continent}`
         return authorizer({
             select: Select({
                 providers: {
@@ -105,20 +105,24 @@ export default {
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {
-                    let machineID = await Machine.fromFingerprint(value.fingerprint).then((x) => x?.id);
-
-                    if (!machineID) {
-                        machineID = await Machine.create({
+                    let exists = await Machines.fromFingerprint(value.fingerprint);
+                    if (!exists) {
+                        const machineID = await Machines.create({
                             fingerprint: value.fingerprint,
                             hostname: value.hostname,
-                            location,
                         });
-                    }
+
+                        return await ctx.subject("device", {
+                            id: machineID,
+                            fingerprint: value.fingerprint
+                        })
+                    } 
 
                     return await ctx.subject("device", {
-                        id: machineID,
+                        id: exists.id,
                         fingerprint: value.fingerprint
                     })
+                    
                 }
 
                 const email = value.email;

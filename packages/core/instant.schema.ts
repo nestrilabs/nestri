@@ -1,74 +1,53 @@
 import { i } from "@instantdb/core";
 
 const _schema = i.schema({
-  // This section lets you define entities: think `posts`, `comments`, etc
-  // Take a look at the docs to learn more:
-  // https://www.instantdb.com/docs/modeling-data#2-attributes
   entities: {
     $users: i.entity({
       email: i.string().unique().indexed(),
     }),
-    // This is here because the $users entity has no more than 1 property; email
-    // profiles: i.entity({
-    //   name: i.string(),
-    //   location: i.string(),
-    //   createdAt: i.date(),
-    //   deletedAt: i.date().optional()
-    // }),
     machines: i.entity({
       hostname: i.string(),
-      location: i.string(),
-      fingerprint: i.string().indexed(),
-      createdAt: i.date(),
-      deletedAt: i.date().optional().indexed()
+      fingerprint: i.string().unique().indexed(),
+      deletedAt: i.date().optional().indexed(),
+      createdAt: i.date()
     }),
-    // teams: i.entity({
-    //   name: i.string(),
-    //   type: i.string(), // "Personal" or "Family"
-    //   createdAt: i.date(),
-    //   deletedAt: i.date().optional()
-    // }),
-    // subscriptions: i.entity({
-    //   quantity: i.number(),
-    //   polarOrderID: i.string(),
-    //   frequency: i.string(),
-    //   next: i.date().optional(),
-    // }),
-    // productVariants: i.entity({
-    //   name: i.string(),
-    //   price: i.number()
-    // })
+    games: i.entity({
+      name: i.string(),
+      steamID: i.number().unique().indexed(),
+    }),
+    sessions: i.entity({
+      name: i.string(),
+      startedAt: i.date(),
+      endedAt: i.date().optional().indexed(),
+      public: i.boolean().indexed(),
+    }),
   },
-  // links: {
-    // userProfiles: {
-    //   forward: { on: 'profiles', has: 'one', label: 'owner' },
-    //   reverse: { on: '$users', has: 'one', label: 'profile' },
-    // },
-    // machineOwners: {
-    //   forward: { on: 'machines', has: 'one', label: 'owner' },
-    //   reverse: { on: '$users', has: 'many', label: 'machinesOwned' },
-    // },
-    // machineTeams: {
-    //   forward: { on: 'machines', has: 'one', label: 'team' },
-    //   reverse: { on: 'teams', has: 'many', label: 'machines' },
-    // },
-    // userTeams: {
-    //   forward: { on: 'teams', has: 'one', label: 'owner' },
-    //   reverse: { on: '$users', has: 'many', label: 'teamsOwned' },
-    // },
-    // teamMembers: {
-    //   forward: { on: 'teams', has: 'many', label: 'members' },
-    //   reverse: { on: '$users', has: 'many', label: 'teams' },
-    // },
-    // subscribedProduct: {
-    //   forward: { on: "subscriptions", has: "one", label: "productVariant" },
-    //   reverse: { on: "productVariants", has: "many", label: "subscriptions" }
-    // },
-    // subscribedUser: {
-    //   forward: { on: "subscriptions", has: "one", label: "owner" },
-    //   reverse: { on: "$users", has: "many", label: "subscriptions" }
-    // }
-  // }
+  links: {
+    UserMachines: {
+      forward: { on: "machines", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "machines" }
+    },
+    UserGames: {
+      forward: { on: "games", has: "many", label: "owners" },
+      reverse: { on: "$users", has: "many", label: "games" }
+    },
+    MachineSessions: {
+      forward: { on: "machines", has: "many", label: "sessions" },
+      reverse: { on: "sessions", has: "one", label: "machine" }
+    },
+    GamesMachines: {
+      forward: { on: "machines", has: "many", label: "games" },
+      reverse: { on: "games", has: "many", label: "machines" }
+    },
+    GameSessions: {
+      forward: { on: "games", has: "many", label: "sessions" },
+      reverse: { on: "sessions", has: "one", label: "game" }
+    },
+    UserSessions: {
+      forward: { on: "sessions", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "sessions" }
+    }
+  }
 });
 
 // This helps Typescript display nicer intellisense

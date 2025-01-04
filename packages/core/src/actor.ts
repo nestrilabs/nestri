@@ -49,6 +49,7 @@ export function useCurrentUser() {
       id:actor.properties.userID,
       token: actor.properties.accessToken
     };
+    
     throw new VisibleError(
         "auth",
         "unauthorized",

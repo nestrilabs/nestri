@@ -9,6 +9,7 @@
     "devDependencies": {
         "@tsconfig/node20": "^20.1.4",
         "loops": "^3.4.1",
+        "remeda": "^2.19.0",
         "ulid": "^2.3.0",
         "uuid": "^11.0.3",
         "zod": "^3.24.1",
