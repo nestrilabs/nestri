@@ -22,7 +22,7 @@ export module Examples {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         public: true,
         name: 'Late night chilling with the squad',
-        createdAt: '2025-01-04T11:56:23.902Z',
+        startedAt: '2025-01-04T11:56:23.902Z',
         endedAt: '2025-01-04T11:56:23.902Z'
     }
 }

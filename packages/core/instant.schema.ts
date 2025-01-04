@@ -17,7 +17,7 @@ const _schema = i.schema({
     }),
     sessions: i.entity({
       name: i.string(),
-      createdAt: i.date(),
+      startedAt: i.date(),
       endedAt: i.date().optional().indexed(),
       public: i.boolean().indexed(),
     }),

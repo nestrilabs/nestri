@@ -1,12 +1,15 @@
 import { z } from "zod"
 import { fn } from "../utils";
+import { Games } from "../game";
+import { Machines } from "../machine";
 import { Common } from "../common";
 import { Examples } from "../examples";
-import { useCurrentUser } from "../actor";
 import databaseClient from "../database"
+import { useCurrentUser } from "../actor";
+import { groupBy, map, pipe, values } from "remeda"
 import { id as createID } from "@instantdb/admin";
 
-export module Session {
+export module Sessions {
     export const Info = z
         .object({
             id: z.string().openapi({
@@ -21,13 +24,13 @@ export module Session {
                 description: "If true, the session is publicly viewable by all users. If false, only authorized users can access it",
                 example: Examples.Session.public,
             }),
-            endedAt: z.string().openapi({
+            endedAt: z.string().or(z.number()).or(z.undefined()).openapi({
                 description: "The timestamp indicating when this session was completed or terminated. Null if session is still active.",
                 example: Examples.Session.endedAt,
             }),
-            createdAt: z.string().openapi({
+            startedAt: z.string().or(z.number()).openapi({
                 description: "The timestamp indicating when this session started.",
-                example: Examples.Session.createdAt,
+                example: Examples.Session.startedAt,
             })
         })
         .openapi({
@@ -36,19 +39,109 @@ export module Session {
             example: Examples.Session,
         });
 
-    export const create = fn(Info.pick({ name: true, public: true }), async (input) => {
+    export type Info = z.infer<typeof Info>;
+
+    export const create = fn(z.object({ name: z.string(), public: z.boolean(), fingerprint: z.string(), steamID: z.number() }), async (input) => {
         const id = createID()
         const now = new Date().toISOString()
         const db = databaseClient()
         const user = useCurrentUser()
+        const machine = await Machines.fromFingerprint(input.fingerprint)
+        if (!machine) {
+            return { error: "Such a machine does not exist" }
+        }
+
+        const games = await Machines.installedGames(machine.id)
+
+        if (!games) {
+            return { error: "The machine has no installed games" }
+        }
+
+        const result = pipe(
+            games,
+            groupBy(x => x.steamID === input.steamID ? "similar" : undefined),
+        )
+
+        if (!result.similar || result.similar.length == 0) {
+
+            return { error: "The machine does not have this game installed" }
+        }
+
         await db.transact(
             db.tx.sessions[id]!.update({
                 name: input.name,
                 public: input.public,
-                createdAt: now,
-            }).link({ owner: user.id })
+                startedAt: now,
+            }).link({ owner: user.id, machine: machine.id, game: result.similar[0].id })
         )
 
-        return id
+        return { data: id }
+    })
+
+    export const list = async () => {
+        const user = useCurrentUser()
+        const db = databaseClient()
+
+        const query = {
+            $users: {
+                $: { where: { id: user.id } },
+                sessions: {}
+            },
+        }
+
+        const res = await db.query(query)
+
+        const sessions = res.$users[0]?.sessions
+        if (sessions && sessions.length > 0) {
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                    name: group[0].name
+                }))
+            )
+            return result
+        }
+        return null
+    }
+
+    export const fromID = fn(z.string(), async (id) => {
+        const db = databaseClient()
+
+        const query = {
+            sessions: {
+                $: {
+                    where: {
+                        id: id,
+                    }
+                }
+            }
+        }
+
+        const res = await db.query(query)
+        const sessions = res.sessions
+
+        if (sessions && sessions.length > 0) {
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                    name: group[0].name
+                }))
+            )
+            return result
+        }
+
+        return null
     })
 }

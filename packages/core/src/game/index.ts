@@ -4,8 +4,9 @@ import { Common } from "../common";
 import { Examples } from "../examples";
 import databaseClient from "../database"
 import { id as createID } from "@instantdb/admin";
+import { groupBy, map, pipe, values } from "remeda"
 
-export module Game {
+export module Games {
     export const Info = z
         .object({
             id: z.string().openapi({
@@ -26,6 +27,8 @@ export module Game {
             description: "Represents a Steam game that can be installed and played on a machine.",
             example: Examples.Game,
         });
+
+    export type Info = z.infer<typeof Info>;
 
     export const create = fn(Info.pick({ name: true, steamID: true }), async (input) => {
         const id = createID()

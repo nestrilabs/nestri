@@ -5,8 +5,9 @@ import { Examples } from "../examples";
 import { useCurrentUser } from "../actor";
 import databaseClient from "../database"
 import { id as createID } from "@instantdb/admin";
-import { groupBy, map, pick, pipe, values } from "remeda"
-export module Machine {
+import { groupBy, map, pipe, values } from "remeda"
+import { Games } from "../game"
+export module Machines {
     export const Info = z
         .object({
             id: z.string().openapi({
@@ -31,6 +32,8 @@ export module Machine {
             description: "Represents a a physical or virtual machine connected to the Nestri network..",
             example: Examples.Machine,
         });
+
+    export type Info = z.infer<typeof Info>;
 
     export const create = fn(Info.pick({ fingerprint: true, hostname: true }), async (input) => {
         const id = createID()
@@ -84,6 +87,35 @@ export module Machine {
         return null
     })
 
+    export const installedGames = fn(z.string(), async (id) => {
+        const db = databaseClient()
+
+        const query = {
+            machines: {
+                $: {
+                    where: {
+                        id: id,
+                        deletedAt: { $isNull: true }
+                    }
+                },
+                games: {}
+            }
+        }
+
+        const res = await db.query(query)
+        const machines = res.machines
+
+        if (machines && machines.length > 0) {
+            const games = machines[0]?.games as any
+            if (games.length > 0) {
+                return games as Games.Info[]
+            }
+            return null
+        }
+
+        return null
+    })
+
     export const fromFingerprint = fn(z.string(), async (input) => {
         const db = databaseClient()
 
@@ -120,11 +152,9 @@ export module Machine {
         return null
     })
 
-    export type Info = z.infer<typeof Info>;
-
     export const list = async () => {
         const user = useCurrentUser()
-        const db = databaseClient().asUser({ token: user.token })
+        const db = databaseClient()
 
         const query = {
             $users: {
