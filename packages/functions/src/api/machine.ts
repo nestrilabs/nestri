@@ -9,23 +9,24 @@ export module MachineApi {
   export const route = new Hono()
     .get(
       "/",
+      //FIXME: Add a way to filter through query params
       describeRoute({
         tags: ["Machine"],
-        summary: "List machines",
-        description: "List the current user's machines.",
+        summary: "Retrieve all machines",
+        description: "Returns a list of all machines registered to the authenticated user in the Nestri network",
         responses: {
           200: {
             content: {
               "application/json": {
                 schema: Result(
                   Machine.Info.array().openapi({
-                    description: "List of machines.",
+                    description: "A list of machines associated with the user",
                     example: [Examples.Machine],
                   }),
                 ),
               },
             },
-            description: "List of machines.",
+            description: "Successfully retrieved the list of machines",
           },
           404: {
             content: {
@@ -33,22 +34,22 @@ export module MachineApi {
                 schema: resolver(z.object({ error: z.string() })),
               },
             },
-            description: "This user has no machines.",
+            description: "No machines found for the authenticated user",
           },
         },
       }),
       async (c) => {
         const machines = await Machine.list();
-        if (!machines) return c.json({ error: "This user has no machines." }, 404);
+        if (!machines) return c.json({ error: "No machines found for this user" }, 404);
         return c.json({ data: machines }, 200);
       },
     )
     .get(
-      "/:id",
+      "/:fingerprint",
       describeRoute({
         tags: ["Machine"],
-        summary: "Get machine",
-        description: "Get the machine with the given ID.",
+        summary: "Retrieve machine by fingerprint",
+        description: "Fetches detailed information about a specific machine using its unique fingerprint derived from the Linux machine ID",
         responses: {
           404: {
             content: {
@@ -56,45 +57,45 @@ export module MachineApi {
                 schema: resolver(z.object({ error: z.string() })),
               },
             },
-            description: "Machine not found.",
+            description: "No machine found matching the provided fingerprint",
           },
           200: {
             content: {
               "application/json": {
                 schema: Result(
                   Machine.Info.openapi({
-                    description: "Machine.",
+                    description: "Detailed information about the requested machine",
                     example: Examples.Machine,
                   }),
                 ),
               },
             },
-            description: "Machine.",
+            description: "Successfully retrieved machine information",
           },
         },
       }),
       validator(
         "param",
         z.object({
-          id: z.string().openapi({
-            description: "ID of the machine to get.",
-            example: Examples.Machine.id,
+          fingerprint: Machine.Info.shape.fingerprint.openapi({
+            description: "The unique fingerprint used to identify the machine, derived from its Linux machine ID",
+            example: Examples.Machine.fingerprint,
           }),
         }),
       ),
       async (c) => {
-        const param = c.req.valid("param");
-        const machine = await Machine.fromID(param.id);
-        if (!machine) return c.json({ error: "Machine not found." }, 404);
+        const params = c.req.valid("param");
+        const machine = await Machine.fromFingerprint(params.fingerprint);
+        if (!machine) return c.json({ error: "Machine not found" }, 404);
         return c.json({ data: machine }, 200);
       },
     )
     .post(
-      "/:id",
+      "/:fingerprint",
       describeRoute({
         tags: ["Machine"],
-        summary: "Link a machine to a user",
-        description: "Link a machine to the owner.",
+        summary: "Register a machine to an owner",
+        description: "Associates a machine with the currently authenticated user's account, enabling them to manage and control the machine",
         responses: {
           200: {
             content: {
@@ -102,33 +103,41 @@ export module MachineApi {
                 schema: Result(z.literal("ok"))
               },
             },
-            description: "Machine was linked successfully.",
+            description: "Machine successfully registered to user's account",
+          },
+          404: {
+            content: {
+              "application/json": {
+                schema: resolver(z.object({ error: z.string() })),
+              },
+            },
+            description: "No machine found matching the provided fingerprint",
           },
         },
       }),
       validator(
         "param",
         z.object({
-          id: Machine.Info.shape.fingerprint.openapi({
-            description: "Fingerprint of the machine to link to.",
-            example: Examples.Machine.id,
+          fingerprint: Machine.Info.shape.fingerprint.openapi({
+            description: "The unique fingerprint of the machine to be registered, derived from its Linux machine ID",
+            example: Examples.Machine.fingerprint,
           }),
         }),
       ),
       async (c) => {
-        const request = c.req.valid("param")
-        const machine = await Machine.fromFingerprint(request.id)
-        if (!machine) return c.json({ error: "Machine not found." }, 404);
-        await Machine.link({machineId:machine.id })
-        return c.json({ data: "ok" as const }, 200);
+        const params = c.req.valid("param")
+        const machine = await Machine.fromFingerprint(params.fingerprint)
+        if (!machine) return c.json({ error: "Machine not found" }, 404);
+        const res = await Machine.linkToCurrentUser({ id: machine.id })
+        return c.json({ data: res }, 200);
       },
     )
     .delete(
-      "/:id",
+      "/:fingerprint",
       describeRoute({
         tags: ["Machine"],
-        summary: "Delete machine",
-        description: "Delete the machine with the given ID.",
+        summary: "Unregister machine from user",
+        description: "Removes the association between a machine and the authenticated user's account. This does not delete the machine itself, but removes the user's ability to manage it",
         responses: {
           200: {
             content: {
@@ -136,23 +145,32 @@ export module MachineApi {
                 schema: Result(z.literal("ok")),
               },
             },
-            description: "Machine was deleted successfully.",
+            description: "Machine successfully unregistered from user's account",
           },
-        },
+          404: {
+            content: {
+              "application/json": {
+                schema: resolver(z.object({ error: z.string() })),
+              },
+            },
+            description: "The machine with the specified fingerprint was not found",
+          },
+        }
       }),
       validator(
         "param",
         z.object({
-          id: Machine.Info.shape.id.openapi({
-            description: "ID of the machine to delete.",
-            example: Examples.Machine.id,
+          fingerprint: Machine.Info.shape.fingerprint.openapi({
+            description: "The unique fingerprint of the machine to be unregistered, derived from its Linux machine ID",
+            example: Examples.Machine.fingerprint,
           }),
         }),
       ),
       async (c) => {
-        const param = c.req.valid("param");
-        await Machine.remove(param.id);
-        return c.json({ data: "ok" as const }, 200);
+        const params = c.req.valid("param");
+        const res = await Machine.unLinkFromCurrentUser({ fingerprint: params.fingerprint })
+        if (!res) return c.json({ error: "Machine not found for this user" }, 404);
+        return c.json({ data: res }, 200);
       },
     );
 }

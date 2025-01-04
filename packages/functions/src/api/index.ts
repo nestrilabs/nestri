@@ -80,7 +80,7 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello there 👋🏾"))
-    .route("/machine", MachineApi.route)
+    .route("/machines", MachineApi.route)
     .onError((error, c) => {
         console.error(error);
         if (error instanceof VisibleError) {

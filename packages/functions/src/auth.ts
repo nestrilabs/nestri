@@ -105,19 +105,24 @@ export default {
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {
-                    let machineID = await Machine.fromFingerprint(value.fingerprint).then((x) => x?.id);
-
-                    if (!machineID) {
-                        machineID = await Machine.create({
+                    let exists = await Machine.fromFingerprint(value.fingerprint);
+                    if (!exists) {
+                        const machineID = await Machine.create({
                             fingerprint: value.fingerprint,
                             hostname: value.hostname,
                         });
-                    }
 
+                        return await ctx.subject("device", {
+                            id: machineID,
+                            fingerprint: value.fingerprint
+                        })
+                    } 
+                    
                     return await ctx.subject("device", {
-                        id: machineID,
+                        id: exists.id,
                         fingerprint: value.fingerprint
                     })
+                    
                 }
 
                 const email = value.email;
