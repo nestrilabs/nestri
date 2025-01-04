@@ -5,8 +5,6 @@ import { describeRoute } from "hono-openapi";
 import { validator, resolver } from "hono-openapi/zod";
 import { Examples } from "@nestri/core/examples";
 import { Machine } from "@nestri/core/machine/index";
-import { useCurrentUser } from "@nestri/core/actor";
-
 export module MachineApi {
   export const route = new Hono()
     .get(
