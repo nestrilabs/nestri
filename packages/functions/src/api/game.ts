@@ -5,6 +5,7 @@ import { describeRoute } from "hono-openapi";
 import { Games } from "@nestri/core/game/index";
 import { Examples } from "@nestri/core/examples";
 import { validator, resolver } from "hono-openapi/zod";
+import { Sessions } from "@nestri/core/session/index";
 
 export module GameApi {
     export const route = new Hono()
@@ -27,7 +28,7 @@ export module GameApi {
                                 ),
                             },
                         },
-                        description: "Successfully retrieved the list of games",
+                        description: "Successfully retrieved the user's library of games",
                     },
                     404: {
                         content: {
@@ -35,21 +36,21 @@ export module GameApi {
                                 schema: resolver(z.object({ error: z.string() })),
                             },
                         },
-                        description: "No games were found for the authenticated user",
+                        description: "No games were found in the authenticated user's library",
                     },
                 },
             }),
             async (c) => {
-                const machines = await Games.list();
-                if (!machines) return c.json({ error: "No games are owned by this user" }, 404);
-                return c.json({ data: machines }, 200);
+                const games = await Games.list();
+                if (!games) return c.json({ error: "No games exist in this user's library" }, 404);
+                return c.json({ data: games }, 200);
             },
         )
         .get(
             "/:steamID",
             describeRoute({
                 tags: ["Game"],
-                summary: "Retrieve machine by its Steam ID",
+                summary: "Retrieve game by its Steam ID",
                 description: "Fetches detailed metadata about a specific game using its Steam ID",
                 responses: {
                     404: {
@@ -137,7 +138,7 @@ export module GameApi {
             "/:steamID",
             describeRoute({
                 tags: ["Game"],
-                summary: "Remove game from library",
+                summary: "Remove game from user's library",
                 description: "Removes a game from the authenticated user's library. The game remains in the system but will no longer be accessible to the user",
                 responses: {
                     200: {
@@ -212,6 +213,52 @@ export module GameApi {
                 const res = await Games.create(params)
                 if (!res) return c.json({ error: "Something went seriously wrong" }, 404);
                 return c.json({ data: res }, 200);
+            },
+        )
+        .get(
+            "/:steamID/sessions",
+            describeRoute({
+                tags: ["Game"],
+                summary: "Retrieve game sessions by their Steam ID",
+                description: "Fetches active and public game sessions about a specific game using its Steam ID",
+                responses: {
+                    404: {
+                        content: {
+                            "application/json": {
+                                schema: resolver(z.object({ error: z.string() })),
+                            },
+                        },
+                        description: "No game sessions found matching  for the game with the provided Steam ID",
+                    },
+                    200: {
+                        content: {
+                            "application/json": {
+                                schema: Result(
+                                    Sessions.Info.openapi({
+                                        description: "Metadata about the requested game sessions",
+                                        example: Examples.Session,
+                                    }),
+                                ),
+                            },
+                        },
+                        description: "Successfully retrieved game sessions for this game",
+                    },
+                },
+            }),
+            validator(
+                "param",
+                z.object({
+                    steamID: Games.Info.shape.steamID.openapi({
+                        description: "The unique Steam ID used to identify a game",
+                        example: Examples.Game.steamID,
+                    }),
+                }),
+            ),
+            async (c) => {
+                const params = c.req.valid("param");
+                const game = await Sessions.fromSteamID(params.steamID);
+                if (!game) return c.json({ error: "Game not found" }, 404);
+                return c.json({ data: game }, 200);
             },
         );
 }

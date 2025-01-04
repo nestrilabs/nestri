@@ -183,6 +183,48 @@ export module Sessions {
         return null
     }
 
+    export const fromSteamID = fn(z.number(), async (steamID) => {
+        const db = databaseClient()
+
+        const query = {
+            games: {
+                $: {
+                    where: {
+                        steamID
+                    }
+                },
+                sessions: {
+                    $: {
+                        where: {
+                            endedAt: { $isNull: true },
+                            public: true
+                        }
+                    }
+                }
+            }
+        }
+
+        const res = await db.query(query)
+
+        const sessions = res.games[0]?.sessions
+        if (sessions && sessions.length > 0) {
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                    name: group[0].name
+                }))
+            )
+            return result
+        }
+        return null
+    })
+
     export const fromID = fn(z.string(), async (id) => {
         const db = databaseClient()
         useCurrentUser()
