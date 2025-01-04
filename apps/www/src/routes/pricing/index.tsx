@@ -31,17 +31,17 @@ const convertToCss = (value: any) => {
 const convertToPrice = (value: any) => {
     switch (value) {
         case 1:
-            return [1, 0]
-        case 2:
             return [1, 5]
-        case 3:
+        case 2:
             return [2, 0]
+        case 3:
+            return [2, 5]
         case 4:
             return [3, 5]
         case 5:
             return [5, 0]
         default:
-            return [2, 0];
+            return [2, 5];
     }
 }
 
@@ -183,17 +183,26 @@ export default component$(() => {
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16.574 19.2l-3.938-3.938l-1.203 1.202c-1.23 1.232-1.846 1.847-2.508 1.702s-.963-.963-1.565-2.596l-2.007-5.45C4.152 6.861 3.55 5.232 4.39 4.392s2.47-.24 5.73.962l5.45 2.006c1.633.602 2.45.903 2.596 1.565s-.47 1.277-1.702 2.508l-1.202 1.203l3.938 3.938c.408.408.612.612.706.84c.125.303.125.643 0 .947c-.094.227-.298.431-.706.839s-.612.612-.84.706a1.24 1.24 0 0 1-.947 0c-.227-.094-.43-.298-.839-.706" /></svg>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="m17 7.83l1.697 1.526c1.542 1.389 2.313 2.083 2.313 2.974c0 .89-.771 1.585-2.314 2.973L17 16.83M13.987 5L12 12.415l-1.987 7.415M7 7.83L5.304 9.356C3.76 10.745 2.99 11.44 2.99 12.33s.771 1.585 2.314 2.973L7 16.83" /></svg>
                                                 </div>
-                                                <p>Basic analytics <sup>1</sup></p>
+                                                <p>No API access </p>
+                                            </div>
+                                        </div>
+
+                                        <div class="gap-2.5 flex relative items-center w-full" >
+                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
+                                                <div class="size-5 relative">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="currentColor" d="M14.5 11.75q-.525 0-.888-.363t-.362-.887t.363-.888t.887-.362t.888.363t.362.887t-.363.888t-.887.362m-5 0q-.525 0-.888-.363T8.25 10.5t.363-.888t.887-.362t.888.363t.362.887t-.363.888t-.887.362M12 17q-1.5 0-2.713-.825T7.5 14h9q-.575 1.35-1.787 2.175T12 17m0 4q-1.875 0-3.512-.712t-2.85-1.925t-1.925-2.85T3 12t.713-3.512t1.924-2.85t2.85-1.925T12 3t3.513.713t2.85 1.924t1.925 2.85T21 12t-.712 3.513t-1.925 2.85t-2.85 1.925T12 21m0-2q2.9 0 4.95-2.05T19 12t-2.05-4.95T12 5h-.3q-.15 0-.3.05q-.15.15-.2.325t-.05.375q0 .525.362.888T12.4 7q.225 0 .413-.075t.387-.075q.3 0 .5.225t.2.525q0 .575-.538.738T12.4 8.5q-1.125 0-1.937-.812T9.65 5.75V5.6q0-.075.025-.2Q7.6 6.15 6.3 7.925T5 12q0 2.9 2.05 4.95T12 19m0-7" /></svg>
+                                                </div>
+                                                <p>No parental controls <sup>1</sup></p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="m17 7.83l1.697 1.526c1.542 1.389 2.313 2.083 2.313 2.974c0 .89-.771 1.585-2.314 2.973L17 16.83M13.987 5L12 12.415l-1.987 7.415M7 7.83L5.304 9.356C3.76 10.745 2.99 11.44 2.99 12.33s.771 1.585 2.314 2.973L7 16.83" /></svg>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16.574 19.2l-3.938-3.938l-1.203 1.202c-1.23 1.232-1.846 1.847-2.508 1.702s-.963-.963-1.565-2.596l-2.007-5.45C4.152 6.861 3.55 5.232 4.39 4.392s2.47-.24 5.73.962l5.45 2.006c1.633.602 2.45.903 2.596 1.565s-.47 1.277-1.702 2.508l-1.202 1.203l3.938 3.938c.408.408.612.612.706.84c.125.303.125.643 0 .947c-.094.227-.298.431-.706.839s-.612.612-.84.706a1.24 1.24 0 0 1-.947 0c-.227-.094-.43-.298-.839-.706" /></svg>
                                                 </div>
-                                                <p>Limited API access <sup>1</sup></p>
+                                                <p>Basic analytics <sup>1</sup></p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
@@ -376,17 +385,25 @@ export default component$(() => {
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16.574 19.2l-3.938-3.938l-1.203 1.202c-1.23 1.232-1.846 1.847-2.508 1.702s-.963-.963-1.565-2.596l-2.007-5.45C4.152 6.861 3.55 5.232 4.39 4.392s2.47-.24 5.73.962l5.45 2.006c1.633.602 2.45.903 2.596 1.565s-.47 1.277-1.702 2.508l-1.202 1.203l3.938 3.938c.408.408.612.612.706.84c.125.303.125.643 0 .947c-.094.227-.298.431-.706.839s-.612.612-.84.706a1.24 1.24 0 0 1-.947 0c-.227-.094-.43-.298-.839-.706" /></svg>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="m17 7.83l1.697 1.526c1.542 1.389 2.313 2.083 2.313 2.974c0 .89-.771 1.585-2.314 2.973L17 16.83M13.987 5L12 12.415l-1.987 7.415M7 7.83L5.304 9.356C3.76 10.745 2.99 11.44 2.99 12.33s.771 1.585 2.314 2.973L7 16.83" /></svg>
                                                 </div>
-                                                <p>Advanced analytics <sup>1</sup></p>
+                                                <p>API access </p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
                                             <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
                                                 <div class="size-5 relative">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="m17 7.83l1.697 1.526c1.542 1.389 2.313 2.083 2.313 2.974c0 .89-.771 1.585-2.314 2.973L17 16.83M13.987 5L12 12.415l-1.987 7.415M7 7.83L5.304 9.356C3.76 10.745 2.99 11.44 2.99 12.33s.771 1.585 2.314 2.973L7 16.83" /></svg>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="currentColor" d="M14.5 11.75q-.525 0-.888-.363t-.362-.887t.363-.888t.887-.362t.888.363t.362.887t-.363.888t-.887.362m-5 0q-.525 0-.888-.363T8.25 10.5t.363-.888t.887-.362t.888.363t.362.887t-.363.888t-.887.362M12 17q-1.5 0-2.713-.825T7.5 14h9q-.575 1.35-1.787 2.175T12 17m0 4q-1.875 0-3.512-.712t-2.85-1.925t-1.925-2.85T3 12t.713-3.512t1.924-2.85t2.85-1.925T12 3t3.513.713t2.85 1.924t1.925 2.85T21 12t-.712 3.513t-1.925 2.85t-2.85 1.925T12 21m0-2q2.9 0 4.95-2.05T19 12t-2.05-4.95T12 5h-.3q-.15 0-.3.05q-.15.15-.2.325t-.05.375q0 .525.362.888T12.4 7q.225 0 .413-.075t.387-.075q.3 0 .5.225t.2.525q0 .575-.538.738T12.4 8.5q-1.125 0-1.937-.812T9.65 5.75V5.6q0-.075.025-.2Q7.6 6.15 6.3 7.925T5 12q0 2.9 2.05 4.95T12 19m0-7" /></svg>
                                                 </div>
-                                                <p>Full API access <sup>1</sup></p>
+                                                <p>Parental controls <sup>1</sup></p>
+                                            </div>
+                                        </div>
+                                        <div class="gap-2.5 flex relative items-center w-full" >
+                                            <div class="gap-1.5 flex w-full items-center text-neutral-900/70 dark:text-neutral-100/70" >
+                                                <div class="size-5 relative">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-full h-full" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m16.574 19.2l-3.938-3.938l-1.203 1.202c-1.23 1.232-1.846 1.847-2.508 1.702s-.963-.963-1.565-2.596l-2.007-5.45C4.152 6.861 3.55 5.232 4.39 4.392s2.47-.24 5.73.962l5.45 2.006c1.633.602 2.45.903 2.596 1.565s-.47 1.277-1.702 2.508l-1.202 1.203l3.938 3.938c.408.408.612.612.706.84c.125.303.125.643 0 .947c-.094.227-.298.431-.706.839s-.612.612-.84.706a1.24 1.24 0 0 1-.947 0c-.227-.094-.43-.298-.839-.706" /></svg>
+                                                </div>
+                                                <p>Advanced analytics <sup>1</sup></p>
                                             </div>
                                         </div>
                                         <div class="gap-2.5 flex relative items-center w-full" >
