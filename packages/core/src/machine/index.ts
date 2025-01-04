@@ -14,37 +14,32 @@ export module Machine {
                 example: Examples.Machine.id,
             }),
             hostname: z.string().openapi({
-                description: "Hostname of the machine",
+                description: "The Linux hostname that identifies this machine",
                 example: Examples.Machine.hostname,
             }),
             fingerprint: z.string().openapi({
-                description: "The machine's fingerprint, derived from the machine's Linux machine ID.",
+                description: "A unique identifier derived from the machine's Linux machine ID.",
                 example: Examples.Machine.fingerprint,
             }),
-            location: z.string().openapi({
-                description: "The machine's approximate location; country and continent.",
-                example: Examples.Machine.location,
+            createdAt: z.string().openapi({
+                description: "Represents a machine running on the Nestri network, containing its identifying information and metadata.",
+                example: Examples.Machine.createdAt,
             })
         })
         .openapi({
             ref: "Machine",
-            description: "A machine running on the Nestri network.",
+            description: "Represents a a physical or virtual machine connected to the Nestri network..",
             example: Examples.Machine,
         });
 
-    export const create = fn(z.object({
-        fingerprint: z.string(),
-        hostname: z.string(),
-        location: z.string()
-    }), async (input) => {
+    export const create = fn(Info.pick({ fingerprint: true, hostname: true }), async (input) => {
         const id = createID()
-        const now = new Date().getTime()
+        const now = new Date().toISOString()
         const db = databaseClient()
         await db.transact(
             db.tx.machines[id]!.update({
                 fingerprint: input.fingerprint,
                 hostname: input.hostname,
-                location: input.location,
                 createdAt: now,
             })
         )
@@ -53,17 +48,10 @@ export module Machine {
     })
 
     export const remove = fn(z.string(), async (id) => {
-        const now = new Date().getTime()
-        // const device = useCurrentDevice()
-        // const db = databaseClient()
-
-        // if (device.id) { // the machine can delete itself
-        //     await db.transact(db.tx.machines[device.id]!.update({ deletedAt: now }))
-        // } else {// the user can delete it manually
+        const now = new Date().toISOString()
         const user = useCurrentUser()
         const db = databaseClient().asUser({ token: user.token })
         await db.transact(db.tx.machines[id]!.update({ deletedAt: now }))
-        // }
 
         return "ok"
     })

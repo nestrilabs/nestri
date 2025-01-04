@@ -32,7 +32,7 @@ export type CodeAdapterState =
 
 export default {
     async fetch(request: CFRequest, env: Env, ctx: ExecutionContext) {
-        const location = `${request.cf.country},${request.cf.continent}`
+        // const location = `${request.cf.country},${request.cf.continent}`
         return authorizer({
             select: Select({
                 providers: {
@@ -111,7 +111,6 @@ export default {
                         machineID = await Machine.create({
                             fingerprint: value.fingerprint,
                             hostname: value.hostname,
-                            location,
                         });
                     }
 
