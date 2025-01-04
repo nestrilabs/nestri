@@ -3,6 +3,7 @@ import { Resource } from "sst";
 import { ZodError } from "zod";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
+import { SessionApi } from "./session";
 import { VisibleError } from "../error";
 import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
@@ -81,6 +82,7 @@ app
 const routes = app
     .get("/", (c) => c.text("Hello there 👋🏾"))
     .route("/machines", MachineApi.route)
+    .route("/sessions", SessionApi.route)
     .onError((error, c) => {
         console.error(error);
         if (error instanceof VisibleError) {

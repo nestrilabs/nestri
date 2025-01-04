@@ -140,7 +140,7 @@ export module SessionApi {
       ),
       async (c) => {
         const params = c.req.valid("json")
-        //FIXME:
+        //FIXME:  
         const session = await Sessions.create(params)
         if (session.error) return c.json({ error: session.error }, 422);
         return c.json({ data: session.data }, 200);
@@ -150,8 +150,8 @@ export module SessionApi {
       "/:id",
       describeRoute({
         tags: ["Session"],
-        summary: "Unregister Session from user",
-        description: "Removes the association between a Session and the authenticated user's account. This does not delete the Session itself, but removes the user's ability to manage it",
+        summary: "Terminate a gaming session",
+        description: "This endpoint allows a user to terminate an active gaming session by providing the session's unique ID",
         responses: {
           200: {
             content: {
@@ -159,7 +159,7 @@ export module SessionApi {
                 schema: Result(z.literal("ok")),
               },
             },
-            description: "Session successfully unregistered from user's account",
+            description: "The session was successfully terminated.",
           },
           404: {
             content: {
@@ -167,7 +167,7 @@ export module SessionApi {
                 schema: resolver(z.object({ error: z.string() })),
               },
             },
-            description: "The Session with the specified fingerprint was not found",
+            description: "The session with the specified ID could not be found",
           },
         }
       }),
@@ -175,14 +175,14 @@ export module SessionApi {
         "param",
         z.object({
           id: Sessions.Info.shape.id.openapi({
-            description: "The unique fingerprint of the Session to be unregistered, derived from its Linux Session ID",
+            description: "The unique identifier of the gaming session to be terminated. ",
             example: Examples.Session.id,
           }),
         }),
       ),
       async (c) => {
         const params = c.req.valid("param");
-        const res = await Session.unLinkFromCurrentUser({ fingerprint: params.fingerprint })
+        const res = await Sessions.end(params.id)
         if (!res) return c.json({ error: "Session not found for this user" }, 404);
         return c.json({ data: res }, 200);
       },

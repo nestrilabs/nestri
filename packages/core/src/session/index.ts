@@ -144,4 +144,34 @@ export module Sessions {
 
         return null
     })
+
+    export const end = fn(z.string(), async (id) => {
+        const user = useCurrentUser()
+        const db = databaseClient()
+        const now = new Date().toISOString()
+
+        const query = {
+            $users: {
+                $: { where: { id: user.id } },
+                sessions: {
+                    $: {
+                        where: {
+                            id,
+                        }
+                    }
+                }
+            },
+        }
+
+        const res = await db.query(query)
+        const sessions = res.$users[0]?.sessions
+        if (sessions && sessions.length > 0) {
+            const session = sessions[0] as Info
+            await db.transact(db.tx.sessions[session.id]!.update({ endedAt: now }))
+
+            return "ok"
+        }
+
+        return null
+    })
 }
