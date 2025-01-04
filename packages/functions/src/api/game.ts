@@ -219,8 +219,8 @@ export module GameApi {
             "/:steamID/sessions",
             describeRoute({
                 tags: ["Game"],
-                summary: "Retrieve game sessions by their Steam ID",
-                description: "Fetches active and public game sessions about a specific game using its Steam ID",
+                summary: "Retrieve game sessions by the associated game's Steam ID",
+                description: "Fetches active and public game sessions associated with a specific game using its Steam ID",
                 responses: {
                     404: {
                         content: {
@@ -228,20 +228,20 @@ export module GameApi {
                                 schema: resolver(z.object({ error: z.string() })),
                             },
                         },
-                        description: "No game sessions found matching  for the game with the provided Steam ID",
+                        description: "This game does not have nay publicly active sessions",
                     },
                     200: {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Sessions.Info.openapi({
-                                        description: "Metadata about the requested game sessions",
-                                        example: Examples.Session,
+                                    Sessions.Info.array().openapi({
+                                        description: "Publicly active sessions associated with the game",
+                                        example: [Examples.Session],
                                     }),
                                 ),
                             },
                         },
-                        description: "Successfully retrieved game sessions for this game",
+                        description: "Successfully retrieved game sessions associated with this game",
                     },
                 },
             }),
@@ -256,9 +256,9 @@ export module GameApi {
             ),
             async (c) => {
                 const params = c.req.valid("param");
-                const game = await Sessions.fromSteamID(params.steamID);
-                if (!game) return c.json({ error: "Game not found" }, 404);
-                return c.json({ data: game }, 200);
+                const sessions = await Sessions.fromSteamID(params.steamID);
+                if (!sessions) return c.json({ error: "This game does not have any publicly active game sessions" }, 404);
+                return c.json({ data: sessions }, 200);
             },
         );
 }
