@@ -14,8 +14,8 @@ export module GameApi {
             //FIXME: Add a way to filter through query params
             describeRoute({
                 tags: ["Game"],
-                summary: "Retrieve all games",
-                description: "Returns a list of all (known) games owned by the authenticated user",
+                summary: "Retrieve all games in the user's library",
+                description: "Returns a list of all (known) games associated with the authenticated user",
                 responses: {
                     200: {
                         content: {
@@ -50,7 +50,7 @@ export module GameApi {
             "/:steamID",
             describeRoute({
                 tags: ["Game"],
-                summary: "Retrieve game by its Steam ID",
+                summary: "Retrieve a game by its Steam ID",
                 description: "Fetches detailed metadata about a specific game using its Steam ID",
                 responses: {
                     404: {
@@ -97,7 +97,7 @@ export module GameApi {
             describeRoute({
                 tags: ["Game"],
                 summary: "Add a game to the user's library using its Steam ID",
-                description: "Associates Adds a game to the currently authenticated user's library by linking it with its Steam ID. Once added, the user can play the game and share their progress with others",
+                description: "Adds a game to the currently authenticated user's library. Once added, the user can play the game and share their progress with others",
                 responses: {
                     200: {
                         content: {
@@ -121,7 +121,7 @@ export module GameApi {
                 "param",
                 z.object({
                     steamID: Games.Info.shape.steamID.openapi({
-                        description: "The unique Steam ID of the game to be link to the current user's library",
+                        description: "The unique Steam ID of the game to be added to the current user's library",
                         example: Examples.Game.steamID,
                     }),
                 }),
