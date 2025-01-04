@@ -13,7 +13,7 @@ import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
-import { Machine } from "@nestri/core/machine/index"
+import { Machines } from "@nestri/core/machine/index"
 
 interface Env {
     CloudflareAuthKV: KVNamespace
@@ -105,9 +105,9 @@ export default {
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {
-                    let exists = await Machine.fromFingerprint(value.fingerprint);
+                    let exists = await Machines.fromFingerprint(value.fingerprint);
                     if (!exists) {
-                        const machineID = await Machine.create({
+                        const machineID = await Machines.create({
                             fingerprint: value.fingerprint,
                             hostname: value.hostname,
                         });
@@ -117,7 +117,7 @@ export default {
                             fingerprint: value.fingerprint
                         })
                     } 
-                    
+
                     return await ctx.subject("device", {
                         id: exists.id,
                         fingerprint: value.fingerprint

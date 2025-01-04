@@ -4,7 +4,7 @@ import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { validator, resolver } from "hono-openapi/zod";
 import { Examples } from "@nestri/core/examples";
-import { Machine } from "@nestri/core/machine/index";
+import { Machines } from "@nestri/core/machine/index";
 export module MachineApi {
   export const route = new Hono()
     .get(
@@ -19,7 +19,7 @@ export module MachineApi {
             content: {
               "application/json": {
                 schema: Result(
-                  Machine.Info.array().openapi({
+                  Machines.Info.array().openapi({
                     description: "A list of machines associated with the user",
                     example: [Examples.Machine],
                   }),
@@ -39,7 +39,7 @@ export module MachineApi {
         },
       }),
       async (c) => {
-        const machines = await Machine.list();
+        const machines = await Machines.list();
         if (!machines) return c.json({ error: "No machines found for this user" }, 404);
         return c.json({ data: machines }, 200);
       },
@@ -63,7 +63,7 @@ export module MachineApi {
             content: {
               "application/json": {
                 schema: Result(
-                  Machine.Info.openapi({
+                  Machines.Info.openapi({
                     description: "Detailed information about the requested machine",
                     example: Examples.Machine,
                   }),
@@ -77,7 +77,7 @@ export module MachineApi {
       validator(
         "param",
         z.object({
-          fingerprint: Machine.Info.shape.fingerprint.openapi({
+          fingerprint: Machines.Info.shape.fingerprint.openapi({
             description: "The unique fingerprint used to identify the machine, derived from its Linux machine ID",
             example: Examples.Machine.fingerprint,
           }),
@@ -85,7 +85,7 @@ export module MachineApi {
       ),
       async (c) => {
         const params = c.req.valid("param");
-        const machine = await Machine.fromFingerprint(params.fingerprint);
+        const machine = await Machines.fromFingerprint(params.fingerprint);
         if (!machine) return c.json({ error: "Machine not found" }, 404);
         return c.json({ data: machine }, 200);
       },
@@ -118,7 +118,7 @@ export module MachineApi {
       validator(
         "param",
         z.object({
-          fingerprint: Machine.Info.shape.fingerprint.openapi({
+          fingerprint: Machines.Info.shape.fingerprint.openapi({
             description: "The unique fingerprint of the machine to be registered, derived from its Linux machine ID",
             example: Examples.Machine.fingerprint,
           }),
@@ -126,9 +126,9 @@ export module MachineApi {
       ),
       async (c) => {
         const params = c.req.valid("param")
-        const machine = await Machine.fromFingerprint(params.fingerprint)
+        const machine = await Machines.fromFingerprint(params.fingerprint)
         if (!machine) return c.json({ error: "Machine not found" }, 404);
-        const res = await Machine.linkToCurrentUser({ id: machine.id })
+        const res = await Machines.linkToCurrentUser({ id: machine.id })
         return c.json({ data: res }, 200);
       },
     )
@@ -160,7 +160,7 @@ export module MachineApi {
       validator(
         "param",
         z.object({
-          fingerprint: Machine.Info.shape.fingerprint.openapi({
+          fingerprint: Machines.Info.shape.fingerprint.openapi({
             description: "The unique fingerprint of the machine to be unregistered, derived from its Linux machine ID",
             example: Examples.Machine.fingerprint,
           }),
@@ -168,7 +168,7 @@ export module MachineApi {
       ),
       async (c) => {
         const params = c.req.valid("param");
-        const res = await Machine.unLinkFromCurrentUser({ fingerprint: params.fingerprint })
+        const res = await Machines.unLinkFromCurrentUser({ fingerprint: params.fingerprint })
         if (!res) return c.json({ error: "Machine not found for this user" }, 404);
         return c.json({ data: res }, 200);
       },
