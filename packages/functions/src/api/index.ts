@@ -18,6 +18,8 @@ const auth: MiddlewareHandler = async (c, next) => {
         issuer: Resource.Urls.auth
     });
 
+    //FIXME: 
+
     const authHeader =
         c.req.query("authorization") ?? c.req.header("authorization");
     if (authHeader) {

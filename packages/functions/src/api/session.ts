@@ -7,6 +7,7 @@ import { Examples } from "@nestri/core/examples";
 import { validator, resolver } from "hono-openapi/zod";
 import { Sessions } from "@nestri/core/session/index";
 import { Machines } from "@nestri/core/machine/index";
+import { assertActor } from "@nestri/core/actor";
 export module SessionApi {
   export const route = new Hono()
     .get(
@@ -41,6 +42,7 @@ export module SessionApi {
         },
       }),
       async (c) => {
+        assertActor("user")
         const res = await Sessions.list();
         if (!res) return c.json({ error: "No gaming sessions found for this user" }, 404);
         return c.json({ data: res }, 200);
@@ -77,6 +79,7 @@ export module SessionApi {
         },
       }),
       async (c) => {
+        assertActor("user")
         const res = await Sessions.getActive();
         if (!res) return c.json({ error: "No active gaming sessions found for this user" }, 404);
         return c.json({ data: res }, 200);
@@ -113,6 +116,7 @@ export module SessionApi {
         },
       }),
       async (c) => {
+        assertActor("user")
         const res = await Sessions.getPublicActive();
         if (!res) return c.json({ error: "No publicly active gaming sessions found" }, 404);
         return c.json({ data: res }, 200);
@@ -158,6 +162,7 @@ export module SessionApi {
         }),
       ),
       async (c) => {
+        assertActor("user")
         const params = c.req.valid("param");
         const res = await Sessions.fromID(params.id);
         if (!res) return c.json({ error: "Session not found" }, 404);
@@ -211,6 +216,7 @@ export module SessionApi {
         }),
       ),
       async (c) => {
+        assertActor("user")
         const params = c.req.valid("json")
         //FIXME:  
         const session = await Sessions.create(params)
@@ -253,6 +259,7 @@ export module SessionApi {
         }),
       ),
       async (c) => {
+        assertActor("user")
         const params = c.req.valid("param");
         const res = await Sessions.end(params.id)
         if (!res) return c.json({ error: "Session not found for this user" }, 404);
