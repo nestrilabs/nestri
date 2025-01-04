@@ -150,7 +150,6 @@ export module Sessions {
 
     export const getPublicActive = async () => {
         const db = databaseClient()
-        useCurrentUser()
 
         const query = {
             sessions: {

@@ -24,12 +24,12 @@ const _schema = i.schema({
   },
   links: {
     UserMachines: {
-      forward: { on: "$users", has: "many", label: "machines" },
-      reverse: { on: "machines", has: "one", label: "owner" }
+      forward: { on: "machines", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "machines" }
     },
     UserGames:{
-      forward: { on: "$users", has: "many", label: "games" },
-      reverse: { on: "games", has: "many", label: "owners" }
+      forward: { on: "games", has: "many", label: "owners" },
+      reverse: { on: "$users", has: "many", label: "games" }
     },
     MachineSessions: {
       forward: { on: "machines", has: "many", label: "sessions" },
@@ -40,8 +40,8 @@ const _schema = i.schema({
       reverse: { on: "sessions", has: "one", label: "game" }
     },
     UserSessions: {
-      forward: { on: "$users", has: "many", label: "sessions" },
-      reverse: { on: "sessions", has: "one", label: "owner" }
+      forward: { on: "sessions", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "sessions" }
     }
   }
 });
