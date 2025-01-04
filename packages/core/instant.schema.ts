@@ -27,13 +27,17 @@ const _schema = i.schema({
       forward: { on: "machines", has: "one", label: "owner" },
       reverse: { on: "$users", has: "many", label: "machines" }
     },
-    UserGames:{
+    UserGames: {
       forward: { on: "games", has: "many", label: "owners" },
       reverse: { on: "$users", has: "many", label: "games" }
     },
     MachineSessions: {
       forward: { on: "machines", has: "many", label: "sessions" },
       reverse: { on: "sessions", has: "one", label: "machine" }
+    },
+    GamesMachines: {
+      forward: { on: "machines", has: "many", label: "games" },
+      reverse: { on: "games", has: "many", label: "machines" }
     },
     GameSessions: {
       forward: { on: "games", has: "many", label: "sessions" },

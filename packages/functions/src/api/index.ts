@@ -1,6 +1,7 @@
 import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
+import { GameApi } from "./game";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
 import { SessionApi } from "./session";
@@ -80,6 +81,7 @@ app
     .use(auth);
 
 const routes = app
+    .route("/games", GameApi.route)
     .route("/machines", MachineApi.route)
     .route("/sessions", SessionApi.route)
     .onError((error, c) => {

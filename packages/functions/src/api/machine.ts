@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { Result } from "../common";
 import { Hono } from "hono";
+import { Result } from "../common";
 import { describeRoute } from "hono-openapi";
-import { validator, resolver } from "hono-openapi/zod";
 import { Examples } from "@nestri/core/examples";
+import { validator, resolver } from "hono-openapi/zod";
 import { Machines } from "@nestri/core/machine/index";
 export module MachineApi {
   export const route = new Hono()
@@ -128,7 +128,7 @@ export module MachineApi {
         const params = c.req.valid("param")
         const machine = await Machines.fromFingerprint(params.fingerprint)
         if (!machine) return c.json({ error: "Machine not found" }, 404);
-        const res = await Machines.linkToCurrentUser({ id: machine.id })
+        const res = await Machines.linkToCurrentUser(machine.id)
         return c.json({ data: res }, 200);
       },
     )
@@ -168,7 +168,7 @@ export module MachineApi {
       ),
       async (c) => {
         const params = c.req.valid("param");
-        const res = await Machines.unLinkFromCurrentUser({ fingerprint: params.fingerprint })
+        const res = await Machines.unLinkFromCurrentUser(params.fingerprint)
         if (!res) return c.json({ error: "Machine not found for this user" }, 404);
         return c.json({ data: res }, 200);
       },

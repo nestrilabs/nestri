@@ -189,20 +189,16 @@ export module Machines {
         return null
     }
 
-    export const linkToCurrentUser = fn(z.object({
-        id: z.string()
-    }), async (input) => {
+    export const linkToCurrentUser = fn(z.string(), async (id) => {
         const user = useCurrentUser()
         const db = databaseClient()
 
-        await db.transact(db.tx.machines[input.id]!.link({ owner: user.id }))
+        await db.transact(db.tx.machines[id]!.link({ owner: user.id }))
 
         return "ok"
     })
 
-    export const unLinkFromCurrentUser = fn(z.object({
-        fingerprint: z.string()
-    }), async (input) => {
+    export const unLinkFromCurrentUser = fn(z.string(), async (id) => {
         const user = useCurrentUser()
         const db = databaseClient()
         const now = new Date().toISOString()
@@ -213,7 +209,7 @@ export module Machines {
                 machines: {
                     $: {
                         where: {
-                            id: input.fingerprint,
+                            id,
                             deletedAt: { $isNull: true }
                         }
                     }
@@ -232,4 +228,5 @@ export module Machines {
 
         return null
     })
+
 }
