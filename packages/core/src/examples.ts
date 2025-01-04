@@ -7,16 +7,21 @@ export module Examples {
 
     export const Location = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
-        name: 'KE',
+        country: 'KE',
         continent: 'AF',
-        approximateLatitude: '-1.28410',
-        approximateLongitude: '36.81550',
         timeZone: 'Africa/Nairobi'
+    }
+
+    export const Status = {
+        id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
+        name: 'initializing', //'running'|'idle'|'terminated'|'error'
+        description: 'The machine is initializing and preparing the game for you to play'
     }
 
     export const Machine = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "desktopeuo8vsf",
+        status: Status,
         fingerprint: "fc27f428f9ca47d4b41b70889ae0c62090",
         location: Location
     }
@@ -75,8 +80,9 @@ export module Examples {
         game: Game,
         url: '/play/0bfcb712',
         public: true,
-        status: 'initializing', //'running'|'idle'|'terminated'|'error'
+        status: Status,
         resolution: '1080x1920',
         framerate: 60,
+        machine: Machine,
     }
 }
