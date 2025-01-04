@@ -23,7 +23,7 @@ export module Game {
         })
         .openapi({
             ref: "Game",
-            description: "Represents a Steam game that can be installed and played through the system.",
+            description: "Represents a Steam game that can be installed and played on a machine.",
             example: Examples.Game,
         });
 
