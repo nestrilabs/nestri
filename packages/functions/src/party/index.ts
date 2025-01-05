@@ -7,7 +7,13 @@ export default class Server implements Party.Server {
 
   onRequest(req: Party.Request): Response | Promise<Response> {
     try {
-      const authHeader = req.headers.get("authorization")
+      const docs = new URL(req.url).toString().endsWith("/doc")
+
+      if(docs){
+        return app.fetch(req as any, { room: this.room })
+      }
+
+      const authHeader = req.headers.get("authorization") ?? new URL(req.url).searchParams.get("authorization")
       if (authHeader) {
         const match = authHeader.match(/^Bearer (.+)$/);
         
