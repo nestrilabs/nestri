@@ -83,10 +83,10 @@ func (p *Party) Connect() {
 				defer conn.Close()
 
 				// Send initial message
-				if err := conn.WriteMessage(websocket.TextMessage, []byte("hello there")); err != nil {
-					log.Error("Failed to send initial message", "err", err)
-					return
-				}
+				// if err := conn.WriteMessage(websocket.TextMessage, []byte("hello there")); err != nil {
+				// 	log.Error("Failed to send initial message", "err", err)
+				// 	return
+				// }
 
 				// Read messages loop
 				for {
