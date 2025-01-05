@@ -101,7 +101,7 @@ export default {
                 const hostname = url.hostname;
                 if (hostname.endsWith("nestri.io")) return true;
                 if (hostname === "localhost") return true;
-                return true;
+                return false;
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {

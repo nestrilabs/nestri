@@ -1,63 +1,50 @@
 import app from "./hono"
 import type * as Party from "partykit/server";
+import { tryAuthentication } from "./utils";
 
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) { }
 
+  static async onBeforeRequest(req: Party.Request, lobby: Party.Lobby) {
+    const docs = new URL(req.url).toString().endsWith("/doc")
+    if (docs) {
+      return req
+    }
 
-  onRequest(req: Party.Request): Response | Promise<Response> {
     try {
-      const docs = new URL(req.url).toString().endsWith("/doc")
-
-      if(docs){
-        return app.fetch(req as any, { room: this.room })
-      }
-
-      const authHeader = req.headers.get("authorization") ?? new URL(req.url).searchParams.get("authorization")
-      if (authHeader) {
-        const match = authHeader.match(/^Bearer (.+)$/);
-        
-        if (!match || !match[1]) {
-          throw new Error("Bearer token not found or improperly formatted");
-        }
-
-        const bearerToken = match[1];
-
-        if (bearerToken !== this.room.env.AUTH_FINGERPRINT) {
-          throw new Error("Invalid authorization token");
-        }
-
-        return app.fetch(req as any, { room: this.room })
-      }
-      throw new Error("You are not authorized to be here")
+      return await tryAuthentication(req, lobby)
     } catch (e: any) {
       // authentication failed!
       return new Response(e, { status: 401 });
     }
-
   }
 
-  getConnectionTags(
-    conn: Party.Connection,
-    ctx: Party.ConnectionContext
-  ) {
-
-    return [conn.id]
+  static async onBeforeConnect(request: Party.Request, lobby: Party.Lobby) {
+    try {
+      return await tryAuthentication(request, lobby)
+    } catch (e: any) {
+      // authentication failed!
+      return new Response(e, { status: 401 });
+    }
   }
 
-  onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-    // A websocket just connected!
+  onRequest(req: Party.Request): Response | Promise<Response> {
+
+    return app.fetch(req as any, { room: this.room })
+  }
+
+  getConnectionTags(conn: Party.Connection, ctx: Party.ConnectionContext) {
+
+    return [conn.id, ctx.request.cf?.country as any]
+  }
+
+  onConnect(conn: Party.Connection, ctx: Party.ConnectionContext): void | Promise<void> {
     this.getConnectionTags(conn, ctx)
 
-    console.log(
-      `Connected:
-  id: ${conn.id}
-  room: ${this.room.id}
-  url: ${new URL(ctx.request.url).pathname}`
-    );
+    console.log(`Connected,id: ${conn.id},room: ${this.room.id},url: ${new URL(ctx.request.url).pathname}`);
 
     // let's send a message to the connection
-    // conn.send("hello from server");
+    conn.send("hello from server");
   }
 
   onMessage(message: string, sender: Party.Connection) {

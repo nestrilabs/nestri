@@ -42,7 +42,7 @@ app.get(
         title: "Nestri Realtime API",
         description:
           "The Nestri realtime API gives you the power to connect to your remote machine and relays from a single station",
-        version: "0.0.1",
+        version: "0.3.0",
       },
       components: {
         securitySchemes: {
