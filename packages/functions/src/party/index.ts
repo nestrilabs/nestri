@@ -39,12 +39,9 @@ export default class Server implements Party.Server {
   }
 
   onConnect(conn: Party.Connection, ctx: Party.ConnectionContext): void | Promise<void> {
-    this.getConnectionTags(conn, ctx)
-
     console.log(`Connected:, id:${conn.id}, room: ${this.room.id}, url: ${new URL(ctx.request.url).pathname}`);
-
-    // let's send a message to the connection
-    // conn.send("hello from server");
+    
+    this.getConnectionTags(conn, ctx)
   }
 
   onMessage(message: string, sender: Party.Connection) {
