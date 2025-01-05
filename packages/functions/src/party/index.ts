@@ -1,22 +1,42 @@
-import type * as Party from "partykit/server";
 import app from "./hono"
+import type * as Party from "partykit/server";
+
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) { }
 
-  onRequest(request: Party.Request): Response | Promise<Response> {
 
-    return app.fetch(request as any, { room: this.room })
+  onRequest(req: Party.Request): Response | Promise<Response> {
+    try {
+      const authHeader = req.headers.get("authorization")
+      if (authHeader) {
+        const match = authHeader.match(/^Bearer (.+)$/);
+        
+        if (!match || !match[1]) {
+          throw new Error("Bearer token not found or improperly formatted");
+        }
+
+        const bearerToken = match[1];
+
+        if (bearerToken !== this.room.env.AUTH_FINGERPRINT) {
+          throw new Error("Invalid authorization token");
+        }
+
+        return app.fetch(req as any, { room: this.room })
+      }
+      throw new Error("You are not authorized to be here")
+    } catch (e: any) {
+      // authentication failed!
+      return new Response(e, { status: 401 });
+    }
+
   }
 
   getConnectionTags(
     conn: Party.Connection,
     ctx: Party.ConnectionContext
   ) {
-    console.log("Tagging", conn.id)
-    // const country = (ctx.request.cf?.country as string) ?? "unknown";
-    // return [country];
+
     return [conn.id]
-    // return ["AF"]
   }
 
   onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
