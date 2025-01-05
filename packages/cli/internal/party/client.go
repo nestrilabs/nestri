@@ -3,6 +3,8 @@ package party
 import (
 	"fmt"
 	"nestrilabs/cli/internal/machine"
+	"nestrilabs/cli/internal/resource"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -48,6 +50,9 @@ func (p *Party) Connect() {
 	wsURL := baseURL + "?" + params.Encode()
 
 	retryDelay := initialRetryDelay
+	header := http.Header{}
+	bearer := fmt.Sprintf("Bearer %s", resource.Resource.AuthFingerprintKey.Value)
+	header.Add("Authorization", bearer)
 
 	for {
 		select {
@@ -55,7 +60,7 @@ func (p *Party) Connect() {
 			log.Info("Shutting down connection")
 			return
 		default:
-			conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+			conn, _, err := websocket.DefaultDialer.Dial(wsURL, header)
 			if err != nil {
 				log.Error("Failed to connect to party server", "err", err)
 				time.Sleep(retryDelay)
@@ -66,6 +71,7 @@ func (p *Party) Connect() {
 				}
 				continue
 			}
+			log.Info("Connection to server", "url", wsURL)
 
 			// Reset retry delay on successful connection
 			retryDelay = initialRetryDelay
@@ -77,10 +83,10 @@ func (p *Party) Connect() {
 				defer conn.Close()
 
 				// Send initial message
-				if err := conn.WriteMessage(websocket.TextMessage, []byte("hello there")); err != nil {
-					log.Error("Failed to send initial message", "err", err)
-					return
-				}
+				// if err := conn.WriteMessage(websocket.TextMessage, []byte("hello there")); err != nil {
+				// 	log.Error("Failed to send initial message", "err", err)
+				// 	return
+				// }
 
 				// Read messages loop
 				for {

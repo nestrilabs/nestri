@@ -133,7 +133,7 @@ app.get(
                 title: "Nestri API",
                 description:
                     "The Nestri API gives you the power to run your own customized cloud gaming platform.",
-                version: "0.0.3",
+                version: "0.3.0",
             },
             components: {
                 securitySchemes: {

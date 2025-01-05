@@ -1,37 +1,47 @@
-import type * as Party from "partykit/server";
 import app from "./hono"
+import type * as Party from "partykit/server";
+import { tryAuthentication } from "./utils";
+
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) { }
 
-  onRequest(request: Party.Request): Response | Promise<Response> {
+  static async onBeforeRequest(req: Party.Request, lobby: Party.Lobby) {
+    const docs = new URL(req.url).toString().endsWith("/doc")
+    if (docs) {
+      return req
+    }
 
-    return app.fetch(request as any, { room: this.room })
+    try {
+      return await tryAuthentication(req, lobby)
+    } catch (e: any) {
+      // authentication failed!
+      return new Response(e, { status: 401 });
+    }
   }
 
-  getConnectionTags(
-    conn: Party.Connection,
-    ctx: Party.ConnectionContext
-  ) {
-    console.log("Tagging", conn.id)
-    // const country = (ctx.request.cf?.country as string) ?? "unknown";
-    // return [country];
-    return [conn.id]
-    // return ["AF"]
+  static async onBeforeConnect(request: Party.Request, lobby: Party.Lobby) {
+    try {
+      return await tryAuthentication(request, lobby)
+    } catch (e: any) {
+      // authentication failed!
+      return new Response(e, { status: 401 });
+    }
   }
 
-  onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-    // A websocket just connected!
+  onRequest(req: Party.Request): Response | Promise<Response> {
+
+    return app.fetch(req as any, { room: this.room })
+  }
+
+  getConnectionTags(conn: Party.Connection, ctx: Party.ConnectionContext) {
+
+    return [conn.id, ctx.request.cf?.country as any]
+  }
+
+  onConnect(conn: Party.Connection, ctx: Party.ConnectionContext): void | Promise<void> {
+    console.log(`Connected:, id:${conn.id}, room: ${this.room.id}, url: ${new URL(ctx.request.url).pathname}`);
+    
     this.getConnectionTags(conn, ctx)
-
-    console.log(
-      `Connected:
-  id: ${conn.id}
-  room: ${this.room.id}
-  url: ${new URL(ctx.request.url).pathname}`
-    );
-
-    // let's send a message to the connection
-    // conn.send("hello from server");
   }
 
   onMessage(message: string, sender: Party.Connection) {
