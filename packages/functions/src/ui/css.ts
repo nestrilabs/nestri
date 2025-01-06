@@ -43,24 +43,70 @@ export function css() {
   --font-size-2xl: calc(1.5rem * var(--font-scale));
 }
 
+html, html * {
+ margin: 0;
+ padding: 0;
+}
+
 [data-component="root"] {
   font-family: var(--font-family);
   background-color: var(--color-background);
-  padding: 1rem;
+  padding: 1rem 1rem 0;
   color: white;
-  position: absolute;
-  inset: 0;
+  position: relative;
+  height: 100%;
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
   flex-direction: column;
   user-select: none;
   color: var(--color-high);
 }
 
+[data-component="header-container"] {
+    width: 100%;
+    height: 64px;
+    border-bottom: 1px solid transparent;
+    position: -webkit-sticky;
+    position: sticky;
+    top: -1px;
+    position: relative;
+    z-index: 10;
+    transition-property: border-color, box-shadow;
+    background-clip: padding-box;
+    padding-left: 24px;
+    padding-right: 24px;
+    display:flex;
+    align-items: center;
+    justify-content: space-between
+ }
+
+ [data-component="logo-footer"] {
+    margin:0;
+    font-size: 100%;
+    max-width: 1440px;
+    width: 100%;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 8px;
+    z-index: 10;
+    overflow: hidden;
+
+    & > svg {
+        width: 100%;
+        height: 100%;
+        transform: translateY(40%);
+        opacity: 70%;
+    }
+ }
+
 [data-component="center"] {
-  width: 380px;
+  max-width: 380px;
+  width: 100%;
   display: flex;
+  padding: 80px 0;
   flex-direction: column;
   gap: 1rem;
 
@@ -82,8 +128,7 @@ export function css() {
 }
 
 [data-component="logo"] {
-  margin: 0 auto;
-  height: 2.5rem;
+  height: 20px;
   width: auto;
   display: none;
 
@@ -108,7 +153,6 @@ export function css() {
   border: 1px solid transparent;
   --background: oklch(
     from var(--color-background) calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h
-
   );
   background: var(--background);
   border-color: #343434;
@@ -121,20 +165,36 @@ export function css() {
     box-shadow: 0 0 0 2px #161616,0 0 0 4px #707070
   }
 
-  &:user-invalid:focus {
-    box-shadow: 0 0 0 2px #161616,0 0 0 4px  #ff6369
+ &:user-invalid:focus {
+    box-shadow: 0 0 0 2px #161616,0 0 0 4px  #ff6369;
   }
 
   &:user-invalid:not(:focus) {
-    outline: none;
     border-color: #ff6369;
+  }
+
+  @media (prefers-color-scheme: light) {
+    border-color: #e2e2e2;
+    color: #171717;
+    
+    &:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px #fcfcfc,0 0 0 4px #8f8f8f;
+     }
+
+    &:user-invalid:focus {
+        box-shadow: 0 0 0 2px #fcfcfc, 0 0 0 4px  #cd2b31;
+    }
+
+    &:user-invalid:not(:focus) {
+        border-color: #cd2b31;
+    }
   }
 }
 
 [data-component="button"] {
   height: 2.5rem;
   cursor: pointer;
-  border: 1px solid #343434;
   font-weight: 500;
   font-size: var(--font-size-sm);
   border-radius: calc(var(--border-radius) * 0.25rem);
@@ -212,9 +272,24 @@ export function css() {
   font-weight: 400;
   font-size: 0.875rem;
   line-height: 1.25rem;
-}
 
-[data-component="form-header"] > h1 {
+  @media (prefers-color-scheme: light) {
+     color: #6f6f6f
+  }
+
+  & > hr {
+    border:0;
+    background: #282828;
+    height:2px;
+    width:100%;
+    margin-top:4px;
+
+    @media (prefers-color-scheme: light) {
+      background: #e8e8e8
+    }
+ }
+
+ & > h1 {
     color: #ededed;
     font-weight:500;
     font-size: 1.25rem;
@@ -222,15 +297,14 @@ export function css() {
     line-height:1.5rem;
     margin:0;
     overflow-wrap:break-word;
+
+    @media (prefers-color-scheme: light) {
+      color: #171717
+    }
+  }
 }
 
-[data-component="form-header"] > hr {
-    border:0;
-    background: #282828;
-    height:2px;
-    width:100%;
-    margin-top:4px;
-}
+
     
 [data-component="input-container"] {
   display: flex;
@@ -243,6 +317,10 @@ export function css() {
   font-weight: 400px;
   font-size: 0.875rem;
   line-height: 1.25rem;
+  
+  @media (prefers-color-scheme: light) {
+     color: #6f6f6f
+  }
 }
 
 [data-component="input-wrapper"] {
@@ -250,7 +328,7 @@ export function css() {
   width:100%;
 }
   
-[data-component="input-wrapper"] [data-component="input-icon"] {
+[data-component="input-icon"] {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -261,13 +339,15 @@ export function css() {
   justify-content: center;
   align-items: center;
   pointer-events: none;
+
+  & > svg {
+        width:20px;
+        height:20px;
+        display:block;
+        max-width:100%;
+    }
 }
-[data-component="input-icon"] > svg {
-  width:20px;
-  height:20px;
-  display:block;
-  max-width:100%;
-}
+
 
     `
 }
