@@ -248,7 +248,11 @@ html, html * {
       border: 1px solid transparent;
     }
      @media (prefers-color-scheme: dark) {
-        border: 1px solid #63707E;
+        border: 1px solid transparent;
+        background: #434D56;
+        &:hover {
+          background: #24292e;
+        }
     }
   }
   
@@ -261,7 +265,11 @@ html, html * {
       border: 1px solid transparent;
     }
     @media (prefers-color-scheme: dark) {
-        border: 1px solid #8093f9;
+        border: 1px solid transparent;
+        background: #5865F2;
+        &:hover {
+          background: #4445e7;
+        }
     }
   }
 
