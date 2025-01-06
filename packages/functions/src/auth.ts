@@ -10,7 +10,8 @@ import { Select } from "./ui/select";
 // import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import { PasswordUI } from "./ui/password"
 import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
-// import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
+import { GithubAdapter } from "@openauthjs/openauth/adapter/github";
+import { DiscordAdapter } from "@openauthjs/openauth/adapter/discord";
 import { PasswordAdapter } from "./ui/adapters/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
 import { Machines } from "@nestri/core/machine/index"
@@ -64,6 +65,16 @@ export default {
             }),
             subjects,
             providers: {
+                github: GithubAdapter({
+                    clientID: Resource.GithubClientID.value,
+                    clientSecret: Resource.GithubClientSecret.value,
+                    scopes: ["user:email"]
+                }),
+                discord: DiscordAdapter({
+                    clientID: Resource.DiscordClientID.value,
+                    clientSecret: Resource.DiscordClientSecret.value,
+                    scopes: ["email","identify"]
+                }),
                 password: PasswordAdapter(
                     PasswordUI({
                         sendCode: async (email, code) => {
@@ -125,9 +136,30 @@ export default {
 
                 }
 
-                const email = value.email;
-                console.log("email", email)
-                value.username && console.log("username", value.username)
+                let email = undefined as string | undefined;
+
+                if (value.provider === "github") {
+                    const access = value.tokenset.access;
+                    const response = await fetch("https://api.github.com/user/emails", {
+                        headers: {
+                            Authorization: `token ${access}`,
+                            Accept: "application/vnd.github.v3+json",
+                        },
+                    });
+                    const emails = (await response.json()) as any[];
+                    const primary = emails.find((email: any) => email.primary);
+                    console.log(primary);
+                    if (!primary.verified) {
+                        throw new Error("Email not verified");
+                    }
+                    email = primary.email;
+                }
+
+                if(email){
+                    console.log("email", email)
+                    // value.username && console.log("username", value.username)
+
+                }
 
                 // if (email) {
                 //     const token = await User.create(email);

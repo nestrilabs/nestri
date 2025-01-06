@@ -1,5 +1,5 @@
 export function css() {
-    return `
+  return `
 @import url("https://unpkg.com/tailwindcss@3.4.15/src/css/preflight.css");
 
 :root {
@@ -217,11 +217,92 @@ html, html * {
   }
 }
 
+[data-component="button-root"] {
+  transition-property: border-color,background,color,transform,box-shadow;
+  transition-duration: .15s;
+  transition-timing-function: ease;
+  height: 48px;
+  cursor: pointer;
+  padding: 0px 14px;
+  margin-top: 3px;
+  font-weight: 500;
+  font-size: 16px;
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 2px solid #00000014;
+
+  @media (prefers-color-scheme: dark) {
+        border: 2px solid #ffffff24;
+    }
+
+  &[data-color="github"] {
+    background: #24292e;
+    color: #fff;
+    border: 2px solid #1B1F22;
+    &:hover {
+      background: #434D56;
+      border: 1px solid transparent;
+    }
+     @media (prefers-color-scheme: dark) {
+        border: 1px solid #63707E;
+    }
+  }
+  
+  &[data-color="discord"] {
+    background: #4445e7;
+    border: 2px solid #3836cc;
+    color: #fff;
+    &:hover {
+      background: #5865F2;
+      border: 1px solid transparent;
+    }
+    @media (prefers-color-scheme: dark) {
+        border: 1px solid #8093f9;
+    }
+  }
+
+  &:hover {
+      background:#FFF;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    &:hover {
+      background:#000;
+    }
+  }
+    
+  &:focus [data-component="spinner"]{
+    display: block;
+  }
+
+  [data-slot="icon"] {
+    width: 20px;
+    height: 20px;
+
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+  }
+}
+
 [data-component="form"] {
   max-width: 100%;
   display: flex;
   flex-direction: column;
   margin: 0;
+}
+
+[data-component="form-root"] {
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  gap: 12px;
 }
 
 [data-component="form-header"] {

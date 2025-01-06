@@ -21,6 +21,22 @@ declare module "sst" {
     "CloudflareAuthKV": {
       "type": "sst.cloudflare.Kv"
     }
+    "DiscordClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "DiscordClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GithubClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GithubClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "InstantAdminToken": {
       "type": "sst.sst.Secret"
       "value": string

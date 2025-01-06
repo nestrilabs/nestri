@@ -11,6 +11,22 @@ declare module "sst" {
       "type": "random.index/randomString.RandomString"
       "value": string
     }
+    "DiscordClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "DiscordClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GithubClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GithubClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "InstantAdminToken": {
       "type": "sst.sst.Secret"
       "value": string
