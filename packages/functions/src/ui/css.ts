@@ -65,7 +65,7 @@ html, html * {
 
 [data-component="header-container"] {
     width: 100%;
-    height: 64px;
+    height: 32px;
     border-bottom: 1px solid transparent;
     position: -webkit-sticky;
     position: sticky;
@@ -82,7 +82,8 @@ html, html * {
  }
 
  [data-component="logo-footer"] {
-    margin:0;
+    position: fixed;
+    bottom: -1px;
     font-size: 100%;
     max-width: 1440px;
     width: 100%;
@@ -125,24 +126,6 @@ html, html * {
   gap: 0.75rem;
   flex-direction: column;
   font-size: var(--font-size-xs);
-}
-
-[data-component="logo"] {
-  height: 20px;
-  width: auto;
-  display: none;
-
-  @media (prefers-color-scheme: light) {
-    &[data-mode="light"] {
-      display: block;
-    }
-  }
-
-  @media (prefers-color-scheme: dark) {
-    &[data-mode="dark"] {
-      display: block;
-    }
-  }
 }
 
 [data-component="input"] {
@@ -195,6 +178,7 @@ html, html * {
 [data-component="button"] {
   height: 2.5rem;
   cursor: pointer;
+  margin-top: 3px;
   font-weight: 500;
   font-size: var(--font-size-sm);
   border-radius: calc(var(--border-radius) * 0.25rem);
@@ -230,8 +214,8 @@ html, html * {
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
   margin: 0;
+//   gap: 0.7rem;
 }
 
 [data-component="form-alert"] {
@@ -321,6 +305,31 @@ html, html * {
   @media (prefers-color-scheme: light) {
      color: #6f6f6f
   }
+ & > small {
+   color: #ff6369;
+   display: block;
+   line-height: 1rem;
+   font-weight: 400;
+   font-size: 0.75rem;
+ }
+}
+
+[data-error="true"] {
+ & input {
+     border-color: #ff6369;
+    &:focus {
+        box-shadow: 0 0 0 2px #161616,0 0 0 4px  #ff6369;
+        border-color: transparent;
+    }
+
+    @media (prefers-color-scheme: light) {
+        border-color: #cd2b31;
+        :focus {
+            box-shadow: 0 0 0 2px #fcfcfc, 0 0 0 4px  #cd2b31;
+            border-color: transparent;
+        }
+    }
+ }
 }
 
 [data-component="input-wrapper"] {
@@ -348,6 +357,10 @@ html, html * {
     }
 }
 
+input:-webkit-autofill,
+  input:-webkit-autofill:focus {
+    transition: background-color 0s 600000s, color 0s 600000s !important;
+}
 
     `
 }

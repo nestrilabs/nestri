@@ -9,7 +9,7 @@ import {
 // import { Layout } from "@openauthjs/openauth/ui/base"
 import { Layout } from "./base"
 import "@openauthjs/openauth/ui/form"
-import { FormAlert } from "@openauthjs/openauth/ui/form"
+// import { FormAlert } from "@openauthjs/openauth/ui/form"
 
 const DEFAULT_COPY = {
   error_email_taken: "There is already an account with this email.",
@@ -57,6 +57,12 @@ export function PasswordUI(input: PasswordUIOptions) {
   return {
     sendCode: input.sendCode,
     login: async (_req, form, error): Promise<Response> => {
+      const emailError = ["invalid_email", "email_taken"].includes(
+        error?.type || "",
+      )
+      const passwordError = ["invalid_password", "password_mismatch"].includes(
+        error?.type || "",
+      )
       const jsx = (
         <Layout>
           <div data-component="form-header">
@@ -70,12 +76,12 @@ export function PasswordUI(input: PasswordUIOptions) {
             <hr />
           </div>
           <form data-component="form" method="post">
-            <FormAlert message={error?.type && copy?.[`error_${error.type}`]} />
+            {/* <FormAlert message={error?.type && copy?.[`error_${error.type}`]} /> */}
             <div
               data-component="input-container"
             >
               <span>Email</span>
-              <div data-component="input-wrapper">
+              <div data-error={emailError} data-component="input-wrapper">
                 <span data-component="input-icon">
                   <svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor">
                     <path d="M7 9l5 3.5L17 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -94,12 +100,13 @@ export function PasswordUI(input: PasswordUIOptions) {
                   value={form?.get("email")?.toString()}
                 />
               </div>
+              <small>{error?.type && emailError && copy?.[`error_${error.type}`]}</small>
             </div>
             <div
               data-component="input-container"
             >
               <span>Password</span>
-              <div data-component="input-wrapper">
+              <div data-error={passwordError} data-component="input-wrapper">
                 <span data-component="input-icon">
                   <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" color="currentColor"><path d="M12 16.5v-2m-7.732 4.345c.225 1.67 1.608 2.979 3.292 3.056c1.416.065 2.855.099 4.44.099s3.024-.034 4.44-.1c1.684-.076 3.067-1.385 3.292-3.055c.147-1.09.268-2.207.268-3.345s-.121-2.255-.268-3.345c-.225-1.67-1.608-2.979-3.292-3.056A95 95 0 0 0 12 9c-1.585 0-3.024.034-4.44.1c-1.684.076-3.067 1.385-3.292 3.055C4.12 13.245 4 14.362 4 15.5s.121 2.255.268 3.345" /><path d="M7.5 9V6.5a4.5 4.5 0 0 1 9 0V9" /></g></svg>
                 </span>
@@ -113,6 +120,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                   autoComplete="current-password"
                 />
               </div>
+              <small>{error?.type && passwordError && copy?.[`error_${error.type}`]}</small>
             </div>
             <button data-component="button">{copy.button_continue}</button>
             <div style={{ padding: "2px 0" }} data-component="form-header">
@@ -135,12 +143,21 @@ export function PasswordUI(input: PasswordUIOptions) {
       })
     },
     register: async (_req, state, form, error): Promise<Response> => {
+      // const error = {
+      //   type: "invalid_password"
+      // }
       const emailError = ["invalid_email", "email_taken"].includes(
         error?.type || "",
       )
       const passwordError = ["invalid_password", "password_mismatch"].includes(
         error?.type || "",
       )
+
+      //Just in case the server does it
+      const codeError = ["invalid_code"].includes(
+        error?.type || "",
+      )
+
       const usernameError = false;
       //  ["invalid_password", "password_mismatch"].includes(
       //   error?.type || "",
@@ -161,7 +178,7 @@ export function PasswordUI(input: PasswordUIOptions) {
             <hr></hr>
           </div>
           <form data-component="form" method="post">
-            <FormAlert message={error?.type && copy?.[`error_${error.type}`]} />
+            {/* <FormAlert message={error?.type && copy?.[`error_${error.type}`]} /> */}
             {state.type === "start" && (
               <>
                 <input type="hidden" name="action" value="register" />
@@ -169,7 +186,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                   data-component="input-container"
                 >
                   <span>Email</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={emailError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor">
                         <path d="M7 9l5 3.5L17 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -188,12 +205,13 @@ export function PasswordUI(input: PasswordUIOptions) {
                       placeholder={copy.input_email}
                     />
                   </div>
+                  <small>{error?.type && emailError && copy?.[`error_${error.type}`]}</small>
                 </div>
                 <div
                   data-component="input-container"
                 >
                   <span>Username</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={usernameError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4.271 18.346S6.5 15.5 12 15.5s7.73 2.846 7.73 2.846M12 12a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
                     </span>
@@ -209,12 +227,13 @@ export function PasswordUI(input: PasswordUIOptions) {
                       }
                     />
                   </div>
+                  <small>{error?.type && usernameError && copy?.[`error_${error.type}`]}</small>
                 </div>
                 <div
                   data-component="input-container"
                 >
                   <span>Password</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={passwordError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" color="currentColor"><path d="M12 16.5v-2m-7.732 4.345c.225 1.67 1.608 2.979 3.292 3.056c1.416.065 2.855.099 4.44.099s3.024-.034 4.44-.1c1.684-.076 3.067-1.385 3.292-3.055c.147-1.09.268-2.207.268-3.345s-.121-2.255-.268-3.345c-.225-1.67-1.608-2.979-3.292-3.056A95 95 0 0 0 12 9c-1.585 0-3.024.034-4.44.1c-1.684.076-3.067 1.385-3.292 3.055C4.12 13.245 4 14.362 4 15.5s.121 2.255.268 3.345" /><path d="M7.5 9V6.5a4.5 4.5 0 0 1 9 0V9" /></g></svg>
                     </span>
@@ -232,6 +251,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                       autoComplete="new-password"
                     />
                   </div>
+                  <small>{error?.type && passwordError && copy?.[`error_${error.type}`]}</small>
                 </div>
                 <button data-component="button">{copy.button_continue}</button>
               </>
@@ -244,7 +264,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                   data-component="input-container"
                 >
                   <span>Code</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={codeError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M2.43 8.25a1 1 0 0 1 1-1h.952c1.063 0 1.952.853 1.952 1.938v6.562a1 1 0 1 1-2 0v-6.5H3.43a1 1 0 0 1-1-1m5.714 0a1 1 0 0 1 1-1h2.857c1.064 0 1.953.853 1.953 1.938v1.874A1.945 1.945 0 0 1 12 13h-1.857v1.75h2.81a1 1 0 1 1 0 2h-2.858a1.945 1.945 0 0 1-1.952-1.937v-1.876c0-1.084.889-1.937 1.952-1.937h1.858V9.25h-2.81a1 1 0 0 1-1-1m7.619 0a1 1 0 0 1 1-1h2.857c1.063 0 1.953.853 1.953 1.938v5.624a1.945 1.945 0 0 1-1.953 1.938h-2.857a1 1 0 1 1 0-2h2.81V13h-2.81a1 1 0 1 1 0-2h2.81V9.25h-2.81a1 1 0 0 1-1-1" clip-rule="evenodd" /></svg>
                     </span>
@@ -259,6 +279,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                       autoComplete="one-time-code"
                     />
                   </div>
+                  <small>{error?.type && codeError && copy?.[`error_${error.type}`]}</small>
                 </div>
                 <button data-component="button">{copy.button_continue}</button>
               </>
@@ -276,6 +297,15 @@ export function PasswordUI(input: PasswordUIOptions) {
       const passwordError = ["invalid_password", "password_mismatch"].includes(
         error?.type || "",
       )
+
+      const emailError = ["invalid_email", "email_taken"].includes(
+        error?.type || "",
+      )
+
+      const codeError = ["invalid_code"].includes(
+        error?.type || "",
+      )
+
       const jsx = (
         <Layout>
           <div data-component="form-header">
@@ -291,7 +321,7 @@ export function PasswordUI(input: PasswordUIOptions) {
             <hr />
           </div>
           <form data-component="form" method="post" replace>
-            <FormAlert message={error?.type && copy?.[`error_${error.type}`]} />
+            {/* <FormAlert message={error?.type && copy?.[`error_${error.type}`]} /> */}
             {state.type === "start" && (
               <>
                 <input type="hidden" name="action" value="code" />
@@ -299,7 +329,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                   data-component="input-container"
                 >
                   <span>Email</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={emailError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor">
                         <path d="M7 9l5 3.5L17 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -318,6 +348,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                       placeholder={copy.input_email}
                     />
                   </div>
+                  <small>{error?.type && emailError && copy?.[`error_${error.type}`]}</small>
                 </div>
               </>
             )}
@@ -328,7 +359,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                   data-component="input-container"
                 >
                   <span>Code</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={codeError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M2.43 8.25a1 1 0 0 1 1-1h.952c1.063 0 1.952.853 1.952 1.938v6.562a1 1 0 1 1-2 0v-6.5H3.43a1 1 0 0 1-1-1m5.714 0a1 1 0 0 1 1-1h2.857c1.064 0 1.953.853 1.953 1.938v1.874A1.945 1.945 0 0 1 12 13h-1.857v1.75h2.81a1 1 0 1 1 0 2h-2.858a1.945 1.945 0 0 1-1.952-1.937v-1.876c0-1.084.889-1.937 1.952-1.937h1.858V9.25h-2.81a1 1 0 0 1-1-1m7.619 0a1 1 0 0 1 1-1h2.857c1.063 0 1.953.853 1.953 1.938v5.624a1.945 1.945 0 0 1-1.953 1.938h-2.857a1 1 0 1 1 0-2h2.81V13h-2.81a1 1 0 1 1 0-2h2.81V9.25h-2.81a1 1 0 0 1-1-1" clip-rule="evenodd" /></svg>
                     </span>
@@ -343,6 +374,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                       autoComplete="one-time-code"
                     />
                   </div>
+                  <small>{error?.type && codeError && copy?.[`error_${error.type}`]}</small>
                 </div>
               </>
             )}
@@ -353,7 +385,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                   data-component="input-container"
                 >
                   <span>Password</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={passwordError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" color="currentColor"><path d="M12 16.5v-2m-7.732 4.345c.225 1.67 1.608 2.979 3.292 3.056c1.416.065 2.855.099 4.44.099s3.024-.034 4.44-.1c1.684-.076 3.067-1.385 3.292-3.055c.147-1.09.268-2.207.268-3.345s-.121-2.255-.268-3.345c-.225-1.67-1.608-2.979-3.292-3.056A95 95 0 0 0 12 9c-1.585 0-3.024.034-4.44.1c-1.684.076-3.067 1.385-3.292 3.055C4.12 13.245 4 14.362 4 15.5s.121 2.255.268 3.345" /><path d="M7.5 9V6.5a4.5 4.5 0 0 1 9 0V9" /></g></svg>
                     </span>
@@ -370,12 +402,13 @@ export function PasswordUI(input: PasswordUIOptions) {
                       autoComplete="new-password"
                     />
                   </div>
+                  <small>{error?.type && passwordError && copy?.[`error_${error.type}`]}</small>
                 </div>
                 <div
                   data-component="input-container"
                 >
                   <span>Confirm Password</span>
-                  <div data-component="input-wrapper">
+                  <div data-error={passwordError} data-component="input-wrapper">
                     <span data-component="input-icon">
                       <svg xmlns="http://www.w3.org/2000/svg" width="24px" height="24px" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" color="currentColor"><path d="M12 16.5v-2m-7.732 4.345c.225 1.67 1.608 2.979 3.292 3.056c1.416.065 2.855.099 4.44.099s3.024-.034 4.44-.1c1.684-.076 3.067-1.385 3.292-3.055c.147-1.09.268-2.207.268-3.345s-.121-2.255-.268-3.345c-.225-1.67-1.608-2.979-3.292-3.056A95 95 0 0 0 12 9c-1.585 0-3.024.034-4.44.1c-1.684.076-3.067 1.385-3.292 3.055C4.12 13.245 4 14.362 4 15.5s.121 2.255.268 3.345" /><path d="M7.5 9V6.5a4.5 4.5 0 0 1 9 0V9" /></g></svg>
                     </span>
@@ -391,6 +424,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                       autoComplete="new-password"
                     />
                   </div>
+                  <small>{error?.type && passwordError && copy?.[`error_${error.type}`]}</small>
                 </div>
               </>
             )}
