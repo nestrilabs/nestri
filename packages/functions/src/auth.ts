@@ -12,7 +12,8 @@ import { Select } from "@openauthjs/openauth/ui/select";
 // import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import { PasswordUI } from "./ui/password"
 import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
-import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
+// import { PasswordAdapter } from "@openauthjs/openauth/adapter/password"
+import { PasswordAdapter } from "./ui/adapters/password"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
 import { Machines } from "@nestri/core/machine/index"
 
@@ -69,7 +70,7 @@ export default {
                     PasswordUI({
                         sendCode: async (email, code) => {
                             console.log("email & code:", email, code)
-                            await Email.send(email, code)
+                            // await Email.send(email, code)
                         },
                     }),
                 ),
@@ -117,26 +118,28 @@ export default {
                             id: machineID,
                             fingerprint: value.fingerprint
                         })
-                    } 
+                    }
 
                     return await ctx.subject("device", {
                         id: exists.id,
                         fingerprint: value.fingerprint
                     })
-                    
+
                 }
 
                 const email = value.email;
+                console.log("email", email)
+                value.username && console.log("username", value.username)
 
-                if (email) {
-                    const token = await User.create(email);
-                    const user = await User.fromEmail(email);
+                // if (email) {
+                //     const token = await User.create(email);
+                //     const user = await User.fromEmail(email);
 
-                    return await ctx.subject("user", {
-                        accessToken: token,
-                        userID: user.id
-                    });
-                }
+                //     return await ctx.subject("user", {
+                //         accessToken: token,
+                //         userID: user.id
+                //     });
+                // }
 
                 throw new Error("This is not implemented yet");
             },

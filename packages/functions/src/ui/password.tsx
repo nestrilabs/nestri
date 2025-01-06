@@ -5,7 +5,7 @@ import {
   type PasswordConfig,
   type PasswordLoginError,
   type PasswordRegisterError,
-} from "@openauthjs/openauth/adapter/password"
+} from "./adapters/password"
 // import { Layout } from "@openauthjs/openauth/ui/base"
 import { Layout } from "./base"
 import "@openauthjs/openauth/ui/form"
@@ -13,9 +13,11 @@ import "@openauthjs/openauth/ui/form"
 
 const DEFAULT_COPY = {
   error_email_taken: "There is already an account with this email.",
+  error_username_taken: "There is already an account with this username.",
   error_invalid_code: "Code is incorrect.",
   error_invalid_email: "Email is not valid.",
   error_invalid_password: "Password is incorrect.",
+  error_invalid_username: "Username must only contain numbers and small letters.",
   error_password_mismatch: "Passwords do not match.",
   register_title: "Welcome to the app",
   register_description: "Sign in with your email",
@@ -152,9 +154,6 @@ export function PasswordUI(input: PasswordUIOptions) {
       })
     },
     register: async (_req, state, form, error): Promise<Response> => {
-      // const error = {
-      //   type: "invalid_password"
-      // }
       const emailError = ["invalid_email", "email_taken"].includes(
         error?.type || "",
       )
@@ -167,13 +166,10 @@ export function PasswordUI(input: PasswordUIOptions) {
         error?.type || "",
       )
 
-      const usernameError = false;
-      //  ["invalid_password", "password_mismatch"].includes(
-      //   error?.type || "",
-      // )
-      // const state = {
-      //   type: "code"
-      // }
+      const usernameError = ["invalid_username", "username_taken"].includes(
+        error?.type || "",
+      );
+
       const jsx = (
         <Layout>
           <div data-component="form-header">
@@ -229,11 +225,9 @@ export function PasswordUI(input: PasswordUIOptions) {
                       data-component="input"
                       autofocus={usernameError}
                       type="text"
-                      name="text"
+                      name="username"
                       placeholder={copy.input_username}
                       required
-                      onInput={(e) => { console.log("v", e) }}
-                      // onFocus={(e) => { user = e.target?.value; console.log("input",e.target?.value); console.log("user",user) }}
                       value={
                         !usernameError ? form?.get("username")?.toString() : ""
                       }
