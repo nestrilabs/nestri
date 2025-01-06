@@ -12,6 +12,9 @@ export function css() {
   --color-background: var(--color-background-dark);
   --color-primary: var(--color-primary-dark);
 
+  --spinner-size: 16px;
+  --spinner-color: #FFF;
+
   @media (prefers-color-scheme: light) {
     --color-background: var(--color-background-light);
     --color-primary: var(--color-primary-light);
@@ -198,6 +201,10 @@ html, html * {
           calc(clamp(0.22, l + (-0.12 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.06), 0.88)) c h
       );
   }
+    
+  &:focus [data-component="spinner"]{
+    display: block;
+  }
 
   [data-slot="icon"] {
     width: 16px;
@@ -216,33 +223,6 @@ html, html * {
   flex-direction: column;
   margin: 0;
 //   gap: 0.7rem;
-}
-
-[data-component="form-alert"] {
-  height: 2.5rem;
-  display: flex;
-  align-items: center;
-  padding: 0 1rem;
-  border-radius: calc(var(--border-radius) * 0.25rem);
-  background: oklch(0.28 0.06 7.91);
-  color: oklch(0.78 0.16 22.29);
-  text-align: left;
-  font-size: 0.75rem;
-  gap: 0.5rem;
-
-  &[data-color="success"] {
-    background: oklch(0.28 0.06 149.45);
-    color: oklch(0.78 0.16 162.29);
-  }
-
-  &:has([data-slot="message"]:empty) {
-    display: none;
-  }
-
-  [data-slot="icon"] {
-    width: 1rem;
-    height: 1rem;
-  }
 }
 
 [data-component="form-header"] {
@@ -305,7 +285,7 @@ html, html * {
   @media (prefers-color-scheme: light) {
      color: #6f6f6f
   }
-     
+
  & > small {
    color: #ff6369;
    display: block;
@@ -348,7 +328,7 @@ html, html * {
   transform: translateY(-50%);
   left: 8px;
   width: 20px;
-  height: 20px;
+  height: 40px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -365,6 +345,104 @@ html, html * {
 input:-webkit-autofill,
   input:-webkit-autofill:focus {
     transition: background-color 0s 600000s, color 0s 600000s !important;
+}
+
+
+[data-component="spinner"] {
+    height: var(--spinner-size,20px);
+    width: var(--spinner-size,20px);
+    margin-left: calc(var(--spinner-size,20px)*-1px);
+    display: none;
+
+    & > div {
+        position: relative;
+        top: 50%;
+        left: 50%;
+        height: var(--spinner-size,20px);
+        width: var(--spinner-size,20px);
+    }
+    
+    & > div > div {
+        animation: spin 1.2s linear infinite;
+        background: var(--spinner-color);
+        border-radius: 9999px;
+        height: 8%;
+        left: -10%;
+        position: absolute;
+        top: -3.9%;
+        width: 24%;
+    }
+
+    & > div > div:first-child {
+        animation-delay: -1.2s;
+        transform: rotate(.0001deg) translate(146%);
+    }
+    
+    & > div > div:nth-child(2) {
+        animation-delay: -1.1s;
+        transform: rotate(30deg) translate(146%);
+    }
+
+   & > div > div:nth-child(3) {
+        animation-delay: -1s;
+        transform: rotate(60deg) translate(146%);
+    }
+
+    & > div > div:nth-child(4) {
+        animation-delay: -.9s;
+        transform: rotate(90deg) translate(146%);
+    }
+
+   & > div > div:nth-child(5) {
+        animation-delay: -.8s;
+        transform: rotate(120deg) translate(146%);
+    }
+
+   & > div > div:nth-child(6) {
+        animation-delay: -.7s;
+        transform: rotate(150deg) translate(146%);
+    }
+    
+    & > div > div:nth-child(7) {
+        animation-delay: -.6s;
+        transform: rotate(180deg) translate(146%);
+    }
+
+    & > div > div:nth-child(8) {
+        animation-delay: -.5s;
+        transform: rotate(210deg) translate(146%);
+    }
+        
+    & > div > div:nth-child(9) {
+        animation-delay: -.4s;
+        transform: rotate(240deg) translate(146%);
+    }
+    
+    & > div > div:nth-child(10) {
+        animation-delay: -.3s;
+        transform: rotate(270deg) translate(146%);
+    }
+        
+    & > div > div:nth-child(11) {
+        animation-delay: -.2s;
+        transform: rotate(300deg) translate(146%);
+    }
+        
+    & > div > div:nth-child(12) {
+        animation-delay: -.1s;
+        transform: rotate(330deg) translate(146%);
+    }
+}
+
+@keyframes spin {
+0% {
+    opacity: 1;
+}
+
+100% {
+    opacity: .15;
+}
+
 }
 
     `

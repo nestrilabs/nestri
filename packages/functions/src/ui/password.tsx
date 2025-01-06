@@ -122,7 +122,16 @@ export function PasswordUI(input: PasswordUIOptions) {
               </div>
               <small>{error?.type && passwordError && copy?.[`error_${error.type}`]}</small>
             </div>
-            <button data-component="button">{copy.button_continue}</button>
+            <button data-component="button">
+              <div data-component="spinner">
+                <div>
+                  {new Array(12).fill(0).map((i, k) => (
+                    <div key={k} />
+                  ))}
+                </div>
+              </div>
+              {copy.button_continue}
+            </button>
             <div style={{ padding: "2px 0" }} data-component="form-header">
               <hr />
               <span>
@@ -165,9 +174,6 @@ export function PasswordUI(input: PasswordUIOptions) {
       // const state = {
       //   type: "code"
       // }
-
-      const username = form?.get("username")?.toString()
-      let user = ""
       const jsx = (
         <Layout>
           <div data-component="form-header">
@@ -259,7 +265,16 @@ export function PasswordUI(input: PasswordUIOptions) {
                   </div>
                   <small>{error?.type && passwordError && copy?.[`error_${error.type}`]}</small>
                 </div>
-                <button data-component="button">{copy.button_continue}</button>
+                <button data-component="button">
+                  <div data-component="spinner">
+                    <div>
+                      {new Array(12).fill(0).map((i, k) => (
+                        <div key={k} />
+                      ))}
+                    </div>
+                  </div>
+                  {copy.button_continue}
+                </button>
               </>
             )}
 
@@ -287,7 +302,16 @@ export function PasswordUI(input: PasswordUIOptions) {
                   </div>
                   <small>{error?.type && codeError && copy?.[`error_${error.type}`]}</small>
                 </div>
-                <button data-component="button">{copy.button_continue}</button>
+                <button data-component="button">
+                  <div data-component="spinner">
+                    <div>
+                      {new Array(12).fill(0).map((i, k) => (
+                        <div key={k} />
+                      ))}
+                    </div>
+                  </div>
+                  {copy.button_continue}
+                </button>
               </>
             )}
           </form>
@@ -434,7 +458,16 @@ export function PasswordUI(input: PasswordUIOptions) {
                 </div>
               </>
             )}
-            <button data-component="button">{copy.button_continue}</button>
+            <button data-component="button">
+              <div data-component="spinner">
+                <div>
+                  {new Array(12).fill(0).map((i, k) => (
+                    <div key={k} />
+                  ))}
+                </div>
+              </div>
+              {copy.button_continue}
+            </button>
           </form>
           {state.type === "code" && (
             <form method="post">

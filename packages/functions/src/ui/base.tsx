@@ -26,27 +26,30 @@ export function Layout(
         return "1"
     })()
 
-    const script = "const DEFAULT_COLORS = ['#6A5ACD', '#E63525', '#20B2AA','#E87D58'];" +
-        "const getModulo = (value, divisor, useEvenCheck) => {" +
-        "  const remainder = value % divisor;" +
-        "  return useEvenCheck && Math.floor(value / Math.pow(10, useEvenCheck) % 10) % 2 === 0 ? -remainder : remainder;" +
-        "};" +
-        "const generateColors = (name, colors = DEFAULT_COLORS) => {" +
-        "  if (!name) return Array(3).fill({ color: colors[0], translateX: 0, translateY: 0, scale: 1, rotate: 0 });" +
-        "  let hashCode = 0;" +
-        "  for (let i = 0; i < name.length; i++) {" +
-        "    hashCode = name.charCodeAt(i) + ((hashCode << 5) - hashCode);" +
-        "  }" +
-        "  const hash = Math.abs(hashCode);" +
-        "  return Array.from({ length: 3 }, (_, i) => ({" +
-        "    color: colors[(hash + i) % colors.length]," +
-        "    translateX: getModulo(hash * (i + 1), 4, 1)," +
-        "    translateY: getModulo(hash * (i + 1), 4, 2)," +
-        "    scale: 1.2 + getModulo(hash * (i + 1), 2) / 10," +
-        "    rotate: getModulo(hash * (i + 1), 360, 1)" +
-        "  }));" +
-        "};" +
-        "const generateFallbackAvatar = (text = 'wanjohi', size = 40, colors = DEFAULT_COLORS) => {" +
+    const script = "const DEFAULT_COLORS = ['#6A5ACD', '#E63525','#20B2AA', '#E87D58'];" +
+        "const getModulo = (value, divisor, useEvenCheck) => {"+
+        "const remainder = value % divisor;"+
+        "if (useEvenCheck && Math.floor(value / Math.pow(10, useEvenCheck) % 10) % 2 === 0) {"+
+        " return -remainder;"+
+        " }"+
+        " return remainder;"+
+       " };"+
+        "const generateColors = (name, colors = DEFAULT_COLORS) => {"+
+        "const hashCode = name.split('').reduce((acc, char) => {"+
+        "acc = ((acc << 5) - acc) + char.charCodeAt(0);"+
+        " return acc & acc;"+
+        " }, 0);"+
+        "const hash = Math.abs(hashCode);"+
+        "const numColors = colors.length;"+
+        "return Array.from({ length: 3 }, (_, index) => ({"+
+        "color: colors[(hash + index) % numColors],"+
+        "translateX: getModulo(hash * (index + 1), 4, 1),"+
+        "translateY: getModulo(hash * (index + 1), 4, 2),"+
+        " scale: 1.2 + getModulo(hash * (index + 1), 2) / 10,"+
+        " rotate: getModulo(hash * (index + 1), 360, 1)"+
+        "}));"+
+        "};"+
+        "const generateFallbackAvatar = (text = 'wanjohi', size = 80, colors = DEFAULT_COLORS) => {" +
         "  const colorData = generateColors(text, colors);" +
         "  return '<svg viewBox=\"0 0 ' + size + ' ' + size + '\" fill=\"none\" role=\"img\" aria-describedby=\"' + text + '\" width=\"' + size + '\" height=\"' + size + '\">' +" +
         "    '<title id=\"' + text + '\">Fallback avatar for ' + text + '</title>' +" +
