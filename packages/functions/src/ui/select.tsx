@@ -54,6 +54,8 @@ const DISPLAY: Record<string, string> = {
     twitch: "Twitch",
     google: "Google",
     github: "GitHub",
+    discord: "Discord",
+    password: "Password",
 }
 
 const ICON: Record<string, any> = {
