@@ -4,8 +4,6 @@ import {
     type KVNamespace,
 } from "@cloudflare/workers-types"
 import { subjects } from "./subjects"
-import { User } from "@nestri/core/user/index"
-import { Email } from "@nestri/core/email/index"
 import { authorizer } from "@openauthjs/openauth"
 import { type CFRequest } from "@nestri/core/types"
 import { Select } from "@openauthjs/openauth/ui/select";
