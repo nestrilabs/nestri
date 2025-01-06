@@ -6,7 +6,7 @@ import {
 import { subjects } from "./subjects"
 import { authorizer } from "@openauthjs/openauth"
 import { type CFRequest } from "@nestri/core/types"
-import { Select } from "@openauthjs/openauth/ui/select";
+import { Select } from "./ui/select";
 // import { PasswordUI } from "@openauthjs/openauth/ui/password"
 import { PasswordUI } from "./ui/password"
 import type { Adapter } from "@openauthjs/openauth/adapter/adapter"

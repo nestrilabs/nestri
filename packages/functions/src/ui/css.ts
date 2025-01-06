@@ -222,7 +222,6 @@ html, html * {
   display: flex;
   flex-direction: column;
   margin: 0;
-//   gap: 0.7rem;
 }
 
 [data-component="form-header"] {
@@ -268,7 +267,33 @@ html, html * {
   }
 }
 
+[data-component="form-header-root"] {
+  color: #FFF;
+  max-width: 400px;
+  font-weight: 700;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 2rem;
+  line-height: 2.5rem;
+  letter-spacing: -0.049375rem;
 
+  @media (prefers-color-scheme: light) {
+     color: #000
+  }
+
+  // & > hr {
+  //   border:0;
+  //   background: #282828;
+  //   height:2px;
+  //   width:100%;
+  //   margin-top:4px;
+
+  //   @media (prefers-color-scheme: light) {
+  //     background: #e8e8e8
+  //   }
+  // }
+}
     
 [data-component="input-container"] {
   display: flex;
