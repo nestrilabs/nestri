@@ -26,6 +26,53 @@ export function Layout(
         return "1"
     })()
 
+    const script = "const DEFAULT_COLORS = ['#6A5ACD', '#E63525', '#20B2AA','#E87D58'];" +
+        "const getModulo = (value, divisor, useEvenCheck) => {" +
+        "  const remainder = value % divisor;" +
+        "  return useEvenCheck && Math.floor(value / Math.pow(10, useEvenCheck) % 10) % 2 === 0 ? -remainder : remainder;" +
+        "};" +
+        "const generateColors = (name, colors = DEFAULT_COLORS) => {" +
+        "  if (!name) return Array(3).fill({ color: colors[0], translateX: 0, translateY: 0, scale: 1, rotate: 0 });" +
+        "  let hashCode = 0;" +
+        "  for (let i = 0; i < name.length; i++) {" +
+        "    hashCode = name.charCodeAt(i) + ((hashCode << 5) - hashCode);" +
+        "  }" +
+        "  const hash = Math.abs(hashCode);" +
+        "  return Array.from({ length: 3 }, (_, i) => ({" +
+        "    color: colors[(hash + i) % colors.length]," +
+        "    translateX: getModulo(hash * (i + 1), 4, 1)," +
+        "    translateY: getModulo(hash * (i + 1), 4, 2)," +
+        "    scale: 1.2 + getModulo(hash * (i + 1), 2) / 10," +
+        "    rotate: getModulo(hash * (i + 1), 360, 1)" +
+        "  }));" +
+        "};" +
+        "const generateFallbackAvatar = (text = 'wanjohi', size = 40, colors = DEFAULT_COLORS) => {" +
+        "  const colorData = generateColors(text, colors);" +
+        "  return '<svg viewBox=\"0 0 ' + size + ' ' + size + '\" fill=\"none\" role=\"img\" aria-describedby=\"' + text + '\" width=\"' + size + '\" height=\"' + size + '\">' +" +
+        "    '<title id=\"' + text + '\">Fallback avatar for ' + text + '</title>' +" +
+        "    '<mask id=\"mask__marble\" maskUnits=\"userSpaceOnUse\" x=\"0\" y=\"0\" width=\"' + size + '\" height=\"' + size + '\">' +" +
+        "      '<rect width=\"' + size + '\" height=\"' + size + '\" rx=\"' + (size * 2) + '\" fill=\"#FFFFFF\" />' +" +
+        "    '</mask>' +" +
+        "    '<g mask=\"url(#mask__marble)\">' +" +
+        "      '<rect width=\"' + size + '\" height=\"' + size + '\" fill=\"' + colorData[0].color + '\" />' +" +
+        "      '<path filter=\"url(#prefix__filter0_f)\" d=\"M32.414 59.35L50.376 70.5H72.5v-71H33.728L26.5 13.381l19.057 27.08L32.414 59.35z\" fill=\"' + colorData[1].color + '\" transform=\"translate(' + colorData[1].translateX + ' ' + colorData[1].translateY + ') rotate(' + colorData[1].rotate + ' ' + (size / 2) + ' ' + (size / 2) + ') scale(' + colorData[1].scale + ')\" />' +" +
+        "      '<path filter=\"url(#prefix__filter0_f)\" style=\"mix-blend-mode: overlay\" d=\"M22.216 24L0 46.75l14.108 38.129L78 86l-3.081-59.276-22.378 4.005 12.972 20.186-23.35 27.395L22.215 24z\" fill=\"' + colorData[2].color + '\" transform=\"translate(' + colorData[2].translateX + ' ' + colorData[2].translateY + ') rotate(' + colorData[2].rotate + ' ' + (size / 2) + ' ' + (size / 2) + ') scale(' + colorData[2].scale + ')\" />' +" +
+        "    '</g>' +" +
+        "    '<defs>' +" +
+        "      '<filter id=\"prefix__filter0_f\" filterUnits=\"userSpaceOnUse\" color-interpolation-filters=\"sRGB\">' +" +
+        "        '<feFlood flood-opacity=\"0\" result=\"BackgroundImageFix\" />' +" +
+        "        '<feBlend in=\"SourceGraphic\" in2=\"BackgroundImageFix\" result=\"shape\" />' +" +
+        "        '<feGaussianBlur stdDeviation=\"7\" result=\"effect1_foregroundBlur\" />' +" +
+        "      '</filter>' +" +
+        "    '</defs>' +" +
+        "  '</svg>';" +
+        "};" +
+        "const input = document.getElementById('username');" +
+        "const avatarSpan = document.getElementById('username-icon');" +
+        "input.addEventListener('input', (e) => {" +
+        "  avatarSpan.innerHTML = generateFallbackAvatar(e.target.value);" +
+        "});";
+
     return (
         <html
             style={{
@@ -72,6 +119,7 @@ export function Layout(
                         </svg>
                     </section>
                 </div>
+                <script dangerouslySetInnerHTML={{ __html: script }} />
             </body>
         </html>
     )

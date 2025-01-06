@@ -305,12 +305,17 @@ html, html * {
   @media (prefers-color-scheme: light) {
      color: #6f6f6f
   }
+     
  & > small {
    color: #ff6369;
    display: block;
    line-height: 1rem;
    font-weight: 400;
    font-size: 0.75rem;
+
+    @media (prefers-color-scheme: light) {
+        color: #cd2b31;
+    }
  }
 }
 
