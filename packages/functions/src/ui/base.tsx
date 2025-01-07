@@ -196,36 +196,26 @@ export function Layout(
                      }
                 }); 
             }
-        });
-        `;
+        });`;
 
     const callbackScript = `
-// Redirect to home if not opened as popup
-if (window.opener == null) {
-    window.location.href = "about:blank";
-}
+        if (window.opener == null) {
+            window.location.href = "about:blank";
+        }
 
-// Get the current URL and send it to parent
-const searchParams = window.location.search;
+        const searchParams = window.location.search;
 
-// Send message to parent window
-try {
-    window.opener.postMessage(
-        JSON.stringify({
-            type: 'auth_success',
-            searchParams: searchParams
-        }), 
-        window.location.origin
-    );
-} catch (e) {
-    console.error('Failed to send message to parent window:', e);
-}
-
-// Close this window after a short delay to ensure message is sent
-// setTimeout(() => {
-//     window.close();
-// }, 100);
-`;
+        try {
+            window.opener.postMessage(
+                JSON.stringify({
+                    type: 'auth_success',
+                    searchParams: searchParams
+                }), 
+                window.location.origin
+            );
+        } catch (e) {
+            console.error('Failed to send message to parent window:', e);
+        }`;
     return (
         <html
             style={{
