@@ -66,7 +66,7 @@ export function PasswordUI(input: PasswordUIOptions) {
         error?.type || "",
       )
       const jsx = (
-        <Layout>
+        <Layout page="password">
           <div data-component="form-header">
             <h1>Login</h1>
             <span>
@@ -171,7 +171,7 @@ export function PasswordUI(input: PasswordUIOptions) {
       );
 
       const jsx = (
-        <Layout>
+        <Layout page="password">
           <div data-component="form-header">
             <h1>Register</h1>
             <span>
@@ -331,7 +331,7 @@ export function PasswordUI(input: PasswordUIOptions) {
       )
 
       const jsx = (
-        <Layout>
+        <Layout page="password">
           <div data-component="form-header">
             <h1>Forgot Password</h1>
             {state.type != "update" && (

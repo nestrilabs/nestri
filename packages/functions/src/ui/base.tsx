@@ -5,7 +5,8 @@ import { getTheme } from "@openauthjs/openauth/ui/theme"
 
 export function Layout(
     props: PropsWithChildren<{
-        size?: "small"
+        size?: "small",
+        page?: "root" | "password" | "popup"
     }>,
 ) {
     const theme = getTheme()
@@ -27,28 +28,28 @@ export function Layout(
     })()
 
     const script = "const DEFAULT_COLORS = ['#6A5ACD', '#E63525','#20B2AA', '#E87D58'];" +
-        "const getModulo = (value, divisor, useEvenCheck) => {"+
-        "const remainder = value % divisor;"+
-        "if (useEvenCheck && Math.floor(value / Math.pow(10, useEvenCheck) % 10) % 2 === 0) {"+
-        " return -remainder;"+
-        " }"+
-        " return remainder;"+
-       " };"+
-        "const generateColors = (name, colors = DEFAULT_COLORS) => {"+
-        "const hashCode = name.split('').reduce((acc, char) => {"+
-        "acc = ((acc << 5) - acc) + char.charCodeAt(0);"+
-        " return acc & acc;"+
-        " }, 0);"+
-        "const hash = Math.abs(hashCode);"+
-        "const numColors = colors.length;"+
-        "return Array.from({ length: 3 }, (_, index) => ({"+
-        "color: colors[(hash + index) % numColors],"+
-        "translateX: getModulo(hash * (index + 1), 4, 1),"+
-        "translateY: getModulo(hash * (index + 1), 4, 2),"+
-        " scale: 1.2 + getModulo(hash * (index + 1), 2) / 10,"+
-        " rotate: getModulo(hash * (index + 1), 360, 1)"+
-        "}));"+
-        "};"+
+        "const getModulo = (value, divisor, useEvenCheck) => {" +
+        "const remainder = value % divisor;" +
+        "if (useEvenCheck && Math.floor(value / Math.pow(10, useEvenCheck) % 10) % 2 === 0) {" +
+        " return -remainder;" +
+        " }" +
+        " return remainder;" +
+        " };" +
+        "const generateColors = (name, colors = DEFAULT_COLORS) => {" +
+        "const hashCode = name.split('').reduce((acc, char) => {" +
+        "acc = ((acc << 5) - acc) + char.charCodeAt(0);" +
+        " return acc & acc;" +
+        " }, 0);" +
+        "const hash = Math.abs(hashCode);" +
+        "const numColors = colors.length;" +
+        "return Array.from({ length: 3 }, (_, index) => ({" +
+        "color: colors[(hash + index) % numColors]," +
+        "translateX: getModulo(hash * (index + 1), 4, 1)," +
+        "translateY: getModulo(hash * (index + 1), 4, 2)," +
+        " scale: 1.2 + getModulo(hash * (index + 1), 2) / 10," +
+        " rotate: getModulo(hash * (index + 1), 360, 1)" +
+        "}));" +
+        "};" +
         "const generateFallbackAvatar = (text = 'wanjohi', size = 80, colors = DEFAULT_COLORS) => {" +
         "  const colorData = generateColors(text, colors);" +
         "  return '<svg viewBox=\"0 0 ' + size + ' ' + size + '\" fill=\"none\" role=\"img\" aria-describedby=\"' + text + '\" width=\"' + size + '\" height=\"' + size + '\">' +" +
@@ -76,6 +77,122 @@ export function Layout(
         "  avatarSpan.innerHTML = generateFallbackAvatar(e.target.value);" +
         "});";
 
+    const authWindowScript = `
+        const openAuthWindow = async (provider) => {
+          const POLL_INTERVAL = 300;
+          const BASE_URL = window.location.origin;
+          
+          const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent
+          );
+        
+          const createDesktopWindow = (authUrl) => {
+            const config = {
+              width: 700,
+              height: 700,
+              features: "toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no,copyhistory=no"
+            };
+        
+            const top = window.top.outerHeight / 2 + window.top.screenY - (config.height / 2);
+            const left = window.top.outerWidth / 2 + window.top.screenX - (config.width / 2);
+        
+            return window.open(
+              authUrl,
+              'Auth Popup',
+              \`width=\${config.width},height=\${config.height},left=\${left},top=\${top},\${config.features}\`
+            );
+          };
+        
+          const monitorAuthWindow = (targetWindow) => {
+            return new Promise((resolve, reject) => {
+              const handleAuthSuccess = (event) => {
+                if (event.origin !== BASE_URL) return;
+                
+                try {
+                  const data = JSON.parse(event.data);
+                  if (data.type === 'auth_success') {
+                    cleanup();
+                    window.location.href = window.location.origin + "/" + provider + "/callback" + data.searchParams;
+                    resolve();
+                  }
+                } catch (e) {
+                  // Ignore invalid JSON messages
+                }
+              };
+        
+            window.addEventListener('message', handleAuthSuccess);
+        
+              const timer = setInterval(() => {
+                if (targetWindow.closed) {
+                  cleanup();
+                  reject(new Error('Authentication window was closed'));
+                } 
+              }, POLL_INTERVAL);
+        
+              function cleanup() {
+                clearInterval(timer);
+                window.removeEventListener('message', handleAuthSuccess);
+                if (!targetWindow.closed) {
+                    targetWindow.location.href = 'about:blank'
+                    targetWindow.close();
+                }
+                window.focus();
+              }
+            });
+          };
+        
+          const authUrl = \`\${BASE_URL}/\${provider}/authorize\`;
+          const newWindow = isMobile ? window.open(authUrl, '_blank') : createDesktopWindow(authUrl);
+          
+          if (!newWindow) {
+            throw new Error('Failed to open authentication window');
+          }
+        
+          return monitorAuthWindow(newWindow);
+        };
+        const buttons = document.querySelectorAll('button[id^="button-"]');
+
+        // Attach listeners to each button
+        buttons.forEach(button => {
+            const provider = button.id.replace('button-', '');
+
+            button.addEventListener('click', async (e) => {
+                try {
+                     await openAuthWindow(provider);
+                } catch (error) {
+                    console.error(\`Authentication failed for \${provider}:\`, error);
+                }
+            });
+        });
+        `;
+
+const callbackScript = `
+// Redirect to home if not opened as popup
+if (window.opener == null) {
+    window.location.href = "about:blank";
+}
+
+// Get the current URL and send it to parent
+const searchParams = window.location.search;
+
+// Send message to parent window
+try {
+    window.opener.postMessage(
+        JSON.stringify({
+            type: 'auth_success',
+            searchParams: searchParams
+        }), 
+        window.location.origin
+    );
+} catch (e) {
+    console.error('Failed to send message to parent window:', e);
+}
+
+// Close this window after a short delay to ensure message is sent
+// setTimeout(() => {
+//     window.close();
+// }, 100);
+`;
     return (
         <html
             style={{
@@ -100,7 +217,6 @@ export function Layout(
             </head>
             <body>
                 <div data-component="root">
-                    <header data-component="header-container" />
                     <main data-component="center" data-size={props.size}>
                         {props.children}
                     </main>
@@ -122,7 +238,15 @@ export function Layout(
                         </svg>
                     </section>
                 </div>
-                <script dangerouslySetInnerHTML={{ __html: script }} />
+                {props.page === "password" && (
+                    <script dangerouslySetInnerHTML={{ __html: script }} />
+                )}
+                {props.page === "root" && (
+                    <script dangerouslySetInnerHTML={{ __html: authWindowScript }} />
+                )}
+                {props.page === "popup" && (
+                    <script dangerouslySetInnerHTML={{ __html: callbackScript }} />
+                )}
             </body>
         </html>
     )

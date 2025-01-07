@@ -3,18 +3,17 @@ import {
     type ExecutionContext,
     type KVNamespace,
 } from "@cloudflare/workers-types"
+import { Select } from "./ui/select";
 import { subjects } from "./subjects"
+import { PasswordUI } from "./ui/password"
 import { authorizer } from "@openauthjs/openauth"
 import { type CFRequest } from "@nestri/core/types"
-import { Select } from "./ui/select";
-// import { PasswordUI } from "@openauthjs/openauth/ui/password"
-import { PasswordUI } from "./ui/password"
-import type { Adapter } from "@openauthjs/openauth/adapter/adapter"
-import { GithubAdapter } from "@openauthjs/openauth/adapter/github";
-import { DiscordAdapter } from "@openauthjs/openauth/adapter/discord";
-import { PasswordAdapter } from "./ui/adapters/password"
-import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
+import { GithubAdapter } from "./ui/adapters/github";
+import { DiscordAdapter } from "./ui/adapters/discord";
 import { Machines } from "@nestri/core/machine/index"
+import { PasswordAdapter } from "./ui/adapters/password"
+import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
+import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
 
 interface Env {
     CloudflareAuthKV: KVNamespace
@@ -73,7 +72,7 @@ export default {
                 discord: DiscordAdapter({
                     clientID: Resource.DiscordClientID.value,
                     clientSecret: Resource.DiscordClientSecret.value,
-                    scopes: ["email","identify"]
+                    scopes: ["email", "identify"]
                 }),
                 password: PasswordAdapter(
                     PasswordUI({
@@ -140,22 +139,33 @@ export default {
 
                 if (value.provider === "github") {
                     const access = value.tokenset.access;
-                    const response = await fetch("https://api.github.com/user/emails", {
+                    const emails = await fetch("https://api.github.com/user/emails", {
                         headers: {
                             Authorization: `token ${access}`,
                             Accept: "application/vnd.github.v3+json",
+                            "User-Agent": "Nestri"
                         },
-                    });
-                    const emails = (await response.json()) as any[];
+                    }).then(r => r.json());
+                    // const emails = (await response.json()) as any[];
+                    console.log("emails:", emails)
+                    const user = await fetch("https://api.github.com/user", {
+                        headers: {
+                            Authorization: `token ${access}`,
+                            Accept: "application/vnd.github.v3+json",
+                            "User-Agent": "Nestri"
+                        },
+                    }).then(r=>r.json());
+                    // const user = (await userResponse.json())
+                    console.log("username:", user.login)
                     const primary = emails.find((email: any) => email.primary);
-                    console.log(primary);
+                    console.log("primary", primary);
                     if (!primary.verified) {
                         throw new Error("Email not verified");
                     }
-                    email = primary.email;
+                    // email = primary.email;
                 }
 
-                if(email){
+                if (email) {
                     console.log("email", email)
                     // value.username && console.log("username", value.username)
 

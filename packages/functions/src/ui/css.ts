@@ -66,24 +66,6 @@ html, html * {
   color: var(--color-high);
 }
 
-[data-component="header-container"] {
-    width: 100%;
-    height: 32px;
-    border-bottom: 1px solid transparent;
-    position: -webkit-sticky;
-    position: sticky;
-    top: -1px;
-    position: relative;
-    z-index: 10;
-    transition-property: border-color, box-shadow;
-    background-clip: padding-box;
-    padding-left: 24px;
-    padding-right: 24px;
-    display:flex;
-    align-items: center;
-    justify-content: space-between
- }
-
  [data-component="logo-footer"] {
     position: fixed;
     bottom: -1px;
@@ -106,11 +88,30 @@ html, html * {
     }
  }
 
+[data-component="popup"] {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  gap: 5px;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.3rem;
+  line-height: 1rem;
+  font-weight: 500;
+
+  & [data-component="spinner"]{
+    --spinner-size: 24px;
+    display: block;
+  }
+}
+
 [data-component="center"] {
   max-width: 380px;
   width: 100%;
+  height: 100%;
+  justify-content: center;
   display: flex;
-  padding: 80px 0;
+  padding: 0 0 120px 0;
   flex-direction: column;
   gap: 1rem;
 
