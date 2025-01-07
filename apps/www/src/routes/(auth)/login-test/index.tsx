@@ -27,7 +27,7 @@ export default component$(() => {
             issuer: "https://auth.lauryn.dev.nestri.io"
         })
 
-        const { url } = await client.authorize("http://localhost:5173/login", "token", { pkce: true })
+        const { url } = await client.authorize("http://localhost:5173/login-test", "token", { pkce: true })
         window.location.href = url
     })
     

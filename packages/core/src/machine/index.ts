@@ -29,7 +29,7 @@ export module Machines {
         })
         .openapi({
             ref: "Machine",
-            description: "Represents a a physical or virtual machine connected to the Nestri network..",
+            description: "Represents a physical or virtual machine connected to the Nestri network..",
             example: Examples.Machine,
         });
 

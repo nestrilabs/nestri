@@ -30,7 +30,11 @@ export const auth = new sst.cloudflare.Worker("Auth", {
         authFingerprintKey,
         secret.InstantAdminToken,
         secret.InstantAppId,
-        secret.LoopsApiKey
+        secret.LoopsApiKey,
+        secret.GithubClientID,
+        secret.GithubClientSecret,
+        secret.DiscordClientID,
+        secret.DiscordClientSecret,
     ],
     handler: "./packages/functions/src/auth.ts",
     url: true,
@@ -43,7 +47,7 @@ export const api = new sst.cloudflare.Worker("Api", {
         authFingerprintKey,
         secret.InstantAdminToken,
         secret.InstantAppId,
-        secret.LoopsApiKey
+        secret.LoopsApiKey,
     ],
     url: true,
     handler: "./packages/functions/src/api/index.ts",
