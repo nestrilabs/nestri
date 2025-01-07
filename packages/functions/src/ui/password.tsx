@@ -1,5 +1,4 @@
 /** @jsxImportSource hono/jsx */
-
 import {
   type PasswordChangeError,
   type PasswordConfig,

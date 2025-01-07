@@ -190,10 +190,12 @@ export function Layout(
                          setLoadingState(provider);
                          await openAuthWindow(provider);
                     } catch (error) {
-                        console.error(\`Authentication failed for \${provider}:\`, error);
-                    } finally {
                         resetState();
-                     }
+                        console.error(\`Authentication failed for \${provider}:\`, error);
+                    } 
+                    //     finally {
+                    //     resetState();
+                    //  }
                 }); 
             }
         });`;

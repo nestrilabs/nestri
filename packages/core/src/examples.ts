@@ -5,6 +5,15 @@ export module Examples {
         email: "john@example.com",
     };
 
+    export const Profile = {
+        id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
+        username: "janedoe47",
+        avatarUrl: "https://cdn.discordapp.com/avatars/xxxxxxx/xxxxxxx.png",
+        discriminator: 12, //it needs to be two digits
+        createdAt: '2025-01-04T11:56:23.902Z',
+        updatedAt: '2025-01-09T01:56:23.902Z'
+    }
+    
     export const Machine = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "DESKTOP-EUO8VSF",

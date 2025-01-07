@@ -1,3 +1,4 @@
+import { Profiles } from "@nestri/core/profile/index"
 import { UnknownStateError } from "@openauthjs/openauth/error"
 import { Storage } from "@openauthjs/openauth/storage/storage"
 import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
@@ -170,7 +171,7 @@ export function PasswordAdapter(config: PasswordConfig) {
         if (action === "register" && adapter.type === "start") {
           const password = fd.get("password")?.toString()
           const username = fd.get("username")?.toString()
-          const usernameRegex = /^[a-z0-9]{1,15}$/;
+          const usernameRegex = /^[a-zA-Z]{1,32}$/;
           if (!email) return transition(adapter, { type: "invalid_email" })
           if (!username) return transition(adapter, { type: "invalid_username" })
           if (!password)
@@ -183,11 +184,7 @@ export function PasswordAdapter(config: PasswordConfig) {
             "password",
           ])
           if (existing) return transition(adapter, { type: "email_taken" })
-          const existingUsername = await Storage.get(ctx.storage, [
-            "username",
-            username,
-            "password",
-          ])
+          const existingUsername = await Profiles.fromUsername(username)
           if (existingUsername) return transition(adapter, { type: "username_taken" })
           const code = generate()
           await config.sendCode(email, code)
@@ -214,11 +211,6 @@ export function PasswordAdapter(config: PasswordConfig) {
           await Storage.set(
             ctx.storage,
             ["email", adapter.email, "password"],
-            adapter.password,
-          )
-          await Storage.set(
-            ctx.storage,
-            ["username", adapter.username, "password"],
             adapter.password,
           )
           return ctx.success(c, {

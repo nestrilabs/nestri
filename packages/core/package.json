@@ -16,6 +16,6 @@
         "zod-openapi": "^4.2.2"
     },
     "dependencies": {
-        "@instantdb/admin": "^0.17.3"
+        "@instantdb/admin": "^0.17.7"
     }
 }

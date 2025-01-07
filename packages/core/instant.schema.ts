@@ -11,6 +11,14 @@ const _schema = i.schema({
       deletedAt: i.date().optional().indexed(),
       createdAt: i.date()
     }),
+    profiles: i.entity({
+      avatarUrl: i.string().optional(),
+      username: i.string().indexed(),
+      ownerID: i.string().unique().indexed(),
+      updatedAt: i.date(),
+      createdAt: i.date(),
+      discriminator: i.string().indexed()
+    }),
     games: i.entity({
       name: i.string(),
       steamID: i.number().unique().indexed(),
@@ -23,6 +31,10 @@ const _schema = i.schema({
     }),
   },
   links: {
+    UserProfiles: {
+      forward: { on: "profiles", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "one", label: "profile" }
+    },
     UserMachines: {
       forward: { on: "machines", has: "one", label: "owner" },
       reverse: { on: "$users", has: "many", label: "machines" }

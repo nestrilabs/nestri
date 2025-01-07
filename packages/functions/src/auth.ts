@@ -14,7 +14,9 @@ import { Machines } from "@nestri/core/machine/index"
 import { PasswordAdapter } from "./ui/adapters/password"
 import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
-
+import { handleDiscord, handleGithub } from "./utils";
+import { User } from "@nestri/core/user/index"
+import { Profiles } from "@nestri/core/profile/index"
 interface Env {
     CloudflareAuthKV: KVNamespace
 }
@@ -30,6 +32,15 @@ export type CodeAdapterState =
         claims: Record<string, string>
     }
 
+type OauthUser = {
+    primary: {
+        email: any;
+        primary: any;
+        verified: any;
+    };
+    avatar: any;
+    username: any;
+}
 export default {
     async fetch(request: CFRequest, env: Env, ctx: ExecutionContext) {
         // const location = `${request.cf.country},${request.cf.continent}`
@@ -135,41 +146,63 @@ export default {
 
                 }
 
-                let email = undefined as string | undefined;
+                if (value.provider === "password") {
+                    const email = value.email
+                    const username = value.username
+                    const token = await User.create(email)
+                    const usr = await User.fromEmail(email);
+                    const exists = await Profiles.getProfile(usr.id)
+                    if(username && !exists){
+                        await Profiles.create({ owner: usr.id, username })
+                    }
+
+                    return await ctx.subject("user", {
+                        accessToken: token,
+                        userID: usr.id
+                    });
+
+                }
+
+                let user = undefined as OauthUser | undefined;
 
                 if (value.provider === "github") {
                     const access = value.tokenset.access;
-                    const emails = await fetch("https://api.github.com/user/emails", {
-                        headers: {
-                            Authorization: `token ${access}`,
-                            Accept: "application/vnd.github.v3+json",
-                            "User-Agent": "Nestri"
-                        },
-                    }).then(r => r.json());
-                    // const emails = (await response.json()) as any[];
-                    console.log("emails:", emails)
-                    const user = await fetch("https://api.github.com/user", {
-                        headers: {
-                            Authorization: `token ${access}`,
-                            Accept: "application/vnd.github.v3+json",
-                            "User-Agent": "Nestri"
-                        },
-                    }).then(r=>r.json());
-                    // const user = (await userResponse.json())
-                    console.log("username:", user.login)
-                    const primary = emails.find((email: any) => email.primary);
-                    console.log("primary", primary);
-                    if (!primary.verified) {
-                        throw new Error("Email not verified");
+                    user = await handleGithub(access)
+                    // console.log("user", user)
+                }
+
+                if (value.provider === "discord") {
+                    const access = value.tokenset.access
+                    user = await handleDiscord(access)
+                    // console.log("user", user)
+                }
+
+                if (user) {
+                    try {
+                        const token = await User.create(user.primary.email)
+                        const usr = await User.fromEmail(user.primary.email);
+                        const exists = await Profiles.getProfile(usr.id)
+                        console.log("exists",exists)
+                        if (!exists) {
+                            await Profiles.create({ owner: usr.id, avatarUrl: user.avatar, username: user.username })
+                        }
+
+                        return await ctx.subject("user", {
+                            accessToken: token,
+                            userID: usr.id
+                        });
+
+                    } catch (error) {
+                        console.error("error registering the user", error)
                     }
-                    // email = primary.email;
-                }
-
-                if (email) {
-                    console.log("email", email)
-                    // value.username && console.log("username", value.username)
 
                 }
+
+                // if (email) {
+                //     console.log("email", email)
+                //     // value.username && console.log("username", value.username)
+
+                // }
 
                 // if (email) {
                 //     const token = await User.create(email);
