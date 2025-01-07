@@ -22,35 +22,34 @@ export function Select(props?: SelectProps) {
                 <div data-component="form-header-root">
                     <h1>Welcome to Nestri</h1>
                 </div>
-                <div data-component="form-root">
+                <div
+                    // data-disabled="true"
+                    data-component="form-root">
                     {Object.entries(providers).map(([key, type]) => {
                         const match = props?.providers?.[key]
                         if (match?.hide) return
                         const icon = ICON[key]
                         return (
-                            <>
-                                {key === "password" ? (
-
-                                    <a
-                                        href={`/${key}/authorize`}
-                                        data-component="button-root"
-                                        data-color={key}
-                                    >
-                                        {icon && <i data-slot="icon">{icon}</i>}
-                                        Continue with {match?.display || DISPLAY[type] || type}
-                                    </a>
-                                ) : (
-
-                                    <button
-                                        id={`button-${key}`}
-                                        data-component="button-root"
-                                        data-color={key}
-                                    >
-                                        {icon && <i data-slot="icon">{icon}</i>}
-                                        Continue with {match?.display || DISPLAY[type] || type}
-                                    </button>
+                            <button
+                                id={`button-${key}`}
+                                data-component="button-root"
+                                // data-loading={key == "password" && "true"}
+                                data-color={key}
+                            >
+                                {icon && (
+                                    <>
+                                        <div data-component="spinner">
+                                            <div>
+                                                {new Array(12).fill(0).map((i, k) => (
+                                                    <div key={k} />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <i data-slot="icon">{icon}</i>
+                                    </>
                                 )}
-                            </>
+                                Continue with {match?.display || DISPLAY[type] || type}
+                            </button>
                         )
                     })}
                 </div>

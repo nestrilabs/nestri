@@ -235,9 +235,11 @@ html, html * {
   justify-content: center;
   background: transparent;
   border: 2px solid #00000014;
+   --spinner-color: #000;
 
   @media (prefers-color-scheme: dark) {
         border: 2px solid #ffffff24;
+        --spinner-color: #FFF;
     }
 
   &[data-color="github"] {
@@ -275,17 +277,13 @@ html, html * {
   }
 
   &:hover {
-      background:#FFF;
+      background:rgb(229, 229, 229);
   }
 
   @media (prefers-color-scheme: dark) {
     &:hover {
-      background:#000;
+      background:rgb(38, 38,38);
     }
-  }
-    
-  &:focus [data-component="spinner"]{
-    display: block;
   }
 
   [data-slot="icon"] {
@@ -304,6 +302,30 @@ html, html * {
   display: flex;
   flex-direction: column;
   margin: 0;
+}
+
+[data-loading="true"]{
+  & [data-component="spinner"]{
+      display: block;
+  }
+
+  & [data-slot="icon"] {
+    display: none;
+  }
+}
+
+[data-disabled="true"] { 
+   & button {
+     background: rgb(229,229,229) !important;
+     border: 2px solid #00000014 !important;
+     opacity: .7 !important;
+     color: inherit !important;
+     cursor: not-allowed !important;
+      @media (prefers-color-scheme: dark) {
+        background: rgb(38, 38,38) !important;
+        border: 2px solid #ffffff24 !important;
+      }
+  }
 }
 
 [data-component="form-root"] {

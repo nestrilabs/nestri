@@ -150,23 +150,56 @@ export function Layout(
         
           return monitorAuthWindow(newWindow);
         };
-        const buttons = document.querySelectorAll('button[id^="button-"]');
 
-        // Attach listeners to each button
+
+        const buttons = document.querySelectorAll('button[id^="button-"]');
+        const formRoot = document.querySelector('[data-component="form-root"]');
+
+        const setLoadingState = (activeProvider) => {
+            formRoot.setAttribute('data-disabled', 'true');
+
+            buttons.forEach(button => {
+                button.style.pointerEvents = 'none';
+
+                const provider = button.id.replace('button-', '');
+                if (provider === activeProvider) {
+                    button.setAttribute('data-loading', 'true');
+                }
+            });
+        };
+
+        const resetState = () => {
+            formRoot.removeAttribute('data-disabled');
+
+            buttons.forEach(button => {
+                button.style.pointerEvents = '';
+                button.removeAttribute('data-loading');
+            });
+        };
+        
         buttons.forEach(button => {
             const provider = button.id.replace('button-', '');
 
-            button.addEventListener('click', async (e) => {
-                try {
-                     await openAuthWindow(provider);
-                } catch (error) {
-                    console.error(\`Authentication failed for \${provider}:\`, error);
-                }
-            });
+            if (provider === "password"){
+                button.addEventListener('click', async (e) => {
+                    window.location.href = window.location.origin + "/" + provider + "/authorize";
+                })
+            } else {
+                button.addEventListener('click', async (e) => {
+                    try {
+                         setLoadingState(provider);
+                         await openAuthWindow(provider);
+                    } catch (error) {
+                        console.error(\`Authentication failed for \${provider}:\`, error);
+                    } finally {
+                        resetState();
+                     }
+                }); 
+            }
         });
         `;
 
-const callbackScript = `
+    const callbackScript = `
 // Redirect to home if not opened as popup
 if (window.opener == null) {
     window.location.href = "about:blank";
@@ -203,6 +236,7 @@ try {
                 "--font-family": theme?.font?.family,
                 "--font-scale": theme?.font?.scale,
                 "--border-radius": radius,
+                backgroundColor: get("background", "dark"),
             }}
         >
             <head>
