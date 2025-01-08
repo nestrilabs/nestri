@@ -137,6 +137,14 @@ export default {
           "100%": {
             transform: "scale(1)"
           }
+        },
+        "fade-in": {
+          " 0% ": {
+            opacity: 0
+          },
+          "100%": {
+            opacity: 1
+          }
         }
       },
       animation: {
@@ -145,7 +153,8 @@ export default {
         "fade-down": "fade-down 0.5s",
         "shake": "shake 0.075s 8",
         "multicolor": "multicolor 5s linear 0s infinite",
-        "zoom-out": "zoom-out 5s ease-out"
+        "zoom-out": "zoom-out 5s ease-out",
+        "fade-in":"fade-in .3s ease forwards"
       },
     },
     plugins: []
