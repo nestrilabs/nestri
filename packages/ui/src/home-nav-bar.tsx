@@ -129,13 +129,16 @@ export const HomeNavBar = component$(() => {
                                     Log out
                                 </span>
                             </Dropdown.Item>
+                        </Dropdown.Group>
+                        <Dropdown.Separator class="w-full bg-[#2e2e2e] border-0 h-[1px] my-1" />
+                        <Dropdown.Group class="flex flex-col gap-1">
                             <Dropdown.Item
                                 class="leading-none transition-all duration-200 text-sm group items-center text-red-500 hover:text-[#ededed] hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative select-none  "
                             >
                                 <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5 ">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 22H6.59c-1.545 0-2.774-.752-3.877-1.803c-2.26-2.153 1.45-3.873 2.865-4.715a10.67 10.67 0 0 1 7.922-1.187m3-7.795a4.5 4.5 0 1 1-9 0a4.5 4.5 0 0 1 9 0M16 22l3-3m0 0l3-3m-3 3l-3-3m3 3l3 3" color="currentColor"/></svg>
-                                   <span class="group-hover:hidden">Leave Team</span>
-                                   <span class="hidden group-hover:block">Hold to leave</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 22H6.59c-1.545 0-2.774-.752-3.877-1.803c-2.26-2.153 1.45-3.873 2.865-4.715a10.67 10.67 0 0 1 7.922-1.187m3-7.795a4.5 4.5 0 1 1-9 0a4.5 4.5 0 0 1 9 0M16 22l3-3m0 0l3-3m-3 3l-3-3m3 3l3 3" color="currentColor" /></svg>
+                                    <span class="group-hover:hidden">Leave Team</span>
+                                    <span class="hidden group-hover:block">Hold to leave</span>
                                 </span>
                             </Dropdown.Item>
                         </Dropdown.Group>
