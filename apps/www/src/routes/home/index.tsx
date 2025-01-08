@@ -1,7 +1,5 @@
 import { component$ } from "@builder.io/qwik";
 import { HomeNavBar } from "@nestri/ui";
-// import { HomeNavBar } from "@nestri/ui";
-
 
 const games = [//870780, 914800, 2507950, 1085220, 1568400, 1172470
     {
@@ -111,7 +109,7 @@ export default component$(() => {
                                         <img class="rounded-md aspect-[77/29] object-contain size-full group-hover:scale-110 transition-all duration-200" width={175} height={80} src={`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.id}/capsule_231x87.jpg`} />
                                     </div>
                                     <div class="flex h-full py-2 w-full group-hover:translate-x-3 transition-all duration-200">
-                                        <div class="flex h-full max-w-[300px] flex-col gap-2 sm:block hidden">
+                                        <div class="h-full max-w-[300px] flex-col gap-2 sm:flex hidden">
                                             <span class="whitespace-nowrap overflow-hidden text-ellipsis text-xl font-medium font-title">{game.name}</span>
                                             <div class="grid grid-cols-2  gap-2 text-sm text-gray-400/70">
                                                 <div class="flex items-center gap-2">

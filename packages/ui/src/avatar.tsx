@@ -30,10 +30,11 @@ const generateColors = (name: string, colors = DEFAULT_COLORS) => {
 type Props = {
     name: string;
     size?: number;
+    class?:string;
     colors?: string[]
 }
 
-export default component$(({ name, size = 80, colors = DEFAULT_COLORS }: Props) => {
+export default component$(({ class:className, name, size = 80, colors = DEFAULT_COLORS }: Props) => {
     const colorData = generateColors(name, colors);
 
     return (
@@ -41,6 +42,7 @@ export default component$(({ name, size = 80, colors = DEFAULT_COLORS }: Props) 
             viewBox={`0 0 ${size} ${size}`}
             fill="none"
             role="img"
+            class={className}
             aria-describedby={name}
             width={size}
             height={size}

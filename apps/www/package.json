@@ -39,6 +39,7 @@
     "@nestri/libmoq": "*",
     "@nestri/ui": "*",
     "@openauthjs/openauth": "^0.2.6",
+    "@qwik-ui/headless": "^0.6.4",
     "@types/eslint": "8.56.10",
     "@types/howler": "^2.2.12",
     "@types/node": "^22.5.1",
