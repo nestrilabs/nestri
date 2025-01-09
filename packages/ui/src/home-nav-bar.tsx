@@ -106,8 +106,8 @@ export const HomeNavBar = component$(() => {
                 <Dropdown.Root onOpenChange$={onDialogOpen}>
                     <Dropdown.Trigger class="focus:ring-[#707070] [&>svg:first-child]:size-5 text-gray-400 text-sm focus:ring-2 outline-none rounded-full transition-all flex items-center duration-150 select-none cursor-pointer hover:bg-gray-700/70 focus:bg-gray-700/70 gap-1 px-3 h-8" >
                         <img src="https://avatars.githubusercontent.com/u/71614375?v=4" height={20} width={20} class="size-6 rounded-full" alt="Avatar" />
-                        {/* <Avatar name="WanjohiRyan" /> */}
-                        <span class="truncate shrink max-w-[20ch] sm:block hidden">WanjohiRyan</span>
+                        {/* <Avatar name="WanjohiRyan#47" /> */}
+                        <span class="truncate shrink max-w-[20ch] sm:flex hidden">WanjohiRyan#47</span>
                         <svg xmlns="http://www.w3.org/2000/svg" class="size-4 sm:block hidden" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
                     </Dropdown.Trigger>
                     <Dropdown.Popover

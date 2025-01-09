@@ -1,7 +1,8 @@
 import { component$ } from "@builder.io/qwik";
 import { HomeNavBar } from "@nestri/ui";
+import Avatar from "../../../../../packages/ui/src/avatar";
 
-const games = [//870780, 914800, 2507950, 1085220, 1568400, 1172470
+const games = [
     {
         id: 2507950,
         name: "Delta Force",
@@ -67,7 +68,7 @@ export default component$(() => {
                                     "--size": "3rem"
                                 }}
                                 class="relative h-full flex w-1/3 justify-end">
-                                <img alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1085660/9f2d65473912e04aea5b63378def39dc71be2485.ico" class="h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1085660/9f2d65473912e04aea5b63378def39dc71be2485.ico" class="h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
                         <button class="border-gray-700/70 group transition-all duration-200 border-[0.5px]  h-14  rounded-xl  px-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-700/70  hover:ring-2  hover:ring-[#707070] outline-none  disabled:opacity-50">
@@ -81,8 +82,8 @@ export default component$(() => {
                                     "--size": "3rem"
                                 }}
                                 class="relative h-full flex w-1/3 justify-end">
-                                <img alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black w-12 translate-y-4 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] rotate-12 rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1086940/ea19a7ce2af83c0240e775d79d3b690751a062c1.ico" class="h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black w-12 translate-y-4 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] rotate-12 rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1086940/ea19a7ce2af83c0240e775d79d3b690751a062c1.ico" class="h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
                         <button class="border-gray-700/70 group transition-all duration-200 border-[0.5px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden hover:bg-gray-700/70  hover:ring-2 hover:ring-[#707070] outline-none disabled:opacity-50">
@@ -96,9 +97,9 @@ export default component$(() => {
                                     "--size": "3rem"
                                 }}
                                 class="relative h-full flex w-1/3 justify-end">
-                                <img alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2767030/bd22e45404f4ed4f3c549b575e23ce76fe03fb07.ico" class=" h-12 bg-black w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[10deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[12deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1623730/22a20bdaa6d782f60caa45eb7b02fc2411dcd988.ico" class=" h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2767030/bd22e45404f4ed4f3c549b575e23ce76fe03fb07.ico" class=" h-12 bg-black w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[10deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[12deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1623730/22a20bdaa6d782f60caa45eb7b02fc2411dcd988.ico" class=" h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
                         <button class="border-gray-700/70 group transition-all border-dashed duration-200 border-[0.5px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-700/70 hover:ring-2 hover:ring-[#707070] outline-none  disabled:opacity-50">
@@ -110,20 +111,64 @@ export default component$(() => {
                     </div>
                 </div>
                 <div class="gap-2 w-full flex-col flex">
-                    <hr class="border-none h-[1px] bg-gray-700 w-full" />
+                    <hr class="border-none h-[1.5px] bg-gray-700 w-full" />
+                    <div class="flex flex-col justify-center py-2 px-3 items-start">
+                        <span class="text-lg text-gray-400/70 leading-none font-title flex gap-1 items-center pb-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="currentColor" d="m12 12.9l-2.13 2.09c-.56.56-.87 1.29-.87 2.07C9 18.68 10.35 20 12 20s3-1.32 3-2.94c0-.78-.31-1.52-.87-2.07z" class="duoicon-primary-layer" /><path fill="currentColor" d="m16 6l-.44.55C14.38 8.02 12 7.19 12 5.3V2S4 6 4 13c0 2.92 1.56 5.47 3.89 6.86c-.56-.79-.89-1.76-.89-2.8c0-1.32.52-2.56 1.47-3.5L12 10.1l3.53 3.47c.95.93 1.47 2.17 1.47 3.5c0 1.02-.31 1.96-.85 2.75c1.89-1.15 3.29-3.06 3.71-5.3c.66-3.55-1.07-6.9-3.86-8.52" class="duoicon-secondary-layer" opacity=".3" /></svg>
+                            Popular Parties you can join right now
+                        </span>
+                        <div class="w-full h-[200px] ml-4 relative">
+                            <div class="gap-3.5 rounded-lg py-2.5 px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
+                                <img height={52} width={52} draggable={false} class="select-none rounded-lg aspect-square w-[80px]" src={games[0].image} alt={games[0].name} />
+                                <div class="w-full h-[80px] border-b border-gray-700/70 flex flex-col gap-1 justify-center">
+                                    <span class="font-normal text-white max-w-full truncate leading-none">
+                                        Chilling with the Big Boys
+                                    </span>
+                                    <p class="font-normal text-gray-400/70 text-sm">By Julius Nzenza</p>
+                                    <div
+                                        class="items-center flex"
+                                        style={{
+                                            "--size": "1.5rem",
+                                            "--cutout-avatar-percentage-visible": 0.5,
+                                            "--head-margin-percentage": 0.1
+                                        }}>
+                                        {new Array(5).fill(0).map((item, key) => (
+                                            <div key={key} class="relative items-start flex  ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))]">
+                                                <div
+                                                    class="[&>svg]:size-6 ring-[3px] ring-gray-900 rounded-full "
+                                                // style={{
+                                                //     maskSize: "100% 100%",
+                                                //     maskRepeat: "no-repeat",
+                                                //     maskPosition: "center",
+                                                //     maskComposite: "subtract",
+                                                //     maskImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.5" cx="0.5" cy="0.5"/></svg>'),url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.6" cx="1.1" cy="0.5"/></svg>')`
+                                                // }}
+                                                >
+                                                    <Avatar name={(key * 1000).toString()} />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="border-l border-[0.125rem] border-dashed border-white/[.12] [mask-image:linear-gradient(rgb(0,0,0)_0%,_rgb(0,0,0)_calc(100%-120px),_transparent_100%)] bottom-0 top-0 -left-[0.4625rem] absolute" />
+                        </div>
+                    </div>
+                </div>
+                <div class="gap-2 w-full flex-col flex">
+                    <hr class="border-none h-[1.5px] bg-gray-700 w-full" />
                     <div class="text-gray-400/70 text-sm leading-none flex justify-between py-2 px-3 items-end">
                         <span class="text-xl text-white leading-none font-title ">Games</span>
                         <button class="flex gap-1 items-center cursor-pointer hover:text-white transition-all duration-200 outline-none">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-4" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 256 256"><path fill="currentColor" d="M248 128a87.34 87.34 0 0 1-17.6 52.81a8 8 0 1 1-12.8-9.62A71.34 71.34 0 0 0 232 128a72 72 0 0 0-144 0a8 8 0 0 1-16 0a88 88 0 0 1 3.29-23.88C74.2 104 73.1 104 72 104a48 48 0 0 0 0 96h24a8 8 0 0 1 0 16H72a64 64 0 1 1 9.29-127.32A88 88 0 0 1 248 128m-69.66 42.34L160 188.69V128a8 8 0 0 0-16 0v60.69l-18.34-18.35a8 8 0 0 0-11.32 11.32l32 32a8 8 0 0 0 11.32 0l32-32a8 8 0 0 0-11.32-11.32" /></svg>
                             <span>Install a game</span>
                         </button>
                     </div>
                     <ul class="relative py-3 w-full grid gap-2 grid-cols-3 list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-900 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.900)_25%,transparent)]  after:[-webkit-backdrop-filter:1px] after:left-0 after:-bottom-[1px]">
                         {games.map((game, key) => (
                             <div class="size-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-1" key={key}>
-                                <img alt={game.name} class="w-full rounded-xl aspect-square group-hover:scale-105 group-hover:shadow-sm group-hover:shadow-black" src={game.image} height={90} width={90} />
-                                <div class="flex flex-col">
-                                    <span>{game.name}</span>
+                                <img draggable={false} alt={game.name} class="select-none w-full rounded-xl aspect-square group-hover:scale-105 group-hover:shadow-sm group-hover:shadow-black" src={game.image} height={90} width={90} />
+                                <div class="flex flex-col px-2 w-full">
                                     <span>{game.name}</span>
                                 </div>
                             </div>
@@ -131,6 +176,6 @@ export default component$(() => {
                     </ul>
                 </div>
             </section>
-        </main>
+        </main >
     )
 })
