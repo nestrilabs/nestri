@@ -68,7 +68,7 @@ export default component$(() => {
                                     "--size": "3rem"
                                 }}
                                 class="relative h-full flex w-1/3 justify-end">
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1085660/9f2d65473912e04aea5b63378def39dc71be2485.ico" class="h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1085660/9f2d65473912e04aea5b63378def39dc71be2485.ico" class="h-12 shadow-lg shadow-gray-900 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
                         <button class="border-gray-700/70 group transition-all duration-200 border-[0.5px]  h-14  rounded-xl  px-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-700/70  hover:ring-2  hover:ring-[#707070] outline-none  disabled:opacity-50">
@@ -82,8 +82,8 @@ export default component$(() => {
                                     "--size": "3rem"
                                 }}
                                 class="relative h-full flex w-1/3 justify-end">
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black w-12 translate-y-4 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] rotate-12 rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1086940/ea19a7ce2af83c0240e775d79d3b690751a062c1.ico" class="h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black shadow-lg shadow-gray-900 w-12 translate-y-4 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] rotate-12 rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1086940/ea19a7ce2af83c0240e775d79d3b690751a062c1.ico" class="h-12 bg-black shadow-lg shadow-gray-900 w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
                         <button class="border-gray-700/70 group transition-all duration-200 border-[0.5px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden hover:bg-gray-700/70  hover:ring-2 hover:ring-[#707070] outline-none disabled:opacity-50">
@@ -97,9 +97,9 @@ export default component$(() => {
                                     "--size": "3rem"
                                 }}
                                 class="relative h-full flex w-1/3 justify-end">
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2767030/bd22e45404f4ed4f3c549b575e23ce76fe03fb07.ico" class=" h-12 bg-black w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[10deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[12deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1623730/22a20bdaa6d782f60caa45eb7b02fc2411dcd988.ico" class=" h-12 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2767030/bd22e45404f4ed4f3c549b575e23ce76fe03fb07.ico" class=" h-12 bg-black shadow-lg shadow-gray-900 w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[10deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black shadow-lg shadow-gray-900 w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[12deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
+                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1623730/22a20bdaa6d782f60caa45eb7b02fc2411dcd988.ico" class=" h-12 bg-black shadow-lg shadow-gray-900 w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
                         <button class="border-gray-700/70 group transition-all border-dashed duration-200 border-[0.5px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-700/70 hover:ring-2 hover:ring-[#707070] outline-none  disabled:opacity-50">
@@ -125,7 +125,7 @@ export default component$(() => {
                         </div>
                         <div class="w-full ml-4 relative">
                             <button class="gap-3.5 text-left hover:bg-gray-700/70 hover:ring-2 hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                <img height={52} width={52} draggable={false} class="select-none rounded-lg aspect-square w-[80px]" src={games[0].image} alt={games[0].name} />
+                                <img height={52} width={52} draggable={false} class="transition-all duration-150 group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={games[0].image} alt={games[0].name} />
                                 <div class="w-full h-[100px] border-b border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
                                     <span class="font-normal text-white max-w-full text-lg font-title truncate leading-none w-full">
                                         {games[0].name}
@@ -163,7 +163,7 @@ export default component$(() => {
                                 </div>
                             </button>
                             <button class="gap-3.5 text-left hover:bg-gray-700/70 hover:ring-2 hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                <img height={52} width={52} draggable={false} class="select-none rounded-lg aspect-square w-[80px]" src={games[1].image} alt={games[1].name} />
+                                <img height={52} width={52} draggable={false} class="transition-all duration-150 group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={games[1].image} alt={games[1].name} />
                                 <div class="w-full h-[100px] border-b border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
                                     <span class="font-normal text-white max-w-full text-lg font-title truncate leading-none">
                                         {games[1].name}
@@ -201,7 +201,7 @@ export default component$(() => {
                                 </div>
                             </button>
                             <button class="gap-3.5 text-left hover:bg-gray-700/70 hover:ring-2 hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                <img height={52} width={52} draggable={false} class="select-none rounded-lg aspect-square w-[80px]" src={games[4].image} alt={games[4].name} />
+                                <img height={52} width={52} draggable={false} class="transition-all duration-150 group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={games[4].image} alt={games[4].name} />
                                 <div class="w-full h-[100px] border-b border-gray-700/70 group-[:nth-last-child(2)]:border-none flex flex-col gap-2 justify-center">
                                     <span class="font-normal text-white max-w-full text-lg font-title truncate leading-none">
                                         {games[4].name}
@@ -254,14 +254,14 @@ export default component$(() => {
                             <span>Install a game</span>
                         </button>
                     </div>
-                    <ul class="relative py-3 w-full grid gap-2 grid-cols-3 list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-900 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.900)_25%,transparent)]  after:[-webkit-backdrop-filter:1px] after:left-0 after:-bottom-[1px]">
+                    <ul class="relative py-3 w-full grid sm:grid-cols-3 grid-cols-2 list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-900 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.900)_25%,transparent)]  after:[-webkit-backdrop-filter:1px] after:left-0 after:-bottom-[1px]">
                         {games.map((game, key) => (
-                            <div class="size-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-1" key={key}>
-                                <img draggable={false} alt={game.name} class="select-none w-full rounded-xl aspect-square group-hover:scale-105 group-hover:shadow-sm group-hover:shadow-black" src={game.image} height={90} width={90} />
+                            <button class="hover:bg-gray-700/70 transition-all duration-200 px-2 py-2 rounded-[15px] hover:ring-2 hover:ring-[#707070] outline-nonesize-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-2" key={key}>
+                                <img draggable={false} alt={game.name} class="select-none transition-all duration-200 group-hover:scale-[1.01] group-hover:shadow-lg group-hover:shadow-gray-900 w-full rounded-xl aspect-square" src={game.image} height={90} width={90} />
                                 <div class="flex flex-col px-2 w-full">
                                     <span>{game.name}</span>
                                 </div>
-                            </div>
+                            </button>
                         ))}
                     </ul>
                 </div>
