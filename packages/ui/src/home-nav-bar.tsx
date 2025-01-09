@@ -48,10 +48,10 @@ export const HomeNavBar = component$(() => {
                             style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
                     </svg>
                 </div>
-                <div class="relative z-[5] animate-fade-in items-center flex">
+                <div class="relative z-[5] animate-fade-in opacity-0 items-center flex">
                     <hr class="bg-gray-700/70 w-0.5 rounded-md mx-3 rotate-[16deg] h-7 border-none" />
                     <Dropdown.Root onOpenChange$={onDialogOpen}>
-                        <Dropdown.Trigger class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-700/70 focus:ring-primary-500 focus:ring-2 outline-none text-gray-400 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-700/70 ">
+                        <Dropdown.Trigger class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-700/70 focus:ring-[#707070] focus:ring-2 outline-none text-gray-400 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-700/70 ">
                             <Avatar name="WanjohiRyan's Games" />
                             <span class="truncate shrink max-w-[20ch]">WanjohiRyan's Games</span>
                             <svg xmlns="http://www.w3.org/2000/svg" class="size-4" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
@@ -102,9 +102,9 @@ export const HomeNavBar = component$(() => {
                 </div>
             </div>
 
-            <div class="gap-4 flex flex-row justify-center h-full items-center">
+            <div class="gap-4 flex flex-row justify-center h-full animate-fade-in opacity-0 items-center">
                 <Dropdown.Root onOpenChange$={onDialogOpen}>
-                    <Dropdown.Trigger class="focus:ring-primary-500 [&>svg:first-child]:size-5 text-gray-400 text-sm focus:ring-2 outline-none rounded-full transition-all flex items-center duration-150 select-none cursor-pointer hover:bg-gray-700/70 focus:bg-gray-700/70 gap-1 px-3 h-8" >
+                    <Dropdown.Trigger class="focus:ring-[#707070] [&>svg:first-child]:size-5 text-gray-400 text-sm focus:ring-2 outline-none rounded-full transition-all flex items-center duration-150 select-none cursor-pointer hover:bg-gray-700/70 focus:bg-gray-700/70 gap-1 px-3 h-8" >
                         <img src="https://avatars.githubusercontent.com/u/71614375?v=4" height={20} width={20} class="size-6 rounded-full" alt="Avatar" />
                         {/* <Avatar name="WanjohiRyan" /> */}
                         <span class="truncate shrink max-w-[20ch] sm:block hidden">WanjohiRyan</span>
