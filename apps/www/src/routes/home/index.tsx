@@ -155,11 +155,11 @@ export default component$(() => {
                                                         </div>
                                                     </div>
                                                 ))}
-                                                <div class="ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] rounded-[--size] h-[--size] min-w-[--size] bg-gray-500/70 text-[calc(var(--size)/2)] px-[calc(var(--size)/6)] relative flex items-center justify-center text-gray-100">
-                                                    {`+${Math.floor(Math.random() * 10)}`}
+                                                <div class="[&>svg]:size-[--size] ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] relative flex items-center justify-center">
+                                                    <Avatar name={(key * Math.floor(100 * Math.random())).toString()} />
                                                 </div>
                                             </div>
-                                            <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">open parties you can join</p>
+                                            <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${Math.floor(Math.random() * 100)} open parties you can join`}</p>
                                         </div>
                                     </div>
                                 </button>
