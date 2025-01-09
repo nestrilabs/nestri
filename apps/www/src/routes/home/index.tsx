@@ -54,7 +54,7 @@ export default component$(() => {
     return (
         <main class="flex w-screen h-full flex-col">
             <HomeNavBar />
-            <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 py-20 ">
+            <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 ">
                 <div class="flex flex-col gap-6 w-full py-4">
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         <button class="border-gray-400/70 dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group transition-all duration-200  border-[2px]  h-14  rounded-xl  px-4  gap-2  flex  items-center  justify-between  overflow-hidden bg-white dark:bg-black hover:bg-gray-300/70 dark:hover:bg-gray-700/70 disabled:opacity-50">
@@ -118,20 +118,20 @@ export default component$(() => {
                                 <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 20 20"><path fill="currentColor" d="M2.049 9.112a8.001 8.001 0 1 1 9.718 8.692a1.5 1.5 0 0 0-.206-1.865l-.01-.01q.244-.355.47-.837a9.3 9.3 0 0 0 .56-1.592H9.744q.17-.478.229-1h2.82A15 15 0 0 0 13 10c0-.883-.073-1.725-.206-2.5H7.206l-.05.315a4.5 4.5 0 0 0-.971-.263l.008-.052H3.46q-.112.291-.198.595c-.462.265-.873.61-1.213 1.017m9.973-4.204C11.407 3.59 10.657 3 10 3s-1.407.59-2.022 1.908A9.3 9.3 0 0 0 7.42 6.5h5.162a9.3 9.3 0 0 0-.56-1.592M6.389 6.5c.176-.743.407-1.422.683-2.015c.186-.399.401-.773.642-1.103A7.02 7.02 0 0 0 3.936 6.5zm9.675 7H13.61a10.5 10.5 0 0 1-.683 2.015a6.6 6.6 0 0 1-.642 1.103a7.02 7.02 0 0 0 3.778-3.118m-2.257-1h2.733c.297-.776.46-1.62.46-2.5s-.163-1.724-.46-2.5h-2.733c.126.788.193 1.63.193 2.5s-.067 1.712-.193 2.5m2.257-6a7.02 7.02 0 0 0-3.778-3.118c.241.33.456.704.642 1.103c.276.593.507 1.272.683 2.015zm-7.76 7.596a3.5 3.5 0 1 0-.707.707l2.55 2.55a.5.5 0 0 0 .707-.707zM8 12a2.5 2.5 0 1 1-5 0a2.5 2.5 0 0 1 5 0" /></svg>
                                 Find people to play with
                             </span>
-                            <button class="flex gap-1 items-center [&>svg]:size-5 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
+                            <button class="sm:flex hidden gap-1 items-center [&>svg]:size-5 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
                                 <span>Create a party</span>
                             </button>
                         </div>
-                        <ul class="list-none w-full ml-4 relative">
+                        <ul class="list-none ml-4 relative w-[calc(100%-1rem)]">
                             {games.slice(5, 8).sort().map((game, key) => (
                                 <button key={`find-${key}`} class="gap-3.5 text-left hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
                                     <img height={52} width={52} draggable={false} class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={game.image} alt={game.name} />
-                                    <div class="w-full h-[100px] border-b-2 border-gray-400/70 dark:border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
-                                        <span class="font-medium tracking-tighter text-gray-700 dark:text-gray-300 max-w-full text-lg font-title truncate leading-none w-full">
+                                    <div class="w-full h-[100px] overflow-hidden border-b-2 border-gray-400/70 dark:border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
+                                        <span class="font-medium tracking-tighter text-gray-700 dark:text-gray-300 max-w-full text-lg font-title truncate leading-none">
                                             {game.name}
                                         </span>
-                                        <div class="flex items-center px-2 gap-2">
+                                        <div class="flex items-center px-2 gap-2 w-full">
                                             <div
                                                 class="items-center flex"
                                                 style={{
@@ -159,7 +159,7 @@ export default component$(() => {
                                                     {`+${Math.floor(Math.random() * 10)}`}
                                                 </div>
                                             </div>
-                                            <p class="font-normal text-gray-600 dark:text-gray-400 text-sm">open parties you can join</p>
+                                            <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">open parties you can join</p>
                                         </div>
                                     </div>
                                 </button>

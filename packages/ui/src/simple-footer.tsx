@@ -8,9 +8,9 @@ type Props = {
 
 export default component$(({ class: className }: Props) => {
     return (
-        <footer class={cn("w-full max-w-[750px] mx-auto z-20 pb-16 text-sm text-gray-600/70 dark:text-gray-400/70", className)}>
+        <footer class={cn("w-full max-w-[750px] px-4 mx-auto z-20 pb-16 text-sm text-gray-600/70 dark:text-gray-400/70", className)}>
             <hr class="border-none w-full h-[1.5px] bg-gray-300 dark:bg-gray-700" />
-            <div class="py-4 px-3 flex justify-between flex-wrap">
+            <div class="py-4 px-3 flex justify-between">
                 <div class="flex gap-4 items-center h-6 leading-none -ml-3">
                     <Link href="/" class="hover:text-gray-700 dark:hover:text-gray-300 -mt-1 transition-all duration-200">
                         <svg
