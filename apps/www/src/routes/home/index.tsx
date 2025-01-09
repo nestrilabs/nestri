@@ -1,5 +1,5 @@
 import { component$ } from "@builder.io/qwik";
-import { HomeNavBar } from "@nestri/ui";
+import { HomeNavBar, SimpleFooter } from "@nestri/ui";
 import Avatar from "../../../../../packages/ui/src/avatar";
 
 const games = [
@@ -123,7 +123,7 @@ export default component$(() => {
                                 <span>Create a party</span>
                             </button>
                         </div>
-                        <div class="w-full ml-4 relative">
+                        <ul class="list-none w-full ml-4 relative">
                             <button class="gap-3.5 text-left hover:bg-gray-700/70 hover:ring-2 hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
                                 <img height={52} width={52} draggable={false} class="transition-all duration-150 group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={games[0].image} alt={games[0].name} />
                                 <div class="w-full h-[100px] border-b border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
@@ -239,7 +239,7 @@ export default component$(() => {
                                 </div>
                             </button>
                             <div class="[border:1px_dashed_theme(colors.gray.800)] [mask-image:linear-gradient(rgb(0,0,0)_0%,_rgb(0,0,0)_calc(100%-120px),_transparent_100%)] bottom-0 top-0 -left-[0.4625rem] absolute" />
-                        </div>
+                        </ul>
                     </div>
                 </div>
                 <div class="gap-2 w-full flex-col flex">
@@ -247,7 +247,7 @@ export default component$(() => {
                     <div class="text-gray-400/70 text-sm leading-none flex justify-between py-2 px-3 items-end">
                         <span class="text-xl text-white/60 leading-none font-title flex gap-2 ">
                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 22c-.818 0-1.6-.33-3.163-.99C4.946 19.366 3 18.543 3 17.16V7m9 15c.818 0 1.6-.33 3.163-.99C19.054 19.366 21 18.543 21 17.16V7m-9 15V11.355M8.326 9.691L5.405 8.278C3.802 7.502 3 7.114 3 6.5s.802-1.002 2.405-1.778l2.92-1.413C10.13 2.436 11.03 2 12 2s1.871.436 3.674 1.309l2.921 1.413C20.198 5.498 21 5.886 21 6.5s-.802 1.002-2.405 1.778l-2.92 1.413C13.87 10.564 12.97 11 12 11s-1.871-.436-3.674-1.309M6 12l2 1m9-9L7 9" color="currentColor" /></svg>
-                            Games
+                            Your Games
                         </span>
                         <button class="flex gap-1 items-center cursor-pointer hover:text-white transition-all duration-200 outline-none">
                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 256 256"><path fill="currentColor" d="M248 128a87.34 87.34 0 0 1-17.6 52.81a8 8 0 1 1-12.8-9.62A71.34 71.34 0 0 0 232 128a72 72 0 0 0-144 0a8 8 0 0 1-16 0a88 88 0 0 1 3.29-23.88C74.2 104 73.1 104 72 104a48 48 0 0 0 0 96h24a8 8 0 0 1 0 16H72a64 64 0 1 1 9.29-127.32A88 88 0 0 1 248 128m-69.66 42.34L160 188.69V128a8 8 0 0 0-16 0v60.69l-18.34-18.35a8 8 0 0 0-11.32 11.32l32 32a8 8 0 0 0 11.32 0l32-32a8 8 0 0 0-11.32-11.32" /></svg>
@@ -259,13 +259,14 @@ export default component$(() => {
                             <button class="hover:bg-gray-700/70 transition-all duration-200 px-2 py-2 rounded-[15px] hover:ring-2 hover:ring-[#707070] outline-nonesize-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-2" key={key}>
                                 <img draggable={false} alt={game.name} class="select-none transition-all duration-200 group-hover:scale-[1.01] group-hover:shadow-lg group-hover:shadow-gray-900 w-full rounded-xl aspect-square" src={game.image} height={90} width={90} />
                                 <div class="flex flex-col px-2 w-full">
-                                    <span>{game.name}</span>
+                                    <span class="max-w-full truncate">{game.name}</span>
                                 </div>
                             </button>
                         ))}
                     </ul>
                 </div>
             </section>
+            <SimpleFooter/>
         </main >
     )
 })
