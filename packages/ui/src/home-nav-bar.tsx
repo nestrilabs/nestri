@@ -59,7 +59,7 @@ export const HomeNavBar = component$(() => {
                         <Dropdown.Popover
                             class="bg-[hsla(0,0%,100%,.5)] dark:bg-[hsla(0,0%,100%,.026)] min-w-[160px] max-w-[240px] backdrop-blur-md rounded-lg py-1 px-2 border border-[#e8e8e8] dark:border-[#2e2e2e] [box-shadow:0_8px_30px_rgba(0,0,0,.12)]">
                             <Dropdown.Group class="flex flex-col gap-1">
-                                {actions.map((action, key) => (
+                                {actions.map((action) => (
                                     <Dropdown.Item
                                         key={action.label}
                                         class="leading-none text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative select-none  "
@@ -69,11 +69,11 @@ export const HomeNavBar = component$(() => {
                                             <Avatar class="flex-shrink-0 rounded-full" name={action.label} />
                                             {action.label}
                                         </span>
-                                        <div class="ml-auto">
+                                        {/* <div class="ml-auto">
                                             <kbd class="[text-shadow:hsla(0,0%,100%,.5)_0_0_1px] gap-1 items-center flex justify-center truncate px-1.5 text-xs min-w-5 h-5 rounded-[4px] bg-[rgba(0,0,0,.047)] dark:bg-[hsla(0,0%,100%,.056)] text-[#6f6f6f] dark:text-[#a0a0a0]">
                                                 {key + 1}
                                             </kbd>
-                                        </div>
+                                        </div> */}
                                     </Dropdown.Item>
                                 ))}
                             </Dropdown.Group>
