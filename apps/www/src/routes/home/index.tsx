@@ -1,6 +1,6 @@
+import { Avatar } from "@nestri/ui";
 import { component$ } from "@builder.io/qwik";
 import { HomeNavBar, SimpleFooter } from "@nestri/ui";
-import Avatar from "../../../../../packages/ui/src/avatar";
 
 const games = [
     {
