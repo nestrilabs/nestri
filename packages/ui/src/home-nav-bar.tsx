@@ -69,6 +69,11 @@ export const HomeNavBar = component$(() => {
                                             <Avatar class="flex-shrink-0 rounded-full" name={action.label} />
                                             {action.label}
                                         </span>
+                                        {/* <div class="ml-auto">
+                                            <kbd class="[text-shadow:hsla(0,0%,100%,.5)_0_0_1px] gap-1 items-center flex justify-center truncate px-1.5 text-xs min-w-5 h-5 rounded-[4px] bg-[rgba(0,0,0,.047)] dark:bg-[hsla(0,0%,100%,.056)] text-[#6f6f6f] dark:text-[#a0a0a0]">
+                                                {key + 1}
+                                            </kbd>
+                                        </div> */}
                                     </Dropdown.Item>
                                 ))}
                             </Dropdown.Group>

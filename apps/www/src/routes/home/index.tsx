@@ -151,7 +151,7 @@ export default component$(() => {
                                                                 maskImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.5" cx="0.5" cy="0.5"/></svg>'),url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.6" cx="1.1" cy="0.5"/></svg>')`
                                                             }}
                                                         >
-                                                            <Avatar name={(key * Math.floor(100 * Math.random())).toString()} />
+                                                            <Avatar name={((key + 1) * Math.floor(100 * Math.random())).toString()} />
                                                         </div>
                                                     </div>
                                                 ))}
