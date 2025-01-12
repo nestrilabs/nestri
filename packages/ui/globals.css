@@ -251,3 +251,107 @@
             0.9991 91.48%, 1);
     translate: 0 calc((var(--v) + 1) * (var(--line-height) * -1));
 }
+
+.modal-sheet {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: slideFromRight;
+}
+.modal::backdrop,
+.modal-sheet::backdrop {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeIn;
+}
+
+.modal-sheet[data-closing] {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: slideToRight;
+}
+
+.modal[data-closing]::backdrop,
+.modal-sheet[data-closing]::backdrop{
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeOut;
+}
+
+.modal {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: modalIn;
+}
+
+.modal[data-closing]{
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: modalOut;
+}
+
+@keyframes slideFromRight {
+    from {
+        transform: translate3d(var(--initial-transform, 100%), 0, 0);
+    }
+
+    to {
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+@keyframes slideToRight {
+    to {
+        transform: translate3d(var(--initial-transform, 100%), 0, 0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes fadeOut {
+    to {
+      opacity: 0;
+    }
+  }
+  
+  @keyframes modalIn {
+    from {
+      opacity: 0;
+      scale: 0.9;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+  
+  @keyframes modalOut {
+    to {
+      opacity: 0;
+      scale: 0.9;
+    }
+  }

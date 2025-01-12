@@ -111,10 +111,10 @@ export default component$(() => {
                                 </span>
                             </Modal.Trigger>
                             <Modal.Panel class="
-                            backdrop:bg-[#b3b5b799] dark:backdrop:bg-[#0009] backdrop:backdrop-grayscale-[.3] w-[340px] max-h-[75vh] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                            dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] w-[340px] max-h-[75vh] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
                             dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b] 
                            [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
-                            backdrop-blur-lg py-4 px-5" >
+                            backdrop-blur-lg py-4 px-5 modal" >
                                 <div class="size-full flex flex-col">
                                     <div class="flex justify-between items-start ">
                                         <div class="mb-3 size-14 rounded-full text-[#939597] dark:text-[#d2d4d7] bg-[rgba(19,21,23,0.04)] dark:bg-white/[.08] flex items-center justify-center [&>svg]:size-8" >
@@ -131,7 +131,7 @@ export default component$(() => {
                                     </div>
                                     <form action="#" class="mt-3 flex flex-col gap-3" >
                                         <div class="">
-                                                <label class="text-xs mb-2 relative block font-medium dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
+                                            <label class="text-xs mb-2 relative block font-medium dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
                                                 Machine ID
                                             </label>
                                             <input placeholder="fc27f428f9ca47d4b41b707ae0c62090" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
@@ -159,44 +159,97 @@ export default component$(() => {
                         </div>
                         <ul class="list-none ml-4 relative w-[calc(100%-1rem)]">
                             {games.slice(5, 8).sort().map((game, key) => (
-                                <button key={`find-${key}`} class="gap-3.5 text-left hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                    <img height={52} width={52} draggable={false} class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={game.image} alt={game.name} />
-                                    <div class="w-full h-[100px] overflow-hidden border-b-2 border-gray-400/70 dark:border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
-                                        <span class="font-medium tracking-tighter text-gray-700 dark:text-gray-300 max-w-full text-lg font-title truncate leading-none">
-                                            {game.name}
-                                        </span>
-                                        <div class="flex items-center px-2 gap-2 w-full">
-                                            <div
-                                                class="items-center flex"
-                                                style={{
-                                                    "--size": "1.25rem",
-                                                    "--cutout-avatar-percentage-visible": 0.4,
-                                                    "--head-margin-percentage": 0.2
-                                                }}>
-                                                {new Array(3).fill(0).map((_, key) => (
-                                                    <div key={key} class="relative items-start flex ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))]">
-                                                        <div
-                                                            class="[&>svg]:size-5"
-                                                            style={{
-                                                                maskSize: "100% 100%",
-                                                                maskRepeat: "no-repeat",
-                                                                maskPosition: "center",
-                                                                maskComposite: "subtract",
-                                                                maskImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.5" cx="0.5" cy="0.5"/></svg>'),url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.6" cx="1.1" cy="0.5"/></svg>')`
-                                                            }}
-                                                        >
-                                                            <Avatar name={((key + 1) * Math.floor(100 * Math.random())).toString()} />
+                                <Modal.Root key={`find-${key}`} >
+                                    <Modal.Trigger class="gap-3.5 text-left hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
+                                        <img height={52} width={52} draggable={false} class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={game.image} alt={game.name} />
+                                        <div class="w-full h-[100px] overflow-hidden border-b-2 border-gray-400/70 dark:border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
+                                            <span class="font-medium tracking-tighter text-gray-700 dark:text-gray-300 max-w-full text-lg font-title truncate leading-none">
+                                                {game.name}
+                                            </span>
+                                            <div class="flex items-center px-2 gap-2 w-full">
+                                                <div
+                                                    class="items-center flex"
+                                                    style={{
+                                                        "--size": "1.25rem",
+                                                        "--cutout-avatar-percentage-visible": 0.4,
+                                                        "--head-margin-percentage": 0.2
+                                                    }}>
+                                                    {new Array(3).fill(0).map((_, key) => (
+                                                        <div key={key} class="relative items-start flex ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))]">
+                                                            <div
+                                                                class="[&>svg]:size-5"
+                                                                style={{
+                                                                    maskSize: "100% 100%",
+                                                                    maskRepeat: "no-repeat",
+                                                                    maskPosition: "center",
+                                                                    maskComposite: "subtract",
+                                                                    maskImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.5" cx="0.5" cy="0.5"/></svg>'),url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.6" cx="1.1" cy="0.5"/></svg>')`
+                                                                }}
+                                                            >
+                                                                <Avatar name={((key + 1) * Math.floor(100 * Math.random())).toString()} />
+                                                            </div>
                                                         </div>
+                                                    ))}
+                                                    <div class="[&>svg]:size-[--size] ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] relative flex items-center justify-center">
+                                                        <Avatar name={(key * Math.floor(100 * Math.random())).toString()} />
                                                     </div>
-                                                ))}
-                                                <div class="[&>svg]:size-[--size] ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] relative flex items-center justify-center">
-                                                    <Avatar name={(key * Math.floor(100 * Math.random())).toString()} />
+                                                </div>
+                                                <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${Math.floor(Math.random() * 100)} open parties you can join`}</p>
+                                            </div>
+                                        </div>
+                                    </Modal.Trigger>
+                                    <Modal.Panel class="overflow-y-auto overflow-x-hidden min-h-[calc(100dvh-1rem)] w-[550px] right-2 mr-2 mt-2 modal-sheet dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                            dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b] 
+                           [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
+                            backdrop-blur-lg">
+                                        <div class="absolute top-0 w-full z-10 backdrop-blur-lg dark:bg-[rgba(19,21,23,0.48)] dark:border-white/[.08] border-b py-2 px-3 min-h-12 gap-3 flex justify-between items-center" >
+                                            <Modal.Close class="text-white/[.64] [&>svg]:size-5 [&>svg]:scale-[1.2] hover:text-[rgb(19,21,23)] py-1.5 px-2.5 rounded-lg transition-all duration-200 hover:bg-white/[.64]">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" fill-rule="evenodd"><path d="M24 0v24H0V0zM12.594 23.258l-.012.002l-.071.035l-.02.004l-.014-.004l-.071-.036q-.016-.004-.024.006l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.016-.018m.264-.113l-.014.002l-.184.093l-.01.01l-.003.011l.018.43l.005.012l.008.008l.201.092q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.003-.011l.018-.43l-.003-.012l-.01-.01z" /><path fill="currentColor" d="M6.293 6.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L10.586 12L6.293 7.707a1 1 0 0 1 0-1.414m6 0a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L16.586 12l-4.293-4.293a1 1 0 0 1 0-1.414" /></g></svg>
+                                            </Modal.Close>
+                                            <div class="gap-2 flex justify-between flex-1 items-center ">
+                                                <div class="w-full flex items-center gap-2">
+                                                    {/* <button class="text-white/[.64] bg-white/[.08] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-2 transition-all duration-200 [&>svg]:size-4 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M15 1.25h-4.056c-1.838 0-3.294 0-4.433.153c-1.172.158-2.121.49-2.87 1.238c-.748.749-1.08 1.698-1.238 2.87c-.153 1.14-.153 2.595-.153 4.433V16a3.75 3.75 0 0 0 3.166 3.705c.137.764.402 1.416.932 1.947c.602.602 1.36.86 2.26.982c.867.116 1.97.116 3.337.116h3.11c1.367 0 2.47 0 3.337-.116c.9-.122 1.658-.38 2.26-.982s.86-1.36.982-2.26c.116-.867.116-1.97.116-3.337v-5.11c0-1.367 0-2.47-.116-3.337c-.122-.9-.38-1.658-.982-2.26c-.531-.53-1.183-.795-1.947-.932A3.75 3.75 0 0 0 15 1.25m2.13 3.021A2.25 2.25 0 0 0 15 2.75h-4c-1.907 0-3.261.002-4.29.14c-1.005.135-1.585.389-2.008.812S4.025 4.705 3.89 5.71c-.138 1.029-.14 2.383-.14 4.29v6a2.25 2.25 0 0 0 1.521 2.13c-.021-.61-.021-1.3-.021-2.075v-5.11c0-1.367 0-2.47.117-3.337c.12-.9.38-1.658.981-2.26c.602-.602 1.36-.86 2.26-.981c.867-.117 1.97-.117 3.337-.117h3.11c.775 0 1.464 0 2.074.021M7.408 6.41c.277-.277.665-.457 1.4-.556c.754-.101 1.756-.103 3.191-.103h3c1.435 0 2.436.002 3.192.103c.734.099 1.122.28 1.399.556c.277.277.457.665.556 1.4c.101.754.103 1.756.103 3.191v5c0 1.435-.002 2.436-.103 3.192c-.099.734-.28 1.122-.556 1.399c-.277.277-.665.457-1.4.556c-.755.101-1.756.103-3.191.103h-3c-1.435 0-2.437-.002-3.192-.103c-.734-.099-1.122-.28-1.399-.556c-.277-.277-.457-.665-.556-1.4c-.101-.755-.103-1.756-.103-3.191v-5c0-1.435.002-2.437.103-3.192c.099-.734.28-1.122.556-1.399" clip-rule="evenodd" /></svg>
+                                                        Copy link
+                                                    </button> */}
+                                                    <button class="text-white/[.64] bg-white/[.08] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-2 transition-all duration-200 [&>svg]:size-4 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
+                                                        Game page
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6m0 0H9m9 0v9" /></svg>
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${Math.floor(Math.random() * 100)} open parties you can join`}</p>
+
                                         </div>
-                                    </div>
-                                </button>
+                                        <div class="p-4 pt-16 gap-6 flex flex-col text-white" >
+                                            <div class="m-4 mb-2 relative flex items-center justify-center" >
+                                                <img src={game.image} height={280} width={280} class="rounded-md bg-white/[.08] aspect-square size-[280px]" />
+                                            </div>
+                                            <div class="flex gap-2 flex-col text-white" >
+                                                <h1 class="text-3xl font-title font-bold tracking-tight leading-none" >{game.name}</h1>
+                                                <div class="mt-3 flex w-full max-w-full flex-col" >
+                                                    <div class="gap-4 items-center flex flex-col" >
+                                                        <div class="w-full bg-white[.08]">
+                                                            <img class="aspect-[287/388] w-[30px]" height={40} width={40} src="https://oyster.ignimgs.com/mediawiki/apis.ign.com/ratings/b/bf/ESRB-ver2013_T.png?width=325" />
+                                                        </div>
+                                                        <div class="flex-1 w-full">
+                                                            <span class="text-white font-medium truncate">Teen [13+]</span>
+                                                            <p class="text-white/[.09] text-sm" >Generally suitable for ages 13 and up. May contain violence, suggestive themes, crude humor, minimal blood, simulated gambling, and/or infrequent use of strong language.</p>
+                                                        </div>
+                                                    </div>
+                                                    <div class="gap-4 items-center flex" >
+                                                        <div class="w-full bg-white[.08]">
+                                                            <img class="aspect-[287/388] w-[30px]" height={40} width={40} src="https://oyster.ignimgs.com/mediawiki/apis.ign.com/ratings/b/bf/ESRB-ver2013_T.png?width=325" />
+                                                        </div>
+                                                        <div class="flex-1">
+                                                            <span class="text-white font-medium truncate">Teen [13+]</span>
+                                                            <p class="text-white/[.09] text-sm" >Generally suitable for ages 13 and up. May contain violence, suggestive themes, crude humor, minimal blood, simulated gambling, and/or infrequent use of strong language.</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Modal.Panel>
+                                </Modal.Root>
                             ))}
                             <div class="[border:1px_dashed_theme(colors.gray.300)] dark:[border:1px_dashed_theme(colors.gray.800)] [mask-image:linear-gradient(rgb(0,0,0)_0%,_rgb(0,0,0)_calc(100%-120px),_transparent_100%)] bottom-0 top-0 -left-[0.4625rem] absolute" />
                         </ul>
