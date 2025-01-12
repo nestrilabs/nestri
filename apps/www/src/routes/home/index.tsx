@@ -272,7 +272,7 @@ export default component$(() => {
                                                     <div class="mb-4 pb-2 border-b border-white/[.08] gap-2 flex justify-between items-center" >
                                                         <p class="font-medium text-[hsla(0,0%,100%,.79)] text-sm leading-none" >Public parties (View only)</p>
                                                     </div>
-                                                    <div class="gap-3 flex flex-col hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none rounded-lg py-2 px-3" >
+                                                    {/* <div class="gap-3 flex flex-col hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none rounded-lg py-2 px-3" >
                                                         <div class="gap-2 items-center flex [&>svg]:size-6 " >
                                                             <Avatar name="Wanjohiryan" />
                                                             <p class="truncate font-medium text-white" >By WanjohiRyan#47</p>
@@ -281,6 +281,30 @@ export default component$(() => {
                                                                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M5 21q-.425 0-.712-.288T4 20v-3q0-.825.588-1.412T6 15h12q.825 0 1.413.588T20 17v3q0 .425-.288.713T19 21t-.712-.288T18 20v-3H6v3q0 .425-.288.713T5 21m-.5-7q-.625 0-1.062-.437T3 12.5t.438-1.062T4.5 11t1.063.438T6 12.5t-.437 1.063T4.5 14M7 14V5q0-.825.588-1.412T9 3h6q.825 0 1.413.588T17 5v9zm12.5 0q-.625 0-1.062-.437T18 12.5t.438-1.062T19.5 11t1.063.438T21 12.5t-.437 1.063T19.5 14" /></svg>
                                                             </div>
                                                         </div>
+                                                    </div> */}
+                                                    <div class="p-3 -mx-3 gap-4 rounded-lg cursor-pointer flex relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
+                                                        <div class="text-sm flex-col flex items-baseline gap-2" >
+                                                            <span class="font-title [-webkit-line-clamp:3] text-[hsla(0,0%,100%,.79)] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium leading-none" >
+                                                                Co-Working Fridays : Sheepy
+                                                            </span>
+                                                            <div class="truncate flex text-[hsla(0,0%,100%,.5)] gap-2 items-end">
+                                                                <div class="[&>svg]:size-4" >
+                                                                    <Avatar name="Wanjohiryan" />
+                                                                </div>
+                                                                <div class="flex gap-4 text-sm leading-none items-baseline" >
+                                                                    <p class="truncate" >
+                                                                        By Wanjohiryan#47
+                                                                    </p>
+                                                                    <span class="whitespace-nowrap before:content-['·'] before:-ml-3 before:pr-1">
+                                                                        3 participating
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <span class="text-[hsla(0,0%,100%,.5)] ml-auto [&>svg]:size-5 flex gap-1 text-sm" >
+                                                            5
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M5 21q-.425 0-.712-.288T4 20v-3q0-.825.588-1.412T6 15h12q.825 0 1.413.588T20 17v3q0 .425-.288.713T19 21t-.712-.288T18 20v-3H6v3q0 .425-.288.713T5 21m-.5-7q-.625 0-1.062-.437T3 12.5t.438-1.062T4.5 11t1.063.438T6 12.5t-.437 1.063T4.5 14M7 14V5q0-.825.588-1.412T9 3h6q.825 0 1.413.588T17 5v9zm12.5 0q-.625 0-1.062-.437T18 12.5t.438-1.062T19.5 11t1.063.438T21 12.5t-.437 1.063T19.5 14" /></svg>
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>
