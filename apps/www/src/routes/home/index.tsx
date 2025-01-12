@@ -2,6 +2,7 @@ import { Avatar } from "@nestri/ui";
 // import {  } from "@qwik-ui/headless";
 import { component$ } from "@builder.io/qwik";
 import { HomeNavBar, Modal, SimpleFooter } from "@nestri/ui";
+import { cn } from "@nestri/ui/design";
 
 const games = [
     {
@@ -162,7 +163,7 @@ export default component$(() => {
                                 <Modal.Root key={`find-${key}`} >
                                     <Modal.Trigger class="gap-3.5 text-left hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
                                         <img height={52} width={52} draggable={false} class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-105 group-hover:shadow-lg group-hover:shadow-gray-900 select-none rounded-lg aspect-square w-[80px]" src={game.image} alt={game.name} />
-                                        <div class="w-full h-[100px] overflow-hidden border-b-2 border-gray-400/70 dark:border-gray-700/70 flex group-[:nth-last-child(2)]:border-none flex-col gap-2 justify-center">
+                                        <div class={cn("w-full h-[100px] overflow-hidden border-b-2 border-gray-400/70 dark:border-gray-700/70 flex flex-col gap-2 justify-center", key == 2 && "border-none")}>
                                             <span class="font-medium tracking-tighter text-gray-700 dark:text-gray-300 max-w-full text-lg font-title truncate leading-none">
                                                 {game.name}
                                             </span>
@@ -271,12 +272,18 @@ export default component$(() => {
                                                     <div class="mb-4 pb-2 border-b border-white/[.08] gap-2 flex justify-between items-center" >
                                                         <p class="font-medium text-[hsla(0,0%,100%,.79)] text-sm leading-none" >Public parties (View only)</p>
                                                     </div>
-                                                    <div class="p-3 -mx-3 gap-4 rounded-lg cursor-pointer flex relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
-                                                        <p class="min-w-20 text-[hsla(0,0%,100%,.5)]" >10:40 AM</p>
-                                                        <div class="text-sm flex-col flex items-baseline gap-1" >
-                                                            <span class="[-webkit-line-clamp:3] text-[hsla(0,0%,100%,.79)] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium" >
+                                                    <div class="p-3 -mx-3 rounded-lg cursor-pointer relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
+                                                        <div class="gap-4 flex items-baseline">
+                                                            <p class="min-w-20 text-[hsla(0,0%,100%,.5)] [&>svg]:size-6 [&>svg]:-translate-y-[2px] flex text-sm gap-2 " >
+                                                                5/9
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M2 16v3m10-6V7a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m-8 4V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2" /><path d="M20 9a2 2 0 0 0-2 2v2H6v-2a2 2 0 1 0-4 0v6h20v-6a2 2 0 0 0-2-2m2 7v3" /></g></svg>
+                                                            </p>
+                                                            <span class="[-webkit-line-clamp:3] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium" >
                                                                 Co-Working Fridays : Sheepy
                                                             </span>
+                                                        </div>
+                                                        <div class="text-sm text-[hsla(0,0%,100%,.5)]  mt-1 flex items-baseline gap-4" >
+                                                            <div class="min-w-20" />
                                                             <div class="truncate flex text-[hsla(0,0%,100%,.5)] gap-2 items-end">
                                                                 <div class="[&>svg]:size-4" >
                                                                     <Avatar name="Wanjohiryan" />
