@@ -153,10 +153,10 @@ export default component$(() => {
                                 <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 20 20"><path fill="currentColor" d="M2.049 9.112a8.001 8.001 0 1 1 9.718 8.692a1.5 1.5 0 0 0-.206-1.865l-.01-.01q.244-.355.47-.837a9.3 9.3 0 0 0 .56-1.592H9.744q.17-.478.229-1h2.82A15 15 0 0 0 13 10c0-.883-.073-1.725-.206-2.5H7.206l-.05.315a4.5 4.5 0 0 0-.971-.263l.008-.052H3.46q-.112.291-.198.595c-.462.265-.873.61-1.213 1.017m9.973-4.204C11.407 3.59 10.657 3 10 3s-1.407.59-2.022 1.908A9.3 9.3 0 0 0 7.42 6.5h5.162a9.3 9.3 0 0 0-.56-1.592M6.389 6.5c.176-.743.407-1.422.683-2.015c.186-.399.401-.773.642-1.103A7.02 7.02 0 0 0 3.936 6.5zm9.675 7H13.61a10.5 10.5 0 0 1-.683 2.015a6.6 6.6 0 0 1-.642 1.103a7.02 7.02 0 0 0 3.778-3.118m-2.257-1h2.733c.297-.776.46-1.62.46-2.5s-.163-1.724-.46-2.5h-2.733c.126.788.193 1.63.193 2.5s-.067 1.712-.193 2.5m2.257-6a7.02 7.02 0 0 0-3.778-3.118c.241.33.456.704.642 1.103c.276.593.507 1.272.683 2.015zm-7.76 7.596a3.5 3.5 0 1 0-.707.707l2.55 2.55a.5.5 0 0 0 .707-.707zM8 12a2.5 2.5 0 1 1-5 0a2.5 2.5 0 0 1 5 0" /></svg>
                                 Find people to play with
                             </span>
-                            <button class="sm:flex hidden gap-1 items-center [&>svg]:size-5 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
+                            {/* <button class="sm:flex hidden gap-1 items-center [&>svg]:size-5 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
                                 <span>Create a party</span>
-                            </button>
+                            </button> */}
                         </div>
                         <ul class="list-none ml-4 relative w-[calc(100%-1rem)]">
                             {games.slice(5, 8).sort().map((game, key) => (
@@ -272,25 +272,13 @@ export default component$(() => {
                                                     <div class="mb-4 pb-2 border-b border-white/[.08] gap-2 flex justify-between items-center" >
                                                         <p class="font-medium text-[hsla(0,0%,100%,.79)] text-sm leading-none" >Public parties (View only)</p>
                                                     </div>
-                                                    <div class="p-3 -mx-3 rounded-lg cursor-pointer relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
-                                                        <div class="gap-4 flex items-baseline">
-                                                            <p class="min-w-20 text-[hsla(0,0%,100%,.5)] [&>svg]:size-6 [&>svg]:-translate-y-[2px] flex text-sm gap-2 " >
+                                                    <div class="gap-3 flex flex-col hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none rounded-lg py-2 px-3" >
+                                                        <div class="gap-2 items-center flex [&>svg]:size-6 " >
+                                                            <Avatar name="Wanjohiryan" />
+                                                            <p class="truncate font-medium text-white" >By WanjohiRyan#47</p>
+                                                            <div class="ml-auto text-sm text-[hsla(0,0%,100%,.5)] [&>svg]:size-5 flex gap-2" >
                                                                 5/9
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"><path d="M2 16v3m10-6V7a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m-8 4V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2" /><path d="M20 9a2 2 0 0 0-2 2v2H6v-2a2 2 0 1 0-4 0v6h20v-6a2 2 0 0 0-2-2m2 7v3" /></g></svg>
-                                                            </p>
-                                                            <span class="[-webkit-line-clamp:3] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium" >
-                                                                Co-Working Fridays : Sheepy
-                                                            </span>
-                                                        </div>
-                                                        <div class="text-sm text-[hsla(0,0%,100%,.5)]  mt-1 flex items-baseline gap-4" >
-                                                            <div class="min-w-20" />
-                                                            <div class="truncate flex text-[hsla(0,0%,100%,.5)] gap-2 items-end">
-                                                                <div class="[&>svg]:size-4" >
-                                                                    <Avatar name="Wanjohiryan" />
-                                                                </div>
-                                                                <p class="text-sm leading-none truncate" >
-                                                                    By Wanjohiryan#47
-                                                                </p>
+                                                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M5 21q-.425 0-.712-.288T4 20v-3q0-.825.588-1.412T6 15h12q.825 0 1.413.588T20 17v3q0 .425-.288.713T19 21t-.712-.288T18 20v-3H6v3q0 .425-.288.713T5 21m-.5-7q-.625 0-1.062-.437T3 12.5t.438-1.062T4.5 11t1.063.438T6 12.5t-.437 1.063T4.5 14M7 14V5q0-.825.588-1.412T9 3h6q.825 0 1.413.588T17 5v9zm12.5 0q-.625 0-1.062-.437T18 12.5t.438-1.062T19.5 11t1.063.438T21 12.5t-.437 1.063T19.5 14" /></svg>
                                                             </div>
                                                         </div>
                                                     </div>
