@@ -4,6 +4,9 @@ import { tryAuthentication } from "./utils";
 
 export default class Server implements Party.Server {
   constructor(readonly room: Party.Room) { }
+  options: Party.ServerOptions = {
+    hibernate: true,
+  };
 
   static async onBeforeRequest(req: Party.Request, lobby: Party.Lobby) {
     const docs = new URL(req.url).toString().endsWith("/doc")
