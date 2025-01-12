@@ -1,4 +1,5 @@
 import colors from "tailwindcss/colors";
+import tailwindcssAnimate from "tailwindcss-animate"
 
 /** @type {import('tailwindcss').Config} */
 export default {
@@ -154,10 +155,10 @@ export default {
         "shake": "shake 0.075s 8",
         "multicolor": "multicolor 5s linear 0s infinite",
         "zoom-out": "zoom-out 5s ease-out",
-        "fade-in":"fade-in .3s ease forwards"
+        "fade-in": "fade-in .3s ease forwards",
       },
     },
-    plugins: []
+    plugins: [tailwindcssAnimate]
   }
 }
 

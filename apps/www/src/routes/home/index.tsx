@@ -1,6 +1,7 @@
+import { Avatar } from "@nestri/ui";
+// import {  } from "@qwik-ui/headless";
 import { component$ } from "@builder.io/qwik";
-import { HomeNavBar, SimpleFooter } from "@nestri/ui";
-import Avatar from "../../../../../packages/ui/src/avatar";
+import { HomeNavBar, Modal, SimpleFooter } from "@nestri/ui";
 
 const games = [
     {
@@ -102,12 +103,45 @@ export default component$(() => {
                                 <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1623730/22a20bdaa6d782f60caa45eb7b02fc2411dcd988.ico" class=" h-12 bg-black ring-gray-400/70 ring-1 shadow-lg shadow-gray-900 w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                             </div>
                         </button>
-                        <button class="border-gray-400/70 dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] group transition-all border-dashed duration-200 border-[2px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-300/70 dark:hover:bg-gray-700/70 outline-none  disabled:opacity-50">
-                            <span class="py-2 text-gray-600/70 dark:text-gray-400/70 leading-none group-hover:text-black dark:group-hover:text-white shrink truncate flex text-start justify-center items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.505 2h-1.501c-3.281 0-4.921 0-6.084.814a4.5 4.5 0 0 0-1.106 1.105C2 5.08 2 6.72 2 10s0 4.919.814 6.081a4.5 4.5 0 0 0 1.106 1.105C5.083 18 6.723 18 10.004 18h4.002c3.28 0 4.921 0 6.084-.814a4.5 4.5 0 0 0 1.105-1.105c.63-.897.772-2.08.805-4.081m-8-6h4m0 0h4m-4 0V2m0 4v4m-7 5h2m-1 3v4m-4 0h8" color="currentColor" /></svg>
-                                Add another Linux machine
-                            </span>
-                        </button>
+                        <Modal.Root class="w-full">
+                            <Modal.Trigger class="border-gray-400/70 w-full dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] group transition-all border-dashed duration-200 border-[2px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-300/70 dark:hover:bg-gray-700/70 outline-none  disabled:opacity-50">
+                                <span class="py-2 text-gray-600/70 dark:text-gray-400/70 leading-none group-hover:text-black dark:group-hover:text-white shrink truncate flex text-start justify-center items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.505 2h-1.501c-3.281 0-4.921 0-6.084.814a4.5 4.5 0 0 0-1.106 1.105C2 5.08 2 6.72 2 10s0 4.919.814 6.081a4.5 4.5 0 0 0 1.106 1.105C5.083 18 6.723 18 10.004 18h4.002c3.28 0 4.921 0 6.084-.814a4.5 4.5 0 0 0 1.105-1.105c.63-.897.772-2.08.805-4.081m-8-6h4m0 0h4m-4 0V2m0 4v4m-7 5h2m-1 3v4m-4 0h8" color="currentColor" /></svg>
+                                    Add another Linux machine
+                                </span>
+                            </Modal.Trigger>
+                            <Modal.Panel class="
+                            backdrop:bg-[#b3b5b799] dark:backdrop:bg-[#0009] backdrop:backdrop-grayscale-[.3] w-[340px] max-h-[75vh] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                            dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b] 
+                           [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
+                            backdrop-blur-lg py-4 px-5" >
+                                <div class="size-full flex flex-col">
+                                    <div class="flex justify-between items-start ">
+                                        <div class="mb-3 size-14 rounded-full text-[#939597] dark:text-[#d2d4d7] bg-[rgba(19,21,23,0.04)] dark:bg-white/[.08] flex items-center justify-center [&>svg]:size-8" >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.505 2h-1.501c-3.281 0-4.921 0-6.084.814a4.5 4.5 0 0 0-1.106 1.105C2 5.08 2 6.72 2 10s0 4.919.814 6.081a4.5 4.5 0 0 0 1.106 1.105C5.083 18 6.723 18 10.004 18h4.002c3.28 0 4.921 0 6.084-.814a4.5 4.5 0 0 0 1.105-1.105c.63-.897.772-2.08.805-4.081m-8-6h4m0 0h4m-4 0V2m0 4v4m-7 5h2m-1 3v4m-4 0h8" color="currentColor" /></svg>
+                                        </div>
+                                    </div>
+                                    <div class="dark:text-white text-black">
+                                        <h3 class="font-semibold text-2xl tracking-tight mb-2 font-title">Add a Linux machine</h3>
+                                        <div class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
+                                            Download and install the Nestri server from&nbsp;
+                                            {/* <a href="/" tabIndex={-1} class="focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] outline-none transition-all duration-200 text-primary-500 cursor-pointer underline underline-offset-3">this link</a> */}
+                                            &nbsp;and get your machine id
+                                        </div>
+                                    </div>
+                                    <form action="#" class="mt-3 flex flex-col gap-3" >
+                                        <div class="">
+                                                <label class="text-xs mb-2 relative block font-medium dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
+                                                Machine ID
+                                            </label>
+                                            <input placeholder="fc27f428f9ca47d4b41b707ae0c62090" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
+                                            focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070]" />
+                                        </div>
+                                        <button class="w-full h-[calc(2.25rem+2*1px)] transition-all duration-200  focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] outline-none bg-primary-500 text-white rounded-lg text-sm" >Add machine</button>
+                                    </form>
+                                </div>
+                            </Modal.Panel>
+                        </Modal.Root>
                     </div>
                 </div>
                 <div class="gap-2 w-full flex-col flex">
