@@ -241,7 +241,7 @@ export default component$(() => {
                                                         Indie
                                                     </button>
                                                 </div>
-                                                <div class="py-3 px-4 overflow-hidden bg-white/[.04] border border-[rgba(19,21,23,0.16)] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
+                                                <div class="py-3 px-4 overflow-hidden bg-white/[.04] border dark:border-[#343434] border-[#e2e2e2] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
                                                     <div class="bg-white/[.08] mx-[calc(-1rem+1px)] my-[calc(-0.75rem+1px)] mb-3 py-[calc(0.5rem-1px)] px-[calc(1rem-1px)]" >
                                                         <p class="text-sm text-[hsla(0,0%,100%,.79)] font-medium font-title" >Start a party</p>
                                                     </div>
@@ -262,7 +262,7 @@ export default component$(() => {
                                                         </div>
                                                         <div class=" mb-1 text-white w-full leading-none -my-1 py-1">
                                                             <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
-                                                                Play
+                                                                Start a party
                                                             </button>
                                                         </div>
                                                     </div>
@@ -270,6 +270,22 @@ export default component$(() => {
                                                 <div class="pb-1 pt-4" >
                                                     <div class="mb-4 pb-2 border-b border-white/[.08] gap-2 flex justify-between items-center" >
                                                         <p class="font-medium text-[hsla(0,0%,100%,.79)] text-sm leading-none" >Public parties (View only)</p>
+                                                    </div>
+                                                    <div class="p-3 -mx-3 gap-4 rounded-lg cursor-pointer flex relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
+                                                        <p class="min-w-20 text-[hsla(0,0%,100%,.5)]" >10:40 AM</p>
+                                                        <div class="text-sm flex-col flex items-baseline gap-1" >
+                                                            <span class="[-webkit-line-clamp:3] text-[hsla(0,0%,100%,.79)] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium" >
+                                                                Co-Working Fridays : Sheepy
+                                                            </span>
+                                                            <div class="truncate flex text-[hsla(0,0%,100%,.5)] gap-2 items-end">
+                                                                <div class="[&>svg]:size-4" >
+                                                                    <Avatar name="Wanjohiryan" />
+                                                                </div>
+                                                                <p class="text-sm leading-none truncate" >
+                                                                    By Wanjohiryan#47
+                                                                </p>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
