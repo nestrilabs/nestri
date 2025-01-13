@@ -153,10 +153,6 @@ export default component$(() => {
                                 <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 20 20"><path fill="currentColor" d="M2.049 9.112a8.001 8.001 0 1 1 9.718 8.692a1.5 1.5 0 0 0-.206-1.865l-.01-.01q.244-.355.47-.837a9.3 9.3 0 0 0 .56-1.592H9.744q.17-.478.229-1h2.82A15 15 0 0 0 13 10c0-.883-.073-1.725-.206-2.5H7.206l-.05.315a4.5 4.5 0 0 0-.971-.263l.008-.052H3.46q-.112.291-.198.595c-.462.265-.873.61-1.213 1.017m9.973-4.204C11.407 3.59 10.657 3 10 3s-1.407.59-2.022 1.908A9.3 9.3 0 0 0 7.42 6.5h5.162a9.3 9.3 0 0 0-.56-1.592M6.389 6.5c.176-.743.407-1.422.683-2.015c.186-.399.401-.773.642-1.103A7.02 7.02 0 0 0 3.936 6.5zm9.675 7H13.61a10.5 10.5 0 0 1-.683 2.015a6.6 6.6 0 0 1-.642 1.103a7.02 7.02 0 0 0 3.778-3.118m-2.257-1h2.733c.297-.776.46-1.62.46-2.5s-.163-1.724-.46-2.5h-2.733c.126.788.193 1.63.193 2.5s-.067 1.712-.193 2.5m2.257-6a7.02 7.02 0 0 0-3.778-3.118c.241.33.456.704.642 1.103c.276.593.507 1.272.683 2.015zm-7.76 7.596a3.5 3.5 0 1 0-.707.707l2.55 2.55a.5.5 0 0 0 .707-.707zM8 12a2.5 2.5 0 1 1-5 0a2.5 2.5 0 0 1 5 0" /></svg>
                                 Find people to play with
                             </span>
-                            {/* <button class="sm:flex hidden gap-1 items-center [&>svg]:size-5 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
-                                <span>Create a party</span>
-                            </button> */}
                         </div>
                         <ul class="list-none ml-4 relative w-[calc(100%-1rem)]">
                             {games.slice(5, 8).sort().map((game, key) => (
@@ -195,108 +191,81 @@ export default component$(() => {
                                                         <Avatar name={(key * Math.floor(100 * Math.random())).toString()} />
                                                     </div>
                                                 </div>
-                                                <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${Math.floor(Math.random() * 100)} open parties you can join`}</p>
+                                                <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${Math.floor(Math.random() * 100)} people are currently playing this game`}</p>
                                             </div>
                                         </div>
                                     </Modal.Trigger>
-                                    <Modal.Panel class="w-[550px] relative min-h-[calc(100dvh-1rem)] h-[calc(100dvh-1rem)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] right-2 top-0 mr-2 mt-2 modal-sheet dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                                    <Modal.Panel class="modal-sheet [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2] right-2 top-0  mr-2 mt-2
                                         dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b] 
                                         [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
                                         backdrop-blur-lg">
-                                        <div class="sticky top-0 w-full z-10 backdrop-blur-lg dark:bg-[rgba(19,21,23,0.48)] dark:border-white/[.08] border-b py-2 px-3 min-h-12 gap-3 flex justify-between items-center" >
-                                            <Modal.Close class="text-white/[.64] [&>svg]:size-5 [&>svg]:scale-[1.2] hover:text-[rgb(19,21,23)] py-1.5 px-2.5 rounded-lg transition-all duration-200 hover:bg-white/[.64]">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" fill-rule="evenodd"><path d="M24 0v24H0V0zM12.594 23.258l-.012.002l-.071.035l-.02.004l-.014-.004l-.071-.036q-.016-.004-.024.006l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.016-.018m.264-.113l-.014.002l-.184.093l-.01.01l-.003.011l.018.43l.005.012l.008.008l.201.092q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.003-.011l.018-.43l-.003-.012l-.01-.01z" /><path fill="currentColor" d="M6.293 6.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L10.586 12L6.293 7.707a1 1 0 0 1 0-1.414m6 0a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L16.586 12l-4.293-4.293a1 1 0 0 1 0-1.414" /></g></svg>
-                                            </Modal.Close>
-                                            <div class="gap-2 flex justify-between flex-1 items-center ">
-                                                <div class="w-full flex items-center gap-2">
-                                                    <button class="text-white/[.64] bg-white/[.08] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-1 transition-all duration-200 [&>svg]:size-5 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7c0-.932 0-1.398-.152-1.765a2 2 0 0 0-1.083-1.083C12.398 4 11.932 4 11 4H8c-1.886 0-2.828 0-3.414.586S4 6.114 4 8v3c0 .932 0 1.398.152 1.765a2 2 0 0 0 1.083 1.083C5.602 14 6.068 14 7 14" /><rect width="10" height="10" x="10" y="10" rx="2" /></g></svg>
-                                                        Copy link
-                                                    </button>
-                                                    <button class="text-white/[.64] bg-white/[.08] py-1.5 px-2.5 rounded-lg flex items-center gap-2 transition-all duration-200 [&>svg]:size-4 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
-                                                        Game page
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6m0 0H9m9 0v9" /></svg>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="p-4 pt-16 gap-6 flex flex-col text-white" >
-                                            <div class="m-4 mb-2 relative flex items-center justify-center" >
-                                                <img src={game.image} height={280} width={280} class="rounded-xl bg-white/[.08] aspect-square size-[280px]" />
-                                            </div>
-                                            <div class="flex gap-2 flex-col text-white" >
-                                                <h1 class="text-3xl font-title font-bold tracking-tight leading-none" >{game.name}</h1>
-                                                <p class="text-gray-400 [display:-webkit-box] max-w-full overflow-hidden [-webkit-line-clamp:3] [-webkit-box-orient:vertical]" >
-                                                    A short handcrafted pixel art platformer that follows Sheepy, an abandoned plushy brought to life. Sheepy: A Short Adventure is the first short game from MrSuicideSheep.
-                                                </p>
-                                                <div class="gap-y-1 gap-x-2 flex-wrap flex " >
-                                                    <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
-                                                        Adventure
-                                                    </button>
-                                                    <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
-                                                        Free to play
-                                                    </button><button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
-                                                        Indie
-                                                    </button>
-                                                </div>
-                                                <div class="py-3 px-4 overflow-hidden bg-white/[.04] border dark:border-[#343434] border-[#e2e2e2] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
-                                                    <div class="bg-white/[.08] mx-[calc(-1rem+1px)] my-[calc(-0.75rem+1px)] mb-3 py-[calc(0.5rem-1px)] px-[calc(1rem-1px)]" >
-                                                        <p class="text-sm text-[hsla(0,0%,100%,.79)] font-medium font-title" >Start a party</p>
+                                        <div class=" min-h-[calc(100dvh-1rem)] h-[calc(100dvh-1rem)] w-[550px] relative " >
+                                            <div class="sticky top-0 w-full z-10 backdrop-blur-lg dark:bg-[rgba(19,21,23,0.48)] dark:border-white/[.08] border-b py-2 px-3 min-h-12 gap-3 flex justify-between items-center" >
+                                                <Modal.Close class="text-white/[.64] [&>svg]:size-5 [&>svg]:scale-[1.2] hover:text-[rgb(19,21,23)] py-1.5 px-2.5 rounded-lg transition-all duration-200 hover:bg-white/[.64]">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" fill-rule="evenodd"><path d="M24 0v24H0V0zM12.594 23.258l-.012.002l-.071.035l-.02.004l-.014-.004l-.071-.036q-.016-.004-.024.006l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.016-.018m.264-.113l-.014.002l-.184.093l-.01.01l-.003.011l.018.43l.005.012l.008.008l.201.092q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.003-.011l.018-.43l-.003-.012l-.01-.01z" /><path fill="currentColor" d="M6.293 6.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L10.586 12L6.293 7.707a1 1 0 0 1 0-1.414m6 0a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L16.586 12l-4.293-4.293a1 1 0 0 1 0-1.414" /></g></svg>
+                                                </Modal.Close>
+                                                <div class="gap-2 flex justify-between flex-1 items-center ">
+                                                    <div class="w-full flex items-center gap-2">
+                                                        <button class="text-white/[.64] bg-white/[.08] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-1 transition-all duration-200 [&>svg]:size-5 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7c0-.932 0-1.398-.152-1.765a2 2 0 0 0-1.083-1.083C12.398 4 11.932 4 11 4H8c-1.886 0-2.828 0-3.414.586S4 6.114 4 8v3c0 .932 0 1.398.152 1.765a2 2 0 0 0 1.083 1.083C5.602 14 6.068 14 7 14" /><rect width="10" height="10" x="10" y="10" rx="2" /></g></svg>
+                                                            Copy link
+                                                        </button>
+                                                        <button class="text-white/[.64] bg-white/[.08] py-1.5 px-2.5 rounded-lg flex items-center gap-2 transition-all duration-200 [&>svg]:size-4 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
+                                                            Game page
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6m0 0H9m9 0v9" /></svg>
+                                                        </button>
                                                     </div>
-                                                    <div class="gap-3 flex flex-col">
-                                                        <div class=" border-b border-white/[.08] gap-3 flex flex-col  [margin:-0.5rem_-1rem_0.25rem] [padding:0.5rem_1rem_0.75rem] ">
-                                                            <div class="flex gap-3">
-                                                                <div class="size-7 mt-2 shrink-0 flex items-center justify-center" >
-                                                                    <img alt="ESRN-Teen" width={40} height={40} src="https://oyster.ignimgs.com/mediawiki/apis.ign.com/ratings/b/bf/ESRB-ver2013_T.png?width=325" />
-                                                                </div>
-                                                                <div>
-                                                                    <p class="font-medium font-title" >Teen [13+]</p>
-                                                                    <span class="mt-[1px] text-sm leading-none text-[hsla(0,0%,100%,.79)]" >Mild Language, Violence, Blood and Gore, Drug References</span>
+                                                </div>
+                                            </div>
+                                            <div class="p-4 gap-6 flex flex-col text-white" >
+                                                <div class="m-4 mb-2 relative flex items-center justify-center" >
+                                                    <img src={game.image} height={280} width={280} class="rounded-xl bg-white/[.08] aspect-square size-[280px]" />
+                                                </div>
+                                                <div class="flex gap-2 flex-col text-white" >
+                                                    <h1 class="text-3xl font-title font-bold tracking-tight leading-none" >{game.name}</h1>
+                                                    <p class="text-gray-400 [display:-webkit-box] max-w-full overflow-hidden [-webkit-line-clamp:3] [-webkit-box-orient:vertical]" >
+                                                        A short handcrafted pixel art platformer that follows Sheepy, an abandoned plushy brought to life. Sheepy: A Short Adventure is the first short game from MrSuicideSheep.
+                                                    </p>
+                                                    <div class="gap-y-1 gap-x-2 flex-wrap flex " >
+                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
+                                                            Adventure
+                                                        </button>
+                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
+                                                            Free to play
+                                                        </button><button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
+                                                            Indie
+                                                        </button>
+                                                    </div>
+                                                    <div class="py-3 px-4 overflow-hidden bg-white/[.04] border dark:border-[#343434] border-[#e2e2e2] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
+                                                        <div class="bg-white/[.08] mx-[calc(-1rem+1px)] my-[calc(-0.75rem+1px)] mb-3 py-[calc(0.5rem-1px)] px-[calc(1rem-1px)]" >
+                                                            <p class="text-sm text-[hsla(0,0%,100%,.79)] font-medium font-title" >Start a party</p>
+                                                        </div>
+                                                        <div class="gap-3 flex flex-col">
+                                                            <div class=" border-b border-white/[.08] gap-3 flex flex-col  [margin:-0.5rem_-1rem_0.25rem] [padding:0.5rem_1rem_0.75rem] ">
+                                                                <div class="flex gap-3">
+                                                                    <div class="size-7 mt-2 shrink-0 flex items-center justify-center" >
+                                                                        <img alt="ESRN-Teen" width={40} height={40} src="https://oyster.ignimgs.com/mediawiki/apis.ign.com/ratings/b/bf/ESRB-ver2013_T.png?width=325" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <p class="font-medium font-title" >Teen [13+]</p>
+                                                                        <span class="mt-[1px] text-sm leading-none text-[hsla(0,0%,100%,.79)]" >Mild Language, Violence, Blood and Gore, Drug References</span>
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                        <div >
+                                                            {/* <div >
                                                             Hello! To start a party with this game, press the button below.
-                                                        </div>
-                                                        <div class=" mb-1 text-white w-full leading-none -my-1 py-1">
-                                                            <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
-                                                                Start a party
-                                                            </button>
+                                                        </div> */}
+                                                            <div class=" mb-1 text-white w-full leading-none -my-1 py-1">
+                                                                <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
+                                                                    Start a party
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                {/* <div class="pb-1 pt-4" >
-                                                    <div class="mb-4 pb-2 border-b border-white/[.08] gap-2 flex justify-between items-center" >
-                                                        <p class="font-medium text-[hsla(0,0%,100%,.79)] text-sm leading-none" >Public parties (View only)</p>
-                                                    </div>
-                                                    <div class="p-3 -mx-3 gap-4 rounded-lg cursor-pointer flex relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
-                                                        <div class="text-sm flex-col flex items-baseline gap-2" >
-                                                            <span class="font-title [-webkit-line-clamp:3] text-[hsla(0,0%,100%,.79)] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium leading-none" >
-                                                                Co-Working Fridays : Sheepy
-                                                            </span>
-                                                            <div class="truncate flex text-[hsla(0,0%,100%,.5)] gap-2 items-end">
-                                                                <div class="[&>svg]:size-4" >
-                                                                    <Avatar name="Wanjohiryan" />
-                                                                </div>
-                                                                <div class="flex gap-4 text-sm leading-none items-baseline" >
-                                                                    <p class="truncate" >
-                                                                        By Wanjohiryan#47
-                                                                    </p>
-                                                                    <span class="whitespace-nowrap before:content-['·'] before:-ml-3 before:pr-1">
-                                                                        3 participating
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <span class="text-[hsla(0,0%,100%,.5)] ml-auto [&>svg]:size-5 flex gap-1 text-sm" >
-                                                            5
-                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M5 21q-.425 0-.712-.288T4 20v-3q0-.825.588-1.412T6 15h12q.825 0 1.413.588T20 17v3q0 .425-.288.713T19 21t-.712-.288T18 20v-3H6v3q0 .425-.288.713T5 21m-.5-7q-.625 0-1.062-.437T3 12.5t.438-1.062T4.5 11t1.063.438T6 12.5t-.437 1.063T4.5 14M7 14V5q0-.825.588-1.412T9 3h6q.825 0 1.413.588T17 5v9zm12.5 0q-.625 0-1.062-.437T18 12.5t.438-1.062T19.5 11t1.063.438T21 12.5t-.437 1.063T19.5 14" /></svg>
-                                                        </span>
-                                                    </div>
-                                                </div> */}
                                             </div>
                                         </div>
                                     </Modal.Panel>
@@ -320,12 +289,64 @@ export default component$(() => {
                     </div>
                     <ul class="relative py-3 w-full grid sm:grid-cols-3 grid-cols-2 list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-100 dark:after:to-gray-900 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.100)_25%,transparent)] dark:after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.900)_25%,transparent)]  after:[-webkit-backdrop-filter:1px] after:left-0 after:-bottom-[1px]">
                         {games.map((game, key) => (
-                            <button class="hover:bg-gray-300/70 dark:hover:bg-gray-700/70 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] px-2 py-2 rounded-[15px] hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none size-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-2" key={key}>
-                                <img draggable={false} alt={game.name} class="select-none [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-[1.01] group-hover:shadow-lg group-hover:shadow-gray-900 w-full rounded-xl aspect-square" src={game.image} height={90} width={90} />
-                                <div class="flex flex-col px-2 w-full">
-                                    <span class="max-w-full truncate">{game.name}</span>
-                                </div>
-                            </button>
+                            <Modal.Root key={`game-${key}`} >
+                                <Modal.Trigger class="hover:bg-gray-300/70 dark:hover:bg-gray-700/70 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] px-2 py-2 rounded-[15px] hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none size-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-2" key={key}>
+                                    <img draggable={false} alt={game.name} class="select-none [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-[1.01] group-hover:shadow-lg group-hover:shadow-gray-900 w-full rounded-xl aspect-square" src={game.image} height={90} width={90} />
+                                    <div class="flex flex-col px-2 w-full">
+                                        <span class="max-w-full truncate">{game.name}</span>
+                                    </div>
+                                </Modal.Trigger>
+                                <Modal.Panel class="dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                                            dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[rgb(22,22,22)] 
+                                            box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
+                                            backdrop-blur-lg modal" >
+                                    <div class="flex flex-col min-w-[17rem] relative text-white/70 w-full max-w-[41.8125rem] min-h-[min(90%,100%-3rem)]" >
+                                        <div class="flex-1 relative w-full " >
+                                            <div class="relative w-full pb-[56.25%] overflow-hidden after:z-[2] after:absolute after:inset-0 after:[background:linear-gradient(40deg,rgb(22,22,22)_24.16%,rgba(6,10,23,0)_56.61%),linear-gradient(0deg,rgb(22,22,22)_3.91%,rgba(6,10,23,0)_69.26%)]" >
+                                                <div
+                                                    style={{
+                                                        backgroundImage: `url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.id}/library_hero.jpg)`
+                                                    }}
+                                                    class={cn("absolute inset-0 z-[1] [transition:opacity_300ms_ease-in-out] bg-cover bg-[center_top] bg-no-repeat")} />
+                                                <div
+                                                    style={{
+                                                        backgroundImage: `url(${game.image})`
+                                                    }}
+                                                    class={cn("absolute inset-0 -z-[1] bg-cover bg-[center_top] bg-no-repeat blur-[4rem]")} />
+                                                <div
+                                                    style={{
+                                                        backgroundImage: `url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.id}/logo.png)`
+                                                    }}
+                                                    class="absolute bottom-0 min-[600px]:left-10 left-4 bg-contain bg-[center_bottom] bg-no-repeat  min-[600px]:max-w-[40%] w-full aspect-video z-[3] " />
+                                            </div>
+                                            <div class="min-[600px]:p-10 min-[600px]:pt-4 pt-4 px-4 pb-6" >
+                                                <ul class="[&_svg]:-mt-[2px] xl:mb-3 min-[960px]:mb-2 min-[600px]:leading-5 mb-4 leading-[0.625rem] list-none flex w-full" >
+                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center text-sm bg-[rgb(65,65,65)] px-2 py-1 w-max rounded-md" >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
+                                                        Shooter
+                                                    </li>
+                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center text-sm bg-[rgb(65,65,65)] px-2 py-1 w-max rounded-md" >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
+                                                        Action
+                                                    </li>
+                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center text-sm bg-[rgb(65,65,65)] px-2 py-1 w-max rounded-md" >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
+                                                        Free to play
+                                                    </li>
+                                                </ul>
+                                                <p class="text-white/90 tracking-tight" >
+                                                    Delta Force is a first-person shooter which offers players both a single player campaign based on the movie Black Hawk Down, but also large-scale PvP multiplayer action. The game was formerly known as Delta Force: Hawk Ops.
+                                                </p>
+                                                <div class="sm:pt-10 sm:block hidden" >
+                                                    <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
+                                                        Play Now
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Modal.Panel>
+                            </Modal.Root>
                         ))}
                     </ul>
                 </div>
