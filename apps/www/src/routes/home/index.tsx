@@ -125,16 +125,14 @@ export default component$(() => {
                                     <div class="dark:text-white text-black">
                                         <h3 class="font-semibold text-2xl tracking-tight mb-2 font-title">Add a Linux machine</h3>
                                         <div class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
-                                            Download and install the Nestri server from&nbsp;
-                                            {/* <a href="/" tabIndex={-1} class="focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] outline-none transition-all duration-200 text-primary-500 cursor-pointer underline underline-offset-3">this link</a> */}
-                                            &nbsp;and get your machine id
+                                            Download and install Nestri on your remote server or computer to connect it. Then paste the generated machine id here.
                                         </div>
                                     </div>
                                     <form action="#" class="mt-3 flex flex-col gap-3" >
                                         <div class="">
-                                            <label class="text-xs mb-2 relative block font-medium dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
+                                            {/* <label class="text-xs mb-2 relative block font-medium dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
                                                 Machine ID
-                                            </label>
+                                            </label> */}
                                             <input placeholder="fc27f428f9ca47d4b41b707ae0c62090" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
                                             focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070]" />
                                         </div>
@@ -217,7 +215,7 @@ export default component$(() => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="p-4 gap-6 flex flex-col text-white" >
+                                            <div class="p-4 pt-0 gap-6 flex flex-col text-white" >
                                                 <div class="m-4 mb-2 relative flex items-center justify-center" >
                                                     <img src={game.image} height={280} width={280} class="rounded-xl bg-white/[.08] aspect-square size-[280px]" />
                                                 </div>
@@ -241,7 +239,7 @@ export default component$(() => {
                                                     </div>
                                                     <div class="py-3 px-4 overflow-hidden bg-white/[.04] border dark:border-[#343434] border-[#e2e2e2] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
                                                         <div class="bg-white/[.08] mx-[calc(-1rem+1px)] my-[calc(-0.75rem+1px)] mb-3 py-[calc(0.5rem-1px)] px-[calc(1rem-1px)]" >
-                                                            <p class="text-sm text-[hsla(0,0%,100%,.79)] font-medium font-title" >Start a party</p>
+                                                            <p class="text-sm text-[hsla(0,0%,100%,.79)] font-medium font-title" >Join a Nestri party</p>
                                                         </div>
                                                         <div class="gap-3 flex flex-col">
                                                             <div class=" border-b border-white/[.08] gap-3 flex flex-col  [margin:-0.5rem_-1rem_0.25rem] [padding:0.5rem_1rem_0.75rem] ">
@@ -255,12 +253,9 @@ export default component$(() => {
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            {/* <div >
-                                                            Hello! To start a party with this game, press the button below.
-                                                        </div> */}
                                                             <div class=" mb-1 text-white w-full leading-none -my-1 py-1">
                                                                 <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
-                                                                    Start a party
+                                                                    Join this party
                                                                 </button>
                                                             </div>
                                                         </div>
