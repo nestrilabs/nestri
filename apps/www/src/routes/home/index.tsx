@@ -129,10 +129,8 @@ export default component$(() => {
                                         </div>
                                     </div>
                                     <form action="#" class="mt-3 flex flex-col gap-3" >
-                                        <div>
-                                            <input placeholder="fc27f428f9ca47d4b41b707ae0c62090" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
+                                        <input placeholder="fc27f428f9ca47d4b41b707ae0c62090" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
                                             focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070]" />
-                                        </div>
                                         <button class="w-full h-[calc(2.25rem+2*1px)] transition-all duration-200 hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] outline-none bg-primary-500 text-white rounded-lg text-sm" >Add machine</button>
                                     </form>
                                 </div>
@@ -247,7 +245,7 @@ export default component$(() => {
                                                                     </div>
                                                                     <div>
                                                                         <p class="font-medium font-title" >Teen [13+]</p>
-                                                                            <span class="mt-[1px] text-sm leading-none text-[rgba(19,21,23,0.64)] dark:text-[hsla(0,0%,100%,.79)]" >Mild Language, Violence, Blood and Gore, Drug References</span>
+                                                                        <span class="mt-[1px] text-sm leading-none text-[rgba(19,21,23,0.64)] dark:text-[hsla(0,0%,100%,.79)]" >Mild Language, Violence, Blood and Gore, Drug References</span>
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -280,7 +278,7 @@ export default component$(() => {
                             <span>Install a game</span>
                         </button>
                     </div>
-                    <ul class="relative py-3 w-full grid sm:grid-cols-3 grid-cols-2 list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-100 dark:after:to-gray-900 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.100)_25%,transparent)] dark:after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.900)_25%,transparent)]  after:[-webkit-backdrop-filter:1px] after:left-0 after:-bottom-[1px]">
+                    <ul class="relative py-3 w-full grid sm:grid-cols-3 grid-cols-2 list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-100 dark:after:to-gray-900 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.100)_25%,transparent)] dark:after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.900)_25%,transparent)] after:left-0 after:-bottom-[1px]">
                         {games.map((game, key) => (
                             <Modal.Root key={`game-${key}`} >
                                 <Modal.Trigger class="hover:bg-gray-300/70 dark:hover:bg-gray-700/70 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] px-2 py-2 rounded-[15px] hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none size-full group [&_*]:transition-all [&_*]:duration-150 flex flex-col gap-2" key={key}>
@@ -289,13 +287,13 @@ export default component$(() => {
                                         <span class="max-w-full truncate">{game.name}</span>
                                     </div>
                                 </Modal.Trigger>
-                                <Modal.Panel class="dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                                <Modal.Panel class="dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-gray-300/70
                                             dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[rgb(22,22,22)] 
-                                            box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
+                                            box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd]
                                             backdrop-blur-lg modal" >
-                                    <div class="flex flex-col min-w-[17rem] relative text-white/70 w-full max-w-[41.8125rem] min-h-[min(90%,100%-3rem)]" >
+                                    <div class="flex flex-col min-w-[17rem] relative text-black/70 dark:text-white/70 w-full max-w-[41.8125rem] min-h-[min(90%,100%-3rem)]" >
                                         <div class="flex-1 relative w-full " >
-                                            <div class="relative w-full pb-[56.25%] overflow-hidden after:z-[2] after:absolute after:inset-0 after:[background:linear-gradient(40deg,rgb(22,22,22)_24.16%,rgba(6,10,23,0)_56.61%),linear-gradient(0deg,rgb(22,22,22)_3.91%,rgba(6,10,23,0)_69.26%)]" >
+                                            <div class="relative w-full pb-[56.25%] overflow-hidden after:z-[2] after:absolute after:inset-0 dark:after:[background:linear-gradient(40deg,rgb(22,22,22)_24.16%,rgba(6,10,23,0)_56.61%),linear-gradient(0deg,rgb(22,22,22)_3.91%,rgba(6,10,23,0)_69.26%)]" >
                                                 <div
                                                     style={{
                                                         backgroundImage: `url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.id}/library_hero.jpg)`
@@ -310,24 +308,24 @@ export default component$(() => {
                                                     style={{
                                                         backgroundImage: `url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.id}/logo.png)`
                                                     }}
-                                                    class="absolute bottom-0 min-[600px]:left-10 left-4 bg-contain bg-[center_bottom] bg-no-repeat  min-[600px]:max-w-[40%] w-full aspect-video z-[3] " />
+                                                    class="absolute dark:bottom-0 min-[600px]:left-10 left-4 bg-contain bg-[center_bottom] bg-no-repeat min-[600px]:max-w-[40%] w-full aspect-video z-[3] bottom-[20px] " />
                                             </div>
                                             <div class="min-[600px]:p-10 min-[600px]:pt-4 pt-4 px-4 pb-6" >
                                                 <ul class="[&_svg]:-mt-[2px] xl:mb-3 min-[960px]:mb-2 min-[600px]:leading-5 mb-4 leading-[0.625rem] list-none flex w-full" >
-                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center text-sm bg-[rgb(65,65,65)] px-2 py-1 w-max rounded-md" >
+                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center justify-center text-sm dark:bg-[rgb(65,65,65)] bg-[rgb(171,171,171)] px-2 py-1 w-max rounded-md" >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                         Shooter
                                                     </li>
-                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center text-sm bg-[rgb(65,65,65)] px-2 py-1 w-max rounded-md" >
+                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center  justify-center text-sm dark:bg-[rgb(65,65,65)] bg-[rgb(171,171,171)] px-2 py-1 w-max rounded-md" >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                         Action
                                                     </li>
-                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center text-sm bg-[rgb(65,65,65)] px-2 py-1 w-max rounded-md" >
+                                                    <li class="mr-2 flex gap-0.5 [&>svg]:size-[14px] items-center justify-center text-sm dark:bg-[rgb(65,65,65)] bg-[rgb(171,171,171)] px-2 py-1 w-max rounded-md" >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                         Free to play
                                                     </li>
                                                 </ul>
-                                                <p class="text-white/90 tracking-tight" >
+                                                <p class="text-black/90 dark:text-white/90 tracking-tight" >
                                                     Delta Force is a first-person shooter which offers players both a single player campaign based on the movie Black Hawk Down, but also large-scale PvP multiplayer action. The game was formerly known as Delta Force: Hawk Ops.
                                                 </p>
                                                 <div class="sm:pt-10 sm:block hidden" >
