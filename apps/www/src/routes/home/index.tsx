@@ -199,7 +199,7 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </Modal.Trigger>
-                                    <Modal.Panel class="w-[550px] relative min-h-[calc(100dvh-1rem)] h-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] right-2 mr-2 mt-2 modal-sheet dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
+                                    <Modal.Panel class="w-[550px] relative min-h-[calc(100dvh-1rem)] h-[calc(100dvh-1rem)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] right-2 mr-2 mt-2 top-2 modal-sheet dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
                                         dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b] 
                                         [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
                                         backdrop-blur-lg">
@@ -230,14 +230,14 @@ export default component$(() => {
                                                     A short handcrafted pixel art platformer that follows Sheepy, an abandoned plushy brought to life. Sheepy: A Short Adventure is the first short game from MrSuicideSheep.
                                                 </p>
                                                 <div class="gap-y-1 gap-x-2 flex-wrap flex " >
-                                                    <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center text-white inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                    <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                         Adventure
                                                     </button>
-                                                    <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center text-white inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                    <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                         Free to play
-                                                    </button><button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center text-white inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                    </button><button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                         Indie
                                                     </button>
@@ -268,20 +268,10 @@ export default component$(() => {
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div class="pb-1 pt-4" >
+                                                {/* <div class="pb-1 pt-4" >
                                                     <div class="mb-4 pb-2 border-b border-white/[.08] gap-2 flex justify-between items-center" >
                                                         <p class="font-medium text-[hsla(0,0%,100%,.79)] text-sm leading-none" >Public parties (View only)</p>
                                                     </div>
-                                                    {/* <div class="gap-3 flex flex-col hover:bg-gray-300/70 dark:hover:bg-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none rounded-lg py-2 px-3" >
-                                                        <div class="gap-2 items-center flex [&>svg]:size-6 " >
-                                                            <Avatar name="Wanjohiryan" />
-                                                            <p class="truncate font-medium text-white" >By WanjohiRyan#47</p>
-                                                            <div class="ml-auto text-sm text-[hsla(0,0%,100%,.5)] [&>svg]:size-5 flex gap-2" >
-                                                                5/9
-                                                                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M5 21q-.425 0-.712-.288T4 20v-3q0-.825.588-1.412T6 15h12q.825 0 1.413.588T20 17v3q0 .425-.288.713T19 21t-.712-.288T18 20v-3H6v3q0 .425-.288.713T5 21m-.5-7q-.625 0-1.062-.437T3 12.5t.438-1.062T4.5 11t1.063.438T6 12.5t-.437 1.063T4.5 14M7 14V5q0-.825.588-1.412T9 3h6q.825 0 1.413.588T17 5v9zm12.5 0q-.625 0-1.062-.437T18 12.5t.438-1.062T19.5 11t1.063.438T21 12.5t-.437 1.063T19.5 14" /></svg>
-                                                            </div>
-                                                        </div>
-                                                    </div> */}
                                                     <div class="p-3 -mx-3 gap-4 rounded-lg cursor-pointer flex relative hover:bg-gray-300/70 dark:hover:bg-gray-700/70 transition-all duration-200 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070]" >
                                                         <div class="text-sm flex-col flex items-baseline gap-2" >
                                                             <span class="font-title [-webkit-line-clamp:3] text-[hsla(0,0%,100%,.79)] [display:-webkit-box] overflow-hidden text-lg [-webkit-box-orient:vertical] flex-1 font-medium leading-none" >
@@ -306,7 +296,7 @@ export default component$(() => {
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="currentColor" d="M5 21q-.425 0-.712-.288T4 20v-3q0-.825.588-1.412T6 15h12q.825 0 1.413.588T20 17v3q0 .425-.288.713T19 21t-.712-.288T18 20v-3H6v3q0 .425-.288.713T5 21m-.5-7q-.625 0-1.062-.437T3 12.5t.438-1.062T4.5 11t1.063.438T6 12.5t-.437 1.063T4.5 14M7 14V5q0-.825.588-1.412T9 3h6q.825 0 1.413.588T17 5v9zm12.5 0q-.625 0-1.062-.437T18 12.5t.438-1.062T19.5 11t1.063.438T21 12.5t-.437 1.063T19.5 14" /></svg>
                                                         </span>
                                                     </div>
-                                                </div>
+                                                </div> */}
                                             </div>
                                         </div>
                                     </Modal.Panel>
