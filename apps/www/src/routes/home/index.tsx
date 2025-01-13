@@ -129,10 +129,7 @@ export default component$(() => {
                                         </div>
                                     </div>
                                     <form action="#" class="mt-3 flex flex-col gap-3" >
-                                        <div class="">
-                                            {/* <label class="text-xs mb-2 relative block font-medium dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
-                                                Machine ID
-                                            </label> */}
+                                        <div>
                                             <input placeholder="fc27f428f9ca47d4b41b707ae0c62090" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
                                             focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070]" />
                                         </div>
@@ -199,16 +196,16 @@ export default component$(() => {
                                         backdrop-blur-lg">
                                         <div class=" min-h-[calc(100dvh-1rem)] h-[calc(100dvh-1rem)] w-[550px] relative " >
                                             <div class="sticky top-0 w-full z-10 backdrop-blur-lg dark:bg-[rgba(19,21,23,0.48)] dark:border-white/[.08] border-b py-2 px-3 min-h-12 gap-3 flex justify-between items-center" >
-                                                <Modal.Close class="text-white/[.64] [&>svg]:size-5 [&>svg]:scale-[1.2] hover:text-[rgb(19,21,23)] py-1.5 px-2.5 rounded-lg transition-all duration-200 hover:bg-white/[.64]">
+                                                <Modal.Close class="dark:text-white/[.64] text-[rgba(19,21,23,0.64)] [&>svg]:size-5 [&>svg]:scale-[1.2] hover:text-white dark:hover:text-[rgb(19,21,23)] py-1.5 px-2.5 rounded-lg transition-all duration-200 hover:bg-[rgba(19,21,23,0.64)] dark:hover:bg-white/[.64]">
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" fill-rule="evenodd"><path d="M24 0v24H0V0zM12.594 23.258l-.012.002l-.071.035l-.02.004l-.014-.004l-.071-.036q-.016-.004-.024.006l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.016-.018m.264-.113l-.014.002l-.184.093l-.01.01l-.003.011l.018.43l.005.012l.008.008l.201.092q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.003-.011l.018-.43l-.003-.012l-.01-.01z" /><path fill="currentColor" d="M6.293 6.293a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L10.586 12L6.293 7.707a1 1 0 0 1 0-1.414m6 0a1 1 0 0 1 1.414 0l5 5a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414-1.414L16.586 12l-4.293-4.293a1 1 0 0 1 0-1.414" /></g></svg>
                                                 </Modal.Close>
                                                 <div class="gap-2 flex justify-between flex-1 items-center ">
                                                     <div class="w-full flex items-center gap-2">
-                                                        <button class="text-white/[.64] bg-white/[.08] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-1 transition-all duration-200 [&>svg]:size-5 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
+                                                        <button class="dark:text-white/[.64] dark:bg-white/[.08] text-[rgba(19,21,23,0.64)] bg-[rgba(19,21,23,0.04)] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-1 transition-all duration-200 [&>svg]:size-5 text-sm hover:text-white dark:hover:text-[rgb(19,21,23)] hover:bg-[rgba(19,21,23,0.64)] dark:hover:bg-white/[.64]">
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7c0-.932 0-1.398-.152-1.765a2 2 0 0 0-1.083-1.083C12.398 4 11.932 4 11 4H8c-1.886 0-2.828 0-3.414.586S4 6.114 4 8v3c0 .932 0 1.398.152 1.765a2 2 0 0 0 1.083 1.083C5.602 14 6.068 14 7 14" /><rect width="10" height="10" x="10" y="10" rx="2" /></g></svg>
                                                             Copy link
                                                         </button>
-                                                        <button class="text-white/[.64] bg-white/[.08] py-1.5 px-2.5 rounded-lg flex items-center gap-2 transition-all duration-200 [&>svg]:size-4 text-sm hover:text-[rgb(19,21,23)] hover:bg-white/[.64]">
+                                                        <button class="dark:text-white/[.64] dark:bg-white/[.08] text-[rgba(19,21,23,0.64)] bg-[rgba(19,21,23,0.04)] font-medium py-1.5 px-2.5 rounded-lg flex items-center gap-1 transition-all duration-200 [&>svg]:size-5 text-sm hover:text-white dark:hover:text-[rgb(19,21,23)] hover:bg-[rgba(19,21,23,0.64)] dark:hover:bg-white/[.64]">
                                                             Game page
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6m0 0H9m9 0v9" /></svg>
                                                         </button>
@@ -219,41 +216,42 @@ export default component$(() => {
                                                 <div class="m-4 mb-2 relative flex items-center justify-center" >
                                                     <img src={game.image} height={280} width={280} class="rounded-xl bg-white/[.08] aspect-square size-[280px]" />
                                                 </div>
-                                                <div class="flex gap-2 flex-col text-white" >
+                                                <div class="flex gap-2 flex-col dark:text-white text-black" >
                                                     <h1 class="text-3xl font-title font-bold tracking-tight leading-none" >{game.name}</h1>
-                                                    <p class="text-gray-400 [display:-webkit-box] max-w-full overflow-hidden [-webkit-line-clamp:3] [-webkit-box-orient:vertical]" >
+                                                    <p class="dark:text-gray-400 text-gray-600 [display:-webkit-box] max-w-full overflow-hidden [-webkit-line-clamp:3] [-webkit-box-orient:vertical]" >
                                                         A short handcrafted pixel art platformer that follows Sheepy, an abandoned plushy brought to life. Sheepy: A Short Adventure is the first short game from MrSuicideSheep.
                                                     </p>
                                                     <div class="gap-y-1 gap-x-2 flex-wrap flex " >
-                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-[rgba(19,21,23,0.08)] dark:border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[rgba(19,21,23,0.36)] dark:text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                             Adventure
                                                         </button>
-                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-[rgba(19,21,23,0.08)] dark:border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[rgba(19,21,23,0.36)] dark:text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                             Free to play
-                                                        </button><button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
+                                                        </button>
+                                                        <button class="[&>svg]:size-[14px] cursor-pointer hover:border-primary-500 hover:text-primary-500 border-2 border-[rgba(19,21,23,0.08)] dark:border-white/[.16] items-center inline-flex py-1 px-2 rounded-[100px] gap-0.5 text-[rgba(19,21,23,0.36)] dark:text-[hsla(0,0%,100%,.5)] text-[0.875rem] font-medium transition-all duration-200" >
                                                             <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="currentColor" fill-rule="evenodd" d="M7.238 2.634a.75.75 0 1 0-1.476-.268L5.283 5H3a.75.75 0 1 0 0 1.5h2.01l-.545 3H2A.75.75 0 1 0 2 11h2.192l-.43 2.366a.75.75 0 1 0 1.476.268L5.717 11h3.475l-.43 2.366a.75.75 0 1 0 1.476.268L10.717 11H13a.75.75 0 0 0 0-1.5h-2.01l.545-3H14A.75.75 0 0 0 14 5h-2.192l.43-2.366a.75.75 0 1 0-1.476-.268L10.283 5H6.808zM9.465 9.5l.545-3H6.535l-.545 3z" clip-rule="evenodd" /></svg>
                                                             Indie
                                                         </button>
                                                     </div>
-                                                    <div class="py-3 px-4 overflow-hidden bg-white/[.04] border dark:border-[#343434] border-[#e2e2e2] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
-                                                        <div class="bg-white/[.08] mx-[calc(-1rem+1px)] my-[calc(-0.75rem+1px)] mb-3 py-[calc(0.5rem-1px)] px-[calc(1rem-1px)]" >
-                                                            <p class="text-sm text-[hsla(0,0%,100%,.79)] font-medium font-title" >Join a Nestri party</p>
+                                                    <div class="py-3 px-4 overflow-hidden bg-white/[.08] dark:bg-white/[.04] border dark:border-[#343434] border-[#e2e2e2] rounded-xl [box-shadow:0_1px_4px_rgba(0,0,0,.1)] dark:[box-shadow:0_1px_4px_rgba(0,0,0,.15)]" >
+                                                        <div class="dark:bg-white/[.08] bg-[rgba(19,21,23,0.04)] mx-[calc(-1rem+1px)] my-[calc(-0.75rem+1px)] mb-3 py-[calc(0.5rem-1px)] px-[calc(1rem-1px)]" >
+                                                            <p class="text-sm text-[rgba(19,21,23,0.64)]  dark:text-[hsla(0,0%,100%,.79)] font-medium font-title" >Join a Nestri party</p>
                                                         </div>
                                                         <div class="gap-3 flex flex-col">
-                                                            <div class=" border-b border-white/[.08] gap-3 flex flex-col  [margin:-0.5rem_-1rem_0.25rem] [padding:0.5rem_1rem_0.75rem] ">
+                                                            <div class=" border-b border-[rgba(19,21,23,0.08)] dark:border-white/[.08] gap-3 flex flex-col  [margin:-0.5rem_-1rem_0.25rem] [padding:0.5rem_1rem_0.75rem] ">
                                                                 <div class="flex gap-3">
                                                                     <div class="size-7 mt-2 shrink-0 flex items-center justify-center" >
                                                                         <img alt="ESRN-Teen" width={40} height={40} src="https://oyster.ignimgs.com/mediawiki/apis.ign.com/ratings/b/bf/ESRB-ver2013_T.png?width=325" />
                                                                     </div>
                                                                     <div>
                                                                         <p class="font-medium font-title" >Teen [13+]</p>
-                                                                        <span class="mt-[1px] text-sm leading-none text-[hsla(0,0%,100%,.79)]" >Mild Language, Violence, Blood and Gore, Drug References</span>
+                                                                            <span class="mt-[1px] text-sm leading-none text-[rgba(19,21,23,0.64)] dark:text-[hsla(0,0%,100%,.79)]" >Mild Language, Violence, Blood and Gore, Drug References</span>
                                                                     </div>
                                                                 </div>
                                                             </div>
-                                                            <div class=" mb-1 text-white w-full leading-none -my-1 py-1">
+                                                            <div class=" mb-1 dark:text-white w-full leading-none -my-1 py-1">
                                                                 <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
                                                                     Join this party
                                                                 </button>
