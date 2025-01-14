@@ -1,8 +1,9 @@
+import Nestri from "@nestri/sdk";
 import { Avatar } from "@nestri/ui";
-// import {  } from "@qwik-ui/headless";
-import { component$ } from "@builder.io/qwik";
-import { HomeNavBar, Modal, SimpleFooter } from "@nestri/ui";
 import { cn } from "@nestri/ui/design";
+import { component$ } from "@builder.io/qwik";
+import { routeLoader$ } from "@builder.io/qwik-city";
+import { HomeNavBar, Modal, SimpleFooter } from "@nestri/ui";
 
 const games = [
     {
@@ -52,10 +53,26 @@ const games = [
 
 ]
 
+export const useCurrentProfile = routeLoader$(async ({ cookie }) => {
+    const access = cookie.get("access_token")
+    if (access) {
+        const bearerToken = access.value
+        const nestriClient = new Nestri({
+            bearerToken,
+            baseURL: "https://api.lauryn.dev.nestri.io"
+        })
+
+        const currentProfile = await nestriClient.users.retrieve()
+        return currentProfile.data
+    }
+})
+
 export default component$(() => {
+    const profile = useCurrentProfile()
+
     return (
         <main class="flex w-screen h-full flex-col">
-            <HomeNavBar />
+            {profile.value && <HomeNavBar avatarUrl={profile.value.avatarUrl} discriminator={profile.value.discriminator} username={profile.value.username} />}
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 ">
                 <div class="flex flex-col gap-6 w-full py-4">
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">

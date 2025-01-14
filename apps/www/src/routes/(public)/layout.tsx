@@ -10,7 +10,7 @@ export const useLink = routeLoader$(async (ev) => {
         issuer: "https://auth.lauryn.dev.nestri.io"
     })
 
-    const { url } = await client.authorize(ev.url.origin + "/authorize", "code")
+    const { url } = await client.authorize(ev.url.origin + "/home", "code")
 
     return url
 })

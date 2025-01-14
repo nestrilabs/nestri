@@ -4,8 +4,13 @@ import { Dropdown } from '@qwik-ui/headless';
 import { disablePageScroll, enablePageScroll } from '@fluejs/noscroll';
 import { $, component$, useOnDocument, useSignal } from "@builder.io/qwik";
 
+type Props = {
+    avatarUrl?: string;
+    discriminator: string | number;
+    username: string;
+}
 
-export const HomeNavBar = component$(() => {
+export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Props) => {
     const hasScrolled = useSignal(false);
 
     const actions = [
@@ -30,7 +35,7 @@ export const HomeNavBar = component$(() => {
             hasScrolled.value = window.scrollY > 0;
         })
     );
-    //
+
     return (
         <nav class={cn("fixed w-screen justify-between top-0 z-50 px-2 sm:px-6 text-xs sm:text-sm leading-[1] text-gray-950/70 dark:text-gray-50/70 h-[66px] before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full flex items-center", hasScrolled.value && "shadow-[0_2px_20px_1px] shadow-gray-300 dark:shadow-gray-700")} >
             <div class="flex flex-row justify-center relative items-center top-0 bottom-0">
@@ -52,8 +57,8 @@ export const HomeNavBar = component$(() => {
                     <hr class="dark:bg-gray-700/70 bg-gray-400/70 w-0.5 rounded-md mx-3 rotate-[16deg] h-7 border-none" />
                     <Dropdown.Root onOpenChange$={onDialogOpen}>
                         <Dropdown.Trigger class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] focus:ring-2 outline-none dark:text-gray-400 text-gray-600 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-300/70 dark:hover:bg-gray-700/70 ">
-                            <Avatar name="WanjohiRyan's Games" />
-                            <span class="truncate shrink max-w-[20ch]">WanjohiRyan's Games</span>
+                            <Avatar name={`${username}'s Games`} />
+                            <span class="truncate shrink max-w-[20ch]">{`${username}'s Games`}</span>
                             <svg xmlns="http://www.w3.org/2000/svg" class="size-4" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
                         </Dropdown.Trigger>
                         <Dropdown.Popover
@@ -69,11 +74,6 @@ export const HomeNavBar = component$(() => {
                                             <Avatar class="flex-shrink-0 rounded-full" name={action.label} />
                                             {action.label}
                                         </span>
-                                        {/* <div class="ml-auto">
-                                            <kbd class="[text-shadow:hsla(0,0%,100%,.5)_0_0_1px] gap-1 items-center flex justify-center truncate px-1.5 text-xs min-w-5 h-5 rounded-[4px] bg-[rgba(0,0,0,.047)] dark:bg-[hsla(0,0%,100%,.056)] text-[#6f6f6f] dark:text-[#a0a0a0]">
-                                                {key + 1}
-                                            </kbd>
-                                        </div> */}
                                     </Dropdown.Item>
                                 ))}
                             </Dropdown.Group>
@@ -103,9 +103,8 @@ export const HomeNavBar = component$(() => {
             <div class="gap-4 flex flex-row justify-center h-full animate-fade-in opacity-0 items-center">
                 <Dropdown.Root onOpenChange$={onDialogOpen}>
                     <Dropdown.Trigger class="focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] text-gray-600 dark:text-gray-400 [&>svg:first-child]:size-5 text-sm focus:ring-2 outline-none rounded-full transition-all flex items-center duration-150 select-none cursor-pointer hover:bg-gray-300/70 dark:hover:bg-gray-700/70 gap-1 px-3 h-8" >
-                        <img src="https://avatars.githubusercontent.com/u/71614375?v=4" height={20} width={20} class="size-6 rounded-full" alt="Avatar" />
-                        {/* <Avatar name="WanjohiRyan#47" /> */}
-                        <span class="truncate shrink max-w-[20ch] sm:flex hidden">WanjohiRyan#47</span>
+                        {avatarUrl ? (<img src={avatarUrl} height={20} width={20} class="size-6 rounded-full" alt="Avatar" />) : (<Avatar name={`${username}#${discriminator}`} />)}
+                        <span class="truncate shrink max-w-[20ch] sm:flex hidden">{`${username}#${discriminator}`}</span>
                         <svg xmlns="http://www.w3.org/2000/svg" class="size-4 sm:block hidden" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
                     </Dropdown.Trigger>
                     <Dropdown.Popover

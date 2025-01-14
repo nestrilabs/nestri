@@ -1,6 +1,7 @@
 import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
+import { UserApi } from "./user";
 import { GameApi } from "./game";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
@@ -31,7 +32,7 @@ const auth: MiddlewareHandler = async (c, next) => {
             );
         }
         const bearerToken = match[1];
-
+        
         const result = await client.verify(subjects, bearerToken!);
         if (result.err)
             throw new VisibleError("input", "auth.invalid", "Invalid bearer token");
@@ -84,6 +85,7 @@ const routes = app
     .route("/games", GameApi.route)
     .route("/machines", MachineApi.route)
     .route("/sessions", SessionApi.route)
+    .route("/users", UserApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {
