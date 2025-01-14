@@ -210,7 +210,7 @@ export default component$(() => {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div class="p-4 pt-0 gap-6 flex flex-col text-white" >
+                                            <div class="p-4 pt-10 gap-6 flex flex-col text-white" >
                                                 <div class="m-4 mb-2 relative flex items-center justify-center" >
                                                     <img src={game.image} height={280} width={280} class="rounded-xl bg-white/[.08] aspect-square size-[280px]" />
                                                 </div>
