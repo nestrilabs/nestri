@@ -18,23 +18,23 @@
     }
 
     *::selection {
-        background-color: theme("colors.primary.100");
-        color: theme("colors.primary.500");
+        background-color: theme("colors.gray.400");
+        color: theme("colors.gray.800");
     }
 
     *::-moz-selection {
-        background-color: theme("colors.primary.100");
-        color: theme("colors.primary.500");
+        background-color: theme("colors.gray.400");
+        color: theme("colors.gray.800");
     }
 
     html.dark *::selection {
-        background-color: theme("colors.primary.800");
-        color: theme("colors.primary.500");
+        background-color: theme("colors.gray.400");
+        color: theme("colors.gray.800");
     }
 
     html.dark *::-moz-selection {
-        background-color: theme("colors.primary.800");
-        color: theme("colors.primary.500");
+        background-color: theme("colors.gray.400");
+        color: theme("colors.gray.800");
     }
 
     html.dark,
@@ -45,13 +45,13 @@
 
     @media (prefers-color-scheme: dark) {
         *::selection {
-            background-color: theme("colors.primary.900");
-            color: theme("colors.primary.500");
+            background-color: theme("colors.gray.400");
+            color: theme("colors.gray.800");
         }
 
         *::-moz-selection {
-            background-color: theme("colors.primary.900");
-            color: theme("colors.primary.500");
+            background-color: theme("colors.gray.400");
+            color: theme("colors.gray.800");
         }
 
         html,
@@ -242,12 +242,120 @@
     }
 }
 
-.digit_timing{
-    transition: translate 1s linear( 0, 0.0009 8.51%, -0.0047 19.22%, 0.0016 22.39%, 0.023 27.81%,
-    0.0237 30.08%, 0.0144 31.81%, -0.0051 33.48%, -0.1116 39.25%, -0.1181 40.59%,
-    -0.1058 41.79%, -0.0455, 0.0701 45.34%, 0.9702 55.19%, 1.0696 56.97%,
-    1.0987 57.88%, 1.1146 58.82%, 1.1181 59.83%, 1.1092 60.95%, 1.0057 66.48%,
-    0.986 68.14%, 0.9765 69.84%, 0.9769 72.16%, 0.9984 77.61%, 1.0047 80.79%,
-    0.9991 91.48%, 1 );
+.digit_timing {
+    transition: translate 1s linear(0, 0.0009 8.51%, -0.0047 19.22%, 0.0016 22.39%, 0.023 27.81%,
+            0.0237 30.08%, 0.0144 31.81%, -0.0051 33.48%, -0.1116 39.25%, -0.1181 40.59%,
+            -0.1058 41.79%, -0.0455, 0.0701 45.34%, 0.9702 55.19%, 1.0696 56.97%,
+            1.0987 57.88%, 1.1146 58.82%, 1.1181 59.83%, 1.1092 60.95%, 1.0057 66.48%,
+            0.986 68.14%, 0.9765 69.84%, 0.9769 72.16%, 0.9984 77.61%, 1.0047 80.79%,
+            0.9991 91.48%, 1);
     translate: 0 calc((var(--v) + 1) * (var(--line-height) * -1));
 }
+
+.modal-sheet {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: slideFromRight;
+}
+.modal::backdrop,
+.modal-sheet::backdrop {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeIn;
+}
+
+.modal-sheet[data-closing] {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: slideToRight;
+}
+
+.modal[data-closing]::backdrop,
+.modal-sheet[data-closing]::backdrop{
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeOut;
+}
+
+.modal {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: modalIn;
+}
+
+.modal[data-closing]{
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: modalOut;
+}
+
+@keyframes slideFromRight {
+    from {
+        transform: translate3d(var(--initial-transform, 100%), 0, 0);
+    }
+
+    to {
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+@keyframes slideToRight {
+    to {
+        transform: translate3d(var(--initial-transform, 100%), 0, 0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes fadeOut {
+    to {
+      opacity: 0;
+    }
+  }
+  
+  @keyframes modalIn {
+    from {
+      opacity: 0;
+      scale: 0.9;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+  
+  @keyframes modalOut {
+    to {
+      opacity: 0;
+      scale: 0.9;
+    }
+  }
+
+  /* button, a {
+    @apply outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]
+  } */
