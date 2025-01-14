@@ -1,5 +1,5 @@
 import { component$ } from "@builder.io/qwik";
-import { type DocumentHead } from "@builder.io/qwik-city";
+import { RequestHandler, type DocumentHead } from "@builder.io/qwik-city";
 import { HeroSection, MotionComponent, transition } from "@nestri/ui/react"
 import { NavBar, Footer } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
@@ -43,6 +43,30 @@ const games = [
   "https://assets-prd.ignimgs.com/2022/05/24/call-of-duty-modern-warfare-2-button-02-1653417394041.jpg",
   "https://assets-prd.ignimgs.com/2023/02/16/apexrevelry-1676588335122.jpg"
 ]
+
+export const onGet: RequestHandler = async ({ request, send }) => {
+  const userAgent = request.headers.get('user-agent') || ''
+  const isCurl = userAgent.toLowerCase().includes('curl');
+
+  //TODO:
+  if (isCurl) {
+    const response = new Response(
+      `#!/bin/bash
+
+ls -la
+      `, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/plain',
+        'Content-Disposition': 'attachment; filename="nestri.sh"'
+      }
+    })
+    send(response)
+  }
+  //  else {
+  // next()
+  // }
+};
 
 // FIXME: Change up the copy
 //TODO: Use a db to query all this

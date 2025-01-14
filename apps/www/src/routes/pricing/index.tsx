@@ -70,7 +70,7 @@ export default component$(() => {
 
     // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(() => {
-        audio.value = noSerialize(new Howl({ src: ["/audio/click.wav"], volume: 0.5 }))
+        audio.value = noSerialize(new Howl({ src: ["/audio/click.wav"] }))
 
         buttonRef.value?.addEventListener("mouseenter", () => {
             bookRef.value?.classList.add('flip')
@@ -329,7 +329,7 @@ export default component$(() => {
                                                 class="overflow-hidden absolute cursor-pointer z-30 top-0 left-0 opacity-0 h-full w-full"
                                             />
                                         </div>
-                                        <div class="flex justify-center items-center w-full h-[72px] mt-2.5">
+                                        <div class="flex justify-center items-center w-full h-[72px] mt-2.5 text-primary-500">
                                             <p class="font-title text-lg font-bold text-center h-max break-words whitespace-pre-line">{convertToTitle(priceValue.value)}</p>
                                         </div>
                                     </div>
