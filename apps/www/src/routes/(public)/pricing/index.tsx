@@ -1,6 +1,6 @@
 import { $, component$, noSerialize, type NoSerialize, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
-import { Footer, Book } from "@nestri/ui"
+import { Footer, Book, CONSTANTS } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
 import { Howl } from 'howler';
 import { Link } from "@builder.io/qwik-city";
@@ -65,25 +65,25 @@ const convertToTitle = (value: any) => {
 
 export default component$(() => {
     const priceValue = useSignal(3)
-    const buttonRef = useSignal<HTMLButtonElement | undefined>()
-    const bookRef = useSignal<HTMLButtonElement | undefined>()
+    const docsLinkRef = useSignal<HTMLElement | undefined>()
+    const bookRef = useSignal<HTMLElement | undefined>()
     const audio = useSignal<NoSerialize<Howl> | undefined>()
 
     // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(() => {
         audio.value = noSerialize(new Howl({ src: ["/audio/click.wav"] }))
 
-        buttonRef.value?.addEventListener("mouseenter", () => {
+        docsLinkRef.value?.addEventListener("mouseenter", () => {
             bookRef.value?.classList.add('flip')
         })
-        buttonRef.value?.addEventListener("mouseleave", () => {
+        docsLinkRef.value?.addEventListener("mouseleave", () => {
             bookRef.value?.classList.remove('flip')
         })
         return () => {
-            buttonRef.value?.removeEventListener("mouseenter", () => {
+            docsLinkRef.value?.removeEventListener("mouseenter", () => {
                 bookRef.value?.classList.add('flip')
             })
-            buttonRef.value?.removeEventListener("mouseleave", () => {
+            docsLinkRef.value?.removeEventListener("mouseleave", () => {
                 bookRef.value?.classList.remove('flip')
             })
         }
@@ -125,11 +125,11 @@ export default component$(() => {
                                     <div class="flex flex-col w-full">
                                         <p class="text-[4rem] leading-[1] font-medium font-title"> Free </p>
                                         {/**FIXME: Add the link to the docs here */}
-                                        <button ref={v => bookRef.value = v} class="h-[154px] w-full flex items-start pt-4 justify-center overflow-hidden">
+                                        <a href={CONSTANTS.githubLink} ref={v => bookRef.value = v} class="h-[154px] w-full flex items-start pt-4 justify-center overflow-hidden">
                                             <Book textColor="#FFF"
                                                 bgColor="#FF4F01"
                                                 title="Getting started with Nestri" class="shadow-lg shadow-gray-900 dark:shadow-gray-300" />
-                                        </button>
+                                        </a>
                                         <hr class="h-[2px] bg-gray-400 text-gray-300 dark:bg-gray-600 " />
                                     </div>
                                     <div class="w-full relative sm:text-sm text-base gap-3 flex flex-col">
@@ -254,14 +254,14 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </div>
-                                    <button ref={v => buttonRef.value = v} class="my-4 bg-white dark:bg-black focus:ring-primary-500 hover:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 focus:dark:bg-primary-900 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
+                                    <a href={CONSTANTS.githubLink} ref={v => docsLinkRef.value = v} class="my-4 bg-white dark:bg-black focus:ring-primary-500 hover:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 focus:dark:bg-primary-900 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
                                         Read the Docs
                                         <div class="size-5 relative">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
                                                 <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
                                             </svg>
                                         </div>
-                                    </button>
+                                    </a>
                                 </div>
                                 <div class="gap-3 w-full p-6 flex flex-col rounded-lg bg-white dark:bg-black">
                                     <div class="flex items-center font-title h-min w-full justify-between">
@@ -483,15 +483,15 @@ export default component$(() => {
                                 <p class="text-neutral-900/70 dark:text-neutral-100/70 text-base" >
                                     Looking for something else? Use Nestri as your own on our servers or yours. Flexible licensing and white-glove onboarding included.
                                 </p>
-                                <Link href="mailto:enterprise@nestri.io" class="underline underline-offset-2 font-medium font-title hover:opacity-70 w-max">
+                                <Link href={CONSTANTS.enterpriseContact} class="underline underline-offset-2 font-medium font-title hover:opacity-70 w-max">
                                     Contact Sales
                                 </Link>
                             </div>
                             <div class="w-full text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm mt-6 py-3">
                                 <div class="flex relative">
                                     <span class="whitespace-pre marquee-animation">
-                                        Organization Account · Security Restrictions · Custom Events · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·
-                                        Organization Account · Security Restrictions · Custom Events · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·
+                                        Organization Account · Security Restrictions · Custom Parties · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·
+                                        Organization Account · Security Restrictions · Custom Parties · Single Sign On · Advanced Integrations · Additional APIs · Custom-Built Features ·
                                     </span>
                                 </div>
                             </div>

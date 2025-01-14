@@ -1,5 +1,5 @@
 import { component$ } from "@builder.io/qwik"
-import { NavBar, Footer } from "@nestri/ui"
+import { Footer } from "@nestri/ui"
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react"
 
 //FIXME: Create and pin the Github Issue
@@ -8,7 +8,6 @@ export default component$(() => {
     return (
 
         <>
-            <NavBar />
             <TitleSection client:load title="Fundraiser" description="Support Nestri — Make cloud gaming accessible to everyone" />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
@@ -65,7 +64,7 @@ export default component$(() => {
                     </div>
                 </div>
             </MotionComponent>
-            <Footer showGH={false} />
+            <Footer showBanner={false} />
         </>
     )
 })
