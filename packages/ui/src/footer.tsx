@@ -2,7 +2,7 @@
 import { component$ } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
 import { MotionComponent, transition } from "@nestri/ui/react"
-import { GithubBanner } from "./github-banner";
+import { FooterBanner } from "./footer-banner";
 
 const socialMedia = [
   {
@@ -30,13 +30,13 @@ const socialMedia = [
 ]
 
 type Props = {
-  showGH?: boolean
+  showBanner?: boolean
 }
 
-export const Footer = component$(({ showGH = true }: Props) => {
+export const Footer = component$(({ showBanner = true }: Props) => {
   return (
     <>
-      {showGH && <GithubBanner />}
+      {showBanner && <FooterBanner />}
       <footer class="flex justify-center flex-col items-center w-full pt-8 sm:pb-0 pb-8 [&>*]:w-full px-3">
         <MotionComponent
           initial={{ opacity: 0, y: 50 }}

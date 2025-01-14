@@ -1,8 +1,9 @@
 import { $, component$, noSerialize, type NoSerialize, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
-import { NavBar, Footer, Book } from "@nestri/ui"
+import { Footer, Book } from "@nestri/ui"
 import { cn } from "@nestri/ui/design";
 import { Howl } from 'howler';
+import { Link } from "@builder.io/qwik-city";
 
 //FIXME: Add a FAQ section
 // FIXME: Takes too long for the price input radio input to become responsive
@@ -95,7 +96,6 @@ export default component$(() => {
 
     return (
         <>
-            <NavBar />
             <TitleSection client:load title="Pricing" description={"We're growing at the speed of trust. Choose a price that feels right for you and help support Nestri"} />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
@@ -267,7 +267,7 @@ export default component$(() => {
                                     <div class="flex items-center font-title h-min w-full justify-between">
                                         <div class="flex items-center justify-center gap-2 ">
                                             <div class="bg-gradient-to-t from-[#685fea] to-[rgb(153,148,224)] rounded-full h-4 w-4" />
-                                            <h1 class="text-base font-semibold">Family</h1>
+                                            <h1 class="text-base font-semibold">Pro</h1>
                                         </div>
                                     </div>
                                     <div class="break-words [word-break:break-word] [text-wrap:balance] [word-wrap:break-word] w-full relative whitespace-pre-wrap">
@@ -483,9 +483,9 @@ export default component$(() => {
                                 <p class="text-neutral-900/70 dark:text-neutral-100/70 text-base" >
                                     Looking for something else? Use Nestri as your own on our servers or yours. Flexible licensing and white-glove onboarding included.
                                 </p>
-                                <button class="underline underline-offset-2 font-medium font-title hover:opacity-70 w-max">
+                                <Link href="mailto:enterprise@nestri.io" class="underline underline-offset-2 font-medium font-title hover:opacity-70 w-max">
                                     Contact Sales
-                                </button>
+                                </Link>
                             </div>
                             <div class="w-full text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm mt-6 py-3">
                                 <div class="flex relative">

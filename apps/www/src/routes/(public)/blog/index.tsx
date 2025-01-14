@@ -1,6 +1,5 @@
-import { component$ } from "@builder.io/qwik"
 import { Link } from "@builder.io/qwik-city"
-import { NavBar } from "@nestri/ui"
+import { component$ } from "@builder.io/qwik"
 import { MotionComponent, TitleSection, transition } from "@nestri/ui/react"
 
 const blogs = [
@@ -15,7 +14,6 @@ const blogs = [
 export default component$(() => {
     return (
         <div>
-            <NavBar />
             <TitleSection client:load title="Blog" description="All the latest news from Nestri and the community." />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}

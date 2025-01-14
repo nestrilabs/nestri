@@ -1,13 +1,12 @@
 /* eslint-disable qwik/jsx-img */
-import { component$ } from "@builder.io/qwik";
+import { Footer } from "@nestri/ui";
 import { Link } from "@builder.io/qwik-city";
-import { NavBar, Footer } from "@nestri/ui";
+import { component$ } from "@builder.io/qwik";
 import { MotionComponent, transition, TitleSection } from "@nestri/ui/react";
 
 export default component$(() => {
     return (
         <>
-            <NavBar />
             <TitleSection client:load title="Changelog" description="All the latest updates, improvements, and fixes to Nestri." />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}

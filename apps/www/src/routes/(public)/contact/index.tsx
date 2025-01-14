@@ -1,5 +1,5 @@
+import { Footer } from "@nestri/ui";
 import { component$ } from "@builder.io/qwik"
-import { NavBar, Footer } from "@nestri/ui";
 import { buttonVariants, cn } from "@nestri/ui/design";
 import { MotionComponent, transition, TitleSection } from "@nestri/ui/react";
 
@@ -85,7 +85,6 @@ export default component$(() => {
 
     return (
         <>
-            <NavBar />
             <TitleSection client:load title="Contact" description="Need help? Found a bug? Have a suggestion? Let us know!" />
 
             <MotionComponent

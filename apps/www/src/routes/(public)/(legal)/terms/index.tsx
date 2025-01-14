@@ -1,24 +1,13 @@
 /* eslint-disable qwik/no-react-props */
-import { Title, Text } from "@nestri/ui/react";
-import { buttonVariants, cn } from "@nestri/ui/design";
-import { component$ } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
+import { Title, Text } from "@nestri/ui/react";
+import { component$ } from "@builder.io/qwik";
+import { buttonVariants } from "@nestri/ui/design";
 
 export default component$(() => {
     return (
         <div class="w-screen relative" >
-            {/**Gradient to hide the ending of the checkered bg at the bottom*/}
-            {/* <div class="absolute inset-0 dark:[background:radial-gradient(60.1852%_65%_at_50%_52%,rgba(255,255,255,0)_41.4414%,theme(colors.gray.950,0.7)_102%)] [background:radial-gradient(60.1852%_65%_at_50%_52%,rgba(255,255,255,0)_41.4414%,theme(colors.gray.50,0.7)_102%)] h-screen w-screen overflow-hidden max-w-[100vw] top-0 left-0 right-0 select-none" /> */}
-            <nav class="w-full h-[70px] lg:flex hidden sticky top-0 z-50 py-4 justify-center items-center" >
-                <div class="w-full left-1/2 relative -translate-x-[40%]">
-                    <Link href="/" class={cn(buttonVariants.outlined({ intent: "neutral", size: "md" }), "w-max")}>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="size-[20px] -rotate-90" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m17 9.5l-5-5l-5 5" /><path d="M12 4.5v10c0 1.667-1 5-5 5" opacity=".5" /></g></svg>
-                        {/* <svg xmlns="http://www.w3.org/2000/svg" class="size-[20px]" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10" opacity=".5" /><path stroke-linecap="round" stroke-linejoin="round" d="m15.5 9l-3 3l3 3m-4-6l-3 3l3 3" /></g></svg> */}
-                        Go Back
-                    </Link>
-                </div>
-            </nav>
-            <section class="px-4 relative lg:-top-[70px]" >
+            <section class="px-4 relative" >
                 <div class="mx-auto select-text max-w-xl overflow-x-hidden py-8 [&_h1]:text-3xl flex relative gap-4 w-full flex-col" >
                     <Title className="py-4 text-4xl" >
                         Nestri's  Terms of Service
@@ -30,7 +19,7 @@ export default component$(() => {
                     </Text>
 
                     <Text>
-                        Welcome to Nestri and thank you for using our services. We are an innovative cloud gaming platform that offers both self-hosted and hosted versions for gamers without GPUs.
+                        Welcome to Nestri and thank you for using our services. We are an innovative cloud gaming platform that offers both self-hosted and hosted versions for gamers to play online with friends and family.
                         <br />
                         <br />
                         By using Nestri, you agree to these Terms of Service ("Terms"). If you have any questions, feel free to contact us.
@@ -38,11 +27,11 @@ export default component$(() => {
 
                     <Title>Who We Are</Title>
 
-                    <Text>Nestri is an open-source cloud gaming platform that lets you play games on your own terms — invite friends to join your gaming sessions, share your game library, and take even more control by hosting your own gaming server. Our hosted version is perfect for those who need GPU support, providing seamless gaming experiences for everyone.</Text>
+                    <Text>Nestri is an open-source cloud gaming platform that lets you play games on your own terms — invite friends to join your gaming sessions, share your game library, and take even more control by hosting your own gaming server. Our hosted version is perfect for those who need GPU support.</Text>
 
                     <Title>Privacy and Security</Title>
 
-                    <Text>We take your privacy and security very seriously. We adhere to stringent data protection laws and ensure that all data, including games downloaded from Steam on behalf of the user, is encrypted. We also collect and log IP addresses to avoid abuse and ensure the security of our services. For more details, please review our
+                    <Text>We take your privacy and security very seriously. We adhere to stringent data protection laws and ensure that all data, is secured. We also collect and log IP addresses to avoid abuse and ensure the security of our services. For more details, please review our
                         <Link
                             href="/privacy"
                             class={buttonVariants.link()}>
@@ -59,7 +48,7 @@ export default component$(() => {
                         <br />
                         <br />
                         <Link
-                            href="/"
+                            href="https://www.protondb.com/"
                             class={buttonVariants.link()}>
                             Check the list here</Link>.
                     </Text>
@@ -176,7 +165,7 @@ export default component$(() => {
                         .
                     </Text>
 
-                    <Text className="pt-3">💖 Thank you for choosing Nestri for your cloud gaming needs! 💖</Text>
+                    <Text align="center" className="pt-3">💖 Thank you for choosing Nestri for your cloud gaming needs! 💖</Text>
                 </div>
             </section>
         </div>

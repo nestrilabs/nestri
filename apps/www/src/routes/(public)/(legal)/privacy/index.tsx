@@ -1,26 +1,14 @@
 /* eslint-disable qwik/no-react-props */
-import { Title, Text} from "@nestri/ui/react";
-import { buttonVariants, cn } from "@nestri/ui/design";
-import { component$ } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
+import { Title, Text } from "@nestri/ui/react";
+import { component$ } from "@builder.io/qwik";
+import { buttonVariants } from "@nestri/ui/design";
 
 export default component$(() => {
 
     return (
         <div class="w-screen relative" >
-            {/**Gradient to hide the ending of the checkered bg at the bottom*/}
-            {/* <div class="absolute inset-0 dark:[background:radial-gradient(60.1852%_65%_at_50%_52%,rgba(255,255,255,0)_41.4414%,theme(colors.gray.950,0.7)_102%)] [background:radial-gradient(60.1852%_65%_at_50%_52%,rgba(255,255,255,0)_41.4414%,theme(colors.gray.50,0.7)_102%)] h-screen w-screen overflow-hidden max-w-[100vw] top-0 left-0 right-0 select-none" /> */}
-            <nav class="w-full h-[70px] lg:flex hidden sticky top-0 z-50 py-4 justify-center items-center" >
-                <div class="w-full left-1/2 relative -translate-x-[40%]">
-                    <Link href="/" class={cn(buttonVariants.outlined({ intent: "neutral", size: "md" }), "w-max")}>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="size-[20px] -rotate-90" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path stroke-linejoin="round" d="m17 9.5l-5-5l-5 5" /><path d="M12 4.5v10c0 1.667-1 5-5 5" opacity=".5" /></g></svg>
-                        {/* <svg xmlns="http://www.w3.org/2000/svg" class="size-[20px]" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10" opacity=".5" /><path stroke-linecap="round" stroke-linejoin="round" d="m15.5 9l-3 3l3 3m-4-6l-3 3l3 3" /></g></svg> */}
-                        Go Back
-                    </Link>
-                </div>
-            </nav>
-            <section class="px-4 relative lg:-top-[70px]" >
-
+            <section class="px-4 relative" >
                 <div class="mx-auto select-text max-w-xl py-8 [&_h1]:text-3xl flex relative gap-4 w-full flex-col" >
                     <Title className="py-4 text-4xl" >
                         Nestri's Privacy Policy
@@ -176,6 +164,7 @@ export default component$(() => {
 
                     <Text align="center" className="pt-3">
                         💖 Thank you for trusting Nestri with your data and gaming experience.💖
+                        <br />
                         <br />
                         We are committed to safeguarding your personal information and ensuring your privacy. </Text>
                 </div>
