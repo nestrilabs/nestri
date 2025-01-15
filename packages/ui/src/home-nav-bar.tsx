@@ -12,10 +12,12 @@ type Props = {
 
 export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Props) => {
     const hasScrolled = useSignal(false);
+    const team = `${username}'s Games`
+    const selectedTeam = useSignal(team)
 
     const actions = [
         { label: "Hell Diver's Europe", disabled: false },
-        { label: "WanjohiRyan's Games", disabled: false },
+        { label: team, disabled: false },
         { label: "CyberPunk Marathon", disabled: false },
         { label: "Emulation Hackers", disabled: true },
         { label: "testing-123", disabled: false },
@@ -57,26 +59,29 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                     <hr class="dark:bg-gray-700/70 bg-gray-400/70 w-0.5 rounded-md mx-3 rotate-[16deg] h-7 border-none" />
                     <Dropdown.Root onOpenChange$={onDialogOpen}>
                         <Dropdown.Trigger class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] focus:ring-2 outline-none dark:text-gray-400 text-gray-600 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-300/70 dark:hover:bg-gray-700/70 ">
-                            <Avatar name={`${username}'s Games`} />
-                            <span class="truncate shrink max-w-[20ch]">{`${username}'s Games`}</span>
+                            <Avatar name={selectedTeam.value} />
+                            <span class="truncate shrink max-w-[20ch]">{selectedTeam.value}</span>
                             <svg xmlns="http://www.w3.org/2000/svg" class="size-4" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
                         </Dropdown.Trigger>
                         <Dropdown.Popover
                             class="bg-[hsla(0,0%,100%,.5)] dark:bg-[hsla(0,0%,100%,.026)] min-w-[160px] max-w-[240px] backdrop-blur-md rounded-lg py-1 px-2 border border-[#e8e8e8] dark:border-[#2e2e2e] [box-shadow:0_8px_30px_rgba(0,0,0,.12)]">
-                            <Dropdown.Group class="flex flex-col gap-1">
+                            <Dropdown.RadioGroup onChange$={(v: string) => selectedTeam.value = v} value={selectedTeam.value} class="w-full flex overflow-hidden flex-col gap-1 [&_*]:w-full [&_[data-checked]]:bg-[rgba(0,0,0,.071)] [&_[data-checked]]:rounded-md [&_[data-checked]]:text-[#171717] [&_[data-checked]_svg]:block cursor-pointer text-[#6f6f6f] dark:[&_[data-highlighted]]:text-[#a0a0a0] [&_[data-highlighted]]:text-[#171717] [&_[data-highlighted]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-highlighted]]:bg-[hsla(0,0%,100%,.077)] [&_[data-highlighted]]:rounded-md">
                                 {actions.map((action) => (
-                                    <Dropdown.Item
+                                    <Dropdown.RadioItem
                                         key={action.label}
-                                        class="leading-none text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative select-none  "
-                                        disabled={action.disabled}
+                                        value={action.label}
+                                        class="leading-none text-sm items-center flex px-2 h-8 rounded-md outline-none relative select-none w-full"
                                     >
-                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5 ">
+                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate [&>svg]:size-5 ">
                                             <Avatar class="flex-shrink-0 rounded-full" name={action.label} />
                                             {action.label}
                                         </span>
-                                    </Dropdown.Item>
+                                        <span class="py-1 px-1 text-primary-500 [&>svg]:size-5 [&>svg]:hidden !w-max" >
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 24 24"><path fill="currentColor" d="m10 13.6l5.9-5.9q.275-.275.7-.275t.7.275t.275.7t-.275.7l-6.6 6.6q-.3.3-.7.3t-.7-.3l-2.6-2.6q-.275-.275-.275-.7t.275-.7t.7-.275t.7.275z" /></svg>
+                                        </span>
+                                    </Dropdown.RadioItem>
                                 ))}
-                            </Dropdown.Group>
+                            </Dropdown.RadioGroup>
                             <Dropdown.Separator class="w-full dark:bg-[#2e2e2e] bg-[#e8e8e8] border-0 h-[1px] my-1" />
                             <Dropdown.Group class="flex flex-col gap-1">
                                 <Dropdown.Item
