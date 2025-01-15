@@ -63,7 +63,7 @@ ls -la
       }
     })
     send(response)
-  }
+  } 
 };
 
 // FIXME: Change up the copy

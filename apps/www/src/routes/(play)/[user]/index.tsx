@@ -1,6 +1,6 @@
-import Nestri from "@nestri/sdk";
 import { Avatar } from "@nestri/ui";
 import { cn } from "@nestri/ui/design";
+import type Nestri from "@nestri/sdk";
 import { component$ } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { HomeNavBar, Modal, SimpleFooter } from "@nestri/ui";
@@ -53,18 +53,10 @@ const games = [
 
 ]
 
-export const useCurrentProfile = routeLoader$(async ({ cookie }) => {
-    const access = cookie.get("access_token")
-    if (access) {
-        const bearerToken = access.value
-        const nestriClient = new Nestri({
-            bearerToken,
-            baseURL: "https://api.lauryn.dev.nestri.io"
-        })
-
-        const currentProfile = await nestriClient.users.retrieve()
-        return currentProfile.data
-    }
+export const useCurrentProfile = routeLoader$(async ({ sharedMap }) => {
+    const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
+    
+    return res 
 })
 
 export default component$(() => {
