@@ -38,11 +38,13 @@ export const onRequest: RequestHandler = async ({ query, url, cookie, redirect }
                     baseURL: "https://api.lauryn.dev.nestri.io"
                 })
 
+                //TODO: Use subjects instead
+
                 const currentProfile = await nestriClient.users.retrieve()
                 const username = currentProfile.data.username
-                if (!url.pathname.toLowerCase().startsWith(`/${username.toLowerCase()}`)) {
-                    throw redirect(308, `${url.origin}/${username}`)
-                }
+                // if (!url.pathname.toLowerCase().startsWith(`/${username.toLowerCase()}`)) {
+                throw redirect(308, `${url.origin}/${username}`)
+                // }
             }
         } else {
             throw redirect(308, url.origin)

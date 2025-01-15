@@ -304,13 +304,13 @@ export default component$(() => {
                                         <span class="max-w-full truncate">{game.name}</span>
                                     </div>
                                 </Modal.Trigger>
-                                <Modal.Panel class="dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-gray-300/70
+                                <Modal.Panel class="dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl border dark:border-[#343434] border-gray-600/70
                                             dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[rgb(22,22,22)] 
-                                            box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd]
+                                            box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-gray-300
                                             backdrop-blur-lg modal" >
                                     <div class="flex flex-col min-w-[17rem] relative text-black/70 dark:text-white/70 w-full max-w-[41.8125rem] min-h-[min(90%,100%-3rem)]" >
                                         <div class="flex-1 relative w-full " >
-                                            <div class="relative w-full pb-[56.25%] overflow-hidden after:z-[2] after:absolute after:inset-0 dark:after:[background:linear-gradient(40deg,rgb(22,22,22)_24.16%,rgba(6,10,23,0)_56.61%),linear-gradient(0deg,rgb(22,22,22)_3.91%,rgba(6,10,23,0)_69.26%)]" >
+                                            <div class="relative w-full pb-[56.25%] overflow-hidden after:z-[2] after:absolute after:inset-0 dark:after:[background:linear-gradient(40deg,rgb(22,22,22)_24.16%,rgba(6,10,23,0)_56.61%),linear-gradient(0deg,rgb(22,22,22)_3.91%,rgba(6,10,23,0)_69.26%)] after:[background:linear-gradient(0deg,theme(colors.gray.300)_3.91%,theme(colors.gray.300/0.03)_69.26%)]" >
                                                 <div
                                                     style={{
                                                         backgroundImage: `url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.id}/library_hero.jpg)`
@@ -346,7 +346,7 @@ export default component$(() => {
                                                     Delta Force is a first-person shooter which offers players both a single player campaign based on the movie Black Hawk Down, but also large-scale PvP multiplayer action. The game was formerly known as Delta Force: Hawk Ops.
                                                 </p>
                                                 <div class="sm:pt-10 sm:block hidden" >
-                                                    <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
+                                                    <button class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_rgba(200,200,200,0.95),0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_rgba(200,200,200,0.95),0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
                                                         Play Now
                                                     </button>
                                                 </div>
