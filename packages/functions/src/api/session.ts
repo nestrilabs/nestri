@@ -166,11 +166,11 @@ export module SessionApi {
       },
     )
     .post(
-      "/:id",
+      "/",
       describeRoute({
         tags: ["Session"],
         summary: "Create a new gaming session for this user",
-        description: "Creates a new gaming session for the currently authenticated user, enabling them to play a game",
+        description: "Create a new gaming session for the currently authenticated user, enabling them to play a game",
         responses: {
           200: {
             content: {

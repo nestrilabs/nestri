@@ -14,6 +14,15 @@ export module Examples {
         updatedAt: '2025-01-09T01:56:23.902Z'
     }
     
+    export const Team = {
+        id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
+        owner: true,
+        name: "Jane Doe's Games",
+        slug: "jane-does-games",
+        createdAt: '2025-01-04T11:56:23.902Z',
+        updatedAt: '2025-01-09T01:56:23.902Z'
+    }
+
     export const Machine = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "DESKTOP-EUO8VSF",

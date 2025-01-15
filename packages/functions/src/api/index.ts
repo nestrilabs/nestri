@@ -3,6 +3,7 @@ import { Resource } from "sst";
 import { ZodError } from "zod";
 import { UserApi } from "./user";
 import { GameApi } from "./game";
+import { TeamApi } from "./team";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
 import { SessionApi } from "./session";
@@ -86,6 +87,7 @@ const routes = app
     .route("/machines", MachineApi.route)
     .route("/sessions", SessionApi.route)
     .route("/users", UserApi.route)
+    .route("/teams", TeamApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {

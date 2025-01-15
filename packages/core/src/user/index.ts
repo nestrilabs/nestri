@@ -4,7 +4,7 @@ import { fn } from "../utils";
 import { Common } from "../common";
 import { Examples } from "../examples";
 
-export module User {
+export module Users {
     export const Info = z
         .object({
             id: z.string().openapi({
