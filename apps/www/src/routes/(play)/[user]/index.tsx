@@ -54,9 +54,14 @@ const games = [
 ]
 
 export const useCurrentProfile = routeLoader$(async ({ sharedMap }) => {
-    const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
+    // const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
     
-    return res 
+    // return res 
+    return {
+        avatarUrl: undefined,
+        discriminator: 47,
+        username: "WanjohiRyan"
+    }
 })
 
 export default component$(() => {

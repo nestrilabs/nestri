@@ -16,17 +16,17 @@ export const onGet: RequestHandler = async ({ cacheControl }) => {
 
 export const onRequest: RequestHandler = async ({ cookie, sharedMap }) => {
   const access = cookie.get("access_token")
-  if (access) {
-    const bearerToken = access.value
+  // if (access) {
+  //   const bearerToken = access.value
 
-    const nestriClient = new Nestri({
-      bearerToken,
-      baseURL: "https://api.lauryn.dev.nestri.io"
-    })
+  //   const nestriClient = new Nestri({
+  //     bearerToken,
+  //     baseURL: "https://api.lauryn.dev.nestri.io"
+  //   })
 
-    const currentProfile = await nestriClient.users.retrieve()
-    sharedMap.set("profile", currentProfile.data)
-  }
+  //   const currentProfile = await nestriClient.users.retrieve()
+  //   sharedMap.set("profile", currentProfile.data)
+  // }
 }
 
 export default component$(() => {
