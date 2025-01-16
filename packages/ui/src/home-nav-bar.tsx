@@ -15,7 +15,8 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
     const hasScrolled = useSignal(false);
     const defaultTeam = `${username}'s Games`
     const selectedTeam = useSignal(defaultTeam)
-    const isModalOpen = useSignal(false);
+    const isNewTeam = useSignal(false);
+    const isNewMember = useSignal(false);
     const isHolding = useSignal(false);
 
     const teams = [
@@ -93,12 +94,21 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                                 <Dropdown.Separator class="w-full dark:bg-[#2e2e2e] bg-[#e8e8e8] border-0 h-[1px] my-1" />
                                 <Dropdown.Group class="flex flex-col gap-1 w-full">
                                     <Dropdown.Item
-                                        onClick$={() => isModalOpen.value = true}
+                                        onClick$={() => isNewTeam.value = true}
                                         class="leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative"
                                     >
                                         <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
                                             New Team
+                                        </span>
+                                    </Dropdown.Item>
+                                    <Dropdown.Item
+                                        onClick$={() => isNewMember.value = true}
+                                        class="leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative"
+                                    >
+                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0m8 12h6m-3-3v6M6 21v-2a4 4 0 0 1 4-4h4" /></svg>
+                                            Send an invite
                                         </span>
                                     </Dropdown.Item>
                                     <button
@@ -146,7 +156,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                             class="bg-[hsla(0,0%,100%,.5)] dark:bg-[hsla(0,0%,100%,.026)] min-w-[160px] max-w-[240px] backdrop-blur-md rounded-lg py-1 px-2 border border-[#e8e8e8] dark:border-[#2e2e2e] [box-shadow:0_8px_30px_rgba(0,0,0,.12)]">
                             <Dropdown.Group class="flex flex-col gap-1">
                                 <Dropdown.Item
-                                    onClick$={()=>window.location.href = "mailto:feedback@nestri.io"}
+                                    onClick$={() => window.location.href = "mailto:feedback@nestri.io"}
                                     class="leading-none text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative select-none  "
                                 >
                                     <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5 ">
@@ -199,42 +209,72 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                     </Dropdown.Root>
                 </div>
             </nav>
-            <Modal.Root bind:show={isModalOpen} class="w-full">
-                <Modal.Panel class="
-                                        dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] max-h-[75vh] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
-                                        dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b] 
-                                        [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd] 
-                                        backdrop-blur-lg py-4 px-5 modal max-w-[400px] w-full">
-                    <div class="size-full flex flex-col">
+            <Modal.Root bind:show={isNewTeam} class="w-full">
+                <Modal.Panel
+                    class="dark:bg-black bg-white [box-shadow:0_8px_30px_rgba(0,0,0,.12)]
+                    dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] max-h-[75vh] rounded-xl
+                    backdrop-blur-md modal max-w-[400px] w-full border dark:border-gray-800 border-gray-200">
+                    <main class="size-full flex flex-col relative py-4 px-5">
                         <div class="dark:text-white text-black">
-                            <h3 class="font-semibold text-2xl tracking-tight mb-2 font-title">Create a team</h3>
-                            <div class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
-                                Create a team by providing it's name and unique slug
+                            <h3 class="font-semibold text-2xl tracking-tight mb-1 font-title">Create a team</h3>
+                            <div class="text-sm dark:text-gray-200/70 text-gray-800/70" >
+                                Continue to start playing with on Pro with increased usage, additional security features, and support
                             </div>
                         </div>
-                        <form class="mt-3 flex flex-col gap-3" >
+                        <div class="mt-3 flex flex-col gap-3" >
                             <div>
-                                <label for="name" class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)] pb-2 pt-1" >
+                                <label for="name" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
+                                    Team Name
+                                </label>
+                                <input id="name" type="text" placeholder="Jane Doe" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full bg-transparent px-2 py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70  rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
+                            </div>
+                        </div>
+                    </main>
+                    <footer class="dark:text-gray-200/70 text-gray-800/70 dark:bg-gray-900 bg-gray-100 ring-1 ring-gray-200 dark:ring-gray-800 select-none flex gap-2 items-center justify-between w-full bottom-0 left-0 py-3 px-5 text-sm leading-none">
+                        <Modal.Close class="rounded-lg [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] py-3 px-4  hover:bg-gray-200 dark:hover:bg-gray-800 flex items-center justify-center">
+                            Cancel
+                        </Modal.Close>
+                        <button class="flex items-center justify-center gap-2 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 py-3 px-4 hover:bg-gray-300 dark:hover:bg-gray-700 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]" >
+                            Continue
+                        </button>
+                    </footer>
+                </Modal.Panel>
+            </Modal.Root >
+            <Modal.Root bind:show={isNewMember} class="w-full">
+                <Modal.Panel
+                    class="dark:bg-black bg-white [box-shadow:0_8px_30px_rgba(0,0,0,.12)]
+                    dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] max-h-[75vh] rounded-xl
+                    backdrop-blur-md modal max-w-[400px] w-full border dark:border-gray-800 border-gray-200">
+                    <main class="size-full flex flex-col relative py-4 px-5">
+                        <div class="dark:text-white text-black">
+                            <h3 class="font-semibold text-2xl tracking-tight mb-1 font-title">Send an invite</h3>
+                            <div class="text-sm dark:text-gray-200/70 text-gray-800/70" >
+                                Friends will receive an email allowing them to join this team
+                            </div>
+                        </div>
+                        <div class="mt-3 flex flex-col gap-3" >
+                            <div>
+                                <label for="name" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
                                     Name
                                 </label>
-                                <input id="name" placeholder="Jane's Games" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
-                                            focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070]" />
+                                <input id="name" type="text" placeholder="Jane Doe" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full bg-transparent px-2 py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70  rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
                             </div>
                             <div>
-                                <label for="slug" class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)] pb-2 pt-1" >
-                                    Slug
+                                <label for="email" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
+                                    Email
                                 </label>
-                                <input id="slug" placeholder="janes-games" class="transition-all duration-200 w-full px-2 py-3 h-10 border text-black dark:text-white dark:border-[#343434] border-[#e2e2e2] rounded-md text-sm outline-none bg-white dark:bg-[rgba(19,21,23,0.64)] leading-none [background-image:-webkit-linear-gradient(hsla(0,0%,100%,0),hsla(0,0%,100%,0))]
-                                            focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070]" />
+                                <input id="email" type="email" placeholder="jane@doe.com" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full px-2 bg-transparent py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70 rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
                             </div>
-                            <div class="flex gap-2 items-center justify-end">
-                                <Modal.Close class="text-[#6f6f6f] hover:bg-[#ededed] bg-transparent dark:text-[#a0a0a0] h-10 dark:hover:bg-[#282828] [background-clip:padding-box] [box-shadow:0_1px_2px_0_rgba(0,0,0,.06)] rounded-md font-medium text-sm leading-none transition-all duration-150 gap-2 px-3 py-0 inline-flex items-center">
-                                    Close
-                                </Modal.Close>
-                                <button class="h-10 bg-white dark:text-[#ededed] dark:bg-[#232323] [background-clip:padding-box] border border-black/[.114] [box-shadow:0_1px_2px_0_rgba(0,0,0,.06)] rounded-md font-medium text-sm leading-none transition-all duration-150 gap-2 px-3 py-0 inline-flex items-center" >Create Team</button>
-                            </div>
-                        </form>
-                    </div>
+                        </div>
+                    </main>
+                    <footer class="dark:text-gray-200/70 text-gray-800/70 dark:bg-gray-900 bg-gray-100 ring-1 ring-gray-200 dark:ring-gray-800 select-none flex gap-2 items-center justify-between w-full bottom-0 left-0 py-3 px-5 text-sm leading-none">
+                        <Modal.Close class="rounded-lg [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] py-3 px-4  hover:bg-gray-200 dark:hover:bg-gray-800 flex items-center justify-center">
+                            Cancel
+                        </Modal.Close>
+                        <button class="flex items-center justify-center gap-2 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 py-3 px-4 hover:bg-gray-300 dark:hover:bg-gray-700 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]" >
+                            Send an invite
+                        </button>
+                    </footer>
                 </Modal.Panel>
             </Modal.Root>
         </>

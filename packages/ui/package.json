@@ -28,7 +28,7 @@
     "@fontsource/bricolage-grotesque": "^5.0.7",
     "@fontsource/geist-mono": "^5.1.0",
     "@fontsource/geist-sans": "^5.1.0",
-    "@modular-forms/qwik": "0.26.1",
+    "@modular-forms/qwik": "^0.29.0",
     "@nestri/core": "*",
     "@qwik-ui/headless": "^0.6.4",
     "@types/eslint": "^8.56.5",
