@@ -47,7 +47,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
         e.preventDefault();
         if (newTeamName.value.trim()) {
             teams.value = [...teams.value, { name: newTeamName.value.trim() }];
-            selectedTeam.value = newTeamName.value.trim()
+            // selectedTeam.value = newTeamName.value.trim()
             newTeamName.value = '';
             isNewTeam.value = false;
         }
@@ -150,7 +150,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                                     </Dropdown.Item>
                                     <Dropdown.Item
                                         onClick$={() => isNewMember.value = true}
-                                        class="leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative"
+                                        class={cn("leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative", selectedTeam.value === defaultTeam && "opacity-50 pointer-events-none !cursor-not-allowed")}
                                     >
                                         <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0m8 12h6m-3-3v6M6 21v-2a4 4 0 0 1 4-4h4" /></svg>

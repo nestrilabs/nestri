@@ -3,7 +3,7 @@ import { cn } from "@nestri/ui/design";
 import type Nestri from "@nestri/sdk";
 import { component$ } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
-import { HomeNavBar, Modal, SimpleFooter } from "@nestri/ui";
+import { HomeNavBar, Modal, SimpleFooter, GameStoreButton } from "@nestri/ui";
 
 const games = [
     {
@@ -55,7 +55,7 @@ const games = [
 
 export const useCurrentProfile = routeLoader$(async ({ sharedMap }) => {
     // const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
-    
+
     // return res 
     return {
         avatarUrl: undefined,
@@ -73,53 +73,9 @@ export default component$(() => {
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 ">
                 <div class="flex flex-col gap-6 w-full py-4">
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <button class="border-gray-400/70 dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group transition-all duration-200  border-[2px]  h-14  rounded-xl  px-4  gap-2  flex  items-center  justify-between  overflow-hidden bg-white dark:bg-black hover:bg-gray-300/70 dark:hover:bg-gray-700/70 disabled:opacity-50">
-                            <div class="py-2 w-2/3 flex flex-col">
-                                <p class="text-text-100 shrink truncate w-full flex">DESKTOP-EUO8VSF</p>
-                            </div>
-                            <div
-                                style={{
-                                    "--cutout-avatar-percentage-visible": 0.2,
-                                    "--head-margin-percentage": 0.1,
-                                    "--size": "3rem"
-                                }}
-                                class="relative h-full flex w-1/3 justify-end">
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1085660/9f2d65473912e04aea5b63378def39dc71be2485.ico" class="h-12 shadow-lg shadow-gray-900 ring-gray-400/70 ring-1 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                            </div>
-                        </button>
-                        <button class="border-gray-400/70 dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] group transition-all duration-200 border-[2px]  h-14  rounded-xl  px-4  gap-2  flex  items-center  justify-between overflow-hidden bg-white dark:bg-black hover:bg-gray-300/70 dark:hover:bg-gray-700/70 outline-none  disabled:opacity-50">
-                            <div class="py-2 w-2/3 flex flex-col">
-                                <p class="text-text-100 shrink truncate w-full flex">DESKTOP-TYUO8VSF</p>
-                            </div>
-                            <div
-                                style={{
-                                    "--cutout-avatar-percentage-visible": 0.2,
-                                    "--head-margin-percentage": 0.1,
-                                    "--size": "3rem"
-                                }}
-                                class="relative h-full flex w-1/3 justify-end">
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black ring-gray-400/70 ring-1 shadow-lg shadow-gray-900 w-12 translate-y-4 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] rotate-12 rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1086940/ea19a7ce2af83c0240e775d79d3b690751a062c1.ico" class="h-12 bg-black ring-gray-400/70 ring-1 shadow-lg shadow-gray-900 w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                            </div>
-                        </button>
-                        <button class="border-gray-400/70 dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] group transition-all duration-200 border-[2px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden bg-white dark:bg-black hover:bg-gray-300/70 dark:hover:bg-gray-700/70 outline-none disabled:opacity-50">
-                            <div class="py-2 w-2/3 flex flex-col">
-                                <p class="text-text-100 shrink truncate w-full flex">DESKTOP-aEFO8VSF</p>
-                            </div>
-                            <div
-                                style={{
-                                    "--cutout-avatar-percentage-visible": 0.2,
-                                    "--head-margin-percentage": 0.1,
-                                    "--size": "3rem"
-                                }}
-                                class="relative h-full flex w-1/3 justify-end">
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2767030/bd22e45404f4ed4f3c549b575e23ce76fe03fb07.ico" class=" h-12 bg-black ring-gray-400/70 ring-1 shadow-lg shadow-gray-900 w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[10deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/578080/f962202b06de547cf47c156bdd7aaa5bf7f2cdbb.ico" class=" h-12 bg-black ring-gray-400/70 ring-1 shadow-lg shadow-gray-900 w-12 mr-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] translate-y-4 rotate-[12deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                                <img draggable={false} alt="game" width={256} height={256} src="https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/1623730/22a20bdaa6d782f60caa45eb7b02fc2411dcd988.ico" class=" h-12 bg-black ring-gray-400/70 ring-1 shadow-lg shadow-gray-900 w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
-                            </div>
-                        </button>
+                        <GameStoreButton/>
                         <Modal.Root class="w-full">
-                            <Modal.Trigger class="border-gray-400/70 w-full dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] group transition-all border-dashed duration-200 border-[2px]  h-14  rounded-xl  pl-4  gap-2  flex  items-center  justify-between  overflow-hidden  hover:bg-gray-300/70 dark:hover:bg-gray-700/70 outline-none  disabled:opacity-50">
+                            <Modal.Trigger class="border-gray-400/70 w-full dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] group transition-all border-dashed duration-200 border-[2px] h-14 rounded-xl pl-4 gap-2 flex items-center justify-between overflow-hidden hover:bg-gray-300/70 dark:hover:bg-gray-700/70 outline-none  disabled:opacity-50">
                                 <span class="py-2 text-gray-600/70 dark:text-gray-400/70 leading-none group-hover:text-black dark:group-hover:text-white shrink truncate flex text-start justify-center items-center gap-2">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.505 2h-1.501c-3.281 0-4.921 0-6.084.814a4.5 4.5 0 0 0-1.106 1.105C2 5.08 2 6.72 2 10s0 4.919.814 6.081a4.5 4.5 0 0 0 1.106 1.105C5.083 18 6.723 18 10.004 18h4.002c3.28 0 4.921 0 6.084-.814a4.5 4.5 0 0 0 1.105-1.105c.63-.897.772-2.08.805-4.081m-8-6h4m0 0h4m-4 0V2m0 4v4m-7 5h2m-1 3v4m-4 0h8" color="currentColor" /></svg>
                                     Add another Linux machine
@@ -151,7 +107,7 @@ export default component$(() => {
                             </Modal.Panel>
                         </Modal.Root>
                     </div>
-                </div>
+                </div >
                 <div class="gap-2 w-full flex-col flex">
                     <hr class="border-none h-[1.5px] dark:bg-gray-700 bg-gray-300 w-full" />
                     <div class="flex flex-col justify-center py-2 px-3 items-start w-full ">
@@ -355,7 +311,7 @@ export default component$(() => {
                         ))}
                     </ul>
                 </div>
-            </section>
+            </section >
             <SimpleFooter />
         </main >
     )

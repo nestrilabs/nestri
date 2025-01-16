@@ -34,7 +34,7 @@
     "@builder.io/qwik": "^1.8.0",
     "@builder.io/qwik-city": "^1.8.0",
     "@builder.io/qwik-react": "0.5.0",
-    "@modular-forms/qwik": "^0.27.0",
+    "@modular-forms/qwik": "^0.29.0",
     "@nestri/input": "*",
     "@nestri/libmoq": "*",
     "@nestri/sdk": "^0.1.0-alpha.6",
