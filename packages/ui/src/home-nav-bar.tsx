@@ -1,9 +1,9 @@
 import { cn } from "./design";
 import Avatar from "./avatar"
+import { MotionComponent } from "./react";
 import { Dropdown, Modal } from '@qwik-ui/headless';
 import { disablePageScroll, enablePageScroll } from '@fluejs/noscroll';
 import { $, component$, useOnDocument, useSignal } from "@builder.io/qwik";
-import { MotionComponent } from "./react";
 
 type Props = {
     avatarUrl?: string;
@@ -18,10 +18,14 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
     const isNewTeam = useSignal(false);
     const isNewMember = useSignal(false);
     const isHolding = useSignal(false);
-
-    const teams = [
+    const showInviteSuccess = useSignal(false);
+    const newTeamName = useSignal('');
+    const inviteName = useSignal('');
+    const inviteEmail = useSignal('');
+    const teams = useSignal([
         { name: defaultTeam }
-    ];
+    ]);
+
 
     const onDialogOpen = $((open: boolean) => {
         if (open) {
@@ -39,12 +43,54 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
         isHolding.value = false
     });
 
+    const handleAddTeam = $((e: any) => {
+        e.preventDefault();
+        if (newTeamName.value.trim()) {
+            teams.value = [...teams.value, { name: newTeamName.value.trim() }];
+            selectedTeam.value = newTeamName.value.trim()
+            newTeamName.value = '';
+            isNewTeam.value = false;
+        }
+    });
+
+    const handleInvite = $((e: any) => {
+        e.preventDefault();
+        if (inviteName.value && inviteEmail.value) {
+            // Here you would typically make an API call to send the invitation
+            console.log('Sending invite to:', { name: inviteName.value, email: inviteEmail.value });
+            inviteName.value = '';
+            inviteEmail.value = '';
+            isNewMember.value = false;
+            showInviteSuccess.value = true;
+            setTimeout(() => {
+                showInviteSuccess.value = false;
+            }, 3000);
+        }
+    });
+
     useOnDocument(
         'scroll',
         $(() => {
             hasScrolled.value = window.scrollY > 0;
         })
     );
+
+    const handleDeleteTeam = $(() => {
+        // Only delete if it's not the default team
+        if (selectedTeam.value !== defaultTeam) {
+            teams.value = teams.value.filter(team => team.name !== selectedTeam.value);
+            selectedTeam.value = defaultTeam;
+        }
+    });
+
+    const handleDeleteAnimationComplete = $(() => {
+        if (isHolding.value) {
+            // isDeleting.value = true;
+            // Reset the holding state
+            isHolding.value = false;
+            handleDeleteTeam();
+        }
+    });
 
     return (
         <>
@@ -75,7 +121,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                             <Dropdown.Popover
                                 class="bg-[hsla(0,0%,100%,.5)] dark:bg-[hsla(0,0%,100%,.026)] min-w-[160px] max-w-[240px] backdrop-blur-md rounded-lg py-1 px-2 border border-[#e8e8e8] dark:border-[#2e2e2e] [box-shadow:0_8px_30px_rgba(0,0,0,.12)]">
                                 <Dropdown.RadioGroup onChange$={(v: string) => selectedTeam.value = v} value={selectedTeam.value} class="w-full flex overflow-hidden flex-col gap-1 [&_*]:w-full [&_[data-checked]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-checked]]:bg-[hsla(0,0%,100%,.077)] [&_[data-checked]]:rounded-md [&_[data-checked]]:text-[#171717] [&_[data-checked]_svg]:block cursor-pointer [&_[data-highlighted]]:text-[#171717] dark:[&_[data-checked]]:text-[#ededed] dark:[&_[data-highlighted]]:text-[#ededed] [&_[data-highlighted]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-highlighted]]:bg-[hsla(0,0%,100%,.077)] [&_[data-highlighted]]:rounded-md">
-                                    {teams.map((team) => (
+                                    {teams.value.map((team) => (
                                         <Dropdown.RadioItem
                                             key={team.name}
                                             value={team.name}
@@ -117,7 +163,8 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                                         onPointerLeave$={handlePointerUp}
                                         onKeyDown$={(e) => e.key === "Enter" && handlePointerDown()}
                                         onKeyUp$={(e) => e.key === "Enter" && handlePointerUp()}
-                                        class="leading-none relative overflow-hidden transition-all duration-200 text-sm group items-center text-red-500 [&>*]:w-full [&>qwik-react]:absolute [&>qwik-react]:h-full [&>qwik-react]:left-0 hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none select-none w-full">
+                                        disabled={selectedTeam.value === defaultTeam}
+                                        class={cn("leading-none relative overflow-hidden transition-all duration-200 text-sm group items-center text-red-500 [&>*]:w-full [&>qwik-react]:absolute [&>qwik-react]:h-full [&>qwik-react]:left-0 hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none select-none w-full", selectedTeam.value === defaultTeam && "opacity-50 pointer-events-none !cursor-not-allowed")}>
                                         <MotionComponent
                                             client:load
                                             class="absolute left-0 top-0 bottom-0 bg-red-500 opacity-50 w-full h-full rounded-md"
@@ -132,6 +179,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                                                 duration: isHolding.value ? 2 : 0.5,
                                                 ease: "linear"
                                             }}
+                                            onAnimationComplete$={handleDeleteAnimationComplete}
                                         />
                                         <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5 ">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m19.5 5.5l-.402 6.506M4.5 5.5l.605 10.025c.154 2.567.232 3.85.874 4.774c.317.456.726.842 1.2 1.131c.671.41 1.502.533 2.821.57m10-7l-7 7m7 0l-7-7M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5" color="currentColor" /></svg>
@@ -214,30 +262,37 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                     class="dark:bg-black bg-white [box-shadow:0_8px_30px_rgba(0,0,0,.12)]
                     dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] max-h-[75vh] rounded-xl
                     backdrop-blur-md modal max-w-[400px] w-full border dark:border-gray-800 border-gray-200">
-                    <main class="size-full flex flex-col relative py-4 px-5">
-                        <div class="dark:text-white text-black">
-                            <h3 class="font-semibold text-2xl tracking-tight mb-1 font-title">Create a team</h3>
-                            <div class="text-sm dark:text-gray-200/70 text-gray-800/70" >
-                                Continue to start playing with on Pro with increased usage, additional security features, and support
+                    <form preventdefault:submit onSubmit$={handleAddTeam}>
+                        <main class="size-full flex flex-col relative py-4 px-5">
+                            <div class="dark:text-white text-black">
+                                <h3 class="font-semibold text-2xl tracking-tight mb-1 font-title">Create a team</h3>
+                                <div class="text-sm dark:text-gray-200/70 text-gray-800/70" >
+                                    Continue to start playing with on Pro with increased usage, additional security features, and support
+                                </div>
                             </div>
-                        </div>
-                        <div class="mt-3 flex flex-col gap-3" >
-                            <div>
-                                <label for="name" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
-                                    Team Name
-                                </label>
-                                <input id="name" type="text" placeholder="Jane Doe" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full bg-transparent px-2 py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70  rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
+                            <div class="mt-3 flex flex-col gap-3" >
+                                <div>
+                                    <label for="name" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
+                                        Team Name
+                                    </label>
+                                    <input
+                                        //@ts-expect-error
+                                        onInput$={(e) => newTeamName.value = e.target!.value}
+                                        required value={newTeamName.value} id="name" type="text" placeholder="Enter team name" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full bg-transparent px-2 py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70  rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
+                                </div>
                             </div>
-                        </div>
-                    </main>
-                    <footer class="dark:text-gray-200/70 text-gray-800/70 dark:bg-gray-900 bg-gray-100 ring-1 ring-gray-200 dark:ring-gray-800 select-none flex gap-2 items-center justify-between w-full bottom-0 left-0 py-3 px-5 text-sm leading-none">
-                        <Modal.Close class="rounded-lg [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] py-3 px-4  hover:bg-gray-200 dark:hover:bg-gray-800 flex items-center justify-center">
-                            Cancel
-                        </Modal.Close>
-                        <button class="flex items-center justify-center gap-2 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 py-3 px-4 hover:bg-gray-300 dark:hover:bg-gray-700 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]" >
-                            Continue
-                        </button>
-                    </footer>
+                        </main>
+                        <footer class="dark:text-gray-200/70 text-gray-800/70 dark:bg-gray-900 bg-gray-100 ring-1 ring-gray-200 dark:ring-gray-800 select-none flex gap-2 items-center justify-between w-full bottom-0 left-0 py-3 px-5 text-sm leading-none">
+                            <Modal.Close class="rounded-lg [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] py-3 px-4  hover:bg-gray-200 dark:hover:bg-gray-800 flex items-center justify-center">
+                                Cancel
+                            </Modal.Close>
+                            <button
+                                type="submit"
+                                class="flex items-center justify-center gap-2 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 py-3 px-4 hover:bg-gray-300 dark:hover:bg-gray-700 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]" >
+                                Continue
+                            </button>
+                        </footer>
+                    </form>
                 </Modal.Panel>
             </Modal.Root >
             <Modal.Root bind:show={isNewMember} class="w-full">
@@ -245,36 +300,47 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                     class="dark:bg-black bg-white [box-shadow:0_8px_30px_rgba(0,0,0,.12)]
                     dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] max-h-[75vh] rounded-xl
                     backdrop-blur-md modal max-w-[400px] w-full border dark:border-gray-800 border-gray-200">
-                    <main class="size-full flex flex-col relative py-4 px-5">
-                        <div class="dark:text-white text-black">
-                            <h3 class="font-semibold text-2xl tracking-tight mb-1 font-title">Send an invite</h3>
-                            <div class="text-sm dark:text-gray-200/70 text-gray-800/70" >
-                                Friends will receive an email allowing them to join this team
+                    <form preventdefault:submit onSubmit$={handleInvite}>
+
+                        <main class="size-full flex flex-col relative py-4 px-5">
+                            <div class="dark:text-white text-black">
+                                <h3 class="font-semibold text-2xl tracking-tight mb-1 font-title">Send an invite</h3>
+                                <div class="text-sm dark:text-gray-200/70 text-gray-800/70" >
+                                    Friends will receive an email allowing them to join this team
+                                </div>
                             </div>
-                        </div>
-                        <div class="mt-3 flex flex-col gap-3" >
-                            <div>
-                                <label for="name" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
-                                    Name
-                                </label>
-                                <input id="name" type="text" placeholder="Jane Doe" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full bg-transparent px-2 py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70  rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
+                            <div class="mt-3 flex flex-col gap-3" >
+                                <div>
+                                    <label for="name" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
+                                        Name
+                                    </label>
+                                    <input
+                                        value={inviteName.value}
+                                        //@ts-expect-error
+                                        onInput$={(e) => inviteName.value = e.target!.value}
+                                        id="name" type="text" placeholder="Jane Doe" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full bg-transparent px-2 py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70  rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
+                                </div>
+                                <div>
+                                    <label for="email" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
+                                        Email
+                                    </label>
+                                    <input
+                                        value={inviteEmail.value}
+                                        //@ts-expect-error
+                                        onInput$={(e) => inviteEmail.value = e.target!.value}
+                                        id="email" type="email" placeholder="jane@doe.com" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full px-2 bg-transparent py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70 rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
+                                </div>
                             </div>
-                            <div>
-                                <label for="email" class="text-sm dark:text-gray-200 text-gray-800 pb-2 pt-1" >
-                                    Email
-                                </label>
-                                <input id="email" type="email" placeholder="jane@doe.com" class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] w-full px-2 bg-transparent py-3 h-10 border text-black dark:text-white dark:border-gray-700/70 border-gray-300/70 rounded-md text-sm outline-none leading-none focus:ring-gray-300 dark:focus:ring-gray-700 focus:ring-2" />
-                            </div>
-                        </div>
-                    </main>
-                    <footer class="dark:text-gray-200/70 text-gray-800/70 dark:bg-gray-900 bg-gray-100 ring-1 ring-gray-200 dark:ring-gray-800 select-none flex gap-2 items-center justify-between w-full bottom-0 left-0 py-3 px-5 text-sm leading-none">
-                        <Modal.Close class="rounded-lg [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] py-3 px-4  hover:bg-gray-200 dark:hover:bg-gray-800 flex items-center justify-center">
-                            Cancel
-                        </Modal.Close>
-                        <button class="flex items-center justify-center gap-2 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 py-3 px-4 hover:bg-gray-300 dark:hover:bg-gray-700 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]" >
-                            Send an invite
-                        </button>
-                    </footer>
+                        </main>
+                        <footer class="dark:text-gray-200/70 text-gray-800/70 dark:bg-gray-900 bg-gray-100 ring-1 ring-gray-200 dark:ring-gray-800 select-none flex gap-2 items-center justify-between w-full bottom-0 left-0 py-3 px-5 text-sm leading-none">
+                            <Modal.Close class="rounded-lg [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] py-3 px-4  hover:bg-gray-200 dark:hover:bg-gray-800 flex items-center justify-center">
+                                Cancel
+                            </Modal.Close>
+                            <button type="submit" class="flex items-center justify-center gap-2 border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-200 dark:bg-gray-800 py-3 px-4 hover:bg-gray-300 dark:hover:bg-gray-700 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]" >
+                                Send an invite
+                            </button>
+                        </footer>
+                    </form>
                 </Modal.Panel>
             </Modal.Root>
         </>
