@@ -1,4 +1,4 @@
-import Nestri from "@nestri/sdk";
+// import Nestri from "@nestri/sdk";
 import { NavBar } from "@nestri/ui";
 import { component$, Slot } from "@builder.io/qwik";
 import { type RequestHandler, routeLoader$ } from "@builder.io/qwik-city";
@@ -20,14 +20,21 @@ import { createClient } from "@openauthjs/openauth/client";
 //   }
 // }
 
-export const useLink = routeLoader$(async (ev) => {
+export const onRequest: RequestHandler = async ({url, sharedMap }) => {
+    // const access = cookie.get("access_token")
+    // if (!access) {
+        const client = createClient({
+            clientID: "www",
+            issuer: "https://auth.lauryn.dev.nestri.io"
+        })
 
-    const client = createClient({
-        clientID: "www",
-        issuer: "https://auth.lauryn.dev.nestri.io"
-    })
+        const auth = await client.authorize(url.origin + "/callback", "code")
+        sharedMap.set("auth_url", auth.url)
+    // }
+}
 
-    const { url } = await client.authorize(ev.url.origin + "/callback", "code")
+export const useLink = routeLoader$(async ({sharedMap}) => {
+    const url =  sharedMap.get("auth_url") as string
 
     return url
 })

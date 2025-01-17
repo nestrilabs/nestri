@@ -4,8 +4,8 @@ import { buttonVariants, cn } from "./design";
 
 const navLinks = [
     {
-        name: "ReadMe",
-        href: "/changelog"
+        name: "About Us",
+        href: "/about"
     },
     {
         name: "Pricing",

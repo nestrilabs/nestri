@@ -54,7 +54,9 @@ export const onGet: RequestHandler = async ({ request, send }) => {
     const response = new Response(
       `#!/bin/bash
 
-ls -la
+echo "Not yet ready 😅\n"
+
+echo "Consider joining our Discord channel (https://discord.com/invite/Y6etn3qKZ3) for the latest updates \n"
       `, {
       status: 200,
       headers: {

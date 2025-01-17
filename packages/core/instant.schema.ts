@@ -14,8 +14,6 @@ const _schema = i.schema({
     profiles: i.entity({
       avatarUrl: i.string().optional(),
       username: i.string().indexed(),
-      //TODO: Remove this attribute
-      ownerID: i.string().unique().indexed(),
       updatedAt: i.date(),
       createdAt: i.date(),
       discriminator: i.string().indexed()

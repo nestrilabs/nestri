@@ -70,14 +70,16 @@ export const Footer = component$(({ showBanner = true }: Props) => {
               <div class="text-gray-950/50 dark:text-gray-50/50 flex flex-col gap-2" >
                 <p class="text-base opacity-50 cursor-not-allowed" >Docs</p>
                 <Link href="/pricing" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >Pricing</Link>
-                <Link href="/changelog" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >Changelog</Link>
+                <Link href="/about" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >About Us</Link>
               </div>
             </div>
             <div class="flex flex-col gap-2">
               <h2 class="font-title text-sm font-bold" >Company</h2>
               <div class="text-gray-950/50 dark:text-gray-50/50 flex flex-col gap-2" >
-                <Link href="/blog" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >Blog</Link>
-                <Link href="/contact" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >Contact Us</Link>
+                {/* <Link href="/blog" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >Blog</Link> */}
+                {/* <Link href="/contact" class="text-base hover:text-gray-950 dark:hover:text-gray-50 transition-all duration-200 hover:underline hover:underline-offset-4" >Contact Us</Link> */}
+                <p class="text-base opacity-50 cursor-not-allowed" >Blog</p>
+                <p class="text-base opacity-50 cursor-not-allowed" >Contact Us</p>
                 <p class="text-base opacity-50 cursor-not-allowed" >Open Startup</p>
               </div>
             </div>

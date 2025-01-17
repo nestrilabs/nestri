@@ -1,9 +1,10 @@
-import { $, component$, noSerialize, type NoSerialize, useSignal, useVisibleTask$ } from "@builder.io/qwik";
-import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
-import { Footer, Book, CONSTANTS } from "@nestri/ui"
-import { cn } from "@nestri/ui/design";
 import { Howl } from 'howler';
-import { Link } from "@builder.io/qwik-city";
+import { cn } from "@nestri/ui/design";
+import { Link, routeLoader$ } from "@builder.io/qwik-city";
+import { Footer, Book, CONSTANTS } from "@nestri/ui"
+import { TitleSection, MotionComponent, transition } from "@nestri/ui/react";
+import { $, component$, noSerialize, type NoSerialize, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+// import { createClient } from '@openauthjs/openauth/client';
 
 //FIXME: Add a FAQ section
 // FIXME: Takes too long for the price input radio input to become responsive
@@ -63,7 +64,26 @@ const convertToTitle = (value: any) => {
     }
 }
 
+// export const useLink = routeLoader$(async (ev) => {
+
+//     const client = createClient({
+//         clientID: "www",
+//         issuer: "https://auth.nestri.io"
+//     })
+
+//     const { url } = await client.authorize(ev.url.origin + "/callback", "code")
+
+//     return url
+// })
+export const useLink = routeLoader$(async ({ sharedMap }) => {
+    const url = sharedMap.get("auth_url") as string
+
+    return url
+})
+
 export default component$(() => {
+    const loginUrl = useLink() // { value: "/" }//
+
     const priceValue = useSignal(3)
     const docsLinkRef = useSignal<HTMLElement | undefined>()
     const bookRef = useSignal<HTMLElement | undefined>()
@@ -455,14 +475,14 @@ export default component$(() => {
                                             </div>
                                         </div>
                                     </div>
-                                    <button class="my-4 focus:ring-primary-500 hover:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 focus:dark:bg-primary-900 bg-gray-300/70 dark:bg-gray-700/30 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
-                                        Start Playing with Family Now
+                                    <a href={loginUrl.value} class="my-4 focus:ring-primary-500 hover:ring-primary-500 ring-gray-500 rounded-lg outline-none dark:text-gray-100/70 ring-2 text-sm h-max py-2 px-4 flex items-center transition-all duration-200 focus:bg-primary-100 focus:dark:bg-primary-900 bg-gray-300/70 dark:bg-gray-700/30 focus:text-primary-500 text-gray-500 font-title font-bold justify-between">
+                                        Get Nestri Pro
                                         <div class="size-5 relative">
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-full h-full">
                                                 <path fill-rule="evenodd" d="M2 10a.75.75 0 01.75-.75h12.59l-2.1-1.95a.75.75 0 111.02-1.1l3.5 3.25a.75.75 0 010 1.1l-3.5 3.25a.75.75 0 11-1.02-1.1l2.1-1.95H2.75A.75.75 0 012 10z" clip-rule="evenodd"></path>
                                             </svg>
                                         </div>
-                                    </button>
+                                    </a>
                                     <div class="flex flex-col gap-0.5">
                                         <div class="text-neutral-900/70 dark:text-neutral-100/70 text-xs">
                                             <sup>1</sup> Feature is in development

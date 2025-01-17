@@ -174,7 +174,6 @@ export module Profiles {
                 avatarUrl: input.avatarUrl,
                 createdAt: now,
                 updatedAt: now,
-                ownerID: input.owner,
                 discriminator,
             }).link({ owner: input.owner })
         )

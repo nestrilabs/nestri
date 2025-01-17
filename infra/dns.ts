@@ -1,6 +1,6 @@
 export const domain =
   {
-    production: "prod.nestri.io", //temporary use until we go into the real production
+    production: "nestri.io",
     dev: "dev.nestri.io",
   }[$app.stage] || $app.stage + ".dev.nestri.io";
 

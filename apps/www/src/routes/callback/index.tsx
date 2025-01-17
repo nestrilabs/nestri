@@ -1,7 +1,7 @@
 import Nestri from "@nestri/sdk";
+import { component$} from "@builder.io/qwik";
 import { createClient } from "@openauthjs/openauth/client";
-import { routeLoader$, useNavigate, type CookieOptions } from "@builder.io/qwik-city";
-import { component$, useVisibleTask$ } from "@builder.io/qwik";
+import { routeLoader$, type CookieOptions } from "@builder.io/qwik-city";
 
 export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
     const code = query.get("code")
@@ -45,16 +45,8 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
 
 export default component$(() => {
     const username = useLoggedIn()
-    const navigate = useNavigate();
+    console.log("username", username)
 
-    // eslint-disable-next-line qwik/no-use-visible-task
-    useVisibleTask$(() => {
-        if (username.value) {
-            setTimeout(async () => {
-                await navigate(`${window.location.origin}/${username.value}`)
-            }, 500);
-        }
-    })
     return (
         <div class="w-screen h-screen flex justify-center items-center" >
             <span class="text-xl font-semibold flex items-center gap-2" >
