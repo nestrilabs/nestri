@@ -1,7 +1,7 @@
 import Nestri from "@nestri/sdk";
-import { component$} from "@builder.io/qwik";
+import { component$, useVisibleTask$ } from "@builder.io/qwik";
 import { createClient } from "@openauthjs/openauth/client";
-import { routeLoader$, type CookieOptions } from "@builder.io/qwik-city";
+import { routeLoader$, useNavigate, type CookieOptions } from "@builder.io/qwik-city";
 
 export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
     const code = query.get("code")
@@ -9,15 +9,16 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
         const redirect_uri = url.origin + "/callback"
         const cookieOptions: CookieOptions = {
             path: "/",
-            sameSite: "Strict",  // Stronger than Lax for auth cookies
-            secure: true,        // Only send cookies over HTTPS
+            sameSite: "lax",  
+            secure: false,        // Only send cookies over HTTPS
+            //FIXME: This causes weird issues in Qwik
             httpOnly: true,      // Prevent JavaScript access to cookies
             expires: new Date(Date.now() + 24 * 10 * 60 * 60 * 1000), // expires in like 10 days
         }
 
         const client = createClient({
             clientID: "www",
-            issuer: "https://auth.lauryn.dev.nestri.io"
+            issuer: "https://auth.nestri.io"
         })
 
         const tokens = await client.exchange(code, redirect_uri)
@@ -32,7 +33,7 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
 
             const nestriClient = new Nestri({
                 bearerToken,
-                baseURL: "https://api.lauryn.dev.nestri.io"
+                baseURL: "https://api.nestri.io"
             })
 
             //TODO: Use subjects instead
@@ -45,7 +46,16 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
 
 export default component$(() => {
     const username = useLoggedIn()
-    console.log("username", username)
+    const navigate = useNavigate();
+
+    // eslint-disable-next-line qwik/no-use-visible-task
+    useVisibleTask$(() => {
+        if (username.value) {
+            setTimeout(async () => {
+                await navigate(`${window.location.origin}/${username.value}`)
+            }, 500);
+        }
+    })
 
     return (
         <div class="w-screen h-screen flex justify-center items-center" >

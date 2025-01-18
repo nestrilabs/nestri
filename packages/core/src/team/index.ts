@@ -16,7 +16,7 @@ export namespace Teams {
             }),
             name: z.string().openapi({
                 description: "Name of the team",
-                example: Examples.User.email,
+                example: Examples.Team.name,
             }),
             createdAt: z.string().or(z.number()).openapi({
                 description: "The time when this team was first created",

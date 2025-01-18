@@ -35,8 +35,19 @@ const _schema = i.schema({
       endedAt: i.date().optional().indexed(),
       public: i.boolean().indexed(),
     }),
+    subscriptions: i.entity({
+      checkoutID: i.string(),
+      // quantity: i.number(),
+      // frequency: i.string(),
+      canceledAt: i.date(),
+      // next: i.date()
+    })
   },
   links: {
+    UserSubscriptions: {
+      forward: { on: "subscriptions", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "subscriptions" }
+    },
     UserProfiles: {
       forward: { on: "profiles", has: "one", label: "owner" },
       reverse: { on: "$users", has: "one", label: "profile" }

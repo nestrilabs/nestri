@@ -14,6 +14,16 @@ export module Examples {
         updatedAt: '2025-01-09T01:56:23.902Z'
     }
     
+    export const Subscription = {
+        id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
+        checkoutID: "0bfcb712-df43-4454-81a8-fbee66eddca4",
+        // productID: "0bfcb712-df43-4454-81a8-fbee66eddca4",
+        // quantity: 1,
+        // frequency: "monthly" as const,
+        // next: '2025-01-09T01:56:23.902Z',
+        canceledAt: '2025-02-09T01:56:23.902Z'
+    }
+    
     export const Team = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         owner: true,

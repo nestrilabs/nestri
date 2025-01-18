@@ -9,6 +9,7 @@ import { subjects } from "../subjects";
 import { SessionApi } from "./session";
 import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
+import { SubscriptionApi } from "./subscription";
 import { VisibleError } from "@nestri/core/error";
 import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
@@ -33,7 +34,7 @@ const auth: MiddlewareHandler = async (c, next) => {
             );
         }
         const bearerToken = match[1];
-        
+
         const result = await client.verify(subjects, bearerToken!);
         if (result.err)
             throw new VisibleError("input", "auth.invalid", "Invalid bearer token");
@@ -83,11 +84,12 @@ app
     .use(auth);
 
 const routes = app
-    .route("/games", GameApi.route)
-    .route("/machines", MachineApi.route)
-    .route("/sessions", SessionApi.route)
     .route("/users", UserApi.route)
     .route("/teams", TeamApi.route)
+    .route("/games", GameApi.route)
+    .route("/sessions", SessionApi.route)
+    .route("/machines", MachineApi.route)
+    .route("/subscriptions", SubscriptionApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {

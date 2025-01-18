@@ -1,8 +1,8 @@
 // import Nestri from "@nestri/sdk";
 import { NavBar } from "@nestri/ui";
 import { component$, Slot } from "@builder.io/qwik";
-import { type RequestHandler, routeLoader$ } from "@builder.io/qwik-city";
 import { createClient } from "@openauthjs/openauth/client";
+import { type RequestHandler, routeLoader$ } from "@builder.io/qwik-city";
 
 //FIXME: This seems not to work
 // export const onRequest: RequestHandler = async ({ cookie, sharedMap }) => {
@@ -25,7 +25,7 @@ export const onRequest: RequestHandler = async ({url, sharedMap }) => {
     // if (!access) {
         const client = createClient({
             clientID: "www",
-            issuer: "https://auth.lauryn.dev.nestri.io"
+            issuer: "https://auth.nestri.io"
         })
 
         const auth = await client.authorize(url.origin + "/callback", "code")

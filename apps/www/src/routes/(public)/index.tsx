@@ -41,7 +41,7 @@ const games = [
   "https://assets-prd.ignimgs.com/2023/03/22/keyart-wide-1-1679503853654-1679505306655.jpeg",
   "https://assets-prd.ignimgs.com/2022/11/09/coffee-talk-episode-1-button-fin-1668033710468.jpg",
   "https://assets-prd.ignimgs.com/2022/06/15/stalker2chornobyl-1655253282275.jpg",
-  "https://assets-prd.ignimgs.com/2022/05/24/call-of-duty-modern-warfare-2-button-02-1653417394041.jpg",
+  "https://assets-prd.ignimgs.com/2023/05/27/alanwake2-1685200534966.jpg",
   "https://assets-prd.ignimgs.com/2023/02/16/apexrevelry-1676588335122.jpg"
 ]
 

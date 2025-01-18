@@ -2,9 +2,9 @@ import { cn } from "@nestri/ui/design";
 import type Nestri from "@nestri/sdk";
 import { Modal } from "@qwik-ui/headless";
 import { Avatar, Icons } from "@nestri/ui";
-import { component$, useSignal, useStore, useVisibleTask$ } from "@builder.io/qwik";
-import { routeLoader$ } from "@builder.io/qwik-city";
+import { Link, routeLoader$ } from "@builder.io/qwik-city";
 import { HomeNavBar, SimpleFooter, GameStoreButton } from "@nestri/ui";
+import { component$, useSignal, useStore, useVisibleTask$ } from "@builder.io/qwik";
 
 const games = [
     {
@@ -55,14 +55,14 @@ const games = [
 ]
 
 export const useCurrentProfile = routeLoader$(async ({ sharedMap }) => {
-    // const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
+    const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
 
-    // return res
-    return {
-        avatarUrl: undefined,
-        discriminator: 47,
-        username: "WanjohiRyan"
-    }
+    return res
+    //     return {
+    //         avatarUrl: undefined,
+    //         discriminator: 47,
+    //         username: "WanjohiRyan"
+    //     }
 })
 //bg-blue-100 rounded-lg p-4 min-w-16 text-center
 const TimeUnit = ({ value, label }: { value: number, label: string }) => (
@@ -94,10 +94,12 @@ const TimeUnit = ({ value, label }: { value: number, label: string }) => (
     </div>
 );
 
+const random = Math.floor(100 * Math.random())
+
 export default component$(() => {
     const profile = useCurrentProfile()
     const isNewPerson = useSignal(false)
-    const targetDate = new Date('2025-01-28T23:59:00Z');
+    const targetDate = new Date('2025-01-29T23:59:00Z');
 
     const timeLeft = useStore({
         days: 0,
@@ -134,7 +136,7 @@ export default component$(() => {
     })
 
     return (
-        <main class="flex w-screen h-full flex-col">
+        <main class="flex w-screen h-full flex-col relative">
             {profile.value && <HomeNavBar avatarUrl={profile.value.avatarUrl} discriminator={profile.value.discriminator} username={profile.value.username} />}
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 ">
                 <div class="flex flex-col gap-6 w-full py-4">
@@ -212,15 +214,15 @@ export default component$(() => {
                                                                     maskImage: `url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.5" cx="0.5" cy="0.5"/></svg>'),url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><circle r="0.6" cx="1.1" cy="0.5"/></svg>')`
                                                                 }}
                                                             >
-                                                                <Avatar name={((key + 1) * Math.floor(100 * Math.random())).toString()} />
+                                                                <Avatar name={((key + 1) * random).toString()} />
                                                             </div>
                                                         </div>
                                                     ))}
                                                     <div class="[&>svg]:size-[--size] ml-[calc(-1*(1-var(--cutout-avatar-percentage-visible)-var(--head-margin-percentage))*var(--size))] relative flex items-center justify-center">
-                                                        <Avatar name={(key * Math.floor(100 * Math.random())).toString()} />
+                                                        <Avatar name={((key + 1) * random).toString()} />
                                                     </div>
                                                 </div>
-                                                <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${Math.floor(Math.random() * 100)} people are currently playing this game`}</p>
+                                                <p class="font-normal text-gray-600 dark:text-gray-400 text-sm w-full truncate">{`${(key + 1) * random} people are currently playing this game`}</p>
                                             </div>
                                         </div>
                                     </Modal.Trigger>
@@ -382,9 +384,9 @@ export default component$(() => {
             <Modal.Root bind:show={isNewPerson} closeOnBackdropClick={false}>
                 <Modal.Panel
                     class="dark:bg-gray-700 bg-white [box-shadow:0_8px_30px_rgba(0,0,0,.12)]
-                    dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] max-h-[75vh] rounded-xl
-                    backdrop-blur-md modal w-full max-w-[740px] outline-none overflow-visible">
-                    <div class="relative select-none">
+                    dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3] rounded-xl
+                    backdrop-blur-md modal outline-none overflow-visible">
+                    <div class="relative select-none w-full max-w-[740px]  max-h-[75vh] h-full">
                         <div class="pointer-events-auto flex w-full flex-col rounded-xl relative bg-white dark:bg-gray-700/70">
                             <span class="absolute inset-0 z-0 size-full rounded-xl bg-gradient-to-b from-[rgb(17,168,255)] to-[rgb(160,221,255)] dark:from-[rgb(93,94,162)] dark:via-[rgb(33,143,205)] dark:to-[rgb(112,203,255)]" />
                             <div class="rounded-xl relative p-6">
@@ -400,9 +402,9 @@ export default component$(() => {
                                         </div>
                                         <div class="relative -mt-1 text-center text-base font-medium text-gray-800">Nestri needs your help</div>
                                         <div class="flex flex-row items-center justify-center gap-2 text-center text-sm text-white/80 [&>svg]:size-5">
-                                            {profile.value.avatarUrl ? (<img src={profile.value.avatarUrl} height={20} width={20} class="size-6 rounded-full" alt="Avatar" />) : (<Avatar name={`${profile.value.username}#${profile.value.discriminator}`} />)}
+                                            {profile.value && profile.value.avatarUrl ? (<img src={profile.value.avatarUrl} height={20} width={20} class="size-6 rounded-full" alt="Avatar" />) : (<Avatar name={profile.value ? `${profile.value.username}#${profile.value.discriminator}` : ""} />)}
                                             <span class="text-balance text-xs font-medium leading-tight text-black font-title">
-                                                {profile.value.username}
+                                                {profile.value && profile.value.username}
                                             </span>
                                         </div>
                                         <div class="w-full">
@@ -468,7 +470,8 @@ export default component$(() => {
                                         </div>
                                         <div class="w-full justify-center flex">
                                             <div class="group relative w-full cursor-pointer">
-                                                <button type="button" class="appearance-none outline-none scale-100 active:scale-[0.98] flex h-9 w-full shrink-0 items-center justify-center rounded-lg bg-blue-500 px-4 text-sm font-semibold text-white transition-colors disabled:pointer-events-none disabled:bg-black/70 disabled:opacity-50 group-hover:bg-blue-400">Get early supporter price</button>
+                                                {/**https://sandbox-api.polar.sh/v1/checkout-links/polar_cl_3Kf9mOEl8We2ZnmYr0tolrFPfHiPvlC71XgZy4Jd2ni/redirect */}
+                                                <Link href="https://buy.polar.sh/polar_cl_Y1SAbDjOOU8kbnKz4yUbF0Aqus94YA4by9FdS1I4igY" class="appearance-none outline-none scale-100 active:scale-[0.98] flex h-9 w-full shrink-0 items-center justify-center rounded-lg bg-blue-500 px-4 text-sm font-semibold text-white transition-colors group-hover:bg-blue-400">Get early supporter price</Link>
                                                 <div class="absolute -top-[22px] left-1/2 -translate-x-1/2">
                                                     <Icons.specialOffer />
                                                 </div>
@@ -481,6 +484,7 @@ export default component$(() => {
                     </div>
                 </Modal.Panel>
             </Modal.Root>
+            {/* <div class="absolute pointer-events-none size-full inset-0 dark:bg-[#0009] bg-[#b3b5b799] select-none backdrop-blur-[2px] z-50" /> */}
         </main >
     )
 })
