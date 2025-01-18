@@ -34,8 +34,8 @@ export const NavBar = component$(({ link }: Props) => {
     );
 
     return (
-        <nav class={cn("w-full sticky top-0 z-50 text-sm font-extrabold bg-gray-100/70 dark:bg-gray-900/70 before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full", hasScrolled.value && "shadow-[0_2px_20px_1px] shadow-gray-300 dark:shadow-gray-700")} >
-            <button onClick$={() => window.location.href = link as string} class="w-full text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm py-3">
+        <nav class={cn("w-full sticky top-0 z-50 text-sm font-extrabold bg-gray-100/70 dark:bg-gray-900/70 before:backdrop-blur-[15px] before:absolute before:-z-[1] before:top-0 before:left-0 before:w-full before:h-full max-w-full overflow-hidden", hasScrolled.value && "shadow-[0_2px_20px_1px] shadow-gray-300 dark:shadow-gray-700")} >
+            <button onClick$={() => window.location.href = link as string} class="w-full  text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm py-3">
                 <div class="flex relative">
                     <span class="whitespace-pre marquee-animation">
                         Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username ·
