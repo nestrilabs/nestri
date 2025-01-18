@@ -1,7 +1,8 @@
 import Nestri from "@nestri/sdk";
 import { NavProgress } from "@nestri/ui";
-import { component$, Slot } from "@builder.io/qwik";
+import { component$, Slot, useVisibleTask$ } from "@builder.io/qwik";
 import { type DocumentHead, type RequestHandler } from "@builder.io/qwik-city";
+import posthog from "posthog-js";
 
 export const onGet: RequestHandler = async ({ cacheControl }) => {
   // Control caching for this request for best performance and to reduce hosting costs:
@@ -30,6 +31,10 @@ export const onRequest: RequestHandler = async ({ cookie, sharedMap }) => {
 }
 
 export default component$(() => {
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => {
+    posthog.init('phc_EN9hs9bPxPrTn6224XjPG55t7w9Rh9lMBacDSEHiZjP', { api_host: 'https://app.posthog.com' })
+  })
   return (
     <>
       <NavProgress />
