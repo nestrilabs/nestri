@@ -22,4 +22,24 @@ export namespace Email {
             console.log("error sending email", error)
         }
     }
+
+    export async function sendWelcome(
+        to: string,
+        name: string,
+    ) {
+
+        try {
+            await Client().sendTransactionalEmail(
+                {
+                    transactionalId: "cm61jrbbx02twlstfwfcywt5u",
+                    email: to,
+                    dataVariables: {
+                        name
+                    }
+                }
+            );
+        } catch (error) {
+            console.log("error sending email", error)
+        }
+    }
 }

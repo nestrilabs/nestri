@@ -260,6 +260,7 @@
     transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
     animation-name: slideFromRight;
 }
+
 .modal::backdrop,
 .modal-sheet::backdrop {
     animation-duration: 0.5s;
@@ -280,7 +281,7 @@
 }
 
 .modal[data-closing]::backdrop,
-.modal-sheet[data-closing]::backdrop{
+.modal-sheet[data-closing]::backdrop {
     animation-duration: 0.5s;
     animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
     touch-action: none;
@@ -298,7 +299,7 @@
     animation-name: modalIn;
 }
 
-.modal[data-closing]{
+.modal[data-closing] {
     animation-duration: 0.5s;
     animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
     touch-action: none;
@@ -325,37 +326,138 @@
 
 @keyframes fadeIn {
     from {
-      opacity: 0;
+        opacity: 0;
     }
-    to {
-      opacity: 1;
-    }
-  }
-  
-  @keyframes fadeOut {
-    to {
-      opacity: 0;
-    }
-  }
-  
-  @keyframes modalIn {
-    from {
-      opacity: 0;
-      scale: 0.9;
-    }
-    to {
-      opacity: 1;
-      scale: 1;
-    }
-  }
-  
-  @keyframes modalOut {
-    to {
-      opacity: 0;
-      scale: 0.9;
-    }
-  }
 
-  /* button, a {
-    @apply outline-none hover:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_#fcfcfc,0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)]
-  } */
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes fadeOut {
+    to {
+        opacity: 0;
+    }
+}
+
+@keyframes modalIn {
+    from {
+        opacity: 0;
+        scale: 0.9;
+    }
+
+    to {
+        opacity: 1;
+        scale: 1;
+    }
+}
+
+@keyframes modalOut {
+    to {
+        opacity: 0;
+        scale: 0.9;
+    }
+}
+
+[data-component="spinner"] {
+    --spinner-size: 20px;
+    --spinner-color: #000;
+
+    @media (prefers-color-scheme: dark) {
+        --spinner-color: #FFF;
+    }
+
+    height: var(--spinner-size, 20px);
+    width: var(--spinner-size, 20px);
+    margin-left: calc(var(--spinner-size, 20px)*-1px);
+    /* display: none; */
+
+    &>div {
+        position: relative;
+        top: 50%;
+        left: 50%;
+        height: var(--spinner-size, 20px);
+        width: var(--spinner-size, 20px);
+    }
+
+    &>div>div {
+        animation: spin 1.2s linear infinite;
+        background: var(--spinner-color);
+        border-radius: 9999px;
+        height: 8%;
+        left: -10%;
+        position: absolute;
+        top: -3.9%;
+        width: 24%;
+    }
+
+    &>div>div:first-child {
+        animation-delay: -1.2s;
+        transform: rotate(.0001deg) translate(146%);
+    }
+
+    &>div>div:nth-child(2) {
+        animation-delay: -1.1s;
+        transform: rotate(30deg) translate(146%);
+    }
+
+    &>div>div:nth-child(3) {
+        animation-delay: -1s;
+        transform: rotate(60deg) translate(146%);
+    }
+
+    &>div>div:nth-child(4) {
+        animation-delay: -.9s;
+        transform: rotate(90deg) translate(146%);
+    }
+
+    &>div>div:nth-child(5) {
+        animation-delay: -.8s;
+        transform: rotate(120deg) translate(146%);
+    }
+
+    &>div>div:nth-child(6) {
+        animation-delay: -.7s;
+        transform: rotate(150deg) translate(146%);
+    }
+
+    &>div>div:nth-child(7) {
+        animation-delay: -.6s;
+        transform: rotate(180deg) translate(146%);
+    }
+
+    &>div>div:nth-child(8) {
+        animation-delay: -.5s;
+        transform: rotate(210deg) translate(146%);
+    }
+
+    &>div>div:nth-child(9) {
+        animation-delay: -.4s;
+        transform: rotate(240deg) translate(146%);
+    }
+
+    &>div>div:nth-child(10) {
+        animation-delay: -.3s;
+        transform: rotate(270deg) translate(146%);
+    }
+
+    &>div>div:nth-child(11) {
+        animation-delay: -.2s;
+        transform: rotate(300deg) translate(146%);
+    }
+
+    &>div>div:nth-child(12) {
+        animation-delay: -.1s;
+        transform: rotate(330deg) translate(146%);
+    }
+}
+
+@keyframes spin {
+    0% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: .15;
+    }
+}

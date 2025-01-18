@@ -5,6 +5,7 @@ import { Examples } from "../examples";
 import databaseClient from "../database";
 import { groupBy, map, pipe, values } from "remeda"
 import { id as createID } from "@instantdb/admin";
+import { useCurrentUser } from "../actor";
 
 export module Profiles {
     const MAX_ATTEMPTS = 50;
@@ -124,10 +125,6 @@ export module Profiles {
     export const create = fn(z.object({ username: z.string(), customDiscriminator: z.string().optional(), avatarUrl: z.string().optional(), owner: z.string() }), async (input) => {
         const username = sanitizeUsername(input.username);
 
-        // if (!username || username.length < 2 || username.length > 32) {
-        //     // throw new Error('Invalid username length');
-        // }
-
         const db = databaseClient()
         const id = createID()
         const now = new Date().toISOString()
@@ -150,6 +147,7 @@ export module Profiles {
                     }
                 }
             }
+
             const res = await db.query(query)
             const profiles = res.profiles
             if (profiles.length != 0) {
@@ -176,7 +174,6 @@ export module Profiles {
                 avatarUrl: input.avatarUrl,
                 createdAt: now,
                 updatedAt: now,
-                ownerID: input.owner,
                 discriminator,
             }).link({ owner: input.owner })
         )
@@ -214,7 +211,7 @@ export module Profiles {
             profiles: {
                 $: {
                     where: {
-                        ownerID
+                        owner: ownerID
                     }
                 },
             }
@@ -227,6 +224,27 @@ export module Profiles {
             return null
         }
 
-        return profiles
+        const profile = pipe(
+            profiles,
+            groupBy(x => x.id),
+            values(),
+            map((group): Info => ({
+                id: group[0].id,
+                username: group[0].username,
+                createdAt: group[0].createdAt,
+                updatedAt: group[0].updatedAt,
+                avatarUrl: group[0].avatarUrl,
+                discriminator: group[0].discriminator
+            }))
+        )
+
+        return profile[0]
+    }
+
+    export const getCurrentProfile = async () => {
+        const user = useCurrentUser()
+        const currentProfile = await getProfile(user.id);
+
+        return currentProfile
     }
 };

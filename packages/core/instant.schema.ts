@@ -14,10 +14,16 @@ const _schema = i.schema({
     profiles: i.entity({
       avatarUrl: i.string().optional(),
       username: i.string().indexed(),
-      ownerID: i.string().unique().indexed(),
       updatedAt: i.date(),
       createdAt: i.date(),
       discriminator: i.string().indexed()
+    }),
+    teams: i.entity({
+      name: i.string(),
+      slug: i.string().unique().indexed(),
+      deletedAt: i.date().optional().indexed(),
+      updatedAt: i.date(),
+      createdAt: i.date(),
     }),
     games: i.entity({
       name: i.string(),
@@ -29,11 +35,30 @@ const _schema = i.schema({
       endedAt: i.date().optional().indexed(),
       public: i.boolean().indexed(),
     }),
+    subscriptions: i.entity({
+      checkoutID: i.string(),
+      // quantity: i.number(),
+      // frequency: i.string(),
+      canceledAt: i.date(),
+      // next: i.date()
+    })
   },
   links: {
+    UserSubscriptions: {
+      forward: { on: "subscriptions", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "subscriptions" }
+    },
     UserProfiles: {
       forward: { on: "profiles", has: "one", label: "owner" },
       reverse: { on: "$users", has: "one", label: "profile" }
+    },
+    TeamsOwned: {
+      forward: { on: "teams", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "teamsOwned" },
+    },
+    TeamsJoined: {
+      forward: { on: "teams", has: "many", label: "members" },
+      reverse: { on: "$users", has: "many", label: "teamsJoined" },
     },
     UserMachines: {
       forward: { on: "machines", has: "one", label: "owner" },
