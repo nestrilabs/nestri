@@ -38,8 +38,8 @@ export const NavBar = component$(({ link }: Props) => {
             <button onClick$={() => window.location.href = link as string} class="w-full  text-gray-900/70 bg-gray-400/30 dark:bg-gray-600/30 dark:text-gray-100/30 whitespace-nowrap font-mono text-sm py-3">
                 <div class="flex relative">
                     <span class="whitespace-pre marquee-animation">
-                        Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username ·
-                        Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username ·
+                        Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username ·
+                        Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username · Launching Soon · Login to reserve your username ·
                     </span>
                 </div>
             </button>

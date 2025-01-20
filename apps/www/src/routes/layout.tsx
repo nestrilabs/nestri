@@ -1,8 +1,8 @@
+import posthog from "posthog-js";
 import Nestri from "@nestri/sdk";
 import { NavProgress } from "@nestri/ui";
 import { component$, Slot, useVisibleTask$ } from "@builder.io/qwik";
 import { type DocumentHead, type RequestHandler } from "@builder.io/qwik-city";
-import posthog from "posthog-js";
 
 export const onGet: RequestHandler = async ({ cacheControl }) => {
   // Control caching for this request for best performance and to reduce hosting costs:
@@ -15,18 +15,26 @@ export const onGet: RequestHandler = async ({ cacheControl }) => {
   });
 };
 
-export const onRequest: RequestHandler = async ({ cookie, sharedMap }) => {
+export const onRequest: RequestHandler = async ({ cookie, url, redirect, sharedMap }) => {
   const access = cookie.get("access_token")
   if (access) {
-    const bearerToken = access.value
+    try {
 
-    const nestriClient = new Nestri({
-      bearerToken,
-      baseURL: "https://api.nestri.io"
-    })
+      const bearerToken = access.value
 
-    const currentProfile = await nestriClient.users.retrieve()
-    sharedMap.set("profile", currentProfile.data)
+      const nestriClient = new Nestri({
+        bearerToken,
+        baseURL: "https://api.nestri.io"
+      })
+      const currentProfile = await nestriClient.users.retrieve()
+      sharedMap.set("profile", currentProfile.data)
+    } catch (error) {
+      console.log("error working with bearer token", error)
+      cookie.delete("access_token")
+      cookie.delete("refresh_token")
+
+      throw redirect(302, url.origin)
+    }
   }
 }
 

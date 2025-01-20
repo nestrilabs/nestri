@@ -127,7 +127,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                                             value={team.name}
                                             class="leading-none text-sm items-center flex px-2 h-8 rounded-md outline-none relative select-none w-full"
                                         >
-                                            <span class="w-full max-w-[20ch] flex items-center gap-2 truncate [&>svg]:size-5 ">
+                                            <span class="w-full max-w-[20ch] flex items-center gap-2 truncate [&>svg]:size-5 text-[#6f6f6f] dark:text-[#a0a0a0]">
                                                 <Avatar class="flex-shrink-0 rounded-full" name={team.name} />
                                                 {team.name}
                                             </span>
