@@ -8,7 +8,8 @@ import { qwikCity } from "@builder.io/qwik-city/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
 import { qwikReact } from "@builder.io/qwik-react/vite";
 import pkg from "./package.json";
-
+import { partytownVite } from "@builder.io/partytown/utils";
+import { join } from "path";
 type PkgDep = Record<string, string>;
 const { dependencies = {}, devDependencies = {} } = pkg as any as {
   dependencies: PkgDep;
@@ -27,17 +28,7 @@ export default defineConfig((): UserConfig => {
       qwikVite(),
       tsconfigPaths(),
       qwikReact(),
-      //For Moq-js (SharedArrayBuffer)
-      // {
-      //   name: "configure-response-headers",
-      //   configureServer: (server) => {
-      //     server.middlewares.use((_req, res, next) => {
-      //       res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-      //       res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-      //       next();
-      //     });
-      //   },
-      // },
+      partytownVite({ dest: join(__dirname, "dist", "~partytown") }),
     ],
     // This tells Vite which dependencies to pre-build in dev mode.
     optimizeDeps: {
