@@ -44,8 +44,6 @@
     "@polar-sh/checkout": "^0.1.8",
     "@polar-sh/sdk": "^0.21.1",
     "@qwik-ui/headless": "^0.6.4",
-    "@scalar/api-reference": "^1.25.106",
-    "@scalar/api-reference-react": "^0.4.15",
     "@types/eslint": "8.56.10",
     "@types/howler": "^2.2.12",
     "@types/node": "^22.5.1",
