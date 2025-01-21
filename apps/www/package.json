@@ -31,6 +31,7 @@
     "qwik": "qwik"
   },
   "devDependencies": {
+    "@builder.io/partytown": "^0.8.1",
     "@builder.io/qwik": "^1.8.0",
     "@builder.io/qwik-city": "^1.8.0",
     "@builder.io/qwik-react": "0.5.0",
@@ -43,6 +44,8 @@
     "@polar-sh/checkout": "^0.1.8",
     "@polar-sh/sdk": "^0.21.1",
     "@qwik-ui/headless": "^0.6.4",
+    "@scalar/api-reference": "^1.25.106",
+    "@scalar/api-reference-react": "^0.4.15",
     "@types/eslint": "8.56.10",
     "@types/howler": "^2.2.12",
     "@types/node": "^22.5.1",
@@ -50,6 +53,7 @@
     "@types/react-dom": "^18.2.13",
     "@typescript-eslint/eslint-plugin": "7.16.1",
     "@typescript-eslint/parser": "7.16.1",
+    "ajv": "^8.17.1",
     "eslint": "8.57.0",
     "eslint-plugin-qwik": "^1.8.0",
     "howler": "^2.2.4",
