@@ -43,13 +43,13 @@ get_gpu_info
 # Identify vendor
 if [[ "${vendor_full_map[0],,}" =~ "intel" ]]; then
     echo "Intel GPU detected, installing required packages..."
-    chwd -a
+    #chwd -a
     pacman -Syu --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
     # chwd missed a thing
     pacman -Syu --noconfirm vpl-gpu-rt
 elif [[ "${vendor_full_map[0],,}" =~ "amd" ]]; then
     echo "AMD GPU detected, installing required packages..."
-    chwd -a
+    #chwd -a
     pacman -Syu --noconfirm gstreamer-vaapi gst-plugin-va
 elif [[ "${vendor_full_map[0],,}" =~ "nvidia" ]]; then
     echo "NVIDIA GPU detected. Assuming drivers are linked"

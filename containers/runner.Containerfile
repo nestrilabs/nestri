@@ -73,6 +73,8 @@ RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /et
     sed -i "s/#Color/Color/" /etc/pacman.conf && \
     pacman --noconfirm -Syu archlinux-keyring && \
     dirmngr </dev/null > /dev/null 2>&1 && \
+    # Install mesa-git before Steam for simplicity
+    pacman --noconfirm -S mesa-git && \
     # Install Steam
     pacman --noconfirm -S steam && \
     pacman -Syu --noconfirm --needed \
@@ -138,6 +140,9 @@ ENV XDG_RUNTIME_DIR=/run/user/${UID} \
 
 # Required for NVIDIA.. they want to be special like that #
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+# DBus run directory creation #
+RUN mkdir -p /run/dbus
 
 # Wireplumber disable suspend #
 # Remove suspend node
