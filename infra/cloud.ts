@@ -12,7 +12,7 @@
  * The EC2 part needs autoscaling as well, this should be handled in another file.
  */
 
-export const queue = new sst.aws.Queue("GamingQueue", { fifo: true });
+// export const queue = new sst.aws.Queue("GamingQueue", { fifo: true });
 
 
-queue.subscribe("packages/functions/src/subscriber.handler")
+// queue.subscribe("packages/functions/src/subscriber.handler")
