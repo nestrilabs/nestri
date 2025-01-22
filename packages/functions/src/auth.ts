@@ -100,23 +100,22 @@ export default {
                         if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
                             throw new Error("Invalid authorization token");
                         }
-
-                        const fingerprint = input.params.fingerprint;
-                        if (!fingerprint) {
-                            throw new Error("Fingerprint is required");
+                        const teamID = input.params.team;
+                        if (!teamID) {
+                            throw new Error("Team ID is required");
                         }
-
+                        
                         const hostname = input.params.hostname;
-                        if (!hostname) {
+                        if (!teamID) {
                             throw new Error("Hostname is required");
                         }
+
                         return {
-                            fingerprint,
-                            hostname
+                            teamID
                         };
                     },
                     init() { }
-                } as Adapter<{ fingerprint: string; hostname: string }>,
+                } as Adapter<{ teamID: string; }>,
             },
             allow: async (input) => {
                 const url = new URL(input.redirectURI);
@@ -153,7 +152,7 @@ export default {
                     const token = await Users.create(email)
                     const usr = await Users.fromEmail(email);
                     const exists = await Profiles.getProfile(usr.id)
-                    if(username && !exists){
+                    if (username && !exists) {
                         await Profiles.create({ owner: usr.id, username })
                     }
 
@@ -181,7 +180,7 @@ export default {
                         const token = await Users.create(user.primary.email)
                         const usr = await Users.fromEmail(user.primary.email);
                         const exists = await Profiles.getProfile(usr.id)
-                        console.log("exists",exists)
+                        console.log("exists", exists)
                         if (!exists) {
                             await Profiles.create({ owner: usr.id, avatarUrl: user.avatar, username: user.username })
                         }

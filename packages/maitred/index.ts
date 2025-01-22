@@ -1,25 +1,18 @@
-import { color } from "bun" with { type: "macro" };
+// import { Auth } from "@/auth";
+import { $ } from "bun";
+import { log } from "@/utils"
 
-const infoBgColor = color("#f267ad", "ansi")?.replace("38", "48")
-const errorBgColor = color("red", "ansi")?.replace("38", "48")
-const resetColor = "\x1b[0m"
+const handler = async () => {
+    // log.Info(hostname)
+    // const teamID = process.argv[2];
 
+    // if (!teamID) {
+    //     log.Error("Please provide the team ID to register this container to")
+    //     process.exit(1)
+    // }
 
-const log = {
-    Info: (r: string) => console.log(`> ${infoBgColor}[INF]${resetColor} ${r}`),
-    Error: (r: string) => console.log(`> ${errorBgColor}[ERR]${resetColor} ${r}`)
-}
-
-const handler = () => {
-    const teamID = process.argv[2];
-
-    if (!teamID) {
-        log.Error("Please provide the team ID to register this container to")
-        process.exit(1)
-    }
-
-    log.Info("Started successfully")
-    log.Error("Did not start successfully")
+    // const credentials = await Auth.getCredentials(teamID)
+    // log.Info(`Credentials ${credentials}`)
 }
 
 handler()

@@ -11,6 +11,11 @@ const _schema = i.schema({
       deletedAt: i.date().optional().indexed(),
       createdAt: i.date()
     }),
+    instances: i.entity({
+      hostname: i.string(),
+      deletedAt: i.date().optional().indexed(),
+      createdAt: i.date()
+    }),
     profiles: i.entity({
       avatarUrl: i.string().optional(),
       username: i.string().indexed(),
@@ -67,6 +72,10 @@ const _schema = i.schema({
     UserGames: {
       forward: { on: "games", has: "many", label: "owners" },
       reverse: { on: "$users", has: "many", label: "games" }
+    },
+    TeamInstances: {
+      forward: { on: "instances", has: "many", label: "owners" },
+      reverse: { on: "teams", has: "many", label: "machines" }
     },
     MachineSessions: {
       forward: { on: "machines", has: "many", label: "sessions" },
