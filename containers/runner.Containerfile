@@ -77,7 +77,13 @@ RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /et
     pacman --noconfirm -Sy mesa-git && \
     # Install Steam
     pacman --noconfirm -Sy steam steam-native-runtime && \
-    pacman -Sy --noconfirm --needed \
+    # Clean up pacman cache
+    paccache -rk1 && \
+    rm -rf /usr/share/info/* && \
+    rm -rf /usr/share/man/* && \
+    rm -rf /usr/share/doc/
+    
+RUN pacman -Sy --noconfirm --needed \
     # Graphics packages
     sudo xorg-xwayland labwc wlr-randr mangohud \
     # GStreamer and plugins
