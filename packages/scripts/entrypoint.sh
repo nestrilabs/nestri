@@ -31,10 +31,6 @@ if [ ! -e "$PIPEWIRE_SOCKET" ]; then
     exit 1
 fi
 
-# Update system packages before proceeding
-echo "Upgrading system packages..."
-pacman -Syu --noconfirm
-
 echo "Detecting GPU vendor and installing necessary GStreamer plugins..."
 source /etc/nestri/gpu_helpers.sh
 
@@ -44,13 +40,13 @@ get_gpu_info
 if [[ "${vendor_full_map[0],,}" =~ "intel" ]]; then
     echo "Intel GPU detected, installing required packages..."
     #chwd -a
-    pacman -Syu --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
+    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
     # chwd missed a thing
-    pacman -Syu --noconfirm vpl-gpu-rt
+    pacman -Sy --noconfirm vpl-gpu-rt
 elif [[ "${vendor_full_map[0],,}" =~ "amd" ]]; then
     echo "AMD GPU detected, installing required packages..."
     #chwd -a
-    pacman -Syu --noconfirm gstreamer-vaapi gst-plugin-va
+    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va
 elif [[ "${vendor_full_map[0],,}" =~ "nvidia" ]]; then
     echo "NVIDIA GPU detected. Assuming drivers are linked"
 else
@@ -62,4 +58,6 @@ echo "Cleaning up old package cache..."
 paccache -rk1
 
 echo "Switching to nestri user for application startup..."
+# Make sure user home dir is owned properly
+chown ${USER}:${USER} /home/${USER}
 exec sudo -E -u nestri /etc/nestri/entrypoint_nestri.sh

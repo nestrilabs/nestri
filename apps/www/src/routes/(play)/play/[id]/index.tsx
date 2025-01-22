@@ -80,6 +80,8 @@ export default component$(() => {
                 window.nestrikeyboard.dispose();
                 // @ts-ignore
                 window.nestrikeyboard = undefined;
+                // @ts-ignore
+                window.nestriLock = undefined;
               }
             });
           };
@@ -147,7 +149,7 @@ export default component$(() => {
       ref={canvas}
       onClick$={async () => {
         // @ts-ignore
-        if (canvas.value && window.hasstream) {
+        if (canvas.value && window.hasstream && !window.nestriLock) {
           // Do not use - unadjustedMovement: true - breaks input on linux
           await canvas.value.requestPointerLock();
           await canvas.value.requestFullscreen()
@@ -168,14 +170,20 @@ export default component$(() => {
               window.navigator.keyboard.lock(keys).then(
                 () => {
                   console.log("keyboard lock success");
+                  // @ts-ignore
+                  window.nestriLock = true;
                 }
               ).catch(
                 (e: any) => {
                   console.log("keyboard lock failed: ", e);
+                  // @ts-ignore
+                  window.nestriLock = false;
                 }
               )
             } else {
               console.log("keyboard lock not supported, navigator is: ", window.navigator, navigator);
+              // @ts-ignore
+              window.nestriLock = undefined;
             }
           }
         }
