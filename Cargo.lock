@@ -2687,7 +2687,6 @@ dependencies = [
  "futures-util",
  "gst-plugin-webrtc",
  "gstreamer",
- "gstreamer-base",
  "gstreamer-webrtc",
  "log",
  "num-derive",
