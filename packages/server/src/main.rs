@@ -13,11 +13,9 @@ use futures_util::StreamExt;
 use gst::prelude::*;
 use gstrswebrtc::signaller::Signallable;
 use gstrswebrtc::webrtcsink::BaseWebRTCSink;
-use gst_base::BaseSrc;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
-use gst_base::prelude::BaseSrcExt;
 
 // Handles gathering GPU information and selecting the most suitable GPU
 fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
