@@ -11,6 +11,7 @@ export default $config({
         docker: "4.5.5",
         "@pulumi/command": "1.0.1",
         random: "4.16.8",
+        aws: "6.66.3",
       },
     };
   },
