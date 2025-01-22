@@ -331,6 +331,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Optimize latency of pipeline
+    video_source.sync_state_with_parent().expect("failed to sync with parent");
     video_source.set_property("do-timestamp", &true);
     audio_source.set_property("do-timestamp", &true);
     pipeline.set_property("latency", &0u64);

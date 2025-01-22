@@ -8,7 +8,7 @@ FROM ${BASE_IMAGE} AS gst-builder
 WORKDIR /builder/
 
 # Grab build and rust packages #
-RUN pacman -Syu --noconfirm meson pkgconf cmake git gcc make rustup \
+RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
 	gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc
 
 # Setup stable rust toolchain #
@@ -34,7 +34,7 @@ FROM ${BASE_IMAGE} AS gstwayland-builder
 WORKDIR /builder/
 
 # Grab build and rust packages #
-RUN pacman -Syu --noconfirm meson pkgconf cmake git gcc make rustup \
+RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
 	libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Setup stable rust toolchain #
@@ -71,11 +71,19 @@ FROM ${BASE_IMAGE} AS runtime
 ## Install Graphics, Media, and Audio packages ##
 RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
     sed -i "s/#Color/Color/" /etc/pacman.conf && \
-    pacman --noconfirm -Syu archlinux-keyring && \
+    pacman --noconfirm -Sy archlinux-keyring && \
     dirmngr </dev/null > /dev/null 2>&1 && \
+    # Install mesa-git before Steam for simplicity
+    pacman --noconfirm -Sy mesa-git && \
     # Install Steam
-    pacman --noconfirm -S steam && \
-    pacman -Syu --noconfirm --needed \
+    pacman --noconfirm -Sy steam steam-native-runtime && \
+    # Clean up pacman cache
+    paccache -rk1 && \
+    rm -rf /usr/share/info/* && \
+    rm -rf /usr/share/man/* && \
+    rm -rf /usr/share/doc/
+    
+RUN pacman -Sy --noconfirm --needed \
     # Graphics packages
     sudo xorg-xwayland labwc wlr-randr mangohud \
     # GStreamer and plugins
@@ -84,6 +92,8 @@ RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /et
     gst-plugin-rswebrtc gst-plugin-rsrtp \
     # Audio packages
     pipewire pipewire-pulse pipewire-alsa wireplumber \
+    # Non-latin fonts
+    noto-fonts-cjk \
     # Other requirements
     supervisor jq chwd lshw pacman-contrib && \
     # Clean up pacman cache
@@ -91,13 +101,16 @@ RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /et
     rm -rf /usr/share/info/* && \
     rm -rf /usr/share/man/* && \
     rm -rf /usr/share/doc/*
-    
+
+
+# Regenerate locale
+RUN locale-gen
 
 ## User ##
 # Create and setup user #
 ENV USER="nestri" \
-	UID=99 \
-	GID=100 \
+	UID=1000 \
+	GID=1000 \
 	USER_PWD="nestri1234"
 
 RUN mkdir -p /home/${USER} && \
@@ -114,7 +127,8 @@ RUN mkdir -p /run/user/${UID} && \
 # Groups #
 RUN usermod -aG input root && usermod -aG input ${USER} && \
     usermod -aG video root && usermod -aG video ${USER} && \
-    usermod -aG render root && usermod -aG render ${USER}
+    usermod -aG render root && usermod -aG render ${USER} && \
+    usermod -aG seat root && usermod -aG seat ${USER}
 
 ## Copy files from builders ##
 # this is done here at end to not trigger full rebuild on changes to builder
@@ -138,6 +152,9 @@ ENV XDG_RUNTIME_DIR=/run/user/${UID} \
 
 # Required for NVIDIA.. they want to be special like that #
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+
+# DBus run directory creation #
+RUN mkdir -p /run/dbus
 
 # Wireplumber disable suspend #
 # Remove suspend node
