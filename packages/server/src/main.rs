@@ -236,6 +236,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     );
 
     /* Video */
+    // Video Source Element
+    let video_source = gst::ElementFactory::make("waylanddisplaysrc").build()?;
+    video_source.set_property("render-node", &gpu.render_path());
+
     // Caps Filter Element (resolution, fps)
     let caps_filter = gst::ElementFactory::make("capsfilter").build()?;
     let caps = gst::Caps::from_str(&format!(
@@ -251,10 +255,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if args.app.dma_buf { "" } else { ",format=RGBx" }
     ))?;
     caps_filter.set_property("caps", &caps);
-
-    // Video Source Element
-    let video_source = gst::ElementFactory::make("waylanddisplaysrc").build()?;
-    video_source.set_property("render-node", &gpu.render_path());
 
     // GL Upload Element
     let glupload = gst::ElementFactory::make("glupload").build()?;
