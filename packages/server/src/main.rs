@@ -13,9 +13,11 @@ use futures_util::StreamExt;
 use gst::prelude::*;
 use gstrswebrtc::signaller::Signallable;
 use gstrswebrtc::webrtcsink::BaseWebRTCSink;
+use gst_base::BaseSrc;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
+use gst_base::prelude::BaseSrcExt;
 
 // Handles gathering GPU information and selecting the most suitable GPU
 fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
@@ -255,7 +257,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Video Source Element
     let video_source = gst::ElementFactory::make("waylanddisplaysrc").build()?;
     video_source.set_property("render-node", &gpu.render_path());
-    video_source.set_property("caps", &caps);
+    let base_src = video_source.downcast_ref::<BaseSrc>().expect("Failed to cast waylanddisplaysrc to BaseSrc");
+    base_src.set_caps(&caps).expect("Failed to set caps for waylanddisplaysrc base");
 
     // GL Upload Element
     let glupload = gst::ElementFactory::make("glupload").build()?;

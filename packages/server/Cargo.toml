@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 gst.workspace = true
+gst-base.workspace = true
 gst-webrtc.workspace = true
 gstrswebrtc.workspace = true
 serde = {version = "1.0.214", features = ["derive"] }
