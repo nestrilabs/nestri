@@ -6,5 +6,5 @@ export default function Authenticate(teamID: string) {
     formData.append('client_id', 'device');
     formData.append('team_id', teamID);
     formData.append('provider', 'device');
-    // formData.append('client_secret', Re)
+    formData.append('client_secret', Resource.AuthFingerprintKey.value)
 }
