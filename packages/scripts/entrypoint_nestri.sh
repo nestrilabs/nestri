@@ -15,26 +15,20 @@ MAX_RETRIES=3
 
 # Helper function to restart the chain
 restart_chain() {
-    echo "Restarting nestri-server, labwc, and wlr-randr..."
-
-    # Kill all child processes safely (if running)
-    if [[ -n "${NESTRI_PID:-}" ]] && kill -0 "${NESTRI_PID}" 2 >/dev/null; then
-        kill "${NESTRI_PID}"
-    fi
-    if [[ -n "${LABWC_PID:-}" ]] && kill -0 "${LABWC_PID}" 2 >/dev/null; then
-        kill "${LABWC_PID}"
-    fi
-
-    wait || true
+    echo "Restarting nestri-server, compositor..."
 
     # Start nestri-server
     start_nestri_server
     RETRY_COUNT=0
 }
 
-
 # Function to start nestri-server
 start_nestri_server() {
+    if [[ -n "${NESTRI_PID:-}" ]] && kill -0 "${NESTRI_PID}" 2 >/dev/null; then
+        echo "Killing existing nestri-server process..."
+        kill "${NESTRI_PID}"
+    fi
+
     echo "Starting nestri-server..."
     nestri-server $(echo $NESTRI_PARAMS) &
     NESTRI_PID=$!
@@ -45,7 +39,8 @@ start_nestri_server() {
     for _ in {1..15}; do # Wait up to 15 seconds
         if [ -e "$WAYLAND_SOCKET" ]; then
             echo "Wayland display 'wayland-1' is ready."
-            start_labwc
+            sleep 1  # necessary sleep - reduces chance that non-ready socket is used
+            start_compositor
             return
         fi
         sleep 1
@@ -60,37 +55,44 @@ start_nestri_server() {
     restart_chain
 }
 
-# Function to start labwc
-start_labwc() {
-    echo "Starting labwc..."
+# Function to start compositor (labwc)
+start_compositor() {
+    if [[ -n "${COMPOSITOR_PID:-}" ]] && kill -0 "${COMPOSITOR_PID}" 2 >/dev/null; then
+        echo "Killing existing compositor process..."
+        kill "${COMPOSITOR_PID}"
+    fi
+
+    echo "Starting compositor..."
     rm -rf /tmp/.X11-unix && mkdir -p /tmp/.X11-unix && chown nestri:nestri /tmp/.X11-unix
     WAYLAND_DISPLAY=wayland-1 WLR_BACKENDS=wayland labwc &
-    LABWC_PID=$!
+    COMPOSITOR_PID=$!
 
-    # Wait for labwc to initialize (using `wlr-randr` as an indicator)
-    echo "Waiting for labwc to initialize..."
+    # Wait for compositor to initialize
+    echo "Waiting for compositor to initialize..."
+    COMPOSITOR_SOCKET="/run/user/${UID}/wayland-0"
     for _ in {1..15}; do
-        if wlr-randr --json | jq -e '.[] | select(.enabled == true)' >/dev/null; then
-            echo "labwc is initialized and Wayland outputs are ready."
+        if [ -e "$COMPOSITOR_SOCKET" ]; then
+            echo "compositor is initialized, wayland-0 output ready."
+            sleep 1  # necessary sleep - reduces chance that non-ready socket is used
             start_wlr_randr
             return
         fi
         sleep 1
     done
 
-    echo "Error: labwc did not initialize correctly. Incrementing retry count..."
+    echo "Error: compositor did not initialize correctly. Incrementing retry count..."
     ((RETRY_COUNT++))
     if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
-        echo "Max retries reached for labwc. Exiting."
+        echo "Max retries reached for compositor. Exiting."
         exit 1
     fi
-    restart_chain
+    start_compositor
 }
 
 # Function to run wlr-randr
 start_wlr_randr() {
     echo "Configuring resolution with wlr-randr..."
-    OUTPUT_NAME=$(wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
+    OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
     if [ -z "$OUTPUT_NAME" ]; then
         echo "Error: No enabled outputs detected. Skipping wlr-randr."
         return
@@ -116,8 +118,8 @@ main_loop() {
 if [[ -n "${NESTRI_PID:-}" ]] && kill -0 "${NESTRI_PID}" 2>/dev/null; then
 kill "${NESTRI_PID}"
 fi
-if [[ -n "${LABWC_PID:-}" ]] && kill -0 "${LABWC_PID}" 2>/dev/null; then
-kill "${LABWC_PID}"
+if [[ -n "${COMPOSITOR_PID:-}" ]] && kill -0 "${COMPOSITOR_PID}" 2>/dev/null; then
+kill "${COMPOSITOR_PID}"
 fi
     exit 0' SIGINT SIGTERM
 
@@ -134,14 +136,14 @@ fi
                 exit 1
             fi
             restart_chain
-        elif ! kill -0 ${LABWC_PID:-} 2 >/dev/null; then
-            echo "labwc crashed. Restarting labwc and wlr-randr..."
+        elif ! kill -0 ${COMPOSITOR_PID:-} 2 >/dev/null; then
+            echo "compositor crashed. Restarting compositor..."
             ((RETRY_COUNT++))
             if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
-                echo "Max retries reached for labwc. Exiting."
+                echo "Max retries reached for compositor. Exiting."
                 exit 1
             fi
-            start_labwc
+            start_compositor
         fi
     done
 }
