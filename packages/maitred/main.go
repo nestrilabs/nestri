@@ -1,7 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"nestri/maitred/pkg/party"
+)
 
 func main() {
-	fmt.Println("Hello There")
+	party.Run()
 }

@@ -1,0 +1,21 @@
+package party
+
+import (
+	"fmt"
+	"time"
+
+	"math/rand"
+
+	"github.com/oklog/ulid/v2"
+)
+
+func generateClientID() string {
+	// Create a source of entropy (use cryptographically secure randomness in production)
+	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Generate a new ULID
+	id := ulid.MustNew(ulid.Timestamp(time.Now()), entropy)
+
+	// Create the client ID string
+	return fmt.Sprintf("client_%s", id.String())
+}
