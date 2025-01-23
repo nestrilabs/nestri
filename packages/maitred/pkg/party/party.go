@@ -39,7 +39,17 @@ func Run() {
 		// We don't want the broker to delete any session info when we disconnect
 		CleanStartOnInitialConnection: true,
 		SessionExpiryInterval:         0,
-		OnConnectError:                func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
+		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+			fmt.Println("mqtt connection up")
+			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+				Subscriptions: []paho.SubscribeOptions{
+					{Topic: fmt.Sprintf("%s/#", topic), QoS: 1}, // For this example, we get all messages under test
+				},
+			}); err != nil {
+				panic(fmt.Sprintf("failed to subscribe (%s). This is likely to mean no messages will be received.", err))
+			}
+		},
+		OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		// eclipse/paho.golang/paho provides base mqtt functionality, the below config will be passed in for each connection
 		ClientConfig: paho.ClientConfig{
 			// If you are using QOS 1/2, then it's important to specify a client id (which must be unique)
@@ -69,16 +79,6 @@ func Run() {
 
 	if err = c.AwaitConnection(ctx); err != nil {
 		panic(err)
-	}
-
-	// In most cases subscribing in OnConnectionUp is recommended (so subscription will be re-established after
-	// a reconnection. However, for the purposes of this demo subscribing here is simpler.
-	if _, err := c.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: []paho.SubscribeOptions{
-			{Topic: fmt.Sprintf("%s/#", topic), QoS: 1}, // For this example, we get all messages under test
-		},
-	}); err != nil {
-		panic(fmt.Sprintf("failed to subscribe (%s). This is likely to mean no messages will be received.", err))
 	}
 
 	// Handlers can be registered/deregistered at any time. It's important to note that you need to subscribe AND create
