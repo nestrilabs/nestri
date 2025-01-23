@@ -5,15 +5,15 @@ const _schema = i.schema({
     $users: i.entity({
       email: i.string().unique().indexed(),
     }),
-    machines: i.entity({
-      hostname: i.string(),
-      fingerprint: i.string().unique().indexed(),
-      deletedAt: i.date().optional().indexed(),
-      createdAt: i.date()
-    }),
+    // machines: i.entity({
+    //   hostname: i.string(),
+    //   fingerprint: i.string().unique().indexed(),
+    //   deletedAt: i.date().optional().indexed(),
+    //   createdAt: i.date()
+    // }),
     instances: i.entity({
       hostname: i.string(),
-      deletedAt: i.date().optional().indexed(),
+      lastActive: i.date().optional(),
       createdAt: i.date()
     }),
     profiles: i.entity({
@@ -30,22 +30,19 @@ const _schema = i.schema({
       updatedAt: i.date(),
       createdAt: i.date(),
     }),
-    games: i.entity({
-      name: i.string(),
-      steamID: i.number().unique().indexed(),
-    }),
-    sessions: i.entity({
-      name: i.string(),
-      startedAt: i.date(),
-      endedAt: i.date().optional().indexed(),
-      public: i.boolean().indexed(),
-    }),
+    // games: i.entity({
+    //   name: i.string(),
+    //   steamID: i.number().unique().indexed(),
+    // }),
+    // sessions: i.entity({
+    //   name: i.string(),
+    //   startedAt: i.date(),
+    //   endedAt: i.date().optional().indexed(),
+    //   public: i.boolean().indexed(),
+    // }),
     subscriptions: i.entity({
       checkoutID: i.string(),
-      // quantity: i.number(),
-      // frequency: i.string(),
       canceledAt: i.date(),
-      // next: i.date()
     })
   },
   links: {
@@ -65,34 +62,34 @@ const _schema = i.schema({
       forward: { on: "teams", has: "many", label: "members" },
       reverse: { on: "$users", has: "many", label: "teamsJoined" },
     },
-    UserMachines: {
-      forward: { on: "machines", has: "one", label: "owner" },
-      reverse: { on: "$users", has: "many", label: "machines" }
-    },
-    UserGames: {
-      forward: { on: "games", has: "many", label: "owners" },
-      reverse: { on: "$users", has: "many", label: "games" }
-    },
+    // UserMachines: {
+    //   forward: { on: "machines", has: "one", label: "owner" },
+    //   reverse: { on: "$users", has: "many", label: "machines" }
+    // },
+    // UserGames: {
+    //   forward: { on: "games", has: "many", label: "owners" },
+    //   reverse: { on: "$users", has: "many", label: "games" }
+    // },
     TeamInstances: {
       forward: { on: "instances", has: "many", label: "owners" },
       reverse: { on: "teams", has: "many", label: "machines" }
     },
-    MachineSessions: {
-      forward: { on: "machines", has: "many", label: "sessions" },
-      reverse: { on: "sessions", has: "one", label: "machine" }
-    },
-    GamesMachines: {
-      forward: { on: "machines", has: "many", label: "games" },
-      reverse: { on: "games", has: "many", label: "machines" }
-    },
-    GameSessions: {
-      forward: { on: "games", has: "many", label: "sessions" },
-      reverse: { on: "sessions", has: "one", label: "game" }
-    },
-    UserSessions: {
-      forward: { on: "sessions", has: "one", label: "owner" },
-      reverse: { on: "$users", has: "many", label: "sessions" }
-    }
+    // MachineSessions: {
+    //   forward: { on: "machines", has: "many", label: "sessions" },
+    //   reverse: { on: "sessions", has: "one", label: "machine" }
+    // },
+    // GamesMachines: {
+    //   forward: { on: "machines", has: "many", label: "games" },
+    //   reverse: { on: "games", has: "many", label: "machines" }
+    // },
+    // GameSessions: {
+    //   forward: { on: "games", has: "many", label: "sessions" },
+    //   reverse: { on: "sessions", has: "one", label: "game" }
+    // },
+    // UserSessions: {
+    //   forward: { on: "sessions", has: "one", label: "owner" },
+    //   reverse: { on: "$users", has: "many", label: "sessions" }
+    // }
   }
 });
 

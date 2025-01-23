@@ -14,7 +14,7 @@ import { handleDiscord, handleGithub } from "./utils";
 import { type CFRequest } from "@nestri/core/types"
 import { GithubAdapter } from "./ui/adapters/github";
 import { DiscordAdapter } from "./ui/adapters/discord";
-import { Machines } from "@nestri/core/machine/index"
+import { Instances } from "@nestri/core/instance/index"
 import { PasswordAdapter } from "./ui/adapters/password"
 import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
@@ -104,18 +104,19 @@ export default {
                         if (!teamID) {
                             throw new Error("Team ID is required");
                         }
-                        
+
                         const hostname = input.params.hostname;
-                        if (!teamID) {
+                        if (!hostname) {
                             throw new Error("Hostname is required");
                         }
 
                         return {
+                            hostname,
                             teamID
                         };
                     },
                     init() { }
-                } as Adapter<{ teamID: string; }>,
+                } as Adapter<{ teamID: string; hostname: string; }>,
             },
             allow: async (input) => {
                 const url = new URL(input.redirectURI);
@@ -126,24 +127,12 @@ export default {
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {
-                    let exists = await Machines.fromFingerprint(value.fingerprint);
-                    if (!exists) {
-                        const machineID = await Machines.create({
-                            fingerprint: value.fingerprint,
-                            hostname: value.hostname,
-                        });
-
-                        return await ctx.subject("device", {
-                            id: machineID,
-                            fingerprint: value.fingerprint
-                        })
-                    }
+                    await Instances.create({ hostname: value.hostname, teamID: value.teamID })
 
                     return await ctx.subject("device", {
-                        id: exists.id,
-                        fingerprint: value.fingerprint
+                        teamID: value.teamID,
+                        hostname: value.hostname,
                     })
-
                 }
 
                 if (value.provider === "password") {

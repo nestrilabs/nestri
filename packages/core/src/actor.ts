@@ -21,8 +21,8 @@ export interface UserActor {
 export interface DeviceActor {
     type: "device";
     properties: {
-        fingerprint: string;
-        id: string;
+        teamID: string;
+        hostname: string;
         auth?:
         | {
             type: "personal";
@@ -60,8 +60,8 @@ export function useCurrentUser() {
 export function useCurrentDevice() {
     const actor = ActorContext.use();
     if (actor.type === "device") return {
-      fingerprint:actor.properties.fingerprint,
-      id: actor.properties.id
+      hostname:actor.properties.hostname,
+      teamID: actor.properties.teamID
     };
     throw new VisibleError(
         "auth",

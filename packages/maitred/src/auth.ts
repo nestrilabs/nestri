@@ -1,15 +1,18 @@
 import { $ } from "bun";
 import { log } from "@/utils";
-import { Resource } from "sst/resource";
+import { Resource } from "sst";
 
-
+type Credentials = {
+    access_token: string;
+    refresh_token: string;
+}
 export module Auth {
-    export const getCredentials = async(teamID: string) => {
+    export const getCredentials = async (teamID: string) => {
         const hostname = (await $`cat /etc/hostname`.text()).replace("\n", "")
         const formData = new URLSearchParams()
         formData.append('grant_type', 'client_credentials');
         formData.append('client_id', 'device');
-        // formData.append('hostname', hostname);
+        formData.append('hostname', hostname);
         formData.append('team', teamID);
         formData.append('provider', 'device');
         formData.append('client_secret', Resource.AuthFingerprintKey.value)
@@ -26,13 +29,13 @@ export module Auth {
         if (!response.ok) {
             const errorBody = await response.text();
             // console.log(errorBody);
-            log.Error(errorBody)
+            log.Error(new Error(errorBody))
             process.exit(1)
             // throw new Error(`Failed to auth: ${errorBody}`);
         }
 
         // Parse and return the credentials
         const credentials = await response.json();
-        return credentials;
+        return credentials as Credentials
     }
 }

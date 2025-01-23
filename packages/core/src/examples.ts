@@ -45,7 +45,7 @@ export module Examples {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "a955e059f05d",
         createdAt: '2025-01-04T11:56:23.902Z',
-        deletedAt: '2025-01-09T01:56:23.902Z'
+        lastActive: '2025-01-09T01:56:23.902Z'
     }
 
     export const Game = {

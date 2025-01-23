@@ -2,8 +2,12 @@
   "name": "maitred",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "dev": "bunx sst shell -- bun index.ts 7cd0ca5b-83b2-47f9-8e36-47acd4dc4a0e"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@nestri/core": "*"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

@@ -8,7 +8,9 @@
     },
     "devDependencies": {
         "@tsconfig/node20": "^20.1.4",
+        "aws-iot-device-sdk-v2": "^1.21.1",
         "loops": "^3.4.1",
+        "mqtt": "^5.10.3",
         "remeda": "^2.19.0",
         "ulid": "^2.3.0",
         "uuid": "^11.0.3",

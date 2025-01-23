@@ -1,5 +1,6 @@
 import { domain } from "./dns";
 import { secret } from "./secrets"
+import { party } from "./party"
 
 sst.Linkable.wrap(random.RandomString, (resource) => ({
     properties: {
@@ -16,10 +17,10 @@ export const authFingerprintKey = new random.RandomString(
 
 export const urls = new sst.Linkable("Urls", {
     properties: {
-      api: "https://api." + domain,
-      auth: "https://auth." + domain,
+        api: "https://api." + domain,
+        auth: "https://auth." + domain,
     },
-  });
+});
 
 export const kv = new sst.cloudflare.Kv("CloudflareAuthKV")
 
@@ -44,6 +45,7 @@ export const auth = new sst.cloudflare.Worker("Auth", {
 export const api = new sst.cloudflare.Worker("Api", {
     link: [
         urls,
+        party,
         authFingerprintKey,
         secret.InstantAdminToken,
         secret.InstantAppId,

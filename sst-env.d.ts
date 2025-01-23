@@ -39,6 +39,11 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Party": {
+      "authorizer": string
+      "endpoint": string
+      "type": "sst.aws.Realtime"
+    }
     "Urls": {
       "api": string
       "auth": string
