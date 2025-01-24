@@ -2,11 +2,21 @@ package party
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"math/rand"
 
+	"github.com/charmbracelet/log"
 	"github.com/oklog/ulid/v2"
+)
+
+var (
+	infoLogger = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		TimeFormat:      time.Kitchen,
+		// Prefix:          "Realtime",
+	})
 )
 
 func generateClientID() string {
