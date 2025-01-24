@@ -26,7 +26,7 @@ export module Examples {
     
     export const Team = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
-        owner: true,
+        // owner: true,
         name: "Jane Doe's Games",
         slug: "jane-does-games",
         createdAt: '2025-01-04T11:56:23.902Z',

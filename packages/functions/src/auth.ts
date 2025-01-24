@@ -8,6 +8,7 @@ import { subjects } from "./subjects"
 import { PasswordUI } from "./ui/password"
 import { Email } from "@nestri/core/email/index"
 import { Users } from "@nestri/core/user/index"
+import { Teams } from "@nestri/core/team/index"
 import { authorizer } from "@openauthjs/openauth"
 import { Profiles } from "@nestri/core/profile/index"
 import { handleDiscord, handleGithub } from "./utils";
@@ -57,8 +58,8 @@ export default {
                 title: "Nestri | Auth",
                 primary: "#FF4F01",
                 //TODO: Change this in prod
-                logo: "https://nestri.pages.dev/logo.webp",
-                favicon: "https://nestri.pages.dev/seo/favicon.ico",
+                logo: "https://nestri.io/logo.webp",
+                favicon: "https://nestri.io/seo/favicon.ico",
                 background: {
                     light: "#f5f5f5 ",
                     dark: "#171717"
@@ -100,9 +101,9 @@ export default {
                         if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
                             throw new Error("Invalid authorization token");
                         }
-                        const teamID = input.params.team;
-                        if (!teamID) {
-                            throw new Error("Team ID is required");
+                        const teamSlug = input.params.team;
+                        if (!teamSlug) {
+                            throw new Error("Team slug is required");
                         }
 
                         const hostname = input.params.hostname;
@@ -112,11 +113,11 @@ export default {
 
                         return {
                             hostname,
-                            teamID
+                            teamSlug
                         };
                     },
                     init() { }
-                } as Adapter<{ teamID: string; hostname: string; }>,
+                } as Adapter<{ teamSlug: string; hostname: string; }>,
             },
             allow: async (input) => {
                 const url = new URL(input.redirectURI);
@@ -127,12 +128,17 @@ export default {
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {
-                    await Instances.create({ hostname: value.hostname, teamID: value.teamID })
+                    const team = await Teams.fromSlug(value.teamSlug)
+                    console.log("team", team)
+                    console.log("teamSlug", value.teamSlug)
+                    if (team) {
+                        await Instances.create({ hostname: value.hostname, teamID: team.id })
 
-                    return await ctx.subject("device", {
-                        teamID: value.teamID,
-                        hostname: value.hostname,
-                    })
+                        return await ctx.subject("device", {
+                            teamSlug: value.teamSlug,
+                            hostname: value.hostname,
+                        })
+                    }
                 }
 
                 if (value.provider === "password") {

@@ -8,12 +8,13 @@ import (
 )
 
 func main() {
-	var teamID string
+	var teamSlug string //FIXME: Switch to team-slug as they are more memorable but still unique
 
 	if len(os.Args) > 1 {
-		teamID = os.Args[1]
+		teamSlug = os.Args[1]
 	} else {
-		log.Fatal("Nestri needs a team ID to register this container to")
+		log.Fatal("Nestri needs a team slug to register this container to")
 	}
-	party.Run(teamID)
+	party.Run(teamSlug)
+	//TODO: On stop here, set the API as the instance is not running (stopped)
 }

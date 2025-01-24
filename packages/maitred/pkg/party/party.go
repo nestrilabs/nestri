@@ -16,7 +16,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run(teamID string) {
+func Run(teamSlug string) {
 	var topic = fmt.Sprintf("%s/%s/test", resource.Resource.App.Name, resource.Resource.App.Stage)
 	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
 	var clientID = generateClientID()
@@ -25,7 +25,7 @@ func Run(teamID string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	userTokens, err := auth.FetchUserToken(teamID)
+	userTokens, err := auth.FetchUserToken(teamSlug)
 	if err != nil {
 		log.Error("Error trying to request for credentials", "err", err)
 		stop()
@@ -98,6 +98,8 @@ func Run(teamID string) {
 
 	// Handlers can be registered/deregistered at any time. It's important to note that you need to subscribe AND create
 	// a handler
+	//TODO: Have different routes for different things, like starting a session, stopping a session, and stopping the container altogether
+	//TODO: Listen on team-slug/container-hostname topic only
 	router.RegisterHandler(fmt.Sprintf("%s/test/test/#", topic), func(p *paho.Publish) {
 		infoLogger.Info("Router", "info", fmt.Sprintf("test/test/# received message with topic: %s\n", p.Topic))
 	})

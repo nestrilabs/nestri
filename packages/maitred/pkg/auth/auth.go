@@ -17,13 +17,13 @@ type UserCredentials struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func FetchUserToken(teamID string) (*UserCredentials, error) {
+func FetchUserToken(teamSlug string) (*UserCredentials, error) {
 	hostname := GetHostname()
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
 	data.Set("client_id", "device")
 	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	data.Set("team", teamID)
+	data.Set("team", teamSlug)
 	data.Set("hostname", hostname)
 	data.Set("provider", "device")
 	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)

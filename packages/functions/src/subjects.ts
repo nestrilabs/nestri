@@ -7,7 +7,7 @@ export const subjects = createSubjects({
     userID: v.string(),
   }),
   device: v.object({
-    teamID: v.string(),
+    teamSlug: v.string(),
     hostname: v.string(),
   })
 })

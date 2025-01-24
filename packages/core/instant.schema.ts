@@ -26,7 +26,7 @@ const _schema = i.schema({
     teams: i.entity({
       name: i.string(),
       slug: i.string().unique().indexed(),
-      deletedAt: i.date().optional().indexed(),
+      deletedAt: i.date().optional(),//.indexed(),
       updatedAt: i.date(),
       createdAt: i.date(),
     }),
@@ -72,7 +72,7 @@ const _schema = i.schema({
     // },
     TeamInstances: {
       forward: { on: "instances", has: "many", label: "owners" },
-      reverse: { on: "teams", has: "many", label: "machines" }
+      reverse: { on: "teams", has: "many", label: "instances" }
     },
     // MachineSessions: {
     //   forward: { on: "machines", has: "many", label: "sessions" },
