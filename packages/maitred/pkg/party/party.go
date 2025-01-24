@@ -3,6 +3,7 @@ package party
 import (
 	"context"
 	"fmt"
+	"nestri/maitred/pkg/auth"
 	"nestri/maitred/pkg/resource"
 	"net/url"
 	"os"
@@ -10,11 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run() {
+func Run(teamID string) {
 	var topic = fmt.Sprintf("%s/%s/test", resource.Resource.App.Name, resource.Resource.App.Stage)
 	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
 	var clientID = generateClientID()
@@ -22,6 +24,12 @@ func Run() {
 	// App will run until cancelled by user (e.g. ctrl-c)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	userTokens, err := auth.FetchUserToken(teamID)
+	if err != nil {
+		log.Error("Error trying to request for credentials", "err", err)
+		stop()
+	}
 
 	// We will connect to the Eclipse test server (note that you may see messages that other users publish)
 	u, err := url.Parse(serverURL)
@@ -37,7 +45,7 @@ func Run() {
 	cliCfg := autopaho.ClientConfig{
 		ServerUrls:      []*url.URL{u},
 		ConnectUsername: "", // Must be empty for the authorizer
-		ConnectPassword: []byte("PLACEHOLDER_PASSWORD"),
+		ConnectPassword: []byte(userTokens.AccessToken),
 		KeepAlive:       20, // Keepalive message should be sent every 20 seconds
 		// We don't want the broker to delete any session info when we disconnect
 		CleanStartOnInitialConnection: true,
