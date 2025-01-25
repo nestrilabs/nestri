@@ -71,10 +71,3 @@ message Input {
     KeyUp key_up = 7;
   }
 }
-
-// MessageInput message
-message MessageInput {
-  string payload_type = 1; // Fixed value "input"
-  Input data = 2;
-  string latency = 3; // Optional latency tracker
-}

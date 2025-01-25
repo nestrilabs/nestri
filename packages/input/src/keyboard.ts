@@ -1,6 +1,6 @@
 import {type Input} from "./types"
 import {keyCodeToLinuxEventCode} from "./codes"
-import {MessageInput, encodeMessage} from "./messages";
+import {MessageInput, encodeMessage, encodeBaseInput} from "./messages";
 import {WebRTCStream} from "./webrtc-stream";
 import {LatencyTracker} from "./latency";
 
@@ -75,10 +75,10 @@ export class Keyboard {
       tracker.addTimestamp("client_send");
       const message: MessageInput = {
         payload_type: "input",
-        data: dataString,
+        data: {...data, type} as Input,
         latency: tracker,
       };
-      this.wrtc.sendBinary(encodeMessage(message));
+      this.wrtc.sendBinary(encodeBaseInput(message));
     };
   }
 

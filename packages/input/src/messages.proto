@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+import "types.proto";
+
+package proto;
+
+
+message MessageBase {
+  string payload_type = 1;
+}
+
+message MessageInput {
+    MessageBase message_base = 1;
+    Input date = 2;
+    // LatencyTracker latency = 3;
+}
+
+message MessageICE {
+    MessageBase message_base = 1;
+    // RTCIceCandidateInit candidate = 2;
+}
+
+message MessageSDP {
+    MessageBase message_base = 1;
+    // RTCSessionDescriptionInit sdp = 2;
+}
+
+enum JoinerType {
+  JoinerNode = 0;
+  JoinerClient = 1;
+}
+
+message MessageJoin {
+    MessageBase message_base = 1;
+    JoinerType joiner_type = 2;
+}
+
+enum AnswerType {
+  AnswerOffline = 0;
+  AnswerInUse = 1;
+  AnswerOK = 2;
+}
+
+message MessageAnswer {
+    MessageBase message_base = 1;
+    AnswerType answer_type = 2;
+}
