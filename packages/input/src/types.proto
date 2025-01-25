@@ -1,0 +1,80 @@
+syntax = "proto3";
+
+package proto;
+
+// Base message for all input types
+message BaseInput {
+  int64 timestamp = 1; // Optional timestamp
+}
+
+// MouseMove message
+message MouseMove {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "MouseMove"
+  int32 x = 3;
+  int32 y = 4;
+}
+
+// MouseMoveAbs message
+message MouseMoveAbs {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "MouseMoveAbs"
+  int32 x = 3;
+  int32 y = 4;
+}
+
+// MouseWheel message
+message MouseWheel {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "MouseWheel"
+  int32 x = 3;
+  int32 y = 4;
+}
+
+// MouseKeyDown message
+message MouseKeyDown {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "MouseKeyDown"
+  int32 key = 3;
+}
+
+// MouseKeyUp message
+message MouseKeyUp {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "MouseKeyUp"
+  int32 key = 3;
+}
+
+// KeyDown message
+message KeyDown {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "KeyDown"
+  int32 key = 3;
+}
+
+// KeyUp message
+message KeyUp {
+  BaseInput base_input = 1;
+  string type = 2; // Fixed value "KeyUp"
+  int32 key = 3;
+}
+
+// Union of all Input types
+message Input {
+  oneof input_type {
+    MouseMove mouse_move = 1;
+    MouseMoveAbs mouse_move_abs = 2;
+    MouseWheel mouse_wheel = 3;
+    MouseKeyDown mouse_key_down = 4;
+    MouseKeyUp mouse_key_up = 5;
+    KeyDown key_down = 6;
+    KeyUp key_up = 7;
+  }
+}
+
+// MessageInput message
+message MessageInput {
+  string payload_type = 1; // Fixed value "input"
+  Input data = 2;
+  string latency = 3; // Optional latency tracker
+}

@@ -1,5 +1,7 @@
 import {gzip, ungzip} from "pako";
+import {type Input} from "./types"
 import {LatencyTracker} from "./latency";
+import { KeyDown, KeyUp, } from "./proto/types_pb"
 
 export interface MessageBase {
   payload_type: string;
@@ -7,7 +9,7 @@ export interface MessageBase {
 
 export interface MessageInput extends MessageBase {
   payload_type: "input";
-  data: string;
+  data: Input;
   latency?: LatencyTracker;
 }
 
@@ -70,4 +72,43 @@ export async function decodeMessage<T>(data: Blob): Promise<T> {
   const json = new TextDecoder().decode(decompressed);
   // Parse the JSON string
   return JSON.parse(json);
+}
+
+export function encodeBaseInput(message: MessageBase): Uint8Array {
+  if  (message.payload_type === "input") {
+    const inputMessage = message as MessageInput
+    switch(inputMessage.data.type) {
+      case "KeyDown": {
+
+        break;
+      }
+      case "KeyUp": {
+
+        break;
+      }
+      case "MouseKeyDown": {
+
+        break;
+      }
+      case "MouseKeyUp": {
+
+        break;
+      }
+      case "MouseMove": {
+
+        break;
+      }
+      case "MouseMoveAbs": {
+
+        break;
+      }
+      case "MouseWheel": {
+
+        break;
+      }
+    } 
+  } else {
+    encodeMessage(message)
+  }
+
 }
