@@ -112,8 +112,8 @@ export namespace Teams {
             map((group): Info => ({
                 id: group[0].id,
                 name: group[0].name,
-                createdAt: group[0].createdAt,
                 slug: group[0].slug,
+                createdAt: group[0].createdAt,
                 updatedAt: group[0].updatedAt,
                 // owner: group[0].owner === user.id
             }))

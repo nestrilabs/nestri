@@ -59,7 +59,7 @@ const auth: MiddlewareHandler = async (c, next) => {
                     type: "device",
                     properties: {
                         hostname: result.subject.properties.hostname,
-                        teamID: result.subject.properties.teamID,
+                        teamSlug: result.subject.properties.teamSlug,
                         auth: {
                             type: "oauth",
                             clientID: result.aud,

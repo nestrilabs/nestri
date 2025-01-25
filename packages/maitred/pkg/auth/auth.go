@@ -7,6 +7,7 @@ import (
 	"nestri/maitred/pkg/resource"
 	"net/http"
 	"net/url"
+	"os"
 	"os/exec"
 
 	"github.com/charmbracelet/log"
@@ -18,7 +19,10 @@ type UserCredentials struct {
 }
 
 func FetchUserToken(teamSlug string) (*UserCredentials, error) {
-	hostname := GetHostname()
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal("Could not get the hostname")
+	}
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
 	data.Set("client_id", "device")

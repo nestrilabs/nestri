@@ -16,5 +16,6 @@ func main() {
 		log.Fatal("Nestri needs a team slug to register this container to")
 	}
 	party.Run(teamSlug)
+
 	//TODO: On stop here, set the API as the instance is not running (stopped)
 }

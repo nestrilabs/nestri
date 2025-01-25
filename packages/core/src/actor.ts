@@ -21,7 +21,7 @@ export interface UserActor {
 export interface DeviceActor {
     type: "device";
     properties: {
-        teamID: string;
+        teamSlug: string;
         hostname: string;
         auth?:
         | {
@@ -61,7 +61,7 @@ export function useCurrentDevice() {
     const actor = ActorContext.use();
     if (actor.type === "device") return {
       hostname:actor.properties.hostname,
-      teamID: actor.properties.teamID
+      teamSlug: actor.properties.teamSlug
     };
     throw new VisibleError(
         "auth",

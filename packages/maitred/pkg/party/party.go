@@ -17,9 +17,13 @@ import (
 )
 
 func Run(teamSlug string) {
-	var topic = fmt.Sprintf("%s/%s/test", resource.Resource.App.Name, resource.Resource.App.Stage)
+	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, teamSlug)
 	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
 	var clientID = generateClientID()
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal(" Could not get the hostname")
+	}
 
 	// App will run until cancelled by user (e.g. ctrl-c)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -55,7 +59,7 @@ func Run(teamSlug string) {
 			infoLogger.Info("Router", "info", "MQTT connection is up and running")
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{
-					{Topic: fmt.Sprintf("%s/#", topic), QoS: 1}, // For this example, we get all messages under test
+					{Topic: fmt.Sprintf("%s/#", topic), QoS: 1}, //Listen to all messages from this team
 				},
 			}); err != nil {
 				panic(fmt.Sprintf("failed to subscribe (%s). This is likely to mean no messages will be received.", err))
@@ -100,26 +104,26 @@ func Run(teamSlug string) {
 	// a handler
 	//TODO: Have different routes for different things, like starting a session, stopping a session, and stopping the container altogether
 	//TODO: Listen on team-slug/container-hostname topic only
-	router.RegisterHandler(fmt.Sprintf("%s/test/test/#", topic), func(p *paho.Publish) {
-		infoLogger.Info("Router", "info", fmt.Sprintf("test/test/# received message with topic: %s\n", p.Topic))
+	router.RegisterHandler(fmt.Sprintf("%s/%s/start", topic, hostname), func(p *paho.Publish) {
+		infoLogger.Info("Router", "info", fmt.Sprintf("start a game: %s\n", p.Topic))
 	})
-	router.RegisterHandler(fmt.Sprintf("%s/test/test/foo", topic), func(p *paho.Publish) { fmt.Printf("test/test/foo received message with topic: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/nomatch", topic), func(p *paho.Publish) { fmt.Printf("test/nomatch received message with topic: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/test/quit", topic), func(p *paho.Publish) { stop() }) // Context will be cancelled if we receive a matching message
+	router.RegisterHandler(fmt.Sprintf("%s/%s/stop", topic, hostname), func(p *paho.Publish) { fmt.Printf("stop the game that is running: %s\n", p.Topic) })
+	router.RegisterHandler(fmt.Sprintf("%s/%s/download", topic, hostname), func(p *paho.Publish) { fmt.Printf("download a game: %s\n", p.Topic) })
+	router.RegisterHandler(fmt.Sprintf("%s/%s/quit", topic, hostname), func(p *paho.Publish) { stop() }) // Stop and quit this running container
 
 	// We publish three messages to test out the various route handlers
-	topics := []string{"test/test", "test/test/foo", "test/xxNoMatch", "test/quit"}
-	for _, t := range topics {
-		if _, err := c.Publish(ctx, &paho.Publish{
-			QoS:     1,
-			Topic:   fmt.Sprintf("%s/%s", topic, t),
-			Payload: []byte("TestMessage on topic: " + t),
-		}); err != nil {
-			if ctx.Err() == nil {
-				panic(err) // Publish will exit when context cancelled or if something went wrong
-			}
-		}
-	}
+	// topics := []string{"test/test", "test/test/foo", "test/xxNoMatch", "test/quit"}
+	// for _, t := range topics {
+	// 	if _, err := c.Publish(ctx, &paho.Publish{
+	// 		QoS:     1,
+	// 		Topic:   fmt.Sprintf("%s/%s", topic, t),
+	// 		Payload: []byte("TestMessage on topic: " + t),
+	// 	}); err != nil {
+	// 		if ctx.Err() == nil {
+	// 			panic(err) // Publish will exit when context cancelled or if something went wrong
+	// 		}
+	// 	}
+	// }
 
 	<-c.Done() // Wait for clean shutdown (cancelling the context triggered the shutdown)
 }
