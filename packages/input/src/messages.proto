@@ -1,6 +1,7 @@
 syntax = "proto3";
 
 import "types.proto";
+import "latency_tracker.proto";
 
 package proto;
 
@@ -12,7 +13,7 @@ message MessageBase {
 message MessageInput {
     MessageBase message_base = 1;
     Input date = 2;
-    // LatencyTracker latency = 3;
+    LatencyTracker latency = 3;
 }
 
 message MessageICE {
