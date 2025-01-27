@@ -7,12 +7,11 @@ const ami = aws.ec2.getAmi({
     filters: [
         {
             name: "name",
-            //?Note: Bottlerocket does not support encrypted EFS instances or ones with 'awsvpc'
-            values: ["bottlerocket-aws-ecs-2-nvidia-x86_64-*"],
+            values: ["amzn2-ami-ecs-gpu-hvm-*"],
         },
     ],
     mostRecent: true,
-    owners: ["092701018921"],
+    owners: ["591542846629"], //amazon
 });
 
 const ecsInstanceRole = new aws.iam.Role("NestriGPUInstanceRole", {
@@ -39,16 +38,36 @@ const ecsInstanceProfile = new aws.iam.InstanceProfile("NestriGPUInstanceProfile
     role: ecsInstanceRole.name,
 });
 
+// Here we configure some user data that will be configured into each EC2 instance.
+// const userData: awsx.autoscaling.AutoScalingUserData = {
+//     extraBootcmdLines: () => 
+//       [
+//         { contents: `- echo ECS_CLUSTER='${clusterId}' >> /etc/ecs/ecs.config` }, // The cluster that the agent should check into.
+//         { contents: `- echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config` }, // When true, the agent creates a file describing the container's metadata.
+//         { contents: `- echo ECS_RESERVED_MEMORY=256 >> /etc/ecs/ecs.config` }, // The amount of memory, in MiB, to remove from the pool that is allocated to your tasks.  
+//       ]
+//   };
+//   cluster = "${ecsCluster.name}"
+//   reserved-memory=300
+//   container-stop-timeout="3h"
+//   image-pull-behavior="always"
+//   enable-spot-instance-draining=true
+
 const server = new aws.ec2.Instance("NestriGPU", {
     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
     ami: ami.then((ami) => ami.id),
-    userData: $interpolate`
-[settings.ecs]
-cluster = "${ecsCluster.name}"
-reserved-memory=300
-container-stop-timeout="3h"
-image-pull-behavior="always"
-enable-spot-instance-draining=true
+    userData: $interpolate`#!/bin/bash
+echo ECS_CLUSTER='${ecsCluster.name}' >> /etc/ecs/ecs.config
+echo ECS_RESERVED_MEMORY=256 >> /etc/ecs/ecs.config
+echo ECS_RESERVED_MEMORY=300 >> /etc/ecs/ecs.config
+echo ECS_CONTAINER_STOP_TIMEOUT=3h >> /etc/ecs/ecs.config
+echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
+echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
+sudo rm /etc/sysconfig/docker
+echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
+echo OPTIONS="--default-ulimit nofile=32768:65536 --default-runtime nvidia" | sudo tee -a /etc/sysconfig/docker
+echo DAEMON_PIDFILE_TIMEOUT=10 | sudo tee -a /etc/sysconfig/docker
+sudo systemctl restart docker
 `,
     instanceMarketOptions: {
         marketType: "spot",
