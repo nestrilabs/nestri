@@ -12,6 +12,7 @@ export default $config({
         "@pulumi/command": "1.0.1",
         random: "4.16.8",
         aws: "6.67.0",
+        tls: "5.1.0",
       },
     };
   },
