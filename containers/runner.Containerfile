@@ -1,5 +1,5 @@
 # Container build arguments #
-ARG BASE_IMAGE=docker.io/cachyos/cachyos-v3:latest
+ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 
 #******************************************************************************
 #                                                                                                          nestri-server-builder
