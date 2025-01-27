@@ -2,7 +2,7 @@ const ecsCluster = new aws.ecs.Cluster("Hosted", {
     name: "NestriGPUCluster"
 });
 
-// Find the latest Ubuntu AMI
+// Find the latest BottleRocket AMI
 const ami = aws.ec2.getAmi({
     filters: [
         {
@@ -28,7 +28,6 @@ const ecsInstanceRole = new aws.iam.Role("NestriGPUInstanceRole", {
             Sid: "",
         }],
     }),
-    // managedPolicyArns: ["arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"]
 });
 
 const ecsInstancePolicyAttachment = new aws.iam.RolePolicyAttachment("NestriGPUInstancePolicyAttachment", {
@@ -48,12 +47,15 @@ const server = new aws.ec2.Instance("NestriGPU", {
 cluster = "${ecsCluster.name}"
 reserved-memory=300
 container-stop-timeout="3h"
+image-pull-behavior="always"
 enable-spot-instance-draining=true
 `,
     instanceMarketOptions: {
         marketType: "spot",
         spotOptions: {
             maxPrice: "0.2",
+            spotInstanceType: "persistent",
+            instanceInterruptionBehavior: "stop"
         },
     },
     iamInstanceProfile: ecsInstanceProfile,
@@ -61,30 +63,54 @@ enable-spot-instance-draining=true
 
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
     name: "/ecs/bottlerocket",
-    retentionInDays: 7, // Adjust retention as needed
+    retentionInDays: 7,
 });
 
-// Create a Task Definition for the ECS service
-const taskDefinition = new aws.ecs.TaskDefinition("myTask", {
+// Create a Task Definition for the ECS service to test it
+const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
     family: "ecsTest",
     requiresCompatibilities: ["EC2"],
     containerDefinitions: JSON.stringify([{
-        "memory": 80,
         "essential": true,
-        "name": "gpu",
-        "image": "nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04",
+        "name": "nestri",
+        "memory": 1024,
+        "cpu": 200,
+        "image": "ghcr.io/nestrilabs/nestri/runner:nightly",
         "resourceRequirements": [
             {
-                "type": "GPU",
-                "value": "1"
+                type: "GPU",
+                value: "1"
             }
         ],
-        "command": [
-            "sh",
-            "-c",
-            "nvidia-smi"
+        "environment": [
+            {
+                name: "NESTRI_ROOM",
+                value: "awstesting"
+            },
+            {
+                name: "RESOLUTION",
+                value: "1920x1080"
+            },
+            {
+                name: "FRAMERATE",
+                value: "60"
+            },
+            {
+                name: "NVIDIA_DRIVER_CAPABILITIES",
+                value: "all"
+            },
+            {
+                name: "RELAY_URL",
+                value: "https://relay.dathorse.com"
+            },
+            {
+                name: "NESTRI_PARAMS",
+                value: "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card1"
+            },
         ],
-        "cpu": 100,
+        "linuxParameter": {
+            sharedMemorySize: 5120
+        },
         "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
@@ -95,3 +121,9 @@ const taskDefinition = new aws.ecs.TaskDefinition("myTask", {
         }
     }])
 });
+
+// RESOLUTION: "1920x1080",
+// FRAMERATE: "60",
+// NVIDIA_DRIVER_CAPABILITIES: "all",
+// RELAY_URL: "https://relay.dathorse.com",
+// NESTRI_PARAMS: "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card1"
