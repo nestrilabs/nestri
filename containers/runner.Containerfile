@@ -74,7 +74,7 @@ RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /et
     pacman --noconfirm -Syu archlinux-keyring && \
     dirmngr </dev/null > /dev/null 2>&1 && \
     # Install mesa-git before Steam for simplicity
-    pacman --noconfirm -Sy mesa-git && \
+    pacman --noconfirm -Sy mesa && \
     # Install Steam
     pacman --noconfirm -Sy steam steam-native-runtime && \
     # Clean up pacman cache
