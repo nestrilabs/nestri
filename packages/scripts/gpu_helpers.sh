@@ -11,8 +11,8 @@ function get_gpu_info {
     vendor_id_map=()
     vendor_index_map=()
 
-    # Use lspci to detect GPU info
-    gpu_info=$(lspci | grep -i 'vga\|3d\|display')
+    # Use lspci to detect GPU info, using class codes for VGA, 3D and Display
+    gpu_info=$(lspci -nn | grep -E '\<(0300|0302|0380)\>')
 
     # Parse each line of GPU info
     while IFS= read -r line; do
