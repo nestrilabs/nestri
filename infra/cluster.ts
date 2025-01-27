@@ -53,32 +53,37 @@ const ecsInstanceProfile = new aws.iam.InstanceProfile("NestriGPUInstanceProfile
 //   image-pull-behavior="always"
 //   enable-spot-instance-draining=true
 
-const server = new aws.ec2.Instance("NestriGPU", {
-    instanceType: aws.ec2.InstanceType.G4dn_XLarge,
-    ami: ami.then((ami) => ami.id),
-    userData: $interpolate`#!/bin/bash
-echo ECS_CLUSTER='${ecsCluster.name}' >> /etc/ecs/ecs.config
-echo ECS_RESERVED_MEMORY=256 >> /etc/ecs/ecs.config
-echo ECS_RESERVED_MEMORY=300 >> /etc/ecs/ecs.config
-echo ECS_CONTAINER_STOP_TIMEOUT=3h >> /etc/ecs/ecs.config
-echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
-echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
-sudo rm /etc/sysconfig/docker
-echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
-echo OPTIONS="--default-ulimit nofile=32768:65536 --default-runtime nvidia" | sudo tee -a /etc/sysconfig/docker
-echo DAEMON_PIDFILE_TIMEOUT=10 | sudo tee -a /etc/sysconfig/docker
-sudo systemctl restart docker
-`,
-    instanceMarketOptions: {
-        marketType: "spot",
-        spotOptions: {
-            maxPrice: "0.2",
-            spotInstanceType: "persistent",
-            instanceInterruptionBehavior: "stop"
-        },
-    },
-    iamInstanceProfile: ecsInstanceProfile,
-});
+const sshKey = new aws.ec2.KeyPair("NestriGPUKey", {
+    publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO6CwSjinm1JKITSERgDIKHZ/wDLt0E1lY1y/KB7c8eR elviswanjohi47@gmail.com"
+})
+
+// const server = new aws.ec2.Instance("NestriGPU", {
+//     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
+//     ami: ami.then((ami) => ami.id),
+//     keyName: sshKey.keyName,
+//     userData: $interpolate`#!/bin/bash
+// echo ECS_CLUSTER='${ecsCluster.name}' >> /etc/ecs/ecs.config
+// echo ECS_RESERVED_MEMORY=256 >> /etc/ecs/ecs.config
+// echo ECS_RESERVED_MEMORY=300 >> /etc/ecs/ecs.config
+// echo ECS_CONTAINER_STOP_TIMEOUT=3h >> /etc/ecs/ecs.config
+// echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
+// echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
+// sudo rm /etc/sysconfig/docker
+// echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
+// echo OPTIONS="--default-ulimit nofile=32768:65536 --default-runtime nvidia" | sudo tee -a /etc/sysconfig/docker
+// echo DAEMON_PIDFILE_TIMEOUT=10 | sudo tee -a /etc/sysconfig/docker
+// sudo systemctl restart docker
+// `,
+//     // instanceMarketOptions: {
+//     //     marketType: "spot",
+//     //     spotOptions: {
+//     //         maxPrice: "0.2",
+//     //         spotInstanceType: "persistent",
+//     //         instanceInterruptionBehavior: "stop"
+//     //     },
+//     // },
+//     iamInstanceProfile: ecsInstanceProfile,
+// });
 
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
     name: "/ecs/bottlerocket",
@@ -127,6 +132,7 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
                 value: "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card1"
             },
         ],
+        "disableNetworking": false,
         "linuxParameter": {
             sharedMemorySize: 5120
         },
