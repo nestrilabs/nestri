@@ -36,19 +36,16 @@ source /etc/nestri/gpu_helpers.sh
 
 get_gpu_info
 
-# Identify vendor
-if [[ "${vendor_full_map[0],,}" =~ "intel" ]]; then
-    echo "Intel GPU detected, installing required packages..."
-    #chwd -a
-    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
-    # chwd missed a thing
-    pacman -Sy --noconfirm vpl-gpu-rt
-elif [[ "${vendor_full_map[0],,}" =~ "amd" ]]; then
-    echo "AMD GPU detected, installing required packages..."
-    #chwd -a
-    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va
-elif [[ "${vendor_full_map[0],,}" =~ "nvidia" ]]; then
+# Check vendors in priority order
+if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
     echo "NVIDIA GPU detected. Assuming drivers are linked"
+elif [[ -n "${vendor_devices[intel]:-}" ]]; then
+    echo "Intel GPU detected, installing required packages..."
+    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
+    pacman -Sy --noconfirm vpl-gpu-rt
+elif [[ -n "${vendor_devices[amd]:-}" ]]; then
+    echo "AMD GPU detected, installing required packages..."
+    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va
 else
     echo "Unknown GPU vendor. No additional packages will be installed"
 fi
