@@ -71,7 +71,7 @@ FROM ${BASE_IMAGE} AS runtime
 ## Install Graphics, Media, and Audio packages ##
 RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
     sed -i "s/#Color/Color/" /etc/pacman.conf && \
-    pacman --noconfirm -Sy archlinux-keyring && \
+    pacman --noconfirm -Syu archlinux-keyring && \
     dirmngr </dev/null > /dev/null 2>&1 && \
     # Install mesa-git before Steam for simplicity
     pacman --noconfirm -Sy mesa-git && \
