@@ -4,13 +4,13 @@ import "google/protobuf/timestamp.proto";
 
 package proto;
 
-message TimestampEntry {
+message ProtoTimestampEntry {
   string stage = 1;
   google.protobuf.Timestamp time = 2;
 };
 
-message LatencyTracker {
+message ProtoLatencyTracker {
     string sequence_id = 1;
-    repeated TimestampEntry timestamps = 2;
+    repeated ProtoTimestampEntry timestamps = 2;
     map<string, google.protobuf.Any> metadata = 3;
 }

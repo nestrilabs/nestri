@@ -3,71 +3,71 @@ syntax = "proto3";
 package proto;
 
 // Base message for all input types
-message BaseInput {
+message ProtoBaseInput {
   int64 timestamp = 1; // Optional timestamp
 }
 
 // MouseMove message
-message MouseMove {
-  BaseInput base_input = 1;
+message ProtoMouseMove {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "MouseMove"
   int32 x = 3;
   int32 y = 4;
 }
 
 // MouseMoveAbs message
-message MouseMoveAbs {
-  BaseInput base_input = 1;
+message ProtoMouseMoveAbs {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "MouseMoveAbs"
   int32 x = 3;
   int32 y = 4;
 }
 
 // MouseWheel message
-message MouseWheel {
-  BaseInput base_input = 1;
+message ProtoMouseWheel {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "MouseWheel"
   int32 x = 3;
   int32 y = 4;
 }
 
 // MouseKeyDown message
-message MouseKeyDown {
-  BaseInput base_input = 1;
+message ProtoMouseKeyDown {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "MouseKeyDown"
   int32 key = 3;
 }
 
 // MouseKeyUp message
-message MouseKeyUp {
-  BaseInput base_input = 1;
+message ProtoMouseKeyUp {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "MouseKeyUp"
   int32 key = 3;
 }
 
 // KeyDown message
-message KeyDown {
-  BaseInput base_input = 1;
+message ProtoKeyDown {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "KeyDown"
   int32 key = 3;
 }
 
 // KeyUp message
-message KeyUp {
-  BaseInput base_input = 1;
+message ProtoKeyUp {
+  ProtoBaseInput base_input = 1;
   string type = 2; // Fixed value "KeyUp"
   int32 key = 3;
 }
 
 // Union of all Input types
-message Input {
+message ProtoInput {
   oneof input_type {
-    MouseMove mouse_move = 1;
-    MouseMoveAbs mouse_move_abs = 2;
-    MouseWheel mouse_wheel = 3;
-    MouseKeyDown mouse_key_down = 4;
-    MouseKeyUp mouse_key_up = 5;
-    KeyDown key_down = 6;
-    KeyUp key_up = 7;
+    ProtoMouseMove mouse_move = 1;
+    ProtoMouseMoveAbs mouse_move_abs = 2;
+    ProtoMouseWheel mouse_wheel = 3;
+    ProtoMouseKeyDown mouse_key_down = 4;
+    ProtoMouseKeyUp mouse_key_up = 5;
+    ProtoKeyDown key_down = 6;
+    ProtoKeyUp key_up = 7;
   }
 }
