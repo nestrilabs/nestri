@@ -13,6 +13,7 @@ export default $config({
         random: "4.16.8",
         aws: "6.67.0",
         tls: "5.1.0",
+        command: "0.0.1-testwindows.signing",
       },
     };
   },
