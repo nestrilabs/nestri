@@ -102,8 +102,16 @@ RUN pacman -Sy --noconfirm --needed \
     rm -rf /usr/share/man/* && \
     rm -rf /usr/share/doc/*
 
+#Install our backup manager
+ARG LUDUSAVI_VERSION="0.28.0"
+RUN pacman -Sy --noconfirm --needed wget &&\
+    wget "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" -O "ludusavi.tar.gz" &&\
+    tar -xzvf ludusavi.tar.gz &&\
+    mv ludusavi /usr/bin/ &&\
+    #Clean up
+    rm *.tar.gz
 
-# Regenerate locale
+    # Regenerate locale
 RUN locale-gen
 
 ## User ##
