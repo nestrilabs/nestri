@@ -5,7 +5,7 @@ const ecsCluster = new aws.ecs.Cluster("Hosted", {
     name: "NestriGPUCluster"
 });
 
-const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
+export const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
     algorithm: "RSA",
     rsaBits: 4096,
 });
@@ -47,7 +47,7 @@ const ecsInstanceProfile = new aws.iam.InstanceProfile("NestriGPUInstanceProfile
 });
 
 // Just in case you want to SSH
-const sshKey = new aws.ec2.KeyPair("NestriGPUKey", {
+export const sshKey = new aws.ec2.KeyPair("NestriGPUKey", {
     keyName: "NestriGPUKey",
     publicKey: privateKey.publicKeyOpenssh
 })
@@ -59,43 +59,43 @@ const keyPath = privateKey.privateKeyOpenssh.apply((key) => {
 });
 
 
-const server = new aws.ec2.Instance("NestriGPU", {
-    instanceType: aws.ec2.InstanceType.G4dn_XLarge,
-    ami: ami.then((ami) => ami.id),
-    keyName: sshKey.keyName,
-    //sudo nvidia-ctk runtime configure --runtime=docker [--set-as-default]
-    userData: $interpolate`#!/bin/bash
-sudo rm /etc/sysconfig/docker
-echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
-echo DAEMON_PIDFILE_TIMEOUT=10 | sud o tee -a /etc/sysconfig/docker
-echo OPTIONS="--default-ulimit nofile=32768:65536" | sudo tee -a /etc/sysconfig/docker
-sudo tee "/etc/docker/daemon.json" > /dev/null <<EOF
-{
-    "default-runtime": "nvidia",
-    "runtimes": {
-        "nvidia": {
-            "path": "/usr/bin/nvidia-container-runtime",
-            "runtimeArgs": []
-        }
-    }
-}
-EOF
-sudo systemctl restart docker
-echo ECS_CLUSTER='${ecsCluster.name}' | sudo tee -a /etc/ecs/ecs.config
-echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
-echo ECS_CONTAINER_STOP_TIMEOUT=3h | sudo tee -a /etc/ecs/ecs.config
-echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
-`,
-    instanceMarketOptions: {
-        marketType: "spot",
-        spotOptions: {
-            maxPrice: "0.2",
-            spotInstanceType: "persistent",
-            instanceInterruptionBehavior: "stop"
-        },
-    },
-    iamInstanceProfile: ecsInstanceProfile,
-});
+// const server = new aws.ec2.Instance("NestriGPU", {
+//     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
+//     ami: ami.then((ami) => ami.id),
+//     keyName: sshKey.keyName,
+//     //sudo nvidia-ctk runtime configure --runtime=docker [--set-as-default]
+//     userData: $interpolate`#!/bin/bash
+// sudo rm /etc/sysconfig/docker
+// echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
+// echo DAEMON_PIDFILE_TIMEOUT=10 | sud o tee -a /etc/sysconfig/docker
+// echo OPTIONS="--default-ulimit nofile=32768:65536" | sudo tee -a /etc/sysconfig/docker
+// sudo tee "/etc/docker/daemon.json" > /dev/null <<EOF
+// {
+//     "default-runtime": "nvidia",
+//     "runtimes": {
+//         "nvidia": {
+//             "path": "/usr/bin/nvidia-container-runtime",
+//             "runtimeArgs": []
+//         }
+//     }
+// }
+// EOF
+// sudo systemctl restart docker
+// echo ECS_CLUSTER='${ecsCluster.name}' | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_CONTAINER_STOP_TIMEOUT=3h | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
+// `,
+//     instanceMarketOptions: {
+//         marketType: "spot",
+//         spotOptions: {
+//             maxPrice: "0.2",
+//             spotInstanceType: "persistent",
+//             instanceInterruptionBehavior: "stop"
+//         },
+//     },
+//     iamInstanceProfile: ecsInstanceProfile,
+// });
 
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
     name: "/ecs/nestrigpu",
