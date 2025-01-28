@@ -4,15 +4,15 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv1";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv1";
-import type { Any, Timestamp } from "@bufbuild/protobuf/wkt";
-import { file_google_protobuf_any, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file latency_tracker.proto.
  */
 export const file_latency_tracker: GenFile = /*@__PURE__*/
-  fileDesc("ChVsYXRlbmN5X3RyYWNrZXIucHJvdG8SBXByb3RvIk4KE1Byb3RvVGltZXN0YW1wRW50cnkSDQoFc3RhZ2UYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi3QEKE1Byb3RvTGF0ZW5jeVRyYWNrZXISEwoLc2VxdWVuY2VfaWQYASABKAkSLgoKdGltZXN0YW1wcxgCIAMoCzIaLnByb3RvLlByb3RvVGltZXN0YW1wRW50cnkSOgoIbWV0YWRhdGEYAyADKAsyKC5wcm90by5Qcm90b0xhdGVuY3lUcmFja2VyLk1ldGFkYXRhRW50cnkaRQoNTWV0YWRhdGFFbnRyeRILCgNrZXkYASABKAkSIwoFdmFsdWUYAiABKAsyFC5nb29nbGUucHJvdG9idWYuQW55OgI4AWIGcHJvdG8z", [file_google_protobuf_any, file_google_protobuf_timestamp]);
+  fileDesc("ChVsYXRlbmN5X3RyYWNrZXIucHJvdG8SBXByb3RvIk4KE1Byb3RvVGltZXN0YW1wRW50cnkSDQoFc3RhZ2UYASABKAkSKAoEdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiWgoTUHJvdG9MYXRlbmN5VHJhY2tlchITCgtzZXF1ZW5jZV9pZBgBIAEoCRIuCgp0aW1lc3RhbXBzGAIgAygLMhoucHJvdG8uUHJvdG9UaW1lc3RhbXBFbnRyeUIWWhRyZWxheS9pbnRlcm5hbC9wcm90b2IGcHJvdG8z", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message proto.ProtoTimestampEntry
@@ -49,11 +49,6 @@ export type ProtoLatencyTracker = Message<"proto.ProtoLatencyTracker"> & {
    * @generated from field: repeated proto.ProtoTimestampEntry timestamps = 2;
    */
   timestamps: ProtoTimestampEntry[];
-
-  /**
-   * @generated from field: map<string, google.protobuf.Any> metadata = 3;
-   */
-  metadata: { [key: string]: Any };
 };
 
 /**

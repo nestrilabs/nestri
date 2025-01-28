@@ -1,13 +1,18 @@
 use crate::messages::{
-    decode_message_as, encode_message, AnswerType, InputMessage, JoinerType, MessageAnswer,
-    MessageBase, MessageICE, MessageInput, MessageJoin, MessageSDP,
+    decode_message_as, encode_message, AnswerType, JoinerType, MessageAnswer, MessageBase,
+    MessageICE, MessageJoin, MessageSDP,
 };
+use crate::proto::proto::proto_input::InputType::{
+    KeyDown, KeyUp, MouseKeyDown, MouseKeyUp, MouseMove, MouseMoveAbs, MouseWheel,
+};
+use crate::proto::proto::{ProtoInput, ProtoMessageInput};
 use crate::websocket::NestriWebSocket;
 use glib::subclass::prelude::*;
 use gst::glib;
 use gst::prelude::*;
 use gst_webrtc::{gst_sdp, WebRTCSDPType, WebRTCSessionDescription};
 use gstrswebrtc::signaller::{Signallable, SignallableImpl};
+use prost::Message;
 use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
 use std::sync::{Mutex, RwLock};
@@ -200,6 +205,7 @@ impl SignallableImpl for Signaller {
                 let join_msg = MessageJoin {
                     base: MessageBase {
                         payload_type: "join".to_string(),
+                        latency: None,
                     },
                     joiner_type: JoinerType::JoinerNode,
                 };
@@ -237,6 +243,7 @@ impl SignallableImpl for Signaller {
         let join_msg = MessageJoin {
             base: MessageBase {
                 payload_type: "join".to_string(),
+                latency: None,
             },
             joiner_type: JoinerType::JoinerNode,
         };
@@ -265,6 +272,7 @@ impl SignallableImpl for Signaller {
         let sdp_message = MessageSDP {
             base: MessageBase {
                 payload_type: "sdp".to_string(),
+                latency: None,
             },
             sdp: RTCSessionDescription::offer(sdp.sdp().as_text().unwrap()).unwrap(),
         };
@@ -301,6 +309,7 @@ impl SignallableImpl for Signaller {
         let ice_message = MessageICE {
             base: MessageBase {
                 payload_type: "ice".to_string(),
+                latency: None,
             },
             candidate: candidate_init,
         };
@@ -354,11 +363,9 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &g
 
     data_channel.connect_on_message_data(move |_data_channel, data| {
         if let Some(data) = data {
-            match decode_message_as::<MessageInput>(data.to_vec()) {
+            match ProtoMessageInput::decode(data.to_vec().as_slice()) {
                 Ok(message_input) => {
-                    // Deserialize the input message data
-                    if let Ok(input_msg) = serde_json::from_str::<InputMessage>(&message_input.data)
-                    {
+                    if let Some(input_msg) = message_input.data {
                         // Process the input message and create an event
                         if let Some(event) =
                             handle_input_message(input_msg, &pressed_keys, &pressed_buttons)
@@ -379,88 +386,92 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &g
 }
 
 fn handle_input_message(
-    input_msg: InputMessage,
+    input_msg: ProtoInput,
     pressed_keys: &Arc<Mutex<HashSet<i32>>>,
     pressed_buttons: &Arc<Mutex<HashSet<i32>>>,
 ) -> Option<gst::Event> {
-    match input_msg {
-        InputMessage::MouseMove { x, y } => {
-            let structure = gst::Structure::builder("MouseMoveRelative")
-                .field("pointer_x", x as f64)
-                .field("pointer_y", y as f64)
-                .build();
+    if let Some(input_type) = input_msg.input_type {
+        match input_type {
+            MouseMove(data) => {
+                let structure = gst::Structure::builder("MouseMoveRelative")
+                    .field("pointer_x", data.x as f64)
+                    .field("pointer_y", data.y as f64)
+                    .build();
 
-            Some(gst::event::CustomUpstream::new(structure))
-        }
-        InputMessage::MouseMoveAbs { x, y } => {
-            let structure = gst::Structure::builder("MouseMoveAbsolute")
-                .field("pointer_x", x as f64)
-                .field("pointer_y", y as f64)
-                .build();
-
-            Some(gst::event::CustomUpstream::new(structure))
-        }
-        InputMessage::KeyDown { key } => {
-            let mut keys = pressed_keys.lock().unwrap();
-            // If the key is already pressed, return to prevent key lockup
-            if keys.contains(&key) {
-                return None;
+                Some(gst::event::CustomUpstream::new(structure))
             }
-            keys.insert(key);
+            MouseMoveAbs(data) => {
+                let structure = gst::Structure::builder("MouseMoveAbsolute")
+                    .field("pointer_x", data.x as f64)
+                    .field("pointer_y", data.y as f64)
+                    .build();
 
-            let structure = gst::Structure::builder("KeyboardKey")
-                .field("key", key as u32)
-                .field("pressed", true)
-                .build();
-
-            Some(gst::event::CustomUpstream::new(structure))
-        }
-        InputMessage::KeyUp { key } => {
-            let mut keys = pressed_keys.lock().unwrap();
-            // Remove the key from the pressed state when released
-            keys.remove(&key);
-
-            let structure = gst::Structure::builder("KeyboardKey")
-                .field("key", key as u32)
-                .field("pressed", false)
-                .build();
-
-            Some(gst::event::CustomUpstream::new(structure))
-        }
-        InputMessage::Wheel { x, y } => {
-            let structure = gst::Structure::builder("MouseAxis")
-                .field("x", x as f64)
-                .field("y", y as f64)
-                .build();
-
-            Some(gst::event::CustomUpstream::new(structure))
-        }
-        InputMessage::MouseDown { key } => {
-            let mut buttons = pressed_buttons.lock().unwrap();
-            // If the button is already pressed, return to prevent button lockup
-            if buttons.contains(&key) {
-                return None;
+                Some(gst::event::CustomUpstream::new(structure))
             }
-            buttons.insert(key);
+            KeyDown(data) => {
+                let mut keys = pressed_keys.lock().unwrap();
+                // If the key is already pressed, return to prevent key lockup
+                if keys.contains(&data.key) {
+                    return None;
+                }
+                keys.insert(data.key);
 
-            let structure = gst::Structure::builder("MouseButton")
-                .field("button", key as u32)
-                .field("pressed", true)
-                .build();
+                let structure = gst::Structure::builder("KeyboardKey")
+                    .field("key", data.key as u32)
+                    .field("pressed", true)
+                    .build();
 
-            Some(gst::event::CustomUpstream::new(structure))
+                Some(gst::event::CustomUpstream::new(structure))
+            }
+            KeyUp(data) => {
+                let mut keys = pressed_keys.lock().unwrap();
+                // Remove the key from the pressed state when released
+                keys.remove(&data.key);
+
+                let structure = gst::Structure::builder("KeyboardKey")
+                    .field("key", data.key as u32)
+                    .field("pressed", false)
+                    .build();
+
+                Some(gst::event::CustomUpstream::new(structure))
+            }
+            MouseWheel(data) => {
+                let structure = gst::Structure::builder("MouseAxis")
+                    .field("x", data.x as f64)
+                    .field("y", data.y as f64)
+                    .build();
+
+                Some(gst::event::CustomUpstream::new(structure))
+            }
+            MouseKeyDown(data) => {
+                let mut buttons = pressed_buttons.lock().unwrap();
+                // If the button is already pressed, return to prevent button lockup
+                if buttons.contains(&data.key) {
+                    return None;
+                }
+                buttons.insert(data.key);
+
+                let structure = gst::Structure::builder("MouseButton")
+                    .field("button", data.key as u32)
+                    .field("pressed", true)
+                    .build();
+
+                Some(gst::event::CustomUpstream::new(structure))
+            }
+            MouseKeyUp(data) => {
+                let mut buttons = pressed_buttons.lock().unwrap();
+                // Remove the button from the pressed state when released
+                buttons.remove(&data.key);
+
+                let structure = gst::Structure::builder("MouseButton")
+                    .field("button", data.key as u32)
+                    .field("pressed", false)
+                    .build();
+
+                Some(gst::event::CustomUpstream::new(structure))
+            }
         }
-        InputMessage::MouseUp { key } => {
-            let mut buttons = pressed_buttons.lock().unwrap();
-            // Remove the button from the pressed state when released
-            buttons.remove(&key);
-
-            let structure = gst::Structure::builder("MouseButton")
-                .field("button", key as u32)
-                .field("pressed", false)
-                .build();
-
-            Some(gst::event::CustomUpstream::new(structure))
-        }
+    } else {
+        None
     }
 }

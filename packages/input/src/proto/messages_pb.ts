@@ -2,8 +2,8 @@
 // @generated from file messages.proto (package proto, syntax proto3)
 /* eslint-disable */
 
-import type { GenEnum, GenFile, GenMessage } from "@bufbuild/protobuf/codegenv1";
-import { enumDesc, fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv1";
+import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv1";
+import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv1";
 import type { ProtoInput } from "./types_pb";
 import { file_types } from "./types_pb";
 import type { ProtoLatencyTracker } from "./latency_tracker_pb";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file messages.proto.
  */
 export const file_messages: GenFile = /*@__PURE__*/
-  fileDesc("Cg5tZXNzYWdlcy5wcm90bxIFcHJvdG8iKAoQUHJvdG9NZXNzYWdlQmFzZRIUCgxwYXlsb2FkX3R5cGUYASABKAkikAEKEVByb3RvTWVzc2FnZUlucHV0Ei0KDG1lc3NhZ2VfYmFzZRgBIAEoCzIXLnByb3RvLlByb3RvTWVzc2FnZUJhc2USHwoEZGF0YRgCIAEoCzIRLnByb3RvLlByb3RvSW5wdXQSKwoHbGF0ZW5jeRgDIAEoCzIaLnByb3RvLlByb3RvTGF0ZW5jeVRyYWNrZXIicAoSUHJvdG9NZXNzYWdlQW5zd2VyEi0KDG1lc3NhZ2VfYmFzZRgBIAEoCzIXLnByb3RvLlByb3RvTWVzc2FnZUJhc2USKwoLYW5zd2VyX3R5cGUYAiABKA4yFi5wcm90by5Qcm90b0Fuc3dlclR5cGUqQwoPUHJvdG9BbnN3ZXJUeXBlEhEKDUFuc3dlck9mZmxpbmUQABIPCgtBbnN3ZXJJblVzZRABEgwKCEFuc3dlck9LEAJiBnByb3RvMw", [file_types, file_latency_tracker]);
+  fileDesc("Cg5tZXNzYWdlcy5wcm90bxIFcHJvdG8iVQoQUHJvdG9NZXNzYWdlQmFzZRIUCgxwYXlsb2FkX3R5cGUYASABKAkSKwoHbGF0ZW5jeRgCIAEoCzIaLnByb3RvLlByb3RvTGF0ZW5jeVRyYWNrZXIiYwoRUHJvdG9NZXNzYWdlSW5wdXQSLQoMbWVzc2FnZV9iYXNlGAEgASgLMhcucHJvdG8uUHJvdG9NZXNzYWdlQmFzZRIfCgRkYXRhGAIgASgLMhEucHJvdG8uUHJvdG9JbnB1dEIWWhRyZWxheS9pbnRlcm5hbC9wcm90b2IGcHJvdG8z", [file_types, file_latency_tracker]);
 
 /**
  * @generated from message proto.ProtoMessageBase
@@ -24,6 +24,11 @@ export type ProtoMessageBase = Message<"proto.ProtoMessageBase"> & {
    * @generated from field: string payload_type = 1;
    */
   payloadType: string;
+
+  /**
+   * @generated from field: proto.ProtoLatencyTracker latency = 2;
+   */
+  latency?: ProtoLatencyTracker;
 };
 
 /**
@@ -46,11 +51,6 @@ export type ProtoMessageInput = Message<"proto.ProtoMessageInput"> & {
    * @generated from field: proto.ProtoInput data = 2;
    */
   data?: ProtoInput;
-
-  /**
-   * @generated from field: proto.ProtoLatencyTracker latency = 3;
-   */
-  latency?: ProtoLatencyTracker;
 };
 
 /**
@@ -59,52 +59,4 @@ export type ProtoMessageInput = Message<"proto.ProtoMessageInput"> & {
  */
 export const ProtoMessageInputSchema: GenMessage<ProtoMessageInput> = /*@__PURE__*/
   messageDesc(file_messages, 1);
-
-/**
- * @generated from message proto.ProtoMessageAnswer
- */
-export type ProtoMessageAnswer = Message<"proto.ProtoMessageAnswer"> & {
-  /**
-   * @generated from field: proto.ProtoMessageBase message_base = 1;
-   */
-  messageBase?: ProtoMessageBase;
-
-  /**
-   * @generated from field: proto.ProtoAnswerType answer_type = 2;
-   */
-  answerType: ProtoAnswerType;
-};
-
-/**
- * Describes the message proto.ProtoMessageAnswer.
- * Use `create(ProtoMessageAnswerSchema)` to create a new message.
- */
-export const ProtoMessageAnswerSchema: GenMessage<ProtoMessageAnswer> = /*@__PURE__*/
-  messageDesc(file_messages, 2);
-
-/**
- * @generated from enum proto.ProtoAnswerType
- */
-export enum ProtoAnswerType {
-  /**
-   * @generated from enum value: AnswerOffline = 0;
-   */
-  AnswerOffline = 0,
-
-  /**
-   * @generated from enum value: AnswerInUse = 1;
-   */
-  AnswerInUse = 1,
-
-  /**
-   * @generated from enum value: AnswerOK = 2;
-   */
-  AnswerOK = 2,
-}
-
-/**
- * Describes the enum proto.ProtoAnswerType.
- */
-export const ProtoAnswerTypeSchema: GenEnum<ProtoAnswerType> = /*@__PURE__*/
-  enumDesc(file_messages, 0);
 

@@ -1,28 +1,18 @@
 syntax = "proto3";
 
+option go_package = "relay/internal/proto";
+
 import "types.proto";
 import "latency_tracker.proto";
 
 package proto;
 
-
 message ProtoMessageBase {
   string payload_type = 1;
+  ProtoLatencyTracker latency = 2;
 }
 
 message ProtoMessageInput {
     ProtoMessageBase message_base = 1;
     ProtoInput data = 2;
-    ProtoLatencyTracker latency = 3;
-}
-
-enum ProtoAnswerType {
-  AnswerOffline = 0;
-  AnswerInUse = 1;
-  AnswerOK = 2;
-}
-
-message ProtoMessageAnswer {
-    ProtoMessageBase message_base = 1;
-    ProtoAnswerType answer_type = 2;
 }

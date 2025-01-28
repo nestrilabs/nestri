@@ -1,8 +1,18 @@
-import {type Input} from "./types"
-import {mouseButtonToLinuxEventCode} from "./codes"
-import {MessageInput, encodeMessage} from "./messages";
 import {WebRTCStream} from "./webrtc-stream";
 import {LatencyTracker} from "./latency";
+import {ProtoMessageInput, ProtoMessageBase, ProtoMessageInputSchema} from "./proto/messages_pb";
+import {
+  ProtoInput, ProtoInputSchema,
+  ProtoMouseKeyDown, ProtoMouseKeyDownSchema,
+  ProtoMouseKeyUp, ProtoMouseKeyUpSchema,
+  ProtoMouseMove,
+  ProtoMouseMoveSchema,
+  ProtoMouseWheel, ProtoMouseWheelSchema
+} from "./proto/types_pb";
+import {mouseButtonToLinuxEventCode} from "./codes";
+import {ProtoLatencyTracker, ProtoTimestampEntry} from "./proto/latency_tracker_pb";
+import {create, toBinary} from "@bufbuild/protobuf";
+import {timestampFromDate} from "@bufbuild/protobuf/wkt";
 
 interface Props {
   webrtc: WebRTCStream;
@@ -15,33 +25,56 @@ export class Mouse {
   protected connected!: boolean;
 
   // Store references to event listeners
-  private mousemoveListener: (e: MouseEvent) => void;
-  private mousedownListener: (e: MouseEvent) => void;
-  private mouseupListener: (e: MouseEvent) => void;
-  private mousewheelListener: (e: WheelEvent) => void;
+  private readonly mousemoveListener: (e: MouseEvent) => void;
+  private readonly mousedownListener: (e: MouseEvent) => void;
+  private readonly mouseupListener: (e: MouseEvent) => void;
+  private readonly mousewheelListener: (e: WheelEvent) => void;
 
   constructor({webrtc, canvas}: Props) {
     this.wrtc = webrtc;
     this.canvas = canvas;
 
-    this.mousemoveListener = this.createMouseListener("mousemove", (e: any) => ({
-      type: "MouseMove",
-      x: e.movementX,
-      y: e.movementY
+    this.mousemoveListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
+      $typeName: "proto.ProtoInput",
+      inputType: {
+        case: "mouseMove",
+        value: create(ProtoMouseMoveSchema, {
+          type: "MouseMove",
+          x: e.movementX,
+          y: e.movementY
+        }),
+      }
     }));
-    this.mousedownListener = this.createMouseListener("mousedown", (e: any) => ({
-      type: "MouseKeyDown",
-      key: this.keyToVirtualKeyCode(e.button)
+    this.mousedownListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
+      $typeName: "proto.ProtoInput",
+      inputType: {
+        case: "mouseKeyDown",
+        value: create(ProtoMouseKeyDownSchema, {
+          type: "MouseKeyDown",
+          key: this.keyToVirtualKeyCode(e.button)
+        }),
+      }
     }));
-
-    this.mouseupListener = this.createMouseListener("mouseup", (e: any) => ({
-      type: "MouseKeyUp",
-      key: this.keyToVirtualKeyCode(e.button)
+    this.mouseupListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
+      $typeName: "proto.ProtoInput",
+      inputType: {
+        case: "mouseKeyUp",
+        value: create(ProtoMouseKeyUpSchema, {
+          type: "MouseKeyUp",
+          key: this.keyToVirtualKeyCode(e.button)
+        }),
+      }
     }));
-    this.mousewheelListener = this.createMouseListener("wheel", (e: any) => ({
-      type: "MouseWheel",
-      x: e.deltaX,
-      y: e.deltaY
+    this.mousewheelListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
+      $typeName: "proto.ProtoInput",
+      inputType: {
+        case: "mouseWheel",
+        value: create(ProtoMouseWheelSchema, {
+          type: "MouseWheel",
+          x: e.deltaX,
+          y: e.deltaY
+        }),
+      }
     }));
 
     this.run()
@@ -59,10 +92,10 @@ export class Mouse {
 
     if (document.pointerLockElement == this.canvas) {
       this.connected = true
-      this.canvas.addEventListener("mousemove", this.mousemoveListener, { passive: false });
-      this.canvas.addEventListener("mousedown", this.mousedownListener, { passive: false });
-      this.canvas.addEventListener("mouseup", this.mouseupListener, { passive: false });
-      this.canvas.addEventListener("wheel", this.mousewheelListener, { passive: false });
+      this.canvas.addEventListener("mousemove", this.mousemoveListener, {passive: false});
+      this.canvas.addEventListener("mousedown", this.mousedownListener, {passive: false});
+      this.canvas.addEventListener("mouseup", this.mouseupListener, {passive: false});
+      this.canvas.addEventListener("wheel", this.mousewheelListener, {passive: false});
 
     } else {
       if (this.connected) {
@@ -81,22 +114,38 @@ export class Mouse {
   }
 
   // Helper function to create and return mouse listeners
-  private createMouseListener(type: string, dataCreator: (e: Event) => Partial<Input>): (e: Event) => void {
+  private createMouseListener(dataCreator: (e: Event) => ProtoInput): (e: Event) => void {
     return (e: Event) => {
       e.preventDefault();
       e.stopPropagation();
-      const data = dataCreator(e as any); // type assertion because of the way dataCreator is used
-      const dataString = JSON.stringify({...data, type} as Input);
+      const data = dataCreator(e as any);
 
       // Latency tracking
       const tracker = new LatencyTracker("input-mouse");
       tracker.addTimestamp("client_send");
-      const message: MessageInput = {
-        payload_type: "input",
-        data: dataString,
-        latency: tracker,
+      const protoTracker: ProtoLatencyTracker = {
+        $typeName: "proto.ProtoLatencyTracker",
+        sequenceId: tracker.sequence_id,
+        timestamps: [],
       };
-      this.wrtc.sendBinary(encodeMessage(message));
+      for (const t of tracker.timestamps) {
+        protoTracker.timestamps.push({
+          $typeName: "proto.ProtoTimestampEntry",
+          stage: t.stage,
+          time: timestampFromDate(t.time),
+        } as ProtoTimestampEntry);
+      }
+
+      const message: ProtoMessageInput = {
+        $typeName: "proto.ProtoMessageInput",
+        messageBase: {
+          $typeName: "proto.ProtoMessageBase",
+          payloadType: "input",
+          latency: protoTracker,
+        } as ProtoMessageBase,
+        data: data,
+      };
+      this.wrtc.sendBinary(toBinary(ProtoMessageInputSchema, message));
     };
   }
 

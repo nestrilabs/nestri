@@ -10,28 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file types.proto.
  */
 export const file_types: GenFile = /*@__PURE__*/
-  fileDesc("Cgt0eXBlcy5wcm90bxIFcHJvdG8iIwoOUHJvdG9CYXNlSW5wdXQSEQoJdGltZXN0YW1wGAEgASgDIl8KDlByb3RvTW91c2VNb3ZlEikKCmJhc2VfaW5wdXQYASABKAsyFS5wcm90by5Qcm90b0Jhc2VJbnB1dBIMCgR0eXBlGAIgASgJEgkKAXgYAyABKAUSCQoBeRgEIAEoBSJiChFQcm90b01vdXNlTW92ZUFicxIpCgpiYXNlX2lucHV0GAEgASgLMhUucHJvdG8uUHJvdG9CYXNlSW5wdXQSDAoEdHlwZRgCIAEoCRIJCgF4GAMgASgFEgkKAXkYBCABKAUiYAoPUHJvdG9Nb3VzZVdoZWVsEikKCmJhc2VfaW5wdXQYASABKAsyFS5wcm90by5Qcm90b0Jhc2VJbnB1dBIMCgR0eXBlGAIgASgJEgkKAXgYAyABKAUSCQoBeRgEIAEoBSJZChFQcm90b01vdXNlS2V5RG93bhIpCgpiYXNlX2lucHV0GAEgASgLMhUucHJvdG8uUHJvdG9CYXNlSW5wdXQSDAoEdHlwZRgCIAEoCRILCgNrZXkYAyABKAUiVwoPUHJvdG9Nb3VzZUtleVVwEikKCmJhc2VfaW5wdXQYASABKAsyFS5wcm90by5Qcm90b0Jhc2VJbnB1dBIMCgR0eXBlGAIgASgJEgsKA2tleRgDIAEoBSJUCgxQcm90b0tleURvd24SKQoKYmFzZV9pbnB1dBgBIAEoCzIVLnByb3RvLlByb3RvQmFzZUlucHV0EgwKBHR5cGUYAiABKAkSCwoDa2V5GAMgASgFIlIKClByb3RvS2V5VXASKQoKYmFzZV9pbnB1dBgBIAEoCzIVLnByb3RvLlByb3RvQmFzZUlucHV0EgwKBHR5cGUYAiABKAkSCwoDa2V5GAMgASgFItwCCgpQcm90b0lucHV0EisKCm1vdXNlX21vdmUYASABKAsyFS5wcm90by5Qcm90b01vdXNlTW92ZUgAEjIKDm1vdXNlX21vdmVfYWJzGAIgASgLMhgucHJvdG8uUHJvdG9Nb3VzZU1vdmVBYnNIABItCgttb3VzZV93aGVlbBgDIAEoCzIWLnByb3RvLlByb3RvTW91c2VXaGVlbEgAEjIKDm1vdXNlX2tleV9kb3duGAQgASgLMhgucHJvdG8uUHJvdG9Nb3VzZUtleURvd25IABIuCgxtb3VzZV9rZXlfdXAYBSABKAsyFi5wcm90by5Qcm90b01vdXNlS2V5VXBIABInCghrZXlfZG93bhgGIAEoCzITLnByb3RvLlByb3RvS2V5RG93bkgAEiMKBmtleV91cBgHIAEoCzIRLnByb3RvLlByb3RvS2V5VXBIAEIMCgppbnB1dF90eXBlYgZwcm90bzM");
-
-/**
- * Base message for all input types
- *
- * @generated from message proto.ProtoBaseInput
- */
-export type ProtoBaseInput = Message<"proto.ProtoBaseInput"> & {
-  /**
-   * Optional timestamp
-   *
-   * @generated from field: int64 timestamp = 1;
-   */
-  timestamp: bigint;
-};
-
-/**
- * Describes the message proto.ProtoBaseInput.
- * Use `create(ProtoBaseInputSchema)` to create a new message.
- */
-export const ProtoBaseInputSchema: GenMessage<ProtoBaseInput> = /*@__PURE__*/
-  messageDesc(file_types, 0);
+  fileDesc("Cgt0eXBlcy5wcm90bxIFcHJvdG8iNAoOUHJvdG9Nb3VzZU1vdmUSDAoEdHlwZRgBIAEoCRIJCgF4GAIgASgFEgkKAXkYAyABKAUiNwoRUHJvdG9Nb3VzZU1vdmVBYnMSDAoEdHlwZRgBIAEoCRIJCgF4GAIgASgFEgkKAXkYAyABKAUiNQoPUHJvdG9Nb3VzZVdoZWVsEgwKBHR5cGUYASABKAkSCQoBeBgCIAEoBRIJCgF5GAMgASgFIi4KEVByb3RvTW91c2VLZXlEb3duEgwKBHR5cGUYASABKAkSCwoDa2V5GAIgASgFIiwKD1Byb3RvTW91c2VLZXlVcBIMCgR0eXBlGAEgASgJEgsKA2tleRgCIAEoBSIpCgxQcm90b0tleURvd24SDAoEdHlwZRgBIAEoCRILCgNrZXkYAiABKAUiJwoKUHJvdG9LZXlVcBIMCgR0eXBlGAEgASgJEgsKA2tleRgCIAEoBSLcAgoKUHJvdG9JbnB1dBIrCgptb3VzZV9tb3ZlGAEgASgLMhUucHJvdG8uUHJvdG9Nb3VzZU1vdmVIABIyCg5tb3VzZV9tb3ZlX2FicxgCIAEoCzIYLnByb3RvLlByb3RvTW91c2VNb3ZlQWJzSAASLQoLbW91c2Vfd2hlZWwYAyABKAsyFi5wcm90by5Qcm90b01vdXNlV2hlZWxIABIyCg5tb3VzZV9rZXlfZG93bhgEIAEoCzIYLnByb3RvLlByb3RvTW91c2VLZXlEb3duSAASLgoMbW91c2Vfa2V5X3VwGAUgASgLMhYucHJvdG8uUHJvdG9Nb3VzZUtleVVwSAASJwoIa2V5X2Rvd24YBiABKAsyEy5wcm90by5Qcm90b0tleURvd25IABIjCgZrZXlfdXAYByABKAsyES5wcm90by5Qcm90b0tleVVwSABCDAoKaW5wdXRfdHlwZUIWWhRyZWxheS9pbnRlcm5hbC9wcm90b2IGcHJvdG8z");
 
 /**
  * MouseMove message
@@ -40,24 +19,19 @@ export const ProtoBaseInputSchema: GenMessage<ProtoBaseInput> = /*@__PURE__*/
  */
 export type ProtoMouseMove = Message<"proto.ProtoMouseMove"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "MouseMove"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 x = 3;
+   * @generated from field: int32 x = 2;
    */
   x: number;
 
   /**
-   * @generated from field: int32 y = 4;
+   * @generated from field: int32 y = 3;
    */
   y: number;
 };
@@ -67,7 +41,7 @@ export type ProtoMouseMove = Message<"proto.ProtoMouseMove"> & {
  * Use `create(ProtoMouseMoveSchema)` to create a new message.
  */
 export const ProtoMouseMoveSchema: GenMessage<ProtoMouseMove> = /*@__PURE__*/
-  messageDesc(file_types, 1);
+  messageDesc(file_types, 0);
 
 /**
  * MouseMoveAbs message
@@ -76,24 +50,19 @@ export const ProtoMouseMoveSchema: GenMessage<ProtoMouseMove> = /*@__PURE__*/
  */
 export type ProtoMouseMoveAbs = Message<"proto.ProtoMouseMoveAbs"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "MouseMoveAbs"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 x = 3;
+   * @generated from field: int32 x = 2;
    */
   x: number;
 
   /**
-   * @generated from field: int32 y = 4;
+   * @generated from field: int32 y = 3;
    */
   y: number;
 };
@@ -103,7 +72,7 @@ export type ProtoMouseMoveAbs = Message<"proto.ProtoMouseMoveAbs"> & {
  * Use `create(ProtoMouseMoveAbsSchema)` to create a new message.
  */
 export const ProtoMouseMoveAbsSchema: GenMessage<ProtoMouseMoveAbs> = /*@__PURE__*/
-  messageDesc(file_types, 2);
+  messageDesc(file_types, 1);
 
 /**
  * MouseWheel message
@@ -112,24 +81,19 @@ export const ProtoMouseMoveAbsSchema: GenMessage<ProtoMouseMoveAbs> = /*@__PURE_
  */
 export type ProtoMouseWheel = Message<"proto.ProtoMouseWheel"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "MouseWheel"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 x = 3;
+   * @generated from field: int32 x = 2;
    */
   x: number;
 
   /**
-   * @generated from field: int32 y = 4;
+   * @generated from field: int32 y = 3;
    */
   y: number;
 };
@@ -139,7 +103,7 @@ export type ProtoMouseWheel = Message<"proto.ProtoMouseWheel"> & {
  * Use `create(ProtoMouseWheelSchema)` to create a new message.
  */
 export const ProtoMouseWheelSchema: GenMessage<ProtoMouseWheel> = /*@__PURE__*/
-  messageDesc(file_types, 3);
+  messageDesc(file_types, 2);
 
 /**
  * MouseKeyDown message
@@ -148,19 +112,14 @@ export const ProtoMouseWheelSchema: GenMessage<ProtoMouseWheel> = /*@__PURE__*/
  */
 export type ProtoMouseKeyDown = Message<"proto.ProtoMouseKeyDown"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "MouseKeyDown"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 key = 3;
+   * @generated from field: int32 key = 2;
    */
   key: number;
 };
@@ -170,7 +129,7 @@ export type ProtoMouseKeyDown = Message<"proto.ProtoMouseKeyDown"> & {
  * Use `create(ProtoMouseKeyDownSchema)` to create a new message.
  */
 export const ProtoMouseKeyDownSchema: GenMessage<ProtoMouseKeyDown> = /*@__PURE__*/
-  messageDesc(file_types, 4);
+  messageDesc(file_types, 3);
 
 /**
  * MouseKeyUp message
@@ -179,19 +138,14 @@ export const ProtoMouseKeyDownSchema: GenMessage<ProtoMouseKeyDown> = /*@__PURE_
  */
 export type ProtoMouseKeyUp = Message<"proto.ProtoMouseKeyUp"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "MouseKeyUp"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 key = 3;
+   * @generated from field: int32 key = 2;
    */
   key: number;
 };
@@ -201,7 +155,7 @@ export type ProtoMouseKeyUp = Message<"proto.ProtoMouseKeyUp"> & {
  * Use `create(ProtoMouseKeyUpSchema)` to create a new message.
  */
 export const ProtoMouseKeyUpSchema: GenMessage<ProtoMouseKeyUp> = /*@__PURE__*/
-  messageDesc(file_types, 5);
+  messageDesc(file_types, 4);
 
 /**
  * KeyDown message
@@ -210,19 +164,14 @@ export const ProtoMouseKeyUpSchema: GenMessage<ProtoMouseKeyUp> = /*@__PURE__*/
  */
 export type ProtoKeyDown = Message<"proto.ProtoKeyDown"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "KeyDown"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 key = 3;
+   * @generated from field: int32 key = 2;
    */
   key: number;
 };
@@ -232,7 +181,7 @@ export type ProtoKeyDown = Message<"proto.ProtoKeyDown"> & {
  * Use `create(ProtoKeyDownSchema)` to create a new message.
  */
 export const ProtoKeyDownSchema: GenMessage<ProtoKeyDown> = /*@__PURE__*/
-  messageDesc(file_types, 6);
+  messageDesc(file_types, 5);
 
 /**
  * KeyUp message
@@ -241,19 +190,14 @@ export const ProtoKeyDownSchema: GenMessage<ProtoKeyDown> = /*@__PURE__*/
  */
 export type ProtoKeyUp = Message<"proto.ProtoKeyUp"> & {
   /**
-   * @generated from field: proto.ProtoBaseInput base_input = 1;
-   */
-  baseInput?: ProtoBaseInput;
-
-  /**
    * Fixed value "KeyUp"
    *
-   * @generated from field: string type = 2;
+   * @generated from field: string type = 1;
    */
   type: string;
 
   /**
-   * @generated from field: int32 key = 3;
+   * @generated from field: int32 key = 2;
    */
   key: number;
 };
@@ -263,7 +207,7 @@ export type ProtoKeyUp = Message<"proto.ProtoKeyUp"> & {
  * Use `create(ProtoKeyUpSchema)` to create a new message.
  */
 export const ProtoKeyUpSchema: GenMessage<ProtoKeyUp> = /*@__PURE__*/
-  messageDesc(file_types, 7);
+  messageDesc(file_types, 6);
 
 /**
  * Union of all Input types
@@ -324,5 +268,5 @@ export type ProtoInput = Message<"proto.ProtoInput"> & {
  * Use `create(ProtoInputSchema)` to create a new message.
  */
 export const ProtoInputSchema: GenMessage<ProtoInput> = /*@__PURE__*/
-  messageDesc(file_types, 8);
+  messageDesc(file_types, 7);
 
