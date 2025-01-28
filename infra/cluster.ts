@@ -10,18 +10,18 @@ const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
     rsaBits: 4096,
 });
 
-// // Find the latest Ecs GPU AMI
-// // FIXME: Problematic for Nestri GPU
-// const ami = aws.ec2.getAmi({
-//     filters: [
-//         {
-//             name: "name",
-//             values: ["amzn2-ami-ecs-gpu-hvm-*"], //Would have wanted to use BottleRocket instead, but we'd have to make so many sacrifices
-//         },
-//     ],
-//     mostRecent: true,
-//     owners: ["591542846629"], //amazon
-// });
+// Find the latest Ecs GPU AMI
+// FIXME: Problematic for Nestri GPU
+const ami = aws.ec2.getAmi({
+    filters: [
+        {
+            name: "name",
+            values: ["amzn2-ami-ecs-gpu-hvm-*"], //Would have wanted to use BottleRocket instead, but we'd have to make so many sacrifices
+        },
+    ],
+    mostRecent: true,
+    owners: ["591542846629"], //amazon
+});
 
 const ecsInstanceRole = new aws.iam.Role("NestriGPUInstanceRole", {
     name: "GPUAssumeRole",
@@ -62,12 +62,14 @@ const keyPath = privateKey.privateKeyOpenssh.apply((key) => {
 
 const server = new aws.ec2.Instance("NestriGPU", {
     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
-    // ami: ami.then((ami) => ami.id),
-    ami: "ami-06835d15c4de57810",
+    ami: ami.then((ami) => ami.id),
+    // ami: "ami-06835d15c4de57810",
     keyName: sshKey.keyName,
     userData: $interpolate`#!/bin/bash
-sudo usermod -aG docker ubuntu
-newgrp docker
+sudo rm /etc/sysconfig/docker
+echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
+echo DAEMON_PIDFILE_TIMEOUT=10 | sud o tee -a /etc/sysconfig/docker
+echo OPTIONS="--default-ulimit nofile=32768:65536" | sudo tee -a /etc/sysconfig/docker
 sudo tee "/etc/docker/daemon.json" > /dev/null <<EOF
 {
     "default-runtime": "nvidia",
@@ -80,46 +82,30 @@ sudo tee "/etc/docker/daemon.json" > /dev/null <<EOF
 }
 EOF
 sudo systemctl restart docker
-curl -O https://s3.us-east-1.amazonaws.com/amazon-ecs-agent-us-east-1/amazon-ecs-init-latest.amd64.deb
-sudo dpkg -i amazon-ecs-init-latest.amd64.deb
 echo ECS_CLUSTER='${ecsCluster.name}' | sudo tee -a /etc/ecs/ecs.config
 echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
 echo ECS_CONTAINER_STOP_TIMEOUT=3h | sudo tee -a /etc/ecs/ecs.config
-sudo systemctl enable ecs
-sudo systemctl start ecs
+echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
 `,
-    // instanceMarketOptions: {
-    //     marketType: "spot",
-    //     spotOptions: {
-    //         maxPrice: "0.2",
-    //         spotInstanceType: "persistent",
-    //         instanceInterruptionBehavior: "stop"
-    //     },
-    // },
+    instanceMarketOptions: {
+        marketType: "spot",
+        spotOptions: {
+            maxPrice: "0.2",
+            spotInstanceType: "persistent",
+            instanceInterruptionBehavior: "stop"
+        },
+    },
     iamInstanceProfile: ecsInstanceProfile,
 });
 
-// echo ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true | sudo tee -a /etc/ecs/ecs.config
-// echo ECS_LOG_DRIVER=awslogs | sudo tee -a /etc/ecs/ecs.config
-
-// sudo mkdir -p /etc/sysconfig/
-// echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
-// echo OPTIONS="--default-ulimit nofile=32768:65536 --default-runtime nvidia" | sudo tee -a /etc/sysconfig/docker
-// echo DAEMON_PIDFILE_TIMEOUT=10 | sudo tee -a /etc/sysconfig/docker
-// sudo systemctl restart docker
-
-// echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
-// echo ECS_ENABLE_CONTAINER_METADATA=true | sudo tee -a /etc/ecs/ecs.config
-// echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
-
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
-    name: "/ecs/bottlerocket",
+    name: "/ecs/nestrigpu",
     retentionInDays: 7,
 });
 
 // Create a Task Definition for the ECS service to test it
 const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
-    family: "ecsTest",
+    family: "NestriGPUTask",
     requiresCompatibilities: ["EC2"],
     containerDefinitions: JSON.stringify([{
         "essential": true,
@@ -127,6 +113,12 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
         "memory": 1024,
         "cpu": 200,
         "gpu": 1,
+        "resourceRequirements": [
+            {
+                type: "GPU",
+                value: "1"
+            }
+        ],
         "image": "ghcr.io/nestrilabs/nestri/runner:nightly",
         "environment": [
             {
@@ -151,7 +143,7 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
             },
             {
                 name: "NESTRI_PARAMS",
-                value: "'--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card1"
+                value: "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card0"
             },
         ],
         "disableNetworking": false,
@@ -161,20 +153,13 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
         "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-                "awslogs-group": "/ecs/bottlerocket",
+                "awslogs-group": "/ecs/nestrigpu",
                 "awslogs-region": "us-east-1",
-                "awslogs-stream-prefix": "demo-gpu"
+                "awslogs-stream-prefix": "nestri-gpu-task"
             }
         }
     }])
 });
-
-// "resourceRequirements": [
-//             {
-//                 type: "GPU",
-//                 value: "1"
-//             }
-//         ],
 
 // RESOLUTION: "1920x1080",
 // FRAMERATE: "60",
