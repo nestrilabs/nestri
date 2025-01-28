@@ -14,6 +14,7 @@ export default $config({
         aws: "6.67.0",
         tls: "5.1.0",
         command: "0.0.1-testwindows.signing",
+        awsx: "2.21.0",
       },
     };
   },
