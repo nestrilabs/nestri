@@ -11,7 +11,6 @@ const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
 });
 
 // Find the latest Ecs GPU AMI
-// FIXME: Problematic for Nestri GPU
 const ami = aws.ec2.getAmi({
     filters: [
         {
@@ -63,8 +62,8 @@ const keyPath = privateKey.privateKeyOpenssh.apply((key) => {
 const server = new aws.ec2.Instance("NestriGPU", {
     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
     ami: ami.then((ami) => ami.id),
-    // ami: "ami-06835d15c4de57810",
     keyName: sshKey.keyName,
+    //sudo nvidia-ctk runtime configure --runtime=docker [--set-as-default]
     userData: $interpolate`#!/bin/bash
 sudo rm /etc/sysconfig/docker
 echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
@@ -134,10 +133,6 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
                 value: "60"
             },
             {
-                name: "NVIDIA_DRIVER_CAPABILITIES",
-                value: "all"
-            },
-            {
                 name: "RELAY_URL",
                 value: "https://relay.dathorse.com"
             },
@@ -160,9 +155,3 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
         }
     }])
 });
-
-// RESOLUTION: "1920x1080",
-// FRAMERATE: "60",
-// NVIDIA_DRIVER_CAPABILITIES: "all",
-// RELAY_URL: "https://relay.dathorse.com",
-// NESTRI_PARAMS: "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card1"
