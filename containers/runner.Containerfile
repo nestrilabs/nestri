@@ -1,5 +1,5 @@
 # Container build arguments #
-ARG BASE_IMAGE=docker.io/cachyos/cachyos-v3:latest
+ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 
 #******************************************************************************
 #                                                                                                          nestri-server-builder
@@ -71,10 +71,10 @@ FROM ${BASE_IMAGE} AS runtime
 ## Install Graphics, Media, and Audio packages ##
 RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
     sed -i "s/#Color/Color/" /etc/pacman.conf && \
-    pacman --noconfirm -Sy archlinux-keyring && \
+    pacman --noconfirm -Syu archlinux-keyring && \
     dirmngr </dev/null > /dev/null 2>&1 && \
     # Install mesa-git before Steam for simplicity
-    pacman --noconfirm -Sy mesa-git && \
+    pacman --noconfirm -Sy mesa && \
     # Install Steam
     pacman --noconfirm -Sy steam steam-native-runtime && \
     # Clean up pacman cache
@@ -160,6 +160,7 @@ ENV XDG_RUNTIME_DIR=/run/user/${UID} \
 
 # Required for NVIDIA.. they want to be special like that #
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV NVIDIA_VISIBLE_DEVICES=all
 
 # DBus run directory creation #
 RUN mkdir -p /run/dbus
