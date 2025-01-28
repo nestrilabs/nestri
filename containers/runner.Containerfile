@@ -160,6 +160,7 @@ ENV XDG_RUNTIME_DIR=/run/user/${UID} \
 
 # Required for NVIDIA.. they want to be special like that #
 ENV NVIDIA_DRIVER_CAPABILITIES=all
+ENV NVIDIA_VISIBLE_DEVICES=all
 
 # DBus run directory creation #
 RUN mkdir -p /run/dbus
