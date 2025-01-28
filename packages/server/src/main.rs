@@ -5,7 +5,6 @@ mod latency;
 mod messages;
 mod nestrisink;
 mod websocket;
-mod proto;
 
 use crate::args::encoding_args;
 use crate::nestrisink::NestriSignaller;

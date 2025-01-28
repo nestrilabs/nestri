@@ -10,10 +10,10 @@ use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex, Notify};
 use tokio::time::sleep;
-use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
 
-type Callback = Box<dyn Fn(String) + Send + Sync>;
+type Callback = Box<dyn Fn(Vec<u8>) + Send + Sync>;
 type WSRead = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 type WSWrite = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 
@@ -23,7 +23,7 @@ pub struct NestriWebSocket {
     reader: Arc<Mutex<Option<WSRead>>>,
     writer: Arc<Mutex<Option<WSWrite>>>,
     callbacks: Arc<RwLock<HashMap<String, Callback>>>,
-    message_tx: mpsc::UnboundedSender<String>,
+    message_tx: mpsc::UnboundedSender<Vec<u8>>,
     reconnected_notify: Arc<Notify>,
 }
 impl NestriWebSocket {
@@ -95,8 +95,8 @@ impl NestriWebSocket {
                 while let Some(message_result) = ws_read.next().await {
                     match message_result {
                         Ok(message) => {
-                            let data = message.into_text().expect("failed to turn message into text");
-                            let base_message = match decode_message(data.to_string()) {
+                            let data = message.into_data();
+                            let base_message = match decode_message(&data) {
                                 Ok(base_message) => base_message,
                                 Err(e) => {
                                     eprintln!("Failed to decode message: {:?}", e);
@@ -107,14 +107,11 @@ impl NestriWebSocket {
                             let callbacks_lock = callbacks.read().unwrap();
                             if let Some(callback) = callbacks_lock.get(&base_message.payload_type) {
                                 let data = data.clone();
-                                callback(data.to_string());
+                                callback(data);
                             }
                         }
                         Err(e) => {
-                            eprintln!(
-                                "Error receiving message: {:?}, reconnecting in 3 seconds...",
-                                e
-                            );
+                            eprintln!("Error receiving message: {:?}, reconnecting in 3 seconds...", e);
                             sleep(Duration::from_secs(3)).await;
                             self_clone.reconnect().await.unwrap();
                             break; // Break the inner loop to get a new ws_read
@@ -126,7 +123,7 @@ impl NestriWebSocket {
         });
     }
 
-    fn spawn_write_loop(&self, mut message_rx: mpsc::UnboundedReceiver<String>) {
+    fn spawn_write_loop(&self, mut message_rx: mpsc::UnboundedReceiver<Vec<u8>>) {
         let writer = self.writer.clone();
         let self_clone = self.clone();
 
@@ -139,10 +136,7 @@ impl NestriWebSocket {
                         let mut writer_lock = writer.lock().await;
                         if let Some(writer) = writer_lock.as_mut() {
                             // Try to send the message over the WebSocket
-                            match writer
-                                .send(Message::Text(Utf8Bytes::from(message.clone())))
-                                .await
-                            {
+                            match writer.send(Message::Binary(message.clone())).await {
                                 Ok(_) => {
                                     // Message sent successfully
                                     break;
@@ -202,7 +196,7 @@ impl NestriWebSocket {
     }
 
     /// Send a message through the WebSocket
-    pub fn send_message(&self, message: String) -> Result<(), Box<dyn Error>> {
+    pub fn send_message(&self, message: Vec<u8>) -> Result<(), Box<dyn Error>> {
         self.message_tx
             .send(message)
             .map_err(|e| format!("Failed to send message: {:?}", e).into())
@@ -211,7 +205,7 @@ impl NestriWebSocket {
     /// Register a callback for a specific response type
     pub fn register_callback<F>(&self, response_type: &str, callback: F)
     where
-        F: Fn(String) + Send + Sync + 'static,
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
     {
         let mut callbacks_lock = self.callbacks.write().unwrap();
         callbacks_lock.insert(response_type.to_string(), Box::new(callback));
@@ -240,7 +234,6 @@ impl Log for NestriWebSocket {
             let log_message = MessageLog {
                 base: MessageBase {
                     payload_type: "log".to_string(),
-                    latency: None,
                 },
                 level,
                 message,

@@ -6,10 +6,12 @@ type TimestampEntry = {
 export class LatencyTracker {
   sequence_id: string;
   timestamps: TimestampEntry[];
+  metadata?: Record<string, any>;
 
-  constructor(sequence_id: string, timestamps: TimestampEntry[] = []) {
+  constructor(sequence_id: string, timestamps: TimestampEntry[] = [], metadata: Record<string, any> = {}) {
     this.sequence_id = sequence_id;
     this.timestamps = timestamps;
+    this.metadata = metadata;
   }
 
   addTimestamp(stage: string): void {
@@ -38,6 +40,7 @@ export class LatencyTracker {
         // Fill nanoseconds with zeros to match the expected format
         time: entry.time.toISOString().replace(/\.(\d+)Z$/, ".$1000000Z"),
       })),
+      metadata: this.metadata,
     };
   }
 
@@ -46,6 +49,6 @@ export class LatencyTracker {
       stage: ts.stage,
       time: new Date(ts.time),
     }));
-    return new LatencyTracker(json.sequence_id, timestamps);
+    return new LatencyTracker(json.sequence_id, timestamps, json.metadata);
   }
 }

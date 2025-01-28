@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"encoding/json"
 	"github.com/gorilla/websocket"
 	"log"
 	"sync"
@@ -11,22 +10,22 @@ import (
 type SafeWebSocket struct {
 	*websocket.Conn
 	sync.Mutex
-	closeCallback func()                       // OnClose callback
-	callbacks     map[string]OnMessageCallback // MessageBase type -> callback
+	closeCallback   func()                       // OnClose callback
+	binaryCallbacks map[string]OnMessageCallback // MessageBase type -> callback
 }
 
 // NewSafeWebSocket creates a new SafeWebSocket from *websocket.Conn
 func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 	ws := &SafeWebSocket{
-		Conn:          conn,
-		closeCallback: nil,
-		callbacks:     make(map[string]OnMessageCallback),
+		Conn:            conn,
+		closeCallback:   nil,
+		binaryCallbacks: make(map[string]OnMessageCallback),
 	}
 
-	// Launch a goroutine to handle messages
+	// Launch a goroutine to handle binary messages
 	go func() {
 		for {
-			// Read message
+			// Read binary message
 			kind, data, err := ws.Conn.ReadMessage()
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNoStatusReceived) {
 				// If unexpected close error, break
@@ -43,23 +42,22 @@ func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 
 			switch kind {
 			case websocket.TextMessage:
+				// Ignore, we use binary messages
+				continue
+			case websocket.BinaryMessage:
 				// Decode message
 				var msg MessageBase
-				if err = json.Unmarshal(data, &msg); err != nil {
-					log.Printf("Failed to decode text WebSocket message, reason: %s\n", err)
+				if err = DecodeMessage(data, &msg); err != nil {
+					log.Printf("Failed to decode binary WebSocket message, reason: %s\n", err)
 					continue
 				}
 
 				// Handle message type callback
-				if callback, ok := ws.callbacks[msg.PayloadType]; ok {
+				if callback, ok := ws.binaryCallbacks[msg.PayloadType]; ok {
 					callback(data)
 				} // TODO: Log unknown message type?
-				break
-			case websocket.BinaryMessage:
-				break
 			default:
 				log.Printf("Unknown WebSocket message type: %d\n", kind)
-				break
 			}
 		}
 
@@ -90,18 +88,18 @@ func (ws *SafeWebSocket) SendBinary(data []byte) error {
 func (ws *SafeWebSocket) RegisterMessageCallback(msgType string, callback OnMessageCallback) {
 	ws.Lock()
 	defer ws.Unlock()
-	if ws.callbacks == nil {
-		ws.callbacks = make(map[string]OnMessageCallback)
+	if ws.binaryCallbacks == nil {
+		ws.binaryCallbacks = make(map[string]OnMessageCallback)
 	}
-	ws.callbacks[msgType] = callback
+	ws.binaryCallbacks[msgType] = callback
 }
 
 // UnregisterMessageCallback removes the callback for binary message of given type
 func (ws *SafeWebSocket) UnregisterMessageCallback(msgType string) {
 	ws.Lock()
 	defer ws.Unlock()
-	if ws.callbacks != nil {
-		delete(ws.callbacks, msgType)
+	if ws.binaryCallbacks != nil {
+		delete(ws.binaryCallbacks, msgType)
 	}
 }
 
@@ -110,7 +108,7 @@ func (ws *SafeWebSocket) RegisterOnClose(callback func()) {
 	ws.closeCallback = func() {
 		// Clear our callbacks
 		ws.Lock()
-		ws.callbacks = nil
+		ws.binaryCallbacks = nil
 		ws.Unlock()
 		// Call the callback
 		callback()

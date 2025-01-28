@@ -48,10 +48,7 @@ impl AppArgs {
                 .unwrap()
                 .parse::<u32>()
                 .unwrap_or(60),
-            relay_url: matches
-                .get_one::<String>("relay-url")
-                .expect("relay url cannot be empty")
-                .clone(),
+            relay_url: matches.get_one::<String>("relay-url").unwrap().clone(),
             // Generate random room name if not provided
             room: matches
                 .get_one::<String>("room")

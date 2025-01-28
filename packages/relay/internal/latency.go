@@ -2,21 +2,20 @@ package relay
 
 import (
 	"fmt"
-	"google.golang.org/protobuf/types/known/timestamppb"
-	gen "relay/internal/proto"
 	"time"
 )
 
 type TimestampEntry struct {
-	Stage string    `json:"stage"`
-	Time  time.Time `json:"time"`
+	Stage string `json:"stage"`
+	Time  string `json:"time"` // ISO 8601 string
 }
 
 // LatencyTracker provides a generic structure for measuring time taken at various stages in message processing.
 // It can be embedded in message structs for tracking the flow of data and calculating round-trip latency.
 type LatencyTracker struct {
-	SequenceID string           `json:"sequence_id"`
-	Timestamps []TimestampEntry `json:"timestamps"`
+	SequenceID string            `json:"sequence_id"`
+	Timestamps []TimestampEntry  `json:"timestamps"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
 // NewLatencyTracker initializes a new LatencyTracker with the given sequence ID
@@ -24,6 +23,7 @@ func NewLatencyTracker(sequenceID string) *LatencyTracker {
 	return &LatencyTracker{
 		SequenceID: sequenceID,
 		Timestamps: make([]TimestampEntry, 0),
+		Metadata:   make(map[string]string),
 	}
 }
 
@@ -32,7 +32,7 @@ func (lt *LatencyTracker) AddTimestamp(stage string) {
 	lt.Timestamps = append(lt.Timestamps, TimestampEntry{
 		Stage: stage,
 		// Ensure extremely precise UTC RFC3339 timestamps (down to nanoseconds)
-		Time: time.Now().UTC(),
+		Time: time.Now().UTC().Format(time.RFC3339Nano),
 	})
 }
 
@@ -44,11 +44,15 @@ func (lt *LatencyTracker) TotalLatency() (int64, error) {
 
 	var earliest, latest time.Time
 	for _, ts := range lt.Timestamps {
-		if earliest.IsZero() || ts.Time.Before(earliest) {
-			earliest = ts.Time
+		t, err := time.Parse(time.RFC3339, ts.Time)
+		if err != nil {
+			return 0, err
 		}
-		if latest.IsZero() || ts.Time.After(latest) {
-			latest = ts.Time
+		if earliest.IsZero() || t.Before(earliest) {
+			earliest = t
+		}
+		if latest.IsZero() || t.After(latest) {
+			latest = t
 		}
 	}
 
@@ -63,13 +67,14 @@ func (lt *LatencyTracker) PainPoints(threshold time.Duration) []string {
 
 	for _, ts := range lt.Timestamps {
 		stage := ts.Stage
+		t := ts.Time
 		if lastStage == "" {
 			lastStage = stage
-			lastTime = ts.Time
+			lastTime, _ = time.Parse(time.RFC3339, t)
 			continue
 		}
 
-		currentTime := ts.Time
+		currentTime, _ := time.Parse(time.RFC3339, t)
 		if currentTime.Sub(lastTime) > threshold {
 			painPoints = append(painPoints, fmt.Sprintf("%s -> %s", lastStage, stage))
 		}
@@ -82,7 +87,7 @@ func (lt *LatencyTracker) PainPoints(threshold time.Duration) []string {
 
 // StageLatency calculates the time taken between two specific stages.
 func (lt *LatencyTracker) StageLatency(startStage, endStage string) (time.Duration, error) {
-	var startTime, endTime time.Time
+	startTime, endTime := "", ""
 	for _, ts := range lt.Timestamps {
 		if ts.Stage == startStage {
 			startTime = ts.Time
@@ -92,41 +97,18 @@ func (lt *LatencyTracker) StageLatency(startStage, endStage string) (time.Durati
 		}
 	}
 
-	/*if startTime == "" || endTime == "" {
+	if startTime == "" || endTime == "" {
 		return 0, fmt.Errorf("missing timestamps for stages: %s -> %s", startStage, endStage)
-	}*/
-
-	return endTime.Sub(startTime), nil
-}
-
-func LatencyTrackerFromProto(protolt *gen.ProtoLatencyTracker) *LatencyTracker {
-	ret := &LatencyTracker{
-		SequenceID: protolt.GetSequenceId(),
-		Timestamps: make([]TimestampEntry, 0),
 	}
 
-	for _, ts := range protolt.GetTimestamps() {
-		ret.Timestamps = append(ret.Timestamps, TimestampEntry{
-			Stage: ts.GetStage(),
-			Time:  ts.GetTime().AsTime(),
-		})
+	start, err := time.Parse(time.RFC3339, startTime)
+	if err != nil {
+		return 0, err
+	}
+	end, err := time.Parse(time.RFC3339, endTime)
+	if err != nil {
+		return 0, err
 	}
 
-	return ret
-}
-
-func (lt *LatencyTracker) ToProto() *gen.ProtoLatencyTracker {
-	ret := &gen.ProtoLatencyTracker{
-		SequenceId: lt.SequenceID,
-		Timestamps: make([]*gen.ProtoTimestampEntry, len(lt.Timestamps)),
-	}
-
-	for i, timestamp := range lt.Timestamps {
-		ret.Timestamps[i] = &gen.ProtoTimestampEntry{
-			Stage: timestamp.Stage,
-			Time:  timestamppb.New(timestamp.Time),
-		}
-	}
-
-	return ret
+	return end.Sub(start), nil
 }

@@ -6,6 +6,8 @@ import {
   MessageAnswer,
   JoinerType,
   AnswerType,
+  decodeMessage,
+  encodeMessage
 } from "./messages";
 
 export class WebRTCStream {
@@ -38,16 +40,16 @@ export class WebRTCStream {
         payload_type: "join",
         joiner_type: JoinerType.JoinerClient
       };
-      this._ws!.send(JSON.stringify(joinMessage));
+      this._ws!.send(encodeMessage(joinMessage));
     }
 
     let iceHolder: RTCIceCandidateInit[] = [];
 
     this._ws.onmessage = async (e) => {
-      // allow only JSON
-      if (typeof e.data === "object") return;
+      // allow only binary
+      if (typeof e.data !== "object") return;
       if (!e.data) return;
-      const message = JSON.parse(e.data) as MessageBase;
+      const message = await decodeMessage<MessageBase>(e.data);
       switch (message.payload_type) {
         case "sdp":
           if (!this._pc) {
@@ -61,7 +63,7 @@ export class WebRTCStream {
           // Force stereo in Chromium browsers
           answer.sdp = this.forceOpusStereo(answer.sdp!);
           await this._pc!.setLocalDescription(answer);
-          this._ws!.send(JSON.stringify({
+          this._ws!.send(encodeMessage({
             payload_type: "sdp",
             sdp: answer
           }));
@@ -152,7 +154,7 @@ export class WebRTCStream {
           payload_type: "ice",
           candidate: e.candidate
         };
-        this._ws!.send(JSON.stringify(message));
+        this._ws!.send(encodeMessage(message));
       }
     }
 

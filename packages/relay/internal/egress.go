@@ -1,11 +1,8 @@
 package relay
 
 import (
-	"encoding/json"
 	"github.com/pion/webrtc/v4"
-	"google.golang.org/protobuf/proto"
 	"log"
-	gen "relay/internal/proto"
 )
 
 func participantHandler(participant *Participant, room *Room) {
@@ -57,22 +54,15 @@ func participantHandler(participant *Participant, room *Room) {
 		if room.DataChannel != nil {
 			// If debug mode, decode and add our timestamp, otherwise just send to room
 			if GetFlags().Debug {
-				var inputMsg gen.ProtoMessageInput
-				if err = proto.Unmarshal(data, &inputMsg); err != nil {
+				var inputMsg MessageInput
+				if err = DecodeMessage(data, &inputMsg); err != nil {
 					log.Printf("Failed to decode input message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 					return
 				}
-
-				protoLat := inputMsg.GetMessageBase().GetLatency()
-				if protoLat != nil {
-					lat := LatencyTrackerFromProto(protoLat)
-					lat.AddTimestamp("relay_to_node")
-					protoLat = lat.ToProto()
-				}
-
-				// Marshal and send
-				if data, err = proto.Marshal(&inputMsg); err != nil {
-					log.Printf("Failed to marshal input message for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+				inputMsg.LatencyTracker.AddTimestamp("relay_to_node")
+				// Encode and send
+				if data, err = EncodeMessage(inputMsg); err != nil {
+					log.Printf("Failed to encode input message for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 					return
 				}
 				if err = room.DataChannel.SendBinary(data); err != nil {
@@ -104,7 +94,7 @@ func participantHandler(participant *Participant, room *Room) {
 	// ICE callback
 	participant.WebSocket.RegisterMessageCallback("ice", func(data []byte) {
 		var iceMsg MessageICECandidate
-		if err = json.Unmarshal(data, &iceMsg); err != nil {
+		if err = DecodeMessage(data, &iceMsg); err != nil {
 			log.Printf("Failed to decode ICE message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 			return
 		}
@@ -130,7 +120,7 @@ func participantHandler(participant *Participant, room *Room) {
 	// SDP answer callback
 	participant.WebSocket.RegisterMessageCallback("sdp", func(data []byte) {
 		var sdpMsg MessageSDP
-		if err = json.Unmarshal(data, &sdpMsg); err != nil {
+		if err = DecodeMessage(data, &sdpMsg); err != nil {
 			log.Printf("Failed to decode SDP message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 			return
 		}
@@ -140,7 +130,7 @@ func participantHandler(participant *Participant, room *Room) {
 	// Log callback
 	participant.WebSocket.RegisterMessageCallback("log", func(data []byte) {
 		var logMsg MessageLog
-		if err = json.Unmarshal(data, &logMsg); err != nil {
+		if err = DecodeMessage(data, &logMsg); err != nil {
 			log.Printf("Failed to decode log message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 			return
 		}

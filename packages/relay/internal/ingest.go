@@ -1,7 +1,6 @@
 package relay
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/pion/webrtc/v4"
@@ -135,7 +134,7 @@ func ingestHandler(room *Room) {
 	// ICE callback
 	room.WebSocket.RegisterMessageCallback("ice", func(data []byte) {
 		var iceMsg MessageICECandidate
-		if err = json.Unmarshal(data, &iceMsg); err != nil {
+		if err = DecodeMessage(data, &iceMsg); err != nil {
 			log.Printf("Failed to decode ICE candidate message from ingest for room: '%s' - reason: %s\n", room.Name, err)
 			return
 		}
@@ -166,7 +165,7 @@ func ingestHandler(room *Room) {
 	// SDP offer callback
 	room.WebSocket.RegisterMessageCallback("sdp", func(data []byte) {
 		var sdpMsg MessageSDP
-		if err = json.Unmarshal(data, &sdpMsg); err != nil {
+		if err = DecodeMessage(data, &sdpMsg); err != nil {
 			log.Printf("Failed to decode SDP message from ingest for room: '%s' - reason: %s\n", room.Name, err)
 			return
 		}
@@ -183,7 +182,7 @@ func ingestHandler(room *Room) {
 	// Log callback
 	room.WebSocket.RegisterMessageCallback("log", func(data []byte) {
 		var logMsg MessageLog
-		if err = json.Unmarshal(data, &logMsg); err != nil {
+		if err = DecodeMessage(data, &logMsg); err != nil {
 			log.Printf("Failed to decode log message from ingest for room: '%s' - reason: %s\n", room.Name, err)
 			return
 		}
@@ -193,7 +192,7 @@ func ingestHandler(room *Room) {
 	// Metrics callback
 	room.WebSocket.RegisterMessageCallback("metrics", func(data []byte) {
 		var metricsMsg MessageMetrics
-		if err = json.Unmarshal(data, &metricsMsg); err != nil {
+		if err = DecodeMessage(data, &metricsMsg); err != nil {
 			log.Printf("Failed to decode metrics message from ingest for room: '%s' - reason: %s\n", room.Name, err)
 			return
 		}
