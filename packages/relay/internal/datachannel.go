@@ -2,20 +2,22 @@ package relay
 
 import (
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 	"log"
+	gen "relay/internal/proto"
 )
 
 // NestriDataChannel is a custom data channel with callbacks
 type NestriDataChannel struct {
 	*webrtc.DataChannel
-	binaryCallbacks map[string]OnMessageCallback // MessageBase type -> callback
+	callbacks map[string]OnMessageCallback // MessageBase type -> callback
 }
 
 // NewNestriDataChannel creates a new NestriDataChannel from *webrtc.DataChannel
 func NewNestriDataChannel(dc *webrtc.DataChannel) *NestriDataChannel {
 	ndc := &NestriDataChannel{
-		DataChannel:     dc,
-		binaryCallbacks: make(map[string]OnMessageCallback),
+		DataChannel: dc,
+		callbacks:   make(map[string]OnMessageCallback),
 	}
 
 	// Handler for incoming messages
@@ -26,14 +28,14 @@ func NewNestriDataChannel(dc *webrtc.DataChannel) *NestriDataChannel {
 		}
 
 		// Decode message
-		var base MessageBase
-		if err := DecodeMessage(msg.Data, &base); err != nil {
+		var base gen.ProtoMessageInput
+		if err := proto.Unmarshal(msg.Data, &base); err != nil {
 			log.Printf("Failed to decode binary DataChannel message, reason: %s\n", err)
 			return
 		}
 
 		// Handle message type callback
-		if callback, ok := ndc.binaryCallbacks[base.PayloadType]; ok {
+		if callback, ok := ndc.callbacks["input"]; ok {
 			go callback(msg.Data)
 		} // TODO: Log unknown message type?
 	})
@@ -48,16 +50,16 @@ func (ndc *NestriDataChannel) SendBinary(data []byte) error {
 
 // RegisterMessageCallback registers a callback for a given binary message type
 func (ndc *NestriDataChannel) RegisterMessageCallback(msgType string, callback OnMessageCallback) {
-	if ndc.binaryCallbacks == nil {
-		ndc.binaryCallbacks = make(map[string]OnMessageCallback)
+	if ndc.callbacks == nil {
+		ndc.callbacks = make(map[string]OnMessageCallback)
 	}
-	ndc.binaryCallbacks[msgType] = callback
+	ndc.callbacks[msgType] = callback
 }
 
 // UnregisterMessageCallback removes the callback for a given binary message type
 func (ndc *NestriDataChannel) UnregisterMessageCallback(msgType string) {
-	if ndc.binaryCallbacks != nil {
-		delete(ndc.binaryCallbacks, msgType)
+	if ndc.callbacks != nil {
+		delete(ndc.callbacks, msgType)
 	}
 }
 

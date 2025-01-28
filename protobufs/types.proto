@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+option go_package = "relay/internal/proto";
+
+package proto;
+
+// MouseMove message
+message ProtoMouseMove {
+  string type = 1; // Fixed value "MouseMove"
+  int32 x = 2;
+  int32 y = 3;
+}
+
+// MouseMoveAbs message
+message ProtoMouseMoveAbs {
+  string type = 1; // Fixed value "MouseMoveAbs"
+  int32 x = 2;
+  int32 y = 3;
+}
+
+// MouseWheel message
+message ProtoMouseWheel {
+  string type = 1; // Fixed value "MouseWheel"
+  int32 x = 2;
+  int32 y = 3;
+}
+
+// MouseKeyDown message
+message ProtoMouseKeyDown {
+  string type = 1; // Fixed value "MouseKeyDown"
+  int32 key = 2;
+}
+
+// MouseKeyUp message
+message ProtoMouseKeyUp {
+  string type = 1; // Fixed value "MouseKeyUp"
+  int32 key = 2;
+}
+
+// KeyDown message
+message ProtoKeyDown {
+  string type = 1; // Fixed value "KeyDown"
+  int32 key = 2;
+}
+
+// KeyUp message
+message ProtoKeyUp {
+  string type = 1; // Fixed value "KeyUp"
+  int32 key = 2;
+}
+
+// Union of all Input types
+message ProtoInput {
+  oneof input_type {
+    ProtoMouseMove mouse_move = 1;
+    ProtoMouseMoveAbs mouse_move_abs = 2;
+    ProtoMouseWheel mouse_wheel = 3;
+    ProtoMouseKeyDown mouse_key_down = 4;
+    ProtoMouseKeyUp mouse_key_up = 5;
+    ProtoKeyDown key_down = 6;
+    ProtoKeyUp key_up = 7;
+  }
+}
