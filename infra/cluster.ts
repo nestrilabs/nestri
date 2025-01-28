@@ -10,17 +10,18 @@ const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
     rsaBits: 4096,
 });
 
-// Find the latest Ecs GPU AMI
-const ami = aws.ec2.getAmi({
-    filters: [
-        {
-            name: "name",
-            values: ["amzn2-ami-ecs-gpu-hvm-*"], //Would have wanted to use BottleRocket instead, but we'd have to make so many sacrifices
-        },
-    ],
-    mostRecent: true,
-    owners: ["591542846629"], //amazon
-});
+// // Find the latest Ecs GPU AMI
+//FIXME: Problematic for Nestri GPU
+// const ami = aws.ec2.getAmi({
+//     filters: [
+//         {
+//             name: "name",
+//             values: ["amzn2-ami-ecs-gpu-hvm-*"], //Would have wanted to use BottleRocket instead, but we'd have to make so many sacrifices
+//         },
+//     ],
+//     mostRecent: true,
+//     owners: ["591542846629"], //amazon
+// });
 
 const ecsInstanceRole = new aws.iam.Role("NestriGPUInstanceRole", {
     name: "GPUAssumeRole",
@@ -59,33 +60,42 @@ const keyPath = privateKey.privateKeyOpenssh.apply((key) => {
 });
 
 
-const server = new aws.ec2.Instance("NestriGPU", {
-    instanceType: aws.ec2.InstanceType.G4dn_XLarge,
-    ami: ami.then((ami) => ami.id),
-    keyName: sshKey.keyName,
-    userData: $interpolate`#!/bin/bash
-echo ECS_CLUSTER='${ecsCluster.name}' >> /etc/ecs/ecs.config
-echo ECS_RESERVED_MEMORY=256 >> /etc/ecs/ecs.config
-echo ECS_RESERVED_MEMORY=300 >> /etc/ecs/ecs.config
-echo ECS_CONTAINER_STOP_TIMEOUT=3h >> /etc/ecs/ecs.config
-echo ECS_ENABLE_CONTAINER_METADATA=true >> /etc/ecs/ecs.config
-echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true >> /etc/ecs/ecs.config
-sudo rm /etc/sysconfig/docker
-echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
-echo OPTIONS="--default-ulimit nofile=32768:65536 --default-runtime nvidia" | sudo tee -a /etc/sysconfig/docker
-echo DAEMON_PIDFILE_TIMEOUT=10 | sudo tee -a /etc/sysconfig/docker
-sudo systemctl restart docker
-`,
-    // instanceMarketOptions: {
-    //     marketType: "spot",
-    //     spotOptions: {
-    //         maxPrice: "0.2",
-    //         spotInstanceType: "persistent",
-    //         instanceInterruptionBehavior: "stop"
-    //     },
-    // },
-    iamInstanceProfile: ecsInstanceProfile,
-});
+// const server = new aws.ec2.Instance("NestriGPU", {
+//     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
+//     // ami: ami.then((ami) => ami.id),
+//     ami: "ami-06835d15c4de57810",
+//     keyName: sshKey.keyName,
+//     userData: $interpolate`#!/bin/bash
+// sudo mkdir -p /etc/sysconfig/
+// echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
+// echo OPTIONS="--default-ulimit nofile=32768:65536 --default-runtime nvidia" | sudo tee -a /etc/sysconfig/docker
+// echo DAEMON_PIDFILE_TIMEOUT=10 | sudo tee -a /etc/sysconfig/docker
+// sudo usermod -aG docker ubuntu
+// newgrp docker
+// sudo systemctl restart docker
+// curl -O https://s3.us-east-1.amazonaws.com/amazon-ecs-agent-us-east-1/amazon-ecs-init-latest.amd64.deb
+// sudo dpkg -i amazon-ecs-init-latest.amd64.deb
+// echo ECS_CLUSTER='${ecsCluster.name}' | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_RESERVED_MEMORY=300 | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_CONTAINER_STOP_TIMEOUT=3h | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_ENABLE_CONTAINER_METADATA=true | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_ENABLE_AWSLOGS_EXECUTIONROLE_OVERRIDE=true | sudo tee -a /etc/ecs/ecs.config
+// echo ECS_LOG_DRIVER=awslogs | sudo tee -a /etc/ecs/ecs.config
+// sudo systemctl enable ecs
+// sudo systemctl start ecs
+// `,
+//     // instanceMarketOptions: {
+//     //     marketType: "spot",
+//     //     spotOptions: {
+//     //         maxPrice: "0.2",
+//     //         spotInstanceType: "persistent",
+//     //         instanceInterruptionBehavior: "stop"
+//     //     },
+//     // },
+//     iamInstanceProfile: ecsInstanceProfile,
+// });
 
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
     name: "/ecs/bottlerocket",
