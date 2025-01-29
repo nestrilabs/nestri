@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "relay/internal/proto";
+
+package proto;
+
+message ProtoTimestampEntry {
+  string stage = 1;
+  google.protobuf.Timestamp time = 2;
+};
+
+message ProtoLatencyTracker {
+    string sequence_id = 1;
+    repeated ProtoTimestampEntry timestamps = 2;
+}

@@ -5,5 +5,12 @@
     "sideEffects": false,
     "exports": {
         ".": "./src/index.ts"
+    },
+    "devDependencies": {
+        "@bufbuild/buf": "^1.50.0",
+        "@bufbuild/protoc-gen-es": "^2.2.3"
+    },
+    "dependencies": {
+        "@bufbuild/protobuf": "^2.2.3"
     }
 }

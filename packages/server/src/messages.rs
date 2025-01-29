@@ -1,50 +1,14 @@
-use std::error::Error;
-use std::io::{Read, Write};
-use flate2::Compression;
-use flate2::read::GzDecoder;
-use flate2::write::GzEncoder;
+use crate::latency::LatencyTracker;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::{FromPrimitive, ToPrimitive};
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
-use crate::latency::LatencyTracker;
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(tag = "type")]
-pub enum InputMessage {
-    #[serde(rename = "mousemove")]
-    MouseMove { x: i32, y: i32 },
-
-    #[serde(rename = "mousemoveabs")]
-    MouseMoveAbs { x: i32, y: i32 },
-
-    #[serde(rename = "wheel")]
-    Wheel { x: f64, y: f64 },
-
-    #[serde(rename = "mousedown")]
-    MouseDown { key: i32 },
-    // Add other variants as needed
-    #[serde(rename = "mouseup")]
-    MouseUp { key: i32 },
-
-    #[serde(rename = "keydown")]
-    KeyDown { key: i32 },
-
-    #[serde(rename = "keyup")]
-    KeyUp { key: i32 },
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MessageBase {
     pub payload_type: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MessageInput {
-    #[serde(flatten)]
-    pub base: MessageBase,
-    pub data: String,
     pub latency: Option<LatencyTracker>,
 }
 
@@ -136,34 +100,21 @@ pub struct MessageAnswer {
     pub answer_type: AnswerType,
 }
 
-pub fn encode_message<T: Serialize>(message: &T) -> Result<Vec<u8>, Box<dyn Error>> {
+pub fn encode_message<T: Serialize>(message: &T) -> Result<String, Box<dyn Error>> {
     // Serialize the message to JSON
     let json = serde_json::to_string(message)?;
-
-    // Compress the JSON using gzip
-    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(json.as_bytes())?;
-    let compressed_data = encoder.finish()?;
-
-    Ok(compressed_data)
+    Ok(json)
 }
 
-pub fn decode_message(data: &[u8]) -> Result<MessageBase, Box<dyn Error + Send + Sync>> {
-    let mut decoder = GzDecoder::new(data);
-    let mut decompressed_data = String::new();
-    decoder.read_to_string(&mut decompressed_data)?;
-
-    let base_message: MessageBase = serde_json::from_str(&decompressed_data)?;
+pub fn decode_message(data: String) -> Result<MessageBase, Box<dyn Error + Send + Sync>> {
+    println!("Data: {}", data);
+    let base_message: MessageBase = serde_json::from_str(&data)?;
     Ok(base_message)
 }
 
 pub fn decode_message_as<T: for<'de> Deserialize<'de>>(
-    data: Vec<u8>,
+    data: String,
 ) -> Result<T, Box<dyn Error + Send + Sync>> {
-    let mut decoder = GzDecoder::new(data.as_slice());
-    let mut decompressed_data = String::new();
-    decoder.read_to_string(&mut decompressed_data)?;
-
-    let message: T = serde_json::from_str(&decompressed_data)?;
+    let message: T = serde_json::from_str(&data)?;
     Ok(message)
 }

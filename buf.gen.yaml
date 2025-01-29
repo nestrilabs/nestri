@@ -1,0 +1,17 @@
+version: v2
+inputs:
+  - directory: protobufs
+plugins:
+  # TypeScript (frontend)
+  - remote: buf.build/bufbuild/es
+    out: packages/input/src/proto
+    opt: target=ts
+
+  # Golang (relay)
+  - remote: buf.build/protocolbuffers/go
+    out: packages/relay/internal/proto
+    opt: paths=source_relative
+
+  # Rust (nestri-server)
+  - remote: buf.build/community/neoeinstein-prost
+    out: packages/server/src/proto

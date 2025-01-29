@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"encoding/json"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
@@ -81,7 +82,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	// Assign message handler for join request
 	ws.RegisterMessageCallback("join", func(data []byte) {
 		var joinMsg MessageJoin
-		if err = DecodeMessage(data, &joinMsg); err != nil {
+		if err = json.Unmarshal(data, &joinMsg); err != nil {
 			log.Printf("Failed to decode join message: %s\n", err)
 			return
 		}
