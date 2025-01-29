@@ -1,107 +1,169 @@
-// import { domain, zone } from "./dns";
-// import { keyPath, sshKey } from "./ssh";
+const vpc = new sst.aws.Vpc("NestriRelayVpc")
 
-// const securityGroup = new aws.ec2.SecurityGroup("NestriRelaySecGrp", {
-//     ingress: [
-//         {
-//             protocol: "tcp",
-//             fromPort: 80,
-//             toPort: 80,
-//             cidrBlocks: ["0.0.0.0/0"],
-//         },
-//         {
-//             protocol: "udp",
-//             fromPort: 10000,
-//             toPort: 20000,
-//             cidrBlocks: ["0.0.0.0/0"],
-//         },
-//     ],
-//     // egress: [
-//     //     {
-//     //         protocol: "-1",
-//     //         cidrBlocks: ["0.0.0.0/0"],
-//     //         fromPort:all
-//     //         toPort:all
-//     //     }
-//     // ]
-// });
+const taskExecutionRole = new aws.iam.Role('NestriRelayExecutionRole', {
+    assumeRolePolicy: JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+            {
+                Effect: 'Allow',
+                Principal: {
+                    Service: 'ecs-tasks.amazonaws.com',
+                },
+                Action: 'sts:AssumeRole',
+            },
+        ],
+    }),
+});
 
-// const ami = aws.ec2.getAmi({
-//     filters: [
-//         {
-//             name: "name",
-//             values: ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"],
-//         },
-//     ],
-//     mostRecent: true,
-//     owners: ["099720109477"], // Canonical
-// });
+const taskRole = new aws.iam.Role('NestriRelayTaskRole', {
+    assumeRolePolicy: JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+            {
+                Effect: 'Allow',
+                Principal: {
+                    Service: 'ecs-tasks.amazonaws.com',
+                },
+                Action: 'sts:AssumeRole',
+            },
+        ],
+    }),
+});
 
-// // User data to set up a simple web server
-// const userData = `#!/bin/bash
-// curl -fsSL https://get.docker.com | sh
-// sudo groupadd docker
-// sudo usermod -aG docker ubuntu
-// newgrp docker
-// docker run -d --restart=always -p 80:8088 -p 10000-20000:10000-20000/udp ghcr.io/nestrilabs/nestri/relay:nightly &
-// `;
+new aws.cloudwatch.LogGroup('NestriRelayLogGroup', {
+    name: '/ecs/nestri-relay',
+    retentionInDays: 7,
+});
 
-// // const userData = `#!/bin/bash
-// // echo "Hello, World!" > index.html
-// // nohup python3 -m http.server 80 &`;
+new aws.iam.RolePolicyAttachment('NestriRelayExecutionRoleAttachment', {
+    policyArn: 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy',
+    role: taskRole,
+});
 
-// const server = new aws.ec2.Instance("NestriRelay", {
-//     instanceType: aws.ec2.InstanceType.T2_Micro,
-//     userData,
-//     vpcSecurityGroupIds: [securityGroup.id],
-//     ami: ami.then((ami) => ami.id),
-//     keyName: sshKey.keyName,
-//     associatePublicIpAddress: true,
-//     // instanceMarketOptions: {
-//     //     marketType: "spot",
-//     //     spotOptions: {
-//     //         maxPrice: "0.05",
-//     //         spotInstanceType: "persistent",
-//     //         instanceInterruptionBehavior: "stop"
-//     //     },
-//     // },
-// });
+const logPolicy = new aws.iam.Policy('NestriRelayLogPolicy', {
+    policy: JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [
+            {
+                Effect: 'Allow',
+                Action: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+                Resource: 'arn:aws:logs:*:*:*',
+            },
+        ],
+    }),
+});
 
-// const relay = new cloudflare.Record("example", {
-//     zoneId: zone.id,
-//     name: "relay." + domain,
-//     content: $interpolate`${server.publicIp}`,
-//     type: "A",
-//     ttl: 1,
-//     proxied: true
-// });
+new aws.iam.RolePolicyAttachment('NestriRelayTaskRoleAttachment', {
+    policyArn: logPolicy.arn,
+    role: taskExecutionRole,
+});
 
-// export const outputs = {
-//     relay: $interpolate`https://${relay.hostname}`
-// }
+const taskDefinition = new aws.ecs.TaskDefinition("NestriRelayTask", {
+    family: "NestriRelay",
+    cpu: "1024",
+    memory: "2048",
+    networkMode: "awsvpc",
+    taskRoleArn: taskRole.arn,
+    requiresCompatibilities: ["FARGATE"],
+    executionRoleArn: taskExecutionRole.arn,
+    containerDefinitions: JSON.stringify([{
+        name: "nestri-relay",
+        essential: true,
+        memory: 2048,
+        image: "ghcr.io/nestrilabs/nestri/relay:nightly",
+        portMappings: [
+            // HTTP port
+            {
+                containerPort: 8088,
+                protocol: "tcp",
+                hostPort: 80,
+            },
+            // UDP port range (1,000 ports)
+            {
+                containerPortRange: "10000-11000",
+                protocol: "udp",
+            },
+        ],
+        logConfiguration: {
+            logDriver: 'awslogs',
+            options: {
+                'awslogs-group': '/ecs/nestri-relay',
+                'awslogs-region': 'us-east-1',
+                'awslogs-stream-prefix': 'ecs',
+            },
+        },
+    }]),
+});
 
-// const dockerProvider = new docker.Provider("DockerProvider", {
-//     host: $interpolate`ssh://ubuntu@${server.publicIp}`,
-//     sshOpts: ["-i", keyPath, "-o", "StrictHostKeyChecking=no"],
-// });
+const relayCluster = new aws.ecs.Cluster('NestriRelay');
 
-// const nginx = new docker.Container(
-//     "Nginx",
-//     {
-//         image: "nginx:latest",
-//         ports: [
-//             {
-//                 internal: 80,
-//                 external: 80,
-//             },
-//             {
-//                 internal:
-//             }
-//         ],
-//         restart: "always",
-//     },
-//     {
-//         provider: dockerProvider,
-//         dependsOn: [server],
-//     },
-// );
+new aws.ecs.Service('NestriRelayService', {
+    name: 'NestriRelayService',
+    cluster: relayCluster.arn,
+    desiredCount: 1,
+    launchType: 'FARGATE',
+    taskDefinition: taskDefinition.arn,
+    deploymentCircuitBreaker: {
+        enable: true,
+        rollback: true,
+    },
+    enableExecuteCommand: true,
+    networkConfiguration: {
+        assignPublicIp: false,
+        subnets: vpc.privateSubnets,
+        securityGroups: vpc.securityGroups,
+    },
+});
+
+const accelerator = new aws.globalaccelerator.Accelerator('Accelerator', {
+    name: 'NestriRelayAccelerator',
+    enabled: true,
+    ipAddressType: 'IPV4',
+});
+
+const httpListener = new aws.globalaccelerator.Listener('TcpListener', {
+    acceleratorArn: accelerator.id,
+    clientAffinity: 'SOURCE_IP',
+    protocol: 'TCP',
+    portRanges: [{
+        fromPort: 80,
+        toPort: 80,
+    }],
+});
+
+const udpListener = new aws.globalaccelerator.Listener('UdpListener', {
+    acceleratorArn: accelerator.id,
+    clientAffinity: 'SOURCE_IP',
+    protocol: 'UDP',
+    portRanges: [{
+        fromPort: 10000,
+        toPort: 11000,
+    }],
+});
+
+new aws.globalaccelerator.EndpointGroup('TcpRelay', {
+    listenerArn: httpListener.id,
+    // healthCheckPath: '/',
+    endpointGroupRegion: aws.Region.USEast1,
+    endpointConfigurations: [{
+        clientIpPreservationEnabled: true,
+        endpointId: vpc.privateSubnets[0].apply(i => i),
+        weight: 100,
+    }],
+});
+
+new aws.globalaccelerator.EndpointGroup('UdpRelay', {
+    listenerArn: udpListener.id,
+    // healthCheckPort: 80,
+    // healthCheckPath: "/",
+    endpointGroupRegion: aws.Region.USEast1,
+    endpointConfigurations: [{
+        clientIpPreservationEnabled: true,
+        endpointId: vpc.privateSubnets[0].apply(i => i),
+        weight: 100,
+    }],
+});
+
+export const outputs = {
+    relay: accelerator.dnsName
+}
