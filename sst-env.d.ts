@@ -2,8 +2,7 @@
 /* tslint:disable */
 /* eslint-disable */
 /* deno-fmt-ignore-file */
-import "sst"
-export {}
+
 import "sst"
 declare module "sst" {
   export interface Resource {
@@ -39,6 +38,11 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Party": {
+      "authorizer": string
+      "endpoint": string
+      "type": "sst.aws.Realtime"
+    }
     "Urls": {
       "api": string
       "auth": string
@@ -55,3 +59,6 @@ declare module "sst" {
     "CloudflareAuthKV": cloudflare.KVNamespace
   }
 }
+
+import "sst"
+export {}
