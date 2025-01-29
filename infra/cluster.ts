@@ -1,13 +1,5 @@
-import { resolve } from "path";
-import { writeFileSync } from "fs";
-
 const ecsCluster = new aws.ecs.Cluster("Hosted", {
     name: "NestriGPUCluster"
-});
-
-export const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
-    algorithm: "RSA",
-    rsaBits: 4096,
 });
 
 // Find the latest Ecs GPU AMI
@@ -45,19 +37,6 @@ const ecsInstancePolicyAttachment = new aws.iam.RolePolicyAttachment("NestriGPUI
 const ecsInstanceProfile = new aws.iam.InstanceProfile("NestriGPUInstanceProfile", {
     role: ecsInstanceRole.name,
 });
-
-// Just in case you want to SSH
-export const sshKey = new aws.ec2.KeyPair("NestriGPUKey", {
-    keyName: "NestriGPUKey",
-    publicKey: privateKey.publicKeyOpenssh
-})
-
-const keyPath = privateKey.privateKeyOpenssh.apply((key) => {
-    const path = "key_rsa";
-    writeFileSync(path, key, { mode: 0o600 });
-    return resolve(path);
-});
-
 
 // const server = new aws.ec2.Instance("NestriGPU", {
 //     instanceType: aws.ec2.InstanceType.G4dn_XLarge,

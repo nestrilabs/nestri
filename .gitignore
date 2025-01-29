@@ -55,4 +55,4 @@ tmp
 .partykit
 
 #private key
-key_rsa
+key_*
