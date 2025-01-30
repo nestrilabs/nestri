@@ -8,7 +8,7 @@ export const privateKey = new tls.PrivateKey("NestriGPUPrivateKey", {
 
 // Just in case you want to SSH
 export const sshKey = new aws.ec2.KeyPair("NestriGPUKey", {
-    keyName: "NestriGPUKey",
+    keyName: "NestriGPUKeyProd",
     publicKey: privateKey.publicKeyOpenssh
 })
 

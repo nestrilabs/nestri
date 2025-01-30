@@ -6,6 +6,8 @@ export const secret = {
     GithubClientID: new sst.Secret("GithubClientID"),
     DiscordClientSecret: new sst.Secret("DiscordClientSecret"),
     DiscordClientID: new sst.Secret("DiscordClientID"),
+    AwsKey: new sst.Secret("AWS_KEY"),
+    AwsAccess: new sst.Secret("AWS_ACCESS"),
   };
   
   export const allSecrets = Object.values(secret);

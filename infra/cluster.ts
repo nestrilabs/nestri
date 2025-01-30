@@ -1,5 +1,9 @@
-const ecsCluster = new aws.ecs.Cluster("Hosted", {
-    name: "NestriGPUCluster"
+import { sshKey } from "./ssh";
+import { authFingerprintKey } from "./auth";
+// import { authFingerprintKey } from "./auth";
+
+export const ecsCluster = new aws.ecs.Cluster("Hosted", {
+    name: "NestriGPUClusterProd",
 });
 
 // Find the latest Ecs GPU AMI
@@ -15,7 +19,7 @@ const ami = aws.ec2.getAmi({
 });
 
 const ecsInstanceRole = new aws.iam.Role("NestriGPUInstanceRole", {
-    name: "GPUAssumeRole",
+    name: "GPUAssumeRoleProd",
     assumeRolePolicy: JSON.stringify({
         Version: "2012-10-17",
         Statement: [{
@@ -29,7 +33,7 @@ const ecsInstanceRole = new aws.iam.Role("NestriGPUInstanceRole", {
     }),
 });
 
-const ecsInstancePolicyAttachment = new aws.iam.RolePolicyAttachment("NestriGPUInstancePolicyAttachment", {
+new aws.iam.RolePolicyAttachment("NestriGPUInstancePolicyAttachment", {
     role: ecsInstanceRole.name,
     policyArn: "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
 });
@@ -38,54 +42,54 @@ const ecsInstanceProfile = new aws.iam.InstanceProfile("NestriGPUInstanceProfile
     role: ecsInstanceRole.name,
 });
 
-// const server = new aws.ec2.Instance("NestriGPU", {
-//     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
-//     ami: ami.then((ami) => ami.id),
-//     keyName: sshKey.keyName,
-//     //sudo nvidia-ctk runtime configure --runtime=docker [--set-as-default]
-//     userData: $interpolate`#!/bin/bash
-// sudo rm /etc/sysconfig/docker
-// echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
-// echo DAEMON_PIDFILE_TIMEOUT=10 | sud o tee -a /etc/sysconfig/docker
-// echo OPTIONS="--default-ulimit nofile=32768:65536" | sudo tee -a /etc/sysconfig/docker
-// sudo tee "/etc/docker/daemon.json" > /dev/null <<EOF
-// {
-//     "default-runtime": "nvidia",
-//     "runtimes": {
-//         "nvidia": {
-//             "path": "/usr/bin/nvidia-container-runtime",
-//             "runtimeArgs": []
-//         }
-//     }
-// }
-// EOF
-// sudo systemctl restart docker
-// echo ECS_CLUSTER='${ecsCluster.name}' | sudo tee -a /etc/ecs/ecs.config
-// echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
-// echo ECS_CONTAINER_STOP_TIMEOUT=3h | sudo tee -a /etc/ecs/ecs.config
-// echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
-// `,
-//     instanceMarketOptions: {
-//         marketType: "spot",
-//         spotOptions: {
-//             maxPrice: "0.2",
-//             spotInstanceType: "persistent",
-//             instanceInterruptionBehavior: "stop"
-//         },
-//     },
-//     iamInstanceProfile: ecsInstanceProfile,
-// });
+const server = new aws.ec2.Instance("NestriGPU", {
+    instanceType: aws.ec2.InstanceType.G4dn_XLarge,
+    ami: ami.then((ami) => ami.id),
+    keyName: sshKey.keyName,
+    //sudo nvidia-ctk runtime configure --runtime=docker [--set-as-default]
+    userData: $interpolate`#!/bin/bash
+sudo rm /etc/sysconfig/docker
+echo DAEMON_MAXFILES=1048576 | sudo tee -a /etc/sysconfig/docker
+echo DAEMON_PIDFILE_TIMEOUT=10 | sud o tee -a /etc/sysconfig/docker
+echo OPTIONS="--default-ulimit nofile=32768:65536" | sudo tee -a /etc/sysconfig/docker
+sudo tee "/etc/docker/daemon.json" > /dev/null <<EOF
+{
+    "default-runtime": "nvidia",
+    "runtimes": {
+        "nvidia": {
+            "path": "/usr/bin/nvidia-container-runtime",
+            "runtimeArgs": []
+        }
+    }
+}
+EOF
+sudo systemctl restart docker
+echo ECS_CLUSTER='${ecsCluster.name}' | sudo tee -a /etc/ecs/ecs.config
+echo ECS_ENABLE_GPU_SUPPORT=true | sudo tee -a /etc/ecs/ecs.config
+echo ECS_CONTAINER_STOP_TIMEOUT=3h | sudo tee -a /etc/ecs/ecs.config
+echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=true | sudo tee -a /etc/ecs/ecs.config
+`,
+    instanceMarketOptions: {
+        marketType: "spot",
+        spotOptions: {
+            maxPrice: "0.2",
+            spotInstanceType: "persistent",
+            instanceInterruptionBehavior: "stop"
+        },
+    },
+    iamInstanceProfile: ecsInstanceProfile,
+});
 
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
-    name: "/ecs/nestrigpu",
+    name: "/ecs/nestri-gpu-prod",
     retentionInDays: 7,
 });
 
 // Create a Task Definition for the ECS service to test it
-const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
-    family: "NestriGPUTask",
+export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
+    family: "NestriGPUTaskProd",
     requiresCompatibilities: ["EC2"],
-    containerDefinitions: JSON.stringify([{
+    containerDefinitions: authFingerprintKey.result.apply(v => JSON.stringify([{
         "essential": true,
         "name": "nestri",
         "memory": 1024,
@@ -93,44 +97,62 @@ const nestriTask = new aws.ecs.TaskDefinition("NestriGPUTask", {
         "gpu": 1,
         "resourceRequirements": [
             {
-                type: "GPU",
-                value: "1"
+                "type": "GPU",
+                "value": "1"
             }
         ],
         "image": "ghcr.io/nestrilabs/nestri/runner:nightly",
         "environment": [
             {
-                name: "NESTRI_ROOM",
-                value: "awstesting"
+                "name": "RESOLUTION",
+                "value": "1920x1080"
             },
             {
-                name: "RESOLUTION",
-                value: "1920x1080"
+                "name": "AUTH_FINGERPRINT",
+                "value": v
             },
             {
-                name: "FRAMERATE",
-                value: "60"
+                "name": "FRAMERATE",
+                "value": "60"
             },
             {
-                name: "RELAY_URL",
-                value: "https://relay.dathorse.com"
+                "name": "RELAY_URL",
+                "value": "https://relay.dathorse.com"
             },
             {
-                name: "NESTRI_PARAMS",
-                value: "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card0"
+                "name": "NESTRI_PARAMS",
+                "value": "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card0"
             },
         ],
         "disableNetworking": false,
         "linuxParameter": {
-            sharedMemorySize: 5120
+            "sharedMemorySize": 5120
         },
         "logConfiguration": {
             "logDriver": "awslogs",
             "options": {
-                "awslogs-group": "/ecs/nestrigpu",
+                "awslogs-group": "/ecs/nestri-gpu-prod",
                 "awslogs-region": "us-east-1",
                 "awslogs-stream-prefix": "nestri-gpu-task"
             }
         }
-    }])
+    }]))
 });
+
+sst.Linkable.wrap(aws.ecs.TaskDefinition, (resource) => ({
+    properties: {
+        value: resource.arn,
+    },
+}));
+
+sst.Linkable.wrap(aws.ecs.Cluster, (resource) => ({
+    properties: {
+        value: resource.arn,
+    },
+}));
+
+// This is used for requesting a container to be deployed on AWS
+// const queue = new sst.aws.Queue("PartyQueue", { fifo: true });
+
+// queue.subscribe({ handler: "packages/functions/src/party/subscriber.handler", permissions:{}, link:[taskF]})
+// const authRes = $interpolate`${authFingerprintKey.result}`

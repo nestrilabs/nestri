@@ -1,10 +1,16 @@
 import { createContext } from "./context";
 import { VisibleError } from "./error";
 
+export enum Subscription {
+    Pro = "Pro",
+    Free = "Free"
+  }
+  
 export interface UserActor {
     type: "user";
     properties: {
         accessToken: string;
+        subscription: string;
         userID: string;
         auth?:
         | {
@@ -47,7 +53,8 @@ export function useCurrentUser() {
     const actor = ActorContext.use();
     if (actor.type === "user") return {
       id:actor.properties.userID,
-      token: actor.properties.accessToken
+      token: actor.properties.accessToken,
+      subscription: actor.properties.subscription as Subscription
     };
     
     throw new VisibleError(

@@ -11,6 +11,14 @@ const _schema = i.schema({
     //   deletedAt: i.date().optional().indexed(),
     //   createdAt: i.date()
     // }),
+    tasks: i.entity({
+      type: i.string(),
+      lastStatus: i.string(),
+      healthStatus: i.string(),
+      startedAt: i.string(),
+      lastUpdated: i.string(),
+      stoppedAt: i.string().optional()
+    }),
     instances: i.entity({
       hostname: i.string(),
       lastActive: i.date().optional(),

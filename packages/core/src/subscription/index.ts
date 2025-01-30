@@ -59,15 +59,15 @@ export namespace Subscriptions {
 
     export type Info = z.infer<typeof Info>;
 
-    export const list = async () => {
+    export const list = fn(z.string().optional(), async (userID) => {
         const db = databaseClient()
-        const user = useCurrentUser()
+        const user = userID ? userID : useCurrentUser().id
 
         const query = {
             subscriptions: {
                 $: {
                     where: {
-                        owner: user.id,
+                        owner: user,
                         canceledAt: { $isNull: true }
                     }
                 },
@@ -96,7 +96,7 @@ export namespace Subscriptions {
         )
 
         return result
-    }
+    })
 
     export const create = fn(Info.omit({ id: true, canceledAt: true }), async (input) => {
         // const id = createID()
@@ -123,7 +123,7 @@ export namespace Subscriptions {
         const db = databaseClient()
 
         await db.transact(db.tx.subscriptions[id]!.update({
-            canceledAt: new Date().toString()
+            canceledAt: new Date().toISOString()
         }))
     })
 

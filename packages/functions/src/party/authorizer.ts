@@ -1,5 +1,5 @@
 import { Resource } from "sst";
-import { subjects } from "./subjects";
+import { subjects } from "../subjects";
 import { realtime } from "sst/aws/realtime";
 import { createClient } from "@openauthjs/openauth/client";
 

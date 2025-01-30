@@ -5,6 +5,16 @@ export module Examples {
         email: "john@example.com",
     };
 
+    export const Task = {
+        id: "0bfcc712-df13-4454-81a8-fbee66eddca4",
+        type: "AWS" as const, //or "on-premises",
+        lastStatus: "RUNNING" as const,
+        healthStatus: "UNKNOWN" as const,
+        startedAt: '2025-01-09T01:56:23.902Z',
+        lastUpdated: '2025-01-09T01:56:23.902Z',
+        stoppedAt: '2025-01-09T04:46:23.902Z'
+    }
+
     export const Profile = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         username: "janedoe47",
@@ -13,7 +23,7 @@ export module Examples {
         createdAt: '2025-01-04T11:56:23.902Z',
         updatedAt: '2025-01-09T01:56:23.902Z'
     }
-    
+
     export const Subscription = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         checkoutID: "0bfcb712-df43-4454-81a8-fbee66eddca4",
@@ -23,7 +33,7 @@ export module Examples {
         // next: '2025-01-09T01:56:23.902Z',
         canceledAt: '2025-02-09T01:56:23.902Z'
     }
-    
+
     export const Team = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         // owner: true,
@@ -40,7 +50,7 @@ export module Examples {
         createdAt: '2025-01-04T11:56:23.902Z',
         deletedAt: '2025-01-09T01:56:23.902Z'
     }
-    
+
     export const Instance = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         hostname: "a955e059f05d",

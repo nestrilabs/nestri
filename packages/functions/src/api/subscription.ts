@@ -40,7 +40,7 @@ export module SubscriptionApi {
                 },
             }),
             async (c) => {
-                const data = await Subscriptions.list();
+                const data = await Subscriptions.list(undefined);
                 if (!data) return c.json({ error: "No subscriptions found for this user" }, 404);
                 return c.json({ data }, 200);
             },

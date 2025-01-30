@@ -184,7 +184,7 @@ export module TeamApi {
                 const params = c.req.valid("param");
                 const team = await Teams.fromSlug(params.slug)
                 if (!team) return c.json({ error: "Team not found" }, 404);
-                if (!team.owner) return c.json({ error: "Your are not authorised to delete this team" }, 401)
+                // if (!team.owner) return c.json({ error: "Your are not authorised to delete this team" }, 401)
                 const res = await Teams.remove(team.id);
                 return c.json({ data: res }, 200);
             },
@@ -231,7 +231,7 @@ export module TeamApi {
                 const params = c.req.valid("param");
                 const team = await Teams.fromSlug(params.slug)
                 if (!team) return c.json({ error: "Team not found" }, 404);
-                if (!team.owner) return c.json({ error: "Your are not authorized to delete this team" }, 401)
+                // if (!team.owner) return c.json({ error: "Your are not authorized to delete this team" }, 401)
                 return c.json({ data: "ok" }, 200);
             },
         )

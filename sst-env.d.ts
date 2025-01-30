@@ -6,6 +6,14 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
+    "AWS_ACCESS": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "AWS_KEY": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "AuthFingerprintKey": {
       "type": "random.index/randomString.RandomString"
       "value": string
@@ -26,6 +34,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Hosted": {
+      "type": "aws.ecs/cluster.Cluster"
+      "value": string
+    }
     "InstantAdminToken": {
       "type": "sst.sst.Secret"
       "value": string
@@ -36,6 +48,10 @@ declare module "sst" {
     }
     "LoopsApiKey": {
       "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriGPUTask": {
+      "type": "aws.ecs/taskDefinition.TaskDefinition"
       "value": string
     }
     "Party": {

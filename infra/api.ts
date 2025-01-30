@@ -1,19 +1,8 @@
+import { authFingerprintKey } from "./auth";
 import { domain } from "./dns";
 import { secret } from "./secrets"
 // import { party } from "./party"
-
-sst.Linkable.wrap(random.RandomString, (resource) => ({
-    properties: {
-        value: resource.result,
-    },
-}));
-
-export const authFingerprintKey = new random.RandomString(
-    "AuthFingerprintKey",
-    {
-        length: 32,
-    },
-);
+import { gpuTaskDefinition, ecsCluster } from "./cluster";
 
 export const urls = new sst.Linkable("Urls", {
     properties: {
@@ -45,11 +34,14 @@ export const auth = new sst.cloudflare.Worker("Auth", {
 export const api = new sst.cloudflare.Worker("Api", {
     link: [
         urls,
-        // party,
+        secret.AwsKey,
+        gpuTaskDefinition,
+        ecsCluster,
+        secret.AwsAccess,
         authFingerprintKey,
-        secret.InstantAdminToken,
-        secret.InstantAppId,
         secret.LoopsApiKey,
+        secret.InstantAppId,
+        secret.InstantAdminToken,
     ],
     url: true,
     handler: "./packages/functions/src/api/index.ts",
