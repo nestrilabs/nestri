@@ -8,6 +8,7 @@ import { logger } from "hono/logger";
 import { subjects } from "../subjects";
 // import { SessionApi } from "./session";
 // import { MachineApi } from "./machine";
+import { TaskApi } from "./task";
 import { openAPISpecs } from "hono-openapi";
 import { SubscriptionApi } from "./subscription";
 import { VisibleError } from "@nestri/core/error";
@@ -45,6 +46,7 @@ const auth: MiddlewareHandler = async (c, next) => {
                     properties: {
                         userID: result.subject.properties.userID,
                         accessToken: result.subject.properties.accessToken,
+                        subscription: result.subject.properties.subscription,
                         auth: {
                             type: "oauth",
                             clientID: result.aud,
@@ -86,6 +88,7 @@ app
 const routes = app
     .get("/",(c)=>c.text("Hello there 👋🏾"))
     .route("/users", UserApi.route)
+    .route("/tasks", TaskApi.route)
     // .route("/teams", TeamApi.route)
     // .route("/games", GameApi.route)
     // .route("/sessions", SessionApi.route)
