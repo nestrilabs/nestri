@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+# Make user directory owned by the default user
+chown -f "$(id -nu):$(id -ng)" ~ || \
+      sudo-root chown -f "$(id -nu):$(id -ng)" ~ || \
+      chown -R -f -h --no-preserve-root "$(id -nu):$(id -ng)" ~ || \
+      sudo-root chown -R -f -h --no-preserve-root "$(id -nu):$(id -ng)" ~ || \
+      echo 'Failed to change user directory permissions, there may be permission issues'
+
 # Source environment variables from envs.sh
 if [ -f /etc/nestri/envs.sh ]; then
     echo "Sourcing environment variables from envs.sh..."
@@ -112,6 +119,27 @@ start_wlr_randr() {
     echo "wlr-randr configuration successful."
 }
 
+# Function to start Steam
+start_steam() {
+    if [[ -n "${STEAM_PID:-}" ]] && kill -0 "${STEAM_PID}" 2 >/dev/null; then
+        echo "Killing existing Steam process..."
+        kill "${STEAM_PID}"
+    fi
+
+    echo "Starting Steam with -tenfoot..."
+    WAYLAND_DISPLAY=wayland-0 steam -tenfoot &
+    STEAM_PID=$!
+
+    # Verify Steam started successfully
+    sleep 2
+    if ! kill -0 "$STEAM_PID" 2>/dev/null; then
+        echo "Error: Steam failed to start."
+        return 1
+    fi
+    echo "Steam started successfully."
+    return 0
+}
+
 # Main loop to monitor processes
 main_loop() {
     trap 'echo "Terminating...";
@@ -120,6 +148,9 @@ kill "${NESTRI_PID}"
 fi
 if [[ -n "${COMPOSITOR_PID:-}" ]] && kill -0 "${COMPOSITOR_PID}" 2>/dev/null; then
 kill "${COMPOSITOR_PID}"
+fi
+if [[ -n "${STEAM_PID:-}" ]] && kill -0 "${STEAM_PID}" 2>/dev/null; then
+kill "${STEAM_PID}"
 fi
     exit 0' SIGINT SIGTERM
 
@@ -136,6 +167,14 @@ fi
                 exit 1
             fi
             restart_chain
+            start_steam || {
+                echo "Failed to restart Steam after chain restart."
+                ((RETRY_COUNT++))
+                if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+                    echo "Max retries reached. Exiting."
+                    exit 1
+                fi
+            }
         elif ! kill -0 ${COMPOSITOR_PID:-} 2 >/dev/null; then
             echo "compositor crashed. Restarting compositor..."
             ((RETRY_COUNT++))
@@ -144,6 +183,22 @@ fi
                 exit 1
             fi
             start_compositor
+            start_steam || {
+                echo "Failed to restart Steam after compositor restart."
+                ((RETRY_COUNT++))
+                if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+                    echo "Max retries reached. Exiting."
+                    exit 1
+                fi
+            }
+        elif ! kill -0 ${STEAM_PID:-} 2 >/dev/null; then
+            echo "Steam crashed. Restarting Steam..."
+            ((RETRY_COUNT++))
+            if [ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]; then
+                echo "Max retries reached for Steam. Exiting."
+                exit 1
+            fi
+            start_steam
         fi
     done
 }
@@ -153,6 +208,9 @@ RETRY_COUNT=0
 
 # Start the initial chain
 restart_chain
+
+# Start Steam after initial setup
+start_steam
 
 # Enter monitoring loop
 main_loop
