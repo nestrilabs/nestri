@@ -1,14 +1,13 @@
 import { z } from "zod";
-import databaseClient from "../database"
 import { fn } from "../utils";
-import { groupBy, map, pipe, values } from "remeda"
+import { Resource } from "sst";
+import { Aws } from "../aws/client";
 import { Common } from "../common";
 import { Examples } from "../examples";
+import databaseClient from "../database"
 import { useCurrentUser } from "../actor";
 import { id as createID } from "@instantdb/admin";
-import { DescribeTasksCommand, ECSClient, RunTaskCommand, StopTaskCommand } from "@aws-sdk/client-ecs";
-import { getAwsCredentials } from "../utils/credentials";
-import { Resource } from "sst";
+import { groupBy, map, pipe, values } from "remeda"
 
 export const lastStatus = z.enum([
     "RUNNING",
@@ -73,14 +72,59 @@ export module Tasks {
 
     export type Info = z.infer<typeof Info>;
 
+    export const list = async () => {
+        const db = databaseClient()
+        const user = useCurrentUser()
+
+        try {
+            const query = {
+                tasks: {
+                    $: {
+                        where: {
+                            stoppedAt: { $isNull: true },
+                            owner: user.id
+                        }
+                    },
+                }
+            }
+
+            const data = await db.query(query)
+
+            const response = data.tasks
+            if (!response || response.length === 0) {
+                throw new Error("No task for this user were found");
+            }
+
+            const result = pipe(
+                response,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    type: group[0].type as taskType,
+                    lastStatus: group[0].lastStatus as lastStatus,
+                    healthStatus: group[0].healthStatus as healthStatus,
+                    startedAt: group[0].startedAt,
+                    stoppedAt: group[0].stoppedAt,
+                    lastUpdated: group[0].lastUpdated,
+                }))
+            )
+
+            return result
+        } catch (e) {
+            return null
+        }
+    }
+
     export const create = async () => {
-        const client = new ECSClient({ credentials: getAwsCredentials() })
+        const user = useCurrentUser()
+
         try {
 
-            const runResponse = await client.send(new RunTaskCommand({
+            const response = await Aws.EcsRunTask({
+                count: 1,
                 cluster: Resource.Hosted.value,
                 taskDefinition: Resource.NestriGPUTask.value,
-                count: 1,
                 launchType: "EC2",
                 overrides: {
                     containerOverrides: [
@@ -95,34 +139,63 @@ export module Tasks {
                         }
                     ]
                 }
-            }))
+            })
 
-            // Check if tasks were started
-            if (!runResponse.tasks || runResponse.tasks.length === 0) {
-                throw new Error("No tasks were started");
-            }
+            console.log(response)
 
-            // Extract task details
-            const task = runResponse.tasks[0];
-            const taskArn = task?.taskArn!;
-            const taskId = taskArn.split('/').pop()!; // Extract task ID from ARN
-            const taskStatus = task?.lastStatus;
-            const taskHealthStatus = task?.healthStatus;
-            const startedAt = task?.startedAt!;
+            return null
 
-            // const id = createID()
-            const db = databaseClient()
-            const now = new Date().toISOString()
-            await db.transact(db.tx.tasks[taskId]!.update({
-                type: "AWS",
-                healthStatus: taskHealthStatus ? taskHealthStatus.toString() : "UNKNOWN",
-                startedAt: startedAt ? startedAt.toISOString() : now,
-                lastStatus: taskStatus,
-                lastUpdated: now,
-            }))
+            // const runResponse = await client.send(new RunTaskCommand({
+            //     cluster: Resource.Hosted.value,
+            //     taskDefinition: Resource.NestriGPUTask.value,
+            //     count: 1,
+            //     launchType: "EC2",
+            //     overrides: {
+            //         containerOverrides: [
+            //             {
+            //                 name: "nestri",
+            //                 environment: [
+            //                     {
+            //                         name: "NESTRI_ROOM",
+            //                         value: "testing-right-now"
+            //                     }
+            //                 ]
+            //             }
+            //         ]
+            //     }
+            // }))
+
+            // console.error("error", runResponse)
+
+            // // Check if tasks were started
+            // if (!runResponse.tasks || runResponse.tasks.length === 0) {
+            //     throw new Error("No tasks were started");
+            // }
+
+            // console.log("got here")
+
+            // // Extract task details
+            // const task = runResponse.tasks[0];
+            // const taskArn = task?.taskArn!;
+            // const taskId = taskArn.split('/').pop()!; // Extract task ID from ARN
+            // const taskStatus = task?.lastStatus;
+            // const taskHealthStatus = task?.healthStatus;
+            // const startedAt = task?.startedAt!;
+
+            // // const id = createID()
+            // const db = databaseClient()
+            // const now = new Date().toISOString()
+            // await db.transact(db.tx.tasks[taskId]!.update({
+            //     type: "AWS",
+            //     healthStatus: taskHealthStatus ? taskHealthStatus.toString() : "UNKNOWN",
+            //     startedAt: startedAt ? startedAt.toISOString() : now,
+            //     lastStatus: taskStatus,
+            //     lastUpdated: now,
+            // }).link({ owner: user.id }))
 
             return "ok"
         } catch (e) {
+            console.error("error", e)
             return null
         }
     }
@@ -172,23 +245,23 @@ export module Tasks {
 
     export const update = fn(z.string(), async (taskID) => {
         try {
-            const client = new ECSClient({ credentials: getAwsCredentials() })
-            const db = databaseClient()
+            // const client = new ECSClient({ credentials: getAwsCredentials() })
+            // const db = databaseClient()
 
-            const describeResponse = await client.send(new DescribeTasksCommand({ tasks: [taskID] }))
-            const now = new Date().toISOString()
+            // const describeResponse = await client.send(new DescribeTasksCommand({ tasks: [taskID] }))
+            // const now = new Date().toISOString()
 
-            if (!describeResponse.tasks || describeResponse.tasks.length === 0) {
-                throw new Error("No tasks were found");
-            }
+            // if (!describeResponse.tasks || describeResponse.tasks.length === 0) {
+            //     throw new Error("No tasks were found");
+            // }
 
-            const task = describeResponse.tasks[0]!
+            // const task = describeResponse.tasks[0]!
 
-            await db.transact(db.tx.tasks[taskID]!.update({
-                healthStatus: task.healthStatus ? task.healthStatus : "UNKNOWN",
-                lastStatus: task.lastStatus ? task.lastStatus : "UNKNOWN",
-                lastUpdated: now,
-            }))
+            // await db.transact(db.tx.tasks[taskID]!.update({
+            //     healthStatus: task.healthStatus ? task.healthStatus : "UNKNOWN",
+            //     lastStatus: task.lastStatus ? task.lastStatus : "UNKNOWN",
+            //     lastUpdated: now,
+            // }))
 
             return "ok"
 
@@ -200,38 +273,38 @@ export module Tasks {
     export const remove = fn(z.string(), async (taskID) => {
         const db = databaseClient()
         const now = new Date().toISOString()
-        const client = new ECSClient({ credentials: getAwsCredentials() })
+        // const client = new ECSClient({ credentials: getAwsCredentials() })
         try {
-            const query = {
-                tasks: {
-                    $: {
-                        where: {
-                            id: taskID,
-                            stoppedAt: { $isNull: true }
-                        }
-                    },
-                }
-            }
+            //     const query = {
+            //         tasks: {
+            //             $: {
+            //                 where: {
+            //                     id: taskID,
+            //                     stoppedAt: { $isNull: true }
+            //                 }
+            //             },
+            //         }
+            //     }
 
-            const data = await db.query(query)
+            //     const data = await db.query(query)
 
-            const response = data.tasks
-            if (!response || response.length === 0) {
-                throw new Error("No task with the given id was found");
-            }
+            //     const response = data.tasks
+            //     if (!response || response.length === 0) {
+            //         throw new Error("No task with the given id was found");
+            //     }
 
-            const stopResponse = await client.send(new StopTaskCommand({
-                task: taskID,
-                cluster: Resource.Hosted.value,
-                reason: "Client requested a shutdown"
-            }))
+            //     const stopResponse = await client.send(new StopTaskCommand({
+            //         task: taskID,
+            //         cluster: Resource.Hosted.value,
+            //         reason: "Client requested a shutdown"
+            //     }))
 
-            await db.transact(db.tx.tasks[taskID]!.update({
-                stoppedAt: now,
-                lastUpdated: now,
-                lastStatus: "STOPPED",
-                healthStatus: "UNKNOWN"
-            }))
+            //     await db.transact(db.tx.tasks[taskID]!.update({
+            //         stoppedAt: now,
+            //         lastUpdated: now,
+            //         lastStatus: "STOPPED",
+            //         healthStatus: "UNKNOWN"
+            //     }))
 
             return "ok"
 

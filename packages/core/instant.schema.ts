@@ -62,6 +62,10 @@ const _schema = i.schema({
       forward: { on: "profiles", has: "one", label: "owner" },
       reverse: { on: "$users", has: "one", label: "profile" }
     },
+    UserTasks: {
+      forward: { on: "tasks", has: "one", label: "owner" },
+      reverse: { on: "$users", has: "many", label: "tasks" }
+    },
     TeamsOwned: {
       forward: { on: "teams", has: "one", label: "owner" },
       reverse: { on: "$users", has: "many", label: "teamsOwned" },

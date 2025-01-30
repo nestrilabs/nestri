@@ -34,13 +34,13 @@ export const auth = new sst.cloudflare.Worker("Auth", {
 export const api = new sst.cloudflare.Worker("Api", {
     link: [
         urls,
-        secret.AwsKey,
-        gpuTaskDefinition,
         ecsCluster,
-        secret.AwsAccess,
+        gpuTaskDefinition,
         authFingerprintKey,
         secret.LoopsApiKey,
         secret.InstantAppId,
+        secret.AwsAccessKey,
+        secret.AwsSecretKey,
         secret.InstantAdminToken,
     ],
     url: true,

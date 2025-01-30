@@ -6,13 +6,48 @@ import { Tasks } from "@nestri/core/task/index";
 import { Examples } from "@nestri/core/examples";
 import { validator, resolver } from "hono-openapi/zod";
 import { useCurrentUser } from "@nestri/core/actor";
+import { Subscriptions } from "@nestri/core/subscription/index";
 
 export module TaskApi {
     export const route = new Hono()
+        .get("/",
+            describeRoute({
+                tags: ["Task"],
+                summary: "List Tasks",
+                description: "List all tasks by this user",
+                responses: {
+                    200: {
+                        content: {
+                            "application/json": {
+                                schema: Result(
+                                    Tasks.Info.openapi({
+                                        description: "A task example gotten from this task id",
+                                        example: Examples.Task,
+                                    }))
+                            },
+                        },
+                        description: "Tasks owned by this user were found",
+                    },
+                    404: {
+                        content: {
+                            "application/json": {
+                                schema: resolver(z.object({ error: z.string() })),
+                            },
+                        },
+                        description: "No tasks for this user were not found.",
+                    },
+                },
+            }),
+            async (c) => {
+                const task = await Tasks.list();
+                if (!task) return c.json({ error: "No tasks were found for this user" }, 404);
+                return c.json({ data: task }, 200);
+            },
+        )
         .get("/:id",
             describeRoute({
                 tags: ["Task"],
-                summary: "Get",
+                summary: "Get Task",
                 description: "Get a task by its id",
                 responses: {
                     200: {
@@ -56,7 +91,7 @@ export module TaskApi {
         .delete("/:id",
             describeRoute({
                 tags: ["Task"],
-                summary: "Stop",
+                summary: "Stop Task",
                 description: "Stop a running task by its id",
                 responses: {
                     200: {
@@ -97,7 +132,7 @@ export module TaskApi {
         .post("/",
             describeRoute({
                 tags: ["Task"],
-                summary: "Create",
+                summary: "Create Task",
                 description: "Create a task",
                 responses: {
                     200: {
@@ -128,9 +163,11 @@ export module TaskApi {
             }),
             async (c) => {
                 const user = useCurrentUser();
-                if (user && user.subscription === "Pro") {
+                // const data = await Subscriptions.list(undefined);
+                // if (!data) return c.json({ error: "No subscriptions found for this user" }, 404);
+                if (user) {
                     const task = await Tasks.create();
-                    if (!task) return c.json({ error: "Task was not found" }, 404);
+                    if (!task) return c.json({ error: "Task could not be created" }, 404);
                     return c.json({ data: task }, 200);
                 }
 

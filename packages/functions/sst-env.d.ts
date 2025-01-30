@@ -6,16 +6,16 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
-    "AWS_ACCESS": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "AWS_KEY": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
     "AuthFingerprintKey": {
       "type": "random.index/randomString.RandomString"
+      "value": string
+    }
+    "AwsAccessKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "AwsSecretKey": {
+      "type": "sst.sst.Secret"
       "value": string
     }
     "DiscordClientID": {

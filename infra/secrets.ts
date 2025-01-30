@@ -1,13 +1,13 @@
 export const secret = {
-    InstantAdminToken: new sst.Secret("InstantAdminToken"),
-    InstantAppId: new sst.Secret("InstantAppId"),
-    LoopsApiKey: new sst.Secret("LoopsApiKey"),
-    GithubClientSecret: new sst.Secret("GithubClientSecret"),
-    GithubClientID: new sst.Secret("GithubClientID"),
-    DiscordClientSecret: new sst.Secret("DiscordClientSecret"),
-    DiscordClientID: new sst.Secret("DiscordClientID"),
-    AwsKey: new sst.Secret("AWS_KEY"),
-    AwsAccess: new sst.Secret("AWS_ACCESS"),
+  LoopsApiKey: new sst.Secret("LoopsApiKey"),
+  InstantAppId: new sst.Secret("InstantAppId"),
+  AwsSecretKey: new sst.Secret("AwsSecretKey"),
+  AwsAccessKey: new sst.Secret("AwsAccessKey"),
+  GithubClientID: new sst.Secret("GithubClientID"),
+  DiscordClientID: new sst.Secret("DiscordClientID"),
+  GithubClientSecret: new sst.Secret("GithubClientSecret"),
+  InstantAdminToken: new sst.Secret("InstantAdminToken"),
+  DiscordClientSecret: new sst.Secret("DiscordClientSecret"),
   };
   
   export const allSecrets = Object.values(secret);

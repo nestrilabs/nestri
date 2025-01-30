@@ -5,8 +5,6 @@ import { describeRoute } from "hono-openapi";
 import { Examples } from "@nestri/core/examples";
 import { validator, resolver } from "hono-openapi/zod";
 import { Subscriptions } from "@nestri/core/subscription/index";
-import { Email } from "@nestri/core/email/index";
-
 export module SubscriptionApi {
     export const route = new Hono()
         .get(

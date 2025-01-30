@@ -116,6 +116,10 @@ export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
                 "value": "60"
             },
             {
+                "name": "NESTRI_ROOM",
+                "value": "aws-testing"
+            },
+            {
                 "name": "RELAY_URL",
                 "value": "https://relay.dathorse.com"
             },
