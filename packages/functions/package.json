@@ -3,7 +3,7 @@
   "module": "index.ts",
   "type": "module",
   "devDependencies": {
-    "@aws-sdk/client-ecs": "^3.734.0",
+    "@aws-sdk/client-ecs": "^3.738.0",
     "@aws-sdk/client-sqs": "^3.734.0",
     "@cloudflare/workers-types": "^4.20241224.0",
     "@nestri/core": "*",

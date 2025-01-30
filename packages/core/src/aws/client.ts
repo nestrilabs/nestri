@@ -2,6 +2,8 @@ import { z } from "zod"
 import { Resource } from "sst";
 import { doubleFn, fn } from "../utils";
 import { AwsClient } from "aws4fetch";
+import { type RunTaskCommandOutput } from "@aws-sdk/client-ecs";
+
 
 export module Aws {
     export const client = async () => {
@@ -31,16 +33,16 @@ export module Aws {
         const c = await client();
 
         const url = new URL(`https://ecs.${c.region}.amazonaws.com/`)
-        
+
         const res = await c.fetch(url, {
             method: "POST",
             headers: {
-                "X-Amz-Target": `AmazonEC2ContainerServiceV20141113.RunTask`,
+                "X-Amz-Target": "AmazonEC2ContainerServiceV20141113.RunTask",
                 "Content-Type": "application/x-amz-json-1.1",
             },
             body: JSON.stringify(body)
-        }).then(r => r.json())
+        })
 
-        return res
+        return res.json() as Promise<RunTaskCommandOutput>
     })
 }

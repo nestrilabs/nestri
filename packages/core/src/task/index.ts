@@ -121,7 +121,7 @@ export module Tasks {
 
         try {
 
-            const response = await Aws.EcsRunTask({
+            const runResponse = await Aws.EcsRunTask({
                 count: 1,
                 cluster: Resource.Hosted.value,
                 taskDefinition: Resource.NestriGPUTask.value,
@@ -139,59 +139,39 @@ export module Tasks {
                         }
                     ]
                 }
-            })
+            }) as any
 
-            console.log(response)
+            console.log("RunTask Failures", runResponse["Failures"] as any)
+            // Validate response structure
+            if (!('tasks' in runResponse)) {
+                throw new Error("Invalid API response - missing tasks field");
+            }
+            
+            // Check if tasks were started
+            if (!runResponse.tasks || runResponse.tasks.length === 0 || (runResponse.failures && runResponse.failures.length > 0)) {
+                console.error("task failures", runResponse.failures)
+                console.log("tasks", runResponse)
+                throw new Error(`No tasks were started`);
+            }
 
-            return null
+            // Extract task details
+            const task = runResponse.tasks[0];
+            const taskArn = task?.taskArn!;
+            const taskId = taskArn.split('/').pop()!; // Extract task ID from ARN
+            const taskStatus = task?.lastStatus;
+            const taskHealthStatus = task?.healthStatus;
+            const startedAt = task?.startedAt!;
 
-            // const runResponse = await client.send(new RunTaskCommand({
-            //     cluster: Resource.Hosted.value,
-            //     taskDefinition: Resource.NestriGPUTask.value,
-            //     count: 1,
-            //     launchType: "EC2",
-            //     overrides: {
-            //         containerOverrides: [
-            //             {
-            //                 name: "nestri",
-            //                 environment: [
-            //                     {
-            //                         name: "NESTRI_ROOM",
-            //                         value: "testing-right-now"
-            //                     }
-            //                 ]
-            //             }
-            //         ]
-            //     }
-            // }))
-
-            // console.error("error", runResponse)
-
-            // // Check if tasks were started
-            // if (!runResponse.tasks || runResponse.tasks.length === 0) {
-            //     throw new Error("No tasks were started");
-            // }
-
-            // console.log("got here")
-
-            // // Extract task details
-            // const task = runResponse.tasks[0];
-            // const taskArn = task?.taskArn!;
-            // const taskId = taskArn.split('/').pop()!; // Extract task ID from ARN
-            // const taskStatus = task?.lastStatus;
-            // const taskHealthStatus = task?.healthStatus;
-            // const startedAt = task?.startedAt!;
-
-            // // const id = createID()
-            // const db = databaseClient()
-            // const now = new Date().toISOString()
-            // await db.transact(db.tx.tasks[taskId]!.update({
-            //     type: "AWS",
-            //     healthStatus: taskHealthStatus ? taskHealthStatus.toString() : "UNKNOWN",
-            //     startedAt: startedAt ? startedAt.toISOString() : now,
-            //     lastStatus: taskStatus,
-            //     lastUpdated: now,
-            // }).link({ owner: user.id }))
+            // const id = createID()
+            const db = databaseClient()
+            const now = new Date().toISOString()
+            await db.transact(db.tx.tasks[taskId]!.update({
+                type: "AWS",
+                healthStatus: taskHealthStatus ? taskHealthStatus.toString() : "UNKNOWN",
+                startedAt: startedAt ? startedAt.toISOString() : now,
+                lastStatus: taskStatus,
+                lastUpdated: now,
+            }).link({ owner: user.id }))
 
             return "ok"
         } catch (e) {
