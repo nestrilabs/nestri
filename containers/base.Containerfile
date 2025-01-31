@@ -34,8 +34,8 @@ RUN --mount=type=bind,target=/builder/nestri/,rw \
 # WORKDIR /builder/
 
 # # Grab build and rust packages #
-# RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
-# 	libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
+RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
+	libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Setup stable rust toolchain #
 # RUN rustup default stable
