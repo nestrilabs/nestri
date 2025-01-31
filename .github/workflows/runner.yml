@@ -52,20 +52,6 @@ jobs:
               with:
                 swap-size-gb: 20
             - 
-              name: Cache Rust artifacts
-              uses: actions/cache@v4
-              with:
-                path: |
-                  /usr/local/cargo/registry
-                  /builder/target
-                key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-            - 
-              name: Cache mold linker
-              uses: actions/cache@v3
-              with:
-                path: /usr/bin/mold
-                key: ${{ runner.os }}-mold
-            - 
               name: Build Docker image
               uses: docker/build-push-action@v5
               with:
@@ -117,20 +103,6 @@ jobs:
               uses: pierotofy/set-swap-space@master
               with:
                 swap-size-gb: 20
-            - 
-              name: Cache Rust artifacts
-              uses: actions/cache@v4
-              with:
-                path: |
-                  /usr/local/cargo/registry
-                  /builder/target
-                key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-            - 
-              name: Cache mold linker
-              uses: actions/cache@v3
-              with:
-                path: /usr/bin/mold
-                key: ${{ runner.os }}-mold
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
