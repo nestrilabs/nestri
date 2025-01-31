@@ -68,14 +68,7 @@ jobs:
                 context: ./
                 push: false
                 load: true
-                cache-from: type=local,src=/tmp/.buildx-cache
-                cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
                 tags: nestri:runner
-            # -
-            #   name: Move cache
-            #   run: |
-            #     rm -rf /tmp/.buildx-cache
-            #     mv /tmp/.buildx-cache-new /tmp/.buildx-cache 
 
     build-docker-main:
         name: Build image on main
@@ -133,12 +126,5 @@ jobs:
                 file:  containers/runner.Containerfile
                 context: ./
                 push: true
-                cache-from: type=local,src=/tmp/.buildx-cache
-                cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
                 tags: ${{ steps.meta.outputs.tags }}
                 labels: ${{ steps.meta.outputs.labels }}
-            # -
-            #   name: Move cache
-            #   run: |
-            #     rm -rf /tmp/.buildx-cache
-            #     mv /tmp/.buildx-cache-new /tmp/.buildx-cache 
