@@ -123,8 +123,7 @@ RUN --mount=type=cache,target=/root/.cache/sccache \
 FROM gst-wayland-builder AS gst-wayland-build
 WORKDIR /builder/gst-wayland-display
 
-COPY --from=gst-wayland-cacher /builder/target /builder/target
-COPY --from=gst-wayland-cacher /builder/plugin /builder/plugin
+COPY --from=gst-wayland-cacher /builder/ /builder/
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
