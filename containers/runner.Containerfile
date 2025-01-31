@@ -175,7 +175,6 @@ RUN mkdir -p /run/dbus && \
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
 COPY --from=gst-wayland-cached-builder /artifacts/usr/ /usr/
 RUN which nestri-server && ls -la /usr/lib/gstreamer-1.0/ | grep 'waylanddisplaysrc'
-#gst-inspect-1.0 waylanddisplaysrc && 
 
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
