@@ -28,7 +28,7 @@ RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
 
 FROM nestri-server-builder AS nestri-server-planner
 WORKDIR /builder/nestri/
-COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
+COPY Cargo.toml Cargo.lock ./
 RUN cargo install cargo-chef && \
     cargo chef prepare --recipe-path recipe.json
 
