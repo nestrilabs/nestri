@@ -44,6 +44,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 FROM nestri-server-deps AS nestri-server-cacher
 COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 
+ENV CARGO_TARGET_DIR=/builder/target
+
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
@@ -90,6 +92,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-cacher
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
+
+ENV CARGO_TARGET_DIR=/builder/target
 
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
