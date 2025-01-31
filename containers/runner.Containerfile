@@ -60,7 +60,7 @@ COPY packages/server/ ./packages/server/
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
     cargo build --release && \
-    cp target/release/nestri-server "${ARTIFACTS}"
+    cp "${CARGO_TARGET_DIR}/release/nestri-server" "${ARTIFACTS}"
 
 #******************************************************************************
 # GST-Wayland Plugin Build Stages
