@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
 
 # Install cargo-chef with proper caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    cargo install -j $(nproc) cargo-chef --locked
+    cargo install -j $(nproc) cargo-chef cargo-c --locked
 
 #******************************************************************************
 # Nestri Server Build Stages
