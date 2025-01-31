@@ -95,12 +95,6 @@ export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
         "memory": 1024,
         "cpu": 200,
         "gpu": 1,
-        "resourceRequirements": [
-            {
-                "type": "GPU",
-                "value": "1"
-            }
-        ],
         "image": "ghcr.io/nestrilabs/nestri/runner:nightly",
         "environment": [
             {
@@ -142,6 +136,13 @@ export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
         }
     }]))
 });
+
+// "resourceRequirements": [
+//     {
+//         "type": "GPU",
+//         "value": "1"
+//     }
+// ],
 
 sst.Linkable.wrap(aws.ecs.TaskDefinition, (resource) => ({
     properties: {

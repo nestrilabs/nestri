@@ -22,7 +22,7 @@ export module TaskApi {
                                 schema: Result(
                                     Tasks.Info.openapi({
                                         description: "A task example gotten from this task id",
-                                        example: Examples.Task,
+                                        examples: [Examples.Task],
                                     }))
                             },
                         },
@@ -116,7 +116,7 @@ export module TaskApi {
                 "param",
                 z.object({
                     id: Tasks.Info.shape.id.openapi({
-                        description: "ID of the task to get",
+                        description: "The id of the task to get",
                         example: Examples.Task.id,
                     }),
                 }),
@@ -125,7 +125,7 @@ export module TaskApi {
                 const param = c.req.valid("param");
                 const task = await Tasks.fromID(param.id);
                 if (!task) return c.json({ error: "Task was not found" }, 404);
-                const res = await Tasks.remove(param.id)
+                const res = await Tasks.stop({ taskID: task[0].taskID, id: param.id })
                 return c.json({ data: res }, 200);
             },
         )
@@ -138,7 +138,10 @@ export module TaskApi {
                     200: {
                         content: {
                             "application/json": {
-                                schema: Result(z.literal("ok"))
+                                schema: Result(Tasks.Info.shape.id.openapi({
+                                    description: "The id of the task created",
+                                    example: Examples.Task.id,
+                                }))
                             },
                         },
                         description: "A task with this id was created",
@@ -163,8 +166,8 @@ export module TaskApi {
             }),
             async (c) => {
                 const user = useCurrentUser();
-                // const data = await Subscriptions.list(undefined);
-                // if (!data) return c.json({ error: "No subscriptions found for this user" }, 404);
+                const data = await Subscriptions.list(undefined);
+                if (!data) return c.json({ error: "No subscriptions found for this user" }, 404);
                 if (user) {
                     const task = await Tasks.create();
                     if (!task) return c.json({ error: "Task could not be created" }, 404);
@@ -173,5 +176,49 @@ export module TaskApi {
 
                 return c.json({ error: "You are not authorized to do this" }, 401);
             },
-        );
+        )
+        .put(
+            "/:id",
+            describeRoute({
+                tags: ["Task"],
+                summary: "Get an update on a task",
+                description: "Updates the metadata about a task by querying remote task",
+                responses: {
+                    200: {
+                        content: {
+                            "application/json": {
+                                schema: Result(Tasks.Info.openapi({
+                                    description: "The updated information about this task",
+                                    example: Examples.Task
+                                })),
+                            },
+                        },
+                        description: "Task successfully updated",
+                    },
+                    404: {
+                        content: {
+                            "application/json": {
+                                schema: resolver(z.object({ error: z.string() })),
+                            },
+                        },
+                        description: "The task specified id was not found",
+                    },
+                }
+            }),
+            validator(
+                "param",
+                z.object({
+                    id: Tasks.Info.shape.id.openapi({
+                        description: "The id of the task to update on",
+                        example: Examples.Task.id
+                    })
+                })
+            ),
+            async (c) => {
+                const params = c.req.valid("param");
+                const res = await Tasks.update(params.id)
+                if (!res) return c.json({ error: "Something went seriously wrong" }, 404);
+                return c.json({ data: res[0] }, 200);
+            },
+        )
 }

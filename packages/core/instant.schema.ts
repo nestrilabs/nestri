@@ -17,7 +17,8 @@ const _schema = i.schema({
       healthStatus: i.string(),
       startedAt: i.string(),
       lastUpdated: i.string(),
-      stoppedAt: i.string().optional()
+      stoppedAt: i.string().optional(),
+      taskID: i.string().unique().indexed()
     }),
     instances: i.entity({
       hostname: i.string(),

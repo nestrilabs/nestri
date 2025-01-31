@@ -7,6 +7,7 @@ export module Examples {
 
     export const Task = {
         id: "0bfcc712-df13-4454-81a8-fbee66eddca4",
+        taskID: "b8302fca2d224d91ab342a2e4ab926d3",
         type: "AWS" as const, //or "on-premises",
         lastStatus: "RUNNING" as const,
         healthStatus: "UNKNOWN" as const,

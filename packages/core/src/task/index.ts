@@ -43,6 +43,10 @@ export module Tasks {
                 description: "Where this task is hosted on",
                 example: Examples.Task.type,
             }),
+            taskID: z.string().openapi({
+                description: "The id of this task as seen on AWS",
+                example: Examples.Task.taskID,
+            }),
             startedAt: z.string().or(z.number()).openapi({
                 description: "The time this task was started",
                 example: Examples.Task.startedAt,
@@ -101,6 +105,7 @@ export module Tasks {
                 values(),
                 map((group): Info => ({
                     id: group[0].id,
+                    taskID: group[0].taskID,
                     type: group[0].type as taskType,
                     lastStatus: group[0].lastStatus as lastStatus,
                     healthStatus: group[0].healthStatus as healthStatus,
@@ -121,7 +126,7 @@ export module Tasks {
 
         try {
 
-            const runResponse = await Aws.EcsRunTask({
+            const run = await Aws.EcsRunTask({
                 count: 1,
                 cluster: Resource.Hosted.value,
                 taskDefinition: Resource.NestriGPUTask.value,
@@ -139,33 +144,25 @@ export module Tasks {
                         }
                     ]
                 }
-            }) as any
+            })
 
-            console.log("RunTask Failures", runResponse["Failures"] as any)
-            // Validate response structure
-            if (!('tasks' in runResponse)) {
-                throw new Error("Invalid API response - missing tasks field");
-            }
-            
-            // Check if tasks were started
-            if (!runResponse.tasks || runResponse.tasks.length === 0 || (runResponse.failures && runResponse.failures.length > 0)) {
-                console.error("task failures", runResponse.failures)
-                console.log("tasks", runResponse)
+            if (!run.tasks || run.tasks.length === 0) {
                 throw new Error(`No tasks were started`);
             }
 
             // Extract task details
-            const task = runResponse.tasks[0];
+            const task = run.tasks[0];
             const taskArn = task?.taskArn!;
             const taskId = taskArn.split('/').pop()!; // Extract task ID from ARN
             const taskStatus = task?.lastStatus;
             const taskHealthStatus = task?.healthStatus;
             const startedAt = task?.startedAt!;
 
-            // const id = createID()
+            const id = createID()
             const db = databaseClient()
             const now = new Date().toISOString()
-            await db.transact(db.tx.tasks[taskId]!.update({
+            await db.transact(db.tx.tasks[id]!.update({
+                taskID: taskId,
                 type: "AWS",
                 healthStatus: taskHealthStatus ? taskHealthStatus.toString() : "UNKNOWN",
                 startedAt: startedAt ? startedAt.toISOString() : now,
@@ -173,7 +170,7 @@ export module Tasks {
                 lastUpdated: now,
             }).link({ owner: user.id }))
 
-            return "ok"
+            return id
         } catch (e) {
             console.error("error", e)
             return null
@@ -207,6 +204,7 @@ export module Tasks {
                 values(),
                 map((group): Info => ({
                     id: group[0].id,
+                    taskID: group[0].taskID,
                     type: group[0].type as taskType,
                     lastStatus: group[0].lastStatus as lastStatus,
                     healthStatus: group[0].healthStatus as healthStatus,
@@ -225,70 +223,100 @@ export module Tasks {
 
     export const update = fn(z.string(), async (taskID) => {
         try {
-            // const client = new ECSClient({ credentials: getAwsCredentials() })
-            // const db = databaseClient()
+            const db = databaseClient()
 
-            // const describeResponse = await client.send(new DescribeTasksCommand({ tasks: [taskID] }))
-            // const now = new Date().toISOString()
+            const query = {
+                tasks: {
+                    $: {
+                        where: {
+                            id: taskID,
+                            stoppedAt: { $isNull: true }
+                        }
+                    },
+                }
+            }
 
-            // if (!describeResponse.tasks || describeResponse.tasks.length === 0) {
-            //     throw new Error("No tasks were found");
-            // }
+            const data = await db.query(query)
 
-            // const task = describeResponse.tasks[0]!
+            const response = data.tasks
+            if (!response || response.length === 0) {
+                throw new Error("No task with the given taskID was found");
+            }
 
-            // await db.transact(db.tx.tasks[taskID]!.update({
-            //     healthStatus: task.healthStatus ? task.healthStatus : "UNKNOWN",
-            //     lastStatus: task.lastStatus ? task.lastStatus : "UNKNOWN",
-            //     lastUpdated: now,
-            // }))
+            const now = new Date().toISOString()
+            const describeResponse = await Aws.EcsDescribeTasks({
+                tasks: [response[0]!.taskID],
+                cluster: Resource.Hosted.value
+            })
 
-            return "ok"
+            if (!describeResponse.tasks || describeResponse.tasks.length === 0) {
+                throw new Error("No tasks were found");
+            }
+
+            const task = describeResponse.tasks[0]!
+
+            const updatedDb = {
+                healthStatus: task.healthStatus ? task.healthStatus : "UNKNOWN",
+                lastStatus: task.lastStatus ? task.lastStatus : "UNKNOWN",
+                lastUpdated: now,
+            }
+
+            await db.transact(db.tx.tasks[response[0]!.id]!.update({
+                ...updatedDb
+            }))
+
+            const updatedRes = [{...response[0]!, ...updatedDb}]
+
+            const result = pipe(
+                updatedRes,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    taskID: group[0].taskID,
+                    type: group[0].type as taskType,
+                    lastStatus: group[0].lastStatus as lastStatus,
+                    healthStatus: group[0].healthStatus as healthStatus,
+                    startedAt: group[0].startedAt,
+                    stoppedAt: group[0].stoppedAt,
+                    lastUpdated: group[0].lastUpdated,
+                }))
+            )
+
+            return result
 
         } catch (error) {
+            console.error("update error", error)
             return null
         }
     })
 
-    export const remove = fn(z.string(), async (taskID) => {
+    export const stop = fn(z.object({ taskID: z.string(), id: z.string() }), async (input) => {
         const db = databaseClient()
         const now = new Date().toISOString()
-        // const client = new ECSClient({ credentials: getAwsCredentials() })
         try {
-            //     const query = {
-            //         tasks: {
-            //             $: {
-            //                 where: {
-            //                     id: taskID,
-            //                     stoppedAt: { $isNull: true }
-            //                 }
-            //             },
-            //         }
-            //     }
 
-            //     const data = await db.query(query)
+            const stopResponse = await Aws.EcsStopTask({
+                task: input.taskID,
+                cluster: Resource.Hosted.value,
+                reason: "Client requested a shutdown"
+            })
 
-            //     const response = data.tasks
-            //     if (!response || response.length === 0) {
-            //         throw new Error("No task with the given id was found");
-            //     }
+            if (!stopResponse.task) {
+                throw new Error(`No task was stopped`);
+            }
 
-            //     const stopResponse = await client.send(new StopTaskCommand({
-            //         task: taskID,
-            //         cluster: Resource.Hosted.value,
-            //         reason: "Client requested a shutdown"
-            //     }))
-
-            //     await db.transact(db.tx.tasks[taskID]!.update({
-            //         stoppedAt: now,
-            //         lastUpdated: now,
-            //         lastStatus: "STOPPED",
-            //         healthStatus: "UNKNOWN"
-            //     }))
+            await db.transact(db.tx.tasks[input.id]!.update({
+                stoppedAt: now,
+                lastUpdated: now,
+                lastStatus: "STOPPED",
+                healthStatus: "UNKNOWN"
+            }))
 
             return "ok"
 
         } catch (error) {
+            console.error("stop error", error)
             return null
         }
     })
