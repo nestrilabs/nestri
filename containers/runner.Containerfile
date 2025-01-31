@@ -109,104 +109,76 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #******************************************************************************
 FROM ${BASE_IMAGE} AS runtime
 
-# ## Install Graphics, Media, and Audio packages ##
-# RUN  sed -i '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' /etc/pacman.conf && \
-#     sed -i "s/#Color/Color/" /etc/pacman.conf && \
-#     pacman --noconfirm -Syu archlinux-keyring && \
-#     dirmngr </dev/null > /dev/null 2>&1 && \
-#     # Install mesa-git before Steam for simplicity
-#     pacman --noconfirm -Sy mesa && \
-#     # Install Steam
-#     pacman --noconfirm -Sy steam steam-native-runtime && \
-#     # Clean up pacman cache
-#     paccache -rk1 && \
-#     rm -rf /usr/share/info/* && \
-#     rm -rf /usr/share/man/* && \
-#     rm -rf /usr/share/doc/
-    
-# RUN pacman -Sy --noconfirm --needed \
-#     # Graphics packages
-#     sudo xorg-xwayland labwc wlr-randr mangohud \
-#     # GStreamer and plugins
-#     gstreamer gst-plugins-base gst-plugins-good \
-#     gst-plugins-bad gst-plugin-pipewire \
-#     gst-plugin-rswebrtc gst-plugin-rsrtp \
-#     # Audio packages
-#     pipewire pipewire-pulse pipewire-alsa wireplumber \
-#     # Non-latin fonts
-#     noto-fonts-cjk \
-#     # Other requirements
-#     supervisor jq chwd lshw pacman-contrib && \
-#     # Clean up pacman cache
-#     paccache -rk1 && \
-#     rm -rf /usr/share/info/* && \
-#     rm -rf /usr/share/man/* && \
-#     rm -rf /usr/share/doc/*
+### System Configuration ###
+RUN sed -i \
+    -e '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' \
+    -e "s/#Color/Color/" /etc/pacman.conf && \
+    pacman --noconfirm -Sy archlinux-keyring && \
+    dirmngr </dev/null > /dev/null 2>&1
 
-# #Install our backup manager
-# ARG LUDUSAVI_VERSION="0.28.0"
-# RUN pacman -Sy --noconfirm --needed curl &&\
-#     curl -fsSL -o ludusavi.tar.gz "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" &&\
-#     tar -xzvf ludusavi.tar.gz &&\
-#     mv ludusavi /usr/bin/ &&\
-#     #Clean up
-#     rm *.tar.gz
+### Package Installation ###
+RUN pacman --noconfirm -Sy && \
+    # Core system components
+    pacman -S --needed --noconfirm \
+        archlinux-keyring mesa steam steam-native-runtime \
+        sudo xorg-xwayland labwc wlr-randr mangohud \
+        pipewire pipewire-pulse pipewire-alsa wireplumber \
+        noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \
+    # GStreamer stack
+    pacman -S --needed --noconfirm \
+        gstreamer gst-plugins-base gst-plugins-good \
+        gst-plugins-bad gst-plugin-pipewire \
+        gst-plugin-rswebrtc gst-plugin-rsrtp && \
+    # Cleanup
+    paccache -rk1 && \
+    rm -rf /usr/share/{info,man,doc}/*
 
-#     # Regenerate locale
-# RUN locale-gen
+### Application Installation ###
+ARG LUDUSAVI_VERSION="0.28.0"
+RUN pacman -Sy --noconfirm --needed curl && \
+    curl -fsSL -o ludusavi.tar.gz \
+        "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" && \
+    tar -xzvf ludusavi.tar.gz && \
+    mv ludusavi /usr/bin/ && \
+    rm ludusavi.tar.gz
 
-# ## User ##
-# # Create and setup user #
-# ENV USER="nestri" \
-# 	UID=1000 \
-# 	GID=1000 \
-# 	USER_PWD="nestri1234"
+### User Configuration ###
+ENV USER="nestri" \
+    UID=1000 \
+    GID=1000 \
+    USER_PWD="nestri1234" \
+    XDG_RUNTIME_DIR=/run/user/1000 \
+    HOME=/home/nestri \
+    NVIDIA_DRIVER_CAPABILITIES=all \
+    NVIDIA_VISIBLE_DEVICES=all
 
-# RUN mkdir -p /home/${USER} && \
-#     groupadd -g ${GID} ${USER} && \
-#     useradd -d /home/${USER} -u ${UID} -g ${GID} -s /bin/bash ${USER} && \
-#     chown -R ${USER}:${USER} /home/${USER} && \
-#     echo "${USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
-#     echo "${USER}:${USER_PWD}" | chpasswd
+RUN mkdir -p /home/${USER} && \
+    groupadd -g ${GID} ${USER} && \
+    useradd -d /home/${USER} -u ${UID} -g ${GID} -s /bin/bash ${USER} && \
+    chown -R ${USER}:${USER} /home/${USER} && \
+    echo "${USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    echo "${USER}:${USER_PWD}" | chpasswd && \
+    mkdir -p /run/user/${UID} && \
+    chown ${USER}:${USER} /run/user/${UID} && \
+    usermod -aG input,video,render,seat root && \
+    usermod -aG input,video,render,seat ${USER}
 
-# # Run directory #
-# RUN mkdir -p /run/user/${UID} && \
-# 	chown ${USER}:${USER} /run/user/${UID}
+### System Services Configuration ###
+RUN mkdir -p /run/dbus && \
+    # Wireplumber suspend disable
+    sed -i -z \
+        -e 's/{[[:space:]]*name = node\/suspend-node\.lua,[[:space:]]*type = script\/lua[[:space:]]*provides = hooks\.node\.suspend[[:space:]]*}[[:space:]]*//g' \
+        -e '/wants = \[/{s/hooks\.node\.suspend\s*//; s/,\s*\]/]/}' \
+        /usr/share/wireplumber/wireplumber.conf
 
-# # Groups #
-# RUN usermod -aG input root && usermod -aG input ${USER} && \
-#     usermod -aG video root && usermod -aG video ${USER} && \
-#     usermod -aG render root && usermod -aG render ${USER} && \
-#     usermod -aG seat root && usermod -aG seat ${USER}
-
-# Copy built artifacts from builders
+### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
 COPY --from=gst-wayland-cached-builder /artifacts/usr/ /usr/
+RUN gst-inspect-1.0 waylanddisplay && which nestri-server
 
-# Verification commands
-RUN gst-inspect-1.0 waylanddisplay && \
-    which nestri-server
+### Scripts and Final Configuration ###
+COPY packages/scripts/ /etc/nestri/
+RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
+    locale-gen
 
-# ## Copy scripts ##
-# COPY packages/scripts/ /etc/nestri/
-# # Set scripts as executable #
-# RUN chmod +x /etc/nestri/envs.sh /etc/nestri/entrypoint.sh /etc/nestri/entrypoint_nestri.sh
-
-# ## Set runtime envs ##
-# ENV XDG_RUNTIME_DIR=/run/user/${UID} \
-#     HOME=/home/${USER}
-
-# # Required for NVIDIA.. they want to be special like that #
-# ENV NVIDIA_DRIVER_CAPABILITIES=all
-# ENV NVIDIA_VISIBLE_DEVICES=all
-
-# # DBus run directory creation #
-# RUN mkdir -p /run/dbus
-
-# # Wireplumber disable suspend #
-# # Remove suspend node
-# RUN sed -z -i 's/{[[:space:]]*name = node\/suspend-node\.lua,[[:space:]]*type = script\/lua[[:space:]]*provides = hooks\.node\.suspend[[:space:]]*}[[:space:]]*//g' /usr/share/wireplumber/wireplumber.conf
-# # Remove "hooks.node.suspend" want
-# RUN sed -i '/wants = \[/{s/hooks\.node\.suspend\s*//; s/,\s*\]/]/}' /usr/share/wireplumber/wireplumber.conf
-
-# ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]
+ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]
