@@ -174,7 +174,7 @@ RUN mkdir -p /run/dbus && \
 ### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
 COPY --from=gst-wayland-cached-builder /artifacts/usr/ /usr/
-RUN which nestri-server && ls -la /usr/lib/gstreamer-1.0/
+RUN which nestri-server && ls -la /usr/lib/gstreamer-1.0/ | grep 'waylanddisplaysrc'
 #gst-inspect-1.0 waylanddisplaysrc && 
 
 ### Scripts and Final Configuration ###
