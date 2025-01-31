@@ -174,7 +174,7 @@ RUN mkdir -p /run/dbus && \
 ### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
 COPY --from=gst-wayland-cached-builder /artifacts/usr/ /usr/
-RUN gst-inspect-1.0 waylanddisplay && which nestri-server
+RUN gst-inspect-1.0 waylanddisplaysrc && which nestri-server
 
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
