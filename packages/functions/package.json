@@ -5,10 +5,8 @@
   "devDependencies": {
     "@aws-sdk/client-ecs": "^3.738.0",
     "@aws-sdk/client-sqs": "^3.734.0",
-    "@cloudflare/workers-types": "^4.20241224.0",
     "@nestri/core": "*",
     "@types/bun": "latest",
-    "partykit": "^0.0.111",
     "valibot": "^1.0.0-beta.9"
   },
   "peerDependencies": {

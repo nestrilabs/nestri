@@ -8,6 +8,7 @@ import databaseClient from "../database"
 import { useCurrentUser } from "../actor";
 import { id as createID } from "@instantdb/admin";
 import { groupBy, map, pipe, values } from "remeda"
+import { Sessions } from "../session";
 
 export const lastStatus = z.enum([
     "RUNNING",
@@ -126,6 +127,12 @@ export module Tasks {
 
         try {
 
+            //TODO: Use a simpler way to set the session ID
+            // const sessionID = createID()
+
+            const sessionID = await Sessions.create({ public: true })
+            if (!sessionID) throw new Error("No session id was given");
+
             const run = await Aws.EcsRunTask({
                 count: 1,
                 cluster: Resource.Hosted.value,
@@ -138,7 +145,7 @@ export module Tasks {
                             environment: [
                                 {
                                     name: "NESTRI_ROOM",
-                                    value: "testing-right-now"
+                                    value: sessionID
                                 }
                             ]
                         }
@@ -168,7 +175,7 @@ export module Tasks {
                 startedAt: startedAt ? startedAt.toISOString() : now,
                 lastStatus: taskStatus,
                 lastUpdated: now,
-            }).link({ owner: user.id }))
+            }).link({ owner: user.id, sessions: sessionID }))
 
             return id
         } catch (e) {
@@ -214,7 +221,7 @@ export module Tasks {
                 }))
             )
 
-            return result
+            return result[0]
 
         } catch (error) {
             return null
@@ -265,7 +272,7 @@ export module Tasks {
                 ...updatedDb
             }))
 
-            const updatedRes = [{...response[0]!, ...updatedDb}]
+            const updatedRes = [{ ...response[0]!, ...updatedDb }]
 
             const result = pipe(
                 updatedRes,
@@ -295,6 +302,7 @@ export module Tasks {
         const db = databaseClient()
         const now = new Date().toISOString()
         try {
+            //TODO:Check whether they own this task first
 
             const stopResponse = await Aws.EcsStopTask({
                 task: input.taskID,

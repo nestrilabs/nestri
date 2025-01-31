@@ -5,8 +5,7 @@ import { createSubjects } from "@openauthjs/openauth"
 export const subjects = createSubjects({
   user: v.object({
     accessToken: v.string(),
-    userID: v.string(),
-    subscription: v.enum(Subscription)
+    userID: v.string()
   }),
   device: v.object({
     teamSlug: v.string(),

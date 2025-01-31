@@ -1,6 +1,0 @@
-{
-  "$schema": "https://www.partykit.io/schema.json",
-  "name": "nestri-party",
-  "main": "src/party/index.ts",
-  "compatibilityDate": "2024-12-31"
-}

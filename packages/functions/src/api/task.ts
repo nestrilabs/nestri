@@ -7,6 +7,7 @@ import { Examples } from "@nestri/core/examples";
 import { validator, resolver } from "hono-openapi/zod";
 import { useCurrentUser } from "@nestri/core/actor";
 import { Subscriptions } from "@nestri/core/subscription/index";
+import { Sessions } from "@nestri/core/session/index";
 
 export module TaskApi {
     export const route = new Hono()
@@ -88,6 +89,52 @@ export module TaskApi {
                 return c.json({ data: task }, 200);
             },
         )
+        .get("/:id/session",
+            describeRoute({
+                tags: ["Task"],
+                summary: "Get the current session running on this task",
+                description: "Get a task by its id",
+                responses: {
+                    200: {
+                        content: {
+                            "application/json": {
+                                schema: Result(
+                                    Sessions.Info.openapi({
+                                        description: "A session running on this task",
+                                        example: Examples.Session,
+                                    }))
+                            },
+                        },
+                        description: "A task with this id was found",
+                    },
+                    404: {
+                        content: {
+                            "application/json": {
+                                schema: resolver(z.object({ error: z.string() })),
+                            },
+                        },
+                        description: "A task with this id was not found.",
+                    },
+                },
+            }),
+            validator(
+                "param",
+                z.object({
+                    id: Tasks.Info.shape.id.openapi({
+                        description: "ID of the task to get session information about",
+                        example: Examples.Task.id,
+                    }),
+                }),
+            ),
+            async (c) => {
+                const param = c.req.valid("param");
+                const task = await Tasks.fromID(param.id);
+                if (!task) return c.json({ error: "Task was not found" }, 404);
+                const session = await Sessions.fromTaskID(task.id)
+                if (!session) return c.json({ error: "No session was found running on this task" }, 404);
+                return c.json({ data: session }, 200);
+            },
+        )
         .delete("/:id",
             describeRoute({
                 tags: ["Task"],
@@ -125,7 +172,12 @@ export module TaskApi {
                 const param = c.req.valid("param");
                 const task = await Tasks.fromID(param.id);
                 if (!task) return c.json({ error: "Task was not found" }, 404);
-                const res = await Tasks.stop({ taskID: task[0].taskID, id: param.id })
+                
+                //End any running tasks then (and only then) kill the task
+                const session = await Sessions.fromTaskID(task.id)
+                if (session) { await Sessions.end(session.id) }
+
+                const res = await Tasks.stop({ taskID: task.taskID, id: param.id })
                 return c.json({ data: res }, 200);
             },
         )
@@ -167,7 +219,7 @@ export module TaskApi {
             async (c) => {
                 const user = useCurrentUser();
                 const data = await Subscriptions.list(undefined);
-                if (!data) return c.json({ error: "No subscriptions found for this user" }, 404);
+                if (!data) return c.json({ error: "You need a subscription to create a task" }, 404);
                 if (user) {
                     const task = await Tasks.create();
                     if (!task) return c.json({ error: "Task could not be created" }, 404);

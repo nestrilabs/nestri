@@ -148,7 +148,6 @@ export default {
                     const username = value.username
                     const token = await Users.create(email)
                     const usr = await Users.fromEmail(email);
-                    const subscription = await Subscriptions.list(usr.id)
                     const exists = await Profiles.getProfile(usr.id)
                     if (username && !exists) {
                         await Profiles.create({ owner: usr.id, username })
@@ -157,7 +156,6 @@ export default {
                     return await ctx.subject("user", {
                         accessToken: token,
                         userID: usr.id,
-                        subscription: (subscription ? "Pro" : "Free") as Subscription
                     });
 
                 }
@@ -178,7 +176,6 @@ export default {
                     try {
                         const token = await Users.create(user.primary.email)
                         const usr = await Users.fromEmail(user.primary.email);
-                        const subscription = await Subscriptions.list(usr.id)
                         const exists = await Profiles.getProfile(usr.id)
                         console.log("exists", exists)
                         if (!exists) {
@@ -188,7 +185,6 @@ export default {
                         return await ctx.subject("user", {
                             accessToken: token,
                             userID: usr.id,
-                            subscription: (subscription ? "Pro" : "Free") as Subscription
                         });
 
                     } catch (error) {
