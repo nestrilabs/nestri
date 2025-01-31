@@ -7,10 +7,6 @@ ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 FROM ${BASE_IMAGE} AS gst-builder
 WORKDIR /builder/
 
-# # Grab build and rust packages #
-# RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
-# 	gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc
-
 # Install system dependencies first (layer caching)
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
     gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc && \
