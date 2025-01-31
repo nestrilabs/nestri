@@ -29,7 +29,7 @@ RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
 
 FROM nestri-server-builder AS nestri-server-planner
 WORKDIR /builder/nestri/
-COPY Cargo.toml Cargo.lock ./
+COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
 RUN cargo install -j $(nproc) cargo-chef && \
     cargo chef prepare --recipe-path recipe.json
 
@@ -38,8 +38,8 @@ RUN cargo install -j $(nproc) cargo-chef && \
 #******************************************************************************
 FROM nestri-server-builder AS nestri-server-cacher
 WORKDIR /builder/nestri/
-COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 
+COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
