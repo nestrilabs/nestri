@@ -6,7 +6,6 @@ on:
     pull_request:
         paths:
             - "containers/runner.Containerfile"
-            - "packages/server/**"
             - "packages/scripts/**"
             - ".github/workflows/runner.yml"
     schedule:
@@ -16,7 +15,7 @@ on:
         paths:
             - "containers/runner.Containerfile"
             - ".github/workflows/runner.yml"
-            - "packages/server/**"
+            - "packages/scripts/**"
         tags:
             - v*.*.*
     release:
@@ -51,15 +50,22 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 10
+                swap-size-gb: 20
             - 
-              name: Cache Docker layers
+              name: Cache Rust artifacts
               uses: actions/cache@v4
               with:
-                path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-
-                restore-keys: |
-                  ${{ runner.os }}-buildx-${{ github.sha }}
+                path: |
+                    ~/.cargo/registry
+                    ~/.cargo/git
+                    target
+                key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            - 
+              name: Cache mold linker
+              uses: actions/cache@v3
+              with:
+                path: /usr/bin/mold
+                key: ${{ runner.os }}-mold
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
@@ -68,14 +74,7 @@ jobs:
                 context: ./
                 push: false
                 load: true
-                cache-from: type=local,src=/tmp/.buildx-cache
-                cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
                 tags: nestri:runner
-            # -
-            #   name: Move cache
-            #   run: |
-            #     rm -rf /tmp/.buildx-cache
-            #     mv /tmp/.buildx-cache-new /tmp/.buildx-cache 
 
     build-docker-main:
         name: Build image on main
@@ -116,15 +115,22 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 10
+                swap-size-gb: 20
             - 
-              name: Cache Docker layers
+              name: Cache Rust artifacts
               uses: actions/cache@v4
               with:
-                path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-
-                restore-keys: |
-                  ${{ runner.os }}-buildx-${{ github.sha }}
+                path: |
+                    ~/.cargo/registry
+                    ~/.cargo/git
+                    target
+                key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            - 
+              name: Cache mold linker
+              uses: actions/cache@v3
+              with:
+                path: /usr/bin/mold
+                key: ${{ runner.os }}-mold
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
@@ -132,12 +138,5 @@ jobs:
                 file:  containers/runner.Containerfile
                 context: ./
                 push: true
-                cache-from: type=local,src=/tmp/.buildx-cache
-                cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
                 tags: ${{ steps.meta.outputs.tags }}
                 labels: ${{ steps.meta.outputs.labels }}
-            # -
-            #   name: Move cache
-            #   run: |
-            #     rm -rf /tmp/.buildx-cache
-            #     mv /tmp/.buildx-cache-new /tmp/.buildx-cache 
