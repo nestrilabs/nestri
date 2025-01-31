@@ -47,11 +47,8 @@ WORKDIR /builder/nestri
 
 COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 
-ENV CARGO_TARGET_DIR=/builder/target
-
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/builder/target \
     cargo chef cook --release --recipe-path recipe.json
 
 #--------------------------------------------------------------------
@@ -60,7 +57,6 @@ WORKDIR /builder/nestri
 
 # Copy cached dependencies and build
 COPY --from=nestri-server-cacher ${CARGO_HOME} ${CARGO_HOME}
-COPY --from=nestri-server-cacher /builder/target /builder/target
 COPY packages/server/ ./packages/server/
 
 ENV CARGO_TARGET_DIR=/builder/target
@@ -99,11 +95,8 @@ WORKDIR /builder/gst-wayland-display
 
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
-ENV CARGO_TARGET_DIR=/builder/target
-
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/builder/target \
     cargo chef cook --release --recipe-path recipe.json
 
 #--------------------------------------------------------------------
@@ -112,7 +105,6 @@ WORKDIR /builder/gst-wayland-display
 
 # Copy cached dependencies and build
 COPY --from=gst-wayland-cacher ${CARGO_HOME} ${CARGO_HOME}
-COPY --from=gst-wayland-cacher /builder/target /builder/target
 COPY . .
 
 ENV CARGO_TARGET_DIR=/builder/target
