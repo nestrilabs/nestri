@@ -12,6 +12,7 @@ RUN pacman -Sy --noconfirm mold && \
     cargo install -j $(nproc) --root /usr/local sccache
    
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_HOME=/usr/local/cargo \
     cargo install --locked cargo-chef
 
 ENV ARTIFACTS=/artifacts
