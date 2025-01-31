@@ -180,8 +180,8 @@ FROM ${BASE_IMAGE} AS runtime
 #     usermod -aG seat root && usermod -aG seat ${USER}
 
 # Copy built artifacts from builders
-COPY --from=nestri-server-builder /artifacts/nestri-server /usr/bin/
-COPY --from=gst-wayland-builder /artifacts/usr/ /usr/
+COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
+COPY --from=gst-wayland-cached-builder /artifacts/usr/ /usr/
 
 # Verification commands
 RUN gst-inspect-1.0 waylanddisplay && \
