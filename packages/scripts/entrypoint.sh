@@ -55,6 +55,4 @@ echo "Cleaning up old package cache..."
 paccache -rk1
 
 echo "Switching to nestri user for application startup..."
-# Make sure user home dir is owned properly
-chown ${USER}:${USER} /home/${USER}
 exec sudo -E -u nestri /etc/nestri/entrypoint_nestri.sh
