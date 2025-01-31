@@ -10,6 +10,9 @@ FROM ${BASE_IMAGE} AS base-builder
 RUN pacman -Sy --noconfirm mold && \
     pacman -S --noconfirm rust && \
     cargo install -j $(nproc) --root /usr/local sccache
+   
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo install --locked cargo-chef
 
 ENV ARTIFACTS=/artifacts
 RUN mkdir -p /artifacts
@@ -30,7 +33,10 @@ RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
 FROM nestri-server-builder AS nestri-server-planner
 WORKDIR /builder/nestri/
 COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
-RUN cargo install -j $(nproc) cargo-chef && \
+RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/tmp \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     cargo chef prepare --recipe-path recipe.json
 
 #******************************************************************************
@@ -42,8 +48,8 @@ WORKDIR /builder/nestri/
 COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/tmp \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-    cargo install -j $(nproc) cargo-chef && \
     cargo chef cook --release --recipe-path recipe.json
 
 #******************************************************************************
@@ -57,6 +63,7 @@ COPY packages/server/ ./packages/server/
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/tmp \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     export CARGO_BUILD_JOBS=$(nproc) && \
     export RUSTFLAGS="-C link-arg=-fuse-ld=mold -C target-cpu=native" && \
@@ -81,7 +88,10 @@ RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 FROM gst-wayland-builder AS gst-wayland-planner
 WORKDIR /builder/gst-wayland-display
 
-RUN cargo install -j $(nproc) cargo-chef && \
+RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/tmp \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     cargo chef prepare --recipe-path recipe.json
 
 #******************************************************************************
@@ -92,9 +102,9 @@ FROM gst-wayland-builder AS gst-wayland-cacher
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/tmp \
     --mount=type=cache,target=/usr/local/cargo/registry \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-    cargo install -j $(nproc) cargo-chef && \
     cargo chef cook --release --recipe-path recipe.json
 
 #******************************************************************************
