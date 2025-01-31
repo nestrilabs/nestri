@@ -57,9 +57,7 @@ jobs:
               with:
                 path: |
                   /usr/local/cargo/registry
-                  packages/gst-plugin-wayland-display/target
-                  packages/wayland-display-core/target
-                  packages/c-bindings/target
+                  /builder/target
                 key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
               name: Cache mold linker
@@ -125,9 +123,7 @@ jobs:
               with:
                 path: |
                   /usr/local/cargo/registry
-                  packages/gst-plugin-wayland-display/target
-                  packages/wayland-display-core/target
-                  packages/c-bindings/target
+                  /builder/target
                 key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
               name: Cache mold linker
