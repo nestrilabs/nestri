@@ -179,6 +179,7 @@ COPY packages/scripts/ /etc/nestri/
 RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
     locale-gen
 
-RUN ldd /usr/bin/nestri-server
+COPY --from=nestri-server-cached-builder /artifacts /artifacts
+RUN ls -la /artifacts/
 
 ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]
