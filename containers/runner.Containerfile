@@ -36,8 +36,6 @@ FROM nestri-server-deps AS nestri-server-planner
 WORKDIR /builder/nestri
 COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
 
-ENV CARGO_TARGET_DIR=/builder/target
-
 # Prepare recipe for dependency caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
@@ -45,8 +43,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #--------------------------------------------------------------------
 FROM nestri-server-deps AS nestri-server-cacher
 COPY --from=nestri-server-planner /builder/nestri/recipe.json .
-
-ENV CARGO_TARGET_DIR=/builder/target
 
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
@@ -56,8 +52,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #--------------------------------------------------------------------
 FROM nestri-server-deps AS nestri-server-builder
 WORKDIR /builder/nestri
-
-ENV CARGO_TARGET_DIR=/builder/target
 
 # Copy cached dependencies and build
 COPY --from=nestri-server-cacher ${CARGO_HOME} ${CARGO_HOME}
@@ -87,8 +81,6 @@ RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 FROM gst-wayland-deps AS gst-wayland-planner
 WORKDIR /builder/gst-wayland-display
 
-ENV CARGO_TARGET_DIR=/builder/target
-
 # Prepare recipe for dependency caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
@@ -96,8 +88,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-cacher
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
-
-ENV CARGO_TARGET_DIR=/builder/target
 
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
@@ -108,16 +98,18 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 FROM gst-wayland-deps AS gst-wayland-builder
 WORKDIR /builder/gst-wayland-display
 
-ENV CARGO_TARGET_DIR=/builder/target
-
 # Copy cached dependencies and build
 COPY --from=gst-wayland-cacher ${CARGO_HOME} ${CARGO_HOME}
-COPY --from=gst-wayland-cacher /builder/target /builder/target
+COPY --from=gst-wayland-cacher /builder/gst-plugin-wayland-display/target /builder/gst-plugin-wayland-display/target
+COPY --from=gst-wayland-cacher /builder/wayland-display-core/target /builder/wayland-display-core/target
+COPY --from=gst-wayland-cacher /builder/c-bindings/target /builder/c-bindings/target
 COPY . .
 
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/builder/target \
+    --mount=type=cache,target=/builder/gst-plugin-wayland-display/target \
+    --mount=type=cache,target=/builder/wayland-display-core/target \
+    --mount=type=cache,target=/builder/c-bindings/target \
     cargo cinstall --prefix=${ARTIFACTS}/usr --release
 
 #******************************************************************************
