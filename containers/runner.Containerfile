@@ -98,6 +98,7 @@ RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/builder/plugin/  \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    CARGO_HOME=/usr/local/cargo \
     cargo chef prepare --recipe-path recipe.json
 
 #******************************************************************************
@@ -114,6 +115,7 @@ RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/tmp \
     export CARGO_TARGET_DIR=/builder/target \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    CARGO_HOME=/usr/local/cargo \
     cargo chef cook --release --recipe-path recipe.json
 
 #******************************************************************************
@@ -133,7 +135,8 @@ RUN --mount=type=cache,target=/root/.cache/sccache \
     export RUSTC_WRAPPER=/usr/local/bin/sccache \
     export CARGO_TARGET_DIR=/builder/target \
     export CARGO_BUILD_JOBS=$(nproc) \
-    export RUSTFLAGS="-C link-arg=-fuse-ld=mold -C target-cpu=native" && \
+    export RUSTFLAGS="-C link-arg=-fuse-ld=mold" && \
+    CARGO_HOME=/usr/local/cargo \
     cargo cinstall --prefix=/builder/plugin/ --release && \
     cp -r /builder/plugin/ "$ARTIFACTS"
     
