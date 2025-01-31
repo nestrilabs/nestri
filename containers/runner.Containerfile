@@ -2,145 +2,67 @@
 ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 
 #******************************************************************************
-#                                                                             base-builder
+# Base Builder Stage - Prepares core build environment
 #******************************************************************************
 FROM ${BASE_IMAGE} AS base-builder
 
-# Install mold linker and sccache upfront
-RUN pacman -Sy --noconfirm mold && \
-    pacman -S --noconfirm rust && \
-    cargo install -j $(nproc) --root /usr/local sccache
-   
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    CARGO_HOME=/usr/local/cargo \
-    cargo install --locked cargo-chef
+# Environment setup for Rust and Cargo
+ENV CARGO_HOME=/usr/local/cargo \
+    ARTIFACTS=/artifacts \
+    RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+    PATH="${CARGO_HOME}/bin:${PATH}"
 
-ENV ARTIFACTS=/artifacts
-RUN mkdir -p /artifacts
-    
-#******************************************************************************
-#                                                                             nestri-server-builder
-#******************************************************************************
-# FROM base-builder AS nestri-server-builder
-# WORKDIR /builder/
-
-# RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
-#     gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc 
+# Install build essentials and caching tools
+RUN pacman -Sy --noconfirm mold rust && \
+    mkdir -p "${ARTIFACTS}" && \
+    # Install sccache and cargo-chef with cache mounting
+    --mount=type=cache,target=${CARGO_HOME}/registry \
+    cargo install -j $(nproc) sccache cargo-chef --locked
 
 #******************************************************************************
-#                                                                             nestri-server-planner
+# GST-Wayland Plugin Build Stages
 #******************************************************************************
+FROM base-builder AS gst-wayland-deps
+WORKDIR /builder
 
-# FROM nestri-server-builder AS nestri-server-planner
-# WORKDIR /builder/nestri/
-# COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
-# RUN --mount=type=cache,target=/root/.cache/sccache \
-#     --mount=type=cache,target=/usr/local/cargo/registry \
-#     --mount=type=cache,target=/tmp \
-#     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-#     cargo chef prepare --recipe-path recipe.json
-
-#******************************************************************************
-#                                                                             nestri-server-cacher
-#******************************************************************************
-# FROM nestri-server-builder AS nestri-server-cacher
-# WORKDIR /builder/nestri/
-
-# COPY --from=nestri-server-planner /builder/nestri/recipe.json .
-# RUN --mount=type=cache,target=/root/.cache/sccache \
-#     --mount=type=cache,target=/usr/local/cargo/registry \
-#     --mount=type=cache,target=/tmp \
-#     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-#     cargo chef cook --release --recipe-path recipe.json
-
-#******************************************************************************
-#                                                                             nestri-server-build
-#******************************************************************************
-# FROM nestri-server-builder AS nestri-server-build
-# WORKDIR /builder/nestri/
-
-# COPY --from=nestri-server-cacher /builder/nestri/target target
-# COPY packages/server/ ./packages/server/
-
-# RUN --mount=type=cache,target=/root/.cache/sccache \
-#     --mount=type=cache,target=/usr/local/cargo/registry \
-#     --mount=type=cache,target=/tmp \
-#     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-#     export CARGO_BUILD_JOBS=$(nproc) && \
-#     export RUSTFLAGS="-C link-arg=-fuse-ld=mold -C target-cpu=native" && \
-#     cargo build --release && \
-#     cp target/release/nestri-server "$ARTIFACTS"
-
-#******************************************************************************
-#                                                                             gst-wayland-builder
-#******************************************************************************
-FROM base-builder AS gst-wayland-builder
-WORKDIR /builder/
-
+# Install build dependencies
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    CARGO_HOME=/usr/local/cargo \
-    cargo install --locked cargo-c
-
+# Clone repository (layer separated for better cache utilization)
 RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 
-RUN mkdir plugin
-
-#******************************************************************************
-#                                                                             gst-wayland-planner
-#******************************************************************************
-FROM gst-wayland-builder AS gst-wayland-planner
+#--------------------------------------------------------------------
+FROM gst-wayland-deps AS gst-wayland-planner
 WORKDIR /builder/gst-wayland-display
 
-RUN --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/tmp \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/builder/plugin/  \
-    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-    CARGO_HOME=/usr/local/cargo \
+# Prepare recipe for dependency caching
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
 
-#******************************************************************************
-#                                                                            gst-wayland-cacher
-#******************************************************************************
-FROM gst-wayland-builder AS gst-wayland-cacher
-
+#--------------------------------------------------------------------
+FROM gst-wayland-deps AS gst-wayland-cacher
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
-RUN --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/builder/target \
-    --mount=type=cache,target=/builder/plugin/  \
-    --mount=type=cache,target=/tmp \
-    export CARGO_TARGET_DIR=/builder/target \
-    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-    CARGO_HOME=/usr/local/cargo \
+# Cache dependencies using cargo-chef
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    --mount=type=cache,target=/root/.cache/sccache \
     cargo chef cook --release --recipe-path recipe.json
 
-#******************************************************************************
-#                                                                            gst-wayland-build
-#******************************************************************************
-
-FROM gst-wayland-builder AS gst-wayland-build
+#--------------------------------------------------------------------
+FROM gst-wayland-deps AS gst-wayland-builder
 WORKDIR /builder/gst-wayland-display
 
-COPY --from=gst-wayland-cacher /builder/ /builder/
-COPY . .
+# Copy cached dependencies and build
+COPY --from=gst-wayland-cacher ${CARGO_HOME} ${CARGO_HOME}
+COPY --from=gst-wayland-cacher /builder/target /builder/target
 
-RUN --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/builder/plugin/  \
-    --mount=type=cache,target=/builder/target \
-    export RUSTC_WRAPPER=/usr/local/bin/sccache \
-    export CARGO_TARGET_DIR=/builder/target \
-    export CARGO_BUILD_JOBS=$(nproc) \
+# Build and install directly to artifacts
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    --mount=type=cache,target=/root/.cache/sccache \
+    export CARGO_TARGET_DIR=/builder/target && \
     export RUSTFLAGS="-C link-arg=-fuse-ld=mold" && \
-    CARGO_HOME=/usr/local/cargo \
-    cargo cinstall --prefix=/builder/plugin/ --release && \
-    cp -r /builder/plugin/ "$ARTIFACTS"
-    
+    cargo cinstall --prefix=${ARTIFACTS}/usr --release
 
 #******************************************************************************
 #                                                                                runtime
