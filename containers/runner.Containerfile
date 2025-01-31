@@ -7,25 +7,42 @@ ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 FROM ${BASE_IMAGE} AS gst-builder
 WORKDIR /builder/
 
-# Grab build and rust packages #
+# # Grab build and rust packages #
+# RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
+# 	gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc
+
+# Install system dependencies first (layer caching)
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
-	gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc
+    gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc && \
+    rustup default stable && \
+    cargo install sccache
 
-# Setup stable rust toolchain #
-RUN rustup default stable
+# Cache dependencies using cargo-chef
+FROM gst-builder AS planner
+WORKDIR /builder/nestri/
+COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
+RUN cargo install cargo-chef && \
+    cargo chef prepare --recipe-path recipe.json
 
-#Copy the whole repo inside the build container
-# COPY ./ /builder/nestri/
-
-RUN mkdir -p /artifacts
-
-RUN --mount=type=bind,target=/builder/nestri/,rw \
-    --mount=type=cache,target=/builder/nestri/target/   \
-    --mount=type=cache,target=/usr/local/cargo/git/db \
+# Build stage with cached dependencies
+FROM gst-builder AS builder
+WORKDIR /builder/nestri/
+COPY --from=planner /builder/nestri/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    cd /builder/nestri/packages/server/ \
-    && cargo build --release \
-    && cp /builder/nestri/target/release/nestri-server /artifacts/
+    --mount=type=cache,target=/root/.cache/sccache \
+    cargo chef cook --release --recipe-path recipe.json
+
+# Copy source and build
+COPY packages/server/ ./packages/server/
+RUN --mount=type=cache,target=/usr/local/cargo/git/db \
+    --mount=type=cache,target=/usr/local/cargo/registry/ \
+    --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/builder/nestri/target/ \
+    export RUSTC_WRAPPER=sccache && \
+    export SCCACHE_DIR=/root/.cache/sccache && \
+    cargo build --release && \
+    cp target/release/nestri-server /artifacts/
 
 #******************************************************************************
 #                                                                                                            gstwayland-builder
@@ -34,34 +51,50 @@ FROM ${BASE_IMAGE} AS gstwayland-builder
 WORKDIR /builder/
 
 # Grab build and rust packages #
+# RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
+# 	libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
+
+# # Setup stable rust toolchain #
+# RUN rustup default stable
+# # Build required cargo-c package #
+# RUN --mount=type=cache,target=/usr/local/cargo/git/db \
+#     --mount=type=cache,target=/usr/local/cargo/registry/ \
+#     --mount=type=cache,target=/root/.cargo/bin/ \
+#     cargo install cargo-c
+
+# # Clone gst plugin source #
+# RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
+
+# # Build gst plugin #
+# RUN mkdir plugin
+
+# RUN mkdir -p /artifacts
+
+# WORKDIR /builder/gst-wayland-display
+
+# RUN --mount=type=cache,target=/builder/gst-wayland-display/target/  \
+#     --mount=type=cache,target=/root/.cargo/bin/ \
+#     --mount=type=cache,target=/builder/plugin/  \
+#     --mount=type=cache,target=/usr/local/cargo/git/db \
+#     --mount=type=cache,target=/usr/local/cargo/registry/ \
+# 	cargo cinstall --prefix=/builder/plugin/ \
+#     && cp -r /builder/plugin/ /artifacts/
+# Install system dependencies
+
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
-	libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
+    libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput && \
+    rustup default stable && \
+    cargo install sccache cargo-c
 
-# Setup stable rust toolchain #
-RUN rustup default stable
-# Build required cargo-c package #
-RUN --mount=type=cache,target=/usr/local/cargo/git/db \
+# Clone and build gst-wayland-display with caching
+RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    --mount=type=cache,target=/root/.cargo/bin/ \
-    cargo install cargo-c
-
-# Clone gst plugin source #
-RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
-
-# Build gst plugin #
-RUN mkdir plugin
-
-RUN mkdir -p /artifacts
-
-WORKDIR /builder/gst-wayland-display
-
-RUN --mount=type=cache,target=/builder/gst-wayland-display/target/  \
-    --mount=type=cache,target=/root/.cargo/bin/ \
-    --mount=type=cache,target=/builder/plugin/  \
     --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
-	cargo cinstall --prefix=/builder/plugin/ \
-    && cp -r /builder/plugin/ /artifacts/
+    git clone https://github.com/games-on-whales/gst-wayland-display.git && \
+    cd gst-wayland-display && \
+    export RUSTC_WRAPPER=sccache && \
+    cargo cinstall --prefix=/builder/plugin/ --release && \
+    cp -r /builder/plugin/ /artifacts/
 
 #******************************************************************************
 #                                                                                                                             runtime
