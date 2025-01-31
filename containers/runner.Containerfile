@@ -108,9 +108,11 @@ FROM gst-wayland-builder AS gst-wayland-cacher
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/builder/target \
     --mount=type=cache,target=/tmp \
     --mount=type=cache,target=/builder/plugin/  \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    export CARGO_TARGET_DIR=/builder/target \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     cargo chef cook --release --recipe-path recipe.json
 
@@ -121,14 +123,17 @@ RUN --mount=type=cache,target=/root/.cache/sccache \
 FROM gst-wayland-builder AS gst-wayland-build
 WORKDIR /builder/gst-wayland-display
 
-COPY --from=gst-wayland-cacher /builder/gst-wayland-display/target target
+COPY --from=gst-wayland-cacher /builder/target /builder/target
+COPY --from=gst-wayland-cacher /builder/plugin /builder/plugin
 COPY . .
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/builder/plugin/  \
-    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
-    export CARGO_BUILD_JOBS=$(nproc) && \
+    --mount=type=cache,target=/builder/target \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache \
+    export CARGO_TARGET_DIR=/builder/target \
+    export CARGO_BUILD_JOBS=$(nproc) \
     export RUSTFLAGS="-C link-arg=-fuse-ld=mold -C target-cpu=native" && \
     cargo cinstall --prefix=/builder/plugin/ --release && \
     cp -r /builder/plugin/ "$ARTIFACTS"
