@@ -9,7 +9,6 @@ FROM ${BASE_IMAGE} AS base-builder
 # Environment setup for Rust and Cargo
 ENV CARGO_HOME=/usr/local/cargo \
     ARTIFACTS=/artifacts \
-    RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
     PATH="${CARGO_HOME}/bin:${PATH}" \
     RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
@@ -22,6 +21,8 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/root/.cache/sccache \
     cargo install -j $(nproc) sccache cargo-chef --locked
+
+ENV RUSTC_WRAPPER="${CARGO_HOME}/bin/sccache"
 
 #******************************************************************************
 # Nestri Server Build Stages
