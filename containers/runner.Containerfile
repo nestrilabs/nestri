@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
 
 #--------------------------------------------------------------------
-FROM nestri-server-deps AS nestri-server-cacher
+FROM nestri-server-deps AS nestri-server-cached-builder
 WORKDIR /builder/nestri
 
 COPY --from=nestri-server-planner /builder/nestri/recipe.json .
@@ -51,15 +51,10 @@ COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef cook --release --recipe-path recipe.json
 
-#--------------------------------------------------------------------
-FROM nestri-server-deps AS nestri-server-builder
-WORKDIR /builder/nestri
-
-# Copy cached dependencies and build
-COPY --from=nestri-server-cacher ${CARGO_HOME} ${CARGO_HOME}
-COPY packages/server/ ./packages/server/
 
 ENV CARGO_TARGET_DIR=/builder/target
+
+COPY packages/server/ ./packages/server/
 
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
@@ -90,7 +85,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
 
 #--------------------------------------------------------------------
-FROM gst-wayland-deps AS gst-wayland-cacher
+FROM gst-wayland-deps AS gst-wayland-cached-builder
 WORKDIR /builder/gst-wayland-display
 
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
@@ -99,15 +94,10 @@ COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef cook --release --recipe-path recipe.json
 
-#--------------------------------------------------------------------
-FROM gst-wayland-deps AS gst-wayland-builder
-WORKDIR /builder/gst-wayland-display
-
-# Copy cached dependencies and build
-COPY --from=gst-wayland-cacher ${CARGO_HOME} ${CARGO_HOME}
-COPY . .
 
 ENV CARGO_TARGET_DIR=/builder/target
+
+COPY . .
 
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
