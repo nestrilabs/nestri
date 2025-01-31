@@ -9,7 +9,7 @@ FROM ${BASE_IMAGE} AS base-builder
 # Install mold linker and sccache upfront
 RUN pacman -Sy --noconfirm mold && \
     pacman -S --noconfirm rust && \
-    cargo install --root /usr/local sccache
+    cargo install -j $(nproc) --root /usr/local sccache
 
 ENV ARTIFACTS=/artifacts
 RUN mkdir -p /artifacts
@@ -20,9 +20,8 @@ RUN mkdir -p /artifacts
 FROM base-builder AS nestri-server-builder
 WORKDIR /builder/
 
-RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
-    gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc && \
-    rustup default stable
+RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
+    gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc 
 
 #******************************************************************************
 #                                                                             nestri-server-planner
@@ -31,7 +30,7 @@ RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
 FROM nestri-server-builder AS nestri-server-planner
 WORKDIR /builder/nestri/
 COPY Cargo.toml Cargo.lock ./
-RUN cargo install cargo-chef && \
+RUN cargo install -j $(nproc) cargo-chef && \
     cargo chef prepare --recipe-path recipe.json
 
 #******************************************************************************
@@ -69,10 +68,9 @@ RUN --mount=type=cache,target=/root/.cache/sccache \
 FROM base-builder AS gst-wayland-builder
 WORKDIR /builder/
 
-RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
+RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput && \
-    rustup default stable && \
-    cargo install cargo-c
+    cargo install -j $(nproc) cargo-c
 
 RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 
@@ -82,7 +80,7 @@ RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 FROM gst-wayland-builder AS gst-wayland-planner
 WORKDIR /builder/gst-wayland-display
 
-RUN cargo install cargo-chef && \
+RUN cargo install -j $(nproc) cargo-chef && \
     cargo chef prepare --recipe-path recipe.json
 
 #******************************************************************************
@@ -157,8 +155,8 @@ RUN pacman -Sy --noconfirm --needed \
 
 #Install our backup manager
 ARG LUDUSAVI_VERSION="0.28.0"
-RUN pacman -Sy --noconfirm --needed wget &&\
-    wget "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" -O "ludusavi.tar.gz" &&\
+RUN pacman -Sy --noconfirm --needed curl &&\
+    curl -fsSL -o ludusavi.tar.gz "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" &&\
     tar -xzvf ludusavi.tar.gz &&\
     mv ludusavi /usr/bin/ &&\
     #Clean up
