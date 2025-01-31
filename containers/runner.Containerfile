@@ -36,6 +36,8 @@ FROM nestri-server-deps AS nestri-server-planner
 WORKDIR /builder/nestri
 COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
 
+ENV CARGO_TARGET_DIR=/builder/target
+
 # Prepare recipe for dependency caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
@@ -85,6 +87,8 @@ RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 FROM gst-wayland-deps AS gst-wayland-planner
 WORKDIR /builder/gst-wayland-display
 
+ENV CARGO_TARGET_DIR=/builder/target
+
 # Prepare recipe for dependency caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo chef prepare --recipe-path recipe.json
@@ -114,7 +118,6 @@ COPY . .
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
-    export CARGO_TARGET_DIR=/builder/target && \
     cargo cinstall --prefix=${ARTIFACTS}/usr --release
 
 #******************************************************************************
