@@ -97,8 +97,6 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 
 ENV CARGO_TARGET_DIR=/builder/target
 
-COPY . .
-
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
