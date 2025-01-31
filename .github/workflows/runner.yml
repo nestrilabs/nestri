@@ -56,9 +56,9 @@ jobs:
               uses: actions/cache@v4
               with:
                 path: |
-                    ~/.cargo/registry
-                    ~/.cargo/git
-                    target
+                  /usr/local/cargo/registry
+                  /root/.cache/sccache
+                  target
                 key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
               name: Cache mold linker
@@ -75,6 +75,8 @@ jobs:
                 push: false
                 load: true
                 tags: nestri:runner
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
 
     build-docker-main:
         name: Build image on main
@@ -121,9 +123,9 @@ jobs:
               uses: actions/cache@v4
               with:
                 path: |
-                    ~/.cargo/registry
-                    ~/.cargo/git
-                    target
+                  /usr/local/cargo/registry
+                  /root/.cache/sccache
+                  target
                 key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
               name: Cache mold linker
@@ -140,3 +142,5 @@ jobs:
                 push: true
                 tags: ${{ steps.meta.outputs.tags }}
                 labels: ${{ steps.meta.outputs.labels }}
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
