@@ -14,12 +14,13 @@ ENV CARGO_HOME=/usr/local/cargo \
     RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
 # Install build essentials and caching tools
-RUN pacman -Sy --noconfirm mold rust && \
-    mkdir -p "${ARTIFACTS}" && \
-    mkdir -p "${CARGO_HOME}" && \
-    mkdir -p "${CARGO_HOME}/registry" && \
-    # Install sccache and cargo-chef with cache mounting
-    --mount=type=cache,target=${CARGO_HOME}/registry \
+RUN --mount=type=cache,target=/var/cache/pacman/pkg \
+    pacman -Sy --noconfirm mold rust && \
+    mkdir -p "${ARTIFACTS}"
+
+# Install sccache and cargo-chef with proper caching
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    --mount=type=cache,target=/root/.cache/sccache \
     cargo install -j $(nproc) sccache cargo-chef --locked
 
 #******************************************************************************
