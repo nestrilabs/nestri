@@ -108,10 +108,10 @@ FROM gst-wayland-builder AS gst-wayland-cacher
 COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/builder/target \
-    --mount=type=cache,target=/tmp \
-    --mount=type=cache,target=/builder/plugin/  \
     --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/builder/target \
+    --mount=type=cache,target=/builder/plugin/  \
+    --mount=type=cache,target=/tmp \
     export CARGO_TARGET_DIR=/builder/target \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     cargo chef cook --release --recipe-path recipe.json
