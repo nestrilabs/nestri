@@ -5,8 +5,10 @@ ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 #                                                                             base-builder
 #******************************************************************************
 FROM ${BASE_IMAGE} AS base-builder
+
 # Install mold linker and sccache upfront
 RUN pacman -Sy --noconfirm mold && \
+    pacman -S --noconfirm rust && \
     cargo install --root /usr/local sccache
 
 ENV ARTIFACTS=/artifacts
