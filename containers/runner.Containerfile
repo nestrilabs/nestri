@@ -77,8 +77,11 @@ FROM base-builder AS gst-wayland-builder
 WORKDIR /builder/
 
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
-    libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput && \
-    cargo install -j $(nproc) cargo-c
+    libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_HOME=/usr/local/cargo \
+    cargo install --locked cargo-c
 
 RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 
@@ -91,8 +94,9 @@ FROM gst-wayland-builder AS gst-wayland-planner
 WORKDIR /builder/gst-wayland-display
 
 RUN --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/tmp \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/builder/plugin/  \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     cargo chef prepare --recipe-path recipe.json
 
