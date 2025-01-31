@@ -49,12 +49,13 @@ ENV CARGO_TARGET_DIR=/builder/target
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
-    export CARGO_TARGET_DIR=/builder/target && \
     cargo chef cook --release --recipe-path recipe.json
 
 #--------------------------------------------------------------------
 FROM nestri-server-deps AS nestri-server-builder
 WORKDIR /builder/nestri
+
+ENV CARGO_TARGET_DIR=/builder/target
 
 # Copy cached dependencies and build
 COPY --from=nestri-server-cacher ${CARGO_HOME} ${CARGO_HOME}
@@ -64,7 +65,6 @@ COPY packages/server/ ./packages/server/
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
-    export CARGO_TARGET_DIR=/builder/target && \
     cargo build --release && \
     cp target/release/nestri-server "${ARTIFACTS}"
 
@@ -98,12 +98,13 @@ ENV CARGO_TARGET_DIR=/builder/target
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
-    export CARGO_TARGET_DIR=/builder/target && \
     cargo chef cook --release --recipe-path recipe.json
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-builder
 WORKDIR /builder/gst-wayland-display
+
+ENV CARGO_TARGET_DIR=/builder/target
 
 # Copy cached dependencies and build
 COPY --from=gst-wayland-cacher ${CARGO_HOME} ${CARGO_HOME}

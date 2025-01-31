@@ -57,7 +57,6 @@ jobs:
               with:
                 path: |
                   /usr/local/cargo/registry
-                  /root/.cache/sccache
                   target
                 key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
@@ -75,7 +74,7 @@ jobs:
                 push: false
                 load: true
                 tags: nestri:runner
-                cache-from: type=gha
+                cache-from: type=gha,mode=max
                 cache-to: type=gha,mode=max
 
     build-docker-main:
@@ -124,7 +123,6 @@ jobs:
               with:
                 path: |
                   /usr/local/cargo/registry
-                  /root/.cache/sccache
                   target
                 key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
@@ -142,5 +140,5 @@ jobs:
                 push: true
                 tags: ${{ steps.meta.outputs.tags }}
                 labels: ${{ steps.meta.outputs.labels }}
-                cache-from: type=gha
+                cache-from: type=gha,mode=max
                 cache-to: type=gha,mode=max
