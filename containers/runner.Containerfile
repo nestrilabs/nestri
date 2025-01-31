@@ -17,12 +17,9 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --noconfirm mold rust && \
     mkdir -p "${ARTIFACTS}"
 
-# Install sccache and cargo-chef with proper caching
+# Install cargo-chef with proper caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/root/.cache/sccache \
-    cargo install -j $(nproc) sccache cargo-chef --locked
-
-ENV RUSTC_WRAPPER="${CARGO_HOME}/bin/sccache"
+    cargo install -j $(nproc) cargo-chef --locked
 
 #******************************************************************************
 # Nestri Server Build Stages
@@ -49,7 +46,6 @@ COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/builder/target \
     export CARGO_TARGET_DIR=/builder/target && \
     cargo chef cook --release --recipe-path recipe.json
@@ -65,7 +61,6 @@ COPY packages/server/ ./packages/server/
 
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/builder/target \
     export CARGO_TARGET_DIR=/builder/target && \
     cargo build --release && \
@@ -98,7 +93,6 @@ COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/builder/target \
     export CARGO_TARGET_DIR=/builder/target && \
     cargo chef cook --release --recipe-path recipe.json
@@ -114,7 +108,6 @@ COPY . .
 
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/builder/target \
     export CARGO_TARGET_DIR=/builder/target && \
     cargo cinstall --prefix=${ARTIFACTS}/usr --release
