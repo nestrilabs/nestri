@@ -43,6 +43,7 @@ COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    cargo install -j $(nproc) cargo-chef && \
     cargo chef cook --release --recipe-path recipe.json
 
 #******************************************************************************
@@ -93,6 +94,7 @@ COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 RUN --mount=type=cache,target=/root/.cache/sccache \
     --mount=type=cache,target=/usr/local/cargo/registry \
     export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    cargo install -j $(nproc) cargo-chef && \
     cargo chef cook --release --recipe-path recipe.json
 
 #******************************************************************************

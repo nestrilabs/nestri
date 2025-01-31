@@ -13,7 +13,6 @@
     "@pulumi/pulumi": "^3.134.0",
     "@types/aws-lambda": "8.10.145",
     "prettier": "^3.2.5",
-    "turbo": "^2.0.12",
     "typescript": "^5.4.5"
   },
   "engines": {
