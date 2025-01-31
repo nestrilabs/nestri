@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 FROM nestri-server-deps AS nestri-server-cacher
 WORKDIR /builder/nestri
 
-COPY --from=nestri-server-planner /builder/recipe.json .
+COPY --from=nestri-server-planner /builder/nestri/recipe.json .
 
 ENV CARGO_TARGET_DIR=/builder/target
 
