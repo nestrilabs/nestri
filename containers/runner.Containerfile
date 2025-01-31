@@ -2,67 +2,120 @@
 ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 
 #******************************************************************************
-#                                                                                                          nestri-server-builder
+#                                                                             base-builder
 #******************************************************************************
-FROM ${BASE_IMAGE} AS gst-builder
+FROM ${BASE_IMAGE} AS base-builder
+# Install mold linker and sccache upfront
+RUN pacman -Sy --noconfirm mold && \
+    cargo install --root /usr/local sccache
+
+ENV ARTIFACTS=/artifacts
+RUN mkdir -p /artifacts
+    
+#******************************************************************************
+#                                                                             nestri-server-builder
+#******************************************************************************
+FROM base-builder AS nestri-server-builder
 WORKDIR /builder/
 
-# Install system dependencies first (layer caching)
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
     gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc && \
-    rustup default stable && \
-    cargo install sccache
+    rustup default stable
 
-# Cache dependencies using cargo-chef
-FROM gst-builder AS planner
+#******************************************************************************
+#                                                                             nestri-server-planner
+#******************************************************************************
+
+FROM nestri-server-builder AS nestri-server-planner
 WORKDIR /builder/nestri/
 COPY packages/server/Cargo.toml packages/server/Cargo.lock ./
 RUN cargo install cargo-chef && \
     cargo chef prepare --recipe-path recipe.json
 
-# Build stage with cached dependencies
-FROM gst-builder AS builder
+#******************************************************************************
+#                                                                             nestri-server-cacher
+#******************************************************************************
+FROM nestri-server-builder AS nestri-server-cacher
 WORKDIR /builder/nestri/
-COPY --from=planner /builder/nestri/recipe.json recipe.json
-RUN --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
-    --mount=type=cache,target=/root/.cache/sccache \
+COPY --from=nestri-server-planner /builder/nestri/recipe.json .
+
+RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
     cargo chef cook --release --recipe-path recipe.json
 
-# Copy source and build
+#******************************************************************************
+#                                                                             nestri-server-build
+#******************************************************************************
+FROM nestri-server-builder AS nestri-server-build
+WORKDIR /builder/nestri/
+
+COPY --from=nestri-server-cacher /builder/nestri/target target
 COPY packages/server/ ./packages/server/
-RUN --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
-    --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/builder/nestri/target/ \
-    export RUSTC_WRAPPER=sccache && \
-    export SCCACHE_DIR=/root/.cache/sccache && \
+
+RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    export CARGO_BUILD_JOBS=$(nproc) && \
+    export RUSTFLAGS="-C link-arg=-fuse-ld=mold -C target-cpu=native" && \
     cargo build --release && \
-    cp target/release/nestri-server /artifacts/
+    cp target/release/nestri-server "$ARTIFACTS"
 
 #******************************************************************************
-#                                                                                                            gstwayland-builder
+#                                                                             gst-wayland-builder
 #******************************************************************************
-FROM ${BASE_IMAGE} AS gstwayland-builder
+FROM base-builder AS gst-wayland-builder
 WORKDIR /builder/
 
 RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make rustup \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput && \
     rustup default stable && \
-    cargo install sccache cargo-c
+    cargo install cargo-c
 
-# Clone and build gst-wayland-display with caching
-RUN --mount=type=cache,target=/root/.cache/sccache \
-    --mount=type=cache,target=/usr/local/cargo/registry/ \
-    --mount=type=cache,target=/usr/local/cargo/git/db \
-    git clone https://github.com/games-on-whales/gst-wayland-display.git && \
-    cd gst-wayland-display && \
-    export RUSTC_WRAPPER=sccache && \
-    cargo cinstall --prefix=/builder/plugin/ --release && \
-    cp -r /builder/plugin/ /artifacts/
+RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
 
 #******************************************************************************
-#                                                                                                                             runtime
+#                                                                             gst-wayland-planner
+#******************************************************************************
+FROM gst-wayland-builder AS gst-wayland-planner
+WORKDIR /builder/gst-wayland-display
+
+RUN cargo install cargo-chef && \
+    cargo chef prepare --recipe-path recipe.json
+
+#******************************************************************************
+#                                                                            gst-wayland-cacher
+#******************************************************************************
+FROM gst-wayland-builder AS gst-wayland-cacher
+
+COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
+
+RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    cargo chef cook --release --recipe-path recipe.json
+
+#******************************************************************************
+#                                                                            gst-wayland-build
+#******************************************************************************
+
+FROM gst-wayland-builder AS gst-wayland-build
+WORKDIR /builder/gst-wayland-display
+
+COPY --from=gst-wayland-cacher /builder/gst-wayland-display/target target
+COPY . .
+
+RUN --mount=type=cache,target=/root/.cache/sccache \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    export RUSTC_WRAPPER=/usr/local/bin/sccache && \
+    export CARGO_BUILD_JOBS=$(nproc) && \
+    export RUSTFLAGS="-C link-arg=-fuse-ld=mold -C target-cpu=native" && \
+    cargo cinstall --prefix=/builder/plugin/ --release && \
+    cp -r /builder/plugin/ "$ARTIFACTS"
+    
+
+#******************************************************************************
+#                                                                                runtime
 #******************************************************************************
 FROM ${BASE_IMAGE} AS runtime
 
@@ -139,13 +192,13 @@ RUN usermod -aG input root && usermod -aG input ${USER} && \
 ## Copy files from builders ##
 # this is done here at end to not trigger full rebuild on changes to builder
 # nestri
-COPY --from=gst-builder /artifacts/nestri-server /usr/bin/nestri-server
+COPY --from=nestri-server-build /artifacts/nestri-server /usr/bin/nestri-server
 # gstwayland
-COPY --from=gstwayland-builder /artifacts/plugin/include/libgstwaylanddisplay /usr/include/
-COPY --from=gstwayland-builder /artifacts/plugin/lib/*libgstwayland* /usr/lib/
-COPY --from=gstwayland-builder /artifacts/plugin/lib/gstreamer-1.0/libgstwayland* /usr/lib/gstreamer-1.0/
-COPY --from=gstwayland-builder /artifacts/plugin/lib/pkgconfig/gstwayland* /usr/lib/pkgconfig/
-COPY --from=gstwayland-builder /artifacts/plugin/lib/pkgconfig/libgstwayland* /usr/lib/pkgconfig/
+COPY --from=gst-wayland-build /artifacts/plugin/include/libgstwaylanddisplay /usr/include/
+COPY --from=gst-wayland-build /artifacts/plugin/lib/*libgstwayland* /usr/lib/
+COPY --from=gst-wayland-build /artifacts/plugin/lib/gstreamer-1.0/libgstwayland* /usr/lib/gstreamer-1.0/
+COPY --from=gst-wayland-build /artifacts/plugin/lib/pkgconfig/gstwayland* /usr/lib/pkgconfig/
+COPY --from=gst-wayland-build /artifacts/plugin/lib/pkgconfig/libgstwayland* /usr/lib/pkgconfig/
 
 ## Copy scripts ##
 COPY packages/scripts/ /etc/nestri/
