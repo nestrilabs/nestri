@@ -55,10 +55,11 @@ jobs:
               name: Cache Docker layers
               uses: actions/cache@v4
               with:
-                path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-${{ github.sha }}
-                restore-keys: |
-                  ${{ runner.os }}-buildx-${{ github.sha }}
+                path: |
+                    ~/.cargo/registry
+                    ~/.cargo/git
+                    target
+                key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
@@ -120,10 +121,11 @@ jobs:
               name: Cache Docker layers
               uses: actions/cache@v4
               with:
-                path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-${{ github.sha }}
-                restore-keys: |
-                  ${{ runner.os }}-buildx-${{ github.sha }}
+                path: |
+                    ~/.cargo/registry
+                    ~/.cargo/git
+                    target
+                key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
