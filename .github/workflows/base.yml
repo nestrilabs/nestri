@@ -1,21 +1,21 @@
 #Tabs not spaces, you moron :)
 
-name: Build nestri:runner
+name: Build nestri:base
 
 on:
     pull_request:
         paths:
-            - "containers/runner.Containerfile"
-            - "packages/scripts/**"
-            - ".github/workflows/runner.yml"
+            - "containers/base.Containerfile"
+            - "packages/server/**"
+            - ".github/workflows/base.yml"
     schedule:
         - cron: 7 0 * * 1,3,6 # Regularly to keep that build cache warm
     push:
         branches: [main]
         paths:
-            - "containers/runner.Containerfile"
-            - ".github/workflows/runner.yml"
-            - "packages/scripts/**"
+            - "containers/base.Containerfile"
+            - ".github/workflows/base.yml"
+            - "packages/server/**"
         tags:
             - v*.*.*
     release:
@@ -24,7 +24,7 @@ on:
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: nestrilabs/nestri
-    BASE_TAG_PREFIX: runner
+    BASE_TAG_PREFIX: base
 
 # This makes our release ci quit prematurely
 # concurrency:
@@ -50,26 +50,26 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 20
+                swap-size-gb: 10
             - 
               name: Cache Docker layers
               uses: actions/cache@v4
               with:
                 path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-
+                key: ${{ runner.os }}-buildx-${{ github.sha }}
                 restore-keys: |
                   ${{ runner.os }}-buildx-${{ github.sha }}
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
               with:
-                file: containers/runner.Containerfile
+                file: containers/base.Containerfile
                 context: ./
                 push: false
                 load: true
                 cache-from: type=local,src=/tmp/.buildx-cache
                 cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
-                tags: nestri:runner
+                tags: nestri:base
             # -
             #   name: Move cache
             #   run: |
@@ -115,20 +115,20 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 20
+                swap-size-gb: 10
             - 
               name: Cache Docker layers
               uses: actions/cache@v4
               with:
                 path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-
+                key: ${{ runner.os }}-buildx-${{ github.sha }}
                 restore-keys: |
                   ${{ runner.os }}-buildx-${{ github.sha }}
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
               with:
-                file:  containers/runner.Containerfile
+                file:  containers/base.Containerfile
                 context: ./
                 push: true
                 cache-from: type=local,src=/tmp/.buildx-cache
