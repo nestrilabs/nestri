@@ -100,7 +100,7 @@ ENV CARGO_TARGET_DIR=/builder/target
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
-    cargo cinstall --prefix=${ARTIFACTS}/usr --release
+    cargo cinstall --prefix=${ARTIFACTS} --release
 
 #******************************************************************************
 # Final Runtime Stage
@@ -171,15 +171,12 @@ RUN mkdir -p /run/dbus && \
 
 ### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
-COPY --from=gst-wayland-cached-builder /artifacts/usr/ /usr/
+COPY --from=gst-wayland-cached-builder /artifacts/lib/ /usr/lib/
 RUN which nestri-server && ls -la /usr/lib/gstreamer-1.0/ | grep 'waylanddisplaysrc'
 
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
 RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
     locale-gen
-
-COPY --from=nestri-server-cached-builder /artifacts /artifacts
-RUN ls -la /artifacts/
 
 ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]
