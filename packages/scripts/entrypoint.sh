@@ -38,7 +38,10 @@ get_gpu_info
 
 # Check vendors in priority order
 if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
-    echo "NVIDIA GPU detected. Assuming drivers are linked"
+    echo "NVIDIA GPU detected, doing a workaround..."
+    pacman -Sy downgrade
+    pacman -Sy nvidia-utils lib32-nvidia-utils --overwrite '*'
+    downgrade --prefer-cache lib32-libx11==1.8.1 -- --noconfirm
 elif [[ -n "${vendor_devices[intel]:-}" ]]; then
     echo "Intel GPU detected, installing required packages..."
     pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
