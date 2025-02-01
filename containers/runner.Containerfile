@@ -97,6 +97,8 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 
 ENV CARGO_TARGET_DIR=/builder/target
 
+COPY --from=gst-wayland-planner /builder/gst-wayland-display/ .
+
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
@@ -172,7 +174,8 @@ RUN mkdir -p /run/dbus && \
 ### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
 COPY --from=gst-wayland-cached-builder /artifacts/lib/ /usr/lib/
-RUN which nestri-server && ls -la /usr/lib/gstreamer-1.0/ | grep 'waylanddisplaysrc'
+COPY --from=gst-wayland-cached-builder /artifacts/include/ /usr/include/
+RUN which nestri-server && ls -la /usr/lib/ | grep 'gstwaylanddisplay'
 
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
