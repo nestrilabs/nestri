@@ -54,13 +54,13 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 
 ENV CARGO_TARGET_DIR=/builder/target
 
-COPY packages/server/ ./packages/server/
+COPY packages/server/ ./
 
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
     cargo build --release && \
-    cp target/release/nestri-server "${ARTIFACTS}"
+    cp "${CARGO_TARGET_DIR}/release/nestri-server" "${ARTIFACTS}"
 
 #******************************************************************************
 # GST-Wayland Plugin Build Stages
@@ -178,5 +178,8 @@ RUN which nestri-server && ls -la /usr/lib/gstreamer-1.0/ | grep 'waylanddisplay
 COPY packages/scripts/ /etc/nestri/
 RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
     locale-gen
+
+COPY --from=nestri-server-cached-builder /artifacts /artifacts
+RUN ls -la /artifacts/
 
 ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]
