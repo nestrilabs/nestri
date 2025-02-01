@@ -38,7 +38,7 @@
     "@modular-forms/qwik": "^0.29.0",
     "@nestri/input": "*",
     "@nestri/libmoq": "*",
-    "@nestri/sdk": "0.1.0-alpha.11",
+    "@nestri/sdk": "0.1.0-alpha.12",
     "@nestri/ui": "*",
     "@openauthjs/openauth": "^0.2.6",
     "@polar-sh/checkout": "^0.1.8",

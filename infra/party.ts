@@ -2,12 +2,12 @@
 // [API] <-> party <-websocket-> container
 // The container is it's own this, and can listen to Websocket connections to start or stop a Steam Game
 
-import { authFingerprintKey } from "./auth";
-import { ecsCluster, gpuTaskDefinition } from "./cluster";
+// import { authFingerprintKey } from "./auth";
+// import { ecsCluster, gpuTaskDefinition } from "./cluster";
 
-export const party = new sst.aws.Realtime("Party", {
-    authorizer: "packages/functions/src/party/authorizer.handler"
-});
+// export const party = new sst.aws.Realtime("Party", {
+//     authorizer: "packages/functions/src/party/authorizer.handler"
+// });
 
 // export const partyFn = new sst.aws.Function("NestriPartyFn", {
 //     handler: "packages/functions/src/party/create.handler",

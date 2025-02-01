@@ -1,7 +1,6 @@
 import { sshKey } from "./ssh";
 import { authFingerprintKey } from "./auth";
-// import { authFingerprintKey } from "./auth";
-
+sst.aws.Cluster
 export const ecsCluster = new aws.ecs.Cluster("Hosted", {
     name: "NestriGPUClusterProd",
 });
@@ -89,6 +88,17 @@ const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
 export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
     family: "NestriGPUTaskProd",
     requiresCompatibilities: ["EC2"],
+    volumes: [
+        {
+            name: "host",
+            hostPath: "/mnt/games"
+            // efsVolumeConfiguration: {
+            //     fileSystemId: storage.id,
+            //     authorizationConfig: { accessPointId: storage.accessPoint },
+            //     transitEncryption: "ENABLED",
+            // }
+        }
+    ],
     containerDefinitions: authFingerprintKey.result.apply(v => JSON.stringify([{
         "essential": true,
         "name": "nestri",
@@ -122,6 +132,7 @@ export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
                 "value": "--verbose=true --video-codec=h264 --video-bitrate=4000 --video-bitrate-max=6000 --gpu-card-path=/dev/dri/card0"
             },
         ],
+        "mountPoints": [{ "containerPath": "/home/nestri", "sourceVolume": "host" }],
         "disableNetworking": false,
         "linuxParameter": {
             "sharedMemorySize": 5120

@@ -461,3 +461,10 @@
         opacity: .15;
     }
 }
+
+@keyframes bgRotate {
+    to {
+        content: var(--tw-content);
+        transform: rotate(1turn)
+    }
+}

@@ -54,11 +54,6 @@ declare module "sst" {
       "type": "aws.ecs/taskDefinition.TaskDefinition"
       "value": string
     }
-    "Party": {
-      "authorizer": string
-      "endpoint": string
-      "type": "sst.aws.Realtime"
-    }
     "Urls": {
       "api": string
       "auth": string

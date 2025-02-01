@@ -30,10 +30,10 @@ export const onRequest: RequestHandler = async ({ cookie, url, redirect, sharedM
       sharedMap.set("profile", currentProfile.data)
     } catch (error) {
       console.log("error working with bearer token", error)
-      cookie.delete("access_token")
-      cookie.delete("refresh_token")
+      // cookie.delete("access_token")
+      // cookie.delete("refresh_token")
 
-      throw redirect(302, url.origin)
+      // throw redirect(302, url.origin)
     }
   }
 }

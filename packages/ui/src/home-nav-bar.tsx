@@ -141,7 +141,7 @@ export const HomeNavBar = component$(({ avatarUrl, username, discriminator }: Pr
                                 <Dropdown.Group class="flex flex-col gap-1 w-full">
                                     <Dropdown.Item
                                         onClick$={() => isNewTeam.value = true}
-                                        class="leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative"
+                                        class={cn("leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative", "opacity-50 pointer-events-none !cursor-not-allowed")}
                                     >
                                         <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
                                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
