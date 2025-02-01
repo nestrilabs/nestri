@@ -6,7 +6,6 @@ on:
     pull_request:
         paths:
             - "containers/runner.Containerfile"
-            - "packages/server/**"
             - "packages/scripts/**"
             - ".github/workflows/runner.yml"
     schedule:
@@ -16,7 +15,7 @@ on:
         paths:
             - "containers/runner.Containerfile"
             - ".github/workflows/runner.yml"
-            - "packages/server/**"
+            - "packages/scripts/**"
         tags:
             - v*.*.*
     release:
@@ -51,15 +50,7 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 10
-            - 
-              name: Cache Docker layers
-              uses: actions/cache@v4
-              with:
-                path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-
-                restore-keys: |
-                  ${{ runner.os }}-buildx-${{ github.sha }}
+                swap-size-gb: 20
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
@@ -68,14 +59,9 @@ jobs:
                 context: ./
                 push: false
                 load: true
-                cache-from: type=local,src=/tmp/.buildx-cache
-                cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
                 tags: nestri:runner
-            # -
-            #   name: Move cache
-            #   run: |
-            #     rm -rf /tmp/.buildx-cache
-            #     mv /tmp/.buildx-cache-new /tmp/.buildx-cache 
+                cache-from: type=gha,mode=max
+                cache-to: type=gha,mode=max
 
     build-docker-main:
         name: Build image on main
@@ -116,15 +102,7 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 10
-            - 
-              name: Cache Docker layers
-              uses: actions/cache@v4
-              with:
-                path: /tmp/.buildx-cache
-                key: ${{ runner.os }}-buildx-
-                restore-keys: |
-                  ${{ runner.os }}-buildx-${{ github.sha }}
+                swap-size-gb: 20
             - 
               name: Build Docker image
               uses: docker/build-push-action@v5
@@ -132,12 +110,7 @@ jobs:
                 file:  containers/runner.Containerfile
                 context: ./
                 push: true
-                cache-from: type=local,src=/tmp/.buildx-cache
-                cache-to: type=local,dest=/tmp/.buildx-cache,mode=max
                 tags: ${{ steps.meta.outputs.tags }}
                 labels: ${{ steps.meta.outputs.labels }}
-            # -
-            #   name: Move cache
-            #   run: |
-            #     rm -rf /tmp/.buildx-cache
-            #     mv /tmp/.buildx-cache-new /tmp/.buildx-cache 
+                cache-from: type=gha,mode=max
+                cache-to: type=gha,mode=max

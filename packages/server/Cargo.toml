@@ -1,6 +1,6 @@
 [package]
 name = "nestri-server"
-version = "0.1.0"
+version = "0.1.0-alpha.2"
 edition = "2021"
 
 [[bin]]
@@ -8,9 +8,9 @@ name = "nestri-server"
 path = "src/main.rs"
 
 [dependencies]
-gst.workspace = true
-gst-webrtc.workspace = true
-gstrswebrtc.workspace = true
+gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["v1_24"] }
+gst-webrtc = { package = "gstreamer-webrtc", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["v1_24"] }
+gstrswebrtc = { package = "gst-plugin-webrtc", git = "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs", branch = "main", features = ["v1_22"] }
 serde = {version = "1.0.214", features = ["derive"] }
 tokio = { version = "1.41.0", features = ["full"] }
 clap = { version = "4.5.20", features = ["env"] }
