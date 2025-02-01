@@ -148,7 +148,7 @@ export default {
                     const username = value.username
                     const token = await Users.create(email)
                     const usr = await Users.fromEmail(email);
-                    const exists = await Profiles.getProfile(usr.id)
+                    const exists = await Profiles.fromOwnerID(usr.id)
                     if (username && !exists) {
                         await Profiles.create({ owner: usr.id, username })
                     }
@@ -176,7 +176,7 @@ export default {
                     try {
                         const token = await Users.create(user.primary.email)
                         const usr = await Users.fromEmail(user.primary.email);
-                        const exists = await Profiles.getProfile(usr.id)
+                        const exists = await Profiles.fromOwnerID(usr.id)
                         console.log("exists", exists)
                         if (!exists) {
                             await Profiles.create({ owner: usr.id, avatarUrl: user.avatar, username: user.username })

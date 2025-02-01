@@ -208,4 +208,44 @@ export module Sessions {
         }
 
     })
+
+    export const fromOwnerID = fn(z.string(), async (id) => {
+        try {
+            const db = databaseClient()
+
+            const query = {
+                sessions: {
+                    $: {
+                        where: {
+                            owner: id,
+                            endedAt: { $isNull: true }
+                        }
+                    }
+                }
+            }
+
+            const res = await db.query(query)
+            const sessions = res.sessions
+
+            if (!sessions || sessions.length === 0) {
+                throw new Error("No sessions were found");
+            }
+
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                }))
+            )
+            return result[0]
+        } catch (err) {
+            console.log("session owner error", err)
+            return null
+        }
+    })
 }

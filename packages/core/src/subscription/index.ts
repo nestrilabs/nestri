@@ -112,7 +112,7 @@ export namespace Subscriptions {
             checkoutID: input.checkoutID,
         }).link({ owner: user.id }))
         const res = await db.auth.getUser({ id: user.id })
-        const profile = await Profiles.getProfile(user.id)
+        const profile = await Profiles.fromOwnerID(user.id)
         if (profile) {
             await Email.sendWelcome(res.email, profile.username)
         }

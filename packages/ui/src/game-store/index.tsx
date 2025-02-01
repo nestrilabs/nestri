@@ -7,10 +7,21 @@ export default component$(() => {
     return (
         <Modal.Root class="w-full" >
             <Modal.Trigger class="w-full border-gray-400/70 dark:border-gray-700/70 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none group transition-all duration-200  border-[2px]  h-14  rounded-xl  px-4  gap-2  flex  items-center  justify-between  overflow-hidden bg-white dark:bg-black hover:bg-gray-300/70 dark:hover:bg-gray-700/70 disabled:opacity-50">
-                <div class="py-2 w-2/3 flex truncate">
-                    <p class="text-text-100 shrink truncate w-full flex">Instance 1</p>
-                    <p class="text-text-100 shrink truncate w-full flex">4 GB</p>
-                    <p class="text-text-100 shrink truncate w-full flex">2vCPU</p>
+                <div class="py-2 w-2/3 flex truncate group">
+                    <div class="flex items-center justify-between group gap-2">
+                        <div class="flex items-center w-auto gap-2 overflow-hidden">
+                            <div class="flex items-center gap-2">
+                                <div class="w-auto select-none text-nowrap font-medium transition-colors duration-200 ease-out group-hover:text-black text-black/80 dark:group-hover:text-white dark:text-white/80">Steam Machine</div>
+                            </div>
+                        </div>
+                        {/* <div class="select-none flex gap-1 items-center overflow-hidden rounded-md px-2 py-1 text-xs font-medium transition-colors duration-200 ease-out bg-[#FF2930]/10 text-[#DA3036] group-hover:bg-[#FF2930]/20 dark:bg-[#EE0048]/20 dark:hover:bg-[#EE0048]/25" > */}
+                        <div class="select-none overflow-hidden flex gap-1 items-center rounded-md px-2 py-1 text-xs bg-gray-200 font-medium transition-colors duration-200 ease-out ring-1 ring-gray-400 dark:ring-0 text-gray-700 dark:bg-[#12ECFA]/20 dark:text-[#12ECFA] dark:group-hover:bg-[#12ECFA]/25">
+                            {/* <div class="size-2 rounded-full dark:bg-[#EE0048] bg-[#FF2930]" /> */}
+                            <div class="size-2 rounded-full dark:bg-[#12ECFA] bg-[#1AFFD8]" />
+                            {/* <span class="" >Error</span> */}
+                            <span>Online</span>
+                        </div>
+                    </div>
                 </div>
                 <div
                     style={{
@@ -18,7 +29,7 @@ export default component$(() => {
                         "--head-margin-percentage": 0.1,
                         "--size": "3rem"
                     }}
-                    class="relative h-full flex w-1/3 justify-end">
+                    class="relative h-full flex w-[20%] justify-end">
                     <img draggable={false} alt="game" width={256} height={256} src="/images/steam.png" class="h-12 shadow-lg shadow-gray-900 ring-gray-400/70 ring-1 bg-black w-12 translate-y-4 rotate-[14deg] rounded-lg object-cover transition-transform sm:h-16 sm:w-16 group-hover:scale-110" />
                 </div>
             </Modal.Trigger>

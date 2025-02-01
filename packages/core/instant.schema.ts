@@ -16,7 +16,7 @@ const _schema = i.schema({
       lastStatus: i.string(),
       healthStatus: i.string(),
       startedAt: i.string(),
-      lastUpdated: i.string(),
+      lastUpdated: i.date(),
       stoppedAt: i.string().optional(),
       taskID: i.string().unique().indexed()
     }),
@@ -28,7 +28,8 @@ const _schema = i.schema({
     profiles: i.entity({
       avatarUrl: i.string().optional(),
       username: i.string().indexed(),
-      updatedAt: i.date(),
+      status: i.string().indexed(),
+      updatedAt: i.date().indexed(),
       createdAt: i.date(),
       discriminator: i.string().indexed()
     }),

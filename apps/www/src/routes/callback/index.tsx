@@ -1,4 +1,3 @@
-import Nestri from "@nestri/sdk";
 import { component$, useVisibleTask$ } from "@builder.io/qwik";
 import { createClient } from "@openauthjs/openauth/client";
 import { routeLoader$, useNavigate, type CookieOptions } from "@builder.io/qwik-city";
@@ -9,7 +8,7 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
         const redirect_uri = url.origin + "/callback"
         const cookieOptions: CookieOptions = {
             path: "/",
-            sameSite: "lax",  
+            sameSite: "lax",
             secure: false,        // Only send cookies over HTTPS
             //FIXME: This causes weird issues in Qwik
             httpOnly: true,      // Prevent JavaScript access to cookies
@@ -28,33 +27,19 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
 
             cookie.set("access_token", access_token, cookieOptions)
             cookie.set("refresh_token", refresh_token, cookieOptions)
-
-            const bearerToken = access_token
-
-            const nestriClient = new Nestri({
-                bearerToken,
-                baseURL: "https://api.nestri.io"
-            })
-
-            //TODO: Use subjects instead
-            const currentProfile = await nestriClient.users.retrieve()
-            const username = currentProfile.data.username
-            return username
         }
     }
 })
 
 export default component$(() => {
-    const username = useLoggedIn()
+    useLoggedIn()
     const navigate = useNavigate();
 
     // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(() => {
-        if (username.value) {
-            setTimeout(async () => {
-                await navigate(`${window.location.origin}/${username.value}`)
-            }, 500);
-        }
+        setTimeout(async () => {
+            await navigate(`${window.location.origin}/home`)
+        }, 500);
     })
 
     return (

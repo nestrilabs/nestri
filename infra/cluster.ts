@@ -1,6 +1,6 @@
 import { sshKey } from "./ssh";
 import { authFingerprintKey } from "./auth";
-sst.aws.Cluster
+
 export const ecsCluster = new aws.ecs.Cluster("Hosted", {
     name: "NestriGPUClusterProd",
 });

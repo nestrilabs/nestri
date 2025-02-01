@@ -19,6 +19,7 @@ export module Examples {
     export const Profile = {
         id: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         username: "janedoe47",
+        status: "active" as const,
         avatarUrl: "https://cdn.discordapp.com/avatars/xxxxxxx/xxxxxxx.png",
         discriminator: 12, //it needs to be two digits
         createdAt: '2025-01-04T11:56:23.902Z',

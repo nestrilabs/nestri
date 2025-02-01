@@ -468,3 +468,13 @@
         transform: rotate(1turn)
     }
 }
+
+@keyframes playing {
+    0%,to {
+        height: 3px
+    }
+
+    50% {
+        height: 12px
+    }
+}

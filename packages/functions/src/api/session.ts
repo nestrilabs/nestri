@@ -152,7 +152,7 @@ export module SessionApi {
                 schema: resolver(z.object({ error: z.string() })),
               },
             },
-            description: "The session with the specified ID could not be found",
+            description: "The session with the specified ID could not be found by this user",
           },
         }
       }),
@@ -168,7 +168,7 @@ export module SessionApi {
       async (c) => {
         const params = c.req.valid("param");
         const res = await Sessions.end(params.id)
-        if (!res) return c.json({ error: "Session not found for this user" }, 404);
+        if (!res) return c.json({ error: "Session is not owned by this user" }, 404);
         return c.json({ data: res }, 200);
       },
     );
