@@ -22,12 +22,9 @@ export const onRequest: RequestHandler = async ({ cookie, url, redirect, sharedM
 
       const bearerToken = access.value
 
-      const nestriClient = new Nestri({
-        bearerToken,
-        baseURL: "https://api.nestri.io"
-      })
-      const currentProfile = await nestriClient.users.retrieve()
-      sharedMap.set("profile", currentProfile.data)
+      // const nestriClient = new Nestri({ bearerToken, maxRetries: 50 })
+      // const currentProfile = await nestriClient.users.retrieve()
+      // sharedMap.set("profile", currentProfile.data)
     } catch (error) {
       console.log("error working with bearer token", error)
       // cookie.delete("access_token")

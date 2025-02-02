@@ -82,10 +82,10 @@ app
         c.header("Cache-Control", "no-store");
         return next();
     })
-    .use(auth);
+    .use(auth)
 
 const routes = app
-    .get("/",(c)=>c.text("Hello there 👋🏾"))
+    .get("/", (c) => c.text("Hello there 👋🏾"))
     .route("/users", UserApi.route)
     .route("/tasks", TaskApi.route)
     // .route("/teams", TeamApi.route)

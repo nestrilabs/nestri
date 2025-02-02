@@ -1,74 +1,32 @@
-import type Nestri from "@nestri/sdk";
 import { Avatar, GameStoreButton } from "@nestri/ui";
 import { cn } from "@nestri/ui/design";
-import { component$ } from "@builder.io/qwik";
-import { routeLoader$ } from "@builder.io/qwik-city";
+import { $, component$ } from "@builder.io/qwik";
+import { server$ } from "@builder.io/qwik-city";
 import { HomeNavBar } from "@nestri/ui";
+import Nestri from "@nestri/sdk";
 
-const games = [
-    {
-        id: 2507950,
-        name: "Delta Force",
-        image: "https://assets-prd.ignimgs.com/2024/08/28/delta-force-button-replacement-1724855313566.jpg"
-    },
-    {
-        id: 870780,
-        name: "Control Ultimate Edition",
-        image: "https://assets-prd.ignimgs.com/2023/04/08/sq-nswitchds-controlultimateeditioncloudversion-image500w-1680973421643.jpg"
-    },
-    {
-        id: 1172470,
-        name: "Apex Legends",
-        image: "https://assets-prd.ignimgs.com/2023/02/16/apexrevelry-1676588335122.jpg"
-    },
-    {
-        id: 914800,
-        name: "Coffee Talk",
-        image: "https://assets-prd.ignimgs.com/2022/11/09/coffee-talk-episode-1-button-fin-1668033710468.jpg"
-    }, {
-        id: 1085220,
-        name: "Figment 2: Creed Valley",
-        image: "https://assets-prd.ignimgs.com/2021/12/15/figment-2-button-1639602944843.jpg"
-    }, {
-        id: 1568400,
-        name: "Sheepy: A Short Adventure",
-        image: "https://assets-prd.ignimgs.com/2024/04/08/sheepy-1712557253260.jpg"
-    }, {
-        id: 271590,
-        name: "Grand Theft Auto V",
-        image: "https://assets-prd.ignimgs.com/2021/12/17/gta-5-button-2021-1639777058682.jpg"
-    }, {
-        id: 1086940,
-        name: "Baldur's Gate 3",
-        image: "https://assets-prd.ignimgs.com/2023/08/24/baldursg3-1692894717196.jpeg"
-    }, {
-        id: 1091500,
-        name: "Cyberpunk 2077",
-        image: "https://assets-prd.ignimgs.com/2020/07/16/cyberpunk-2077-button-fin-1594877291453.jpg"
-    }, {
-        id: 221100,
-        name: "DayZ",
-        image: "https://assets-prd.ignimgs.com/2021/12/20/dayz-1640044421966.jpg"
-    },
-]
+export const getUserProfile = server$(
+    async function () {
+        const access = this.cookie.get("access_token")
+        if (access) {
+            const bearerToken = access.value
 
-export const useCurrentProfile = routeLoader$(async ({ sharedMap }) => {
-    const res = sharedMap.get("profile") as Nestri.Users.UserRetrieveResponse.Data | null
-
-    return res
-})
+            const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+            const currentProfile = await nestriClient.users.retrieve()
+            return currentProfile;
+        }
+    }
+);
 
 export default component$(() => {
-    const profile = useCurrentProfile()
-
 
     return (
         <main class="flex w-screen h-full flex-col relative">
-            {profile.value && <HomeNavBar avatarUrl={profile.value.avatarUrl} discriminator={profile.value.discriminator} username={profile.value.username} />}
+            <HomeNavBar getUserProfile$={$(async () => { return await getUserProfile() })} />
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 min-h-screen">
                 <div class="flex flex-col gap-6 w-full py-4">
                     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        <GameStoreButton />
+                        {/* <GameStoreButton />
                         <button class="w-full">
                             <div class="border-gray-400/70 w-full dark:border-gray-700/70 transition-all border-dashed duration-200 border-[2px] h-14 rounded-xl px-4 gap-2 flex items-center justify-between overflow-hidden outline-none disabled:opacity-50">
                                 <span class="p-2 pl-0 text-gray-600/70 dark:text-gray-400/70 leading-none shrink truncate flex text-start items-center gap-2">
@@ -79,7 +37,12 @@ export default component$(() => {
                                     </div>
                                 </span>
                             </div>
-                        </button>
+                        </button> */}
+                        {new Array(2).fill(0).map((_, key) => (
+                            <div class="w-full animate-pulse" key={`skeleton-machine-${key}`}>
+                                <div class="rounded-xl bg-gray-200 dark:bg-gray-800 h-14 w-full" />
+                            </div>
+                        ))}
                     </div>
                 </div >
                 <div class="gap-2 w-full flex-col flex">
@@ -92,18 +55,18 @@ export default component$(() => {
                             </span>
                         </div>
                         <ul class="list-none ml-4 relative w-[calc(100%-1rem)]">
-                            {new Array(3).fill(0).map((_,key) => (
-                                <div key={`find-${key}`} >
+                            {new Array(3).fill(0).map((_, key) => (
+                                <div key={`skeleton-friend-${key}`} >
                                     <div class="gap-3.5 text-left animate-pulse outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
                                         <div class="relative w-max">
-                                            <div class="size-20 rounded-full bg-gray-800"/>
+                                            <div class="size-20 rounded-full bg-gray-200 dark:bg-gray-800" />
                                         </div>
                                         <div class={cn("w-full h-[100px] overflow-hidden pr-2 border-b-2 border-gray-400/70 dark:border-gray-700/70 flex gap-2 items-center", key == 2 && "border-none")}>
                                             <div class="flex-col w-[80%] gap-2 flex">
-                                                <span class="font-medium tracking-tighter bg-gray-800 h-6 w-2/3 max-w-full text-lg font-title truncate leading-none block"/>
-                                                <div class="flex items-center gap-2 w-full h-6 bg-gray-800"/>
+                                                <span class="font-medium tracking-tighter bg-gray-200 dark:bg-gray-800 rounded-md h-6 w-2/3 max-w-full text-lg font-title truncate leading-none block" />
+                                                <div class="flex items-center gap-2 w-full h-6 bg-gray-200 dark:bg-gray-800 rounded-md" />
                                             </div>
-                                            <div class="bg-gray-800 h-7 w-16 ml-auto" />
+                                            <div class="bg-gray-200 dark:bg-gray-800 h-7 w-16 ml-auto rounded-md" />
                                         </div>
                                     </div>
                                 </div>
@@ -156,13 +119,13 @@ export default component$(() => {
                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 22c-.818 0-1.6-.33-3.163-.99C4.946 19.366 3 18.543 3 17.16V7m9 15c.818 0 1.6-.33 3.163-.99C19.054 19.366 21 18.543 21 17.16V7m-9 15V11.355M8.326 9.691L5.405 8.278C3.802 7.502 3 7.114 3 6.5s.802-1.002 2.405-1.778l2.92-1.413C10.13 2.436 11.03 2 12 2s1.871.436 3.674 1.309l2.921 1.413C20.198 5.498 21 5.886 21 6.5s-.802 1.002-2.405 1.778l-2.92 1.413C13.87 10.564 12.97 11 12 11s-1.871-.436-3.674-1.309M6 12l2 1m9-9L7 9" color="currentColor" /></svg>
                             Your Games
                         </span>
-                        <button class="flex gap-1 items-center cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
+                        {/* <button class="flex gap-1 items-center cursor-pointer hover:text-gray-800 dark:hover:text-gray-200 transition-all duration-200 outline-none">
                             <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 256 256"><path fill="currentColor" d="M248 128a87.34 87.34 0 0 1-17.6 52.81a8 8 0 1 1-12.8-9.62A71.34 71.34 0 0 0 232 128a72 72 0 0 0-144 0a8 8 0 0 1-16 0a88 88 0 0 1 3.29-23.88C74.2 104 73.1 104 72 104a48 48 0 0 0 0 96h24a8 8 0 0 1 0 16H72a64 64 0 1 1 9.29-127.32A88 88 0 0 1 248 128m-69.66 42.34L160 188.69V128a8 8 0 0 0-16 0v60.69l-18.34-18.35a8 8 0 0 0-11.32 11.32l32 32a8 8 0 0 0 11.32 0l32-32a8 8 0 0 0-11.32-11.32" /></svg>
                             <span>Install a game</span>
-                        </button>
+                        </button> */}
                     </div>
                     <ul class="relative py-3 w-full list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-200 dark:after:to-gray-800 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.200)_25%,transparent)] dark:after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.800)_25%,transparent)] after:left-0 after:-bottom-[1px]">
-                        <div class="flex flex-col items-center justify-center gap-6 px-6 py-20 w-full" >
+                        {/* <div class="flex flex-col items-center justify-center gap-6 px-6 py-20 w-full" >
                             <div class="relative flex items-center justify-center overflow-hidden rounded-[22px] p-[2px] before:absolute before:left-[-50%] before:top-[-50%] before:z-[-2] before:h-[200%] before:w-[200%] before:animate-[bgRotate_1.15s_linear_infinite] before:bg-[conic-gradient(from_0deg,transparent_0%,#ff4f01_10%,#ff4f01_25%,transparent_35%)] before:content-[''] after:absolute after:inset-[2px] after:z-[-1] after:content-['']" >
                                 <div class="flex items-center justify-center rounded-[20px] bg-gray-200 dark:bg-gray-800 p-1">
                                     <div class="flex items-center justify-center rounded-2xl bg-[#F5F5F5] p-1 dark:bg-[#171717]">
@@ -177,6 +140,13 @@ export default component$(() => {
                                 <p class="text-center text-base font-medium text-gray-600 dark:text-gray-400 sm:font-regular">Once you have installed  a game on your machine, it should appear here</p>
                             </div>
                             <button disabled class="flex h-[48px] disabled:cursor-not-allowed disabled:opacity-50 max-w-[360px] w-full select-none items-center justify-center rounded-full bg-primary-500 text-base font-semibold text-white transition-all duration-200 ease-out disabled:hover:!ring-0 hover:ring-2 hover:ring-gray-600 dark:hover:ring-gray-400 focus:scale-95 active:scale-95 disabled:active:scale-100 disabled:focus:scale-100 sm:font-medium">Launch Steam</button>
+                        </div> */}
+                        <div class="grid sm:grid-cols-3 grid-cols-2 gap-2 gap-y-3 w-full animate-pulse" >
+                            {new Array(6).fill(0).map((_, key) => (
+                                <div key={`skeleton-game-${key}`} class="w-full gap-2 flex flex-col" >
+                                    <div class="bg-gray-200 dark:bg-gray-800 w-full aspect-square rounded-2xl" />
+                                </div>
+                            ))}
                         </div>
                     </ul>
                 </div>
