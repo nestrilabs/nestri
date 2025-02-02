@@ -40,8 +40,8 @@ get_gpu_info
 if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
     echo "NVIDIA GPU detected, doing a workaround..."
     pacman -Sy --noconfirm downgrade
-    pacman -Sy --noconfirm nvidia-utils lib32-nvidia-utils --overwrite '*'
-    downgrade --prefer-cache lib32-libx11==1.8.1 -- --noconfirm
+    pacman -Sy --noconfirm --ask=4 nvidia-utils lib32-nvidia-utils --overwrite '*'
+    N|sudo downgrade --prefer-cache lib32-libx11==1.8.1 -- --noconfirm
 elif [[ -n "${vendor_devices[intel]:-}" ]]; then
     echo "Intel GPU detected, installing required packages..."
     pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
