@@ -280,6 +280,27 @@
     animation-name: slideToRight;
 }
 
+.tooltip[data-closing],
+.tooltip[data-closed] {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeOut;
+}
+
+.tooltip[data-opening],
+.tooltip[data-opened] {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeIn;
+}
+
+
 .modal[data-closing]::backdrop,
 .modal-sheet[data-closing]::backdrop {
     animation-duration: 0.5s;

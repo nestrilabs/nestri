@@ -43,24 +43,28 @@ export const getActiveUsers = server$(
     }
 );
 
+export const getSession = server$(
+    async function (profileID: string) {
+
+        const access = this.cookie.get("access_token")
+        if (access) {
+            const bearerToken = access.value
+
+            const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+            const session = await nestriClient.users.session(profileID)
+            return session
+        }
+    }
+);
+
 export default component$(() => {
 
     return (
         <main class="flex w-screen h-full flex-col relative">
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 min-h-screen">
                 {/* <HomeMachineSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} /> */}
-                <div class="gap-2 w-full flex-col flex">
-                    <hr class="border-none h-[1.5px] dark:bg-gray-700 bg-gray-300 w-full" />
-                    <div class="flex flex-col justify-center py-2 px-3 items-start w-full ">
-                        <div class="text-gray-600/70 dark:text-gray-400/70 leading-none flex justify-between items-center w-full py-1">
-                            <span class="text-xl text-gray-700 dark:text-gray-300 leading-none font-bold font-title flex gap-2 items-center pb-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 20 20"><path fill="currentColor" d="M2.049 9.112a8.001 8.001 0 1 1 9.718 8.692a1.5 1.5 0 0 0-.206-1.865l-.01-.01q.244-.355.47-.837a9.3 9.3 0 0 0 .56-1.592H9.744q.17-.478.229-1h2.82A15 15 0 0 0 13 10c0-.883-.073-1.725-.206-2.5H7.206l-.05.315a4.5 4.5 0 0 0-.971-.263l.008-.052H3.46q-.112.291-.198.595c-.462.265-.873.61-1.213 1.017m9.973-4.204C11.407 3.59 10.657 3 10 3s-1.407.59-2.022 1.908A9.3 9.3 0 0 0 7.42 6.5h5.162a9.3 9.3 0 0 0-.56-1.592M6.389 6.5c.176-.743.407-1.422.683-2.015c.186-.399.401-.773.642-1.103A7.02 7.02 0 0 0 3.936 6.5zm9.675 7H13.61a10.5 10.5 0 0 1-.683 2.015a6.6 6.6 0 0 1-.642 1.103a7.02 7.02 0 0 0 3.778-3.118m-2.257-1h2.733c.297-.776.46-1.62.46-2.5s-.163-1.724-.46-2.5h-2.733c.126.788.193 1.63.193 2.5s-.067 1.712-.193 2.5m2.257-6a7.02 7.02 0 0 0-3.778-3.118c.241.33.456.704.642 1.103c.276.593.507 1.272.683 2.015zm-7.76 7.596a3.5 3.5 0 1 0-.707.707l2.55 2.55a.5.5 0 0 0 .707-.707zM8 12a2.5 2.5 0 1 1-5 0a2.5 2.5 0 0 1 5 0" /></svg>
-                                Find people to play with
-                            </span>
-                        </div>
-                        <HomeFriendsSection getActiveUsers$={$(async () => { return await getActiveUsers() })}  />
-                    </div>
-                </div>
+
+                <HomeFriendsSection getActiveUsers$={$(async () => { return await getActiveUsers() })} getSession$={$(async (profileID: string) => { return await getSession(profileID) })} />
                 <div class="gap-2 w-full flex-col flex">
                     <hr class="border-none h-[1.5px] dark:bg-gray-700 bg-gray-300 w-full" />
                     <div class="text-gray-600/70 dark:text-gray-400/70 text-sm leading-none flex justify-between py-2 px-3 items-end">
