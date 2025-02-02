@@ -2,7 +2,7 @@ import Nestri from "@nestri/sdk";
 import { cn } from "@nestri/ui/design";
 import { server$ } from "@builder.io/qwik-city";
 import { $, component$ } from "@builder.io/qwik";
-import { HomeMachineSection } from "@nestri/ui";
+import { HomeFriendsSection, HomeMachineSection } from "@nestri/ui";
 
 export const getUserSubscriptions = server$(
     async function () {
@@ -29,12 +29,26 @@ export const getUserSubscriptions = server$(
     }
 );
 
+export const getActiveUsers = server$(
+    async function () {
+
+        const access = this.cookie.get("access_token")
+        if (access) {
+            const bearerToken = access.value
+
+            const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+            const users = await nestriClient.users.list().then(t => t.data) as any
+            return users as Nestri.Users.UserListResponse.Data[]
+        }
+    }
+);
+
 export default component$(() => {
 
     return (
         <main class="flex w-screen h-full flex-col relative">
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 min-h-screen">
-                <HomeMachineSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} />
+                {/* <HomeMachineSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} /> */}
                 <div class="gap-2 w-full flex-col flex">
                     <hr class="border-none h-[1.5px] dark:bg-gray-700 bg-gray-300 w-full" />
                     <div class="flex flex-col justify-center py-2 px-3 items-start w-full ">
@@ -44,62 +58,7 @@ export default component$(() => {
                                 Find people to play with
                             </span>
                         </div>
-                        <ul class="list-none ml-4 relative w-[calc(100%-1rem)]">
-                            {new Array(3).fill(0).map((_, key) => (
-                                <div key={`skeleton-friend-${key}`} >
-                                    <div class="gap-3.5 text-left animate-pulse outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                        <div class="relative w-max">
-                                            <div class="size-20 rounded-full bg-gray-200 dark:bg-gray-800" />
-                                        </div>
-                                        <div class={cn("w-full h-[100px] overflow-hidden pr-2 border-b-2 border-gray-400/70 dark:border-gray-700/70 flex gap-2 items-center", key == 2 && "border-none")}>
-                                            <div class="flex-col w-[80%] gap-2 flex">
-                                                <span class="font-medium tracking-tighter bg-gray-200 dark:bg-gray-800 rounded-md h-6 w-2/3 max-w-full text-lg font-title truncate leading-none block" />
-                                                <div class="flex items-center gap-2 w-full h-6 bg-gray-200 dark:bg-gray-800 rounded-md" />
-                                            </div>
-                                            <div class="bg-gray-200 dark:bg-gray-800 h-7 w-16 ml-auto rounded-md" />
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                            {/* {games.slice(5, 8).sort().map((game, key) => (
-                                <div key={`find-${key}`} >
-                                    <div class="gap-3.5 text-left outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                        <div class="relative [&>svg]:size-[80px] w-max">
-                                            {profile.value && (profile.value.avatarUrl ? (<img height={52} width={52} draggable={false} class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] group-hover:scale-105 group-hover:shadow-md group-hover:shadow-gray-900 select-none rounded-full aspect-square w-[80px]" src={profile.value.avatarUrl} alt={game.name} />) : (<Avatar name={`${profile.value.username}#${profile.value.discriminator}`} />))}
-                                            <div class="size-1/4 min-w-1.5 min-h-1.5 rounded-full bg-gray-100 dark:bg-gray-900 absolute right-0 bottom-0 overflow-hidden [&>svg]:size-10 flex justify-center items-center">
-                                                <div style={{ "--border": "max(3px,10%)" }} class="dark:bg-[#00EE98] bg-[#1AFFD8] m-[--border]  rounded-full size-[calc(100%-2*var(--border))]" />
-                                            </div>
-                                        </div>
-                                        <div class={cn("w-full h-[100px] overflow-hidden pr-2 border-b-2 border-gray-400/70 dark:border-gray-700/70 flex gap-2 items-center", key == 2 && "border-none")}>
-                                            <div class="flex-col">
-                                                <span class="font-medium tracking-tighter text-gray-700 dark:text-gray-300 max-w-full text-lg font-title truncate leading-none">
-                                                    {`${profile.value.username}#${profile.value.discriminator}`}
-                                                    WanjohiRyan#47
-                                                </span>
-                                                <div class="flex items-center gap-2 w-full cursor-pointer">
-                                                    <div style={{ "--dark-bg": "#00EE98" }} class="flex w-5 items-center justify-center space-x-[1.5px] brightness-110">
-                                                        <div class="ease size-0.5 max-h-5 animate-[playing_0.95s_ease_infinite] rounded-[1px] transition-all duration-500 bg-gray-800 dark:bg-[--dark-bg]" />
-                                                        <div class="ease size-0.5 max-h-5 animate-[playing_1.46s_ease_infinite] rounded-[1px] transition-all duration-500 bg-gray-800 dark:bg-[--dark-bg]" />
-                                                        <div class="ease size-0.5 max-h-5 animate-[playing_0.82s_ease_infinite] rounded-[1px] transition-all duration-500 bg-gray-800 dark:bg-[--dark-bg]" />
-                                                        <div class="ease size-0.5 max-h-5 animate-[playing_1.24s_ease_infinite] rounded-[1px] transition-all duration-500 bg-gray-800 dark:bg-[--dark-bg]" />
-                                                    </div>
-                                                    <div class="font-normal w-full text-[#00EE98] truncate flex gap-1 items-center">
-                                                        Playing Steam on AWS
-                                                        <div class="[&>svg]:size-4" >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.25 2.75h-5.5v10.5h10.5v-5.5m0-5l-5.5 5.5m3-6.5h3.5v3.5" /></svg>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <button disabled class="ml-auto disabled:cursor-not-allowed disabled:opacity-50 text-gray-600 dark:text-gray-400 bg-gray-500/20 text-sm rounded-md py-2 transition-colors duration-200 ease-out px-3 hover:ring-2 hover:ring-[#8f8f8f] dark:hover:ring-[#707070] outline-none hover:bg-gray-300/70 dark:hover:bg-gray-700/70">
-                                                Invite
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))} */}
-                            <div class="[border:1px_dashed_theme(colors.gray.300)] dark:[border:1px_dashed_theme(colors.gray.800)] [mask-image:linear-gradient(rgb(0,0,0)_0%,_rgb(0,0,0)_calc(100%-120px),_transparent_100%)] bottom-0 top-0 -left-[0.4625rem] absolute" />
-                        </ul>
+                        <HomeFriendsSection getActiveUsers$={$(async () => { return await getActiveUsers() })}  />
                     </div>
                 </div>
                 <div class="gap-2 w-full flex-col flex">

@@ -4,9 +4,8 @@ import { MotionComponent } from "@/react";
 import { $, component$, useOnDocument, useSignal, type QRL } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
 
-type Input = QRL<() => Promise<"Free" | "Pro" | undefined>>
 type Props = {
-    getUserSubscription$: Input
+    getUserSubscription$: QRL<() => Promise<"Free" | "Pro" | undefined>>
 }
 
 export const HomeMachineSection = component$(({ getUserSubscription$ }: Props) => {
