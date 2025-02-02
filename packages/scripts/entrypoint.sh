@@ -38,10 +38,8 @@ get_gpu_info
 
 # Check vendors in priority order
 if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
-    echo "NVIDIA GPU detected, doing a workaround..."
-    pacman -Sy --noconfirm downgrade
-    pacman -Sy --noconfirm --ask=4 nvidia-utils lib32-nvidia-utils --overwrite '*'
-    N|sudo downgrade --prefer-cache lib32-libx11==1.8.1 -- --noconfirm
+    echo "NVIDIA GPU detected, assuming driver is linked and applying Vulkan fix..."
+    echo "{\"file_format_version\":\"1.0.0\",\"ICD\":{\"library_path\":\"libGLX_nvidia.so.0\",\"api_version\":\"1.3\"}}" > /usr/share/vulkan/icd.d/nvidia_icd.json
 elif [[ -n "${vendor_devices[intel]:-}" ]]; then
     echo "Intel GPU detected, installing required packages..."
     pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv

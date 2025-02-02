@@ -120,7 +120,8 @@ RUN sed -i \
 RUN pacman --noconfirm -Sy && \
     # Core system components
     pacman -S --needed --noconfirm \
-        archlinux-keyring mesa steam steam-native-runtime \
+        archlinux-keyring vulkan-intel lib32-vulkan-intel mesa \
+        steam steam-native-runtime \
         sudo xorg-xwayland labwc wlr-randr mangohud \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \
