@@ -1,19 +1,30 @@
-import { Avatar, GameStoreButton } from "@nestri/ui";
-import { cn } from "@nestri/ui/design";
-import { $, component$ } from "@builder.io/qwik";
-import { server$ } from "@builder.io/qwik-city";
-import { HomeNavBar } from "@nestri/ui";
 import Nestri from "@nestri/sdk";
+import { cn } from "@nestri/ui/design";
+import { server$ } from "@builder.io/qwik-city";
+import { $, component$ } from "@builder.io/qwik";
+import { HomeMachineSection } from "@nestri/ui";
 
-export const getUserProfile = server$(
+export const getUserSubscriptions = server$(
     async function () {
+
         const access = this.cookie.get("access_token")
         if (access) {
             const bearerToken = access.value
 
             const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
-            const currentProfile = await nestriClient.users.retrieve()
-            return currentProfile;
+            const subscriptions = await nestriClient.subscriptions.list().then(t => t.data.length > 0 ? "Pro" : "Free").catch(async (err) => {
+                if (err instanceof Nestri.APIError) {
+                    if (err.status == 404) {
+                        return "Free"
+                    } else {
+                        throw err
+                    }
+                } else {
+                    throw err;
+                }
+            })
+
+            return subscriptions as "Free" | "Pro"
         }
     }
 );
@@ -22,29 +33,8 @@ export default component$(() => {
 
     return (
         <main class="flex w-screen h-full flex-col relative">
-            <HomeNavBar getUserProfile$={$(async () => { return await getUserProfile() })} />
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 min-h-screen">
-                <div class="flex flex-col gap-6 w-full py-4">
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                        {/* <GameStoreButton />
-                        <button class="w-full">
-                            <div class="border-gray-400/70 w-full dark:border-gray-700/70 transition-all border-dashed duration-200 border-[2px] h-14 rounded-xl px-4 gap-2 flex items-center justify-between overflow-hidden outline-none disabled:opacity-50">
-                                <span class="p-2 pl-0 text-gray-600/70 dark:text-gray-400/70 leading-none shrink truncate flex text-start items-center gap-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11.505 2h-1.501c-3.281 0-4.921 0-6.084.814a4.5 4.5 0 0 0-1.106 1.105C2 5.08 2 6.72 2 10s0 4.919.814 6.081a4.5 4.5 0 0 0 1.106 1.105C5.083 18 6.723 18 10.004 18h4.002c3.28 0 4.921 0 6.084-.814a4.5 4.5 0 0 0 1.105-1.105c.63-.897.772-2.08.805-4.081m-8-6h4m0 0h4m-4 0V2m0 4v4m-7 5h2m-1 3v4m-4 0h8" color="currentColor" /></svg>
-                                    Add another machine
-                                    <div class="select-none text-[rgb(249,134,0)] ring-1 right-2 ring-gray-400 dark:ring-0 uppercase overflow-hidden rounded-md px-2 py-1 text-xs font-medium transition-colors duration-200 ease-out  dark:text-[rgb(255,159,49)] bg-[rgb(255,244,232)] dark:bg-[rgb(49,39,28)] border-[rgb(254,231,204)] dark:border-[rgb(72,53,30)]">
-                                        <span>Soon</span>
-                                    </div>
-                                </span>
-                            </div>
-                        </button> */}
-                        {new Array(2).fill(0).map((_, key) => (
-                            <div class="w-full animate-pulse" key={`skeleton-machine-${key}`}>
-                                <div class="rounded-xl bg-gray-200 dark:bg-gray-800 h-14 w-full" />
-                            </div>
-                        ))}
-                    </div>
-                </div >
+                <HomeMachineSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} />
                 <div class="gap-2 w-full flex-col flex">
                     <hr class="border-none h-[1.5px] dark:bg-gray-700 bg-gray-300 w-full" />
                     <div class="flex flex-col justify-center py-2 px-3 items-start w-full ">

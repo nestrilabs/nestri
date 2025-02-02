@@ -1,26 +1,28 @@
-import { cn } from "./design";
-import Avatar from "./avatar"
+import { cn } from "../design";
+import Avatar from "../avatar"
 import type Nestri from "@nestri/sdk"
-import { MotionComponent } from "./react";
+import { MotionComponent } from "../react";
 import { Dropdown, Modal } from '@qwik-ui/headless';
 import { disablePageScroll, enablePageScroll } from '@fluejs/noscroll';
 import { $, component$, type QRL, useOnDocument, useSignal } from "@builder.io/qwik";
+import { useLocation } from "@builder.io/qwik-city";
 
 type Props = {
-    getUserProfile$: QRL<() => Promise<Nestri.Users.UserRetrieveResponse | undefined>>
+    getUserProfile$: QRL<() => Promise<Nestri.Users.UserRetrieveResponse.Data | undefined>>
 }
 
 
 export const HomeNavBar = component$(({ getUserProfile$ }: Props) => {
     const hasScrolled = useSignal(false);
     const isNewTeam = useSignal(false);
-    const userProfile = useSignal<Nestri.Users.UserRetrieveResponse | undefined>()
+    const userProfile = useSignal<Nestri.Users.UserRetrieveResponse.Data | undefined>()
     const isNewMember = useSignal(false);
     const isHolding = useSignal(false);
     const showInviteSuccess = useSignal(false);
     const newTeamName = useSignal('');
     const inviteName = useSignal('');
     const inviteEmail = useSignal('');
+    const location = useLocation().url
 
     const onDialogOpen = $((open: boolean) => {
         if (open) {
@@ -109,90 +111,103 @@ export const HomeNavBar = component$(({ getUserProfile$ }: Props) => {
                                 style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
                         </svg>
                     </div>
-                    <div class="relative z-[5] animate-fade-in opacity-0 items-center flex">
+                    <div class="relative z-[5] items-center flex">
                         <hr class="dark:bg-gray-700/70 bg-gray-400/70 w-0.5 rounded-md mx-3 rotate-[16deg] h-7 border-none" />
-                        {userProfile.value ? (<Dropdown.Root onOpenChange$={onDialogOpen}>
-                            <Dropdown.Trigger class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] focus:ring-2 outline-none dark:text-gray-400 text-gray-600 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-300/70 dark:hover:bg-gray-700/70 ">
-                                <Avatar name={`${userProfile.value.data.username}'s Games`} />
-                                <span class="truncate shrink max-w-[20ch]">{`${userProfile.value.data.username}'s Games`}</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" class="size-4" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
-                            </Dropdown.Trigger>
-                            <Dropdown.Popover
-                                class="bg-[hsla(0,0%,100%,.5)] dark:bg-[hsla(0,0%,100%,.026)] min-w-[160px] max-w-[240px] backdrop-blur-md rounded-lg py-1 px-2 border border-[#e8e8e8] dark:border-[#2e2e2e] [box-shadow:0_8px_30px_rgba(0,0,0,.12)]">
-                                <Dropdown.RadioGroup class="w-full flex overflow-hidden flex-col gap-1 [&_*]:w-full [&_[data-checked]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-checked]]:bg-[hsla(0,0%,100%,.077)] [&_[data-checked]]:rounded-md [&_[data-checked]]:text-[#171717] [&_[data-checked]_svg]:block cursor-pointer [&_[data-highlighted]]:text-[#171717] dark:[&_[data-checked]]:text-[#ededed] dark:[&_[data-highlighted]]:text-[#ededed] [&_[data-highlighted]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-highlighted]]:bg-[hsla(0,0%,100%,.077)] [&_[data-highlighted]]:rounded-md">
-                                    <Dropdown.RadioItem
-                                        value={`${userProfile.value.data.username}'s Games`}
-                                        class="leading-none text-sm items-center flex px-2 h-8 rounded-md outline-none relative select-none w-full"
-                                    >
-                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate [&>svg]:size-5 text-[#6f6f6f] dark:text-[#a0a0a0]">
-                                            <Avatar class="flex-shrink-0 rounded-full" name={`${userProfile.value.data.username}'s Games`} />
-                                            {`${userProfile.value.data.username}'s Games`}
-                                        </span>
-                                        <span class="py-1 px-1 text-primary-500 [&>svg]:size-5 [&>svg]:hidden !w-max" >
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 24 24"><path fill="currentColor" d="m10 13.6l5.9-5.9q.275-.275.7-.275t.7.275t.275.7t-.275.7l-6.6 6.6q-.3.3-.7.3t-.7-.3l-2.6-2.6q-.275-.275-.275-.7t.275-.7t.7-.275t.7.275z" /></svg>
-                                        </span>
-                                    </Dropdown.RadioItem>
-                                </Dropdown.RadioGroup>
-                                <Dropdown.Separator class="w-full dark:bg-[#2e2e2e] bg-[#e8e8e8] border-0 h-[1px] my-1" />
-                                <Dropdown.Group class="flex flex-col gap-1 w-full">
-                                    <Dropdown.Item
-                                        onClick$={() => isNewTeam.value = true}
-                                        class={cn("leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative", "opacity-50 pointer-events-none !cursor-not-allowed")}
-                                    >
-                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
-                                            New Team
-                                        </span>
-                                    </Dropdown.Item>
-                                    <Dropdown.Item
-                                        // onClick$={() => isNewMember.value = true}
-                                        class={cn("leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative", "opacity-50 pointer-events-none !cursor-not-allowed")}
-                                    >
-                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0m8 12h6m-3-3v6M6 21v-2a4 4 0 0 1 4-4h4" /></svg>
-                                            Send an invite
-                                        </span>
-                                    </Dropdown.Item>
-                                    <button
-                                        onPointerDown$={handlePointerDown}
-                                        onPointerUp$={handlePointerUp}
-                                        onPointerLeave$={handlePointerUp}
-                                        onKeyDown$={(e) => e.key === "Enter" && handlePointerDown()}
-                                        onKeyUp$={(e) => e.key === "Enter" && handlePointerUp()}
-                                        disabled={true}
-                                        class={cn("leading-none relative overflow-hidden transition-all duration-200 text-sm group items-center text-red-500 [&>*]:w-full [&>qwik-react]:absolute [&>qwik-react]:h-full [&>qwik-react]:left-0 hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none select-none w-full", "opacity-50 pointer-events-none !cursor-not-allowed")}>
-                                        <MotionComponent
-                                            client:load
-                                            class="absolute left-0 top-0 bottom-0 bg-red-500 opacity-50 w-full h-full rounded-md"
-                                            initial={{ scaleX: 0 }}
-                                            animate={{
-                                                scaleX: isHolding.value ? 1 : 0
-                                            }}
-                                            style={{
-                                                transformOrigin: 'left',
-                                            }}
-                                            transition={{
-                                                duration: isHolding.value ? 2 : 0.5,
-                                                ease: "linear"
-                                            }}
-                                        />
-                                        <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5 ">
-                                            <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m19.5 5.5l-.402 6.506M4.5 5.5l.605 10.025c.154 2.567.232 3.85.874 4.774c.317.456.726.842 1.2 1.131c.671.41 1.502.533 2.821.57m10-7l-7 7m7 0l-7-7M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5" color="currentColor" /></svg>
-                                            <span class="group-hover:hidden">Delete Team</span>
-                                            <span class="hidden group-hover:block">Hold to delete</span>
-                                        </span>
-                                    </button>
-                                </Dropdown.Group>
-                            </Dropdown.Popover>
-                        </Dropdown.Root>) : (<div class="h-6 w-40 rounded-md bg-gray-200 dark:bg-gray-800 animate-pulse" />)}
+                        {userProfile.value ? (
+                            <Dropdown.Root class="animate-fade-in opacity-0 transition-all duration-200 ease-in" onOpenChange$={onDialogOpen}>
+                                <Dropdown.Trigger class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] focus:ring-2 outline-none dark:text-gray-400 text-gray-600 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-300/70 dark:hover:bg-gray-700/70 ">
+                                    <Avatar name={`${userProfile.value.username}'s Games`} />
+                                    <span class="truncate shrink max-w-[20ch]">{`${userProfile.value.username}'s Games`}</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="size-4" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
+                                </Dropdown.Trigger>
+                                <Dropdown.Popover
+                                    class="bg-[hsla(0,0%,100%,.5)] dark:bg-[hsla(0,0%,100%,.026)] min-w-[160px] max-w-[240px] backdrop-blur-md rounded-lg py-1 px-2 border border-[#e8e8e8] dark:border-[#2e2e2e] [box-shadow:0_8px_30px_rgba(0,0,0,.12)]">
+                                    <Dropdown.RadioGroup class="w-full flex overflow-hidden flex-col gap-1 [&_*]:w-full [&_[data-checked]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-checked]]:bg-[hsla(0,0%,100%,.077)] [&_[data-checked]]:rounded-md [&_[data-checked]]:text-[#171717] [&_[data-checked]_svg]:block cursor-pointer [&_[data-highlighted]]:text-[#171717] dark:[&_[data-checked]]:text-[#ededed] dark:[&_[data-highlighted]]:text-[#ededed] [&_[data-highlighted]]:bg-[rgba(0,0,0,.071)] dark:[&_[data-highlighted]]:bg-[hsla(0,0%,100%,.077)] [&_[data-highlighted]]:rounded-md">
+                                        <Dropdown.RadioItem
+                                            value={`${userProfile.value.username}'s Games`}
+                                            class="leading-none text-sm items-center flex px-2 h-8 rounded-md outline-none relative select-none w-full"
+                                        >
+                                            <span class="w-full max-w-[20ch] flex items-center gap-2 truncate [&>svg]:size-5 text-[#6f6f6f] dark:text-[#a0a0a0]">
+                                                <Avatar class="flex-shrink-0 rounded-full" name={`${userProfile.value.username}'s Games`} />
+                                                {`${userProfile.value.username}'s Games`}
+                                            </span>
+                                            <span class="py-1 px-1 text-primary-500 [&>svg]:size-5 [&>svg]:hidden !w-max" >
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="" viewBox="0 0 24 24"><path fill="currentColor" d="m10 13.6l5.9-5.9q.275-.275.7-.275t.7.275t.275.7t-.275.7l-6.6 6.6q-.3.3-.7.3t-.7-.3l-2.6-2.6q-.275-.275-.275-.7t.275-.7t.7-.275t.7.275z" /></svg>
+                                            </span>
+                                        </Dropdown.RadioItem>
+                                    </Dropdown.RadioGroup>
+                                    <Dropdown.Separator class="w-full dark:bg-[#2e2e2e] bg-[#e8e8e8] border-0 h-[1px] my-1" />
+                                    <Dropdown.Group class="flex flex-col gap-1 w-full">
+                                        <Dropdown.Item
+                                            onClick$={() => isNewTeam.value = true}
+                                            class={cn("leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative", "opacity-50 pointer-events-none !cursor-not-allowed")}
+                                        >
+                                            <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v14m-7-7h14" /></svg>
+                                                New Team
+                                            </span>
+                                        </Dropdown.Item>
+                                        <Dropdown.Item
+                                            // onClick$={() => isNewMember.value = true}
+                                            class={cn("leading-none w-full text-sm items-center text-[#6f6f6f] dark:text-[#a0a0a0] hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none relative", "opacity-50 pointer-events-none !cursor-not-allowed")}
+                                        >
+                                            <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0-8 0m8 12h6m-3-3v6M6 21v-2a4 4 0 0 1 4-4h4" /></svg>
+                                                Send an invite
+                                            </span>
+                                        </Dropdown.Item>
+                                        <button
+                                            onPointerDown$={handlePointerDown}
+                                            onPointerUp$={handlePointerUp}
+                                            onPointerLeave$={handlePointerUp}
+                                            onKeyDown$={(e) => e.key === "Enter" && handlePointerDown()}
+                                            onKeyUp$={(e) => e.key === "Enter" && handlePointerUp()}
+                                            disabled={true}
+                                            class={cn("leading-none relative overflow-hidden transition-all duration-200 text-sm group items-center text-red-500 [&>*]:w-full [&>qwik-react]:absolute [&>qwik-react]:h-full [&>qwik-react]:left-0 hover:text-[#171717] dark:hover:text-[#ededed] hover:bg-[rgba(0,0,0,.071)] dark:hover:bg-[hsla(0,0%,100%,.077)] flex px-2 gap-2 h-8 rounded-md cursor-pointer outline-none select-none w-full", "opacity-50 pointer-events-none !cursor-not-allowed")}>
+                                            <MotionComponent
+                                                client:load
+                                                class="absolute left-0 top-0 bottom-0 bg-red-500 opacity-50 w-full h-full rounded-md"
+                                                initial={{ scaleX: 0 }}
+                                                animate={{
+                                                    scaleX: isHolding.value ? 1 : 0
+                                                }}
+                                                style={{
+                                                    transformOrigin: 'left',
+                                                }}
+                                                transition={{
+                                                    duration: isHolding.value ? 2 : 0.5,
+                                                    ease: "linear"
+                                                }}
+                                            />
+                                            <span class="w-full max-w-[20ch] flex items-center gap-2 truncate overflow-visible [&>svg]:size-5 ">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m19.5 5.5l-.402 6.506M4.5 5.5l.605 10.025c.154 2.567.232 3.85.874 4.774c.317.456.726.842 1.2 1.131c.671.41 1.502.533 2.821.57m10-7l-7 7m7 0l-7-7M3 5.5h18m-4.944 0l-.683-1.408c-.453-.936-.68-1.403-1.071-1.695a2 2 0 0 0-.275-.172C13.594 2 13.074 2 12.035 2c-1.066 0-1.599 0-2.04.234a2 2 0 0 0-.278.18c-.395.303-.616.788-1.058 1.757L8.053 5.5" color="currentColor" /></svg>
+                                                <span class="group-hover:hidden">Delete Team</span>
+                                                <span class="hidden group-hover:block">Hold to delete</span>
+                                            </span>
+                                        </button>
+                                    </Dropdown.Group>
+                                </Dropdown.Popover>
+                            </Dropdown.Root>) : (<div class="h-6 w-40 rounded-md bg-gray-200 dark:bg-gray-800 animate-pulse" />)}
+                        {location.pathname == "/machine" &&
+                            (<>
+                                <hr class="dark:bg-gray-700/70 bg-gray-400/70 w-0.5 rounded-md mx-3 rotate-[16deg] h-7 border-none" />
+                                {userProfile.value ? (
+                                <div class="text-sm [&>svg:first-child]:size-5 rounded-full h-8 focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] focus:ring-2 outline-none dark:text-gray-400 text-gray-600 gap-2 px-3 cursor-pointer inline-flex transition-all duration-150 items-center hover:bg-gray-300/70 dark:hover:bg-gray-700/70 ">
+                                    <span class="truncate shrink max-w-[20ch]">{`Steam Machine`}</span>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="size-4" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
+                                </div>
+                                ) : (<div class="h-6 w-40 rounded-md bg-gray-200 dark:bg-gray-800 animate-pulse" />)}
+                            </>
+                            )
+                        }
                     </div>
                 </div>
                 <div class="gap-4 flex flex-row justify-center h-full items-center">
                     {userProfile.value ?
                         (<Dropdown.Root class="animate-fade-in opacity-0 transition-all duration-200 ease-in" onOpenChange$={onDialogOpen}>
                             <Dropdown.Trigger class="focus:bg-gray-300/70 dark:focus:bg-gray-700/70 focus:ring-[#8f8f8f] dark:focus:ring-[#707070] text-gray-600 dark:text-gray-400 [&>svg:first-child]:size-5 text-sm focus:ring-2 outline-none rounded-full transition-all flex items-center duration-150 select-none cursor-pointer hover:bg-gray-300/70 dark:hover:bg-gray-700/70 gap-1 px-3 h-8" >
-                                {userProfile.value.data.avatarUrl ? (<img src={userProfile.value.data.avatarUrl} height={20} width={20} class="size-6 rounded-full" alt="Avatar" />) : (<Avatar name={`${userProfile.value.data.username}#${userProfile.value.data.discriminator}`} />)}
-                                <span class="truncate shrink max-w-[20ch] sm:flex hidden">{`${userProfile.value.data.username}#${userProfile.value.data.discriminator}`}</span>
+                                {userProfile.value.avatarUrl ? (<img src={userProfile.value.avatarUrl} height={20} width={20} class="size-6 rounded-full" alt="Avatar" />) : (<Avatar name={`${userProfile.value.username}#${userProfile.value.discriminator}`} />)}
+                                <span class="truncate shrink max-w-[20ch] sm:flex hidden">{`${userProfile.value.username}#${userProfile.value.discriminator}`}</span>
                                 <svg xmlns="http://www.w3.org/2000/svg" class="size-4 sm:block hidden" width="32" height="32" viewBox="0 0 256 256"><path fill="currentColor" d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" /></svg>
                             </Dropdown.Trigger>
                             <Dropdown.Popover
