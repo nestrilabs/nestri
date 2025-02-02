@@ -9,13 +9,12 @@ type Props = {
 }
 
 export const HomeMachineSection = component$(({ getUserSubscription$ }: Props) => {
-    const userSubscription = useSignal<"Free" | "Pro" | undefined>()
     const isHovered = useSignal(false)
+    const userSubscription = useSignal<"Free" | "Pro" | undefined>()
 
     useOnDocument("load", $(async () => {
         const subscription = await getUserSubscription$()
         userSubscription.value = subscription
-        // userSubscription.value = "Pro"
     }))
 
     return (
