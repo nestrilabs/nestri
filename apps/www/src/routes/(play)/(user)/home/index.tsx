@@ -36,9 +36,14 @@ export const getActiveUsers = server$(
         if (access) {
             const bearerToken = access.value
 
-            const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
-            const users = await nestriClient.users.list().then(t => t.data) as any
-            return users as Nestri.Users.UserListResponse.Data[]
+            try {
+                const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+                const users = await nestriClient.users.list().then(t => t.data) as any
+                return users as Nestri.Users.UserListResponse.Data[]
+            } catch (error) {
+                console.log("error", error)
+                return undefined
+            }
         }
     }
 );
@@ -49,10 +54,33 @@ export const getSession = server$(
         const access = this.cookie.get("access_token")
         if (access) {
             const bearerToken = access.value
+            try {
+                const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+                const session = await nestriClient.users.session(profileID)
+                return session
+            } catch (error) {
+                console.log("error", error)
+                return undefined
+            }
+        }
+    }
+);
 
-            const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
-            const session = await nestriClient.users.session(profileID)
-            return session
+export const createSession = server$(
+    async function () {
+        const access = this.cookie.get("access_token")
+        if (access) {
+            const bearerToken = access.value
+
+            try {
+                const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+                const taskID = await nestriClient.tasks.create()
+                const sessionID = await nestriClient.tasks.session(taskID.data)
+                return sessionID.data
+            } catch (error) {
+                console.log("error", error)
+                return undefined
+            }
         }
     }
 );

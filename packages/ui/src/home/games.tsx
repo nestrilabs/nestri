@@ -48,7 +48,17 @@ export const HomeGamesSection = component$(({ getUserSubscription$ }: Props) => 
                             <span class="select-none text-center text-gray-700 dark:text-gray-300 font-title text-xl font-semibold sm:font-medium">Waiting for your first game install</span>
                             <p class="text-center text-base font-medium text-gray-600 dark:text-gray-400 sm:font-regular">Once you have installed  a game on your machine, it should appear here</p>
                         </div>
-                        <button disabled={userSubscription.value === "Free"} class="flex h-[48px] disabled:cursor-not-allowed disabled:opacity-50 max-w-[360px] w-full select-none items-center justify-center rounded-full bg-primary-500 text-base font-semibold text-white transition-all duration-200 ease-out [&:not(:disabled)]:hover:ring-2 [&:not(:disabled)]:hover:ring-gray-600 dark:[&:not(:disabled)]:hover:ring-gray-400 [&:not(:disabled)]:focus:scale-95 [&:not(:disabled)]:active:scale-95 sm:font-medium">Launch Steam</button>
+                        <button disabled={userSubscription.value === "Free"} class="flex gap-2 h-[48px] disabled:cursor-not-allowed disabled:opacity-50 max-w-[360px] w-full select-none items-center justify-center rounded-full bg-primary-500 text-base font-semibold text-white transition-all duration-200 ease-out [&:not(:disabled)]:hover:ring-2 [&:not(:disabled)]:hover:ring-gray-600 dark:[&:not(:disabled)]:hover:ring-gray-400 [&:not(:disabled)]:focus:scale-95 [&:not(:disabled)]:active:scale-95 sm:font-medium">
+                            <div style={{ "--spinner-color": "#FFF" }} data-component="spinner">
+                                <div>
+                                    {new Array(12).fill(0).map((i, k) => (
+                                        <div key={k} />
+                                    ))}
+                                </div>
+                            </div>
+                            <span class="hidden">Launch Steam</span>
+                            <span class="">Launching Steam</span>
+                        </button>
                     </div>
                 ) : (
                     <div class="grid sm:grid-cols-3 grid-cols-2 gap-2 gap-y-3 w-full animate-pulse" >

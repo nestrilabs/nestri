@@ -93,7 +93,7 @@ export const HomeMachineSection = component$(({ getUserSubscription$ }: Props) =
                                         <a
                                             onMouseEnter$={() => isHovered.value = true}
                                             onMouseLeave$={() => isHovered.value = false}
-                                            href="#" class="dark:text-white text-black border-b border-[#99CCFF] py-0.5">Upgrade to Pro</a>&nbsp;to get a machine
+                                            href="https://polar.sh/nestri" class="dark:text-white text-black border-b border-[#99CCFF] py-0.5">Upgrade to Pro</a>&nbsp;to get a machine
                                     </span>
                                 </div>
                             </div>
