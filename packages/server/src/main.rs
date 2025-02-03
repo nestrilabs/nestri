@@ -10,6 +10,7 @@ mod proto;
 use crate::args::encoding_args;
 use crate::nestrisink::NestriSignaller;
 use crate::websocket::NestriWebSocket;
+use crate::gpu::GPUVendor;
 use futures_util::StreamExt;
 use gst::prelude::*;
 use gstrswebrtc::signaller::Signallable;
@@ -54,7 +55,7 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
             gpu = filtered_gpus.get(args.device.gpu_index as usize).cloned();
         } else {
             // get first GPU
-            gpu = filtered_gpus.get(0).cloned();
+            gpu = filtered_gpus.into_iter().find(|g| *g.vendor() != GPUVendor::UNKNOWN);
         }
     }
     if gpu.is_none() {

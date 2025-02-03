@@ -46,7 +46,7 @@ start_nestri_server() {
     for _ in {1..15}; do # Wait up to 15 seconds
         if [ -e "$WAYLAND_SOCKET" ]; then
             echo "Wayland display 'wayland-1' is ready."
-            sleep 1  # necessary sleep - reduces chance that non-ready socket is used
+            sleep 5  # necessary sleep - reduces chance that non-ready socket is used
             start_compositor
             return
         fi
@@ -127,7 +127,7 @@ start_steam() {
     fi
 
     echo "Starting Steam with -tenfoot..."
-    WAYLAND_DISPLAY=wayland-0 steam -tenfoot &
+    WAYLAND_DISPLAY=wayland-0 steam-native -tenfoot &
     STEAM_PID=$!
 
     # Verify Steam started successfully
