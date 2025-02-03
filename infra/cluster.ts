@@ -1,8 +1,8 @@
 import { sshKey } from "./ssh";
 import { authFingerprintKey } from "./auth";
 
-export const ecsCluster = new aws.ecs.Cluster("Hosted", {
-    name: "NestriGPUClusterProd",
+export const ecsCluster = new aws.ecs.Cluster("NestriGPUCluster", {
+    name: "NestriGPUCluster",
 });
 
 // Find the latest Ecs GPU AMI
@@ -91,7 +91,7 @@ export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
     volumes: [
         {
             name: "host",
-            hostPath: "/mnt/games"
+            hostPath: "/mnt/"
             // efsVolumeConfiguration: {
             //     fileSystemId: storage.id,
             //     authorizationConfig: { accessPointId: storage.accessPoint },
@@ -147,13 +147,6 @@ export const gpuTaskDefinition = new aws.ecs.TaskDefinition("NestriGPUTask", {
         }
     }]))
 });
-
-// "resourceRequirements": [
-//     {
-//         "type": "GPU",
-//         "value": "1"
-//     }
-// ],
 
 sst.Linkable.wrap(aws.ecs.TaskDefinition, (resource) => ({
     properties: {

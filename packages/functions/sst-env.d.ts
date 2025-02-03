@@ -34,10 +34,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Hosted": {
-      "type": "aws.ecs/cluster.Cluster"
-      "value": string
-    }
     "InstantAdminToken": {
       "type": "sst.sst.Secret"
       "value": string
@@ -48,6 +44,10 @@ declare module "sst" {
     }
     "LoopsApiKey": {
       "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriGPUCluster": {
+      "type": "aws.ecs/cluster.Cluster"
       "value": string
     }
     "NestriGPUTask": {

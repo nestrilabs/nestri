@@ -135,7 +135,7 @@ export module Tasks {
 
             const run = await Aws.EcsRunTask({
                 count: 1,
-                cluster: Resource.Hosted.value,
+                cluster: Resource.NestriGPUCluster.value,
                 taskDefinition: Resource.NestriGPUTask.value,
                 launchType: "EC2",
                 overrides: {
@@ -253,7 +253,7 @@ export module Tasks {
             const now = new Date().toISOString()
             const describeResponse = await Aws.EcsDescribeTasks({
                 tasks: [response[0]!.taskID],
-                cluster: Resource.Hosted.value
+                cluster: Resource.NestriGPUCluster.value
             })
 
             if (!describeResponse.tasks || describeResponse.tasks.length === 0) {
@@ -306,7 +306,7 @@ export module Tasks {
 
             const stopResponse = await Aws.EcsStopTask({
                 task: input.taskID,
-                cluster: Resource.Hosted.value,
+                cluster: Resource.NestriGPUCluster.value,
                 reason: "Client requested a shutdown"
             })
 

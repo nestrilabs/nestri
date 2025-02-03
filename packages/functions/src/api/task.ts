@@ -218,8 +218,8 @@ export module TaskApi {
             }),
             async (c) => {
                 const user = useCurrentUser();
-                const data = await Subscriptions.list(undefined);
-                if (!data) return c.json({ error: "You need a subscription to create a task" }, 404);
+                // const data = await Subscriptions.list(undefined);
+                // if (!data) return c.json({ error: "You need a subscription to create a task" }, 404);
                 if (user) {
                     const task = await Tasks.create();
                     if (!task) return c.json({ error: "Task could not be created" }, 404);
