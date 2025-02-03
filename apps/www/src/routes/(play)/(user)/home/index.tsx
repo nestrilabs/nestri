@@ -1,5 +1,4 @@
 import Nestri from "@nestri/sdk";
-import { cn } from "@nestri/ui/design";
 import { server$ } from "@builder.io/qwik-city";
 import { $, component$ } from "@builder.io/qwik";
 import { HomeFriendsSection, HomeGamesSection, HomeMachineSection } from "@nestri/ui";

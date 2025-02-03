@@ -1,5 +1,7 @@
-import { component$, useVisibleTask$ } from "@builder.io/qwik";
+import posthog from "posthog-js";
+import Nestri from "@nestri/sdk";
 import { createClient } from "@openauthjs/openauth/client";
+import { component$, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, type CookieOptions } from "@builder.io/qwik-city";
 
 export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
@@ -27,16 +29,40 @@ export const useLoggedIn = routeLoader$(async ({ query, url, cookie }) => {
 
             cookie.set("access_token", access_token, cookieOptions)
             cookie.set("refresh_token", refresh_token, cookieOptions)
+
+            const bearerToken = access_token
+
+            const nestriClient = new Nestri({
+                bearerToken,
+                baseURL: "https://api.nestri.io"
+            })
+
+            //TODO: Use subjects instead
+            const currentProfile = await nestriClient.users.retrieve()
+            const userProfile = currentProfile.data
+            return userProfile
         }
+
     }
 })
 
 export default component$(() => {
-    useLoggedIn()
+    const userProfile = useLoggedIn()
     const navigate = useNavigate();
 
     // eslint-disable-next-line qwik/no-use-visible-task
     useVisibleTask$(() => {
+
+        if (userProfile.value) {
+            posthog.identify(
+                userProfile.value.id,
+                {
+                    username: userProfile.value.username,
+                    joinedAt: userProfile.value.createdAt,
+                },
+            )
+        }
+
         setTimeout(async () => {
             await navigate(`${window.location.origin}/home`)
         }, 500);
