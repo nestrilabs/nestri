@@ -27,7 +27,7 @@ export const HomeGamesSection = component$(({ getUserSubscription$, createSessio
         console.log("session", sessionID)
         if (sessionID) {
             creatingSession.value = false
-            nav(`/play/${sessionID.id}`)
+            await nav(`/play/${sessionID.id}`)
         }
         // }
     });

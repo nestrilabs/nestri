@@ -3,9 +3,9 @@ import Avatar from "../avatar"
 import type Nestri from "@nestri/sdk"
 import { MotionComponent } from "../react";
 import { Dropdown, Modal } from '@qwik-ui/headless';
+import { useLocation, useNavigate } from "@builder.io/qwik-city";
 import { disablePageScroll, enablePageScroll } from '@fluejs/noscroll';
 import { $, component$, type QRL, useOnDocument, useSignal } from "@builder.io/qwik";
-import { useLocation } from "@builder.io/qwik-city";
 
 type Props = {
     getUserProfile$: QRL<() => Promise<Nestri.Users.UserRetrieveResponse.Data | undefined>>
@@ -23,6 +23,7 @@ export const HomeNavBar = component$(({ getUserProfile$ }: Props) => {
     const inviteName = useSignal('');
     const inviteEmail = useSignal('');
     const location = useLocation().url
+    const nav =  useNavigate()
 
     const onDialogOpen = $((open: boolean) => {
         if (open) {
@@ -72,9 +73,9 @@ export const HomeNavBar = component$(({ getUserProfile$ }: Props) => {
         })
     );
 
-    const handleLogout = $(() => {
+    const handleLogout = $(async() => {
         console.log("got here")
-        window.location.href = window.location.origin + "/api/logout"
+        await nav(`/api/logout`)
     });
 
     const handleLogoutAnimationComplete = $(() => {

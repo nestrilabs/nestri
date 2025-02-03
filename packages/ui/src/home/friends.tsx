@@ -2,6 +2,7 @@ import { cn } from "../design";
 import Avatar from "../avatar";
 import type Nestri from "@nestri/sdk"
 import { Tooltip } from '@qwik-ui/headless';
+import { useNavigate } from "@builder.io/qwik-city";
 import { $, component$, useOnDocument, useSignal, type QRL } from "@builder.io/qwik";
 
 type Props = {
@@ -13,6 +14,7 @@ const skeletonCrew = new Array(3).fill(0)
 
 export const HomeFriendsSection = component$(({ getActiveUsers$, getSession$ }: Props) => {
     const activeUsers = useSignal<Nestri.Users.UserListResponse.Data[] | undefined>()
+    const nav = useNavigate()
 
     useOnDocument("load", $(async () => {
         const users = await getActiveUsers$()
@@ -21,7 +23,7 @@ export const HomeFriendsSection = component$(({ getActiveUsers$, getSession$ }: 
 
     const onWatch = $(async (profileID: string) => {
         const session = await getSession$(profileID)
-        window.location.href = window.origin + "/play/" + session?.data.id
+        await nav(`/play/${session?.data.id}`)
     })
 
     return (
