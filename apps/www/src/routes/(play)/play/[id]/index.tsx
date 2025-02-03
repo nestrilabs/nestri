@@ -150,7 +150,6 @@ export default component$(() => {
     try {
       if (!playState.video) {
         playState.video = document.createElement("video") as HTMLVideoElement
-        playState.video.id = "stream-video-player";
         playState.video.style.visibility = "hidden";
         playState.webrtc = noSerialize(new WebRTCStream("https://relay.dathorse.com", id, async (mediaStream) => {
           if (playState.video && mediaStream && playState.video.srcObject === null) {
