@@ -1,19 +1,36 @@
+import type Nestri from "@nestri/sdk";
+import { useNavigate } from "@builder.io/qwik-city";
 import { $, component$, useOnDocument, useSignal, type QRL } from "@builder.io/qwik";
 
 type Props = {
     getUserSubscription$: QRL<() => Promise<"Free" | "Pro" | undefined>>
+    createSession$: QRL<() => Promise<Nestri.Tasks.TaskSessionResponse.Data | undefined>>
 }
 
 const skeletonGames = new Array(6).fill(0)
 
-export const HomeGamesSection = component$(({ getUserSubscription$ }: Props) => {
+export const HomeGamesSection = component$(({ getUserSubscription$, createSession$ }: Props) => {
+    const nav = useNavigate()
+    const creatingSession = useSignal(false)
     const userSubscription = useSignal<"Free" | "Pro" | undefined>()
 
     useOnDocument("load", $(async () => {
-        // const subscription = await getUserSubscription$()
-        // userSubscription.value = subscription
-        userSubscription.value = "Pro"
+        const subscription = await getUserSubscription$()
+        userSubscription.value = subscription
+        // userSubscription.value = "Pro"
     }))
+
+    const onClick = $(async () => {
+        creatingSession.value = true
+        if (userSubscription.value != "Free") {
+            const sessionID = await createSession$()
+            if (sessionID) {
+                creatingSession.value = false
+                nav(`/play/${sessionID}`)
+            }
+        }
+    });
+
 
     return (
         <div class="gap-2 w-full flex-col flex">
@@ -23,14 +40,14 @@ export const HomeGamesSection = component$(({ getUserSubscription$ }: Props) => 
                     <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 22c-.818 0-1.6-.33-3.163-.99C4.946 19.366 3 18.543 3 17.16V7m9 15c.818 0 1.6-.33 3.163-.99C19.054 19.366 21 18.543 21 17.16V7m-9 15V11.355M8.326 9.691L5.405 8.278C3.802 7.502 3 7.114 3 6.5s.802-1.002 2.405-1.778l2.92-1.413C10.13 2.436 11.03 2 12 2s1.871.436 3.674 1.309l2.921 1.413C20.198 5.498 21 5.886 21 6.5s-.802 1.002-2.405 1.778l-2.92 1.413C13.87 10.564 12.97 11 12 11s-1.871-.436-3.674-1.309M6 12l2 1m9-9L7 9" color="currentColor" /></svg>
                     Your Games
                 </span>
-                {userSubscription.value ? (
+                {/* {userSubscription.value ? (
                     <button disabled={userSubscription.value === "Free"} class="disabled:opacity-50 disabled:cursor-not-allowed ml-auto flex gap-1 items-center cursor-pointer [&:not(:disabled)]:hover:text-gray-800 dark:[&:not(:disabled)]:hover:text-gray-200 transition-all duration-200 outline-none">
                         <svg xmlns="http://www.w3.org/2000/svg" class="flex-shrink-0 size-5" viewBox="0 0 256 256"><path fill="currentColor" d="M248 128a87.34 87.34 0 0 1-17.6 52.81a8 8 0 1 1-12.8-9.62A71.34 71.34 0 0 0 232 128a72 72 0 0 0-144 0a8 8 0 0 1-16 0a88 88 0 0 1 3.29-23.88C74.2 104 73.1 104 72 104a48 48 0 0 0 0 96h24a8 8 0 0 1 0 16H72a64 64 0 1 1 9.29-127.32A88 88 0 0 1 248 128m-69.66 42.34L160 188.69V128a8 8 0 0 0-16 0v60.69l-18.34-18.35a8 8 0 0 0-11.32 11.32l32 32a8 8 0 0 0 11.32 0l32-32a8 8 0 0 0-11.32-11.32" /></svg>
                         <span>Install a game</span>
                     </button>
                 ) : (
                     <div class="ml-auto h-4 w-28 rounded-md bg-gray-200 dark:gray-800 animate-pulse" />
-                )}
+                )} */}
             </div>
             <ul class="relative py-3 w-full list-none after:pointer-events-none after:select-none after:w-full after:h-[120px] after:fixed after:z-10 after:backdrop-blur-[1px] after:bg-gradient-to-b after:from-transparent after:to-gray-200 dark:after:to-gray-800 after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.200)_25%,transparent)] dark:after:[-webkit-mask-image:linear-gradient(to_top,theme(colors.gray.800)_25%,transparent)] after:left-0 after:-bottom-[1px]">
                 {userSubscription.value ? (
@@ -48,16 +65,17 @@ export const HomeGamesSection = component$(({ getUserSubscription$ }: Props) => 
                             <span class="select-none text-center text-gray-700 dark:text-gray-300 font-title text-xl font-semibold sm:font-medium">Waiting for your first game install</span>
                             <p class="text-center text-base font-medium text-gray-600 dark:text-gray-400 sm:font-regular">Once you have installed  a game on your machine, it should appear here</p>
                         </div>
-                        <button disabled={userSubscription.value === "Free"} class="flex gap-2 h-[48px] disabled:cursor-not-allowed disabled:opacity-50 max-w-[360px] w-full select-none items-center justify-center rounded-full bg-primary-500 text-base font-semibold text-white transition-all duration-200 ease-out [&:not(:disabled)]:hover:ring-2 [&:not(:disabled)]:hover:ring-gray-600 dark:[&:not(:disabled)]:hover:ring-gray-400 [&:not(:disabled)]:focus:scale-95 [&:not(:disabled)]:active:scale-95 sm:font-medium">
-                            <div style={{ "--spinner-color": "#FFF" }} data-component="spinner">
-                                <div>
-                                    {new Array(12).fill(0).map((i, k) => (
-                                        <div key={k} />
-                                    ))}
+                        <button onClick$={onClick} disabled={userSubscription.value === "Free"} class="flex gap-2 h-[48px] disabled:cursor-not-allowed disabled:opacity-50 max-w-[360px] w-full select-none items-center justify-center rounded-full bg-primary-500 text-base font-semibold text-white transition-all duration-200 ease-out [&:not(:disabled)]:hover:ring-2 [&:not(:disabled)]:hover:ring-gray-600 dark:[&:not(:disabled)]:hover:ring-gray-400 [&:not(:disabled)]:focus:scale-95 [&:not(:disabled)]:active:scale-95 sm:font-medium">
+                            {creatingSession.value &&
+                                <div style={{ "--spinner-color": "#FFF" }} data-component="spinner">
+                                    <div>
+                                        {new Array(12).fill(0).map((i, k) => (
+                                            <div key={k} />
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                            <span class="hidden">Launch Steam</span>
-                            <span class="">Launching Steam</span>
+                            }
+                            <span> {creatingSession.value ? "Launching Steam" : "Launch Steam"}</span>
                         </button>
                     </div>
                 ) : (

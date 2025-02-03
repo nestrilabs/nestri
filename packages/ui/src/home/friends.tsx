@@ -39,7 +39,7 @@ export const HomeFriendsSection = component$(({ getActiveUsers$, getSession$ }: 
                         activeUsers.value.slice(0, 3).map((user, key) => (
                             <div key={`user-${key}`} >
                                 <div class="gap-3.5 hover:bg-gray-200 dark:hover:bg-gray-800 text-left outline-none group rounded-lg px-3 [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] flex items-center w-full">
-                                    <div class="relative [&>svg]:size-[80px] w-max">
+                                    <div class="relative [&>svg]:size-[80px] [&>img]:size-[80px] min-w-[80px]">
                                         {user.avatarUrl ?
                                             (<img height={52} width={52} draggable={false} class="[transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] ring-2 ring-gray-200 dark:ring-gray-800 select-none rounded-full aspect-square w-[80px]" src={user.avatarUrl} alt={user.username} />) :
                                             (<Avatar name={`${user.username}#${user.discriminator}`} />)}

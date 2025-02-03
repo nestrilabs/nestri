@@ -20,7 +20,7 @@ export default component$(() => {
 
     return (
         <>
-            {/* <HomeNavBar getUserProfile$={$(async () => { return await getUserProfile() })} /> */}
+            <HomeNavBar getUserProfile$={$(async () => { return await getUserProfile() })} />
             <Slot />
         </>
     )

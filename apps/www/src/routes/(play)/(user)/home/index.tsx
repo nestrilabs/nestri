@@ -90,10 +90,9 @@ export default component$(() => {
     return (
         <main class="flex w-screen h-full flex-col relative">
             <section class="max-w-[750px] w-full mx-auto flex flex-col gap-3 px-5 pt-20 pb-14 min-h-screen">
-                {/* <HomeMachineSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} /> */}
-
-                {/* <HomeFriendsSection getActiveUsers$={$(async () => { return await getActiveUsers() })} getSession$={$(async (profileID: string) => { return await getSession(profileID) })} /> */}
-                <HomeGamesSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} />
+                <HomeMachineSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} />
+                <HomeFriendsSection getActiveUsers$={$(async () => { return await getActiveUsers() })} getSession$={$(async (profileID: string) => { return await getSession(profileID) })} />
+                <HomeGamesSection getUserSubscription$={$(async () => { return await getUserSubscriptions() })} createSession$={$(async () => { return await createSession() })} />
             </section >
         </main >
     )
