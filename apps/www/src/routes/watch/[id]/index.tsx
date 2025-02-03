@@ -186,7 +186,7 @@ export default component$(() => {
                                 Continue Watching
                             </button>
                             <button
-                                onClick$={()=>{
+                                onClick$={() => {
                                     nav("/home")
                                 }}
                                 class="transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:dark:ring-gray-700 outline-none w-full hover:bg-gray-300 hover:dark:bg-gray-700 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center font-medium font-title rounded-lg flex py-3 px-4" >
@@ -206,7 +206,7 @@ export default component$(() => {
                         <div class="dark:text-white text-black">
                             <h3 class="font-semibold text-2xl tracking-tight mb-2 font-title">Important information from Nestri</h3>
                             <div class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
-                                Our product is in Alpha — please use responsibly and share feedback whenever possible to help us improve. Thanks for your support!
+                                This product is in Alpha — please share feedback whenever possible to help us improve. Thanks you for your support! 💖
                             </div>
                         </div>
                         <div class="sm:pt-10 sm:block hidden" >

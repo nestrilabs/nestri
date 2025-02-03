@@ -277,7 +277,7 @@ export default component$(() => {
             <div class="dark:text-white text-black">
               <h3 class="font-semibold text-2xl tracking-tight mb-2 font-title">Important information from Nestri</h3>
               <div class="text-sm dark:text-white/[.79] text-[rgba(19,21,23,0.64)]" >
-                Our product is in Alpha — please use responsibly and share feedback whenever possible to help us improve. Thanks for your support!
+                This product is in Alpha — please share feedback whenever possible to help us improve. Thanks you for your support! 💖
               </div>
             </div>
             <div class="sm:pt-10 sm:block hidden" >
