@@ -30,7 +30,7 @@ export default component$(() => {
     webrtc: undefined,
     video: undefined,
     hasStream: undefined,
-    showOffline: false,
+    showOffline: undefined,
     inputInitialized: false,
     initializedVideo: false
   })
@@ -180,7 +180,8 @@ export default component$(() => {
             console.log("Setting new mediastream");
             playState.video.srcObject = mediaStream;
             playState.hasStream = true;
-            console.log("video", playState.video)
+            playState.showOffline = true
+
             playState.video.play().then(() => {
               // window.roomOfflineElement?.remove();
               playState.showOffline = false
@@ -209,14 +210,38 @@ export default component$(() => {
   return (
     <>
       {playState.showOffline ? (
-        <div class="aspect-video h-full w-full object-contain max-h-screen">
-          Offline
-        </div>) : (
+        <div class="w-screen h-screen flex justify-center items-center">
+          <span class="text-xl font-semibold flex items-center gap-2" >
+            <div data-component="spinner">
+              <div>
+                {new Array(12).fill(0).map((i, k) => (
+                  <div key={k} />
+                ))}
+              </div>
+            </div>
+            Something went wrong, retrying...
+          </span>
+        </div>
+      ) : (
         <>
           < canvas
             ref={canvas}
             onClick$={lockPlay}
             class="aspect-video h-full w-full object-contain max-h-screen" />
+          {typeof playState.showOffline === "undefined" && (
+            <div class="w-screen h-screen bg-gray-100 dark:bg-gray-900 absolute z-10 flex justify-center items-center">
+              <span class="text-xl font-semibold flex items-center gap-2" >
+                <div data-component="spinner">
+                  <div>
+                    {new Array(12).fill(0).map((i, k) => (
+                      <div key={k} />
+                    ))}
+                  </div>
+                </div>
+                Warming up the GPUs...
+              </span>
+            </div>
+          )}
         </>
       )}
       <Modal.Root bind:show={showButtonModal} closeOnBackdropClick={false}>
