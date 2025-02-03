@@ -3,8 +3,24 @@ import { Modal } from "@nestri/ui";
 import { useLocation } from "@builder.io/qwik-city";
 import { Keyboard, Mouse, WebRTCStream } from "@nestri/input"
 import { $, component$, noSerialize, type NoSerialize, useSignal, useStore, useVisibleTask$ } from "@builder.io/qwik";
+// import Nestri from "@nestri/sdk";
 
 //TODO: go full screen, then lock on "landscape" screen-orientation on mobile
+// FIXME: Add authentication and authorization
+// export const getUserSubscriptions = server$(
+//   async function () {
+
+//     const access = this.cookie.get("access_token")
+//     if (access) {
+//       const bearerToken = access.value
+
+//       const nestriClient = new Nestri({ bearerToken, maxRetries: 5 })
+//       const subscriptions = await nestriClient.users.session()
+
+//       return subscriptions as "Free" | "Pro"
+//     }
+//   }
+// );
 
 type PlayState = {
   nestriMouse: NoSerialize<Mouse | undefined>
