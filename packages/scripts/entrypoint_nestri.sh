@@ -127,7 +127,7 @@ start_steam() {
     fi
 
     echo "Starting Steam with -tenfoot..."
-    WAYLAND_DISPLAY=wayland-0 steam -tenfoot &
+    WAYLAND_DISPLAY=wayland-0 steam-native -tenfoot &
     STEAM_PID=$!
 
     # Verify Steam started successfully
