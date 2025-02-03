@@ -297,6 +297,14 @@ export class WebRTCStream {
     this._dataChannel.onmessage = e => console.log(`Message from DataChannel '${this._dataChannel?.label}' payload '${e.data}'`)
   }
 
+  // Send binary message through the data channel
+  public sendBinary(data: Uint8Array) {
+    if (this._dataChannel && this._dataChannel.readyState === "open")
+      this._dataChannel.send(data);
+    else
+      console.log("Data channel not open or not established.");
+  }
+
   public disconnect() {
     this._clearConnectionTimer();
     this._cleanupPeerConnection();

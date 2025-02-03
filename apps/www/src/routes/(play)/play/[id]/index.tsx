@@ -14,6 +14,8 @@ type PlayState = {
   hasStream?: boolean
   showOffline?: boolean
   video?: HTMLVideoElement
+  inputInitialized?: boolean
+  initializedVideo?: boolean
 }
 
 export default component$(() => {
@@ -28,52 +30,100 @@ export default component$(() => {
     webrtc: undefined,
     video: undefined,
     hasStream: undefined,
-    showOffline: false
+    showOffline: false,
+    inputInitialized: false,
+    initializedVideo: false
   })
+
+  const initializeInputDevices = $(() => {
+    if (!canvas.value || !playState.webrtc || playState.inputInitialized) return;
+
+    try {
+      playState.nestriMouse = noSerialize(new Mouse({
+        canvas: canvas.value,
+        webrtc: playState.webrtc
+      }));
+      playState.nestriKeyboard = noSerialize(new Keyboard({
+        canvas: canvas.value,
+        webrtc: playState.webrtc
+      }));
+      playState.inputInitialized = true;
+      console.log("Input devices initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize input devices:", error);
+      playState.inputInitialized = false;
+    }
+  });
 
   const lockPlay = $(async () => {
-    if (canvas.value && playState.hasStream && !playState.nestriLock) {
-      // Do not use - unadjustedMovement: true - breaks input on linux
-      await canvas.value.requestPointerLock();
-      await canvas.value.requestFullscreen()
-      if (document.fullscreenElement !== null) {
-        if ('keyboard' in window.navigator && 'lock' in (window.navigator.keyboard as any)) {
-          const keys = [
-            "AltLeft",
-            "AltRight",
-            "Tab",
-            "Escape",
-            "ContextMenu",
-            "MetaLeft",
-            "MetaRight"
-          ];
-          console.log("requesting keyboard lock");
+    if (!canvas.value || !playState.hasStream) return;
 
-          (window.navigator.keyboard as any).lock(keys).then(
-            () => {
-              console.log("keyboard lock success");
-              playState.nestriLock = true;
-            }
-          ).catch(
-            (e: any) => {
-              console.log("keyboard lock failed: ", e);
-              playState.nestriLock = false;
-            }
-          )
-        } else {
-          console.log("keyboard lock not supported, navigator is: ", window.navigator, navigator);
-          playState.nestriLock = undefined;
+    try {
+      await canvas.value.requestPointerLock();
+      await canvas.value.requestFullscreen();
+
+      if (document.fullscreenElement !== null) {
+        if ('keyboard' in navigator && 'lock' in (navigator.keyboard as any)) {
+          const keys = [
+            "AltLeft", "AltRight", "Tab", "Escape",
+            "ContextMenu", "MetaLeft", "MetaRight"
+          ];
+
+          try {
+            await (navigator.keyboard as any).lock(keys);
+            playState.nestriLock = true;
+            console.log("Keyboard lock acquired");
+          } catch (e) {
+            console.warn("Keyboard lock failed:", e);
+            playState.nestriLock = false;
+          }
         }
       }
+    } catch (error) {
+      console.error("Error during lock sequence:", error);
     }
-  })
+  });
 
-  const handleVideoInput = $(() => {
-    if (!playState.video) return
-    playState.video.play().then(() => {
+  const setupPointerLockListener = $(() => {
+    document.addEventListener("pointerlockchange", () => {
+      if (!canvas.value) return;
+
+      if (document.pointerLockElement === canvas.value) {
+        // Initialize input devices when pointer is locked
+        if (!playState.inputInitialized) {
+          initializeInputDevices();
+        }
+      } else {
+        if (!showBannerModal.value) {
+          const playing = sessionStorage.getItem("showedBanner");
+          showBannerModal.value = !playing || playing !== "true";
+          showButtonModal.value = playing === "true";
+        }
+
+        // Clean up input devices
+        if (playState.nestriKeyboard) {
+          playState.nestriKeyboard.dispose();
+          playState.nestriKeyboard = undefined;
+        }
+        if (playState.nestriMouse) {
+          playState.nestriMouse.dispose();
+          playState.nestriMouse = undefined;
+        }
+        playState.nestriLock = undefined;
+        playState.inputInitialized = false;
+      }
+    });
+  });
+
+  const handleVideoInput = $(async () => {
+    if (!playState.video) return;
+    if (playState.initializedVideo) return;
+
+    await playState.video.play().then(() => {
       if (canvas.value && playState.video) {
         canvas.value.width = playState.video.videoWidth;
         canvas.value.height = playState.video.videoHeight;
+        playState.initializedVideo = true
 
         const ctx = canvas.value.getContext("2d");
         const renderer = () => {
@@ -81,75 +131,28 @@ export default component$(() => {
             ctx.drawImage(playState.video, 0, 0);
             playState.video.requestVideoFrameCallback(renderer);
           }
-        }
+        };
 
         playState.video.requestVideoFrameCallback(renderer);
       }
-    })
-    document.addEventListener("pointerlockchange", () => {
-      if (!canvas.value) return; // Ensure canvas is available
-
-      if (document.pointerLockElement) {
-        if (!playState.nestriMouse && !playState.nestriKeyboard && playState.webrtc) {
-          playState.nestriMouse = noSerialize(new Mouse({ canvas: canvas.value, webrtc: playState.webrtc }));
-          playState.nestriKeyboard = noSerialize(new Keyboard({ canvas: canvas.value, webrtc: playState.webrtc }))
-        }
-      } else {
-
-        if (!showBannerModal.value) {
-          const playing = sessionStorage.getItem("showedBanner")
-          if (!playing || playing != "true") {
-            showBannerModal.value = true
-          } else {
-            showButtonModal.value = true
-          }
-        }
-        
-        playState.nestriLock = undefined
-
-        if (playState.nestriMouse && playState.nestriKeyboard) {
-          playState.nestriKeyboard.dispose();
-          playState.nestriKeyboard = undefined;
-
-          playState.nestriMouse.dispose();
-          playState.nestriMouse = undefined;
-          playState.nestriLock = undefined;
-        }
-      }
+    }).catch(error => {
+      console.error("Error playing video:", error);
     });
-  })
+  });
 
-  const continuePlaying = $(async () => {
-    // sessionStorage.setItem("showBanner", "true")
-    showButtonModal.value = false
-    posthog.capture("user_continued_playing", { sessionID: window.location.pathname.split("/").pop() })
-
-    await lockPlay()
-    handleVideoInput()
-  })
-  const startPlaying = $(async () => {
-    showBannerModal.value = false
-    sessionStorage.setItem("showedBanner", "true")
-    posthog.capture("user_started_playing", { sessionID: window.location.pathname.split("/").pop() })
-
-    await lockPlay()
-    handleVideoInput()
-  })
 
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(({ track }) => {
     track(() => canvas.value);
-
     if (!canvas.value) return; // Ensure canvas is available
-    // showButtonModal.value = true
-    // Create video element and make it output to canvas (TODO: improve this)
-    const video = document.getElementById("webrtc-video-player");
+
+    setupPointerLockListener();
     try {
-      if (!video) {
+      if (!playState.video) {
         playState.video = document.createElement("video") as HTMLVideoElement
         playState.video.id = "stream-video-player";
         playState.video.style.visibility = "hidden";
-        playState.webrtc = noSerialize(new WebRTCStream("https://relay.dathorse.com", id, (mediaStream) => {
+        playState.webrtc = noSerialize(new WebRTCStream("https://relay.dathorse.com", id, async (mediaStream) => {
           if (playState.video && mediaStream && playState.video.srcObject === null) {
             console.log("Setting mediastream");
             playState.video.srcObject = mediaStream;
@@ -163,7 +166,7 @@ export default component$(() => {
               if (!showButtonModal.value) showButtonModal.value = true
             }
 
-
+            await handleVideoInput();
           } else if (mediaStream === null) {
             console.log("MediaStream is null, Room is offline");
             playState.showOffline = true
@@ -224,7 +227,13 @@ export default component$(() => {
             backdrop-blur-lg py-4 px-5 modal" >
           <div class="size-full flex flex-col">
             <div class="flex flex-col gap-3" >
-              <button onClick$={continuePlaying} class="transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:dark:ring-gray-700 outline-none w-full hover:bg-gray-300 hover:dark:bg-gray-700 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center font-medium font-title rounded-lg flex py-3 px-4" >
+              <button
+                onClick$={async () => {
+                  showButtonModal.value = false;
+                  await handleVideoInput()
+                  await lockPlay();
+                }}
+                class="transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:dark:ring-gray-700 outline-none w-full hover:bg-gray-300 hover:dark:bg-gray-700 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center font-medium font-title rounded-lg flex py-3 px-4" >
                 Continue Playing
               </button>
               <button class="transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:dark:ring-gray-700 outline-none w-full hover:bg-gray-300 hover:dark:bg-gray-700 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center font-medium font-title rounded-lg flex py-3 px-4" >
@@ -248,7 +257,14 @@ export default component$(() => {
               </div>
             </div>
             <div class="sm:pt-10 sm:block hidden" >
-              <button onClick$={startPlaying} class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_rgba(200,200,200,0.95),0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_rgba(200,200,200,0.95),0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
+              <button
+                onClick$={async () => {
+                  sessionStorage.setItem("showedBanner", "true");
+                  showBannerModal.value = false;
+                  await handleVideoInput()
+                  await lockPlay();
+                }}
+                class="gap-3 outline-none hover:[box-shadow:0_0_0_2px_rgba(200,200,200,0.95),0_0_0_4px_#8f8f8f] dark:hover:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] focus:[box-shadow:0_0_0_2px_rgba(200,200,200,0.95),0_0_0_4px_#8f8f8f] dark:focus:[box-shadow:0_0_0_2px_#161616,0_0_0_4px_#707070] [transition:all_0.3s_cubic-bezier(0.4,0,0.2,1)] font-medium font-title rounded-lg flex h-[calc(2.25rem+2*1px)] flex-col text-white w-full leading-none truncate bg-primary-500 items-center justify-center" >
                 Continue
               </button>
             </div>
