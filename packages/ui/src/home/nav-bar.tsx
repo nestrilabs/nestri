@@ -13,17 +13,17 @@ type Props = {
 
 
 export const HomeNavBar = component$(({ getUserProfile$ }: Props) => {
-    const hasScrolled = useSignal(false);
-    const isNewTeam = useSignal(false);
-    const userProfile = useSignal<Nestri.Users.UserRetrieveResponse.Data | undefined>()
-    const isNewMember = useSignal(false);
-    const isHolding = useSignal(false);
-    const showInviteSuccess = useSignal(false);
-    const newTeamName = useSignal('');
-    const inviteName = useSignal('');
+    const nav =  useNavigate()
     const inviteEmail = useSignal('');
     const location = useLocation().url
-    const nav =  useNavigate()
+    const inviteName = useSignal('');
+    const isHolding = useSignal(false);
+    const newTeamName = useSignal('');
+    const isNewTeam = useSignal(false);
+    const hasScrolled = useSignal(false);
+    const isNewMember = useSignal(false);
+    const showInviteSuccess = useSignal(false);
+    const userProfile = useSignal<Nestri.Users.UserRetrieveResponse.Data | undefined>()
 
     const onDialogOpen = $((open: boolean) => {
         if (open) {

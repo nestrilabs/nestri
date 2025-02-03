@@ -15,21 +15,23 @@ export const HomeGamesSection = component$(({ getUserSubscription$, createSessio
     const userSubscription = useSignal<"Free" | "Pro" | undefined>()
 
     useOnDocument("load", $(async () => {
-        const subscription = await getUserSubscription$()
-        userSubscription.value = subscription
-        // userSubscription.value = "Pro"
+        const userSub = sessionStorage.getItem("subscription_data")
+        if (userSub) {
+            userSubscription.value = JSON.parse(userSub)
+        } else {
+            const subscription = await getUserSubscription$()
+            sessionStorage.setItem("subscription_data", JSON.stringify(subscription))
+            userSubscription.value = subscription
+        }
     }))
 
     const onClick = $(async () => {
         creatingSession.value = true
-        // if (userSubscription.value != "Free") {
         const sessionID = await createSession$()
-        console.log("session", sessionID)
         if (sessionID) {
             creatingSession.value = false
             await nav(`/play/${sessionID.id}`)
         }
-        // }
     });
 
 

@@ -17,8 +17,14 @@ export const HomeFriendsSection = component$(({ getActiveUsers$, getSession$ }: 
     const nav = useNavigate()
 
     useOnDocument("load", $(async () => {
-        const users = await getActiveUsers$()
-        activeUsers.value = users
+        const sessionUserData = sessionStorage.getItem("active_user_data")
+        if (!sessionUserData) {
+            const users = await getActiveUsers$()
+            sessionStorage.setItem("active_user_data", JSON.stringify(users))
+            activeUsers.value = users
+        } else {
+            activeUsers.value = JSON.parse(sessionUserData)
+        }
     }))
 
     const onWatch = $(async (profileID: string) => {

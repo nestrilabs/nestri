@@ -13,8 +13,14 @@ export const HomeMachineSection = component$(({ getUserSubscription$ }: Props) =
     const userSubscription = useSignal<"Free" | "Pro" | undefined>()
 
     useOnDocument("load", $(async () => {
-        const subscription = await getUserSubscription$()
-        userSubscription.value = subscription
+        const userSub = sessionStorage.getItem("subscription_data")
+        if (userSub) {
+            userSubscription.value = JSON.parse(userSub)
+        } else {
+            const subscription = await getUserSubscription$()
+            sessionStorage.setItem("subscription_data", JSON.stringify(subscription))
+            userSubscription.value = subscription
+        }
     }))
 
     return (
