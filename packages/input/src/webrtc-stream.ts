@@ -284,7 +284,7 @@ export class WebRTCStream {
 
   private _clearConnectionTimer() {
     if (this._connectionTimer) {
-      clearTimeout(this._connectionTimer);
+      clearTimeout(this._connectionTimer as any);
       this._connectionTimer = undefined;
     }
   }

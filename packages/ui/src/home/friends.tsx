@@ -1,5 +1,5 @@
-import { cn } from "@/design";
-import Avatar from "@/avatar";
+import { cn } from "../design";
+import Avatar from "../avatar";
 import type Nestri from "@nestri/sdk"
 import { Tooltip } from '@qwik-ui/headless';
 import { $, component$, useOnDocument, useSignal, type QRL } from "@builder.io/qwik";

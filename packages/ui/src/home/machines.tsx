@@ -1,6 +1,6 @@
 /* eslint-disable qwik/jsx-img */
-import { cn } from "@/design";
-import { MotionComponent } from "@/react";
+import { cn } from "../design";
+import { MotionComponent } from "../react";
 import { $, component$, useOnDocument, useSignal, type QRL } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
 
