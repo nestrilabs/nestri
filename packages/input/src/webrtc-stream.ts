@@ -17,8 +17,11 @@ export class WebRTCStream {
   private _mediaStream: MediaStream | undefined = undefined;
   private _dataChannel: RTCDataChannel | undefined = undefined;
   private _onConnected: ((stream: MediaStream | null) => void) | undefined = undefined;
-  private _connectionTimeout: number = 15000; // 15 seconds timeout
+  // 5 second timeout, this looks like the sweet spot anything longer you wait too long... anything shorter it turns into a race condition from hell
+  private _connectionTimeout: number =7000; 
   private _connectionTimer: NodeJS.Timeout | NodeJS.Timer | undefined = undefined;
+  private _serverURL: string | undefined = undefined
+  private _roomName: string | undefined = undefined
 
   constructor(serverURL: string, roomName: string, connectedCallback: (stream: MediaStream | null) => void) {
     // If roomName is not provided, return
@@ -28,6 +31,8 @@ export class WebRTCStream {
     }
 
     this._onConnected = connectedCallback;
+    this._serverURL = serverURL
+    this._roomName = roomName
     this._setup(serverURL, roomName);
   }
 
@@ -120,14 +125,12 @@ export class WebRTCStream {
         this._onConnected(null);
 
       // Clear PeerConnection
-      if (this._pc) {
-        this._pc.close();
-        this._pc = undefined;
-      }
+      this._cleanupPeerConnection()
 
-      setTimeout(() => {
-        this._setup(serverURL, roomName);
-      }, 3000);
+      this._handleConnectionFailure()
+      // setTimeout(() => {
+      //   this._setup(serverURL, roomName);
+      // }, this._connectionTimeout);
     }
 
     this._ws.onerror = (e) => {
@@ -239,9 +242,12 @@ export class WebRTCStream {
     this._cleanupPeerConnection();
 
     // Attempt to reconnect
-    if (this._ws && this._ws.readyState === WebSocket.OPEN) {
-      this._ws.close();
+    if (this._serverURL && this._roomName) {
+      this._setup(this._serverURL,this._roomName);
     }
+    // if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+    //   this._ws.close();
+    // }
   }
 
   private _cleanupPeerConnection() {
