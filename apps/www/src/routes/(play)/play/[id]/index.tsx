@@ -1,4 +1,4 @@
-import posthog from "posthog-js";
+// import posthog from "posthog-js";
 import { Modal } from "@nestri/ui";
 import { useLocation } from "@builder.io/qwik-city";
 import { Keyboard, Mouse, WebRTCStream } from "@nestri/input"
