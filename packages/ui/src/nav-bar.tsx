@@ -45,11 +45,11 @@ export const NavBar = component$(({ link }: Props) => {
             </button> */}
             <div class="px-4 mx-auto flex max-w-[600px] items-center border-b-2 dark:border-gray-50/50 border-gray-950/50" >
                 <Link class="outline-none focus:ring-2 py-1 px-3 -ml-3 rounded-lg focus:ring-primary-500 duration-200 transition-all" href="/" >
-                    <h1 class="text-lg font-title" >
+                    <h1 class="text-lg font-bricolage font-semibold" >
                         Nestri
                     </h1>
                 </Link>
-                <ul class="ml-0 -mr-4 flex font-medium m-4 flex-1 gap-1 tracking-[0.035em] items-center justify-end dark:text-primary-50/70 text-primary-950/70">
+                <ul class="ml-0 -mr-4 flex font-medium m-4 font-mona tracking-tight flex-1 gap-1 items-center justify-end dark:text-primary-50/70 text-primary-950/70">
                     {navLinks.map((linkItem, key) => (
                         <li key={`linkItem-${key}`}>
                             <Link href={linkItem.href ? linkItem.href : link} class={cn(buttonVariants.ghost({ intent: "gray", size: "sm" }), "hover:bg-gray-300/70 dark:hover:bg-gray-700/70 focus:ring-2 outline-none focus:ring-primary-500 duration-200 transition-all", location.url.pathname === linkItem.href && "bg-gray-300/70 hover:bg-gray-300/70 dark:bg-gray-700/70 dark:hover:bg-gray-700/70")}>

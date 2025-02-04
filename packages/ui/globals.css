@@ -8,7 +8,7 @@
     font-display: swap;
     font-weight: 800;
     src: url("/fonts/BasementGrotesque-Black.woff2") format('woff2'), url("/fonts/BasementGrotesque-Black.woff") format('woff');
-  }
+}
 
 @layer base {
 
@@ -498,11 +498,18 @@
 }
 
 @keyframes playing {
-    0%,to {
+
+    0%,
+    to {
         height: 3px
     }
 
     50% {
         height: 12px
     }
+}
+
+.shadow-browser {
+    box-shadow: 0 30.0333px 63.0111px rgba(45, 48, 57, .09), 0 12.5472px 26.3245px rgba(45, 48, 57, .065), 0 6.70834px 14.0744px rgba(45, 48, 57, .054), 0 3.76064px 7.88997px rgba(45, 48, 57, .045), 0 1.99725px 4.1903px rgba(45, 48, 57, .036), 0 .831099px 1.74368px rgba(45, 48, 57, .025);
+    border-radius: 7.07px;
 }

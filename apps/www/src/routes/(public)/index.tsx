@@ -65,7 +65,7 @@ echo "Consider joining our Discord channel (https://discord.com/invite/Y6etn3qKZ
       }
     })
     send(response)
-  } 
+  }
 };
 
 // FIXME: Change up the copy
@@ -101,33 +101,12 @@ export default component$(() => {
         viewport={{ once: true }}
         transition={transition}
         client:load
-        class="items-center justify-center w-full flex py-8 px-4 flex-col"
-        as="div"
-      >
-        <section class="sticky w-full max-w-4xl px-1 mx-auto py-3 md:overflow-hidden overflow-x-scroll flex gap-1.5">
-          <button class="bg-transparent text-gray-900/70 focus:ring-primary-500 outline-none dark:text-gray-100/70 ring-2 mt-[1px] ring-gray-300 dark:ring-gray-700 w-48 h-max py-2 rounded-full flex text-sm px-4 items-center gap-1 hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200">
-            <svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 24 24" class="size-[14px] -mt-[1px] flex-shrink-0"><g fill="none" stroke="currentColor" stroke-width="2"><circle cx="11.5" cy="11.5" r="9.5"></circle><path stroke-linecap="round" d="M18.5 18.5L22 22"></path></g></svg>
-            Search...
-          </button>
-          {tags.map((tag, key) => (
-            <button key={`tags-${key}`} class={cn("bg-white dark:bg-black text-gray-900/70 hover:ring-primary-500 outline-none dark:text-gray-100/70 ring-2 text-sm h-max ring-gray-300 dark:ring-gray-700 py-2 px-4 rounded-full flex items-center hover:bg-gray-100 dark:hover:bg-gray-900 transition-all duration-200 focus:bg-primary-100 dark:focus:bg-primary-900 focus:text-primary-500 focus:ring-primary-500 focus:!bg-[url:none]", key == 1 && "bg-[url:linear-gradient(135deg,theme(colors.gray.100),theme(colors.gray.300)_20%,theme(colors.gray.100)_40%,theme(colors.gray.300)_60%,theme(colors.gray.100)_80%,theme(colors.gray.300))] dark:bg-[url:linear-gradient(135deg,theme(colors.gray.900),theme(colors.gray.700)_20%,theme(colors.gray.900)_40%,theme(colors.gray.700)_60%,theme(colors.gray.900)_80%,theme(colors.gray.700))]")}>
-              <p class="whitespace-nowrap"> {tag.name}</p>
-              {tag.total && <sup class="pl-1 font-title" >{tag.total}</sup>}
-            </button>
-          ))}
-
-        </section>
-        <section class="w-full md:max-w-[70%] px-1 py-2">
-          <div class="w-full grid grid-cols-2 md:grid-cols-[repeat(auto-fit,minmax(280px,.5fr))] auto-cols-[1fr] place-items-start mb-2 md:gap-6 gap-3">
-            {games.map((game, key) => (
-              <button key={key} class="hover:shadow-2xl hover:shadow-gray-800 dark:hover:shadow-gray-200 hover:ring-primary-500 transition-all duration-200 w-full rounded-[20px] relative md:ring-[.4375em] ring-[.275em] ring-gray-300 dark:ring-gray-700 overflow-hidden bg-gradient-to-b from-gray-300 dark:from-gray-700 to-white dark:to-black">
-                <div class="py-[50%] w-full relative min-w-full min-h-full flex items-center justify-center overflow-visible">
-                  <img src={game} class="mx-auto w-full absolute" height={80} width={80} />
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
+        as="section"
+        class="relative container py-10 min-[1280px]:max-w-[80rem] px-4 mx-auto" >
+        <div class="px-6 pt-8 sm:px-12 xl:h-[537px] xl:px-0">
+          <img alt="Nestri screenshot in dark mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:block hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-dark.png" />
+          <img alt="Nestri screenshot in light mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-light.png" />
+        </div>
       </MotionComponent>
       <Footer />
     </div>

@@ -61,8 +61,23 @@ export default {
           "Courier New",
           "monospace"
         ],
-        title: [
-          "Bricolage Grotesque",
+        mona: [
+          "Mona Sans Variable",
+          "-apple-system",
+          "blinkmacsystemfont",
+          "segoe ui",
+          "roboto",
+          "oxygen",
+          "ubuntu",
+          "cantarell",
+          "fira",
+          "sans",
+          "droid sans",
+          "helvetica neue",
+          "sans-serif",
+        ],
+        bricolage: [
+          "Bricolage Grotesque Variable",
           "-apple-system",
           "blinkmacsystemfont",
           "segoe ui",
@@ -78,6 +93,7 @@ export default {
         ],
         basement: [
           "Basement Grotesque",
+          "Bricolage Grotesque Variable",
           "-apple-system",
           "blinkmacsystemfont",
           "segoe ui",
