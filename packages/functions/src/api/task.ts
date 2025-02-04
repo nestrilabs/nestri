@@ -178,7 +178,8 @@ export module TaskApi {
                 if (session) { await Sessions.end(session.id) }
 
                 const res = await Tasks.stop({ taskID: task.taskID, id: param.id })
-                return c.json({ data: res }, 200);
+                if (!res) return c.json({ error: "Something went wrong trying to stop the task" }, 404);
+                return c.json({ data: "ok" }, 200);
             },
         )
         .post("/",
