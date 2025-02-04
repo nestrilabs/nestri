@@ -30,7 +30,7 @@ export default component$(() => {
                             <Link key={blog.title} class="border-b border-gray-300 dark:border-gray-700 outline-none w-full" href={`/blog/${blog.href}`}>
                                 <div class="w-full gap-3 py-6 hover:px-2 flex relative items-center rounded-md hover:bg-gray-200 dark:hover:bg-gray-800 transition-all duration-200">
                                     <div class="w-max flex flex-col max-w-[70%]">
-                                        <h2 class="text-lg inline-block font-title font-bold dark:text-gray-100 text-gray-800">{blog.title}</h2>
+                                        <h2 class="text-lg inline-block font-bricolage font-bold dark:text-gray-100 text-gray-800">{blog.title}</h2>
                                         <p class="text-sm text-gray-600 dark:text-gray-400 overflow-ellipsis whitespace-nowrap overflow-hidden">{blog.description}</p>
                                     </div>
                                     <div class="flex-1 relative min-w-[8px] box-border before:absolute before:-bottom-[1px] before:h-[1px] before:w-full before:bg-gray-600 dark:before:bg-gray-400 before:z-[5] before:duration-300 before:transition-all" />

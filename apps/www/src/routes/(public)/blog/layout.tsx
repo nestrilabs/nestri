@@ -57,7 +57,7 @@ export default component$(() => {
                                 </nav>
                             </div>
                             <div class="max-w-xl mx-auto w-full gap-1 flex flex-col">
-                                <h2 class="text-4xl text-start tracking-tight font-bold font-title">
+                                <h2 class="text-4xl text-start tracking-tight font-bold font-bricolage">
                                     {frontmatter.blogTitle}
                                 </h2>
                                 <div class="list-none flex flex-col items-start justify-start mt-2 gap-2 text-sm w-full">
