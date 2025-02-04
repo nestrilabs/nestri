@@ -80,7 +80,7 @@ export default component$(() => {
           <button onClick$={() => {
             //@ts-ignore
             navigator.clipboard.writeText("curl -fsSL https://nestri.io | sh")
-          }} class="group w-full max-w-xl focus:ring-primary-500 duration-200 outline-none rounded-xl flex items-center justify-start hover:bg-gray-200 focus:bg-gray-200 dark:hover:bg-gray-800 dark:focus:bg-gray-800 transition-all gap-2 px-4 py-3 h-[45px] ring-2 ring-gray-300 dark:ring-gray-700 mx-auto text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black">
+          }} class="group w-full max-w-[600px] focus:ring-primary-500 duration-200 outline-none rounded-xl flex items-center justify-start hover:bg-gray-200 focus:bg-gray-200 dark:hover:bg-gray-800 dark:focus:bg-gray-800 transition-all gap-2 px-4 py-3 h-[45px] ring-2 ring-gray-300 dark:ring-gray-700 mx-auto text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black">
             <svg xmlns="http://www.w3.org/2000/svg" class="size-[20px] flex-shrink-0" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M3.464 3.464C2 4.93 2 7.286 2 12s0 7.071 1.464 8.535C4.93 22 7.286 22 12 22s7.071 0 8.535-1.465C22 19.072 22 16.714 22 12s0-7.071-1.465-8.536C19.072 2 16.714 2 12 2S4.929 2 3.464 3.464m2.96 6.056a.75.75 0 0 1 1.056-.096l.277.23c.605.504 1.12.933 1.476 1.328c.379.42.674.901.674 1.518s-.295 1.099-.674 1.518c-.356.395-.871.824-1.476 1.328l-.277.23a.75.75 0 1 1-.96-1.152l.234-.195c.659-.55 1.09-.91 1.366-1.216c.262-.29.287-.427.287-.513s-.025-.222-.287-.513c-.277-.306-.707-.667-1.366-1.216l-.234-.195a.75.75 0 0 1-.096-1.056M17.75 15a.75.75 0 0 1-.75.75h-5a.75.75 0 0 1 0-1.5h5a.75.75 0 0 1 .75.75" clip-rule="evenodd" /></svg>
             <p class="font-bold tracking-tighter h-max overflow-hidden overflow-ellipsis whitespace-nowrap font-mono">
               curl -fsSL https://nestri.io | sh
@@ -90,7 +90,7 @@ export default component$(() => {
               <svg xmlns="http://www.w3.org/2000/svg" class="group-focus:block hidden text-green-500 size-6 flex-shrink-0" width="20" height="20" viewBox="0 0 24 24"><path fill="currentColor" d="m9.55 15.15l8.475-8.475q.3-.3.7-.3t.7.3t.3.713t-.3.712l-9.175 9.2q-.3.3-.7.3t-.7-.3L4.55 13q-.3-.3-.288-.712t.313-.713t.713-.3t.712.3z" /></svg>
             </div>
           </button>
-          <p class="w-full max-w-xl py-3 font-title px-2 text-gray-600 dark:text-gray-400 justify-start text-sm items-center flex">
+          <p class="w-full max-w-[600px] py-3 font-title px-2 text-gray-600 dark:text-gray-400 justify-start text-sm items-center flex">
             <span class="font-semibold">System requirements:</span>&nbsp;Docker 27.3.1 or newer
           </p>
         </div>

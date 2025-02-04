@@ -184,8 +184,8 @@ export function PasswordAdapter(config: PasswordConfig) {
             "password",
           ])
           if (existing) return transition(adapter, { type: "email_taken" })
-          const existingUsername = await Profiles.fromUsername(username)
-          if (existingUsername) return transition(adapter, { type: "username_taken" })
+          // const existingUsername = await Profiles.fromUsername(username)
+          // if (existingUsername) return transition(adapter, { type: "username_taken" })
           const code = generate()
           await config.sendCode(email, code)
           return transition({

@@ -2,6 +2,14 @@
 @tailwind base;
 @tailwind utilities;
 
+@font-face {
+    font-family: 'Basement Grotesque';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 800;
+    src: url("/fonts/BasementGrotesque-Black.woff2") format('woff2'), url("/fonts/BasementGrotesque-Black.woff") format('woff');
+  }
+
 @layer base {
 
     html {

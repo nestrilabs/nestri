@@ -21,7 +21,7 @@ export function ReactHeroSection({ children }: Props) {
     return (
         <>
             <section className="px-4 w-screen" >
-                <header className="mx-auto max-w-xl pt-20 pb-1">
+                <header className="mx-auto max-w-[600px] pt-20 pb-1">
                     <motion.img
                         initial={{
                             opacity: 0,
@@ -37,7 +37,7 @@ export function ReactHeroSection({ children }: Props) {
                         }}
                         src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[70px] md:w-[80px] aspect-[90/69]" />
                     <div className="my-4 sm:mt-8">
-                        <ReactDisplay className="mb-4 sm:text-8xl text-[3.5rem] text-balance tracking-tight leading-none" >
+                        <ReactDisplay className="mb-4 sm:text-[5.6rem] text-[3.5rem] text-balance tracking-tight leading-none" >
                             <motion.span
                                 initial={{
                                     opacity: 0,

@@ -43,7 +43,7 @@ export const NavBar = component$(({ link }: Props) => {
                     </span>
                 </div>
             </button> */}
-            <div class="px-4 mx-auto flex max-w-xl items-center border-b-2 dark:border-gray-50/50 border-gray-950/50" >
+            <div class="px-4 mx-auto flex max-w-[600px] items-center border-b-2 dark:border-gray-50/50 border-gray-950/50" >
                 <Link class="outline-none focus:ring-2 py-1 px-3 -ml-3 rounded-lg focus:ring-primary-500 duration-200 transition-all" href="/" >
                     <h1 class="text-lg font-title" >
                         Nestri
