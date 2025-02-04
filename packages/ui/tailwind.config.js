@@ -75,6 +75,21 @@ export default {
           "droid sans",
           "helvetica neue",
           "sans-serif",
+        ],
+        basement: [
+          "Basement Grotesque",
+          "-apple-system",
+          "blinkmacsystemfont",
+          "segoe ui",
+          "roboto",
+          "oxygen",
+          "ubuntu",
+          "cantarell",
+          "fira",
+          "sans",
+          "droid sans",
+          "helvetica neue",
+          "sans-serif",
         ]
       },
       boxShadow: {

@@ -16,7 +16,7 @@ const DEFAULT_COPY = {
   error_invalid_code: "Code is incorrect.",
   error_invalid_email: "Email is not valid.",
   error_invalid_password: "Password is incorrect.",
-  error_invalid_username: "Username must only contain numbers and small letters.",
+  error_invalid_username: "Username can only contain letters.",
   error_password_mismatch: "Passwords do not match.",
   register_title: "Welcome to the app",
   register_description: "Sign in with your email",
