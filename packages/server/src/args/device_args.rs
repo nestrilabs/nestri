@@ -36,6 +36,13 @@ impl DeviceArgs {
         println!("> gpu_vendor: {}", self.gpu_vendor);
         println!("> gpu_name: {}", self.gpu_name);
         println!("> gpu_index: {}", self.gpu_index);
-        println!("> gpu_card_path: {}", self.gpu_card_path);
+        println!(
+            "> gpu_card_path: {}",
+            if self.gpu_card_path.is_empty() {
+                "Auto-Selection"
+            } else {
+                &self.gpu_card_path
+            }
+        );
     }
 }
