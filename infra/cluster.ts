@@ -29,20 +29,20 @@ const ecsInstanceProfile = new aws.iam.InstanceProfile("NestriGPUInstanceProfile
     role: ecsInstanceRole.name,
 });
 
-const server = new aws.ec2.Instance("NestriGPU", {
-    instanceType: aws.ec2.InstanceType.G4dn_XLarge,
-    ami: "ami-046a6af96ef510bb6",//Fedora cloud
-    keyName: sshKey.keyName,
-    instanceMarketOptions: {
-        marketType: "spot",
-        spotOptions: {
-            maxPrice: "0.2",
-            spotInstanceType: "persistent",
-            instanceInterruptionBehavior: "stop"
-        },
-    },
-    iamInstanceProfile: ecsInstanceProfile,
-});
+// const server = new aws.ec2.Instance("NestriGPU", {
+//     instanceType: aws.ec2.InstanceType.G4dn_XLarge,
+//     ami: "ami-046a6af96ef510bb6",//Fedora cloud
+//     keyName: sshKey.keyName,
+//     instanceMarketOptions: {
+//         marketType: "spot",
+//         spotOptions: {
+//             maxPrice: "0.2",
+//             spotInstanceType: "persistent",
+//             instanceInterruptionBehavior: "stop"
+//         },
+//     },
+//     iamInstanceProfile: ecsInstanceProfile,
+// });
 
 const logGroup = new aws.cloudwatch.LogGroup("NestriGPULogGroup", {
     name: "/ecs/nestri-gpu-prod",
