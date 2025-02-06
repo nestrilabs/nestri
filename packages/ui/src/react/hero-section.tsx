@@ -21,7 +21,7 @@ export function ReactHeroSection({ children }: Props) {
     return (
         <>
             <section className="px-4 w-screen" >
-                <header className="mx-auto max-w-[600px] pt-20 pb-1">
+                <header className="mx-auto flex flex-col justify-center items-center max-w-[600px] pt-20 pb-1">
                     <motion.img
                         initial={{
                             opacity: 0,
@@ -35,9 +35,9 @@ export function ReactHeroSection({ children }: Props) {
                         transition={{
                             ...transition
                         }}
-                        src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[70px] md:w-[80px] aspect-[90/69]" />
-                    <div className="my-4 sm:mt-8">
-                        <ReactDisplay className="mb-4 sm:text-[5.6rem] text-[3.5rem] text-balance tracking-tight leading-none" >
+                        src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[50px] md:w-[80px] aspect-[90/69]" />
+                    <div className="my-4 sm:mt-8 w-full flex flex-col justify-center items-center">
+                        <ReactDisplay className="mb-4 sm:text-[5.6rem] text-[3.2rem] text-balance text-center tracking-tight leading-none" >
                             <motion.span
                                 initial={{
                                     opacity: 0,
@@ -53,7 +53,7 @@ export function ReactHeroSection({ children }: Props) {
                                 }}
                                 viewport={{ once: true }}
                                 className="inline-block" >
-                                Your games.
+                                Your games
                             </motion.span>
                             <motion.span
                                 initial={{
@@ -70,7 +70,7 @@ export function ReactHeroSection({ children }: Props) {
                                 }}
                                 viewport={{ once: true }}
                                 className="inline-block" >
-                                Your rules.
+                                Your rules
                             </motion.span>
                         </ReactDisplay>
                         <motion.p
@@ -87,9 +87,9 @@ export function ReactHeroSection({ children }: Props) {
                                 opacity: 1
                             }}
                             viewport={{ once: true }}
-                            className="dark:text-gray-50/70 text-gray-950/70 text-lg font-normal tracking-tight sm:text-xl"
+                            className="dark:text-gray-50/70 text-gray-950/70 text-lg font-normal text-center leading-tight text-balance tracking-tight sm:text-xl"
                         >
-                            Nestri is an open-source cloud gaming platform that lets you play games on your own terms — invite friends to join your gaming sessions, share your game library, and take even more control by hosting on your own server.
+                            Nestri is an open-source cloud gaming platform that lets you play games on your own terms — invite friends to join your gaming sessions, share your game library, and take even more control by hosting on your own server
                         </motion.p>
                         <motion.div
                             initial={{
