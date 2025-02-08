@@ -1,8 +1,9 @@
-import { component$ } from "@builder.io/qwik";
+import { Footer } from "@nestri/ui"
 import { Link } from "@builder.io/qwik-city";
-import { HeroSection, MotionComponent, transition } from "@nestri/ui/react"
+import { component$ } from "@builder.io/qwik";
 import ImgMainDark from '~/images/screenshots/main-dark.png?jsx';
 import ImgMainLight from '~/images/screenshots/main-light.png?jsx';
+import { HeroSection, MotionComponent, transition } from "@nestri/ui/react"
 
 export default component$(() => {
 
@@ -13,7 +14,7 @@ export default component$(() => {
           <Link href="/auth/login" prefetch={false} class="flex font-bricolage rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
             Get early access
           </Link>
-          <Link href="/links/github"  prefetch={false} class="sm:flex hidden font-bricolage items-center gap-2 rounded-full font-semibold text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black px-5 py-4 ring-2 ring-gray-300 dark:ring-gray-700 transition-all hover:scale-105 active:scale-95 sm:px-6" >
+          <Link href="/links/github" prefetch={false} class="sm:flex hidden font-bricolage items-center gap-2 rounded-full font-semibold text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black px-5 py-4 ring-2 ring-gray-300 dark:ring-gray-700 transition-all hover:scale-105 active:scale-95 sm:px-6" >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="h-5 w-5 fill-content3-light"><path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd"></path><path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd"></path></svg>
             Star us on Github
           </Link>
@@ -30,7 +31,7 @@ export default component$(() => {
         <div class="w-max h-max relative mx-auto">
           <div class="absolute inset-0 bg-radial-gradient" />
           <ImgMainDark alt="Nestri screenshot in dark mode" draggable={false} class="dark:block hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " />
-          <ImgMainLight alt="Nestri screenshot in light mode" draggable={false}  class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] "/>
+          <ImgMainLight alt="Nestri screenshot in light mode" draggable={false} class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " />
           {/* <img alt="Nestri screenshot in dark mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:block hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-dark.png" /> */}
           {/* <img alt="Nestri screenshot in light mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-light.png" /> */}
         </div>
@@ -51,7 +52,24 @@ export default component$(() => {
           </svg>
         </div>
       </section>
-      {/* <Footer /> */}
+      <Footer client:load>
+        <div class="w-full flex justify-center flex-col items-center gap-3">
+          <Link href="/auth/login" prefetch={false} class="flex font-bricolage rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+            Get early access
+          </Link>
+          <div class="mt-6 flex w-full items-center justify-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-400">
+            <span>
+              <Link rel="noreferrer" href="/terms" >Terms of Service</Link></span>
+            <span class="text-gray-400 dark:text-gray-600">•</span>
+            <span>
+              <Link href="/privacy">Privacy Policy</Link>
+            </span>
+          </div>
+          {/* <div class="w-full border-t-2 border-b-2 dark:border-gray-600 border-gray-400 py-8">
+
+          </div> */}
+        </div>
+      </Footer>
     </div >
   );
 });
