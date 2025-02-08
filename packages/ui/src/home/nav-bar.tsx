@@ -74,8 +74,7 @@ export const HomeNavBar = component$(({ getUserProfile$ }: Props) => {
     );
 
     const handleLogout = $(async() => {
-        console.log("got here")
-        await nav(`/api/logout`)
+        await nav(`/auth/logout`)
     });
 
     const handleLogoutAnimationComplete = $(() => {
