@@ -1,6 +1,8 @@
 import { component$ } from "@builder.io/qwik";
 import { Link } from "@builder.io/qwik-city";
 import { HeroSection, MotionComponent, transition } from "@nestri/ui/react"
+import ImgMainDark from '~/images/screenshots/main-dark.png?jsx';
+import ImgMainLight from '~/images/screenshots/main-light.png?jsx';
 
 export default component$(() => {
 
@@ -27,8 +29,10 @@ export default component$(() => {
         class="relative container py-10 min-[1280px]:max-w-[80rem] px-4 mx-auto overflow-x-clip" >
         <div class="w-max h-max relative mx-auto">
           <div class="absolute inset-0 bg-radial-gradient" />
-          <img alt="Nestri screenshot in dark mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:block hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-dark.png" />
-          <img alt="Nestri screenshot in light mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-light.png" />
+          <ImgMainDark alt="Nestri screenshot in dark mode" draggable={false} class="dark:block hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " />
+          <ImgMainLight alt="Nestri screenshot in light mode" draggable={false}  class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] "/>
+          {/* <img alt="Nestri screenshot in dark mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:block hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-dark.png" /> */}
+          {/* <img alt="Nestri screenshot in light mode" width={1696} height={1074} decoding="async" draggable={false} class="dark:hidden shadow-browser relative z-10 mx-auto w-full max-w-[848px] " src="/images/screenshots/main-light.png" /> */}
         </div>
       </MotionComponent>
       <section class="relative container py-10 max-w-[600px] px-4 mx-auto overflow-hidden z-20" >
