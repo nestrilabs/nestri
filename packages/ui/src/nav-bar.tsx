@@ -41,7 +41,7 @@ export const NavBar = component$(() => {
                 <ul class="ml-0 -mr-4 flex font-medium m-4 font-mona tracking-tight flex-1 gap-1 items-center justify-end dark:text-primary-50/70 text-primary-950/70">
                     {navLinks.map((linkItem, key) => (
                         <li key={`linkItem-${key}`}>
-                            <Link href={linkItem.href} class={cn(buttonVariants.ghost({ intent: "gray", size: "sm" }), "hover:bg-gray-300/70 dark:hover:bg-gray-700/70 focus:ring-2 outline-none focus:ring-primary-500 duration-200 transition-all", location.url.pathname === linkItem.href && "bg-gray-300/70 hover:bg-gray-300/70 dark:bg-gray-700/70 dark:hover:bg-gray-700/70")}>
+                            <Link href={linkItem.href} prefetch={linkItem.name === "Login" && false} class={cn(buttonVariants.ghost({ intent: "gray", size: "sm" }), "hover:bg-gray-300/70 dark:hover:bg-gray-700/70 focus:ring-2 outline-none focus:ring-primary-500 duration-200 transition-all", location.url.pathname === linkItem.href && "bg-gray-300/70 hover:bg-gray-300/70 dark:bg-gray-700/70 dark:hover:bg-gray-700/70")}>
                                 {linkItem.name}
                             </Link>
                         </li>
