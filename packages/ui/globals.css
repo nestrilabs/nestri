@@ -513,3 +513,8 @@
     box-shadow: 0 30.0333px 63.0111px rgba(45, 48, 57, .09), 0 12.5472px 26.3245px rgba(45, 48, 57, .065), 0 6.70834px 14.0744px rgba(45, 48, 57, .054), 0 3.76064px 7.88997px rgba(45, 48, 57, .045), 0 1.99725px 4.1903px rgba(45, 48, 57, .036), 0 .831099px 1.74368px rgba(45, 48, 57, .025);
     border-radius: 7.07px;
 }
+
+.bg-radial-gradient {
+    filter: blur(32px);
+    background-image: linear-gradient(90deg, rgb(239, 118, 70), rgb(251, 91, 88), rgb(255, 61, 116), rgb(249, 33, 149), rgb(227, 34, 188), rgb(181, 94, 230), rgb(118, 128, 252), rgb(0, 150, 255), rgb(0, 183, 255), rgb(0, 208, 242), rgb(0, 227, 184), rgb(70, 239, 111));;
+}
