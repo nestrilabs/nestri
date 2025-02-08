@@ -10,7 +10,7 @@ export default component$(() => {
     <div class="w-screen relative">
       <HeroSection client:load>
         <div class="sm:w-full flex gap-2 justify-center pt-4 sm:flex-row flex-col w-auto items-center">
-          <Link href="/auth/login" prefetch={false} class="flex font-bricolage rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+          <Link href="/auth" class="flex font-bricolage rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
             Get early access
           </Link>
           <Link href="/links/github"  prefetch={false} class="sm:flex hidden font-bricolage items-center gap-2 rounded-full font-semibold text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black px-5 py-4 ring-2 ring-gray-300 dark:ring-gray-700 transition-all hover:scale-105 active:scale-95 sm:px-6" >
