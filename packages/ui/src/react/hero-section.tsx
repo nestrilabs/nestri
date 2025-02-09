@@ -20,7 +20,7 @@ type Props = {
 export function ReactHeroSection({ children }: Props) {
     return (
         <>
-            <section className="px-4 w-screen" >
+            <section className="px-4 w-screen pt-10 sm:pt-0" >
                 <header className="mx-auto flex flex-col justify-center items-center max-w-[600px] pt-20 pb-1">
                     <motion.img
                         initial={{

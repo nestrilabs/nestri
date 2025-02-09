@@ -24,7 +24,7 @@ export function ReactTitleSection({ title, description }: Props) {
     return (
         <>
             <section className="px-4" >
-                <header className="overflow-hidden mx-auto max-w-xl pt-20 pb-4">
+                <header className="overflow-hidden mx-auto max-w-xl pt-20 pb-4 flex justify-center items-center flex-col">
                     <motion.img
                         initial={{
                             opacity: 0,
@@ -39,7 +39,7 @@ export function ReactTitleSection({ title, description }: Props) {
                         }}
                         viewport={{ once: true }}
                         src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[70px] md:w-[80px] aspect-[90/69]" />
-                    <div className="my-4 sm:my-8">
+                    <div className="my-4 sm:my-8 flex justify-center items-center flex-col text-center">
                         <ReactDisplay className="mb-4 sm:text-8xl text-[3.5rem] text-balance tracking-tight leading-none" >
                             <motion.span
                                 initial={{

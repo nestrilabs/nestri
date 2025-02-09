@@ -115,7 +115,7 @@ export default component$(() => {
     })
 
     return (
-        <>
+        <div class="w-screen relative">
             <TitleSection client:load title="Pricing" description={"We're growing at the speed of trust. Choose a price that feels right for you and help support Nestri"} />
             <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
@@ -519,7 +519,21 @@ export default component$(() => {
                     </section>
                 </div>
             </MotionComponent>
-            <Footer />
-        </>
+            <Footer client:load>
+                <div class="w-full flex justify-center flex-col items-center gap-3">
+                    <Link href="/auth/login" prefetch={false} class="flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+                        Get early access
+                    </Link>
+                    <div class="mt-6 flex w-full items-center justify-center gap-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-400">
+                        <span>
+                            <Link rel="noreferrer" href="/terms" >Terms of Service</Link></span>
+                        <span class="text-gray-400 dark:text-gray-600">•</span>
+                        <span>
+                            <Link href="/privacy">Privacy Policy</Link>
+                        </span>
+                    </div>
+                </div>
+            </Footer>
+        </div>
     )
 })

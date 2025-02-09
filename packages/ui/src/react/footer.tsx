@@ -119,8 +119,8 @@ export function ReactFooter({ children }: Props) {
             duration: 0.8,
             delay: 0.7
           }}
-          className="w-full sm:flex z-[1] hidden pointer-events-none overflow-hidden -mt-[100px] justify-center items-center flex-col" >
-          <section className='my-0 bottom-0 text-[100%] max-w-[1440px] pointer-events-none w-full flex items-center translate-y-[45%] justify-center relative overflow-hidden px-2 z-10 [&_svg]:w-full [&_svg]:max-w-[1440px] [&_svg]:h-full [&_svg]:opacity-70' >
+          className="w-full sm:flex z-[1] hidden pointer-events-none overflow-hidden -mt-[80px] justify-center items-center flex-col" >
+          <section className='my-0 bottom-0 text-[100%] max-w-[1440px] pointer-events-none w-full flex items-center translate-y-[40%] justify-center relative overflow-hidden px-2 z-10 [&_svg]:w-full [&_svg]:max-w-[1440px] [&_svg]:h-full [&_svg]:opacity-70' >
             <svg viewBox="0 0 498.05 70.508" xmlns="http://www.w3.org/2000/svg" height={157} width={695} >
               <g stroke-linecap="round" fill-rule="evenodd" font-size="9pt" stroke="currentColor" stroke-width="0.25mm" fill="currentColor">
                 <path
