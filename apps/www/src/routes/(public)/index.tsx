@@ -1,6 +1,11 @@
 import { Footer } from "@nestri/ui"
 import { Link } from "@builder.io/qwik-city";
 import { component$ } from "@builder.io/qwik";
+import ImgVictor from '~/images/avatars/victor.png?jsx';
+import ImgJanried from '~/images/avatars/janried.png?jsx';
+import ImgWanjohi from '~/images/avatars/wanjohi.png?jsx';
+import ImgDoom from '~/images/screenshots/doom.png?jsx';
+import ImgDatHorse from '~/images/avatars/dathorse.png?jsx';
 import ImgMainDark from '~/images/screenshots/main-dark.png?jsx';
 import ImgMainLight from '~/images/screenshots/main-light.png?jsx';
 import { HeroSection, MotionComponent, transition } from "@nestri/ui/react"
@@ -56,7 +61,15 @@ export default component$(() => {
             <h3 class="sm:text-5xl font-mona font-extrabold text-xl mb-2 px-4 tracking-tighter" style="opacity: 1; transform: none; will-change: transform;">Play Co-Op or Stream to Friends with Nestri Parties</h3>
             <p class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70" style="opacity: 1; transform: none; will-change: transform;">Invite friends to watch your gameplay live, join multiplayer lobbies, or jump into co-op sessions</p>
           </div>
-          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0" style="opacity: 1; transform: none; will-change: transform;">Jean
+          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-red-500 -bottom-16 left-0" style="opacity: 1; transform: none; will-change: transform;">
+            Jd the 65th
+            <span class="absolute -right-4 -top-4 rotate-45 text-red-500">
+              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path>
+              </svg>
+            </span>
+          </div>
+          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0" style="opacity: 1; transform: none; will-change: transform;">
+            WORMS
             <span class="absolute -left-4 -top-4 -rotate-45 text-amber-500">
               <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
             </span>
@@ -77,7 +90,9 @@ export default component$(() => {
                     <p class="text-sm leading-none">app.nestri.io/play</p>
                   </div>
                 </div>
-                <div class="rounded-md relative w-full h-full border border-gray-200 dark:border-gray-800 mt-4 overflow-hidden"></div>
+                <div class="rounded-md relative w-full h-full border border-gray-200 dark:border-gray-800 mt-4 overflow-hidden">
+                  <ImgDoom class="h-full w-full" />
+                </div>
               </div>
               <div class="absolute z-[3] w-max top-[35%] -left-16">
                 <div class="px-3 rounded-xl bg-[rgb(18,162,24)] flex py-1.5 w-min items-center gap-1">
@@ -90,9 +105,9 @@ export default component$(() => {
                   </div>
                   <hr class="w-[1px] h-5 bg-white/50 border-none" />
                   <div class="flex h-9 cursor-pointer items-center justify-center rounded-full w-max">
-                    <img height={20} width={20} src="https://avatars.githubusercontent.com/u/71614375?v=4" class="size-6 rounded-full border-2 border-[#FF9300]" />
-                    <img height={20} width={20} src="https://avatars.githubusercontent.com/u/49293748?v=4" class="size-6 -ml-2 border-2 border-[#9340D5] rounded-full" />
-                    <img height={20} width={20} src="https://avatars.githubusercontent.com/u/14197772?v=4" class="bg-white size-6 -ml-2 border-2 border-[#006FFE] rounded-full" />
+                    <ImgWanjohi alt="Wanjohi Ryan's Avatar" class="size-6 rounded-full border-2 border-[#FF9300]" />
+                    <ImgVictor alt="Victor's Pahuus Avatar" class="size-6 -ml-2 border-2 border-[#9340D5] rounded-full" />
+                    <ImgDatHorse alt="DatCaptainHorse's Avatar" class="bg-white size-6 -ml-2 border-2 border-[#006FFE] rounded-full" />
                   </div>
                   <div>
                   </div>
@@ -151,7 +166,7 @@ export default component$(() => {
                   <div class="flex flex-col items-stretch gap-2">
                     <div class="flex flex-row justify-between">
                       <div class="flex flex-row items-center gap-1">
-                        <img height={20} width={20} src="https://avatars.githubusercontent.com/u/71614375?v=4" class="size-5 rounded-full border-2 border-[#FF9300]" />
+                        <ImgWanjohi alt="Wanjohi Ryan's Avatar" class="size-5 rounded-full border-2 border-[#FF9300]" />
                         <span class="text-sm font-medium dark:text-gray-50/70 text-gray-950/70">Wanjohi Ryan</span>
                       </div>
                       <span class="text-gray-950/50 dark:text-gray-50/50 ml-3 text-sm min-h-6 flex items-center justify-center">3 minutes ago</span>
@@ -161,6 +176,31 @@ export default component$(() => {
                     <p class="text-sm text-gray-950/50 dark:text-gray-50/50" >
                       Wow! You did it!
                     </p>
+                  </div>
+                </div>
+              </div>
+              <div class="absolute -left-24 bottom-[25%] z-[3]" >
+                <div class="p-4 bg-white dark:bg-black ring-2 ring-gray-200 dark:ring-gray-800 rounded-xl flex flex-row gap-2" >
+                  <div class="size-6 rounded-full ring-2 ring-[hsla(274,71%,43%)] flex justify-center items-center">
+                    <ImgJanried alt="Janried's Avatar" class="rounded-full" />
+                  </div>
+                  <span class="text-sm text-gray-600 dark:text-gray-400 h-6 flex justify-center items-center">
+                    <span class="text-[hsla(274,71%,43%)]">JanRied#33</span>&nbsp;is requesting to join this Party
+                  </span>
+                </div>
+              </div>
+              <div class="absolute -right-20 bottom-[20%] z-[3]" >
+                <div class="p-4 bg-white dark:bg-black ring-2 ring-gray-200 dark:ring-gray-800 rounded-xl flex gap-3 items-center" >
+                  <div class="size-6 rounded-full bg-[hsla(358,75%,59%,1)] text-white flex justify-center items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
+                      <g fill="currentColor" fill-rule="evenodd" stroke-width="1.5" clip-rule="evenodd">
+                        <path d="M14.752 1.914a5.25 5.25 0 0 0 4.07 8.333v.011c.015.198.03.401.05.597c.237 2.247.777 3.79 1.296 4.803c.345.675.684 1.123.924 1.394a3.4 3.4 0 0 0 .34.335l.01.006A.75.75 0 0 1 21 18.75H3a.75.75 0 0 1-.441-1.356l.008-.007l.064-.054c.06-.054.157-.145.277-.281c.24-.27.579-.718.924-1.393C4.522 14.31 5.25 12.03 5.25 8.4c0-1.881.7-3.694 1.96-5.038C8.472 2.016 10.194 1.25 12 1.25q.574 0 1.133.101c.238.043 1.018.286 1.619.563" />
+                        <path d="M15.25 5a3.75 3.75 0 1 1 7.5 0a3.75 3.75 0 0 1-7.5 0M9.894 20.351a.75.75 0 0 1 1.025.273a1.25 1.25 0 0 0 2.162 0a.75.75 0 1 1 1.298.753a2.75 2.75 0 0 1-4.758 0a.75.75 0 0 1 .273-1.026" />
+                      </g>
+                    </svg>
+                  </div>
+                  <div class="text-sm text-gray-600 dark:text-gray-400">
+                    <span class="text-[#006FFE]">DatHorse#77</span>&nbsp;is requesting pointer access
                   </div>
                 </div>
               </div>
