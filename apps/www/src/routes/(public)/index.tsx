@@ -52,8 +52,8 @@ export default component$(() => {
       </section> */}
       <section class="px-4 w-full">
         <div class="relative mx-auto my-24 max-w-[980px] sm:my-32">
-          <div class="relative z-10 gap-2 mx-auto flex max-w-full flex-col items-center text-balance text-center sm:max-w-[700px]">
-            <h3 class="sm:text-5xl font-mona font-extrabold text-xl mb-2 px-4" style="opacity: 1; transform: none; will-change: transform;">Play Co-Op or Stream to Friends with Nestri Parties</h3>
+          <div class="relative z-10 gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
+            <h3 class="sm:text-5xl font-mona font-extrabold text-xl mb-2 px-4 tracking-tighter" style="opacity: 1; transform: none; will-change: transform;">Play Co-Op or Stream to Friends with Nestri Parties</h3>
             <p class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70" style="opacity: 1; transform: none; will-change: transform;">Invite friends to watch your gameplay live, join multiplayer lobbies, or jump into co-op sessions</p>
           </div>
           <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 -bottom-16 right-0" style="opacity: 1; transform: none; will-change: transform;">Jean
