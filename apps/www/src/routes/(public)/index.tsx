@@ -56,16 +56,16 @@ export default component$(() => {
             <h3 class="sm:text-5xl font-mona font-extrabold text-xl mb-2 px-4 tracking-tighter" style="opacity: 1; transform: none; will-change: transform;">Play Co-Op or Stream to Friends with Nestri Parties</h3>
             <p class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70" style="opacity: 1; transform: none; will-change: transform;">Invite friends to watch your gameplay live, join multiplayer lobbies, or jump into co-op sessions</p>
           </div>
-          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 -bottom-16 right-0" style="opacity: 1; transform: none; will-change: transform;">Jean
+          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0" style="opacity: 1; transform: none; will-change: transform;">Jean
             <span class="absolute -left-4 -top-4 -rotate-45 text-amber-500">
               <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
             </span>
           </div>
           <div class="mx-auto">
             <div class="pt-24 pb-11 [padding-inline:16px] m-auto w-full relative max-w-[720px]" >
-              <div class="top-12 z-[1] scale-[.8] left-0 absolute w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
-              <div class="absolute left-0 top-[70px] scale-90 z-[2] w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
-              <div class="relative z-[3] [transform-origin:top_center] ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4">
+              <div class="top-12 z-[1] scale-[.8] left-0 absolute w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-200 dark:ring-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
+              <div class="absolute left-0 top-[70px] scale-90 z-[2] w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-200 dark:ring-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
+              <div class="relative z-[3] [transform-origin:top_center] ring-2 ring-gray-200 dark:ring-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4">
                 <div class="relative flex justify-center w-full">
                   <div class="absolute left-0 top-1 items-center gap-1 flex group [&>:first-child]:bg-[hsla(358,75%,59%,1)] [&>:nth-child(2)]:bg-[hsla(208,100%,66%,1)] [&>:last-child]:bg-[hsla(170,70%,57%,1)]">
                     {new Array(3).fill(0).map((_, key) => (
@@ -78,6 +78,91 @@ export default component$(() => {
                   </div>
                 </div>
                 <div class="rounded-md relative w-full h-full border border-gray-200 dark:border-gray-800 mt-4 overflow-hidden"></div>
+              </div>
+              <div class="absolute z-[3] w-max top-[35%] -left-16">
+                <div class="px-3 rounded-xl bg-[rgb(18,162,24)] flex py-1.5 w-min items-center gap-1">
+                  <div class="items-start flex gap-0.5">
+                    <svg width="28" height="24" viewBox="0 0 28 24" fill="none">
+                      <path fill-rule="evenodd" clip-rule="evenodd" d="M12 6C12 4.89543 12.8954 4 14 4C15.1046 4 16 4.89543 16 6V11C16 12.1046 15.1046 13 14 13C12.8954 13 12 12.1046 12 11V6ZM15 17C15 16.9534 15.0322 16.9117 15.0781 16.9034C17.8773 16.3955 20 13.9457 20 11C20 10.4477 19.5523 10 19 10C18.4477 10 18 10.4477 18 11C18 13.2091 16.2091 15 14 15C11.7909 15 10 13.2091 10 11C10 10.4477 9.55228 10 9 10C8.44772 10 8 10.4477 8 11C8 13.9457 10.1227 16.3955 12.9219 16.9034C12.9678 16.9117 13 16.9534 13 17V17V19C13 19.5523 13.4477 20 14 20C14.5523 20 15 19.5523 15 19V17V17Z" fill="white"></path>
+                      <rect class="animate-pulse duration-75" x="18.5" y="16.5" width="5" height="5" rx="2.5" fill="#00FF0B" stroke="#13A318"></rect>
+                    </svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="text-white/50" width="28" height="24" viewBox="0 0 24 24"><path d="M4 19h10.879L2.145 6.265A1.977 1.977 0 0 0 2 7v10c0 1.103.897 2 2 2zM18 7c0-1.103-.897-2-2-2H6.414L3.707 2.293L2.293 3.707l18 18l1.414-1.414L18 16.586v-2.919L22 17V7l-4 3.333V7z" fill="currentColor" /></svg>
+                  </div>
+                  <hr class="w-[1px] h-5 bg-white/50 border-none" />
+                  <div class="flex h-9 cursor-pointer items-center justify-center rounded-full w-max">
+                    <img height={20} width={20} src="https://avatars.githubusercontent.com/u/71614375?v=4" class="size-6 rounded-full border-2 border-[#FF9300]" />
+                    <img height={20} width={20} src="https://avatars.githubusercontent.com/u/49293748?v=4" class="size-6 -ml-2 border-2 border-[#9340D5] rounded-full" />
+                    <img height={20} width={20} src="https://avatars.githubusercontent.com/u/14197772?v=4" class="bg-white size-6 -ml-2 border-2 border-[#006FFE] rounded-full" />
+                  </div>
+                  <div>
+                  </div>
+                </div>
+              </div>
+              <div class="absolute z-[3] top-[40%] -right-24">
+                <div class="bg-white dark:bg-black py-3 px-4 rounded-[20px] ring-gray-200 dark:ring-gray-800 ring-2 relative">
+                  <svg aria-hidden="true" class="absolute dark:hidden -bottom-[3px] -right-[7px]" fill="none" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M0 0H24V24H0z" fill="#f5f5f5 " transform="matrix(-1 0 0 1 24 0)"></path>
+                    <mask height="24" id="ad" maskUnits="userSpaceOnUse" width="24" x="0" y="0" style="mask-type: alpha;"><path d="M24 0H0v24h24V0z" fill="#D9D9D9"></path></mask>
+                    <g filter="url(#filter0_d_1762_122304)" mask="url(#ad)">
+                      <mask fill="#000" height="42" id="ba" maskUnits="userSpaceOnUse" width="46" x="-24" y="-20">
+                        <path d="M-24 -20H22V22H-24z" fill="#fff"></path>
+                        <path clip-rule="evenodd" d="M-3-19c11.046 0 20 8.954 20 20 0 .335-.008.669-.025 1H17v10a15 15 0 003 9 14.952 14.952 0 01-10.555-4.342A19.915 19.915 0 01-3 21c-11.046 0-20-8.954-20-20s8.954-20 20-20z" fill-rule="evenodd"></path>
+                      </mask>
+                      <path clip-rule="evenodd" d="M-3-19c11.046 0 20 8.954 20 20 0 .335-.008.669-.025 1H17v10a15 15 0 003 9 14.952 14.952 0 01-10.555-4.342A19.915 19.915 0 01-3 21c-11.046 0-20-8.954-20-20s8.954-20 20-20z" fill="#FFF" fill-rule="evenodd"></path>
+                      <path stroke-width={2} stroke="#e5e5e5" d="M16.975 2v1h-1.05l.052-1.05.998.05zM17 2V1h1v1h-1zm3 19l.8-.6L22 22h-2v-1zM9.445 16.658l-.623-.783.695-.553.631.625-.703.71zM16 1C16-9.493 7.493-18-3-18v-2c11.598 0 21 9.402 21 21h-2zm-.023.95C15.992 1.637 16 1.32 16 1h2c0 .352-.009.702-.026 1.05l-1.997-.1zM17 3h-.025V1H17v2zm-1 9V2h2v10h-2zm3.2 9.6A16 16 0 0116 12h2a14 14 0 002.8 8.4l-1.6 1.2zm-9.052-5.653A13.952 13.952 0 0020 20v2c-4.39 0-8.37-1.77-11.259-4.632l1.407-1.42zM-3 20c4.47 0 8.577-1.542 11.822-4.125l1.245 1.565A20.915 20.915 0 01-3 22v-2zM-22 1c0 10.493 8.507 19 19 19v2c-11.598 0-21-9.402-21-21h2zm19-19c-10.493 0-19 8.507-19 19h-2c0-11.598 9.402-21 21-21v2z" fill="#e5e5e5" mask="url(#ba)"></path>
+                    </g>
+                    <defs>
+                      <filter color-interpolation-filters="s-rGB" filterUnits="userSpaceOnUse" height="46" id="filter0_d_1762_122304" width="50" x="-26" y="-21">
+                        <feFlood flood-opacity="0" result="BackgroundImageFix"></feFlood><feColorMatrix in="SourceAlpha" result="hardAlpha" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"></feColorMatrix>
+                        <feOffset dy="1"></feOffset><feGaussianBlur stdDeviation="1"></feGaussianBlur>
+                        <feColorMatrix values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.04 0"></feColorMatrix>
+                        <feBlend in2="BackgroundImageFix" result="effect1_dropShadow_1762_12230"></feBlend>
+                        <feBlend in="SourceGraphic" in2="effect1_dropShadow_1762_12230" result="shape"></feBlend>
+                      </filter>
+                    </defs>
+                  </svg>
+                  <svg aria-hidden="true" class="absolute dark:block hidden -bottom-[3px] -right-[7px]" style={{ transform: "scale(-1,1)" }} fill="none" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
+                    <rect fill="#171717" height="24" width="24"></rect>
+                    <mask height="24" id="mask0_1762_12230" maskUnits="userSpaceOnUse" width="24" x="0" y="0" style="mask-type: alpha;">
+                      <path d="M0 0H24V24H0V0Z" fill="#D9D9D9"></path>
+                    </mask>
+                    <g mask="url(#mask0_1762_12230)">
+                      <g filter="url(#filter0_d_1762_12230)">
+                        <mask fill="black" height="42" id="path-3-outside-1_1762_12230" maskUnits="userSpaceOnUse" width="46" x="2" y="-20">
+                          <rect fill="white" height="42" width="46" x="2" y="-20"></rect>
+                          <path clip-rule="evenodd" d="M27 -19C15.9543 -19 7 -10.0457 7 1C7 1.33533 7.00825 1.66872 7.02456 2H7V12C7 15.2456 5.94733 18.4036 4 21C8.11612 21 11.845 19.3421 14.5553 16.6576C17.9708 19.3758 22.2957 21 27 21C38.0457 21 47 12.0457 47 1C47 -10.0457 38.0457 -19 27 -19Z" fill-rule="evenodd"></path>
+                        </mask>
+                        <path clip-rule="evenodd" d="M27 -19C15.9543 -19 7 -10.0457 7 1C7 1.33533 7.00825 1.66872 7.02456 2H7V12C7 15.2456 5.94733 18.4036 4 21C8.11612 21 11.845 19.3421 14.5553 16.6576C17.9708 19.3758 22.2957 21 27 21C38.0457 21 47 12.0457 47 1C47 -10.0457 38.0457 -19 27 -19Z" fill="#000" fill-rule="evenodd"></path>
+                        <path stroke-width={2} stroke="#262626" d="M7.02456 2V3H8.07502L8.02335 1.95082L7.02456 2ZM7 2V1H6V2H7ZM4 21L3.2 20.4L2 22H4V21ZM14.5553 16.6576L15.178 15.8752L14.4829 15.3219L13.8516 15.9471L14.5553 16.6576ZM8 1C8 -9.49341 16.5066 -18 27 -18V-20C15.402 -20 6 -10.598 6 1H8ZM8.02335 1.95082C8.00785 1.63591 8 1.31892 8 1H6C6 1.35173 6.00866 1.70153 6.02578 2.04918L8.02335 1.95082ZM7 3H7.02456V1H7V3ZM8 12V2H6V12H8ZM4.8 21.6C6.87715 18.8305 8 15.4619 8 12H6C6 15.0292 5.01751 17.9767 3.2 20.4L4.8 21.6ZM13.8516 15.9471C11.3209 18.4537 7.84202 20 4 20V22C8.39022 22 12.3691 20.2305 15.259 17.3681L13.8516 15.9471ZM27 20C22.5299 20 18.4229 18.4576 15.178 15.8752L13.9326 17.4401C17.5187 20.2941 22.0615 22 27 22V20ZM46 1C46 11.4934 37.4934 20 27 20V22C38.598 22 48 12.598 48 1H46ZM27 -18C37.4934 -18 46 -9.49341 46 1H48C48 -10.598 38.598 -20 27 -20V-18Z" fill="#262626" mask="url(#path-3-outside-1_1762_12230)"></path>
+                      </g>
+                    </g>
+                    <defs>
+                      <filter color-interpolation-filters="s-rGB" filterUnits="userSpaceOnUse" height="46" id="filter0_d_1762_12230" width="50" x="0" y="-21">
+                        <feFlood flood-opacity="0" result="BackgroundImageFix"></feFlood>
+                        <feColorMatrix in="SourceAlpha" result="hardAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"></feColorMatrix>
+                        <feOffset dy="1"></feOffset>
+                        <feGaussianBlur stdDeviation="1"></feGaussianBlur>
+                        <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.04 0"></feColorMatrix>
+                        <feBlend in2="BackgroundImageFix" mode="normal" result="effect1_dropShadow_1762_12230"></feBlend>
+                        <feBlend in="SourceGraphic" in2="effect1_dropShadow_1762_12230" mode="normal" result="shape"></feBlend>
+                      </filter>
+                    </defs>
+                  </svg>
+                  <div class="flex flex-col items-stretch gap-2">
+                    <div class="flex flex-row justify-between">
+                      <div class="flex flex-row items-center gap-1">
+                        <img height={20} width={20} src="https://avatars.githubusercontent.com/u/71614375?v=4" class="size-5 rounded-full border-2 border-[#FF9300]" />
+                        <span class="text-sm font-medium dark:text-gray-50/70 text-gray-950/70">Wanjohi Ryan</span>
+                      </div>
+                      <span class="text-gray-950/50 dark:text-gray-50/50 ml-3 text-sm min-h-6 flex items-center justify-center">3 minutes ago</span>
+                      <div>
+                      </div>
+                    </div>
+                    <p class="text-sm text-gray-950/50 dark:text-gray-50/50" >
+                      Wow! You did it!
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
