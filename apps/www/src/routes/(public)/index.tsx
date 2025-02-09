@@ -61,6 +61,26 @@ export default component$(() => {
               <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
             </span>
           </div>
+          <div class="mx-auto">
+            <div class="pt-24 pb-11 [padding-inline:16px] m-auto w-full relative max-w-[720px]" >
+              <div class="top-12 z-[1] scale-[.8] left-0 absolute w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
+              <div class="absolute left-0 top-[70px] scale-90 z-[2] w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
+              <div class="relative z-[3] [transform-origin:top_center] ring-2 ring-gray-300 dark:ring-gray-700 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4">
+                <div class="relative flex justify-center w-full">
+                  <div class="absolute left-0 top-1 items-center gap-1 flex group [&>:first-child]:bg-[hsla(358,75%,59%,1)] [&>:nth-child(2)]:bg-[hsla(208,100%,66%,1)] [&>:last-child]:bg-[hsla(170,70%,57%,1)]">
+                    {new Array(3).fill(0).map((_, key) => (
+                      <div key={`toolbar-${key}`} class="size-2.5 rounded-full" />
+                    ))}
+                  </div>
+                  <div class="flex items-center gap-2 dark:text-gray-50/70 text-gray-950/70">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="-mt-0.5" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0-2 0m-3-5V7a4 4 0 1 1 8 0v4" /></g></svg>
+                    <p class="text-sm leading-none">app.nestri.io/play</p>
+                  </div>
+                </div>
+                <div class="rounded-md relative w-full h-full border border-gray-200 dark:border-gray-800 mt-4 overflow-hidden"></div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
       <Footer client:load>
