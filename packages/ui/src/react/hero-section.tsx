@@ -35,7 +35,7 @@ export function ReactHeroSection({ children }: Props) {
                         transition={{
                             ...transition
                         }}
-                        src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[50px] md:w-[80px] aspect-[90/69]" />
+                        src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[50px] md:w-[80px] aspect-[90/69] select-none" />
                     <div className="my-4 sm:mt-8 w-full flex flex-col justify-center items-center">
                         <ReactDisplay className="mb-4 sm:text-[5.6rem] text-[3.2rem] text-balance text-center tracking-tight leading-none" >
                             <motion.span

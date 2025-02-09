@@ -525,10 +525,10 @@ export default component$(() => {
                         Get early access
                     </Link>
                     <div class="mt-6 flex w-full items-center justify-center gap-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                        <span>
+                        <span class="hover:text-primary-500 transition-colors duration-200">
                             <Link rel="noreferrer" href="/terms" >Terms of Service</Link></span>
                         <span class="text-gray-400 dark:text-gray-600">•</span>
-                        <span>
+                        <span class="hover:text-primary-500 transition-colors duration-200" >
                             <Link href="/privacy">Privacy Policy</Link>
                         </span>
                     </div>

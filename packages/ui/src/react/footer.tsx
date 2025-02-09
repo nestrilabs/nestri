@@ -19,7 +19,7 @@ type Props = {
 export function ReactFooter({ children }: Props) {
   return (
     <>
-      <footer className="flex justify-center flex-col items-center w-full pt-8 sm:pb-0 pb-8 [&>*]:w-full px-3">
+      <footer className="flex justify-center flex-col items-center w-screen pt-8 sm:pb-0 pb-8 [&>*]:w-screen px-3">
         <section className="mx-auto flex flex-col justify-center items-center max-w-[600px] pt-20">
           <motion.img
             initial={{
@@ -34,7 +34,7 @@ export function ReactFooter({ children }: Props) {
             transition={{
               ...transition
             }}
-            src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[50px] md:w-[80px] aspect-[90/69]" />
+            src="/logo.webp" alt="Nestri Logo" height={80} width={80} draggable={false} className="w-[50px] md:w-[80px] aspect-[90/69] select-none" />
           <div className="my-4 sm:mt-8 w-full flex flex-col justify-center items-center">
             <ReactDisplay className="mb-4 sm:text-[5.6rem] text-[3.2rem] text-balance text-center tracking-tight leading-none" >
               <motion.span
@@ -122,7 +122,7 @@ export function ReactFooter({ children }: Props) {
           className="w-full sm:flex z-[1] hidden pointer-events-none overflow-hidden -mt-[80px] justify-center items-center flex-col" >
           <section className='my-0 bottom-0 text-[100%] max-w-[1440px] pointer-events-none w-full flex items-center translate-y-[40%] justify-center relative overflow-hidden px-2 z-10 [&_svg]:w-full [&_svg]:max-w-[1440px] [&_svg]:h-full [&_svg]:opacity-70' >
             <svg viewBox="0 0 498.05 70.508" xmlns="http://www.w3.org/2000/svg" height={157} width={695} >
-              <g stroke-linecap="round" fill-rule="evenodd" font-size="9pt" stroke="currentColor" stroke-width="0.25mm" fill="currentColor">
+              <g strokeLinecap="round" fillRule="evenodd" fontSize="9pt" stroke="currentColor" strokeWidth="0.25mm" fill="currentColor">
                 <path
                   fill="url(#paint1)"
                   pathLength="1"
@@ -131,8 +131,8 @@ export function ReactFooter({ children }: Props) {
               </g>
               <defs>
                 <linearGradient gradientUnits="userSpaceOnUse" id="paint1" x1="317.5" x2="314.007" y1="-51.5" y2="126">
-                  <stop stop-color="white"></stop>
-                  <stop offset="1" stop-opacity="0"></stop>
+                  <stop stopColor="white"></stop>
+                  <stop offset="1" stopOpacity="0"></stop>
                 </linearGradient>
               </defs>
             </svg>
