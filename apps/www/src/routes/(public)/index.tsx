@@ -1,10 +1,10 @@
+/* eslint-disable qwik/jsx-img */
 import { Footer } from "@nestri/ui"
 import { Link } from "@builder.io/qwik-city";
 import { component$ } from "@builder.io/qwik";
 import ImgVictor from '~/images/avatars/victor.png?jsx';
 import ImgJanried from '~/images/avatars/janried.png?jsx';
 import ImgWanjohi from '~/images/avatars/wanjohi.png?jsx';
-import ImgDoom from '~/images/screenshots/doom.png?jsx';
 import ImgDatHorse from '~/images/avatars/dathorse.png?jsx';
 import ImgMainDark from '~/images/screenshots/main-dark.png?jsx';
 import ImgMainLight from '~/images/screenshots/main-light.png?jsx';
@@ -91,7 +91,7 @@ export default component$(() => {
                   </div>
                 </div>
                 <div class="rounded-md relative w-full h-full border border-gray-200 dark:border-gray-800 mt-4 overflow-hidden">
-                  <ImgDoom class="h-full w-full" />
+                  <img width={100} height={100} src="/images/screenshots/movie.avifs" class="h-full w-full" />
                 </div>
               </div>
               <div class="absolute z-[3] w-max top-[35%] -left-16">
@@ -113,7 +113,7 @@ export default component$(() => {
                   </div>
                 </div>
               </div>
-              <div class="absolute z-[3] top-[40%] -right-24">
+              <div class="absolute z-[3] bottom-[40%] -right-24">
                 <div class="bg-white dark:bg-black py-3 px-4 rounded-[20px] ring-gray-200 dark:ring-gray-800 ring-2 relative">
                   <svg aria-hidden="true" class="absolute dark:hidden -bottom-[3px] -right-[7px]" fill="none" height="24" viewBox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
                     <path d="M0 0H24V24H0z" fill="#f5f5f5 " transform="matrix(-1 0 0 1 24 0)"></path>
