@@ -92,45 +92,6 @@ export default component$(() => {
               as="p"
               class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70">Invite friends to watch your gameplay live, join multiplayer lobbies, or jump into co-op sessions</MotionComponent>
           </div>
-          <MotionComponent
-            client:load
-            initial={{
-              opacity: 0,
-            }}
-            transition={{
-              ...transition,
-              delay: 0.6,
-            }}
-            whileInView={{
-              opacity: 1
-            }}
-            viewport={{ once: true }}
-            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-red-500 -bottom-16 left-0">
-            Jd the 65th
-            <span class="absolute -right-4 -top-4 rotate-45 text-red-500">
-              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path>
-              </svg>
-            </span>
-          </MotionComponent>
-          <MotionComponent
-            client:load
-            initial={{
-              opacity: 0,
-            }}
-            transition={{
-              ...transition,
-              delay: 0.6,
-            }}
-            whileInView={{
-              opacity: 1
-            }}
-            viewport={{ once: true }}
-            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0">
-            WORMS
-            <span class="absolute -left-4 -top-4 -rotate-45 text-amber-500">
-              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
-            </span>
-          </MotionComponent>
           <div class="mx-auto overflow-x-hidden">
             <MotionComponent
               client:load
@@ -275,6 +236,192 @@ export default component$(() => {
               </div>
             </MotionComponent>
           </div>
+        </div>
+      </section>
+      <section class="w-full">
+        <div class="relative mx-auto my-24 max-w-[980px] sm:my-32">
+          <div class="relative px-4 z-10 gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+                y: 100
+              }}
+              transition={{
+                ...transition,
+                delay: 0.5,
+              }}
+              whileInView={{
+                y: 0,
+                opacity: 1
+              }}
+              viewport={{ once: true }}
+              as="h3" class="sm:text-5xl font-mona font-extrabold text-2xl mb-2 sm:tracking-tighter">Team Up with Friends on a Shared Gaming Machine</MotionComponent>
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+                y: 100
+              }}
+              transition={{
+                ...transition,
+                delay: 0.6,
+              }}
+              whileInView={{
+                y: 0,
+                opacity: 1
+              }}
+              viewport={{ once: true }}
+              as="p"
+              class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70">Form a team of up to 5 players, share a GPU instance and storage, and play games remotely together</MotionComponent>
+          </div>
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }}
+            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-red-500 -bottom-16 left-0">
+            Jd the 65th
+            <span class="absolute -right-4 -top-4 rotate-45 text-red-500">
+              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path>
+              </svg>
+            </span>
+          </MotionComponent>
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }}
+            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-blue-500 bottom-6 right-20">
+            Ryan
+            <span class="absolute -left-4 -top-4 -rotate-45 text-blue-500">
+              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path>
+              </svg>
+            </span>
+          </MotionComponent>
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }}
+            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0">
+            WORMS
+            <span class="absolute -left-4 -top-4 -rotate-45 text-amber-500">
+              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
+            </span>
+          </MotionComponent>
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }}
+            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-indigo-500 top-10 left-10">
+            Jean
+            <span class="absolute -right-4 -top-4 rotate-45 text-indigo-500">
+              <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
+            </span>
+          </MotionComponent>
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }} class="flex flex-col items-center [mask-image:linear-gradient(0deg,transparent,black_30px)] pt-10">
+            <div style={{ "--index": 4 }} class="rounded-t-[13px] sm:p-[11px_17px_15px] p-[6px_10px_15px] z-[6] items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-48px*var(--index))] -mb-6">
+              <div class="absolute items-center gap-2.5 flex group [&>div]:bg-gray-200 [&>div]:dark:bg-gray-800">
+                {new Array(3).fill(0).map((_, key) => (
+                  <div key={`toolbar-${key}`} class="size-4 rounded-full" />
+                ))}
+              </div>
+              <div class="w-[256px] h-[42px] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
+                <span class="font-mono text-sm">app.nestri.io/myteam/jean</span>
+              </div>
+            </div>
+            <div style={{ "--index": 3 }} class="rounded-t-[13px] sm:p-[12px_18px_15px] p-[7px_11px_15px] z-[7] items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-48px*var(--index))] -mb-6">
+              <div class="absolute items-center gap-2.5 flex group [&>div]:bg-gray-200 [&>div]:dark:bg-gray-800">
+                {new Array(3).fill(0).map((_, key) => (
+                  <div key={`toolbar-${key}`} class="size-4 rounded-full" />
+                ))}
+              </div>
+              <div class="w-[272px] h-[42px] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
+                <span class="font-mono text-sm">app.nestri.io/myteam/jd</span>
+              </div>
+            </div>
+            <div style={{ "--index": 2 }} class="rounded-t-[14px] sm:p-[13px_19px_15px] p-[7px_12px_15px] z-[8] items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-48px*var(--index))] -mb-6">
+              <div class="absolute items-center gap-2.5 flex group [&>div]:bg-gray-200 [&>div]:dark:bg-gray-800">
+                {new Array(3).fill(0).map((_, key) => (
+                  <div key={`toolbar-${key}`} class="size-4 rounded-full" />
+                ))}
+              </div>
+              <div class="w-[288px] h-[42px] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
+                <span class="font-mono text-sm">app.nestri.io/myteam/worms</span>
+              </div>
+            </div>
+            <div style={{ "--index": 1 }} class="rounded-t-[15px] sm:p-[14px_18px_15px] p-[8px_13px_15px] z-[9] items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-48px*var(--index))] -mb-6">
+              <div class="absolute items-center gap-2.5 flex group [&>div]:bg-gray-200 [&>div]:dark:bg-gray-800">
+                {new Array(3).fill(0).map((_, key) => (
+                  <div key={`toolbar-${key}`} class="size-4 rounded-full" />
+                ))}
+              </div>
+              <div class="w-[302px] h-[42px] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
+                <span class="font-mono text-sm">app.nestri.io/myteam/ryan</span>
+              </div>
+            </div>
+            <div style={{ "--index": 0 }} class="rounded-t-[16px] sm:p-[15px_20px_45px] p-[10px_15px_25px] z-10 items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-48px*var(--index))] -mb-[15px]">
+              <div class="absolute items-center gap-2.5 flex group [&>:first-child]:bg-[hsla(358,75%,59%,1)] [&>:nth-child(2)]:bg-[hsla(208,100%,66%,1)] [&>:last-child]:bg-[hsla(170,70%,57%,1)]">
+                {new Array(3).fill(0).map((_, key) => (
+                  <div key={`toolbar-${key}`} class="size-4 rounded-full" />
+                ))}
+              </div>
+              <div class="w-[320px] h-[42px] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
+                <span class="font-mono text-sm">app.nestri.io/myteam/claire</span>
+              </div>
+            </div>
+          </MotionComponent>
         </div>
       </section>
       <Footer client:load>
