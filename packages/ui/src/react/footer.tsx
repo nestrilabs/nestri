@@ -19,7 +19,7 @@ type Props = {
 export function ReactFooter({ children }: Props) {
   return (
     <>
-      <footer className="flex justify-center flex-col items-center w-screen pt-8 sm:pb-0 pb-8 [&>*]:w-screen px-3">
+      <footer className="flex justify-center flex-col items-center w-screen pt-8 sm:pb-0 pb-8 [&>*]:w-full px-3">
         <section className="mx-auto flex flex-col justify-center items-center max-w-[600px] pt-20">
           <motion.img
             initial={{
