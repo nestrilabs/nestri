@@ -55,30 +55,99 @@ export default component$(() => {
           </svg>
         </div>
       </section> */}
-      <section class="px-4 w-full">
+      <section class="w-full">
         <div class="relative mx-auto my-24 max-w-[980px] sm:my-32">
-          <div class="relative z-10 gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
-            <h3 class="sm:text-5xl font-mona font-extrabold text-xl mb-2 px-4 tracking-tighter" style="opacity: 1; transform: none; will-change: transform;">Play Co-Op or Stream to Friends with Nestri Parties</h3>
-            <p class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70" style="opacity: 1; transform: none; will-change: transform;">Invite friends to watch your gameplay live, join multiplayer lobbies, or jump into co-op sessions</p>
+          <div class="relative px-4 z-10 gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+                y: 100
+              }}
+              transition={{
+                ...transition,
+                delay: 0.5,
+              }}
+              whileInView={{
+                y: 0,
+                opacity: 1
+              }}
+              viewport={{ once: true }}
+              as="h3" class="sm:text-5xl font-mona font-extrabold text-2xl mb-2 sm:tracking-tighter">Play Co-Op or Stream to Friends with Nestri Parties</MotionComponent>
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+                y: 100
+              }}
+              transition={{
+                ...transition,
+                delay: 0.6,
+              }}
+              whileInView={{
+                y: 0,
+                opacity: 1
+              }}
+              viewport={{ once: true }}
+              as="p"
+              class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70">Invite friends to watch your gameplay live, join multiplayer lobbies, or jump into co-op sessions</MotionComponent>
           </div>
-          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-red-500 -bottom-16 left-0" style="opacity: 1; transform: none; will-change: transform;">
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }}
+            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-red-500 -bottom-16 left-0">
             Jd the 65th
             <span class="absolute -right-4 -top-4 rotate-45 text-red-500">
               <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path>
               </svg>
             </span>
-          </div>
-          <div class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0" style="opacity: 1; transform: none; will-change: transform;">
+          </MotionComponent>
+          <MotionComponent
+            client:load
+            initial={{
+              opacity: 0,
+            }}
+            transition={{
+              ...transition,
+              delay: 0.6,
+            }}
+            whileInView={{
+              opacity: 1
+            }}
+            viewport={{ once: true }}
+            class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-amber-500 top-30 right-0">
             WORMS
             <span class="absolute -left-4 -top-4 -rotate-45 text-amber-500">
               <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
             </span>
-          </div>
-          <div class="mx-auto">
-            <div class="pt-24 pb-11 [padding-inline:16px] m-auto w-full relative max-w-[720px]" >
+          </MotionComponent>
+          <div class="mx-auto overflow-x-hidden">
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+              }}
+              transition={{
+                ...transition,
+                delay: 0.6,
+              }}
+              whileInView={{
+                opacity: 1
+              }}
+              viewport={{ once: true }} class="pt-24 pb-11 sm:[padding-inline:16px] m-auto w-full relative max-w-[720px]" >
               <div class="top-12 z-[1] scale-[.8] left-0 absolute w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-200 dark:ring-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
               <div class="absolute left-0 top-[70px] scale-90 z-[2] w-full h-1/2 [transform-origin:top_center] ring-2 ring-gray-200 dark:ring-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4" />
-              <div class="relative z-[3] [transform-origin:top_center] ring-2 ring-gray-200 dark:ring-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4">
+              <div class="relative z-[3] [transform-origin:top_center] border-2 border-gray-200 dark:border-gray-800 dark:bg-black bg-white rounded-xl aspect-[4/2.5] bg-clip-padding p-4 [mask-image:linear-gradient(0deg,rgba(0,0,0,0)_10%,rgba(0,0,0,1)_20%,rgba(0,0,0,1))]">
                 <div class="relative flex justify-center w-full">
                   <div class="absolute left-0 top-1 items-center gap-1 flex group [&>:first-child]:bg-[hsla(358,75%,59%,1)] [&>:nth-child(2)]:bg-[hsla(208,100%,66%,1)] [&>:last-child]:bg-[hsla(170,70%,57%,1)]">
                     {new Array(3).fill(0).map((_, key) => (
@@ -204,7 +273,7 @@ export default component$(() => {
                   </div>
                 </div>
               </div>
-            </div>
+            </MotionComponent>
           </div>
         </div>
       </section>
