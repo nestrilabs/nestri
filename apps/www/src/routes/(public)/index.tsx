@@ -55,9 +55,9 @@ export default component$(() => {
           </svg>
         </div>
       </section> */}
-      <section class="w-full">
-        <div class="relative mx-auto my-24 max-w-[980px] sm:my-32">
-          <div class="relative px-4 z-10 gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
+      <section class="w-full pt-24 pb-12 sm:pb-16">
+        <div class="relative mx-auto max-w-[980px]">
+          <div class="relative px-4 z-10 gap-1 sm:gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
             <MotionComponent
               client:load
               initial={{
@@ -238,9 +238,9 @@ export default component$(() => {
           </div>
         </div>
       </section>
-      <section class="w-full">
-        <div class="relative mx-auto my-24 max-w-[980px] sm:my-32">
-          <div class="relative px-4 z-10 gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
+      <section class="w-full pb-12 sm:pb-16">
+        <div class="relative mx-auto max-w-[980px]">
+          <div class="relative px-4 z-10 gap-1 sm:gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
             <MotionComponent
               client:load
               initial={{
@@ -365,14 +365,14 @@ export default component$(() => {
             whileInView={{
               opacity: 1
             }}
-            viewport={{ once: true }} class="flex flex-col items-center [mask-image:linear-gradient(0deg,transparent,black_30px)] pt-10">
+            viewport={{ once: true }} class="flex flex-col items-center [mask-image:linear-gradient(0deg,transparent,black_30px)] pt-5 sm:pt-10">
             <div style={{ "--index": 4 }} class="rounded-t-[13px] sm:p-[11px_17px_15px] p-[6px_10px_15px] z-[6] items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-16px*var(--index))] sm:w-[calc(100%-48px*var(--index))] -mb-6">
               <div class="absolute items-center gap-0.5 sm:gap-2.5 flex group [&>div]:bg-gray-200 [&>div]:dark:bg-gray-800">
                 {new Array(3).fill(0).map((_, key) => (
                   <div key={`toolbar-${key}`} class="size-2.5 sm:size-4 rounded-full" />
                 ))}
               </div>
-              <div style={{ "--width": "256px", "--height":"42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+              <div style={{ "--width": "256px", "--height": "42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
                 <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/jean</span>
               </div>
@@ -383,7 +383,7 @@ export default component$(() => {
                   <div key={`toolbar-${key}`} class="size-2.5 sm:size-4 rounded-full" />
                 ))}
               </div>
-              <div style={{ "--width": "272px", "--height":"42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+              <div style={{ "--width": "272px", "--height": "42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
                 <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/jd</span>
               </div>
@@ -394,7 +394,7 @@ export default component$(() => {
                   <div key={`toolbar-${key}`} class="size-2.5 sm:size-4 rounded-full" />
                 ))}
               </div>
-              <div style={{ "--width": "288px", "--height":"42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+              <div style={{ "--width": "288px", "--height": "42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
                 <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/worms</span>
               </div>
@@ -405,7 +405,7 @@ export default component$(() => {
                   <div key={`toolbar-${key}`} class="size-2.5 sm:size-4 rounded-full" />
                 ))}
               </div>
-              <div style={{ "--width": "302px", "--height":"42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+              <div style={{ "--width": "302px", "--height": "42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
                 <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/ryan</span>
               </div>
@@ -416,12 +416,112 @@ export default component$(() => {
                   <div key={`toolbar-${key}`} class="size-2.5 sm:size-4 rounded-full" />
                 ))}
               </div>
-              <div style={{ "--width": "320px", "--height":"42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
+              <div style={{ "--width": "320px", "--height": "42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
                 <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/claire</span>
               </div>
             </div>
           </MotionComponent>
+        </div>
+      </section>
+      <section class="w-full py-12 sm:py-16">
+        <div class="relative mx-auto w-full max-w-[980px]">
+          <div class="relative px-4 z-10 gap-1 sm:gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+                y: 100
+              }}
+              transition={{
+                ...transition,
+                delay: 0.5,
+              }}
+              whileInView={{
+                y: 0,
+                opacity: 1
+              }}
+              viewport={{ once: true }}
+              as="h3" class="sm:text-5xl font-mona font-extrabold text-2xl mb-2 sm:tracking-tighter">Run Nestri on Your Own GPU</MotionComponent>
+            <MotionComponent
+              client:load
+              initial={{
+                opacity: 0,
+                y: 100
+              }}
+              transition={{
+                ...transition,
+                delay: 0.6,
+              }}
+              whileInView={{
+                y: 0,
+                opacity: 1
+              }}
+              viewport={{ once: true }}
+              as="p"
+              class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70">Install Nestri-server on your GPU instance, connect to our network in minutes, and only pay for bandwidth and API calls</MotionComponent>
+          </div>
+          <div class="w-full flex items-center max-w-[600px] mx-auto pt-5 sm:pt-10" >
+            <div class="flex flex-col items-center bg-white [&>div]:px-4 [&>div]:py-3 dark:bg-black justify-center relative z-[1] rounded-full ring-2 ring-gray-200 dark:ring-gray-800 [&>div:not(:last-child)]:border-b-2 dark:[&>div:not(:last-child)]:border-gray-800 [&>div:not(:last-child)]:border-gray-200" >
+              <div>
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path d="M14.9449 6.54871C15.3128 5.45919 15.1861 4.26567 14.5978 3.27464C13.7131 1.75461 11.9345 0.972595 10.1974 1.3406C9.42464 0.481584 8.3144 -0.00692594 7.15045 7.42132e-05C5.37487 -0.00392587 3.79946 1.1241 3.2532 2.79113C2.11256 3.02164 1.12799 3.72615 0.551837 4.72468C-0.339497 6.24071 -0.1363 8.15175 1.05451 9.45178C0.686626 10.5413 0.813308 11.7348 1.40162 12.7258C2.28637 14.2459 4.06498 15.0279 5.80204 14.6599C6.5743 15.5189 7.68504 16.0074 8.849 15.9999C10.6256 16.0044 12.2015 14.8754 12.7478 13.2069C13.8884 12.9764 14.873 12.2718 15.4491 11.2733C16.3394 9.75728 16.1357 7.84774 14.9454 6.54771L14.9449 6.54871ZM8.85001 14.9544C8.13907 14.9554 7.45043 14.7099 6.90468 14.2604C6.92951 14.2474 6.97259 14.2239 7.00046 14.2069L10.2293 12.3668C10.3945 12.2743 10.4959 12.1008 10.4949 11.9133V7.42173L11.8595 8.19925C11.8742 8.20625 11.8838 8.22025 11.8858 8.23625V11.9558C11.8838 13.6099 10.5263 14.9509 8.85001 14.9544ZM2.32133 12.2028C1.9651 11.5958 1.8369 10.8843 1.95902 10.1938C1.98284 10.2078 2.02489 10.2333 2.05479 10.2503L5.28366 12.0903C5.44733 12.1848 5.65003 12.1848 5.81421 12.0903L9.75604 9.84429V11.3993C9.75705 11.4153 9.74945 11.4308 9.73678 11.4408L6.47295 13.3004C5.01915 14.1264 3.1625 13.6354 2.32184 12.2028H2.32133ZM1.47155 5.24819C1.82626 4.64017 2.38619 4.17516 3.05305 3.93366C3.05305 3.96116 3.05152 4.00966 3.05152 4.04366V7.72424C3.05051 7.91124 3.15186 8.08475 3.31654 8.17725L7.25838 10.4228L5.89376 11.2003C5.88008 11.2093 5.86285 11.2108 5.84765 11.2043L2.58331 9.34327C1.13255 8.51426 0.63494 6.68272 1.47104 5.24869L1.47155 5.24819ZM12.6834 7.82274L8.74157 5.57669L10.1062 4.79968C10.1199 4.79068 10.1371 4.78918 10.1523 4.79568L13.4166 6.65522C14.8699 7.48373 15.3681 9.31827 14.5284 10.7523C14.1732 11.3593 13.6138 11.8243 12.9474 12.0663V8.27575C12.9489 8.08875 12.8481 7.91574 12.6839 7.82274H12.6834ZM14.0414 5.8057C14.0176 5.7912 13.9756 5.7662 13.9457 5.7492L10.7168 3.90916C10.5531 3.81466 10.3504 3.81466 10.1863 3.90916L6.24442 6.15521V4.60017C6.2434 4.58417 6.251 4.56867 6.26367 4.55867L9.52751 2.70063C10.9813 1.87311 12.84 2.36563 13.6781 3.80066C14.0323 4.40667 14.1605 5.11618 14.0404 5.8057H14.0414ZM5.50257 8.57726L4.13744 7.79974C4.12275 7.79274 4.11312 7.77874 4.11109 7.76274V4.04316C4.11211 2.38713 5.47368 1.0451 7.15197 1.0461C7.86189 1.0461 8.54902 1.2921 9.09476 1.74011C9.06993 1.75311 9.02737 1.77661 8.99899 1.79361L5.77012 3.63365C5.60493 3.72615 5.50358 3.89916 5.50459 4.08666L5.50257 8.57626V8.57726ZM6.24391 7.00022L7.99972 5.9997L9.75553 6.99972V9.00027L7.99972 10.0003L6.24391 9.00027V7.00022Z" fill="currentColor"></path></svg>
+                <span class="absolute size-[1px] -m-[1px] overflow-hidden whitespace-nowrap [clip:rect(0,0,0,0)] border-0" >OpenAI</span>
+              </div><div>
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path d="M14.9449 6.54871C15.3128 5.45919 15.1861 4.26567 14.5978 3.27464C13.7131 1.75461 11.9345 0.972595 10.1974 1.3406C9.42464 0.481584 8.3144 -0.00692594 7.15045 7.42132e-05C5.37487 -0.00392587 3.79946 1.1241 3.2532 2.79113C2.11256 3.02164 1.12799 3.72615 0.551837 4.72468C-0.339497 6.24071 -0.1363 8.15175 1.05451 9.45178C0.686626 10.5413 0.813308 11.7348 1.40162 12.7258C2.28637 14.2459 4.06498 15.0279 5.80204 14.6599C6.5743 15.5189 7.68504 16.0074 8.849 15.9999C10.6256 16.0044 12.2015 14.8754 12.7478 13.2069C13.8884 12.9764 14.873 12.2718 15.4491 11.2733C16.3394 9.75728 16.1357 7.84774 14.9454 6.54771L14.9449 6.54871ZM8.85001 14.9544C8.13907 14.9554 7.45043 14.7099 6.90468 14.2604C6.92951 14.2474 6.97259 14.2239 7.00046 14.2069L10.2293 12.3668C10.3945 12.2743 10.4959 12.1008 10.4949 11.9133V7.42173L11.8595 8.19925C11.8742 8.20625 11.8838 8.22025 11.8858 8.23625V11.9558C11.8838 13.6099 10.5263 14.9509 8.85001 14.9544ZM2.32133 12.2028C1.9651 11.5958 1.8369 10.8843 1.95902 10.1938C1.98284 10.2078 2.02489 10.2333 2.05479 10.2503L5.28366 12.0903C5.44733 12.1848 5.65003 12.1848 5.81421 12.0903L9.75604 9.84429V11.3993C9.75705 11.4153 9.74945 11.4308 9.73678 11.4408L6.47295 13.3004C5.01915 14.1264 3.1625 13.6354 2.32184 12.2028H2.32133ZM1.47155 5.24819C1.82626 4.64017 2.38619 4.17516 3.05305 3.93366C3.05305 3.96116 3.05152 4.00966 3.05152 4.04366V7.72424C3.05051 7.91124 3.15186 8.08475 3.31654 8.17725L7.25838 10.4228L5.89376 11.2003C5.88008 11.2093 5.86285 11.2108 5.84765 11.2043L2.58331 9.34327C1.13255 8.51426 0.63494 6.68272 1.47104 5.24869L1.47155 5.24819ZM12.6834 7.82274L8.74157 5.57669L10.1062 4.79968C10.1199 4.79068 10.1371 4.78918 10.1523 4.79568L13.4166 6.65522C14.8699 7.48373 15.3681 9.31827 14.5284 10.7523C14.1732 11.3593 13.6138 11.8243 12.9474 12.0663V8.27575C12.9489 8.08875 12.8481 7.91574 12.6839 7.82274H12.6834ZM14.0414 5.8057C14.0176 5.7912 13.9756 5.7662 13.9457 5.7492L10.7168 3.90916C10.5531 3.81466 10.3504 3.81466 10.1863 3.90916L6.24442 6.15521V4.60017C6.2434 4.58417 6.251 4.56867 6.26367 4.55867L9.52751 2.70063C10.9813 1.87311 12.84 2.36563 13.6781 3.80066C14.0323 4.40667 14.1605 5.11618 14.0404 5.8057H14.0414ZM5.50257 8.57726L4.13744 7.79974C4.12275 7.79274 4.11312 7.77874 4.11109 7.76274V4.04316C4.11211 2.38713 5.47368 1.0451 7.15197 1.0461C7.86189 1.0461 8.54902 1.2921 9.09476 1.74011C9.06993 1.75311 9.02737 1.77661 8.99899 1.79361L5.77012 3.63365C5.60493 3.72615 5.50358 3.89916 5.50459 4.08666L5.50257 8.57626V8.57726ZM6.24391 7.00022L7.99972 5.9997L9.75553 6.99972V9.00027L7.99972 10.0003L6.24391 9.00027V7.00022Z" fill="currentColor"></path></svg>
+                <span class="absolute size-[1px] -m-[1px] overflow-hidden whitespace-nowrap [clip:rect(0,0,0,0)] border-0" >OpenAI</span>
+              </div><div>
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path d="M14.9449 6.54871C15.3128 5.45919 15.1861 4.26567 14.5978 3.27464C13.7131 1.75461 11.9345 0.972595 10.1974 1.3406C9.42464 0.481584 8.3144 -0.00692594 7.15045 7.42132e-05C5.37487 -0.00392587 3.79946 1.1241 3.2532 2.79113C2.11256 3.02164 1.12799 3.72615 0.551837 4.72468C-0.339497 6.24071 -0.1363 8.15175 1.05451 9.45178C0.686626 10.5413 0.813308 11.7348 1.40162 12.7258C2.28637 14.2459 4.06498 15.0279 5.80204 14.6599C6.5743 15.5189 7.68504 16.0074 8.849 15.9999C10.6256 16.0044 12.2015 14.8754 12.7478 13.2069C13.8884 12.9764 14.873 12.2718 15.4491 11.2733C16.3394 9.75728 16.1357 7.84774 14.9454 6.54771L14.9449 6.54871ZM8.85001 14.9544C8.13907 14.9554 7.45043 14.7099 6.90468 14.2604C6.92951 14.2474 6.97259 14.2239 7.00046 14.2069L10.2293 12.3668C10.3945 12.2743 10.4959 12.1008 10.4949 11.9133V7.42173L11.8595 8.19925C11.8742 8.20625 11.8838 8.22025 11.8858 8.23625V11.9558C11.8838 13.6099 10.5263 14.9509 8.85001 14.9544ZM2.32133 12.2028C1.9651 11.5958 1.8369 10.8843 1.95902 10.1938C1.98284 10.2078 2.02489 10.2333 2.05479 10.2503L5.28366 12.0903C5.44733 12.1848 5.65003 12.1848 5.81421 12.0903L9.75604 9.84429V11.3993C9.75705 11.4153 9.74945 11.4308 9.73678 11.4408L6.47295 13.3004C5.01915 14.1264 3.1625 13.6354 2.32184 12.2028H2.32133ZM1.47155 5.24819C1.82626 4.64017 2.38619 4.17516 3.05305 3.93366C3.05305 3.96116 3.05152 4.00966 3.05152 4.04366V7.72424C3.05051 7.91124 3.15186 8.08475 3.31654 8.17725L7.25838 10.4228L5.89376 11.2003C5.88008 11.2093 5.86285 11.2108 5.84765 11.2043L2.58331 9.34327C1.13255 8.51426 0.63494 6.68272 1.47104 5.24869L1.47155 5.24819ZM12.6834 7.82274L8.74157 5.57669L10.1062 4.79968C10.1199 4.79068 10.1371 4.78918 10.1523 4.79568L13.4166 6.65522C14.8699 7.48373 15.3681 9.31827 14.5284 10.7523C14.1732 11.3593 13.6138 11.8243 12.9474 12.0663V8.27575C12.9489 8.08875 12.8481 7.91574 12.6839 7.82274H12.6834ZM14.0414 5.8057C14.0176 5.7912 13.9756 5.7662 13.9457 5.7492L10.7168 3.90916C10.5531 3.81466 10.3504 3.81466 10.1863 3.90916L6.24442 6.15521V4.60017C6.2434 4.58417 6.251 4.56867 6.26367 4.55867L9.52751 2.70063C10.9813 1.87311 12.84 2.36563 13.6781 3.80066C14.0323 4.40667 14.1605 5.11618 14.0404 5.8057H14.0414ZM5.50257 8.57726L4.13744 7.79974C4.12275 7.79274 4.11312 7.77874 4.11109 7.76274V4.04316C4.11211 2.38713 5.47368 1.0451 7.15197 1.0461C7.86189 1.0461 8.54902 1.2921 9.09476 1.74011C9.06993 1.75311 9.02737 1.77661 8.99899 1.79361L5.77012 3.63365C5.60493 3.72615 5.50358 3.89916 5.50459 4.08666L5.50257 8.57626V8.57726ZM6.24391 7.00022L7.99972 5.9997L9.75553 6.99972V9.00027L7.99972 10.0003L6.24391 9.00027V7.00022Z" fill="currentColor"></path></svg>
+                <span class="absolute size-[1px] -m-[1px] overflow-hidden whitespace-nowrap [clip:rect(0,0,0,0)] border-0" >OpenAI</span>
+              </div><div>
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path d="M14.9449 6.54871C15.3128 5.45919 15.1861 4.26567 14.5978 3.27464C13.7131 1.75461 11.9345 0.972595 10.1974 1.3406C9.42464 0.481584 8.3144 -0.00692594 7.15045 7.42132e-05C5.37487 -0.00392587 3.79946 1.1241 3.2532 2.79113C2.11256 3.02164 1.12799 3.72615 0.551837 4.72468C-0.339497 6.24071 -0.1363 8.15175 1.05451 9.45178C0.686626 10.5413 0.813308 11.7348 1.40162 12.7258C2.28637 14.2459 4.06498 15.0279 5.80204 14.6599C6.5743 15.5189 7.68504 16.0074 8.849 15.9999C10.6256 16.0044 12.2015 14.8754 12.7478 13.2069C13.8884 12.9764 14.873 12.2718 15.4491 11.2733C16.3394 9.75728 16.1357 7.84774 14.9454 6.54771L14.9449 6.54871ZM8.85001 14.9544C8.13907 14.9554 7.45043 14.7099 6.90468 14.2604C6.92951 14.2474 6.97259 14.2239 7.00046 14.2069L10.2293 12.3668C10.3945 12.2743 10.4959 12.1008 10.4949 11.9133V7.42173L11.8595 8.19925C11.8742 8.20625 11.8838 8.22025 11.8858 8.23625V11.9558C11.8838 13.6099 10.5263 14.9509 8.85001 14.9544ZM2.32133 12.2028C1.9651 11.5958 1.8369 10.8843 1.95902 10.1938C1.98284 10.2078 2.02489 10.2333 2.05479 10.2503L5.28366 12.0903C5.44733 12.1848 5.65003 12.1848 5.81421 12.0903L9.75604 9.84429V11.3993C9.75705 11.4153 9.74945 11.4308 9.73678 11.4408L6.47295 13.3004C5.01915 14.1264 3.1625 13.6354 2.32184 12.2028H2.32133ZM1.47155 5.24819C1.82626 4.64017 2.38619 4.17516 3.05305 3.93366C3.05305 3.96116 3.05152 4.00966 3.05152 4.04366V7.72424C3.05051 7.91124 3.15186 8.08475 3.31654 8.17725L7.25838 10.4228L5.89376 11.2003C5.88008 11.2093 5.86285 11.2108 5.84765 11.2043L2.58331 9.34327C1.13255 8.51426 0.63494 6.68272 1.47104 5.24869L1.47155 5.24819ZM12.6834 7.82274L8.74157 5.57669L10.1062 4.79968C10.1199 4.79068 10.1371 4.78918 10.1523 4.79568L13.4166 6.65522C14.8699 7.48373 15.3681 9.31827 14.5284 10.7523C14.1732 11.3593 13.6138 11.8243 12.9474 12.0663V8.27575C12.9489 8.08875 12.8481 7.91574 12.6839 7.82274H12.6834ZM14.0414 5.8057C14.0176 5.7912 13.9756 5.7662 13.9457 5.7492L10.7168 3.90916C10.5531 3.81466 10.3504 3.81466 10.1863 3.90916L6.24442 6.15521V4.60017C6.2434 4.58417 6.251 4.56867 6.26367 4.55867L9.52751 2.70063C10.9813 1.87311 12.84 2.36563 13.6781 3.80066C14.0323 4.40667 14.1605 5.11618 14.0404 5.8057H14.0414ZM5.50257 8.57726L4.13744 7.79974C4.12275 7.79274 4.11312 7.77874 4.11109 7.76274V4.04316C4.11211 2.38713 5.47368 1.0451 7.15197 1.0461C7.86189 1.0461 8.54902 1.2921 9.09476 1.74011C9.06993 1.75311 9.02737 1.77661 8.99899 1.79361L5.77012 3.63365C5.60493 3.72615 5.50358 3.89916 5.50459 4.08666L5.50257 8.57626V8.57726ZM6.24391 7.00022L7.99972 5.9997L9.75553 6.99972V9.00027L7.99972 10.0003L6.24391 9.00027V7.00022Z" fill="currentColor"></path></svg>
+                <span class="absolute size-[1px] -m-[1px] overflow-hidden whitespace-nowrap [clip:rect(0,0,0,0)] border-0" >OpenAI</span>
+              </div><div>
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path d="M14.9449 6.54871C15.3128 5.45919 15.1861 4.26567 14.5978 3.27464C13.7131 1.75461 11.9345 0.972595 10.1974 1.3406C9.42464 0.481584 8.3144 -0.00692594 7.15045 7.42132e-05C5.37487 -0.00392587 3.79946 1.1241 3.2532 2.79113C2.11256 3.02164 1.12799 3.72615 0.551837 4.72468C-0.339497 6.24071 -0.1363 8.15175 1.05451 9.45178C0.686626 10.5413 0.813308 11.7348 1.40162 12.7258C2.28637 14.2459 4.06498 15.0279 5.80204 14.6599C6.5743 15.5189 7.68504 16.0074 8.849 15.9999C10.6256 16.0044 12.2015 14.8754 12.7478 13.2069C13.8884 12.9764 14.873 12.2718 15.4491 11.2733C16.3394 9.75728 16.1357 7.84774 14.9454 6.54771L14.9449 6.54871ZM8.85001 14.9544C8.13907 14.9554 7.45043 14.7099 6.90468 14.2604C6.92951 14.2474 6.97259 14.2239 7.00046 14.2069L10.2293 12.3668C10.3945 12.2743 10.4959 12.1008 10.4949 11.9133V7.42173L11.8595 8.19925C11.8742 8.20625 11.8838 8.22025 11.8858 8.23625V11.9558C11.8838 13.6099 10.5263 14.9509 8.85001 14.9544ZM2.32133 12.2028C1.9651 11.5958 1.8369 10.8843 1.95902 10.1938C1.98284 10.2078 2.02489 10.2333 2.05479 10.2503L5.28366 12.0903C5.44733 12.1848 5.65003 12.1848 5.81421 12.0903L9.75604 9.84429V11.3993C9.75705 11.4153 9.74945 11.4308 9.73678 11.4408L6.47295 13.3004C5.01915 14.1264 3.1625 13.6354 2.32184 12.2028H2.32133ZM1.47155 5.24819C1.82626 4.64017 2.38619 4.17516 3.05305 3.93366C3.05305 3.96116 3.05152 4.00966 3.05152 4.04366V7.72424C3.05051 7.91124 3.15186 8.08475 3.31654 8.17725L7.25838 10.4228L5.89376 11.2003C5.88008 11.2093 5.86285 11.2108 5.84765 11.2043L2.58331 9.34327C1.13255 8.51426 0.63494 6.68272 1.47104 5.24869L1.47155 5.24819ZM12.6834 7.82274L8.74157 5.57669L10.1062 4.79968C10.1199 4.79068 10.1371 4.78918 10.1523 4.79568L13.4166 6.65522C14.8699 7.48373 15.3681 9.31827 14.5284 10.7523C14.1732 11.3593 13.6138 11.8243 12.9474 12.0663V8.27575C12.9489 8.08875 12.8481 7.91574 12.6839 7.82274H12.6834ZM14.0414 5.8057C14.0176 5.7912 13.9756 5.7662 13.9457 5.7492L10.7168 3.90916C10.5531 3.81466 10.3504 3.81466 10.1863 3.90916L6.24442 6.15521V4.60017C6.2434 4.58417 6.251 4.56867 6.26367 4.55867L9.52751 2.70063C10.9813 1.87311 12.84 2.36563 13.6781 3.80066C14.0323 4.40667 14.1605 5.11618 14.0404 5.8057H14.0414ZM5.50257 8.57726L4.13744 7.79974C4.12275 7.79274 4.11312 7.77874 4.11109 7.76274V4.04316C4.11211 2.38713 5.47368 1.0451 7.15197 1.0461C7.86189 1.0461 8.54902 1.2921 9.09476 1.74011C9.06993 1.75311 9.02737 1.77661 8.99899 1.79361L5.77012 3.63365C5.60493 3.72615 5.50358 3.89916 5.50459 4.08666L5.50257 8.57626V8.57726ZM6.24391 7.00022L7.99972 5.9997L9.75553 6.99972V9.00027L7.99972 10.0003L6.24391 9.00027V7.00022Z" fill="currentColor"></path></svg>
+                <span class="absolute size-[1px] -m-[1px] overflow-hidden whitespace-nowrap [clip:rect(0,0,0,0)] border-0" >OpenAI</span>
+              </div>
+            </div>
+            <div class="relative -left-[1px] h-0.5 bg-gray-400 dark:bg-gray-600 flex-[0.6_1]" />
+            <div class="size-[128px] z-[3] -left-[2px] grid [place-items:center] ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black rounded-2xl">
+              <svg
+                height={64}
+                width={64}
+                viewBox="0 0 12.8778 9.7377253"
+                version="1.1"
+                id="svg1"
+                xmlns="http://www.w3.org/2000/svg">
+                <g id="layer1">
+                  <path
+                    d="m 2.093439,1.7855532 h 8.690922 V 2.2639978 H 2.093439 Z m 0,2.8440874 h 8.690922 V 5.1080848 H 2.093439 Z m 0,2.8440866 h 8.690922 V 7.952172 H 2.093439 Z"
+                    style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
+                </g>
+              </svg>
+            </div>
+            <div class="h-10 relative w-full -left-[3px] flex-1">
+              <svg class="top-[calc(-100%-26px)] w-full absolute left-0 z-[1] text-[hsla(208,100%,66%,1)]" fill="none" height="75" preserveAspectRatio="none" viewBox="0 0 96 75" width="96" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0 74v0a57.893 57.893 0 0051.922-32.287l9.463-19.188A38.595 38.595 0 0196 1v0" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+              </svg>
+              <svg class="top-[calc(-100%+32px)] w-full absolute left-0 z-[1] text-[hsla(358,75%,59%,1)]" fill="none" height="75" preserveAspectRatio="none" viewBox="0 0 96 75" width="96" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0 25H14.3667C28.4727 25 42.2631 20.8246 54 13V13C65.7369 5.1754 79.5273 1 93.6333 1H96" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+              </svg>
+              <svg class="top-[calc(100%-16px)] [transform:rotateY(180deg)] w-full absolute left-0 z-[1] text-[hsla(39,100%,57%,1)]" fill="none" height="75" preserveAspectRatio="none" viewBox="0 0 96 75" width="96" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0 25H14.3667C28.4727 25 42.2631 20.8246 54 13V13C65.7369 5.1754 79.5273 1 93.6333 1H96" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+              </svg>
+              <svg class="top-[calc(100%-8px)] [transform:rotateY(180deg)] w-full absolute left-0 z-[1] text-[hsla(170,70%,57%,1)]" fill="none" height="75" preserveAspectRatio="none" viewBox="0 0 96 75" width="96" xmlns="http://www.w3.org/2000/svg">
+                <path d="M0 74v0a57.893 57.893 0 0051.922-32.287l9.463-19.188A38.595 38.595 0 0196 1v0" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+              </svg>
+            </div>
+            <div class="flex-1 flex-grow-0 relative gap-6 flex w-8 -left-[3px] z-[3] items-center justify-between flex-col">
+              <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.5H1.5V9.18933L2.96966 7.71967L3.18933 7.5H3.49999H6.63001H6.93933L6.96966 7.46967L10.4697 3.96967L11.5303 3.96967L14.5 6.93934V2.5ZM8.00066 8.55999L9.53034 10.0897L10.0607 10.62L9.00001 11.6807L8.46968 11.1503L6.31935 9H3.81065L1.53032 11.2803L1.5 11.3106V12.5C1.5 13.0523 1.94772 13.5 2.5 13.5H13.5C14.0523 13.5 14.5 13.0523 14.5 12.5V9.06066L11 5.56066L8.03032 8.53033L8.00066 8.55999ZM4.05312e-06 10.8107V12.5C4.05312e-06 13.8807 1.11929 15 2.5 15H13.5C14.8807 15 16 13.8807 16 12.5V9.56066L16.5607 9L16.0303 8.46967L16 8.43934V2.5V1H14.5H1.5H4.05312e-06V2.5V10.6893L-0.0606689 10.75L4.05312e-06 10.8107Z" fill="currentColor"></path></svg>
+              </div> <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.5H1.5V9.18933L2.96966 7.71967L3.18933 7.5H3.49999H6.63001H6.93933L6.96966 7.46967L10.4697 3.96967L11.5303 3.96967L14.5 6.93934V2.5ZM8.00066 8.55999L9.53034 10.0897L10.0607 10.62L9.00001 11.6807L8.46968 11.1503L6.31935 9H3.81065L1.53032 11.2803L1.5 11.3106V12.5C1.5 13.0523 1.94772 13.5 2.5 13.5H13.5C14.0523 13.5 14.5 13.0523 14.5 12.5V9.06066L11 5.56066L8.03032 8.53033L8.00066 8.55999ZM4.05312e-06 10.8107V12.5C4.05312e-06 13.8807 1.11929 15 2.5 15H13.5C14.8807 15 16 13.8807 16 12.5V9.56066L16.5607 9L16.0303 8.46967L16 8.43934V2.5V1H14.5H1.5H4.05312e-06V2.5V10.6893L-0.0606689 10.75L4.05312e-06 10.8107Z" fill="currentColor"></path></svg>
+              </div> <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.5H1.5V9.18933L2.96966 7.71967L3.18933 7.5H3.49999H6.63001H6.93933L6.96966 7.46967L10.4697 3.96967L11.5303 3.96967L14.5 6.93934V2.5ZM8.00066 8.55999L9.53034 10.0897L10.0607 10.62L9.00001 11.6807L8.46968 11.1503L6.31935 9H3.81065L1.53032 11.2803L1.5 11.3106V12.5C1.5 13.0523 1.94772 13.5 2.5 13.5H13.5C14.0523 13.5 14.5 13.0523 14.5 12.5V9.06066L11 5.56066L8.03032 8.53033L8.00066 8.55999ZM4.05312e-06 10.8107V12.5C4.05312e-06 13.8807 1.11929 15 2.5 15H13.5C14.8807 15 16 13.8807 16 12.5V9.56066L16.5607 9L16.0303 8.46967L16 8.43934V2.5V1H14.5H1.5H4.05312e-06V2.5V10.6893L-0.0606689 10.75L4.05312e-06 10.8107Z" fill="currentColor"></path></svg>
+              </div> <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
+                <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.5H1.5V9.18933L2.96966 7.71967L3.18933 7.5H3.49999H6.63001H6.93933L6.96966 7.46967L10.4697 3.96967L11.5303 3.96967L14.5 6.93934V2.5ZM8.00066 8.55999L9.53034 10.0897L10.0607 10.62L9.00001 11.6807L8.46968 11.1503L6.31935 9H3.81065L1.53032 11.2803L1.5 11.3106V12.5C1.5 13.0523 1.94772 13.5 2.5 13.5H13.5C14.0523 13.5 14.5 13.0523 14.5 12.5V9.06066L11 5.56066L8.03032 8.53033L8.00066 8.55999ZM4.05312e-06 10.8107V12.5C4.05312e-06 13.8807 1.11929 15 2.5 15H13.5C14.8807 15 16 13.8807 16 12.5V9.56066L16.5607 9L16.0303 8.46967L16 8.43934V2.5V1H14.5H1.5H4.05312e-06V2.5V10.6893L-0.0606689 10.75L4.05312e-06 10.8107Z" fill="currentColor"></path></svg>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
       <Footer client:load>
