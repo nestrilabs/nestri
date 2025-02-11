@@ -9,7 +9,8 @@ type Props = {
 
 const skeletonGames = new Array(6).fill(0)
 
-export const HomeGamesSection = component$(({ getUserSubscription$, createSession$ }: Props) => {
+export const HomeGamesSection = component$(({ getUserSubscription$ }: Props) => { //createSession$
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const nav = useNavigate()
     const creatingSession = useSignal(false)
     const userSubscription = useSignal<"Free" | "Pro" | undefined>()
@@ -26,12 +27,13 @@ export const HomeGamesSection = component$(({ getUserSubscription$, createSessio
     }))
 
     const onClick = $(async () => {
-        creatingSession.value = true
-        const sessionID = await createSession$()
-        if (sessionID) {
-            creatingSession.value = false
-            await nav(`/play/${sessionID.id}`)
-        }
+        console.log("clicked")
+        // creatingSession.value = true
+        // const sessionID = await createSession$()
+        // if (sessionID) {
+        //     creatingSession.value = false
+        //     await nav(`/play/${sessionID.id}`)
+        // }
     });
 
 
@@ -71,6 +73,7 @@ export const HomeGamesSection = component$(({ getUserSubscription$, createSessio
                         <button
                             onClick$={onClick}
                             // disabled={userSubscription.value === "Free"}
+                            disabled
                             class="flex gap-2 h-[48px] disabled:cursor-not-allowed disabled:opacity-50 max-w-[360px] w-full select-none items-center justify-center rounded-full bg-primary-500 text-base font-semibold text-white transition-all duration-200 ease-out [&:not(:disabled)]:hover:ring-2 [&:not(:disabled)]:hover:ring-gray-600 dark:[&:not(:disabled)]:hover:ring-gray-400 [&:not(:disabled)]:focus:scale-95 [&:not(:disabled)]:active:scale-95 sm:font-medium">
                             {creatingSession.value &&
                                 <div style={{ "--spinner-color": "#FFF" }} data-component="spinner">

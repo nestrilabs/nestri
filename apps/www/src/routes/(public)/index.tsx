@@ -117,7 +117,7 @@ export default component$(() => {
                   </div>
                   <div class="flex items-center gap-2 dark:text-gray-50/70 text-gray-950/70">
                     <svg xmlns="http://www.w3.org/2000/svg" class="-mt-0.5" width="16" height="16" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M5 13a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" /><path d="M11 16a1 1 0 1 0 2 0a1 1 0 0 0-2 0m-3-5V7a4 4 0 1 1 8 0v4" /></g></svg>
-                    <p class="text-sm leading-none font-mono tracking-tighter font-semibold">app.nestri.io/play</p>
+                    <p class="text-sm leading-none tracking-tighter">app.nestri.io/play</p>
                   </div>
                 </div>
                 <div class="rounded-md relative w-full h-full border border-gray-200 dark:border-gray-800 mt-4 overflow-hidden">
@@ -348,7 +348,7 @@ export default component$(() => {
             }}
             viewport={{ once: true }}
             class="absolute z-20 hidden md:block rounded-full px-4 py-2 text-white shadow-lg bg-indigo-500 top-10 left-10">
-            Jean
+            Aqua Wolf
             <span class="absolute -right-4 -top-4 rotate-45 text-indigo-500">
               <svg width="24" height="20" fill="none" viewBox="0 0 24 20" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M10.6268 0.755784C11.2467 -0.251929 12.7533 -0.251928 13.3732 0.755785L23.7722 17.6588C24.4072 18.691 23.6394 20 22.3989 20H1.60105C0.360604 20 -0.407208 18.691 0.227812 17.6588L10.6268 0.755784Z"></path></svg>
             </span>
@@ -374,7 +374,7 @@ export default component$(() => {
               </div>
               <div style={{ "--width": "256px", "--height": "42px" }} class="sm:w-[--width] sm:h-[--height] w-[calc(var(--width)-172px)] h-[calc(var(--height)-12px)] bg-gray-100 dark:bg-gray-900 rounded-[8px] mx-auto flex flex-row gap-2 items-center justify-center text-gray-600 dark:text-gray-400">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><path fill="currentColor" d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2m-6 9c-1.1 0-2-.9-2-2s.9-2 2-2s2 .9 2 2s-.9 2-2 2M9 8V6c0-1.66 1.34-3 3-3s3 1.34 3 3v2z" /></svg>
-                <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/jean</span>
+                <span class="font-mono sm:text-sm tracking-tighter text-xs truncate">app.nestri.io/myteam/aqua</span>
               </div>
             </div>
             <div style={{ "--index": 3 }} class="rounded-t-[13px] sm:p-[12px_18px_15px] p-[7px_11px_15px] z-[7] items-center flex relative bg-white dark:bg-black border-2 border-gray-200 dark:border-gray-800 w-[calc(100%-16px*var(--index))] sm:w-[calc(100%-48px*var(--index))] -mb-6">

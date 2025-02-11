@@ -136,15 +136,8 @@ export default component$(() => {
         <>
             {playState.showOffline ? (
                 <div class="w-screen h-screen flex justify-center items-center">
-                    <span class="text-xl font-semibold flex items-center gap-2" >
-                        <div data-component="spinner">
-                            <div>
-                                {new Array(12).fill(0).map((i, k) => (
-                                    <div key={k} />
-                                ))}
-                            </div>
-                        </div>
-                        Something went wrong, retrying...
+                    <span class="text-2xl font-semibold flex items-center gap-2" >
+                        Offline
                     </span>
                 </div>
             ) : (
