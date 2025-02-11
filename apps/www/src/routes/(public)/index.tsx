@@ -461,8 +461,85 @@ export default component$(() => {
               as="p"
               class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70">Install Nestri-server on your GPU instance, connect to our network in minutes, and only pay for bandwidth and API calls</MotionComponent>
           </div>
-          <div class="w-full flex items-center max-w-[600px] mx-auto pt-5 sm:pt-10" >
-            <div class="flex flex-col items-center bg-white [&>div]:px-4 [&>div]:py-3 dark:bg-black justify-center relative z-[1] rounded-full ring-2 ring-gray-200 dark:ring-gray-800 [&>div:not(:last-child)]:border-b-2 dark:[&>div:not(:last-child)]:border-gray-800 [&>div:not(:last-child)]:border-gray-200" >
+          <div class="w-full flex select-none justify-between max-[600px]:flex-col items-center max-w-[700px] mx-auto my-5 sm:my-20" >
+            <div class="relative h-[264px] flex flex-[1_1]">
+              <div class="justify-between items-start inline-flex md:flex-col h-full max-[600px]:pb-[64px] max-[600px]:max-w-[264px] max-[600px]:w-full">
+                <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
+                  <svg class="size-5 text-[#0068b5]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="currentColor" d="M9.427 14.401v5.167H7.781v-6.495h3.396c1.443 0 1.932 1.021 1.932 1.943v4.552h-1.641v-4.542c0-.391-.198-.625-.682-.625zm11.188-.078c-.568 0-1 .286-1.182.682a1.6 1.6 0 0 0-.156.703h2.531c-.031-.703-.354-1.385-1.193-1.385m-1.339 2.505c0 .839.521 1.464 1.458 1.464c.724 0 1.083-.203 1.505-.625l1.016.974c-.646.641-1.333 1.031-2.536 1.031c-1.573 0-3.078-.859-3.078-3.359c0-2.141 1.313-3.349 3.042-3.349c1.755 0 2.766 1.417 2.766 3.271v.589h-4.172zm-3.026 2.729c-1.339 0-1.906-.932-1.906-1.854v-6.401h1.641v1.771h1.234v1.328h-1.234v3.198c0 .38.177.589.568.589h.667v1.37zm-9.932-7.38H4.662v-1.578h1.656zm.005 7.458c-1.24-.12-1.661-.87-1.661-1.74v-4.823h1.656v6.568zm19.74-.14c-1.24-.12-1.656-.87-1.656-1.734v-7.38h1.656v9.12zm5.796-8.047c-1.5-7.328-15.724-7.792-24.885-2.214v.62c9.151-4.708 22.141-4.677 23.323 2.063c.391 2.234-.865 4.557-3.109 5.896v1.75c2.703-.99 5.474-4.198 4.672-8.115zM15.198 24.26c-6.323.583-12.917-.339-13.839-5.276c-.448-2.438.667-5.021 2.13-6.625v-.854C.843 13.828-.594 16.771.234 20.245c1.057 4.458 6.714 6.984 15.344 6.146c3.417-.333 7.891-1.432 10.995-3.141v-2.422c-2.818 1.682-7.49 3.073-11.375 3.432m12.781-13.395c0-.078-.052-.104-.156-.104h-.104v.229h.104c.104 0 .156-.031.156-.109zm.162.567h-.125a.03.03 0 0 1-.026-.016l-.167-.286a.04.04 0 0 0-.026-.01h-.073v.281c0 .016-.016.031-.031.031h-.109c-.016 0-.031-.016-.031-.031v-.714c0-.036.021-.057.052-.063q.102-.006.203-.005c.203 0 .328.057.328.25v.01c0 .12-.063.182-.151.214l.172.292c0 .005.005.016.005.021c.005.01-.005.026-.021.026m-.292-.948a.547.547 0 0 0-.547.547c.005.302.25.547.552.547a.545.545 0 0 0 .542-.542a.55.55 0 0 0-.547-.552m0 1.209a.657.657 0 1 1 0-1.317c.359 0 .661.297.661.661s-.302.656-.661.656" /></svg>
+                  <span class="max-[600px]:hidden" >Arc A770</span>
+                </div>
+                <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
+                  <svg class="size-6 text-[#85B737]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" d="M1.635 7.146S3.08 5.012 5.97 4.791v-.774C2.77 4.273 0 6.983 0 6.983s1.57 4.536 5.97 4.952v-.824c-3.23-.406-4.335-3.965-4.335-3.965M5.97 9.475v.753c-2.44-.435-3.118-2.972-3.118-2.972S4.023 5.958 5.97 5.747v.828h-.004c-1.021-.123-1.82.83-1.82.83s.448 1.607 1.824 2.07M6 2l-.03 2.017A7 7 0 0 1 6.252 4c3.637-.123 6.007 2.983 6.007 2.983s-2.722 3.31-5.557 3.31q-.39-.002-.732-.065v.883q.292.039.61.04c2.638 0 4.546-1.348 6.394-2.943c.307.246 1.561.842 1.819 1.104c-1.757 1.47-5.852 2.657-8.173 2.657a7 7 0 0 1-.65-.034V14H16l.03-12zm-.03 3.747v-.956a6 6 0 0 1 .282-.015c2.616-.082 4.332 2.248 4.332 2.248S8.73 9.598 6.743 9.598c-.286 0-.542-.046-.773-.123v-2.9c1.018.123 1.223.572 1.835 1.593L9.167 7.02s-.994-1.304-2.67-1.304a5 5 0 0 0-.527.031" /></svg>
+                  <span class="max-[600px]:hidden" >RTX 4090</span>
+                </div>
+                <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
+                  <svg class="size-6 text-[#85B737]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" d="M1.635 7.146S3.08 5.012 5.97 4.791v-.774C2.77 4.273 0 6.983 0 6.983s1.57 4.536 5.97 4.952v-.824c-3.23-.406-4.335-3.965-4.335-3.965M5.97 9.475v.753c-2.44-.435-3.118-2.972-3.118-2.972S4.023 5.958 5.97 5.747v.828h-.004c-1.021-.123-1.82.83-1.82.83s.448 1.607 1.824 2.07M6 2l-.03 2.017A7 7 0 0 1 6.252 4c3.637-.123 6.007 2.983 6.007 2.983s-2.722 3.31-5.557 3.31q-.39-.002-.732-.065v.883q.292.039.61.04c2.638 0 4.546-1.348 6.394-2.943c.307.246 1.561.842 1.819 1.104c-1.757 1.47-5.852 2.657-8.173 2.657a7 7 0 0 1-.65-.034V14H16l.03-12zm-.03 3.747v-.956a6 6 0 0 1 .282-.015c2.616-.082 4.332 2.248 4.332 2.248S8.73 9.598 6.743 9.598c-.286 0-.542-.046-.773-.123v-2.9c1.018.123 1.223.572 1.835 1.593L9.167 7.02s-.994-1.304-2.67-1.304a5 5 0 0 0-.527.031" /></svg>
+                  <span class="max-[600px]:hidden" >RTX 5000 Ada</span>
+                </div>
+                <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
+                  <svg class="size-4 text-black dark:text-white" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" d="m.334 0l4.358 4.359h7.15v7.15l4.358 4.358V0zM.2 9.72l4.487-4.488v6.281h6.28L6.48 16H.2z" /></svg>
+                  <span class="max-[600px]:hidden" >Radeon RX 7900</span>
+                </div>
+              </div>
+              <div class="absolute -right-[30px] w-[calc(100%-96px+40px)] top-1/2 -z-[1] -translate-y-1/2">
+                <div class="sm:hidden h-16 relative"></div>
+                <div class="h-[231px] relative sm:block hidden">
+                  <svg class="absolute inset-0" fill="none" height="231" preserveAspectRatio="none" viewBox="0 0 175 231" width="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M175 103V103C137.929 103 102.537 87.5452 77.3391 60.3545L34.7984 14.4487C26.8521 5.87384 15.6907 1 4 1V1" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 111H142.698C118.994 111 95.4785 106.786 73.2496 98.5553L23.9035 80.2834C16.2524 77.4504 8.1587 76 0 76V76" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 119H148.986C127.989 119 107.414 124.89 89.597 136L78.7424 142.769C68.0198 149.455 55.6366 153 43 153V153" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 127H174.002C139.072 127 107.233 147.02 92.097 178.5L76.5806 210.772C70.9294 222.525 59.0417 230 46 230V230" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                  </svg>
+                  <svg class="[-webkit-mask:linear-gradient(270deg,black_0,black)] absolute inset-0 to-blue-500" fill="none" height="231" preserveAspectRatio="none" viewBox="0 0 175 231" width="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M175 103V103C137.929 103 102.537 87.5452 77.3391 60.3545L34.7984 14.4487C26.8521 5.87384 15.6907 1 4 1V1" stroke="#3b82f6 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 111H142.698C118.994 111 95.4785 106.786 73.2496 98.5553L23.9035 80.2834C16.2524 77.4504 8.1587 76 0 76V76" stroke="#ef4444 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 119H148.986C127.989 119 107.414 124.89 89.597 136L78.7424 142.769C68.0198 149.455 55.6366 153 43 153V153" stroke="#f59e0b " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 127H174.002C139.072 127 107.233 147.02 92.097 178.5L76.5806 210.772C70.9294 222.525 59.0417 230 46 230V230" stroke="#14b8a6 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div class="size-[100px] z-[3] -left-[2px] grid [place-items:center] ring-2 ring-gray-300 dark:ring-gray-700 bg-white dark:bg-black rounded-2xl">
+              <svg
+                height={64}
+                width={64}
+                viewBox="0 0 12.8778 9.7377253"
+                version="1.1"
+                id="svg1"
+                xmlns="http://www.w3.org/2000/svg">
+                <g id="layer1">
+                  <path
+                    d="m 2.093439,1.7855532 h 8.690922 V 2.2639978 H 2.093439 Z m 0,2.8440874 h 8.690922 V 5.1080848 H 2.093439 Z m 0,2.8440866 h 8.690922 V 7.952172 H 2.093439 Z"
+                    style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
+                </g>
+              </svg>
+            </div>
+            <div class="flex-1 flex justify-end relative">
+              <div class="w-[212px] absolute left-0 top-1/2 -translate-y-1/2 -z-[1]">
+                <svg class="text-gray-400 dark:text-gray-600 absolute inset-0 left-0 w-full top-1/2 -translate-y-1/2 -z-[1]" fill="none" height="26" preserveAspectRatio="none" viewBox="0 0 112 26" width="100%" xmlns="http://www.w3.org/2000/svg">
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="17" y2="17"></line>
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="9" y2="9"></line>
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="1" y2="1"></line>
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="25" y2="25"></line>
+                </svg>
+                <svg class="text-gray-400 dark:text-gray-600 absolute inset-0 left-0 w-full top-1/2 -translate-y-1/2 -z-[1] [-webkit-mask:linear-gradient(270deg,black_0,black)]" fill="none" height="26" preserveAspectRatio="none" viewBox="0 0 112 26" width="100%" xmlns="http://www.w3.org/2000/svg">
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="17" y2="17"></line>
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="9" y2="9"></line>
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="1" y2="1"></line>
+                  <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="25" y2="25"></line>
+                </svg>
+              </div>
+              <div class="h-[172px] w-[200px] bg-white dark:bg-black rounded-xl ring-gray-200 ring-2 dark:ring-gray-800 gap-3 flex flex-col p-4" >
+                <div class="h-5 relative">
+                  <div class="absolute items-center gap-1 flex group [&>:first-child]:bg-[hsla(358,75%,59%,1)] [&>:nth-child(2)]:bg-[hsla(208,100%,66%,1)] [&>:last-child]:bg-[hsla(170,70%,57%,1)]">
+                    {new Array(3).fill(0).map((_, key) => (
+                      <div key={`toolbar-${key}`} class="size-2.5 rounded-full" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            {/* <div class="flex flex-col items-center bg-white [&>div]:px-4 [&>div]:py-3 dark:bg-black justify-center relative z-[1] rounded-full ring-2 ring-gray-200 dark:ring-gray-800 [&>div:not(:last-child)]:border-b-2 dark:[&>div:not(:last-child)]:border-gray-800 [&>div:not(:last-child)]:border-gray-200" >
               <div>
                 <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path d="M14.9449 6.54871C15.3128 5.45919 15.1861 4.26567 14.5978 3.27464C13.7131 1.75461 11.9345 0.972595 10.1974 1.3406C9.42464 0.481584 8.3144 -0.00692594 7.15045 7.42132e-05C5.37487 -0.00392587 3.79946 1.1241 3.2532 2.79113C2.11256 3.02164 1.12799 3.72615 0.551837 4.72468C-0.339497 6.24071 -0.1363 8.15175 1.05451 9.45178C0.686626 10.5413 0.813308 11.7348 1.40162 12.7258C2.28637 14.2459 4.06498 15.0279 5.80204 14.6599C6.5743 15.5189 7.68504 16.0074 8.849 15.9999C10.6256 16.0044 12.2015 14.8754 12.7478 13.2069C13.8884 12.9764 14.873 12.2718 15.4491 11.2733C16.3394 9.75728 16.1357 7.84774 14.9454 6.54771L14.9449 6.54871ZM8.85001 14.9544C8.13907 14.9554 7.45043 14.7099 6.90468 14.2604C6.92951 14.2474 6.97259 14.2239 7.00046 14.2069L10.2293 12.3668C10.3945 12.2743 10.4959 12.1008 10.4949 11.9133V7.42173L11.8595 8.19925C11.8742 8.20625 11.8838 8.22025 11.8858 8.23625V11.9558C11.8838 13.6099 10.5263 14.9509 8.85001 14.9544ZM2.32133 12.2028C1.9651 11.5958 1.8369 10.8843 1.95902 10.1938C1.98284 10.2078 2.02489 10.2333 2.05479 10.2503L5.28366 12.0903C5.44733 12.1848 5.65003 12.1848 5.81421 12.0903L9.75604 9.84429V11.3993C9.75705 11.4153 9.74945 11.4308 9.73678 11.4408L6.47295 13.3004C5.01915 14.1264 3.1625 13.6354 2.32184 12.2028H2.32133ZM1.47155 5.24819C1.82626 4.64017 2.38619 4.17516 3.05305 3.93366C3.05305 3.96116 3.05152 4.00966 3.05152 4.04366V7.72424C3.05051 7.91124 3.15186 8.08475 3.31654 8.17725L7.25838 10.4228L5.89376 11.2003C5.88008 11.2093 5.86285 11.2108 5.84765 11.2043L2.58331 9.34327C1.13255 8.51426 0.63494 6.68272 1.47104 5.24869L1.47155 5.24819ZM12.6834 7.82274L8.74157 5.57669L10.1062 4.79968C10.1199 4.79068 10.1371 4.78918 10.1523 4.79568L13.4166 6.65522C14.8699 7.48373 15.3681 9.31827 14.5284 10.7523C14.1732 11.3593 13.6138 11.8243 12.9474 12.0663V8.27575C12.9489 8.08875 12.8481 7.91574 12.6839 7.82274H12.6834ZM14.0414 5.8057C14.0176 5.7912 13.9756 5.7662 13.9457 5.7492L10.7168 3.90916C10.5531 3.81466 10.3504 3.81466 10.1863 3.90916L6.24442 6.15521V4.60017C6.2434 4.58417 6.251 4.56867 6.26367 4.55867L9.52751 2.70063C10.9813 1.87311 12.84 2.36563 13.6781 3.80066C14.0323 4.40667 14.1605 5.11618 14.0404 5.8057H14.0414ZM5.50257 8.57726L4.13744 7.79974C4.12275 7.79274 4.11312 7.77874 4.11109 7.76274V4.04316C4.11211 2.38713 5.47368 1.0451 7.15197 1.0461C7.86189 1.0461 8.54902 1.2921 9.09476 1.74011C9.06993 1.75311 9.02737 1.77661 8.99899 1.79361L5.77012 3.63365C5.60493 3.72615 5.50358 3.89916 5.50459 4.08666L5.50257 8.57626V8.57726ZM6.24391 7.00022L7.99972 5.9997L9.75553 6.99972V9.00027L7.99972 10.0003L6.24391 9.00027V7.00022Z" fill="currentColor"></path></svg>
                 <span class="absolute size-[1px] -m-[1px] overflow-hidden whitespace-nowrap [clip:rect(0,0,0,0)] border-0" >OpenAI</span>
@@ -481,7 +558,7 @@ export default component$(() => {
               </div>
             </div>
             <div class="relative -left-[1px] h-0.5 bg-gray-400 dark:bg-gray-600 flex-[0.6_1]" />
-            <div class="size-[128px] z-[3] -left-[2px] grid [place-items:center] ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black rounded-2xl">
+            <div class="size-[100px] z-[3] -left-[2px] grid [place-items:center] ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black rounded-2xl">
               <svg
                 height={64}
                 width={64}
@@ -510,7 +587,7 @@ export default component$(() => {
                 <path d="M0 74v0a57.893 57.893 0 0051.922-32.287l9.463-19.188A38.595 38.595 0 0196 1v0" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
               </svg>
             </div>
-            <div class="flex-1 flex-grow-0 relative gap-6 flex w-8 -left-[3px] z-[3] items-center justify-between flex-col">
+            <div class="flex-1 flex-grow-0 relative h-full flex w-8 -left-[3px] z-[3] items-center justify-between flex-col">
               <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
                 <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.5H1.5V9.18933L2.96966 7.71967L3.18933 7.5H3.49999H6.63001H6.93933L6.96966 7.46967L10.4697 3.96967L11.5303 3.96967L14.5 6.93934V2.5ZM8.00066 8.55999L9.53034 10.0897L10.0607 10.62L9.00001 11.6807L8.46968 11.1503L6.31935 9H3.81065L1.53032 11.2803L1.5 11.3106V12.5C1.5 13.0523 1.94772 13.5 2.5 13.5H13.5C14.0523 13.5 14.5 13.0523 14.5 12.5V9.06066L11 5.56066L8.03032 8.53033L8.00066 8.55999ZM4.05312e-06 10.8107V12.5C4.05312e-06 13.8807 1.11929 15 2.5 15H13.5C14.8807 15 16 13.8807 16 12.5V9.56066L16.5607 9L16.0303 8.46967L16 8.43934V2.5V1H14.5H1.5H4.05312e-06V2.5V10.6893L-0.0606689 10.75L4.05312e-06 10.8107Z" fill="currentColor"></path></svg>
               </div> <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
@@ -520,7 +597,7 @@ export default component$(() => {
               </div> <div class="rounded-lg p-2 ring-2 ring-gray-200 dark:ring-gray-800 bg-white dark:bg-black text-gray-400 dark:text-gray-600 flex justify-center items-center">
                 <svg data-testid="geist-icon" height="24" stroke-linejoin="round" viewBox="0 0 16 16" width="24" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M14.5 2.5H1.5V9.18933L2.96966 7.71967L3.18933 7.5H3.49999H6.63001H6.93933L6.96966 7.46967L10.4697 3.96967L11.5303 3.96967L14.5 6.93934V2.5ZM8.00066 8.55999L9.53034 10.0897L10.0607 10.62L9.00001 11.6807L8.46968 11.1503L6.31935 9H3.81065L1.53032 11.2803L1.5 11.3106V12.5C1.5 13.0523 1.94772 13.5 2.5 13.5H13.5C14.0523 13.5 14.5 13.0523 14.5 12.5V9.06066L11 5.56066L8.03032 8.53033L8.00066 8.55999ZM4.05312e-06 10.8107V12.5C4.05312e-06 13.8807 1.11929 15 2.5 15H13.5C14.8807 15 16 13.8807 16 12.5V9.56066L16.5607 9L16.0303 8.46967L16 8.43934V2.5V1H14.5H1.5H4.05312e-06V2.5V10.6893L-0.0606689 10.75L4.05312e-06 10.8107Z" fill="currentColor"></path></svg>
               </div>
-            </div>
+            </div> */}
           </div>
         </div>
       </section>
