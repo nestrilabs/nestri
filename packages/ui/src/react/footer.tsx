@@ -19,7 +19,7 @@ type Props = {
 export function ReactFooter({ children }: Props) {
   return (
     <>
-      <footer className="flex justify-center flex-col items-center w-screen pt-8 sm:pb-0 pb-8 [&>*]:w-full px-3">
+      <footer className="flex justify-center flex-col items-center w-screen py-20 sm:pb-0 [&>*]:w-full px-3">
         <section className="mx-auto flex flex-col justify-center items-center max-w-[600px] pt-20">
           <motion.img
             initial={{
@@ -72,24 +72,6 @@ export function ReactFooter({ children }: Props) {
                 Your rules
               </motion.span>
             </ReactDisplay>
-            {/* <motion.p
-              initial={{
-                opacity: 0,
-                y: 50
-              }}
-              transition={{
-                delay: 0.3,
-                ...transition
-              }}
-              whileInView={{
-                y: 0,
-                opacity: 1
-              }}
-              viewport={{ once: true }}
-              className="dark:text-gray-50/70 text-gray-950/70 text-base font-normal text-center leading-tight text-balance tracking-tight sm:text-xl"
-            >
-              Nestri is an open-source cloud gaming platform that lets you play games on your own terms — invite friends to join your gaming sessions, share your game library, and take even more control by running it on your own GPU instance
-            </motion.p> */}
             <motion.div
               initial={{
                 opacity: 0,

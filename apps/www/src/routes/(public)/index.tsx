@@ -424,7 +424,7 @@ export default component$(() => {
           </MotionComponent>
         </div>
       </section>
-      <section class="w-full py-12 sm:py-16">
+      <section class="w-full pt-12 pb-3 sm:py-16">
         <div class="relative mx-auto w-full max-w-[980px]">
           <div class="relative px-4 z-10 gap-1 sm:gap-2 mx-auto flex flex-col items-center text-balance text-center max-w-[680px]">
             <MotionComponent
@@ -475,7 +475,7 @@ export default component$(() => {
             }}
             viewport={{ once: true }} class="w-full flex select-none justify-between max-[600px]:flex-col items-center max-w-[700px] mx-auto my-5 sm:my-20" >
             <div class="relative h-[264px] flex flex-[1_1] max-[600px]:pb-[64px] max-[600px]:max-w-[264px] max-[600px]:w-full">
-              <div class="justify-between items-start inline-flex md:flex-col h-full max-[600px]:flex-[1_1]">
+              <div class="justify-between items-start inline-flex md:flex-col min-[600px]:h-full max-[600px]:flex-[1_1]">
                 <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
                   <svg class="size-6 text-[#85B737]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" d="M1.635 7.146S3.08 5.012 5.97 4.791v-.774C2.77 4.273 0 6.983 0 6.983s1.57 4.536 5.97 4.952v-.824c-3.23-.406-4.335-3.965-4.335-3.965M5.97 9.475v.753c-2.44-.435-3.118-2.972-3.118-2.972S4.023 5.958 5.97 5.747v.828h-.004c-1.021-.123-1.82.83-1.82.83s.448 1.607 1.824 2.07M6 2l-.03 2.017A7 7 0 0 1 6.252 4c3.637-.123 6.007 2.983 6.007 2.983s-2.722 3.31-5.557 3.31q-.39-.002-.732-.065v.883q.292.039.61.04c2.638 0 4.546-1.348 6.394-2.943c.307.246 1.561.842 1.819 1.104c-1.757 1.47-5.852 2.657-8.173 2.657a7 7 0 0 1-.65-.034V14H16l.03-12zm-.03 3.747v-.956a6 6 0 0 1 .282-.015c2.616-.082 4.332 2.248 4.332 2.248S8.73 9.598 6.743 9.598c-.286 0-.542-.046-.773-.123v-2.9c1.018.123 1.223.572 1.835 1.593L9.167 7.02s-.994-1.304-2.67-1.304a5 5 0 0 0-.527.031" /></svg>
                   <span class="max-[600px]:hidden" >RTX 4090</span>
