@@ -493,7 +493,7 @@ export default component$(() => {
                   <span class="max-[600px]:hidden" >Radeon RX 7900</span>
                 </div>
               </div>
-              <div class="absolute max-[600px]:right-1/2 max-[600px]:translate-x-1/2 max-[600px]:w-[calc(100%-36px)] max-[600px]:bottom-0 -right-[30px] w-[calc(100%-96px+40px)] top-1/2 -z-[1] -translate-y-1/2">
+              <div class="absolute max-[600px]:right-1/2 max-[600px]:translate-x-1/2 max-[600px]:translate-y-0 max-[600px]:top-auto max-[600px]:w-[calc(100%-36px)] max-[600px]:bottom-0 -right-[30px] w-[calc(100%-96px+40px)] top-1/2 -z-[1] -translate-y-1/2">
                 <div class="min-[600px]:hidden h-16 relative">
                   <svg class="absolute inset-0 text-gray-500" fill="none" height="64" preserveAspectRatio="none" viewBox="0 0 230 64" width="100%" xmlns="http://www.w3.org/2000/svg">
                     <path d="M111 64L111 56.9516C111 43.5878 104.93 30.9476 94.5 22.5925L85.3167 15.236C80.6917 11.5311 78 5.92592 78 -1.44248e-06V-1.44248e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
