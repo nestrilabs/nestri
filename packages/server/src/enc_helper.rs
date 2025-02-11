@@ -1,3 +1,4 @@
+use crate::gpu::{self, get_gpu_by_card_path, get_gpus_by_vendor, GPUInfo};
 use gst::prelude::*;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -7,47 +8,23 @@ pub enum VideoCodec {
     AV1,
     UNKNOWN,
 }
+
 impl VideoCodec {
     pub fn to_str(&self) -> &'static str {
         match self {
-            VideoCodec::H264 => "H.264",
-            VideoCodec::H265 => "H.265",
-            VideoCodec::AV1 => "AV1",
-            VideoCodec::UNKNOWN => "Unknown",
-        }
-    }
-
-    // unlike to_str, converts to gstreamer friendly codec name
-    pub fn to_gst_str(&self) -> &'static str {
-        match self {
-            VideoCodec::H264 => "h264",
-            VideoCodec::H265 => "h265",
-            VideoCodec::AV1 => "av1",
-            VideoCodec::UNKNOWN => "unknown",
-        }
-    }
-
-    // returns mime-type string
-    pub fn to_mime_str(&self) -> &'static str {
-        match self {
-            VideoCodec::H264 => "video/H264",
-            VideoCodec::H265 => "video/H265",
-            VideoCodec::AV1 => "video/AV1",
-            VideoCodec::UNKNOWN => "unknown",
+            Self::H264 => "H.264",
+            Self::H265 => "H.265",
+            Self::AV1 => "AV1",
+            Self::UNKNOWN => "Unknown",
         }
     }
 
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "h264" => VideoCodec::H264,
-            "h.264" => VideoCodec::H264,
-            "avc" => VideoCodec::H264,
-            "h265" => VideoCodec::H265,
-            "h.265" => VideoCodec::H265,
-            "hevc" => VideoCodec::H265,
-            "hev1" => VideoCodec::H265,
-            "av1" => VideoCodec::AV1,
-            _ => VideoCodec::UNKNOWN,
+            "h264" | "h.264" | "avc" => Self::H264,
+            "h265" | "h.265" | "hevc" | "hev1" => Self::H265,
+            "av1" => Self::AV1,
+            _ => Self::UNKNOWN,
         }
     }
 }
@@ -61,15 +38,16 @@ pub enum EncoderAPI {
     SOFTWARE,
     UNKNOWN,
 }
+
 impl EncoderAPI {
     pub fn to_str(&self) -> &'static str {
         match self {
-            EncoderAPI::QSV => "Intel QuickSync Video",
-            EncoderAPI::VAAPI => "Video Acceleration API",
-            EncoderAPI::NVENC => "NVIDIA NVENC",
-            EncoderAPI::AMF => "AMD Media Framework",
-            EncoderAPI::SOFTWARE => "Software",
-            EncoderAPI::UNKNOWN => "Unknown",
+            Self::QSV => "Intel QuickSync Video",
+            Self::VAAPI => "Video Acceleration API",
+            Self::NVENC => "NVIDIA NVENC",
+            Self::AMF => "AMD Media Framework",
+            Self::SOFTWARE => "Software",
+            Self::UNKNOWN => "Unknown",
         }
     }
 }
@@ -80,20 +58,21 @@ pub enum EncoderType {
     HARDWARE,
     UNKNOWN,
 }
+
 impl EncoderType {
     pub fn to_str(&self) -> &'static str {
         match self {
-            EncoderType::SOFTWARE => "Software",
-            EncoderType::HARDWARE => "Hardware",
-            EncoderType::UNKNOWN => "Unknown",
+            Self::SOFTWARE => "Software",
+            Self::HARDWARE => "Hardware",
+            Self::UNKNOWN => "Unknown",
         }
     }
 
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "software" => EncoderType::SOFTWARE,
-            "hardware" => EncoderType::HARDWARE,
-            _ => EncoderType::UNKNOWN,
+            "software" => Self::SOFTWARE,
+            "hardware" => Self::HARDWARE,
+            _ => Self::UNKNOWN,
         }
     }
 }
@@ -105,6 +84,7 @@ pub struct VideoEncoderInfo {
     pub encoder_type: EncoderType,
     pub encoder_api: EncoderAPI,
     pub parameters: Vec<(String, String)>,
+    pub gpu_info: Option<GPUInfo>,
 }
 
 impl VideoEncoderInfo {
@@ -120,26 +100,26 @@ impl VideoEncoderInfo {
             encoder_type,
             encoder_api,
             parameters: Vec::new(),
+            gpu_info: None,
         }
     }
 
     pub fn get_parameters_string(&self) -> String {
         self.parameters
             .iter()
-            .map(|(key, value)| format!("{}={}", key, value))
-            .collect::<Vec<String>>()
+            .map(|(k, v)| format!("{}={}", k, v))
+            .collect::<Vec<_>>()
             .join(" ")
     }
 
     pub fn set_parameter(&mut self, key: &str, value: &str) {
-        self.parameters.push((key.to_string(), value.to_string()));
+        self.parameters.push((key.into(), value.into()));
     }
 
-    pub fn apply_parameters(&self, element: &gst::Element, verbose: &bool) {
+    pub fn apply_parameters(&self, element: &gst::Element, verbose: bool) {
         for (key, value) in &self.parameters {
             if element.has_property(key) {
-                // If verbose, log property sets
-                if *verbose {
+                if verbose {
                     println!("Setting property {} to {}", key, value);
                 }
                 element.set_property_from_str(key, value);
@@ -148,199 +128,126 @@ impl VideoEncoderInfo {
     }
 }
 
-/// Converts VA-API encoder name to low-power variant.
-/// # Arguments
-/// * `encoder` - The name of the VA-API encoder.
-/// # Returns
-/// * `&str` - The name of the low-power variant of the encoder.
-fn get_low_power_encoder(encoder: &String) -> String {
-    if encoder.starts_with("va") && !encoder.ends_with("enc") && !encoder.ends_with("lpenc") {
-        // Replace "enc" substring at end with "lpenc"
-        let mut encoder = encoder.to_string();
-        encoder.truncate(encoder.len() - 3);
-        encoder.push_str("lpenc");
-        encoder
-    } else {
-        encoder.to_string()
-    }
-}
-
-/// Returns best guess for encoder API based on the encoder name.
-/// # Arguments
-/// * `encoder` - The name of the encoder.
-/// # Returns
-/// * `EncoderAPI` - The best guess for the encoder API.
-fn get_encoder_api(encoder: &String, encoder_type: &EncoderType) -> EncoderAPI {
-    if *encoder_type == EncoderType::HARDWARE {
-        if encoder.starts_with("qsv") {
-            EncoderAPI::QSV
-        } else if encoder.starts_with("va") {
-            EncoderAPI::VAAPI
-        } else if encoder.starts_with("nv") {
-            EncoderAPI::NVENC
-        } else if encoder.starts_with("amf") {
-            EncoderAPI::AMF
-        } else {
-            EncoderAPI::UNKNOWN
-        }
-    } else if *encoder_type == EncoderType::SOFTWARE {
-        EncoderAPI::SOFTWARE
-    } else {
-        EncoderAPI::UNKNOWN
-    }
-}
-
-/// Returns true if system supports given encoder.
-/// # Returns
-/// * `bool` - True if encoder is supported, false otherwise.
-fn is_encoder_supported(encoder: &String) -> bool {
-    gst::ElementFactory::find(encoder.as_str()).is_some()
-}
-
-fn set_element_property(element: &gst::Element, property: &str, value: &dyn ToValue) {
-    element.set_property(property, value.to_value());
-}
-
-
-/// Helper to set CQP value of known encoder
-/// # Arguments
-/// * `encoder` - Information about the encoder.
-/// * `quality` - Constant quantization parameter (CQP) quality, recommended values are between 20-30.
-/// # Returns
-/// * `EncoderInfo` - Encoder with maybe updated parameters.
-pub fn encoder_cqp_params(encoder: &VideoEncoderInfo, quality: u32) -> VideoEncoderInfo {
-    let mut encoder_optz = encoder.clone();
-
-    // Look for known keys by factory creation
-    let encoder = gst::ElementFactory::make(encoder_optz.name.as_str())
-        .build()
-        .unwrap();
-
-    // Get properties of the encoder
-    for prop in encoder.list_properties() {
-        let prop_name = prop.name();
-
-        // Look for known keys
-        if prop_name.to_lowercase().contains("qp")
-            && (prop_name.to_lowercase().contains("i") || prop_name.to_lowercase().contains("min"))
-        {
-            encoder_optz.set_parameter(prop_name, &quality.to_string());
-        } else if prop_name.to_lowercase().contains("qp")
-            && (prop_name.to_lowercase().contains("p") || prop_name.to_lowercase().contains("max"))
-        {
-            encoder_optz.set_parameter(prop_name, &(quality + 2).to_string());
-        }
-    }
-
-    encoder_optz
-}
-
-/// Helper to set VBR values of known encoder
-/// # Arguments
-/// * `encoder` - Information about the encoder.
-/// * `bitrate` - Target bitrate in bits per second.
-/// * `max_bitrate` - Maximum bitrate in bits per second.
-/// # Returns
-/// * `EncoderInfo` - Encoder with maybe updated parameters.
-pub fn encoder_vbr_params(encoder: &VideoEncoderInfo, bitrate: u32, max_bitrate: u32) -> VideoEncoderInfo {
-    let mut encoder_optz = encoder.clone();
-
-    // Look for known keys by factory creation
-    let encoder = gst::ElementFactory::make(encoder_optz.name.as_str())
-        .build()
-        .unwrap();
-
-    // Get properties of the encoder
-    for prop in encoder.list_properties() {
-        let prop_name = prop.name();
-
-        // Look for known keys
-        if prop_name.to_lowercase().contains("bitrate")
-            && !prop_name.to_lowercase().contains("max")
-        {
-            encoder_optz.set_parameter(prop_name, &bitrate.to_string());
-        } else if prop_name.to_lowercase().contains("bitrate")
-            && prop_name.to_lowercase().contains("max")
-        {
-            // If SVT-AV1, don't set max bitrate
-            if encoder_optz.name == "svtav1enc" {
-                continue;
+fn get_encoder_api(encoder: &str, encoder_type: &EncoderType) -> EncoderAPI {
+    match encoder_type {
+        EncoderType::HARDWARE => {
+            if encoder.starts_with("qsv") {
+                EncoderAPI::QSV
+            } else if encoder.starts_with("va") {
+                EncoderAPI::VAAPI
+            } else if encoder.starts_with("nv") {
+                EncoderAPI::NVENC
+            } else if encoder.starts_with("amf") {
+                EncoderAPI::AMF
+            } else {
+                EncoderAPI::UNKNOWN
             }
-            encoder_optz.set_parameter(prop_name, &max_bitrate.to_string());
         }
+        EncoderType::SOFTWARE => EncoderAPI::SOFTWARE,
+        _ => EncoderAPI::UNKNOWN,
     }
+}
+
+fn codec_from_encoder_name(name: &str) -> Option<VideoCodec> {
+    if name.contains("h264") {
+        Some(VideoCodec::H264)
+    } else if name.contains("h265") {
+        Some(VideoCodec::H265)
+    } else if name.contains("av1") {
+        Some(VideoCodec::AV1)
+    } else {
+        None
+    }
+}
+
+fn modify_encoder_params<F>(encoder: &VideoEncoderInfo, mut param_check: F) -> VideoEncoderInfo
+where
+    F: FnMut(&str) -> Option<(String, String)>,
+{
+    let mut encoder_optz = encoder.clone();
+    let element = match gst::ElementFactory::make(&encoder_optz.name).build() {
+        Ok(e) => e,
+        Err(_) => return encoder_optz, // Return original if element creation fails
+    };
+
+    element.list_properties().iter().for_each(|prop| {
+        let prop_name = prop.name();
+        if let Some((key, value)) = param_check(prop_name) {
+            encoder_optz.set_parameter(&key, &value);
+        }
+    });
 
     encoder_optz
 }
 
-/// Helper to set CBR value of known encoder
-/// # Arguments
-/// * `encoder` - Information about the encoder.
-/// * `bitrate` - Target bitrate in bits per second.
-/// # Returns
-/// * `EncoderInfo` - Encoder with maybe updated parameters.
+// Parameter setting helpers
+pub fn encoder_cqp_params(encoder: &VideoEncoderInfo, quality: u32) -> VideoEncoderInfo {
+    modify_encoder_params(encoder, |prop| {
+        let pl = prop.to_lowercase();
+        if !pl.contains("qp") {
+            return None;
+        }
+
+        if pl.contains("i") || pl.contains("min") {
+            Some((prop.into(), quality.to_string()))
+        } else if pl.contains("p") || pl.contains("max") {
+            Some((prop.into(), (quality + 2).to_string()))
+        } else {
+            None
+        }
+    })
+}
+
+pub fn encoder_vbr_params(
+    encoder: &VideoEncoderInfo,
+    bitrate: u32,
+    max_bitrate: u32,
+) -> VideoEncoderInfo {
+    modify_encoder_params(encoder, |prop| {
+        let pl = prop.to_lowercase();
+        if !pl.contains("bitrate") {
+            return None;
+        }
+
+        if !pl.contains("max") {
+            Some((prop.into(), bitrate.to_string()))
+        } else if encoder.name != "svtav1enc" {
+            Some((prop.into(), max_bitrate.to_string()))
+        } else {
+            None
+        }
+    })
+}
+
 pub fn encoder_cbr_params(encoder: &VideoEncoderInfo, bitrate: u32) -> VideoEncoderInfo {
-    let mut encoder_optz = encoder.clone();
-
-    // Look for known keys by factory creation
-    let encoder = gst::ElementFactory::make(encoder_optz.name.as_str())
-        .build()
-        .unwrap();
-
-    // Get properties of the encoder
-    for prop in encoder.list_properties() {
-        let prop_name = prop.name();
-
-        // Look for known keys
-        if prop_name.to_lowercase().contains("bitrate")
-            && !prop_name.to_lowercase().contains("max")
-        {
-            encoder_optz.set_parameter(prop_name, &bitrate.to_string());
+    modify_encoder_params(encoder, |prop| {
+        let pl = prop.to_lowercase();
+        if pl.contains("bitrate") && !pl.contains("max") {
+            Some((prop.into(), bitrate.to_string()))
+        } else {
+            None
         }
-    }
-
-    encoder_optz
+    })
 }
 
-/// Helper to set GOP size of known encoder
-/// # Arguments
-/// * `encoder` - Information about the encoder.
-/// * `gop_size` - Group of pictures (GOP) size.
-/// # Returns
-/// * `EncoderInfo` - Encoder with maybe updated parameters.
 pub fn encoder_gop_params(encoder: &VideoEncoderInfo, gop_size: u32) -> VideoEncoderInfo {
-    let mut encoder_optz = encoder.clone();
-
-    // Look for known keys by factory creation
-    let encoder = gst::ElementFactory::make(encoder_optz.name.as_str())
-        .build()
-        .unwrap();
-
-    // Get properties of the encoder
-    for prop in encoder.list_properties() {
-        let prop_name = prop.name();
-
-        // Look for known keys
-        if prop_name.to_lowercase().contains("gop-size")
-            || prop_name.to_lowercase().contains("int-max")
-            || prop_name.to_lowercase().contains("max-dist")
-            || prop_name.to_lowercase().contains("intra-period-length")
+    modify_encoder_params(encoder, |prop| {
+        let pl = prop.to_lowercase();
+        if pl.contains("gop-size")
+            || pl.contains("int-max")
+            || pl.contains("max-dist")
+            || pl.contains("intra-period-length")
         {
-            encoder_optz.set_parameter(prop_name, &gop_size.to_string());
+            Some((prop.into(), gop_size.to_string()))
+        } else {
+            None
         }
-    }
-
-    encoder_optz
+    })
 }
 
-/// Sets parameters of known encoders for low latency operation.
-/// # Arguments
-/// * `encoder` - Information about the encoder.
-/// # Returns
-/// * `EncoderInfo` - Encoder with maybe updated parameters.
 pub fn encoder_low_latency_params(encoder: &VideoEncoderInfo) -> VideoEncoderInfo {
-    let mut encoder_optz = encoder.clone();
-    encoder_optz = encoder_gop_params(&encoder_optz, 30);
+    let mut encoder_optz = encoder_gop_params(encoder, 30);
+
     match encoder_optz.encoder_api {
         EncoderAPI::QSV => {
             encoder_optz.set_parameter("low-latency", "true");
@@ -350,147 +257,138 @@ pub fn encoder_low_latency_params(encoder: &VideoEncoderInfo) -> VideoEncoderInf
             encoder_optz.set_parameter("target-usage", "7");
         }
         EncoderAPI::NVENC => {
-            match encoder_optz.codec {
-                // nvcudah264enc supports newer presets and tunes
-                VideoCodec::H264 => {
-                    encoder_optz.set_parameter("multi-pass", "disabled");
-                    encoder_optz.set_parameter("preset", "p1");
-                    encoder_optz.set_parameter("tune", "ultra-low-latency");
-                }
-                // same goes for nvcudah265enc
-                VideoCodec::H265 => {
-                    encoder_optz.set_parameter("multi-pass", "disabled");
-                    encoder_optz.set_parameter("preset", "p1");
-                    encoder_optz.set_parameter("tune", "ultra-low-latency");
-                }
-                // nvav1enc only supports older presets
-                VideoCodec::AV1 => {
-                    encoder_optz.set_parameter("preset", "low-latency-hp");
-                }
-                _ => {}
-            }
+            encoder_optz.set_parameter("multi-pass", "disabled");
+            encoder_optz.set_parameter("preset", "p1");
+            encoder_optz.set_parameter("tune", "ultra-low-latency");
         }
         EncoderAPI::AMF => {
             encoder_optz.set_parameter("preset", "speed");
-            match encoder_optz.codec {
-                // Only H.264 supports "ultra-low-latency" usage
-                VideoCodec::H264 => {
-                    encoder_optz.set_parameter("usage", "ultra-low-latency");
-                }
-                // Same goes for H.265
-                VideoCodec::H265 => {
-                    encoder_optz.set_parameter("usage", "ultra-low-latency");
-                }
-                VideoCodec::AV1 => {
-                    encoder_optz.set_parameter("usage", "low-latency");
-                }
-                _ => {}
+            let usage = match encoder_optz.codec {
+                VideoCodec::H264 | VideoCodec::H265 => "ultra-low-latency",
+                VideoCodec::AV1 => "low-latency",
+                _ => "",
+            };
+            if !usage.is_empty() {
+                encoder_optz.set_parameter("usage", usage);
             }
         }
-        EncoderAPI::SOFTWARE => {
-            // Check encoder name for software encoders
-            match encoder_optz.name.as_str() {
-                "openh264enc" => {
-                    encoder_optz.set_parameter("complexity", "low");
-                    encoder_optz.set_parameter("usage-type", "screen");
-                }
-                "x264enc" => {
-                    encoder_optz.set_parameter("rc-lookahead", "0");
-                    encoder_optz.set_parameter("speed-preset", "ultrafast");
-                    encoder_optz.set_parameter("tune", "zerolatency");
-                }
-                "svtav1enc" => {
-                    encoder_optz.set_parameter("preset", "12");
-                    // Add ":pred-struct=1" only in CBR mode
-                    let params_string = format!(
-                        "lookahead=0{}",
-                        if encoder_optz.get_parameters_string().contains("cbr") {
-                            ":pred-struct=1"
-                        } else {
-                            ""
-                        }
-                    );
-                    encoder_optz.set_parameter("parameters-string", params_string.as_str());
-                }
-                "av1enc" => {
-                    encoder_optz.set_parameter("usage-profile", "realtime");
-                    encoder_optz.set_parameter("cpu-used", "10");
-                    encoder_optz.set_parameter("lag-in-frames", "0");
-                }
-                _ => {}
+        EncoderAPI::SOFTWARE => match encoder_optz.name.as_str() {
+            "openh264enc" => {
+                encoder_optz.set_parameter("complexity", "low");
+                encoder_optz.set_parameter("usage-type", "screen");
             }
-        }
+            "x264enc" => {
+                encoder_optz.set_parameter("rc-lookahead", "0");
+                encoder_optz.set_parameter("speed-preset", "ultrafast");
+                encoder_optz.set_parameter("tune", "zerolatency");
+            }
+            "svtav1enc" => {
+                encoder_optz.set_parameter("preset", "12");
+                let suffix = if encoder_optz.get_parameters_string().contains("cbr") {
+                    ":pred-struct=1"
+                } else {
+                    ""
+                };
+                encoder_optz.set_parameter("parameters-string", &format!("lookahead=0{}", suffix));
+            }
+            "av1enc" => {
+                encoder_optz.set_parameter("usage-profile", "realtime");
+                encoder_optz.set_parameter("cpu-used", "10");
+                encoder_optz.set_parameter("lag-in-frames", "0");
+            }
+            _ => {}
+        },
         _ => {}
     }
 
     encoder_optz
 }
 
-/// Returns all compatible encoders for the system.
-/// # Returns
-/// * `Vec<EncoderInfo>` - List of compatible encoders.
 pub fn get_compatible_encoders() -> Vec<VideoEncoderInfo> {
-    let mut encoders: Vec<VideoEncoderInfo> = Vec::new();
-
+    let mut encoders = Vec::new();
     let registry = gst::Registry::get();
-    let plugins = registry.plugins();
-    for plugin in plugins {
-        let features = registry.features_by_plugin(plugin.plugin_name().as_str());
-        for feature in features {
-            let encoder = feature.name().to_string();
-            let factory = gst::ElementFactory::find(encoder.as_str());
-            if factory.is_some() {
-                let factory = factory.unwrap();
-                // Get klass metadata
-                let klass = factory.metadata("klass");
-                if klass.is_some() {
-                    // Make sure klass contains "Encoder/Video/..."
-                    let klass = klass.unwrap().to_string();
-                    if !klass.to_lowercase().contains("encoder/video") {
-                        continue;
-                    }
+    let gpus = gpu::get_gpus();
 
-                    // If contains "/hardware" in klass, it's a hardware encoder
-                    let encoder_type = if klass.to_lowercase().contains("/hardware") {
-                        EncoderType::HARDWARE
-                    } else {
-                        EncoderType::SOFTWARE
-                    };
+    for plugin in registry.plugins() {
+        for feature in registry.features_by_plugin(plugin.plugin_name().as_str()) {
+            let encoder_name = feature.name();
 
-                    let api = get_encoder_api(&encoder, &encoder_type);
-                    if is_encoder_supported(&encoder) {
-                        // Match codec by looking for "264" or "av1" in encoder name
-                        let codec = if encoder.contains("264") {
-                            VideoCodec::H264
-                        } else if encoder.contains("265") {
-                            VideoCodec::H265
-                        } else if encoder.contains("av1") {
-                            VideoCodec::AV1
-                        } else {
-                            continue;
-                        };
-                        let encoder_info = VideoEncoderInfo::new(encoder, codec, encoder_type, api);
-                        encoders.push(encoder_info);
-                    } else if api == EncoderAPI::VAAPI {
-                        // Try low-power variant of VA-API encoder
-                        let low_power_encoder = get_low_power_encoder(&encoder);
-                        if is_encoder_supported(&low_power_encoder) {
-                            let codec = if low_power_encoder.contains("264") {
-                                VideoCodec::H264
-                            } else if low_power_encoder.contains("265") {
-                                VideoCodec::H265
-                            } else if low_power_encoder.contains("av1") {
-                                VideoCodec::AV1
-                            } else {
-                                continue;
-                            };
-                            let encoder_info =
-                                VideoEncoderInfo::new(low_power_encoder, codec, encoder_type, api);
-                            encoders.push(encoder_info);
-                        }
-                    }
-                }
+            let factory = match gst::ElementFactory::find(encoder_name.as_str()) {
+                Some(f) => f,
+                None => continue,
+            };
+
+            let klass = match factory.metadata("klass") {
+                Some(k) => k.to_lowercase(),
+                None => continue,
+            };
+
+            if !klass.contains("encoder/video") {
+                continue;
             }
+
+            let encoder_type = if klass.contains("/hardware") {
+                EncoderType::HARDWARE
+            } else {
+                EncoderType::SOFTWARE
+            };
+
+            let api = get_encoder_api(encoder_name.as_str(), &encoder_type);
+            let codec = match codec_from_encoder_name(encoder_name.as_str()) {
+                Some(c) => c,
+                None => continue,
+            };
+
+            let element = match factory.create().build() {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+
+            let mut gpu_info = None;
+
+            if encoder_type == EncoderType::HARDWARE {
+                gpu_info = std::panic::catch_unwind(|| {
+                    match api {
+                        EncoderAPI::QSV | EncoderAPI::VAAPI => {
+                            // Safe property access with panic protection, gstreamer-rs is fun
+                            let path = if element.has_property("device-path") {
+                                Some(element.property::<String>("device-path"))
+                            } else if element.has_property("device") {
+                                Some(element.property::<String>("device"))
+                            } else {
+                                None
+                            };
+
+                            path.and_then(|p| get_gpu_by_card_path(&gpus, &p))
+                        }
+                        EncoderAPI::NVENC if element.has_property("cuda-device-id") => {
+                            let cuda_id = element.property::<u32>("cuda-device-id");
+                            get_gpus_by_vendor(&gpus, "nvidia")
+                                .get(cuda_id as usize)
+                                .cloned()
+                        }
+                        EncoderAPI::AMF if element.has_property("device") => {
+                            let device_id = element.property::<u32>("device");
+                            get_gpus_by_vendor(&gpus, "amd")
+                                .get(device_id as usize)
+                                .cloned()
+                        }
+                        _ => None,
+                    }
+                })
+                .unwrap_or_else(|_| {
+                    log::error!(
+                        "Panic occurred while querying properties for {}",
+                        encoder_name
+                    );
+                    None
+                });
+            }
+
+            let mut encoder_info =
+                VideoEncoderInfo::new(encoder_name.into(), codec, encoder_type.clone(), api);
+            encoder_info.gpu_info = gpu_info;
+            encoders.push(encoder_info);
         }
     }
 

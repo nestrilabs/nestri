@@ -78,11 +78,12 @@ fn handle_encoder_video(args: &args::Args) -> Option<enc_helper::VideoEncoderInf
     }
     for encoder in &video_encoders {
         println!(
-            "> [Video Encoder] Name: '{}', Codec: '{}', API: '{}', Type: '{}'",
+            "> [Video Encoder] Name: '{}', Codec: '{}', API: '{}', Type: '{}', Device: '{}'",
             encoder.name,
             encoder.codec.to_str(),
             encoder.encoder_api.to_str(),
-            encoder.encoder_type.to_str()
+            encoder.encoder_type.to_str(),
+            if let Some(gpu) = &encoder.gpu_info { gpu.device_name() } else { "CPU" },
         );
     }
     // Pick most suitable video encoder based on given arguments
@@ -152,7 +153,7 @@ fn handle_encoder_audio(args: &args::Args) -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
-    let args = args::Args::new();
+    let mut args = args::Args::new();
     if args.app.verbose {
         args.debug_print();
     }
@@ -185,6 +186,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Err("Failed to find a suitable GPU. Exiting..".into());
     }
     let gpu = gpu.unwrap();
+
+    // TODO: Currently DMA-BUF only works for NVIDIA
+    if args.app.dma_buf && *gpu.vendor() != GPUVendor::NVIDIA {
+        log::warn!("DMA-BUF is currently unsupported outside NVIDIA GPUs, force disabling..");
+        args.app.dma_buf = false;
+    }
 
     // Handle video encoder selection
     let video_encoder_info = handle_encoder_video(&args);
@@ -261,9 +268,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // GL Upload Element
     let glupload = gst::ElementFactory::make("glupload").build()?;
 
+    // GL color convert element
+    let glcolorconvert = gst::ElementFactory::make("glcolorconvert").build()?;
+
     // GL upload caps filter
     let gl_caps_filter = gst::ElementFactory::make("capsfilter").build()?;
-    let gl_caps = gst::Caps::from_str("video/x-raw(memory:VAMemory)")?;
+    let gl_caps = gst::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
     gl_caps_filter.set_property("caps", &gl_caps);
 
     // Video Converter Element
@@ -271,7 +281,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Video Encoder Element
     let video_encoder = gst::ElementFactory::make(video_encoder_info.name.as_str()).build()?;
-    video_encoder_info.apply_parameters(&video_encoder, &args.app.verbose);
+    video_encoder_info.apply_parameters(&video_encoder, args.app.verbose);
 
     /* Output */
     // WebRTC sink Element
@@ -294,9 +304,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_source,
     ])?;
 
-    // If DMA-BUF is enabled, add glupload and gl caps filter
+    // If DMA-BUF is enabled, add glupload, color conversion and caps filter
     if args.app.dma_buf {
-        pipeline.add_many(&[&glupload, &gl_caps_filter])?;
+        pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter])?;
     }
 
     // Link main audio branch
@@ -316,8 +326,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &video_source,
             &caps_filter,
             &glupload,
+            &glcolorconvert,
             &gl_caps_filter,
-            &video_converter,
             &video_encoder,
             webrtcsink.upcast_ref(),
         ])?;

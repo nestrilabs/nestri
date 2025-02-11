@@ -74,7 +74,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Clone repository with proper directory structure
-RUN git clone https://github.com/games-on-whales/gst-wayland-display.git
+RUN git clone -b dev-dmabuf https://github.com/games-on-whales/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner

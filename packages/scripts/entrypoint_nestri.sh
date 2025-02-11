@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Make user directory owned by the default user
 chown -f "$(id -nu):$(id -ng)" ~ || \
-      sudo-root chown -f "$(id -nu):$(id -ng)" ~ || \
+      sudo chown -f "$(id -nu):$(id -ng)" ~ || \
       chown -R -f -h --no-preserve-root "$(id -nu):$(id -ng)" ~ || \
-      sudo-root chown -R -f -h --no-preserve-root "$(id -nu):$(id -ng)" ~ || \
+      sudo chown -R -f -h --no-preserve-root "$(id -nu):$(id -ng)" ~ || \
       echo 'Failed to change user directory permissions, there may be permission issues'
 
 # Source environment variables from envs.sh
