@@ -44,7 +44,7 @@ export const ReactDisplay = ({
             size,
             weight,
             align,
-            className: cn("font-title font-extrabold", className)
+            className: cn("font-basement font-extrabold", className)
         })} {...props}>
             <ReactBalancer.Balancer>
                 {children}

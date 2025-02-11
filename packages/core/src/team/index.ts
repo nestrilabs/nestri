@@ -26,10 +26,10 @@ export namespace Teams {
                 description: "The time when this team was last edited",
                 example: Examples.Team.updatedAt,
             }),
-            owner: z.boolean().openapi({
-                description: "Whether this team is owned by this user",
-                example: Examples.Team.owner,
-            }),
+            // owner: z.boolean().openapi({
+            //     description: "Whether this team is owned by this user",
+            //     example: Examples.Team.owner,
+            // }),
             slug: z.string().openapi({
                 description: "This is the unique name identifier for the team",
                 example: Examples.Team.slug
@@ -112,11 +112,10 @@ export namespace Teams {
             map((group): Info => ({
                 id: group[0].id,
                 name: group[0].name,
-                createdAt: group[0].createdAt,
                 slug: group[0].slug,
+                createdAt: group[0].createdAt,
                 updatedAt: group[0].updatedAt,
-                //@ts-expect-error
-                owner: group[0].owner === user.id
+                // owner: group[0].owner === user.id
             }))
         )
 

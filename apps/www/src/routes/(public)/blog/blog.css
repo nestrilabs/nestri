@@ -1,13 +1,13 @@
 .blog h1 {
-  @apply text-4xl font-title font-bold text-gray-800 dark:text-gray-200;
+  @apply text-4xl font-bricolage font-bold text-gray-800 dark:text-gray-200;
 }
 
 .blog h2 {
-  @apply text-3xl font-title font-bold text-gray-800 dark:text-gray-200;
+  @apply text-3xl font-bricolage font-bold text-gray-800 dark:text-gray-200;
 }
 
 .blog h3 {
-  @apply text-2xl font-title font-bold text-gray-800 dark:text-gray-200;
+  @apply text-2xl font-mona font-bold text-gray-800 dark:text-gray-200;
 }
 
 .blog img {
@@ -19,7 +19,7 @@
 }
 
 .blog strong {
-  @apply text-gray-700 dark:text-gray-300 font-title font-semibold;
+  @apply text-gray-700 dark:text-gray-300 font-mona font-semibold;
 }
 
 .blog ul {

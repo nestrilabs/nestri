@@ -2,6 +2,13 @@
 @tailwind base;
 @tailwind utilities;
 
+@font-face {
+    font-family: 'Basement Grotesque';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 800;
+    src: url("/fonts/BasementGrotesque-Black.woff2") format('woff2'), url("/fonts/BasementGrotesque-Black.woff") format('woff');
+}
 
 @layer base {
 
@@ -18,23 +25,23 @@
     }
 
     *::selection {
-        background-color: theme("colors.gray.400");
-        color: theme("colors.gray.800");
+        background-color: theme("colors.primary.100");
+        color: theme("colors.primary.500");
     }
 
     *::-moz-selection {
-        background-color: theme("colors.gray.400");
-        color: theme("colors.gray.800");
+        background-color: theme("colors.primary.100");
+        color: theme("colors.primary.500");
     }
 
     html.dark *::selection {
-        background-color: theme("colors.gray.400");
-        color: theme("colors.gray.800");
+        background-color: theme("colors.primary.500");
+        color: theme("colors.primary.100");
     }
 
     html.dark *::-moz-selection {
-        background-color: theme("colors.gray.400");
-        color: theme("colors.gray.800");
+        background-color: theme("colors.primary.500");
+        color: theme("colors.primary.100");
     }
 
     html.dark,
@@ -45,13 +52,13 @@
 
     @media (prefers-color-scheme: dark) {
         *::selection {
-            background-color: theme("colors.gray.400");
-            color: theme("colors.gray.800");
+            background-color: theme("colors.primary.500");
+            color: theme("colors.primary.100");
         }
 
         *::-moz-selection {
-            background-color: theme("colors.gray.400");
-            color: theme("colors.gray.800");
+            background-color: theme("colors.primary.500");
+            color: theme("colors.primary.100");
         }
 
         html,
@@ -280,6 +287,27 @@
     animation-name: slideToRight;
 }
 
+.tooltip[data-closing],
+.tooltip[data-closed] {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeOut;
+}
+
+.tooltip[data-opening],
+.tooltip[data-opened] {
+    animation-duration: 0.5s;
+    animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+    touch-action: none;
+    will-change: transform;
+    transition: transform 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+    animation-name: fadeIn;
+}
+
+
 .modal[data-closing]::backdrop,
 .modal-sheet[data-closing]::backdrop {
     animation-duration: 0.5s;
@@ -460,4 +488,33 @@
     100% {
         opacity: .15;
     }
+}
+
+@keyframes bgRotate {
+    to {
+        content: var(--tw-content);
+        transform: rotate(1turn)
+    }
+}
+
+@keyframes playing {
+
+    0%,
+    to {
+        height: 3px
+    }
+
+    50% {
+        height: 12px
+    }
+}
+
+.shadow-browser {
+    box-shadow: 0 30.0333px 63.0111px rgba(45, 48, 57, .09), 0 12.5472px 26.3245px rgba(45, 48, 57, .065), 0 6.70834px 14.0744px rgba(45, 48, 57, .054), 0 3.76064px 7.88997px rgba(45, 48, 57, .045), 0 1.99725px 4.1903px rgba(45, 48, 57, .036), 0 .831099px 1.74368px rgba(45, 48, 57, .025);
+    border-radius: 7.07px;
+}
+
+.bg-radial-gradient {
+    filter: blur(32px);
+    background-image: linear-gradient(90deg, rgb(239, 118, 70), rgb(251, 91, 88), rgb(255, 61, 116), rgb(249, 33, 149), rgb(227, 34, 188), rgb(181, 94, 230), rgb(118, 128, 252), rgb(0, 150, 255), rgb(0, 183, 255), rgb(0, 208, 242), rgb(0, 227, 184), rgb(70, 239, 111));;
 }

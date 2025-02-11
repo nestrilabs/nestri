@@ -8,16 +8,19 @@ import { subjects } from "./subjects"
 import { PasswordUI } from "./ui/password"
 import { Email } from "@nestri/core/email/index"
 import { Users } from "@nestri/core/user/index"
+import { Teams } from "@nestri/core/team/index"
 import { authorizer } from "@openauthjs/openauth"
 import { Profiles } from "@nestri/core/profile/index"
 import { handleDiscord, handleGithub } from "./utils";
 import { type CFRequest } from "@nestri/core/types"
 import { GithubAdapter } from "./ui/adapters/github";
 import { DiscordAdapter } from "./ui/adapters/discord";
-import { Machines } from "@nestri/core/machine/index"
+import { Instances } from "@nestri/core/instance/index"
 import { PasswordAdapter } from "./ui/adapters/password"
 import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
 import { CloudflareStorage } from "@openauthjs/openauth/storage/cloudflare"
+import { Subscriptions } from "@nestri/core/subscription/index";
+import type { Subscription } from "./type";
 interface Env {
     CloudflareAuthKV: KVNamespace
 }
@@ -57,8 +60,8 @@ export default {
                 title: "Nestri | Auth",
                 primary: "#FF4F01",
                 //TODO: Change this in prod
-                logo: "https://nestri.pages.dev/logo.webp",
-                favicon: "https://nestri.pages.dev/seo/favicon.ico",
+                logo: "https://nestri.io/logo.webp",
+                favicon: "https://nestri.io/seo/favicon.ico",
                 background: {
                     light: "#f5f5f5 ",
                     dark: "#171717"
@@ -100,23 +103,23 @@ export default {
                         if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
                             throw new Error("Invalid authorization token");
                         }
-
-                        const fingerprint = input.params.fingerprint;
-                        if (!fingerprint) {
-                            throw new Error("Fingerprint is required");
+                        const teamSlug = input.params.team;
+                        if (!teamSlug) {
+                            throw new Error("Team slug is required");
                         }
 
                         const hostname = input.params.hostname;
                         if (!hostname) {
                             throw new Error("Hostname is required");
                         }
+
                         return {
-                            fingerprint,
-                            hostname
+                            hostname,
+                            teamSlug
                         };
                     },
                     init() { }
-                } as Adapter<{ fingerprint: string; hostname: string }>,
+                } as Adapter<{ teamSlug: string; hostname: string; }>,
             },
             allow: async (input) => {
                 const url = new URL(input.redirectURI);
@@ -127,24 +130,17 @@ export default {
             },
             success: async (ctx, value) => {
                 if (value.provider === "device") {
-                    let exists = await Machines.fromFingerprint(value.fingerprint);
-                    if (!exists) {
-                        const machineID = await Machines.create({
-                            fingerprint: value.fingerprint,
-                            hostname: value.hostname,
-                        });
+                    const team = await Teams.fromSlug(value.teamSlug)
+                    console.log("team", team)
+                    console.log("teamSlug", value.teamSlug)
+                    if (team) {
+                        await Instances.create({ hostname: value.hostname, teamID: team.id })
 
                         return await ctx.subject("device", {
-                            id: machineID,
-                            fingerprint: value.fingerprint
+                            teamSlug: value.teamSlug,
+                            hostname: value.hostname,
                         })
                     }
-
-                    return await ctx.subject("device", {
-                        id: exists.id,
-                        fingerprint: value.fingerprint
-                    })
-
                 }
 
                 if (value.provider === "password") {
@@ -152,14 +148,14 @@ export default {
                     const username = value.username
                     const token = await Users.create(email)
                     const usr = await Users.fromEmail(email);
-                    const exists = await Profiles.getProfile(usr.id)
-                    if(username && !exists){
+                    const exists = await Profiles.fromOwnerID(usr.id)
+                    if (username && !exists) {
                         await Profiles.create({ owner: usr.id, username })
                     }
 
                     return await ctx.subject("user", {
                         accessToken: token,
-                        userID: usr.id
+                        userID: usr.id,
                     });
 
                 }
@@ -180,15 +176,15 @@ export default {
                     try {
                         const token = await Users.create(user.primary.email)
                         const usr = await Users.fromEmail(user.primary.email);
-                        const exists = await Profiles.getProfile(usr.id)
-                        console.log("exists",exists)
+                        const exists = await Profiles.fromOwnerID(usr.id)
+                        console.log("exists", exists)
                         if (!exists) {
                             await Profiles.create({ owner: usr.id, avatarUrl: user.avatar, username: user.username })
                         }
 
                         return await ctx.subject("user", {
                             accessToken: token,
-                            userID: usr.id
+                            userID: usr.id,
                         });
 
                     } catch (error) {

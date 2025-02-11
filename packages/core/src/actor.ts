@@ -1,6 +1,6 @@
 import { createContext } from "./context";
 import { VisibleError } from "./error";
-
+  
 export interface UserActor {
     type: "user";
     properties: {
@@ -21,8 +21,8 @@ export interface UserActor {
 export interface DeviceActor {
     type: "device";
     properties: {
-        fingerprint: string;
-        id: string;
+        teamSlug: string;
+        hostname: string;
         auth?:
         | {
             type: "personal";
@@ -47,7 +47,7 @@ export function useCurrentUser() {
     const actor = ActorContext.use();
     if (actor.type === "user") return {
       id:actor.properties.userID,
-      token: actor.properties.accessToken
+      token: actor.properties.accessToken,
     };
     
     throw new VisibleError(
@@ -60,8 +60,8 @@ export function useCurrentUser() {
 export function useCurrentDevice() {
     const actor = ActorContext.use();
     if (actor.type === "device") return {
-      fingerprint:actor.properties.fingerprint,
-      id: actor.properties.id
+      hostname:actor.properties.hostname,
+      teamSlug: actor.properties.teamSlug
     };
     throw new VisibleError(
         "auth",

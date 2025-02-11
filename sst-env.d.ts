@@ -2,13 +2,20 @@
 /* tslint:disable */
 /* eslint-disable */
 /* deno-fmt-ignore-file */
-import "sst"
-export {}
+
 import "sst"
 declare module "sst" {
   export interface Resource {
     "AuthFingerprintKey": {
       "type": "random.index/randomString.RandomString"
+      "value": string
+    }
+    "AwsAccessKey": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "AwsSecretKey": {
+      "type": "sst.sst.Secret"
       "value": string
     }
     "DiscordClientID": {
@@ -39,6 +46,14 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "NestriGPUCluster": {
+      "type": "aws.ecs/cluster.Cluster"
+      "value": string
+    }
+    "NestriGPUTask": {
+      "type": "aws.ecs/taskDefinition.TaskDefinition"
+      "value": string
+    }
     "Urls": {
       "api": string
       "auth": string
@@ -55,3 +70,6 @@ declare module "sst" {
     "CloudflareAuthKV": cloudflare.KVNamespace
   }
 }
+
+import "sst"
+export {}

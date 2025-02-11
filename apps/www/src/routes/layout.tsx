@@ -1,5 +1,4 @@
 import posthog from "posthog-js";
-import Nestri from "@nestri/sdk";
 import { NavProgress } from "@nestri/ui";
 import { component$, Slot, useVisibleTask$ } from "@builder.io/qwik";
 import { type DocumentHead, type RequestHandler } from "@builder.io/qwik-city";
@@ -14,29 +13,6 @@ export const onGet: RequestHandler = async ({ cacheControl }) => {
     maxAge: 5,
   });
 };
-
-export const onRequest: RequestHandler = async ({ cookie, url, redirect, sharedMap }) => {
-  const access = cookie.get("access_token")
-  if (access) {
-    try {
-
-      const bearerToken = access.value
-
-      const nestriClient = new Nestri({
-        bearerToken,
-        baseURL: "https://api.nestri.io"
-      })
-      const currentProfile = await nestriClient.users.retrieve()
-      sharedMap.set("profile", currentProfile.data)
-    } catch (error) {
-      console.log("error working with bearer token", error)
-      cookie.delete("access_token")
-      cookie.delete("refresh_token")
-
-      throw redirect(302, url.origin)
-    }
-  }
-}
 
 export default component$(() => {
   // eslint-disable-next-line qwik/no-use-visible-task

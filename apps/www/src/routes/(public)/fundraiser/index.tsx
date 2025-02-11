@@ -64,7 +64,7 @@ export default component$(() => {
                     </div>
                 </div>
             </MotionComponent>
-            <Footer showBanner={false} />
+            <Footer/>
         </>
     )
 })

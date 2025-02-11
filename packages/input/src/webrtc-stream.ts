@@ -8,27 +8,41 @@ import {
   AnswerType,
 } from "./messages";
 
+//FIXME: Sometimes the room will wait to say offline, then appear to be online after retrying :D
+// This works for me, with my trashy internet, does it work for you as well?
+
 export class WebRTCStream {
   private _ws: WebSocket | undefined = undefined;
   private _pc: RTCPeerConnection | undefined = undefined;
   private _mediaStream: MediaStream | undefined = undefined;
   private _dataChannel: RTCDataChannel | undefined = undefined;
   private _onConnected: ((stream: MediaStream | null) => void) | undefined = undefined;
+  private _connectionTimeout: number = 7000;
+  private _connectionTimer: NodeJS.Timeout | NodeJS.Timer | undefined = undefined;
+  private _serverURL: string | undefined = undefined;
+  private _roomName: string | undefined = undefined;
+  private _isConnected: boolean = false; // Add flag to track connection state
 
   constructor(serverURL: string, roomName: string, connectedCallback: (stream: MediaStream | null) => void) {
-    // If roomName is not provided, return
     if (roomName.length <= 0) {
       console.error("Room name not provided");
       return;
     }
 
     this._onConnected = connectedCallback;
+    this._serverURL = serverURL;
+    this._roomName = roomName;
     this._setup(serverURL, roomName);
   }
 
   private _setup(serverURL: string, roomName: string) {
+    // Don't setup new connection if already connected
+    if (this._isConnected) {
+      console.log("Already connected, skipping setup");
+      return;
+    }
+
     console.log("Setting up WebSocket");
-    // Replace http/https with ws/wss
     const wsURL = serverURL.replace(/^http/, "ws");
     this._ws = new WebSocket(`${wsURL}/api/ws/${roomName}`);
     this._ws.onopen = async () => {
@@ -68,14 +82,21 @@ export class WebRTCStream {
           break;
         case "ice":
           if (!this._pc) break;
-          // If remote description is not set yet, hold the ICE candidates
           if (this._pc.remoteDescription) {
-            await this._pc.addIceCandidate((message as MessageICE).candidate);
-            // Add held ICE candidates
-            for (const ice of iceHolder) {
-              await this._pc.addIceCandidate(ice);
+            try {
+              await this._pc.addIceCandidate((message as MessageICE).candidate);
+              // Add held ICE candidates
+              for (const ice of iceHolder) {
+                try {
+                  await this._pc.addIceCandidate(ice);
+                } catch (e) {
+                  console.error("Error adding held ICE candidate: ", e);
+                }
+              }
+              iceHolder = [];
+            } catch (e) {
+              console.error("Error adding ICE candidate: ", e);
             }
-            iceHolder = [];
           } else {
             iceHolder.push((message as MessageICE).candidate);
           }
@@ -108,14 +129,12 @@ export class WebRTCStream {
         this._onConnected(null);
 
       // Clear PeerConnection
-      if (this._pc) {
-        this._pc.close();
-        this._pc = undefined;
-      }
+      this._cleanupPeerConnection()
 
-      setTimeout(() => {
-        this._setup(serverURL, roomName);
-      }, 3000);
+      this._handleConnectionFailure()
+      // setTimeout(() => {
+      //   this._setup(serverURL, roomName);
+      // }, this._connectionTimeout);
     }
 
     this._ws.onerror = (e) => {
@@ -123,7 +142,17 @@ export class WebRTCStream {
     }
   }
 
+  // Forces opus to stereo in Chromium browsers, because of course
+  private forceOpusStereo(SDP: string): string {
+    // Look for "minptime=10;useinbandfec=1" and replace with "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;"
+    return SDP.replace(/(minptime=10;useinbandfec=1)/, "$1;stereo=1;sprop-stereo=1;");
+  }
+
   private _setupPeerConnection() {
+    if (this._pc) {
+      this._cleanupPeerConnection();
+    }
+
     console.log("Setting up PeerConnection");
     this._pc = new RTCPeerConnection({
       iceServers: [
@@ -133,17 +162,27 @@ export class WebRTCStream {
       ],
     });
 
+    // Start connection timeout
+    this._startConnectionTimer();
+
     this._pc.ontrack = (e) => {
       console.log("Track received: ", e.track);
       this._mediaStream = e.streams[e.streams.length - 1];
+      this._checkConnectionState();
     };
 
     this._pc.onconnectionstatechange = () => {
-      console.log("Connection state: ", this._pc!.connectionState);
-      if (this._pc!.connectionState === "connected") {
-        if (this._onConnected && this._mediaStream)
-          this._onConnected(this._mediaStream);
-      }
+      console.log("Connection state changed to: ", this._pc!.connectionState);
+      this._checkConnectionState();
+    };
+
+    this._pc.oniceconnectionstatechange = () => {
+      console.log("ICE connection state changed to: ", this._pc!.iceConnectionState);
+      this._checkConnectionState();
+    };
+
+    this._pc.onicegatheringstatechange = () => {
+      console.log("ICE gathering state changed to: ", this._pc!.iceGatheringState);
     };
 
     this._pc.onicecandidate = (e) => {
@@ -154,18 +193,100 @@ export class WebRTCStream {
         };
         this._ws!.send(JSON.stringify(message));
       }
-    }
+    };
 
     this._pc.ondatachannel = (e) => {
       this._dataChannel = e.channel;
       this._setupDataChannelEvents();
+    };
+  }
+
+  private _checkConnectionState() {
+    if (!this._pc) return;
+
+    console.log("Checking connection state:", {
+      connectionState: this._pc.connectionState,
+      iceConnectionState: this._pc.iceConnectionState,
+      hasMediaStream: !!this._mediaStream,
+      isConnected: this._isConnected
+    });
+
+    if (this._pc.connectionState === "connected" && this._mediaStream) {
+      this._clearConnectionTimer();
+      if (!this._isConnected) { // Only trigger callback if not already connected
+        this._isConnected = true;
+        if (this._onConnected) {
+          this._onConnected(this._mediaStream);
+        }
+      }
+    } else if (this._pc.connectionState === "failed" ||
+      this._pc.connectionState === "closed" ||
+      this._pc.iceConnectionState === "failed") {
+      console.log("Connection failed or closed, attempting reconnect");
+      this._isConnected = false; // Reset connected state
+      this._handleConnectionFailure();
     }
   }
 
-  // Forces opus to stereo in Chromium browsers, because of course
-  private forceOpusStereo(SDP: string): string {
-    // Look for "minptime=10;useinbandfec=1" and replace with "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;"
-    return SDP.replace(/(minptime=10;useinbandfec=1)/, "$1;stereo=1;sprop-stereo=1;");
+  private _handleConnectionFailure() {
+    this._clearConnectionTimer();
+    if (this._isConnected) { // Only notify if previously connected
+      this._isConnected = false;
+      if (this._onConnected) {
+        this._onConnected(null);
+      }
+    }
+    this._cleanupPeerConnection();
+
+    // Attempt to reconnect only if not already connected
+    if (!this._isConnected && this._serverURL && this._roomName) {
+      this._setup(this._serverURL, this._roomName);
+    }
+  }
+
+  private _startConnectionTimer() {
+    this._clearConnectionTimer();
+    this._connectionTimer = setTimeout(() => {
+      console.log("Connection timeout reached");
+      this._handleConnectionFailure();
+    }, this._connectionTimeout);
+  }
+
+  private _cleanupPeerConnection() {
+    if (this._pc) {
+      try {
+        this._pc.close();
+      } catch (err) {
+        console.error("Error closing peer connection:", err);
+      }
+      this._pc = undefined;
+    }
+
+    if (this._mediaStream) {
+      try {
+        this._mediaStream.getTracks().forEach(track => track.stop());
+      } catch (err) {
+        console.error("Error stopping media tracks:", err);
+      }
+      this._mediaStream = undefined;
+    }
+
+    if (this._dataChannel) {
+      try {
+        this._dataChannel.close();
+      } catch (err) {
+        console.error("Error closing data channel:", err);
+      }
+      this._dataChannel = undefined;
+    }
+    this._isConnected = false; // Reset connected state during cleanup
+  }
+
+  private _clearConnectionTimer() {
+    if (this._connectionTimer) {
+      clearTimeout(this._connectionTimer as any);
+      this._connectionTimer = undefined;
+    }
   }
 
   private _setupDataChannelEvents() {
@@ -182,5 +303,15 @@ export class WebRTCStream {
       this._dataChannel.send(data);
     else
       console.log("Data channel not open or not established.");
+  }
+
+  public disconnect() {
+    this._clearConnectionTimer();
+    this._cleanupPeerConnection();
+    if (this._ws) {
+      this._ws.close();
+      this._ws = undefined;
+    }
+    this._isConnected = false;
   }
 }

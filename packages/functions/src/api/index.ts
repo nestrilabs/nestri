@@ -2,12 +2,13 @@ import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
 import { UserApi } from "./user";
-import { GameApi } from "./game";
-import { TeamApi } from "./team";
+import { TaskApi } from "./task";
+// import { GameApi } from "./game";
+// import { TeamApi } from "./team";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
 import { SessionApi } from "./session";
-import { MachineApi } from "./machine";
+// import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
 import { SubscriptionApi } from "./subscription";
 import { VisibleError } from "@nestri/core/error";
@@ -58,8 +59,8 @@ const auth: MiddlewareHandler = async (c, next) => {
                 {
                     type: "device",
                     properties: {
-                        fingerprint: result.subject.properties.fingerprint,
-                        id: result.subject.properties.id,
+                        hostname: result.subject.properties.hostname,
+                        teamSlug: result.subject.properties.teamSlug,
                         auth: {
                             type: "oauth",
                             clientID: result.aud,
@@ -81,14 +82,16 @@ app
         c.header("Cache-Control", "no-store");
         return next();
     })
-    .use(auth);
+    .use(auth)
 
 const routes = app
+    .get("/", (c) => c.text("Hello there 👋🏾"))
     .route("/users", UserApi.route)
-    .route("/teams", TeamApi.route)
-    .route("/games", GameApi.route)
+    .route("/tasks", TaskApi.route)
+    // .route("/teams", TeamApi.route)
+    // .route("/games", GameApi.route)
     .route("/sessions", SessionApi.route)
-    .route("/machines", MachineApi.route)
+    // .route("/machines", MachineApi.route)
     .route("/subscriptions", SubscriptionApi.route)
     .onError((error, c) => {
         console.warn(error);

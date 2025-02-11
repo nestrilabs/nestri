@@ -29,6 +29,6 @@
     "workerd"
   ],
   "dependencies": {
-    "sst": "^3.4.32"
+    "sst": "3.6.27"
   }
 }

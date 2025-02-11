@@ -94,7 +94,7 @@ export const HModalPanel = component$((props: PropsOf<'dialog'>) => {
 
   const handleKeyDown$ = $((e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      context.showSig.value = false;
+      // context.showSig.value = false;
       e.stopPropagation();
     }
   });

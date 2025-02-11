@@ -4,8 +4,14 @@ import { Common } from "../common";
 import { Examples } from "../examples";
 import databaseClient from "../database";
 import { groupBy, map, pipe, values } from "remeda"
-import { id as createID } from "@instantdb/admin";
+import { id as createID, } from "@instantdb/admin";
 import { useCurrentUser } from "../actor";
+
+export const userStatus = z.enum([
+    "active", //online and playing a game
+    "idle", //online and not playing
+    "offline",
+]);
 
 export module Profiles {
     const MAX_ATTEMPTS = 50;
@@ -23,6 +29,10 @@ export module Profiles {
             avatarUrl: z.string().or(z.undefined()).openapi({
                 description: "The url to the profile picture.",
                 example: Examples.Profile.username,
+            }),
+            status: userStatus.openapi({
+                description: "Whether the user is active, idle or offline",
+                example: Examples.Profile.status
             }),
             discriminator: z.string().or(z.number()).openapi({
                 description: "The number discriminator for each username",
@@ -44,6 +54,7 @@ export module Profiles {
         });
 
     export type Info = z.infer<typeof Info>;
+    export type userStatus = z.infer<typeof userStatus>;
 
     export const sanitizeUsername = (username: string): string => {
         // Remove spaces and numbers
@@ -91,7 +102,8 @@ export module Profiles {
                 username: group[0].username,
                 createdAt: group[0].createdAt,
                 discriminator: group[0].discriminator,
-                updatedAt: group[0].updatedAt
+                updatedAt: group[0].updatedAt,
+                status: group[0].status as userStatus
             }))
         )
     })
@@ -175,6 +187,7 @@ export module Profiles {
                 createdAt: now,
                 updatedAt: now,
                 discriminator,
+                status: "idle"
             }).link({ owner: input.owner })
         )
     })
@@ -203,48 +216,197 @@ export module Profiles {
         return `${profiles[0]?.username}#${profiles[0]?.discriminator}`;
     }
 
-    export const getProfile = async (ownerID: string) => {
+    export const fromOwnerID = async (ownerID: string) => {
+        try {
 
-        const db = databaseClient()
+            const db = databaseClient()
 
-        const query = {
-            profiles: {
-                $: {
-                    where: {
-                        owner: ownerID
-                    }
-                },
+            const query = {
+                profiles: {
+                    $: {
+                        where: {
+                            owner: ownerID
+                        }
+                    },
+                }
             }
-        }
-        const res = await db.query(query)
+            const res = await db.query(query)
 
-        const profiles = res.profiles
+            const profiles = res.profiles
 
-        if (!profiles || profiles.length === 0) {
+            if (!profiles || profiles.length === 0) {
+                throw new Error("No profiles were found");
+            }
+
+            const profile = pipe(
+                profiles,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    username: group[0].username,
+                    createdAt: group[0].createdAt,
+                    updatedAt: group[0].updatedAt,
+                    avatarUrl: group[0].avatarUrl,
+                    discriminator: group[0].discriminator,
+                    status: group[0].status as userStatus
+                }))
+            )
+
+            return profile[0]
+        } catch (error) {
+            console.log("user fromOwnerID", error)
             return null
         }
-
-        const profile = pipe(
-            profiles,
-            groupBy(x => x.id),
-            values(),
-            map((group): Info => ({
-                id: group[0].id,
-                username: group[0].username,
-                createdAt: group[0].createdAt,
-                updatedAt: group[0].updatedAt,
-                avatarUrl: group[0].avatarUrl,
-                discriminator: group[0].discriminator
-            }))
-        )
-
-        return profile[0]
     }
 
+    export const fromID = async (id: string) => {
+        try {
+
+            const db = databaseClient()
+
+            const query = {
+                profiles: {
+                    $: {
+                        where: {
+                            id
+                        }
+                    },
+                }
+            }
+            const res = await db.query(query)
+
+            const profiles = res.profiles
+
+            if (!profiles || profiles.length === 0) {
+                throw new Error("No profiles were found");
+            }
+
+            const profile = pipe(
+                profiles,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    username: group[0].username,
+                    createdAt: group[0].createdAt,
+                    updatedAt: group[0].updatedAt,
+                    avatarUrl: group[0].avatarUrl,
+                    discriminator: group[0].discriminator,
+                    status: group[0].status as userStatus
+                }))
+            )
+
+            return profile[0]
+        } catch (error) {
+            console.log("user fromID", error)
+            return null
+        }
+    }
+
+    export const fromIDToOwner = async (id: string) => {
+        try {
+
+            const db = databaseClient()
+
+            const query = {
+                profiles: {
+                    $: {
+                        where: {
+                            id
+                        }
+                    },
+                }
+            }
+            const res = await db.query(query)
+
+            const profiles = res.profiles as any
+
+            if (!profiles || profiles.length === 0) {
+                throw new Error("No profiles were found");
+            }
+
+            return profiles[0]!.owner as string
+        } catch (error) {
+            console.log("user fromID", error)
+            return null
+        }
+    }
     export const getCurrentProfile = async () => {
         const user = useCurrentUser()
-        const currentProfile = await getProfile(user.id);
+        const currentProfile = await fromOwnerID(user.id);
 
         return currentProfile
     }
-};
+
+    export const setStatus = fn(userStatus, async (status) => {
+        try {
+            const user = useCurrentUser()
+            const db = databaseClient()
+
+            const now = new Date().toISOString()
+
+            await db.transact(
+                db.tx.profiles[user.id]!.update({
+                    status,
+                    updatedAt: now
+                })
+            )
+        } catch (error) {
+            console.log("user setStatus error", error)
+            return null
+        }
+    })
+
+    export const list = async () => {
+        try {
+            const db = databaseClient()
+            // const ago = new Date(Date.now() - (60 * 1000 * 30)).toISOString()
+            const ago = new Date(Date.now() - (24 * 60 * 60 * 1000)).toISOString()
+
+            const query = {
+                profiles: {
+                    $: {
+                        limit: 10,
+                        where: {
+                            updatedAt: { $gt: ago },
+                        },
+                        order: {
+                            updatedAt: "desc" as const,
+                        },
+                    }
+                }
+            }
+
+            const res = await db.query(query)
+
+            const profiles = res.profiles
+
+            if (!profiles || profiles.length === 0) {
+                throw new Error("No profiles were found");
+
+            }
+
+            const result = pipe(
+                profiles,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    username: group[0].username,
+                    createdAt: group[0].createdAt,
+                    updatedAt: group[0].updatedAt,
+                    avatarUrl: group[0].avatarUrl,
+                    discriminator: group[0].discriminator,
+                    status: group[0].status as userStatus
+                }))
+            )
+
+            return result
+
+        } catch (error) {
+            console.log("user list error", error)
+            return null
+        }
+    }
+}

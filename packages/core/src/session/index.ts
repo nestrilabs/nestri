@@ -1,6 +1,5 @@
 import { z } from "zod"
 import { fn } from "../utils";
-import { Machines } from "../machine";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import databaseClient from "../database"
@@ -14,10 +13,6 @@ export module Sessions {
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.Session.id,
-            }),
-            name: z.string().openapi({
-                description: "A human-readable name for the session to help identify it",
-                example: Examples.Session.name,
             }),
             public: z.boolean().openapi({
                 description: "If true, the session is publicly viewable by all users. If false, only authorized users can access it",
@@ -40,82 +35,31 @@ export module Sessions {
 
     export type Info = z.infer<typeof Info>;
 
-    export const create = fn(z.object({ name: z.string(), public: z.boolean(), fingerprint: z.string(), steamID: z.number() }), async (input) => {
-        const id = createID()
-        const now = new Date().toISOString()
-        const db = databaseClient()
-        const user = useCurrentUser()
-        const machine = await Machines.fromFingerprint(input.fingerprint)
-        if (!machine) {
-            return { error: "Such a machine does not exist" }
+    export const create = fn(z.object({ public: z.boolean() }), async (input) => {
+        try {
+            const id = createID()
+            const db = databaseClient()
+            const user = useCurrentUser()
+            const now = new Date().toISOString()
+
+            await db.transact(
+                db.tx.sessions[id]!.update({
+                    public: input.public,
+                    startedAt: now,
+                }).link({ owner: user.id })
+            )
+
+            return id
+        } catch (err) {
+            return null
         }
-
-        const games = await Machines.installedGames(machine.id)
-
-        if (!games) {
-            return { error: "The machine has no installed games" }
-        }
-
-        const result = pipe(
-            games,
-            groupBy(x => x.steamID === input.steamID ? "similar" : undefined),
-        )
-
-        if (!result.similar || result.similar.length == 0) {
-
-            return { error: "The machine does not have this game installed" }
-        }
-
-        await db.transact(
-            db.tx.sessions[id]!.update({
-                name: input.name,
-                public: input.public,
-                startedAt: now,
-            }).link({ owner: user.id, machine: machine.id, game: result.similar[0].id })
-        )
-
-        return { data: id }
     })
 
-    export const list = async () => {
-        const user = useCurrentUser()
-        const db = databaseClient()
-
-        const query = {
-            $users: {
-                $: { where: { id: user.id } },
-                sessions: {}
-            },
-        }
-
-        const res = await db.query(query)
-
-        const sessions = res.$users[0]?.sessions
-        if (sessions && sessions.length > 0) {
-            const result = pipe(
-                sessions,
-                groupBy(x => x.id),
-                values(),
-                map((group): Info => ({
-                    id: group[0].id,
-                    endedAt: group[0].endedAt,
-                    startedAt: group[0].startedAt,
-                    public: group[0].public,
-                    name: group[0].name
-                }))
-            )
-            return result
-        }
-        return null
-    }
-
     export const getActive = async () => {
-        const user = useCurrentUser()
-        const db = databaseClient()
+        try {
+            const db = databaseClient()
 
-        const query = {
-            $users: {
-                $: { where: { id: user.id } },
+            const query = {
                 sessions: {
                     $: {
                         where: {
@@ -123,48 +67,15 @@ export module Sessions {
                         }
                     }
                 }
-            },
-        }
-
-        const res = await db.query(query)
-
-        const sessions = res.$users[0]?.sessions
-        if (sessions && sessions.length > 0) {
-            const result = pipe(
-                sessions,
-                groupBy(x => x.id),
-                values(),
-                map((group): Info => ({
-                    id: group[0].id,
-                    endedAt: group[0].endedAt,
-                    startedAt: group[0].startedAt,
-                    public: group[0].public,
-                    name: group[0].name
-                }))
-            )
-            return result
-        }
-        return null
-    }
-
-    export const getPublicActive = async () => {
-        const db = databaseClient()
-
-        const query = {
-            sessions: {
-                $: {
-                    where: {
-                        endedAt: { $isNull: true },
-                        public: true
-                    }
-                }
             }
-        }
 
-        const res = await db.query(query)
+            const res = await db.query(query)
 
-        const sessions = res.sessions
-        if (sessions && sessions.length > 0) {
+            const sessions = res.sessions
+            if (!sessions || sessions.length === 0) {
+                throw new Error("No active sessions found")
+            }
+
             const result = pipe(
                 sessions,
                 groupBy(x => x.id),
@@ -174,39 +85,37 @@ export module Sessions {
                     endedAt: group[0].endedAt,
                     startedAt: group[0].startedAt,
                     public: group[0].public,
-                    name: group[0].name
                 }))
             )
+
             return result
+
+        } catch (error) {
+            return null
         }
-        return null
     }
 
-    export const fromSteamID = fn(z.number(), async (steamID) => {
-        const db = databaseClient()
+    export const fromID = fn(z.string(), async (id) => {
+        try {
+            const db = databaseClient()
 
-        const query = {
-            games: {
-                $: {
-                    where: {
-                        steamID
-                    }
-                },
+            const query = {
                 sessions: {
                     $: {
                         where: {
-                            endedAt: { $isNull: true },
-                            public: true
+                            id: id,
                         }
                     }
                 }
             }
-        }
 
-        const res = await db.query(query)
+            const res = await db.query(query)
+            const sessions = res.sessions
 
-        const sessions = res.games[0]?.sessions
-        if (sessions && sessions.length > 0) {
+            if (!sessions || sessions.length === 0) {
+                throw new Error("No sessions were found");
+            }
+
             const result = pipe(
                 sessions,
                 groupBy(x => x.id),
@@ -216,32 +125,38 @@ export module Sessions {
                     endedAt: group[0].endedAt,
                     startedAt: group[0].startedAt,
                     public: group[0].public,
-                    name: group[0].name
                 }))
             )
             return result
+        } catch (err) {
+            console.log("sessions error", err)
+            return null
         }
-        return null
     })
 
-    export const fromID = fn(z.string(), async (id) => {
-        const db = databaseClient()
-        useCurrentUser()
+    export const fromTaskID = fn(z.string(), async (taskID) => {
+        try {
+            const db = databaseClient()
 
-        const query = {
-            sessions: {
-                $: {
-                    where: {
-                        id: id,
+            const query = {
+                sessions: {
+                    $: {
+                        where: {
+                            task: taskID,
+                            endedAt: { $isNull: true }
+                        }
                     }
                 }
             }
-        }
 
-        const res = await db.query(query)
-        const sessions = res.sessions
+            const res = await db.query(query)
+            const sessions = res.sessions
 
-        if (sessions && sessions.length > 0) {
+            if (!sessions || sessions.length === 0) {
+                throw new Error("No sessions were found");
+            }
+            console.log("sessions", sessions)
+
             const result = pipe(
                 sessions,
                 groupBy(x => x.id),
@@ -251,42 +166,86 @@ export module Sessions {
                     endedAt: group[0].endedAt,
                     startedAt: group[0].startedAt,
                     public: group[0].public,
-                    name: group[0].name
                 }))
             )
-            return result
+            return result[0]
+        } catch (err) {
+            console.log("sessions error", err)
+            return null
         }
-
-        return null
     })
 
     export const end = fn(z.string(), async (id) => {
         const user = useCurrentUser()
-        const db = databaseClient()
-        const now = new Date().toISOString()
+        try {
+            const db = databaseClient()
+            const now = new Date().toISOString()
 
-        const query = {
-            $users: {
-                $: { where: { id: user.id } },
+            const query = {
                 sessions: {
                     $: {
                         where: {
+                            owner: user.id,
                             id,
                         }
                     }
-                }
-            },
-        }
+                },
+            }
 
-        const res = await db.query(query)
-        const sessions = res.$users[0]?.sessions
-        if (sessions && sessions.length > 0) {
-            const session = sessions[0] as Info
-            await db.transact(db.tx.sessions[session.id]!.update({ endedAt: now }))
+            const res = await db.query(query)
+            const sessions = res.sessions
+            if (!sessions || sessions.length === 0) {
+                throw new Error("No sessions were found");
+            }
+
+            await db.transact(db.tx.sessions[sessions[0]!.id]!.update({ endedAt: now }))
 
             return "ok"
+
+        } catch (error) {
+
+            return null
         }
 
-        return null
+    })
+
+    export const fromOwnerID = fn(z.string(), async (id) => {
+        try {
+            const db = databaseClient()
+
+            const query = {
+                sessions: {
+                    $: {
+                        where: {
+                            owner: id,
+                            endedAt: { $isNull: true }
+                        }
+                    }
+                }
+            }
+
+            const res = await db.query(query)
+            const sessions = res.sessions
+
+            if (!sessions || sessions.length === 0) {
+                throw new Error("No sessions were found");
+            }
+
+            const result = pipe(
+                sessions,
+                groupBy(x => x.id),
+                values(),
+                map((group): Info => ({
+                    id: group[0].id,
+                    endedAt: group[0].endedAt,
+                    startedAt: group[0].startedAt,
+                    public: group[0].public,
+                }))
+            )
+            return result[0]
+        } catch (err) {
+            console.log("session owner error", err)
+            return null
+        }
     })
 }
