@@ -493,14 +493,14 @@ export default component$(() => {
                   <span class="max-[600px]:hidden" >Radeon RX 7900</span>
                 </div>
               </div>
-              <div class="absolute max-[600px]:right-1/2 max-[600px]:translate-x-1/2 max-[600px]:top-auto max-[600px]:translate-y-0 max-[600px]:w-[calc(100%-36px)] max-[600px]:bottom-0 -right-[30px] w-[calc(100%-96px+40px)] top-1/2 -z-[1] -translate-y-1/2">
+              <div class="absolute max-[600px]:right-1/2 max-[600px]:translate-x-1/2 max-[600px]:w-[calc(100%-36px)] max-[600px]:bottom-0 min-[600px]:-right-[30px] w-[calc(100%-96px+40px)] min-[600px]:top-1/2 -z-[1] min-[600px]:-translate-y-1/2 max-[600px]:top-[unset] ">
                 <div class="min-[600px]:hidden h-16 relative">
-                  {/* <svg class="absolute inset-0 text-gray-500" fill="none" height="64" preserveAspectRatio="none" viewBox="0 0 230 64" width="100%" xmlns="http://www.w3.org/2000/svg">
+                  <svg class="absolute inset-0 text-gray-500" fill="none" height="64" preserveAspectRatio="none" viewBox="0 0 230 64" width="100%" xmlns="http://www.w3.org/2000/svg">
                     <path d="M111 64L111 56.9516C111 43.5878 104.93 30.9476 94.5 22.5925L85.3167 15.236C80.6917 11.5311 78 5.92592 78 -1.44248e-06V-1.44248e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
                     <path d="M103 64V64C103 53.2897 95.7597 43.9337 85.392 41.2467L19.7552 24.2356C8.712 21.3735 1 11.408 1 -4.45856e-06V-4.45856e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
                     <path d="M127 64V64C127 53.2897 134.24 43.9337 144.608 41.2467L210.245 24.2356C221.288 21.3735 229 11.408 229 -4.45856e-06V-4.45856e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
                     <path d="M119 64L119 57.7409C119 43.9291 125.479 30.9169 136.5 22.5925L146.519 15.025C151.231 11.4665 154 5.9042 154 1.5299e-06V1.5299e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                  </svg> */}
+                  </svg>
                   <svg class="[-webkit-mask:linear-gradient(270deg,black_0,black)] absolute inset-0" fill="none" height="64" preserveAspectRatio="none" viewBox="0 0 230 64" width="100%" xmlns="http://www.w3.org/2000/svg">
                     <path d="M111 64L111 56.9516C111 43.5878 104.93 30.9476 94.5 22.5925L85.3167 15.236C80.6917 11.5311 78 5.92592 78 -1.44248e-06V-1.44248e-06" stroke="#E5484D" stroke-width="2" vector-effect="non-scaling-stroke"></path>
                     <path d="M103 64V64C103 53.2897 95.7597 43.9337 85.392 41.2467L19.7552 24.2356C8.712 21.3735 1 11.408 1 -4.45856e-06V-4.45856e-06" stroke="#52AEFF" stroke-width="2" vector-effect="non-scaling-stroke"></path>
