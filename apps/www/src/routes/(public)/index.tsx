@@ -462,15 +462,15 @@ export default component$(() => {
               class="p1 sm:text-xl dark:text-gray-50/70 text-gray-950/70">Install Nestri-server on your GPU instance, connect to our network in minutes, and only pay for bandwidth and API calls</MotionComponent>
           </div>
           <div class="w-full flex select-none justify-between max-[600px]:flex-col items-center max-w-[700px] mx-auto my-5 sm:my-20" >
-            <div class="relative h-[264px] flex flex-[1_1]">
-              <div class="justify-between items-start inline-flex md:flex-col h-full max-[600px]:pb-[64px] max-[600px]:max-w-[264px] max-[600px]:w-full">
-                <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
-                  <svg class="size-5 text-[#0068b5]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="currentColor" d="M9.427 14.401v5.167H7.781v-6.495h3.396c1.443 0 1.932 1.021 1.932 1.943v4.552h-1.641v-4.542c0-.391-.198-.625-.682-.625zm11.188-.078c-.568 0-1 .286-1.182.682a1.6 1.6 0 0 0-.156.703h2.531c-.031-.703-.354-1.385-1.193-1.385m-1.339 2.505c0 .839.521 1.464 1.458 1.464c.724 0 1.083-.203 1.505-.625l1.016.974c-.646.641-1.333 1.031-2.536 1.031c-1.573 0-3.078-.859-3.078-3.359c0-2.141 1.313-3.349 3.042-3.349c1.755 0 2.766 1.417 2.766 3.271v.589h-4.172zm-3.026 2.729c-1.339 0-1.906-.932-1.906-1.854v-6.401h1.641v1.771h1.234v1.328h-1.234v3.198c0 .38.177.589.568.589h.667v1.37zm-9.932-7.38H4.662v-1.578h1.656zm.005 7.458c-1.24-.12-1.661-.87-1.661-1.74v-4.823h1.656v6.568zm19.74-.14c-1.24-.12-1.656-.87-1.656-1.734v-7.38h1.656v9.12zm5.796-8.047c-1.5-7.328-15.724-7.792-24.885-2.214v.62c9.151-4.708 22.141-4.677 23.323 2.063c.391 2.234-.865 4.557-3.109 5.896v1.75c2.703-.99 5.474-4.198 4.672-8.115zM15.198 24.26c-6.323.583-12.917-.339-13.839-5.276c-.448-2.438.667-5.021 2.13-6.625v-.854C.843 13.828-.594 16.771.234 20.245c1.057 4.458 6.714 6.984 15.344 6.146c3.417-.333 7.891-1.432 10.995-3.141v-2.422c-2.818 1.682-7.49 3.073-11.375 3.432m12.781-13.395c0-.078-.052-.104-.156-.104h-.104v.229h.104c.104 0 .156-.031.156-.109zm.162.567h-.125a.03.03 0 0 1-.026-.016l-.167-.286a.04.04 0 0 0-.026-.01h-.073v.281c0 .016-.016.031-.031.031h-.109c-.016 0-.031-.016-.031-.031v-.714c0-.036.021-.057.052-.063q.102-.006.203-.005c.203 0 .328.057.328.25v.01c0 .12-.063.182-.151.214l.172.292c0 .005.005.016.005.021c.005.01-.005.026-.021.026m-.292-.948a.547.547 0 0 0-.547.547c.005.302.25.547.552.547a.545.545 0 0 0 .542-.542a.55.55 0 0 0-.547-.552m0 1.209a.657.657 0 1 1 0-1.317c.359 0 .661.297.661.661s-.302.656-.661.656" /></svg>
-                  <span class="max-[600px]:hidden" >Arc A770</span>
-                </div>
+            <div class="relative h-[264px] flex flex-[1_1] max-[600px]:pb-[64px] max-[600px]:max-w-[264px] max-[600px]:w-full">
+              <div class="justify-between items-start inline-flex md:flex-col h-full max-[600px]:flex-[1_1]">
                 <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
                   <svg class="size-6 text-[#85B737]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" d="M1.635 7.146S3.08 5.012 5.97 4.791v-.774C2.77 4.273 0 6.983 0 6.983s1.57 4.536 5.97 4.952v-.824c-3.23-.406-4.335-3.965-4.335-3.965M5.97 9.475v.753c-2.44-.435-3.118-2.972-3.118-2.972S4.023 5.958 5.97 5.747v.828h-.004c-1.021-.123-1.82.83-1.82.83s.448 1.607 1.824 2.07M6 2l-.03 2.017A7 7 0 0 1 6.252 4c3.637-.123 6.007 2.983 6.007 2.983s-2.722 3.31-5.557 3.31q-.39-.002-.732-.065v.883q.292.039.61.04c2.638 0 4.546-1.348 6.394-2.943c.307.246 1.561.842 1.819 1.104c-1.757 1.47-5.852 2.657-8.173 2.657a7 7 0 0 1-.65-.034V14H16l.03-12zm-.03 3.747v-.956a6 6 0 0 1 .282-.015c2.616-.082 4.332 2.248 4.332 2.248S8.73 9.598 6.743 9.598c-.286 0-.542-.046-.773-.123v-2.9c1.018.123 1.223.572 1.835 1.593L9.167 7.02s-.994-1.304-2.67-1.304a5 5 0 0 0-.527.031" /></svg>
                   <span class="max-[600px]:hidden" >RTX 4090</span>
+                </div>
+                <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
+                  <svg class="size-5 text-[#0068b5]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="currentColor" d="M9.427 14.401v5.167H7.781v-6.495h3.396c1.443 0 1.932 1.021 1.932 1.943v4.552h-1.641v-4.542c0-.391-.198-.625-.682-.625zm11.188-.078c-.568 0-1 .286-1.182.682a1.6 1.6 0 0 0-.156.703h2.531c-.031-.703-.354-1.385-1.193-1.385m-1.339 2.505c0 .839.521 1.464 1.458 1.464c.724 0 1.083-.203 1.505-.625l1.016.974c-.646.641-1.333 1.031-2.536 1.031c-1.573 0-3.078-.859-3.078-3.359c0-2.141 1.313-3.349 3.042-3.349c1.755 0 2.766 1.417 2.766 3.271v.589h-4.172zm-3.026 2.729c-1.339 0-1.906-.932-1.906-1.854v-6.401h1.641v1.771h1.234v1.328h-1.234v3.198c0 .38.177.589.568.589h.667v1.37zm-9.932-7.38H4.662v-1.578h1.656zm.005 7.458c-1.24-.12-1.661-.87-1.661-1.74v-4.823h1.656v6.568zm19.74-.14c-1.24-.12-1.656-.87-1.656-1.734v-7.38h1.656v9.12zm5.796-8.047c-1.5-7.328-15.724-7.792-24.885-2.214v.62c9.151-4.708 22.141-4.677 23.323 2.063c.391 2.234-.865 4.557-3.109 5.896v1.75c2.703-.99 5.474-4.198 4.672-8.115zM15.198 24.26c-6.323.583-12.917-.339-13.839-5.276c-.448-2.438.667-5.021 2.13-6.625v-.854C.843 13.828-.594 16.771.234 20.245c1.057 4.458 6.714 6.984 15.344 6.146c3.417-.333 7.891-1.432 10.995-3.141v-2.422c-2.818 1.682-7.49 3.073-11.375 3.432m12.781-13.395c0-.078-.052-.104-.156-.104h-.104v.229h.104c.104 0 .156-.031.156-.109zm.162.567h-.125a.03.03 0 0 1-.026-.016l-.167-.286a.04.04 0 0 0-.026-.01h-.073v.281c0 .016-.016.031-.031.031h-.109c-.016 0-.031-.016-.031-.031v-.714c0-.036.021-.057.052-.063q.102-.006.203-.005c.203 0 .328.057.328.25v.01c0 .12-.063.182-.151.214l.172.292c0 .005.005.016.005.021c.005.01-.005.026-.021.026m-.292-.948a.547.547 0 0 0-.547.547c.005.302.25.547.552.547a.545.545 0 0 0 .542-.542a.55.55 0 0 0-.547-.552m0 1.209a.657.657 0 1 1 0-1.317c.359 0 .661.297.661.661s-.302.656-.661.656" /></svg>
+                  <span class="max-[600px]:hidden" >Arc A770</span>
                 </div>
                 <div class="ring-gray-200 md:justify-start max-[600px]:size-9 text-gray-600 dark:text-gray-400 dark:ring-gray-800 ring-2 bg-white dark:bg-black rounded-xl flex items-center justify-center md:p-[8px_14px_8px_12px] xl:p-[8px_14px_8px_12px] gap-2" >
                   <svg class="size-6 text-[#85B737]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="currentColor" d="M1.635 7.146S3.08 5.012 5.97 4.791v-.774C2.77 4.273 0 6.983 0 6.983s1.57 4.536 5.97 4.952v-.824c-3.23-.406-4.335-3.965-4.335-3.965M5.97 9.475v.753c-2.44-.435-3.118-2.972-3.118-2.972S4.023 5.958 5.97 5.747v.828h-.004c-1.021-.123-1.82.83-1.82.83s.448 1.607 1.824 2.07M6 2l-.03 2.017A7 7 0 0 1 6.252 4c3.637-.123 6.007 2.983 6.007 2.983s-2.722 3.31-5.557 3.31q-.39-.002-.732-.065v.883q.292.039.61.04c2.638 0 4.546-1.348 6.394-2.943c.307.246 1.561.842 1.819 1.104c-1.757 1.47-5.852 2.657-8.173 2.657a7 7 0 0 1-.65-.034V14H16l.03-12zm-.03 3.747v-.956a6 6 0 0 1 .282-.015c2.616-.082 4.332 2.248 4.332 2.248S8.73 9.598 6.743 9.598c-.286 0-.542-.046-.773-.123v-2.9c1.018.123 1.223.572 1.835 1.593L9.167 7.02s-.994-1.304-2.67-1.304a5 5 0 0 0-.527.031" /></svg>
@@ -481,25 +481,38 @@ export default component$(() => {
                   <span class="max-[600px]:hidden" >Radeon RX 7900</span>
                 </div>
               </div>
-              <div class="absolute -right-[30px] w-[calc(100%-96px+40px)] top-1/2 -z-[1] -translate-y-1/2">
-                <div class="sm:hidden h-16 relative"></div>
-                <div class="h-[231px] relative sm:block hidden">
-                  <svg class="absolute inset-0" fill="none" height="231" preserveAspectRatio="none" viewBox="0 0 175 231" width="100%" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M175 103V103C137.929 103 102.537 87.5452 77.3391 60.3545L34.7984 14.4487C26.8521 5.87384 15.6907 1 4 1V1" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                    <path d="M175 111H142.698C118.994 111 95.4785 106.786 73.2496 98.5553L23.9035 80.2834C16.2524 77.4504 8.1587 76 0 76V76" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                    <path d="M175 119H148.986C127.989 119 107.414 124.89 89.597 136L78.7424 142.769C68.0198 149.455 55.6366 153 43 153V153" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                    <path d="M175 127H174.002C139.072 127 107.233 147.02 92.097 178.5L76.5806 210.772C70.9294 222.525 59.0417 230 46 230V230" stroke="#a3a3a3" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+              <div class="absolute max-[600px]:right-1/2 max-[600px]:translate-x-1/2 max-[600px]:w-[calc(100%-36px)] max-[600px]:bottom-0 -right-[30px] w-[calc(100%-96px+40px)] top-1/2 -z-[1] -translate-y-1/2">
+                <div class="min-[600px]:hidden h-16 relative">
+                  <svg class="absolute inset-0 text-gray-500" fill="none" height="64" preserveAspectRatio="none" viewBox="0 0 230 64" width="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M111 64L111 56.9516C111 43.5878 104.93 30.9476 94.5 22.5925L85.3167 15.236C80.6917 11.5311 78 5.92592 78 -1.44248e-06V-1.44248e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M103 64V64C103 53.2897 95.7597 43.9337 85.392 41.2467L19.7552 24.2356C8.712 21.3735 1 11.408 1 -4.45856e-06V-4.45856e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M127 64V64C127 53.2897 134.24 43.9337 144.608 41.2467L210.245 24.2356C221.288 21.3735 229 11.408 229 -4.45856e-06V-4.45856e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M119 64L119 57.7409C119 43.9291 125.479 30.9169 136.5 22.5925L146.519 15.025C151.231 11.4665 154 5.9042 154 1.5299e-06V1.5299e-06" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
                   </svg>
-                  <svg class="[-webkit-mask:linear-gradient(270deg,black_0,black)] absolute inset-0 to-blue-500" fill="none" height="231" preserveAspectRatio="none" viewBox="0 0 175 231" width="100%" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M175 103V103C137.929 103 102.537 87.5452 77.3391 60.3545L34.7984 14.4487C26.8521 5.87384 15.6907 1 4 1V1" stroke="#3b82f6 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                    <path d="M175 111H142.698C118.994 111 95.4785 106.786 73.2496 98.5553L23.9035 80.2834C16.2524 77.4504 8.1587 76 0 76V76" stroke="#ef4444 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                    <path d="M175 119H148.986C127.989 119 107.414 124.89 89.597 136L78.7424 142.769C68.0198 149.455 55.6366 153 43 153V153" stroke="#f59e0b " stroke-width="2" vector-effect="non-scaling-stroke"></path>
-                    <path d="M175 127H174.002C139.072 127 107.233 147.02 92.097 178.5L76.5806 210.772C70.9294 222.525 59.0417 230 46 230V230" stroke="#14b8a6 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                  <svg class="[-webkit-mask:linear-gradient(270deg,black_0,black)] absolute inset-0" fill="none" height="64" preserveAspectRatio="none" viewBox="0 0 230 64" width="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M111 64L111 56.9516C111 43.5878 104.93 30.9476 94.5 22.5925L85.3167 15.236C80.6917 11.5311 78 5.92592 78 -1.44248e-06V-1.44248e-06" stroke="#E5484D" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M103 64V64C103 53.2897 95.7597 43.9337 85.392 41.2467L19.7552 24.2356C8.712 21.3735 1 11.408 1 -4.45856e-06V-4.45856e-06" stroke="#52AEFF" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M127 64V64C127 53.2897 134.24 43.9337 144.608 41.2467L210.245 24.2356C221.288 21.3735 229 11.408 229 -4.45856e-06V-4.45856e-06" stroke="#45DEC4" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M119 64L119 57.7409C119 43.9291 125.479 30.9169 136.5 22.5925L146.519 15.025C151.231 11.4665 154 5.9042 154 1.5299e-06V1.5299e-06" stroke="#FFB224" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                  </svg>
+                </div>
+                <div class="h-[231px] relative min-[600px]:block hidden">
+                  <svg class="absolute inset-0 text-gray-500" fill="none" height="231" preserveAspectRatio="none" viewBox="0 0 175 231" width="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M175 103V103C137.929 103 102.537 87.5452 77.3391 60.3545L34.7984 14.4487C26.8521 5.87384 15.6907 1 4 1V1" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 111H142.698C118.994 111 95.4785 106.786 73.2496 98.5553L23.9035 80.2834C16.2524 77.4504 8.1587 76 0 76V76" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 119H148.986C127.989 119 107.414 124.89 89.597 136L78.7424 142.769C68.0198 149.455 55.6366 153 43 153V153" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 127H174.002C139.072 127 107.233 147.02 92.097 178.5L76.5806 210.772C70.9294 222.525 59.0417 230 46 230V230" stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                  </svg>
+                  <svg class="[-webkit-mask:linear-gradient(270deg,black_0,black)] absolute inset-0" fill="none" height="231" preserveAspectRatio="none" viewBox="0 0 175 231" width="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M175 103V103C137.929 103 102.537 87.5452 77.3391 60.3545L34.7984 14.4487C26.8521 5.87384 15.6907 1 4 1V1" stroke="#52AEFF " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 111H142.698C118.994 111 95.4785 106.786 73.2496 98.5553L23.9035 80.2834C16.2524 77.4504 8.1587 76 0 76V76" stroke="#E5484D " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 119H148.986C127.989 119 107.414 124.89 89.597 136L78.7424 142.769C68.0198 149.455 55.6366 153 43 153V153" stroke="#FFB224 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
+                    <path d="M175 127H174.002C139.072 127 107.233 147.02 92.097 178.5L76.5806 210.772C70.9294 222.525 59.0417 230 46 230V230" stroke="#45DEC4 " stroke-width="2" vector-effect="non-scaling-stroke"></path>
                   </svg>
                 </div>
               </div>
             </div>
-            <div class="size-[100px] z-[3] -left-[2px] grid [place-items:center] ring-2 ring-gray-300 dark:ring-gray-700 bg-white dark:bg-black rounded-2xl">
+            <div class="size-[100px] max-[600px]:-top-2 relative max-[600px]:size-[64px] max-[600px]:[&>svg]:size-8 z-[3] min-[600px]:-left-[2px] grid [place-items:center] ring-2 ring-gray-300 dark:ring-gray-700 bg-white dark:bg-black rounded-2xl">
               <svg
                 height={64}
                 width={64}
@@ -514,22 +527,22 @@ export default component$(() => {
                 </g>
               </svg>
             </div>
-            <div class="flex-1 flex justify-end relative">
-              <div class="w-[212px] absolute left-0 top-1/2 -translate-y-1/2 -z-[1]">
-                <svg class="text-gray-400 dark:text-gray-600 absolute inset-0 left-0 w-full top-1/2 -translate-y-1/2 -z-[1]" fill="none" height="26" preserveAspectRatio="none" viewBox="0 0 112 26" width="100%" xmlns="http://www.w3.org/2000/svg">
+            <div class="flex-1 flex justify-end max-[600px]:flex-col relative max-[600px]:pt-6">
+              <div class="w-[212px] absolute left-0 top-1/2 -translate-y-1/2 -z-[1] max-[600px]:left-1/2 max-[600px]:top-0 max-[600px]:-translate-x-1/2">
+                <svg class="max-[600px]:left-1/2 max-[600px]:top-0 max-[600px]:w-10 max-[600px]:-translate-x-1/2 max-[600px]:rotate-90 text-gray-400 dark:text-gray-600 absolute inset-0 left-0 w-full top-1/2 -translate-y-1/2 -z-[1]" fill="none" height="26" preserveAspectRatio="none" viewBox="0 0 112 26" width="100%" xmlns="http://www.w3.org/2000/svg">
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="17" y2="17"></line>
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="9" y2="9"></line>
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="1" y2="1"></line>
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="25" y2="25"></line>
                 </svg>
-                <svg class="text-gray-400 dark:text-gray-600 absolute inset-0 left-0 w-full top-1/2 -translate-y-1/2 -z-[1] [-webkit-mask:linear-gradient(270deg,black_0,black)]" fill="none" height="26" preserveAspectRatio="none" viewBox="0 0 112 26" width="100%" xmlns="http://www.w3.org/2000/svg">
+                <svg class="max-[600px]:left-1/2 max-[600px]:top-0 max-[600px]:w-10 max-[600px]:-translate-x-1/2 max-[600px]:rotate-90 text-gray-400 dark:text-gray-600 absolute inset-0 left-0 w-full top-1/2 -translate-y-1/2 -z-[1] [-webkit-mask:linear-gradient(270deg,black_0,black)]" fill="none" height="26" preserveAspectRatio="none" viewBox="0 0 112 26" width="100%" xmlns="http://www.w3.org/2000/svg">
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="17" y2="17"></line>
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="9" y2="9"></line>
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="1" y2="1"></line>
                   <line stroke="currentColor" stroke-width="2" vector-effect="non-scaling-stroke" x2="112" y1="25" y2="25"></line>
                 </svg>
               </div>
-              <div class="h-[172px] w-[200px] bg-white dark:bg-black rounded-xl ring-gray-200 ring-2 dark:ring-gray-800 gap-3 flex flex-col p-4" >
+              <div class="h-[172px] w-[200px] max-[600px]:-top-1 bg-white dark:bg-black rounded-xl ring-gray-200 ring-2 dark:ring-gray-800 gap-3 flex flex-col p-4" >
                 <div class="h-5 relative">
                   <div class="absolute items-center gap-1 flex group [&>:first-child]:bg-[hsla(358,75%,59%,1)] [&>:nth-child(2)]:bg-[hsla(208,100%,66%,1)] [&>:last-child]:bg-[hsla(170,70%,57%,1)]">
                     {new Array(3).fill(0).map((_, key) => (
