@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"nestri/maitred/pkg/resource"
+	"nestri/maitred/internal/resource"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,7 +34,12 @@ func FetchUserToken(teamSlug string) (*UserCredentials, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err = Body.Close()
+		if err != nil {
+			log.Warn("Could not close response body", "err", err)
+		}
+	}(resp.Body)
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		fmt.Println(string(body))
