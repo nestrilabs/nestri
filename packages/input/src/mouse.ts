@@ -25,7 +25,7 @@ export class Mouse {
   protected connected!: boolean;
 
   // Store references to event listeners
-  private readonly sendInterval = 16 //60fps
+  private sendInterval = 16 //60fps
 
   private readonly mousemoveListener: (e: MouseEvent) => void;
   private movementX: number = 0;
@@ -39,6 +39,8 @@ export class Mouse {
   constructor({webrtc, canvas}: Props) {
     this.wrtc = webrtc;
     this.canvas = canvas;
+
+    this.sendInterval = 1000 / webrtc.currentFrameRate
 
     this.mousemoveListener = (e: MouseEvent) => {
       e.preventDefault();

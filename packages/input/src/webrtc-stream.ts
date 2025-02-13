@@ -22,6 +22,7 @@ export class WebRTCStream {
   private _serverURL: string | undefined = undefined;
   private _roomName: string | undefined = undefined;
   private _isConnected: boolean = false; // Add flag to track connection state
+  currentFrameRate: number = 60;
 
   constructor(serverURL: string, roomName: string, connectedCallback: (stream: MediaStream | null) => void) {
     if (roomName.length <= 0) {
@@ -219,6 +220,8 @@ export class WebRTCStream {
           this._onConnected(this._mediaStream);
         }
       }
+
+      this._gatherFrameRate();
     } else if (this._pc.connectionState === "failed" ||
       this._pc.connectionState === "closed" ||
       this._pc.iceConnectionState === "failed") {
@@ -295,6 +298,35 @@ export class WebRTCStream {
     this._dataChannel.onclose = () => console.log('sendChannel has closed')
     this._dataChannel.onopen = () => console.log('sendChannel has opened')
     this._dataChannel.onmessage = e => console.log(`Message from DataChannel '${this._dataChannel?.label}' payload '${e.data}'`)
+  }
+
+  private _gatherFrameRate() {
+    if (this._pc === undefined || this._mediaStream === undefined)
+      return;
+
+    const videoInfoPromise = new Promise<{ fps: number}>((resolve) => {
+      const track = this._mediaStream!.getVideoTracks()[0];
+      // Keep trying to get fps until it's found
+      const interval = setInterval(async () => {
+        if (this._pc === undefined) {
+          clearInterval(interval);
+          return;
+        }
+
+        const stats = await this._pc!.getStats(track);
+        stats.forEach((report) => {
+          if (report.type === "inbound-rtp") {
+            clearInterval(interval);
+            
+            resolve({ fps: report.framesPerSecond });
+          }
+        });
+      }, 250);
+    });
+
+    videoInfoPromise.then((value) => {
+      this.currentFrameRate = value.fps
+    }) 
   }
 
   // Send binary message through the data channel
