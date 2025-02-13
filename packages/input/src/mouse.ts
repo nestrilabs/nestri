@@ -25,6 +25,8 @@ export class Mouse {
   protected connected!: boolean;
 
   // Store references to event listeners
+  private readonly sendInterval = 16 //60fps
+
   private readonly mousemoveListener: (e: MouseEvent) => void;
   private movementX: number = 0;
   private movementY: number = 0;
@@ -44,18 +46,6 @@ export class Mouse {
       this.movementX += e.movementX;
       this.movementY += e.movementY;
     };
-
-    /*this.mousemoveListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
-      $typeName: "proto.ProtoInput",
-      inputType: {
-        case: "mouseMove",
-        value: create(ProtoMouseMoveSchema, {
-          type: "MouseMove",
-          x: e.movementX,
-          y: e.movementY
-        }),
-      }
-    }));*/
 
     this.mousedownListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
       $typeName: "proto.ProtoInput",
@@ -133,7 +123,7 @@ export class Mouse {
         this.movementX = 0;
         this.movementY = 0;
       }
-    }, 10);
+    }, this.sendInterval);
   }
 
   private sendAggregatedMouseMove() {
