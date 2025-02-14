@@ -5,8 +5,7 @@ import (
 	"os"
 	"time"
 
-	"math/rand"
-
+	"crypto/rand"
 	"github.com/charmbracelet/log"
 	"github.com/oklog/ulid/v2"
 )
@@ -20,8 +19,8 @@ var (
 )
 
 func generateClientID() string {
-	// Create a source of entropy (use cryptographically secure randomness in production)
-	entropy := rand.New(rand.NewSource(time.Now().UnixNano()))
+	// Create a source of entropy (cryptographically secure)
+	entropy := ulid.Monotonic(rand.Reader, 0)
 
 	// Generate a new ULID
 	id := ulid.MustNew(ulid.Timestamp(time.Now()), entropy)

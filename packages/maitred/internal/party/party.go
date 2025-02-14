@@ -3,12 +3,10 @@ package party
 import (
 	"context"
 	"fmt"
-	"nestri/maitred/pkg/auth"
-	"nestri/maitred/pkg/resource"
+	"nestri/maitred/internal/auth"
+	"nestri/maitred/internal/resource"
 	"net/url"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -16,27 +14,23 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run(teamSlug string) {
+func Run(teamSlug string, ctx context.Context) {
 	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, teamSlug)
-	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
+	var srvURLStr = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
 	var clientID = generateClientID()
 	hostname, err := os.Hostname()
 	if err != nil {
 		log.Fatal(" Could not get the hostname")
 	}
 
-	// App will run until cancelled by user (e.g. ctrl-c)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	userTokens, err := auth.FetchUserToken(teamSlug)
 	if err != nil {
 		log.Error("Error trying to request for credentials", "err", err)
-		stop()
+		panic(err)
 	}
 
 	// We will connect to the Eclipse test server (note that you may see messages that other users publish)
-	u, err := url.Parse(serverURL)
+	srvURL, err := url.Parse(srvURLStr)
 	if err != nil {
 		panic(err)
 	}
@@ -47,7 +41,7 @@ func Run(teamSlug string) {
 	})
 
 	cliCfg := autopaho.ClientConfig{
-		ServerUrls:      []*url.URL{u},
+		ServerUrls:      []*url.URL{srvURL},
 		ConnectUsername: "", // Must be empty for the authorizer
 		ConnectPassword: []byte(userTokens.AccessToken),
 		KeepAlive:       20, // Keepalive message should be sent every 20 seconds
@@ -57,7 +51,7 @@ func Run(teamSlug string) {
 		ReconnectBackoff:              autopaho.NewConstantBackoff(time.Second),
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			infoLogger.Info("Router", "info", "MQTT connection is up and running")
-			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+			if _, err = cm.Subscribe(context.Background(), &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{
 					{Topic: fmt.Sprintf("%s/#", topic), QoS: 1}, //Listen to all messages from this team
 				},
@@ -109,7 +103,7 @@ func Run(teamSlug string) {
 	})
 	router.RegisterHandler(fmt.Sprintf("%s/%s/stop", topic, hostname), func(p *paho.Publish) { fmt.Printf("stop the game that is running: %s\n", p.Topic) })
 	router.RegisterHandler(fmt.Sprintf("%s/%s/download", topic, hostname), func(p *paho.Publish) { fmt.Printf("download a game: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/%s/quit", topic, hostname), func(p *paho.Publish) { stop() }) // Stop and quit this running container
+	router.RegisterHandler(fmt.Sprintf("%s/%s/quit", topic, hostname), func(p *paho.Publish) { /**/ }) // Stop and quit this running container
 
 	// We publish three messages to test out the various route handlers
 	// topics := []string{"test/test", "test/test/foo", "test/xxNoMatch", "test/quit"}
@@ -124,6 +118,4 @@ func Run(teamSlug string) {
 	// 		}
 	// 	}
 	// }
-
-	<-c.Done() // Wait for clean shutdown (cancelling the context triggered the shutdown)
 }
