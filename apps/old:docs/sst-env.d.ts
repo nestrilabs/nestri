@@ -3,15 +3,7 @@
 /* eslint-disable */
 /* deno-fmt-ignore-file */
 
-import "sst"
-declare module "sst" {
-  export interface Resource {
-    "Console": {
-      "type": "sst.aws.Astro"
-      "url": string
-    }
-  }
-}
+/// <reference path="../../sst-env.d.ts" />
 
 import "sst"
 export {}
