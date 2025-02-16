@@ -22,9 +22,8 @@ export default $config({
       path: "./apps/console"
     })
 
-    const outputs = {
-      console: console.url
-    }
-
+    const docs = new sst.aws.Nextjs("Docs",{
+      path:"./apps/docs",
+    })
   },
 });
