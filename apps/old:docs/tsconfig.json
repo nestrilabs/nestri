@@ -1,4 +1,0 @@
-{
-  // "extends": "./.nuxt/tsconfig.json",
-  "ignoreConfigErrors": true
-}

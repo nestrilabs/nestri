@@ -21,9 +21,5 @@ export default $config({
       buildCommand: "bun run build",
       path: "./apps/console"
     })
-
-    const docs = new sst.aws.Nextjs("Docs",{
-      path:"./apps/docs",
-    })
   },
 });

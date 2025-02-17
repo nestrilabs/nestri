@@ -4,6 +4,8 @@ import react from '@astrojs/react';
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 
+import solidJs from '@astrojs/solid-js';
+
 // https://astro.build/config
 export default defineConfig({
   vite: {
@@ -13,5 +15,5 @@ export default defineConfig({
   adapter: aws(),
   output:"server",
   server: { host: true },
-  integrations: [react()]
+  integrations: [react(), solidJs()]
 });
