@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+/* @layer base {
+    html,
+    html * {
+        scrollbar-color: theme("colors.gray.700") theme("colors.gray.300");
+        scrollbar-width: thin;
+        scroll-behavior: smooth;
+    }
+
+    *::selection {
+        background-color: theme("colors.primary.100");
+        color: theme("colors.primary.500");
+    }
+
+    *::-moz-selection {
+        background-color: theme("colors.primary.100");
+        color: theme("colors.primary.500");
+    }
+
+    html.dark *::selection {
+        background-color: theme("colors.primary.500");
+        color: theme("colors.primary.100");
+    }
+
+    html.dark *::-moz-selection {
+        background-color: theme("colors.primary.500");
+        color: theme("colors.primary.100");
+    }
+
+    html.dark,
+    html.dark * {
+        scrollbar-color: theme("colors.gray.300") theme("colors.gray.700");
+        scrollbar-width: thin;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        *::selection {
+            background-color: theme("colors.primary.500");
+            color: theme("colors.primary.100");
+        }
+
+        *::-moz-selection {
+            background-color: theme("colors.primary.500");
+            color: theme("colors.primary.100");
+        }
+
+        html,
+        html * {
+            scrollbar-color: theme("colors.gray.300") theme("colors.gray.700");
+            scrollbar-width: thin;
+        }
+    }
+
+    input:-webkit-autofill,
+    input:-webkit-autofill:focus {
+        transition: background-color 0s 600000s, color 0s 600000s !important;
+    }
+
+} */

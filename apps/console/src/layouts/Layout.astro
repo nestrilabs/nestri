@@ -1,22 +1,144 @@
-<!doctype html>
-<html lang="en">
-	<head>
-		<meta charset="UTF-8" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro Basics</title>
-	</head>
-	<body>
-		<slot />
-	</body>
-</html>
+---
+import "@styles/global.css";
+---
 
+<!-- <script is:inline>
+  const getThemePreference = () => {
+    if (typeof localStorage !== "undefined" && localStorage.getItem("theme")) {
+      return localStorage.getItem("theme");
+    }
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  };
+  const isDark = getThemePreference() === "dark";
+  document.documentElement.classList[isDark ? "add" : "remove"]("dark");
+
+  if (typeof localStorage !== "undefined") {
+    const observer = new MutationObserver(() => {
+      const isDark = document.documentElement.classList.contains("dark");
+      localStorage.setItem("theme", isDark ? "dark" : "light");
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"]
+    });
+  }
+</script> -->
+
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#f5f5f5"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#171717"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="180x180"
+      href="/seo/apple-touch-icon.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/seo/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/seo/favicon-16x16.png"
+    />
+	 <link
+      rel="preload"
+      href="/fonts/Geist.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin="anonymous"
+    />
+	<link
+      rel="preload"
+      href="/fonts/GeistMono.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin="anonymous"
+    />
+	<link
+      rel="preload"
+      href="/fonts/MonaSansVF-Regular.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin="anonymous"
+    />
+	<link
+      rel="preload"
+      href="/fonts/MonaSansVF-Regular.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin="anonymous"
+    />
+	<link
+      rel="preload"
+      href="/fonts/MonaSansVF-Regular.woff"
+      as="font"
+      type="font/woff"
+      crossorigin="anonymous"
+    />
+    <meta name="generator" content={Astro.generator} />
+    <title>Nestri - Your games. Your rules.</title>
+  </head>
+
+  <body
+    class="bg-gray-100 font-sans text-gray-950 dark:bg-gray-900 dark:text-gray-50 flex flex-col items-center justify-center overflow-x-hidden antialiased"
+  >
+    <slot />
+  </body>
+</html>
 <style>
-	html,
-	body {
-		margin: 0;
-		width: 100%;
-		height: 100%;
-	}
+  @font-face {
+    font-family: "geist-mono";
+    src: url("/fonts/GeistMono.ttf") format("opentype-variations");
+    font-display: swap;
+    font-style: normal;
+    font-weight: 400 500 600 700 800;
+  }
+  @font-face {
+    font-family: "geist-sans";
+    src: url("/fonts/Geist.ttf") format("opentype-variations");
+    font-display: swap;
+    font-style: normal;
+    font-weight: 400 500 600 700 800;
+  }
+  @font-face {
+    font-family: "github-mona";
+    src:
+      url("/fonts/MonaSansVF-Regular.woff2") format("woff2-variations"),
+      url("/fonts/MonaSansVF-Regular.woff") format("woff-variations"),
+      url("/fonts/MonaSansVF-Regular.ttf") format("opentype-variations");
+    font-display: swap;
+    font-style: normal;
+    font-weight: 400 500 600 700 800 900;
+  }
+  @font-face {
+    font-family: "geist-fallback";
+    src: local("Courier New");
+    size-adjust: 100%;
+    ascent-override: 97%;
+    descent-override: 25%;
+    line-gap-override: 1%;
+  }
+  html,
+  body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+  }
 </style>

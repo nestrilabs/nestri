@@ -19,6 +19,7 @@
     "solid-js": "^1.9.4"
   },
   "devDependencies": {
+    "@astrojs/tailwind": "^6.0.0",
     "@tailwindcss/vite": "^4.0.6",
     "astro-sst": "^2.45.2",
     "tailwindcss": "^4.0.6",

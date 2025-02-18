@@ -8,6 +8,10 @@
     "dist"
   ],
   "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@styles/*": ["src/styles/*"]
+    },
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
   }
