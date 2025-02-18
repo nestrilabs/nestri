@@ -1,7 +1,7 @@
 {
-  "name": "console",
-  "type": "module",
+  "name": "@nestri/www",
   "version": "0.0.1",
+  "type": "module",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",

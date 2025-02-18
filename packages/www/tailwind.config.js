@@ -24,7 +24,7 @@ export default {
           950: "#190800",
           DEFAULT: "#FF4F01"
         },
-        secondary: colors.gray,
+        secondary: colors.neutral,
         accent: colors.orange,
         gray: {
           ...colors.neutral,
