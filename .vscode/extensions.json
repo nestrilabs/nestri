@@ -1,4 +1,4 @@
 {
-  "recommendations": ["dbaeumer.vscode-eslint", "unifiedjs.vscode-mdx"],
+  "recommendations": ["dbaeumer.vscode-eslint", "unifiedjs.vscode-mdx","astro-build.astro-vscode"],
   "unwantedRecommendations": []
 }

@@ -1,0 +1,15 @@
+{
+  "name": "@nestri/console",
+  "module": "index.ts",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tailwind.config": "./tailwind.config.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

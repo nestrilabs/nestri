@@ -10,10 +10,6 @@ declare module "sst" {
       "type": "sst.aws.Astro"
       "url": string
     }
-    "Docs": {
-      "type": "sst.aws.Nextjs"
-      "url": string
-    }
   }
 }
 

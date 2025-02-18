@@ -12,6 +12,12 @@
       "webRoot": "${workspaceFolder}"
     },
     {
+      "name": "Astro evelopment server",
+      "command": "./node_modules/.bin/astro dev",
+      "request": "launch",
+      "type": "node-terminal"
+    },
+    {
       "type": "node",
       "name": "dev.debug",
       "request": "launch",
