@@ -2,7 +2,10 @@
   "extends": "astro/tsconfigs/strict",
   "include": [
     ".astro/types.d.ts",
-    "**/*"
+    "**/*",
+     "./*.d.ts", 
+     "./*.config.ts",
+     "./*.config.js"
   ],
   "exclude": [
     "dist"
@@ -10,9 +13,14 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@styles/*": ["src/styles/*"]
+      "@styles/*": [
+        "src/styles/*"
+      ]
     },
     "jsx": "preserve",
     "jsxImportSource": "solid-js"
-  }
+  },
+  "files": [
+      "./eslint.config.mjs"
+    ]
 }

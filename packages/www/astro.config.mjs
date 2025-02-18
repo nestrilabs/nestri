@@ -19,6 +19,6 @@ export default defineConfig({
   integrations: [ 
     solidJs({ exclude: '**/cui/**/*' }),
     react({ include: '**/cui/**/*' }),
-    tailwind({ applyBaseStyles: false })
+    tailwind({ applyBaseStyles: true })
   ]
 });

@@ -17,9 +17,8 @@ export default $config({
     };
   },
   async run() {
-    const console = new sst.aws.Astro("Console", {
-      buildCommand: "bun run build",
-      path: "./apps/console"
+    const www = new sst.aws.Astro("www", {
+      path: "./packages/www"
     })
   },
 });
