@@ -6,7 +6,7 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
-    "Console": {
+    "www": {
       "type": "sst.aws.Astro"
       "url": string
     }
