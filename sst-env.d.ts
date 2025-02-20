@@ -6,6 +6,58 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
+    "Api": {
+      "type": "sst.aws.Router"
+      "url": string
+    }
+    "ApiFn": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
+    }
+    "Auth": {
+      "type": "sst.aws.Auth"
+      "url": string
+    }
+    "AuthFingerprintKey": {
+      "type": "random.index/randomString.RandomString"
+      "value": string
+    }
+    "DiscordClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "DiscordClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GithubClientID": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "GithubClientSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "InstantAdminToken": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "InstantAppId": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "Mail": {
+      "configSet": string
+      "sender": string
+      "type": "sst.aws.Email"
+    }
+    "Urls": {
+      "api": string
+      "auth": string
+      "site": string
+      "type": "sst.sst.Linkable"
+    }
     "www": {
       "type": "sst.aws.Astro"
       "url": string

@@ -1,4 +1,6 @@
 /// <reference path="./.sst/platform/config.d.ts" />
+import { readdirSync } from "fs";
+
 export default $config({
   app(input) {
     return {
@@ -13,10 +15,16 @@ export default $config({
             input.stage === "production" ? "nestri-production" : "nestri-dev",
         },
         cloudflare: "5.49.0",
+        random: "4.17.0",
       },
     };
   },
   async run() {
-    await import("./infra/www");
+    const outputs = {};
+    for (const value of readdirSync("./infra/")) {
+      const result = await import("./infra/" + value);
+      if (result.outputs) Object.assign(outputs, result.outputs);
+    }
+    return outputs;
   },
 });

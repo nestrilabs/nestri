@@ -15,6 +15,7 @@ import { VisibleError } from "@nestri/core/error";
 import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { handle, streamHandle } from "hono/aws-lambda";
 import { createClient } from "@openauthjs/openauth/client";
 
 const auth: MiddlewareHandler = async (c, next) => {
@@ -162,4 +163,4 @@ app.get(
 );
 
 export type Routes = typeof routes;
-export default app
+export const handler = process.env.SST_DEV ? handle(app) : streamHandle(app);
