@@ -17,8 +17,6 @@ export default $config({
     };
   },
   async run() {
-    const www = new sst.aws.Astro("www", {
-      path: "./packages/www"
-    })
+    await import("./infra/www");
   },
 });
