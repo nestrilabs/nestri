@@ -55,20 +55,11 @@ Ensure you have the following installed:
 ➞ *coming soon*
 
 ## 🏗 Architecture Overview
+```mermaid
+graph TD;
+    A[User Browser] <-- WebRTC Streaming --> B[Nestri Relay];
+    B <-- WebRTC (NAT Traversal) --> C[Nestri Runner];
 ```
-┌───────────────────────┐
-│     User Browser      │
-└────────▲──────────────┘
-         │ WebRTC Streaming
-┌────────▼──────────────┐
-│   Nestri Relay        │
-└────────▲──────────────┘
-         │ WebRTC forwarding (NAT Traversal)
-┌────────▼──────────────┐
-│   Nestri Runner       │
-└───────────────────────┘
-```
-
 
 ## 🛠 Documentation
 To build and run the docs:
