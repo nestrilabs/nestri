@@ -83,7 +83,10 @@ We welcome contributions! Please fork the repository and submit a pull request.
 If you find a bug or have an idea feel free to create an [issue](https://github.com/nestrilabs/nestri/issues)
 
 ## 💵 Sponsoring
-We'd be incredibly grateful for any support - whether it's a contribution, donation, sharing our product, or simply cheering us on. Every bit helps us get closer to our goal of an open source cloud streaming platform! Thank you for believing in us! Feel free to sponsor us on [Polar](https://polar.sh/nestri)
+We'd be incredibly grateful for any support - whether it's a contribution, donation, sharing our product, or simply cheering us on. Every bit helps us get closer to our goal of an open source cloud gaming platform! Thank you for believing in us!
+
+We would highly appreciate your sponsoring on [Polar](https://polar.sh/nestri) 
+🫶
 
 ## 📜 License
 This project is licensed under the AGPL-3.0 license - see the [LICENSE](https://github.com/nestrilabs/nestri?tab=AGPL-3.0-1-ov-file#readme) file for details.
