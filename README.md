@@ -41,7 +41,9 @@ Welcome to **Nestri**, a cutting-edge cloud gaming web streaming platform that a
 - ⚡ **Low Latency**: Optimized for high-speed performance.
 - 🎥 **HD Streaming**: Supports up to 1080p resolution.
 - 🕹 **Controller Support**: ➞ *planned soon*
-- 🎉 **Share with your friends & family**: You can share your gaming rig with your firends or family
+- 📱 **Native App**: ➞ *planned later*
+- 📺 **TV App**: ➞ *in discussion*
+- 🎉 **Share with your friends & family**: You can share your gaming rig with your friends or family
 
 ## 📦 Installation & Setup
 ### 🔧 Prerequisites for BYOG
