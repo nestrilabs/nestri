@@ -58,7 +58,7 @@ Ensure you have the following installed:
 ```
 ┌────────────────────────┐
 │     User Browser       │
-└────────▲──────────-────┘
+└────────▲───────────────┘
          │ WebRTC Streaming
 ┌────────▼──────────────┐
 │   Nestri Relay        │
