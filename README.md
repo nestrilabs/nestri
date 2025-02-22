@@ -80,6 +80,10 @@ bun run dev
 
 ## 🤝 Contributing
 We welcome contributions! Please fork the repository and submit a pull request.
+If you find a bug or have an idea feel free to create an [issue](https://github.com/nestrilabs/nestri/issues)
+
+## 💵 Sponsoring
+This project is open source but while having not only volunteers we would really appreciate if you could support our development on [Polar](https://polar.sh/nestri)
 
 ## 📜 License
 This project is licensed under the AGPL-3.0 license - see the [LICENSE](https://github.com/nestrilabs/nestri?tab=AGPL-3.0-1-ov-file#readme) file for details.
@@ -88,6 +92,7 @@ This project is licensed under the AGPL-3.0 license - see the [LICENSE](https://
 - [Official Website](https://nestri.io)
 - [Documentation](https://github.com/nestrilabs/nestri/tree/main/apps/docs)
 - [Discord Community](https://discord.com/invite/Y6etn3qKZ3)
+- [Polar](https://polar.sh/nestri)
 
 Happy Gaming! 🎮🔥
 
