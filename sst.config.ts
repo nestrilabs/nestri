@@ -1,6 +1,5 @@
 /// <reference path="./.sst/platform/config.d.ts" />
 import { readdirSync } from "fs";
-
 export default $config({
   app(input) {
     return {
@@ -16,6 +15,7 @@ export default $config({
         },
         cloudflare: "5.49.0",
         random: "4.17.0",
+        neon: "0.6.3",
       },
     };
   },
