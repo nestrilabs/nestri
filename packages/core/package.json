@@ -8,7 +8,8 @@
         "db:push": "sst shell drizzle-kit push",
         "db:migrate": "sst shell drizzle-kit migrate",
         "db:generate": "sst shell drizzle-kit generate",
-        "db:connect": "sst shell ../scripts/src/psql.ts"
+        "db:connect": "sst shell ../scripts/src/psql.ts",
+        "db:move": "sst shell drizzle-kit generate && sst shell drizzle-kit migrate && sst shell drizzle-kit push"
     },
     "exports": {
         "./*": "./src/*.ts"
@@ -31,8 +32,6 @@
         "@neondatabase/serverless": "^0.10.4",
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
-        "drizzle-orm": "^0.39.3",
-        "pg": "^8.13.3",
-        "postgres": "^3.4.5"
+        "drizzle-orm": "^0.39.3"
     }
 }
