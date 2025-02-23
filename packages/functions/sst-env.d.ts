@@ -51,14 +51,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "InstantAdminToken": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "InstantAppId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
     "Mail": {
       "configSet": string
       "sender": string
