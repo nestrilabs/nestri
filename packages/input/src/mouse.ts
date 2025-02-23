@@ -25,7 +25,13 @@ export class Mouse {
   protected connected!: boolean;
 
   // Store references to event listeners
+  private sendInterval = 16 //60fps
+
   private readonly mousemoveListener: (e: MouseEvent) => void;
+  private movementX: number = 0;
+  private movementY: number = 0;
+  private isProcessing: boolean = false;
+
   private readonly mousedownListener: (e: MouseEvent) => void;
   private readonly mouseupListener: (e: MouseEvent) => void;
   private readonly mousewheelListener: (e: WheelEvent) => void;
@@ -34,17 +40,15 @@ export class Mouse {
     this.wrtc = webrtc;
     this.canvas = canvas;
 
-    this.mousemoveListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
-      $typeName: "proto.ProtoInput",
-      inputType: {
-        case: "mouseMove",
-        value: create(ProtoMouseMoveSchema, {
-          type: "MouseMove",
-          x: e.movementX,
-          y: e.movementY
-        }),
-      }
-    }));
+    this.sendInterval = 1000 / webrtc.currentFrameRate
+
+    this.mousemoveListener = (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.movementX += e.movementX;
+      this.movementY += e.movementY;
+    };
+
     this.mousedownListener = this.createMouseListener((e: any) => create(ProtoInputSchema, {
       $typeName: "proto.ProtoInput",
       inputType: {
@@ -78,6 +82,7 @@ export class Mouse {
     }));
 
     this.run()
+    this.startProcessing();
   }
 
   private run() {
@@ -111,6 +116,57 @@ export class Mouse {
     this.canvas.removeEventListener("mouseup", this.mouseupListener);
     this.canvas.removeEventListener("wheel", this.mousewheelListener);
     this.connected = false;
+  }
+
+  private startProcessing() {
+    setInterval(() => {
+      if (this.connected && (this.movementX !== 0 || this.movementY !== 0)) {
+        this.sendAggregatedMouseMove();
+        this.movementX = 0;
+        this.movementY = 0;
+      }
+    }, this.sendInterval);
+  }
+
+  private sendAggregatedMouseMove() {
+    const data = create(ProtoInputSchema, {
+      $typeName: "proto.ProtoInput",
+      inputType: {
+        case: "mouseMove",
+        value: create(ProtoMouseMoveSchema, {
+          type: "MouseMove",
+          x: this.movementX,
+          y: this.movementY,
+        }),
+      },
+    });
+
+    // Latency tracking
+    const tracker = new LatencyTracker("input-mouse");
+    tracker.addTimestamp("client_send");
+    const protoTracker: ProtoLatencyTracker = {
+      $typeName: "proto.ProtoLatencyTracker",
+      sequenceId: tracker.sequence_id,
+      timestamps: [],
+    };
+    for (const t of tracker.timestamps) {
+      protoTracker.timestamps.push({
+        $typeName: "proto.ProtoTimestampEntry",
+        stage: t.stage,
+        time: timestampFromDate(t.time),
+      } as ProtoTimestampEntry);
+    }
+
+    const message: ProtoMessageInput = {
+      $typeName: "proto.ProtoMessageInput",
+      messageBase: {
+        $typeName: "proto.ProtoMessageBase",
+        payloadType: "input",
+        latency: protoTracker,
+      } as ProtoMessageBase,
+      data: data,
+    };
+    this.wrtc.sendBinary(toBinary(ProtoMessageInputSchema, message));
   }
 
   // Helper function to create and return mouse listeners
