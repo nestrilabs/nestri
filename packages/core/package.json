@@ -3,6 +3,11 @@
     "version": "0.0.0",
     "sideEffects": false,
     "type": "module",
+    "scripts": {
+        "db": "sst shell drizzle-kit",
+        "db:push": "sst shell drizzle-kit push",
+        "db:connect": "sst shell ../scripts/mysql"
+    },
     "exports": {
         "./*": "./src/*.ts"
     },
@@ -10,6 +15,7 @@
         "@tsconfig/node20": "^20.1.4",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
+        "drizzle-kit": "^0.30.4",
         "loops": "^3.4.1",
         "mqtt": "^5.10.3",
         "remeda": "^2.19.0",
@@ -19,6 +25,10 @@
         "zod-openapi": "^4.2.2"
     },
     "dependencies": {
-        "@instantdb/admin": "^0.17.7"
+        "@instantdb/admin": "^0.17.7",
+        "@neondatabase/serverless": "^0.10.4",
+        "@openauthjs/openevent": "^0.0.27",
+        "@polar-sh/sdk": "^0.26.1",
+        "drizzle-orm": "^0.39.3"
     }
 }

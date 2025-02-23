@@ -1,3 +1,5 @@
+import { bus } from "./bus";
+import { database } from "./database";
 import { domain } from "./dns";
 import { email } from "./email";
 import { secret } from "./secret";
@@ -27,13 +29,14 @@ export const auth = new sst.aws.Auth("Auth", {
     issuer: {
         handler: "./packages/functions/src/auth.handler",
         link: [
+            bus,
             email,
+            database,
             authFingerprintKey,
-            secret.InstantAppId,
+            secret.PolarSecret,
             secret.GithubClientID,
             secret.DiscordClientID,
             secret.GithubClientSecret,
-            secret.InstantAdminToken,
             secret.DiscordClientSecret,
         ],
         permissions: [
@@ -52,7 +55,10 @@ export const auth = new sst.aws.Auth("Auth", {
 export const apiFunction = new sst.aws.Function("ApiFn", {
     handler: "packages/functions/src/api/index.handler",
     link:[
+        bus,
         urls,
+        database,
+        secret.PolarSecret,
     ],
     timeout: "3 minutes",
     streaming: !$dev,

@@ -23,6 +23,18 @@ declare module "sst" {
       "type": "random.index/randomString.RandomString"
       "value": string
     }
+    "Bus": {
+      "arn": string
+      "name": string
+      "type": "sst.aws.Bus"
+    }
+    "Database": {
+      "host": string
+      "name": string
+      "password": string
+      "type": "sst.sst.Linkable"
+      "user": string
+    }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -51,6 +63,10 @@ declare module "sst" {
       "configSet": string
       "sender": string
       "type": "sst.aws.Email"
+    }
+    "PolarSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
     }
     "Urls": {
       "api": string

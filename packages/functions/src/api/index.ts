@@ -1,80 +1,23 @@
 import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
-import { UserApi } from "./user";
-import { TaskApi } from "./task";
+// import { UserApi } from "./user";
+// import { TaskApi } from "./task";
 // import { GameApi } from "./game";
 // import { TeamApi } from "./team";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
-import { SessionApi } from "./session";
+// import { SessionApi } from "./session";
 // import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
-import { SubscriptionApi } from "./subscription";
+// import { SubscriptionApi } from "./subscription";
 import { VisibleError } from "@nestri/core/error";
-import { ActorContext } from '@nestri/core/actor';
+// import { ActorContext } from '@nestri/core/actor';
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { handle, streamHandle } from "hono/aws-lambda";
 import { createClient } from "@openauthjs/openauth/client";
-
-const auth: MiddlewareHandler = async (c, next) => {
-    const client = createClient({
-        clientID: "api",
-        issuer: Resource.Urls.auth
-    });
-
-    const authHeader =
-        c.req.query("authorization") ?? c.req.header("authorization");
-    if (authHeader) {
-        const match = authHeader.match(/^Bearer (.+)$/);
-        if (!match || !match[1]) {
-            throw new VisibleError(
-                "input",
-                "auth.token",
-                "Bearer token not found or improperly formatted",
-            );
-        }
-        const bearerToken = match[1];
-
-        const result = await client.verify(subjects, bearerToken!);
-        if (result.err)
-            throw new VisibleError("input", "auth.invalid", "Invalid bearer token");
-        if (result.subject.type === "user") {
-            return ActorContext.with(
-                {
-                    type: "user",
-                    properties: {
-                        userID: result.subject.properties.userID,
-                        accessToken: result.subject.properties.accessToken,
-                        auth: {
-                            type: "oauth",
-                            clientID: result.aud,
-                        },
-                    },
-                },
-                next,
-            );
-        } else if (result.subject.type === "device") {
-            return ActorContext.with(
-                {
-                    type: "device",
-                    properties: {
-                        hostname: result.subject.properties.hostname,
-                        teamSlug: result.subject.properties.teamSlug,
-                        auth: {
-                            type: "oauth",
-                            clientID: result.aud,
-                        },
-                    },
-                },
-                next,
-            );
-        }
-    }
-
-    return ActorContext.with({ type: "public", properties: {} }, next);
-};
+import { auth } from "./auth";
 
 
 const app = new Hono();
@@ -87,13 +30,13 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello there 👋🏾"))
-    .route("/users", UserApi.route)
-    .route("/tasks", TaskApi.route)
+    // .route("/users", UserApi.route)
+    // .route("/tasks", TaskApi.route)
     // .route("/teams", TeamApi.route)
     // .route("/games", GameApi.route)
-    .route("/sessions", SessionApi.route)
+    // .route("/sessions", SessionApi.route)
     // .route("/machines", MachineApi.route)
-    .route("/subscriptions", SubscriptionApi.route)
+    // .route("/subscriptions", SubscriptionApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {
@@ -102,7 +45,7 @@ const routes = app
                     code: error.code,
                     message: error.message,
                 },
-                error.kind === "auth" ? 401 : 400,
+                400
             );
         }
         if (error instanceof ZodError) {

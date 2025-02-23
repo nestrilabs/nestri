@@ -5,14 +5,15 @@ import { logger } from "hono/logger";
 import { handle } from "hono/aws-lambda";
 import { PasswordUI } from "./ui/password"
 import { issuer } from "@openauthjs/openauth";
-import { Email } from "@nestri/core/email/index"
-import { Users } from "@nestri/core/user/index"
-import { Teams } from "@nestri/core/team/index"
-import { Profiles } from "@nestri/core/profile/index"
+import { User } from "@nestri/core/user/index"
+// import { Email } from "@nestri/core/email/index"
+// import { Users } from "@nestri/core/user/index"
+// import { Teams } from "@nestri/core/team/index"
+// import { Profiles } from "@nestri/core/profile/index"
 import { handleDiscord, handleGithub } from "./utils";
 import { GithubAdapter } from "./ui/adapters/github";
 import { DiscordAdapter } from "./ui/adapters/discord";
-import { Instances } from "@nestri/core/instance/index"
+// import { Instances } from "@nestri/core/instance/index"
 import { PasswordAdapter } from "./ui/adapters/password"
 import { type Provider } from "@openauthjs/openauth/provider/provider"
 // import { Subscriptions } from "@nestri/core/subscription/index";
@@ -69,7 +70,7 @@ const app = issuer({
             PasswordUI({
                 sendCode: async (email, code) => {
                     console.log("email & code:", email, code)
-                    await Email.send(email, code)
+                    // await Email.send(email, code)
                 },
             }),
         ),
@@ -105,35 +106,45 @@ const app = issuer({
         return false;
     },
     success: async (ctx, value) => {
-        if (value.provider === "device") {
-            const team = await Teams.fromSlug(value.teamSlug)
-            console.log("team", team)
-            console.log("teamSlug", value.teamSlug)
-            if (team) {
-                await Instances.create({ hostname: value.hostname, teamID: team.id })
+        // if (value.provider === "device") {
+        //     const team = await Teams.fromSlug(value.teamSlug)
+        //     console.log("team", team)
+        //     console.log("teamSlug", value.teamSlug)
+        //     if (team) {
+        //         await Instances.create({ hostname: value.hostname, teamID: team.id })
 
-                return await ctx.subject("device", {
-                    teamSlug: value.teamSlug,
-                    hostname: value.hostname,
-                })
-            }
-        }
+        //         return await ctx.subject("device", {
+        //             teamSlug: value.teamSlug,
+        //             hostname: value.hostname,
+        //         })
+        //     }
+        // }
 
         if (value.provider === "password") {
             const email = value.email
             const username = value.username
-            const token = await Users.create(email)
-            const usr = await Users.fromEmail(email);
-            const exists = await Profiles.fromOwnerID(usr.id)
-            if (username && !exists) {
-                await Profiles.create({ owner: usr.id, username })
+            const matching = await User.fromEmail(email)
+
+            //Sign Up
+            if (username && matching.length === 0) {
+                const userID = await User.create({
+                    email,
+                    name: username,
+                });
+
+                if (!userID) throw new Error("Error creating user");
+
+                return ctx.subject("user", {
+                    userID,
+                    email
+                });
             }
 
-            return await ctx.subject("user", {
-                accessToken: token,
-                userID: usr.id,
+            //Sign In
+            return ctx.subject("user", {
+                userID: matching[0].id,
+                email
             });
-
         }
 
         let user = undefined as OauthUser | undefined;
@@ -150,17 +161,27 @@ const app = issuer({
 
         if (user) {
             try {
-                const token = await Users.create(user.primary.email)
-                const usr = await Users.fromEmail(user.primary.email);
-                const exists = await Profiles.fromOwnerID(usr.id)
-                console.log("exists", exists)
-                if (!exists) {
-                    await Profiles.create({ owner: usr.id, avatarUrl: user.avatar, username: user.username })
+                const matching = await User.fromEmail(user.primary.email);
+                //Sign Up
+                if (matching.length === 0) {
+                    const userID = await User.create({
+                        email: user.primary.email,
+                        name: user.username,
+                        avatarUrl: user.avatar
+                    });
+
+                    if (!userID) throw new Error("Error creating user");
+
+                    return ctx.subject("user", {
+                        userID,
+                        email: user.primary.email
+                    });
                 }
 
+                //Sign In
                 return await ctx.subject("user", {
-                    accessToken: token,
-                    userID: usr.id,
+                    userID: matching[0].id,
+                    email: user.primary.email
                 });
 
             } catch (error) {

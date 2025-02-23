@@ -4,11 +4,11 @@ import { createSubjects } from "@openauthjs/openauth/subject"
 
 export const subjects = createSubjects({
   user: v.object({
-    accessToken: v.string(),
-    userID: v.string()
+    email: v.string(),
+    userID: v.string(),
   }),
-  device: v.object({
-    teamSlug: v.string(),
-    hostname: v.string(),
-  })
+  // device: v.object({
+  //   teamSlug: v.string(),
+  //   hostname: v.string(),
+  // })
 })

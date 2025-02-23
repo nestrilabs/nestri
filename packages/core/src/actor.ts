@@ -1,86 +1,62 @@
+import { z } from "zod";
 import { createContext } from "./context";
-import { VisibleError } from "./error";
-  
-export interface UserActor {
-    type: "user";
-    properties: {
-        accessToken: string;
-        userID: string;
-        auth?:
-        | {
-            type: "personal";
-            token: string;
-        }
-        | {
-            type: "oauth";
-            clientID: string;
-        };
-    };
-}
 
-export interface DeviceActor {
-    type: "device";
-    properties: {
-        teamSlug: string;
-        hostname: string;
-        auth?:
-        | {
-            type: "personal";
-            token: string;
-        }
-        | {
-            type: "oauth";
-            clientID: string;
-        };
-    };
-}
+export const PublicActor = z.object({
+  type: z.literal("public"),
+  properties: z.object({}),
+});
+export type PublicActor = z.infer<typeof PublicActor>;
 
-export interface PublicActor {
-    type: "public";
-    properties: {};
-}
+export const UserActor = z.object({
+  type: z.literal("user"),
+  properties: z.object({
+    userID: z.string(),
+    email: z.string().nonempty(),
+  }),
+});
+export type UserActor = z.infer<typeof UserActor>;
 
-type Actor = UserActor | PublicActor | DeviceActor;
-export const ActorContext = createContext<Actor>();
+export const MemberActor = z.object({
+  type: z.literal("member"),
+  properties: z.object({
+    userID: z.string(),
+    teamID: z.string(),
+  }),
+});
+export type MemberActor = z.infer<typeof MemberActor>;
 
-export function useCurrentUser() {
-    const actor = ActorContext.use();
-    if (actor.type === "user") return {
-      id:actor.properties.userID,
-      token: actor.properties.accessToken,
-    };
-    
-    throw new VisibleError(
-        "auth",
-        "unauthorized",
-        `You don't have permission to access this resource`,
-    );
-}
+export const SystemActor = z.object({
+  type: z.literal("system"),
+  properties: z.object({
+    teamID: z.string(),
+  }),
+});
+export type SystemActor = z.infer<typeof SystemActor>;
 
-export function useCurrentDevice() {
-    const actor = ActorContext.use();
-    if (actor.type === "device") return {
-      hostname:actor.properties.hostname,
-      teamSlug: actor.properties.teamSlug
-    };
-    throw new VisibleError(
-        "auth",
-        "unauthorized",
-        `You don't have permission to access this resource`,
-    );
-}
+export const Actor = z.discriminatedUnion("type", [
+  MemberActor,
+  UserActor,
+  PublicActor,
+  SystemActor,
+]);
+export type Actor = z.infer<typeof Actor>;
 
-export function useActor() {
-    try {
-      return ActorContext.use();
-    } catch {
-      return { type: "public", properties: {} } as PublicActor;
-    }
+const ActorContext = createContext<Actor>("actor");
+
+export const useActor = ActorContext.use;
+export const withActor = ActorContext.with;
+
+export function assertActor<T extends Actor["type"]>(type: T) {
+  const actor = useActor();
+  if (actor.type !== type) {
+    throw new Error(`Expected actor type ${type}, got ${actor.type}`);
   }
-  
-  export function assertActor<T extends Actor["type"]>(type: T) {
-    const actor = useActor();
-    if (actor.type !== type)
-      throw new VisibleError("auth", "actor.invalid", `Actor is not "${type}"`);
-    return actor as Extract<Actor, { type: T }>;
-  }
+
+  return actor as Extract<Actor, { type: T }>;
+}
+
+export function useTeam() {
+  const actor = useActor();
+  if ("teamID" in actor.properties) return actor.properties.teamID;
+  throw new Error(`Expected actor to have teamID`);
+}

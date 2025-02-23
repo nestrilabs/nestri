@@ -1,5 +1,4 @@
-import { Profiles } from "@nestri/core/profile/index"
-import { UnknownStateError } from "@openauthjs/openauth/error"
+// import { UnknownStateError } from "@openauthjs/openauth/error"
 import { Storage } from "@openauthjs/openauth/storage/storage"
 import { type Provider } from "@openauthjs/openauth/provider/provider"
 import { generateUnbiasedDigits, timingSafeCompare } from "@openauthjs/openauth/random"
@@ -378,6 +377,7 @@ export function PBKDF2Hasher(opts?: { interations?: number }): PasswordHasher<{
 }
 import { timingSafeEqual, randomBytes, scrypt } from "node:crypto"
 import { getRelativeUrl } from "@openauthjs/openauth/util"
+import { UnknownStateError } from "@openauthjs/openauth/error"
 
 export function ScryptHasher(opts?: {
   N?: number
