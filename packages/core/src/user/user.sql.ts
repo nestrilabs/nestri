@@ -13,6 +13,6 @@ export const user = pgTable(
         polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique().notNull(),
     },
     (user) => [
-        uniqueIndex("email").on(user.email),
+        uniqueIndex("user_email").on(user.email),
     ],
 );
