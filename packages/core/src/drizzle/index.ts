@@ -1,11 +1,15 @@
 export * from "drizzle-orm";
+import ws from 'ws';
 import { Resource } from "sst";
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
+import {  drizzle as neonDrizzle, NeonDatabase } from "drizzle-orm/neon-serverless";
+// import { drizzle } from 'drizzle-orm/postgres-js';
+import { Pool, neonConfig } from "@neondatabase/serverless";
 
-const client = neon(`postgres://${Resource.Database.user}:${Resource.Database.password}@${Resource.Database.host}/${Resource.Database.name}?sslmode=require`)
+neonConfig.webSocketConstructor = ws;
 
-export const db = drizzle(client, {
+const client = new Pool({ connectionString: `postgres://${Resource.Database.user}:${Resource.Database.password}@${Resource.Database.host}/${Resource.Database.name}?sslmode=require` })
+
+export const db = neonDrizzle(client, {
     logger:
         process.env.DRIZZLE_LOG === "true"
             ? {

@@ -1,3 +1,4 @@
+import { auth } from "./auth";
 import "zod-openapi/extend";
 import { Resource } from "sst";
 import { ZodError } from "zod";
@@ -16,8 +17,6 @@ import { VisibleError } from "@nestri/core/error";
 import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { handle, streamHandle } from "hono/aws-lambda";
-import { createClient } from "@openauthjs/openauth/client";
-import { auth } from "./auth";
 
 
 const app = new Hono();
@@ -95,9 +94,15 @@ app.get(
                         scheme: "bearer",
                         bearerFormat: "JWT",
                     },
+                    TeamID: {
+                        type: "apiKey",
+                        description:"The team ID to use for this query",
+                        in: "header",
+                        name: "x-nestri-team"
+                    },
                 },
             },
-            security: [{ Bearer: [] }],
+            security: [{ Bearer: [], TeamID:[] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
             ],

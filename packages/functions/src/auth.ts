@@ -123,28 +123,31 @@ const app = issuer({
         if (value.provider === "password") {
             const email = value.email
             const username = value.username
-            const matching = await User.fromEmail(email)
+            console.log("user", username, "email", email)
+            // const matching = await User.fromEmail(email)
+
+            // console.log("matching", matching)
 
             //Sign Up
-            if (username && matching.length === 0) {
-                const userID = await User.create({
-                    email,
-                    name: username,
-                });
+            // if (username && matching.length === 0) {
+            const userID = await User.create({
+                email,
+                name: username ?? "JohnDoeTesting",
+            });
 
-                if (!userID) throw new Error("Error creating user");
+            if (!userID) throw new Error("Error creating user");
 
-                return ctx.subject("user", {
-                    userID,
-                    email
-                });
-            }
-
-            //Sign In
             return ctx.subject("user", {
-                userID: matching[0].id,
+                userID,
                 email
             });
+            // }
+
+            //Sign In
+            // return ctx.subject("user", {
+            //     userID: matching[0].id,
+            //     email
+            // });
         }
 
         let user = undefined as OauthUser | undefined;
@@ -152,37 +155,40 @@ const app = issuer({
         if (value.provider === "github") {
             const access = value.tokenset.access;
             user = await handleGithub(access)
+            console.log("user", user)
         }
 
         if (value.provider === "discord") {
             const access = value.tokenset.access
             user = await handleDiscord(access)
+            console.log("user", user)
         }
 
         if (user) {
             try {
                 const matching = await User.fromEmail(user.primary.email);
+                console.log("matching", matching)
                 //Sign Up
-                if (matching.length === 0) {
-                    const userID = await User.create({
-                        email: user.primary.email,
-                        name: user.username,
-                        avatarUrl: user.avatar
-                    });
+                // if (matching.length === 0) {
+                const userID = await User.create({
+                    email: user.primary.email,
+                    name: user.username,
+                    avatarUrl: user.avatar
+                });
 
-                    if (!userID) throw new Error("Error creating user");
+                if (!userID) throw new Error("Error creating user");
 
-                    return ctx.subject("user", {
-                        userID,
-                        email: user.primary.email
-                    });
-                }
-
-                //Sign In
-                return await ctx.subject("user", {
-                    userID: matching[0].id,
+                return ctx.subject("user", {
+                    userID,
                     email: user.primary.email
                 });
+                // }
+
+                //Sign In
+                // return await ctx.subject("user", {
+                //     userID: matching[0].id,
+                //     email: user.primary.email
+                // });
 
             } catch (error) {
                 console.error("error registering the user", error)

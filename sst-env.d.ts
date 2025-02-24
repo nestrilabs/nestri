@@ -66,7 +66,7 @@ declare module "sst" {
       "site": string
       "type": "sst.sst.Linkable"
     }
-    "www": {
+    "Web": {
       "type": "sst.aws.Astro"
       "url": string
     }

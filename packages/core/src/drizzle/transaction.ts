@@ -4,14 +4,14 @@ import {
   PgTransactionConfig
 } from "drizzle-orm/pg-core";
 import {
-  // NeonQueryResultHKT
-  NeonHttpQueryResultHKT
-} from "drizzle-orm/neon-http";
+  NeonQueryResultHKT
+  // NeonHttpQueryResultHKT
+} from "drizzle-orm/neon-serverless";
 import { ExtractTablesWithRelations } from "drizzle-orm";
 import { createContext } from "../context";
 
 export type Transaction = PgTransaction<
-  NeonHttpQueryResultHKT,
+  NeonQueryResultHKT,
   Record<string, never>,
   ExtractTablesWithRelations<Record<string, never>>
 >;
@@ -59,6 +59,7 @@ export async function createTransaction<T>(
       },
     );
     await Promise.all(effects.map((x) => x()));
+    // await db.$client.end()
     return result as T;
   }
 }

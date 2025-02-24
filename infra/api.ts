@@ -27,6 +27,7 @@ export const authFingerprintKey = new random.RandomString(
 
 export const auth = new sst.aws.Auth("Auth", {
     issuer: {
+        timeout: "3 minutes",
         handler: "./packages/functions/src/auth.handler",
         link: [
             bus,
@@ -54,7 +55,7 @@ export const auth = new sst.aws.Auth("Auth", {
 
 export const apiFunction = new sst.aws.Function("ApiFn", {
     handler: "packages/functions/src/api/index.handler",
-    link:[
+    link: [
         bus,
         urls,
         database,

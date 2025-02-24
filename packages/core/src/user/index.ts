@@ -9,6 +9,7 @@ import { and, db, eq, isNull, asc } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 import { bus } from "sst/aws/bus";
 import { Resource } from "sst/resource";
+import { withActor } from "../actor";
 
 
 export module User {
@@ -83,13 +84,12 @@ export module User {
         for (let i = 0; i < MAX_ATTEMPTS; i++) {
             const discriminator = generateDiscriminator();
 
-            const users = await db.transaction(async (tx) => {
-                return tx
+            const users = await useTransaction(async (tx) =>
+                tx
                     .select()
                     .from(user)
                     .where(and(eq(user.name, username), eq(user.discriminator, Number(discriminator))))
-                    .execute()
-            })
+            )
 
             if (users.length === 0) {
                 return discriminator;
@@ -101,17 +101,23 @@ export module User {
 
     export const create = fn(Info.omit({ polarCustomerID: true, discriminator: true }).partial({ avatarUrl: true, id: true }), async (input) => {
         const userID = createID("user")
+        console.log("userid", userID)
 
-        const customer = await Polar.client.customers.create({
-            email: input.email,
-            metadata: {
-                userID,
-            },
-        });
+        // const customer = await Polar.client.customers.create({
+        //     email: input.email,
+        //     metadata: {
+        //         userID,
+        //     },
+        // });
+
+        // console.log("customer", customer.id)
 
         const name = sanitizeUsername(input.name);
+        console.log("name", name)
+
         // Generate a random available discriminator
         const discriminator = await findAvailableDiscriminator(name);
+        console.log("discriminator", discriminator)
 
         if (!discriminator) {
             console.error("No available discriminators for this username ")
@@ -124,12 +130,20 @@ export module User {
                 id,
                 name: input.name,
                 avatarUrl: input.avatarUrl,
-                polarCustomerID: customer!.id,
-                email: input.email ?? customer?.email,
+                polarCustomerID: "nones", //customer!.id,
+                email: input.email ?? "nestritesting", //customer?.email,
                 discriminator: Number(discriminator),
             });
             await afterTx(() =>
-                bus.publish(Resource.Bus, Events.Created, { userID: id }),
+                withActor({
+                    type: "user",
+                    properties: {
+                        userID,
+                        email: input.email
+                    },
+                },
+                    async () => bus.publish(Resource.Bus, Events.Created, { userID: id }),
+                )
             );
         })
 

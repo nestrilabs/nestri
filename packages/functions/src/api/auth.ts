@@ -39,8 +39,7 @@ export const auth: MiddlewareHandler = async (c, next) => {
   }
 
   if (result.subject.type === "user") {
-    const teamID =
-      c.req.header("x-nestri-team") || c.req.query("teamID");
+    const teamID = c.req.header("x-nestri-team") //|| c.req.query("teamID");
     if (!teamID) return withActor(result.subject, next);
     // const email = result.subject.properties.email;
     return withActor(
