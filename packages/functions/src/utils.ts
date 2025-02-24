@@ -1,4 +1,6 @@
 export const handleGithub = async (accessKey: string) => {
+    console.log("acceskey", accessKey)
+
     const headers = {
         Authorization: `token ${accessKey}`,
         Accept: "application/vnd.github.v3+json",

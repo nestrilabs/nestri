@@ -2,7 +2,7 @@
 import { Layout } from "../base"
 import { OauthError } from "@openauthjs/openauth/error"
 import { getRelativeUrl } from "@openauthjs/openauth/util"
-import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
+import { type Provider } from "@openauthjs/openauth/provider/provider"
 
 export interface Oauth2Config {
   type?: string
@@ -32,7 +32,7 @@ interface AdapterState {
 
 export function Oauth2Adapter(
   config: Oauth2Config,
-): Adapter<{ tokenset: Oauth2Token; clientID: string }> {
+): Provider<{ tokenset: Oauth2Token; clientID: string }> {
   const query = config.query || {}
   return {
     type: config.type || "oauth2",

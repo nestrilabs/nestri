@@ -5,16 +5,17 @@ export default $config({
     return {
       name: "nestri",
       removal: input?.stage === "production" ? "retain" : "remove",
-      home: "cloudflare",
+      protect: ["production"].includes(input?.stage),
+      home: "aws",
       providers: {
-        cloudflare: "5.37.1",
-        docker: "4.5.5",
-        "@pulumi/command": "1.0.1",
-        random: "4.16.8",
-        aws: "6.67.0",
-        tls: "5.1.0",
-        command: "0.0.1-testwindows.signing",
-        awsx: "2.21.0",
+        aws: {
+          region: "us-east-1",
+          profile:
+            input.stage === "production" ? "nestri-production" : "nestri-dev",
+        },
+        cloudflare: "5.49.0",
+        random: "4.17.0",
+        neon: "0.6.3",
       },
     };
   },

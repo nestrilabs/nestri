@@ -14,6 +14,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@openauthjs/openauth": "^0.3.9",
     "hono": "^4.6.15",
     "hono-openapi": "^0.3.1",
     "partysocket": "1.0.3"

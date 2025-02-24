@@ -4,14 +4,14 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
-    "sst": "sst dev",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "lint": "turbo lint"
+    "lint": "turbo lint",
+    "sso": "aws sso login --sso-session=nestri --no-browser --use-device-code"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20240821.1",
     "@pulumi/pulumi": "^3.134.0",
-    "@types/aws-lambda": "8.10.145",
+    "@types/aws-lambda": "8.10.147",
     "prettier": "^3.2.5",
     "typescript": "^5.4.5"
   },
@@ -29,6 +29,6 @@
     "workerd"
   ],
   "dependencies": {
-    "sst": "3.6.27"
+    "sst": "3.9.1"
   }
 }

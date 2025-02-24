@@ -1,54 +1,82 @@
-import { authFingerprintKey } from "./auth";
+import { bus } from "./bus";
+import { database } from "./database";
 import { domain } from "./dns";
-import { secret } from "./secrets"
-// import { party } from "./party"
-import { gpuTaskDefinition, ecsCluster } from "./cluster";
+import { email } from "./email";
+import { secret } from "./secret";
+
+sst.Linkable.wrap(random.RandomString, (resource) => ({
+    properties: {
+        value: resource.result,
+    },
+}));
 
 export const urls = new sst.Linkable("Urls", {
     properties: {
         api: "https://api." + domain,
         auth: "https://auth." + domain,
+        site: $dev ? "http://localhost:4321" : "https://" + domain,
     },
 });
 
-export const kv = new sst.cloudflare.Kv("CloudflareAuthKV")
+export const authFingerprintKey = new random.RandomString(
+    "AuthFingerprintKey",
+    {
+        length: 32,
+    },
+);
 
-export const auth = new sst.cloudflare.Worker("Auth", {
-    link: [
-        kv,
-        urls,
-        authFingerprintKey,
-        secret.InstantAdminToken,
-        secret.InstantAppId,
-        secret.LoopsApiKey,
-        secret.GithubClientID,
-        secret.GithubClientSecret,
-        secret.DiscordClientID,
-        secret.DiscordClientSecret,
-    ],
-    handler: "./packages/functions/src/auth.ts",
-    url: true,
-    domain: "auth." + domain
-});
+export const auth = new sst.aws.Auth("Auth", {
+    issuer: {
+        timeout: "3 minutes",
+        handler: "./packages/functions/src/auth.handler",
+        link: [
+            bus,
+            email,
+            database,
+            authFingerprintKey,
+            secret.PolarSecret,
+            secret.GithubClientID,
+            secret.DiscordClientID,
+            secret.GithubClientSecret,
+            secret.DiscordClientSecret,
+        ],
+        permissions: [
+            {
+                actions: ["ses:SendEmail"],
+                resources: ["*"],
+            },
+        ],
+    },
+    domain: {
+        name: "auth." + domain,
+        dns: sst.cloudflare.dns(),
+    },
+})
 
-export const api = new sst.cloudflare.Worker("Api", {
+export const apiFunction = new sst.aws.Function("ApiFn", {
+    handler: "packages/functions/src/api/index.handler",
     link: [
+        bus,
         urls,
-        ecsCluster,
-        gpuTaskDefinition,
-        authFingerprintKey,
-        secret.LoopsApiKey,
-        secret.InstantAppId,
-        secret.AwsAccessKey,
-        secret.AwsSecretKey,
-        secret.InstantAdminToken,
+        database,
+        secret.PolarSecret,
     ],
-    url: true,
-    handler: "./packages/functions/src/api/index.ts",
-    domain: "api." + domain
+    timeout: "3 minutes",
+    streaming: !$dev,
+    url: true
+})
+
+export const api = new sst.aws.Router("Api", {
+    routes: {
+        "/*": apiFunction.url
+    },
+    domain: {
+        name: "api." + domain,
+        dns: sst.cloudflare.dns(),
+    },
 })
 
 export const outputs = {
     auth: auth.url,
-    api: api.url
-}
+    api: api.url,
+};
