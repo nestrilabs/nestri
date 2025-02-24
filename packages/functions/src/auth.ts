@@ -6,18 +6,12 @@ import { handle } from "hono/aws-lambda";
 import { PasswordUI } from "./ui/password"
 import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index"
-// import { Email } from "@nestri/core/email/index"
-// import { Users } from "@nestri/core/user/index"
-// import { Teams } from "@nestri/core/team/index"
-// import { Profiles } from "@nestri/core/profile/index"
+import { Email } from "@nestri/core/email/index";
 import { handleDiscord, handleGithub } from "./utils";
 import { GithubAdapter } from "./ui/adapters/github";
 import { DiscordAdapter } from "./ui/adapters/discord";
-// import { Instances } from "@nestri/core/instance/index"
 import { PasswordAdapter } from "./ui/adapters/password"
 import { type Provider } from "@openauthjs/openauth/provider/provider"
-// import { Subscriptions } from "@nestri/core/subscription/index";
-// import type { Subscription } from "./type";
 
 type OauthUser = {
     primary: {
@@ -70,7 +64,12 @@ const app = issuer({
             PasswordUI({
                 sendCode: async (email, code) => {
                     console.log("email & code:", email, code)
-                    // await Email.send(email, code)
+                    await Email.send(
+                        "auth",
+                        email,
+                        `Nestri code: ${code}`,
+                        `Your Nestri login code is ${code}`,
+                    )
                 },
             }),
         ),
@@ -123,31 +122,28 @@ const app = issuer({
         if (value.provider === "password") {
             const email = value.email
             const username = value.username
-            console.log("user", username, "email", email)
-            // const matching = await User.fromEmail(email)
-
-            // console.log("matching", matching)
+            const matching = await User.fromEmail(email)
 
             //Sign Up
-            // if (username && matching.length === 0) {
-            const userID = await User.create({
-                email,
-                name: username ?? "JohnDoeTesting",
-            });
+            if (username && matching.length === 0) {
+                const userID = await User.create({
+                    name: username,
+                    email,
+                });
 
-            if (!userID) throw new Error("Error creating user");
+                if (!userID) throw new Error("Error creating user");
 
-            return ctx.subject("user", {
-                userID,
-                email
-            });
-            // }
+                return ctx.subject("user", {
+                    userID,
+                    email
+                });
+            }
 
             //Sign In
-            // return ctx.subject("user", {
-            //     userID: matching[0].id,
-            //     email
-            // });
+            return ctx.subject("user", {
+                userID: matching[0].id,
+                email
+            });
         }
 
         let user = undefined as OauthUser | undefined;
@@ -155,40 +151,38 @@ const app = issuer({
         if (value.provider === "github") {
             const access = value.tokenset.access;
             user = await handleGithub(access)
-            console.log("user", user)
         }
 
         if (value.provider === "discord") {
             const access = value.tokenset.access
             user = await handleDiscord(access)
-            console.log("user", user)
         }
 
         if (user) {
             try {
                 const matching = await User.fromEmail(user.primary.email);
-                console.log("matching", matching)
+
                 //Sign Up
-                // if (matching.length === 0) {
-                const userID = await User.create({
-                    email: user.primary.email,
-                    name: user.username,
-                    avatarUrl: user.avatar
-                });
+                if (matching.length === 0) {
+                    const userID = await User.create({
+                        email: user.primary.email,
+                        name: user.username,
+                        avatarUrl: user.avatar
+                    });
 
-                if (!userID) throw new Error("Error creating user");
+                    if (!userID) throw new Error("Error creating user");
 
-                return ctx.subject("user", {
-                    userID,
-                    email: user.primary.email
-                });
-                // }
+                    return ctx.subject("user", {
+                        userID,
+                        email: user.primary.email
+                    });
+                }
 
                 //Sign In
-                // return await ctx.subject("user", {
-                //     userID: matching[0].id,
-                //     email: user.primary.email
-                // });
+                return await ctx.subject("user", {
+                    userID: matching[0].id,
+                    email: user.primary.email
+                });
 
             } catch (error) {
                 console.error("error registering the user", error)

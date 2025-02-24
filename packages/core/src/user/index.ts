@@ -101,23 +101,18 @@ export module User {
 
     export const create = fn(Info.omit({ polarCustomerID: true, discriminator: true }).partial({ avatarUrl: true, id: true }), async (input) => {
         const userID = createID("user")
-        console.log("userid", userID)
 
-        // const customer = await Polar.client.customers.create({
-        //     email: input.email,
-        //     metadata: {
-        //         userID,
-        //     },
-        // });
-
-        // console.log("customer", customer.id)
+        const customer = await Polar.client.customers.create({
+            email: input.email,
+            metadata: {
+                userID,
+            },
+        });
 
         const name = sanitizeUsername(input.name);
-        console.log("name", name)
 
         // Generate a random available discriminator
         const discriminator = await findAvailableDiscriminator(name);
-        console.log("discriminator", discriminator)
 
         if (!discriminator) {
             console.error("No available discriminators for this username ")
@@ -130,8 +125,8 @@ export module User {
                 id,
                 name: input.name,
                 avatarUrl: input.avatarUrl,
-                polarCustomerID: "nones", //customer!.id,
-                email: input.email ?? "nestritesting", //customer?.email,
+                polarCustomerID: customer!.id,
+                email: input.email ?? customer?.email,
                 discriminator: Number(discriminator),
             });
             await afterTx(() =>

@@ -1,0 +1,43 @@
+---
+import { Resource } from "sst";
+import Layout from "../../layouts/Layout.astro";
+import { createClient } from "@openauthjs/openauth/client";
+import type { AstroCookieSetOptions } from "astro";
+
+const client = createClient({
+  issuer: Resource.Urls.auth,
+  clientID: "console"
+});
+
+const code = Astro.url.searchParams.get("code");
+if (code) {
+  const redirect_uri = Astro.url.origin + "/auth/callback";
+  const cookieOptions: AstroCookieSetOptions = {
+    path: "/",
+    sameSite: "lax",
+    secure: false, // Only send cookies over HTTPS
+    httpOnly: true, // Prevent JavaScript access to cookies
+    expires: new Date(Date.now() + 24 * 10 * 60 * 60 * 1000) // expires in like 10 days
+  };
+
+  const tokens = await client.exchange(code, redirect_uri);
+  if (!tokens.err) {
+    const access_token = tokens.tokens.access;
+    const refresh_token = tokens.tokens.refresh;
+
+    Astro.cookies.set("access_token", access_token, cookieOptions);
+    Astro.cookies.set("refresh_token", refresh_token, cookieOptions);
+  }
+}
+const error = Astro.url.searchParams.get("error");
+---
+
+<Layout>
+  <div class="size-full flex justify-center items-center">
+    {
+      error && (
+        <p class="text-2xl font-mona font-semibold">An error occurred while authenticating you&nbsp;{error}</p>
+      )
+    }
+  </div>
+</Layout>
