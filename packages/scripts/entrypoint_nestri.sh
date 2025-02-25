@@ -42,11 +42,11 @@ start_nestri_server() {
 
     # Wait for Wayland display (wayland-1) to be ready
     echo "Waiting for Wayland display 'wayland-1' to be ready..."
-    WAYLAND_SOCKET="/run/user/${UID}/wayland-1"
+    WAYLAND_SOCKET="${XDG_RUNTIME_DIR}/wayland-1"
     for _ in {1..15}; do # Wait up to 15 seconds
         if [ -e "$WAYLAND_SOCKET" ]; then
             echo "Wayland display 'wayland-1' is ready."
-            sleep 5  # necessary sleep - reduces chance that non-ready socket is used
+            sleep 3  # necessary sleep - reduces chance that non-ready socket is used
             start_compositor
             return
         fi
@@ -69,6 +69,11 @@ start_compositor() {
         kill "${COMPOSITOR_PID}"
     fi
 
+    echo "Pre-configuring compositor..."
+    mkdir -p "${HOME}/.config/labwc/"
+    echo '<?xml version="1.0" encoding="UTF-8"?><labwc_config><keyboard><default/></keyboard><mouse><default/><context name="Root"><mousebind button="Left" action="Press"/><mousebind button="Right" action="Press"/><mousebind button="Middle" action="Press"/></context></mouse></labwc_config>' > ~/.config/labwc/rc.xml
+    echo '<?xml version="1.0" encoding="UTF-8"?><openbox_menu></openbox_menu>' > ~/.config/labwc/menu.xml
+
     echo "Starting compositor..."
     rm -rf /tmp/.X11-unix && mkdir -p /tmp/.X11-unix && chown nestri:nestri /tmp/.X11-unix
     WAYLAND_DISPLAY=wayland-1 WLR_BACKENDS=wayland labwc &
@@ -76,11 +81,11 @@ start_compositor() {
 
     # Wait for compositor to initialize
     echo "Waiting for compositor to initialize..."
-    COMPOSITOR_SOCKET="/run/user/${UID}/wayland-0"
+    COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/wayland-0"
     for _ in {1..15}; do
         if [ -e "$COMPOSITOR_SOCKET" ]; then
             echo "compositor is initialized, wayland-0 output ready."
-            sleep 1  # necessary sleep - reduces chance that non-ready socket is used
+            sleep 2  # necessary sleep - reduces chance that non-ready socket is used
             start_wlr_randr
             return
         fi
@@ -101,8 +106,8 @@ start_wlr_randr() {
     echo "Configuring resolution with wlr-randr..."
     OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
     if [ -z "$OUTPUT_NAME" ]; then
-        echo "Error: No enabled outputs detected. Skipping wlr-randr."
-        return
+        echo "Error: No enabled outputs detected, exiting."
+        exit 1
     fi
 
     # Retry logic for wlr-randr
@@ -111,12 +116,13 @@ start_wlr_randr() {
         echo "Error: Failed to configure wlr-randr. Retrying..."
         ((WLR_RETRIES++))
         if [ "$WLR_RETRIES" -ge "$MAX_RETRIES" ]; then
-            echo "Max retries reached for wlr-randr. Moving on without resolution setup."
-            return
+            echo "Max retries reached for wlr-randr, exiting."
+            exit 1
         fi
         sleep 2
     done
     echo "wlr-randr configuration successful."
+    sleep 1  # necessary sleep - makes sure resolution is changed before next step(s)
 }
 
 # Function to start Steam

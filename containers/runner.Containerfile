@@ -117,12 +117,12 @@ RUN sed -i \
     dirmngr </dev/null > /dev/null 2>&1
 
 ### Package Installation ###
-RUN pacman --noconfirm -Sy && \
+RUN pacman --noconfirm -Syu && \
     # Core system components
     pacman -S --needed --noconfirm \
         archlinux-keyring vulkan-intel lib32-vulkan-intel mesa \
         steam steam-native-runtime \
-        sudo xorg-xwayland labwc wlr-randr mangohud \
+        sudo xorg-xwayland labwc wlr-randr mangohud libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \
     # GStreamer stack
@@ -136,8 +136,7 @@ RUN pacman --noconfirm -Sy && \
 
 ### Application Installation ###
 ARG LUDUSAVI_VERSION="0.28.0"
-RUN pacman -Sy --noconfirm --needed curl && \
-    curl -fsSL -o ludusavi.tar.gz \
+RUN curl -fsSL -o ludusavi.tar.gz \
         "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" && \
     tar -xzvf ludusavi.tar.gz && \
     mv ludusavi /usr/bin/ && \
