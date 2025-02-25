@@ -1,15 +1,14 @@
 import { z } from "zod";
-import { Polar } from "../polar";
 import { user } from "./user.sql";
+import { bus } from "sst/aws/bus";
+import { withActor } from "../actor";
 import { Common } from "../common";
 import { createID, fn } from "../utils";
 import { createEvent } from "../event";
 import { Examples } from "../examples";
-import { and, db, eq, isNull, asc } from "../drizzle";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { bus } from "sst/aws/bus";
 import { Resource } from "sst/resource";
-import { withActor } from "../actor";
+import { and, eq, isNull, asc } from "../drizzle";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 
 export module User {
@@ -25,7 +24,7 @@ export module User {
                 description: "The user's unique username",
                 example: Examples.User.name,
             }),
-            polarCustomerID: z.string().openapi({
+            polarCustomerID: z.string().or(z.null()).openapi({
                 description: "The polar customer id for this user",
                 example: Examples.User.polarCustomerID,
             }),
@@ -102,12 +101,14 @@ export module User {
     export const create = fn(Info.omit({ polarCustomerID: true, discriminator: true }).partial({ avatarUrl: true, id: true }), async (input) => {
         const userID = createID("user")
 
-        const customer = await Polar.client.customers.create({
-            email: input.email,
-            metadata: {
-                userID,
-            },
-        });
+        //FIXME: Do this much later, as Polar.sh has so many inconsistencies for fuck's sake
+
+        // const customer = await Polar.client.customers.create({
+        //     email: input.email,
+        //     metadata: {
+        //         userID,
+        //     },
+        // });
 
         const name = sanitizeUsername(input.name);
 
@@ -125,8 +126,7 @@ export module User {
                 id,
                 name: input.name,
                 avatarUrl: input.avatarUrl,
-                polarCustomerID: customer!.id,
-                email: input.email ?? customer?.email,
+                email: input.email,
                 discriminator: Number(discriminator),
             });
             await afterTx(() =>

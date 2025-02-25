@@ -1,5 +1,6 @@
 ---
 import "@styles/global.css";
+import { Resource } from "sst";
 ---
 
 <!-- <script is:inline>
@@ -29,6 +30,8 @@ import "@styles/global.css";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta property="api-url" content={Resource.Urls.api} />
+    <meta property="auth-url" content={Resource.Urls.auth} />
     <meta
       name="theme-color"
       media="(prefers-color-scheme: light)"

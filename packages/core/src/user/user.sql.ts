@@ -10,7 +10,7 @@ export const user = pgTable(
         email: varchar("email", { length: 255 }).notNull(),
         name: varchar("name", { length: 255 }).notNull(),
         discriminator: integer("discriminator").notNull(),
-        polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique().notNull(),
+        polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique(),
     },
     (user) => [
         uniqueIndex("user_email").on(user.email),
