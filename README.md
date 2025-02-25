@@ -11,7 +11,7 @@
 &nbsp;
 &nbsp;
 
-Welcome to **Nestri**, a cutting-edge cloud gaming web streaming platform that allows users to play high-performance games directly from their browsers—no downloads or installations required! 🚀</strong>
+**Welcome to Nestri**, a cutting-edge cloud gaming web streaming platform that lets you play high-performance games directly from your browser — no downloads or installations required! 🚀</strong>
 <br/>
 <br/>
 
@@ -34,27 +34,27 @@ Welcome to **Nestri**, a cutting-edge cloud gaming web streaming platform that a
 &nbsp;
 
 ## 📌 Features
-- 🎮 **Play Instantly**: Stream games on any device with a chromium browser.
-- ☁ **Cloud-Powered**: You can use our whole hosted service without any self-hosting hassle
-- 🧰 **BYOG**: You can user our infrastructure and bring your own gpu server that is running under your desk or in your rack at home
-- 🛠 **Self-Host**: You can host the whole stack on your own if you want to
-- ⚡ **Low Latency**: Optimized for high-speed performance.
-- 🎥 **HD Streaming**: Supports up to 1080p resolution.
-- 🕹 **Controller Support**: ➞ *planned soon*
-- 📱 **Native App**: ➞ *planned later*
-- 📺 **TV App**: ➞ *in discussion*
-- 🎉 **Share with your friends & family**: You can share your gaming rig with your friends or family
+- 🎮 **Play Instantly**: Stream games on any device with a Chromium-based browser.  
+- ☁ **Cloud-Powered**: Use our fully hosted service without any self-hosting hassle.  
+- 🧰 **BYOG (Bring Your Own GPU)**: Utilize our infrastructure while running your own GPU server — whether it's under your desk or in a homelab rack.  
+- 🛠 **Self-Host**: Optionally, host the entire stack yourself.  
+- ⚡ **Low Latency**: Optimized for high-speed performance.  
+- 🎥 **HD Streaming**: Supports up to 1080p resolution.  
+- 🕹 **Controller Support**: ➞ *Planned soon*  
+- 📱 **Native App**: ➞ *Planned later*  
+- 📺 **TV App**: ➞ *In discussion*  
+- 🎉 **Share with Friends & Family**: Easily share your gaming rig with others.  
 
-## 📦 Installation & Setup
-### 🔧 Prerequisites for BYOG
-Ensure you have the following installed:
-- Linux e.g. Ubuntu/Fedora/Arch
-- [Docker](https://www.docker.com/get-started) or [Podman](https://podman.io/get-started)
-- A Nvidia, Intel or AMD GPU in your machine
-- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) (NVIDIA GPU only)
+## 📦 Installation & Setup  
+### 🔧 Prerequisites for BYOG  
+Ensure you have the following installed:  
+- A Linux distribution (e.g. Debian, Ubuntu, Fedora or Arch)  
+- [Docker](https://www.docker.com/get-started) or [Podman](https://podman.io/get-started)  
+- A compatible NVIDIA, Intel, or AMD GPU  
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) *(NVIDIA GPUs only)*  
 
-### 🚀 Quick Start
-➞ *coming soon*
+### 🚀 Quick Start  
+➞ *Coming soon*  
 
 ## 🏗 Architecture Overview
 ```mermaid
@@ -64,7 +64,7 @@ graph TD;
 ```
 
 ## 🛠 Documentation
-To build and run the docs:
+To build and run the documentation:
 ```sh
 cd apps/docs/
 bun install
@@ -72,17 +72,17 @@ bun run dev
 ```
 
 ## 🤝 Contributing
-We welcome contributions! Please fork the repository and submit a pull request.
-If you find a bug or have an idea feel free to create an [issue](https://github.com/nestrilabs/nestri/issues)
+We welcome contributions! Fork the repository and submit a pull request.  
+If you find a bug or have an idea, feel free to create an [issue](https://github.com/nestrilabs/nestri/issues).
 
 ## 💵 Sponsoring
-We'd be incredibly grateful for any support - whether it's a contribution, donation, sharing our product, or simply cheering us on. Every bit helps us get closer to our goal of an open source cloud gaming platform! Thank you for believing in us!
+We'd be incredibly grateful for any support—whether it's a contribution, donation, sharing our project, or simply cheering us on. Every bit helps us move closer to our goal of an open-source cloud gaming platform!  
 
-We would highly appreciate your sponsoring on [Polar](https://polar.sh/nestri) 
+We greatly appreciate sponsorship via [Polar](https://polar.sh/nestri) 🧡 
 🧡
 
 ## 📜 License
-This project is licensed under the AGPL-3.0 license - see the [LICENSE](https://github.com/nestrilabs/nestri?tab=AGPL-3.0-1-ov-file#readme) file for details.
+This project is licensed under the AGPL-3.0 license. See the [LICENSE](https://github.com/nestrilabs/nestri?tab=AGPL-3.0-1-ov-file#readme) file for details.
 
 ## 🌐 Links & Resources
 - [Official Website](https://nestri.io)
@@ -90,7 +90,7 @@ This project is licensed under the AGPL-3.0 license - see the [LICENSE](https://
 - [Discord Community](https://discord.com/invite/Y6etn3qKZ3)
 - [Polar](https://polar.sh/nestri)
 
-Happy Gaming! 🎮🔥
+**Happy Gaming! 🎮🔥**
 
 
 [github-release-link]: https://github.com/nestriness/nestri/releases
