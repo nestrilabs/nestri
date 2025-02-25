@@ -68,7 +68,7 @@ To build and run the documentation:
 ```sh
 cd apps/docs/
 bun install
-bun run dev
+bun run nestri.dev
 ```
 
 ## 🤝 Contributing
@@ -76,7 +76,7 @@ We welcome contributions! Fork the repository and submit a pull request.
 If you find a bug or have an idea, feel free to create an [issue](https://github.com/nestrilabs/nestri/issues).
 
 ## 💵 Sponsoring
-We'd be incredibly grateful for any support—whether it's a contribution, donation, sharing our project, or simply cheering us on. Every bit helps us move closer to our goal of an open-source cloud gaming platform!  
+We'd be incredibly grateful for any support — whether it's a contribution, donation, sharing our project, or simply cheering us on. Every bit helps us move closer to our goal of an open-source cloud gaming platform!  
 
 We greatly appreciate sponsorship via [Polar](https://polar.sh/nestri) 🧡 
 🧡
