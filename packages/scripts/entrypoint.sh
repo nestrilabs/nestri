@@ -31,12 +31,12 @@ if [ ! -e "$PIPEWIRE_SOCKET" ]; then
     exit 1
 fi
 
-echo "Detecting GPU vendor and installing necessary GStreamer plugins..."
+echo "Detecting GPU vendor..."
 source /etc/nestri/gpu_helpers.sh
 
 get_gpu_info
 
-# Check vendors in priority order
+# Check for NVIDIA so we can apply a workaround
 if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
     echo "NVIDIA GPU detected, applying driver fix..."
     # Determine NVIDIA driver version from host
@@ -61,24 +61,12 @@ if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
                 exit 1
             fi
         fi
+
+        chmod +x "${filename}"
+        # Install driver components without kernel modules
+        sudo ./"${filename}" --silent --no-kernel-module --install-compat32-libs --no-nouveau-check --no-nvidia-modprobe --no-systemd --no-rpms --no-backup --no-check-for-alternate-installs
     fi
-
-    chmod +x "${filename}"
-    # Install driver components without kernel modules
-    sudo ./"${filename}" --silent --no-kernel-module --install-compat32-libs --no-nouveau-check --no-nvidia-modprobe --no-systemd --no-rpms --no-backup --no-check-for-alternate-installs
 fi
-if [[ -n "${vendor_devices[intel]:-}" ]]; then
-    echo "Intel GPU detected, installing required packages..."
-    pacman -Sy --noconfirm vpl-gpu-rt gst-plugin-va gst-plugin-qsv
-fi
-if [[ -n "${vendor_devices[amd]:-}" ]]; then
-    echo "AMD GPU detected, installing required packages..."
-    pacman -Sy --noconfirm gst-plugin-va
-fi
-
-# Clean up remainders
-echo "Cleaning up old package cache..."
-paccache -rk1
 
 echo "Switching to nestri user for application startup..."
 exec sudo -E -u nestri /etc/nestri/entrypoint_nestri.sh

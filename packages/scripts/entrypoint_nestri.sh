@@ -46,7 +46,7 @@ start_nestri_server() {
     for _ in {1..15}; do # Wait up to 15 seconds
         if [ -e "$WAYLAND_SOCKET" ]; then
             echo "Wayland display 'wayland-1' is ready."
-            sleep 3  # necessary sleep - reduces chance that non-ready socket is used
+            sleep 5  # necessary sleep - reduces chance that non-ready socket is used
             start_compositor
             return
         fi
@@ -85,7 +85,7 @@ start_compositor() {
     for _ in {1..15}; do
         if [ -e "$COMPOSITOR_SOCKET" ]; then
             echo "compositor is initialized, wayland-0 output ready."
-            sleep 2  # necessary sleep - reduces chance that non-ready socket is used
+            sleep 3  # necessary sleep - reduces chance that non-ready socket is used
             start_wlr_randr
             return
         fi
@@ -122,7 +122,7 @@ start_wlr_randr() {
         sleep 2
     done
     echo "wlr-randr configuration successful."
-    sleep 1  # necessary sleep - makes sure resolution is changed before next step(s)
+    sleep 2  # necessary sleep - makes sure resolution is changed before next step(s)
 }
 
 # Function to start Steam

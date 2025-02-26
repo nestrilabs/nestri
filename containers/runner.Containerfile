@@ -2,9 +2,17 @@
 ARG BASE_IMAGE=docker.io/cachyos/cachyos:latest
 
 #******************************************************************************
+# Base Stage - Updates system packages
+#******************************************************************************
+FROM ${BASE_IMAGE} AS base
+
+RUN --mount=type=cache,target=/var/cache/pacman/pkg \
+    pacman --noconfirm -Syu
+
+#******************************************************************************
 # Base Builder Stage - Prepares core build environment
 #******************************************************************************
-FROM ${BASE_IMAGE} AS base-builder
+FROM base AS base-builder
 
 # Environment setup for Rust and Cargo
 ENV CARGO_HOME=/usr/local/cargo \
@@ -14,8 +22,11 @@ ENV CARGO_HOME=/usr/local/cargo \
 
 # Install build essentials and caching tools
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -Sy --noconfirm mold rust && \
+    pacman -Sy --noconfirm mold rustup && \
     mkdir -p "${ARTIFACTS}"
+
+# Install latest Rust using rustup
+RUN rustup default stable
 
 # Install cargo-chef with proper caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
@@ -28,7 +39,8 @@ FROM base-builder AS nestri-server-deps
 WORKDIR /builder
 
 # Install build dependencies
-RUN pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
+RUN --mount=type=cache,target=/var/cache/pacman/pkg \
+    pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
     gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc
 
 #--------------------------------------------------------------------
@@ -107,7 +119,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #******************************************************************************
 # Final Runtime Stage
 #******************************************************************************
-FROM ${BASE_IMAGE} AS runtime
+FROM base AS runtime
 
 ### System Configuration ###
 RUN sed -i \
@@ -117,19 +129,21 @@ RUN sed -i \
     dirmngr </dev/null > /dev/null 2>&1
 
 ### Package Installation ###
-RUN pacman --noconfirm -Syu && \
-    # Core system components
-    pacman -S --needed --noconfirm \
-        archlinux-keyring vulkan-intel lib32-vulkan-intel mesa \
+# Core system components
+RUN --mount=type=cache,target=/var/cache/pacman/pkg \
+    pacman -Sy --needed --noconfirm \
+        vulkan-intel lib32-vulkan-intel vpl-gpu-rt mesa \
         steam steam-native-runtime \
-        sudo xorg-xwayland labwc wlr-randr mangohud libssh2 curl wget \
+        sudo xorg-xwayland seatd libinput labwc wlr-randr mangohud \
+        libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \
     # GStreamer stack
-    pacman -S --needed --noconfirm \
+    pacman -Sy --needed --noconfirm \
         gstreamer gst-plugins-base gst-plugins-good \
         gst-plugins-bad gst-plugin-pipewire \
-        gst-plugin-rswebrtc gst-plugin-rsrtp && \
+        gst-plugin-webrtchttp gst-plugin-rswebrtc gst-plugin-rsrtp \
+        gst-plugin-va gst-plugin-qsv && \
     # Cleanup
     paccache -rk1 && \
     rm -rf /usr/share/{info,man,doc}/*
