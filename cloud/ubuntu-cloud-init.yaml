@@ -1,0 +1,84 @@
+#cloud-config
+# Cloud-init script to install NVIDIA 570 drivers on Ubuntu
+# Tested with TensorDock Ubuntu 22.04 instances
+
+# Install required packages
+packages:
+  - build-essential
+  - linux-headers-generic
+  - dkms
+
+# Our scripts
+write_files:
+  - path: /root/prevent_driver_update.sh
+    encoding: b64
+    permissions: '0755'
+    content: ZHBrZy1xdWVyeSAtVyAtLXNob3dmb3JtYXQ9JyR7UGFja2FnZX0gJHtTdGF0dXN9XG4nIHwgZ3JlcCAtdiBkZWluc3RhbGwgfCBhd2sgJ3sgcHJpbnQgJDEgfScgfCBncmVwIC1FICdudmlkaWEuKi1bMC05XSskJyB8IHhhcmdzIC1yIC1MIDEgc3VkbyBhcHQtbWFyayBob2xk
+  # Blacklist nouveau just in case
+  - path: /etc/modprobe.d/blacklist-nouveau.conf
+    content: |
+      blacklist nouveau
+  # Enable modesetting for NVIDIA drivers
+  - path: /etc/modprobe.d/nvidia.conf
+    content: |
+      options nvidia-drm modeset=1
+  # Main setup script
+  - path: /root/setup_nvidia.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      echo "Starting Nestri NVIDIA driver setup..."
+
+      echo "Purging old NVIDIA packages..."
+      apt remove --purge -y '*nvidia*'
+      apt autoremove -y
+
+      echo "Unloading conflicting kernel modules..."
+      modprobe -r nouveau 2>/dev/null || true
+      modprobe -r nvidia_drm 2>/dev/null || true
+      modprobe -r nvidia_modeset 2>/dev/null || true
+      modprobe -r nvidia 2>/dev/null || true
+
+      # Update initramfs to apply blacklist
+      update-initramfs -u
+
+      echo "Installing NVIDIA 570 driver..."
+      wget https://us.download.nvidia.com/XFree86/Linux-x86_64/570.86.16/NVIDIA-Linux-x86_64-570.86.16.run -O /root/NVIDIA-Linux-x86_64-570.86.16.run
+      chmod +x /root/NVIDIA-Linux-x86_64-570.86.16.run
+      # Install without building kernel module immediately, then build with DKMS
+      /root/NVIDIA-Linux-x86_64-570.86.16.run --silent --dkms
+      # Clean up
+      rm /root/NVIDIA-Linux-x86_64-570.86.16.run
+
+      # Prevent auto-update from nuking driver
+      echo "Making the new driver held version..."
+      bash /root/prevent_driver_update.sh
+
+      echo "Loading new NVIDIA modules..."
+      modprobe nvidia
+      modprobe nvidia_modeset
+      modprobe nvidia_drm
+
+      # Re-install container toolkit
+      echo "Re-installing NVIDIA container toolkit..."
+      apt install -y nvidia-container-toolkit
+
+      echo "Configuring NVIDIA container toolkit..."
+      nvidia-ctk runtime configure --runtime=docker
+      # Restart Docker only if necessary
+      if ! nvidia-smi > /dev/null 2>&1; then
+        echo "Restarting Docker to apply GPU changes..."
+        systemctl restart docker
+      fi
+
+      echo "Setting up permissions..."
+      chmod 777 /dev/dri/* 2>/dev/null || true
+
+      cd /home/user/ && mkdir -p nestri && chown user:user nestri
+      docker run --security-opt="seccomp=unconfined" --security-opt="apparmor=unconfined" --name=nestri -d --shm-size=6g --runtime=nvidia --gpus=all -e RELAY_URL='https://relay.dathorse.com' -e NESTRI_ROOM=cloudinit123 -e RESOLUTION=1920x1080 -e FRAMERATE=60 -e GST_DEBUG=3 -e NESTRI_PARAMS='--verbose=true --video-codec=h264 --video-bitrate=6000 --video-bitrate-max=8000' -v /home/user/nestri:/home/nestri ghcr.io/datcaptainhorse/nestri-cachyos:latest-v3
+
+      echo "Nestri NVIDIA driver setup complete!"
+
+# Run setup script on first launch
+runcmd:
+  - /root/setup_nvidia.sh
