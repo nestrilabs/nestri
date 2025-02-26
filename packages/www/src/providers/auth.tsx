@@ -101,7 +101,9 @@ export const { use: useAuth, provider: AuthProvider } =
           await new Promise((resolve) => setTimeout(resolve, 5000));
 
           if (response.ok) {
-            const info = await response.json();
+            const result = await response.json();
+            const info = await result.data;
+
             setStore(
               "accounts",
               info.id,
@@ -130,7 +132,8 @@ export const { use: useAuth, provider: AuthProvider } =
           },
         }).catch(() => { })
         if (result?.ok) {
-          const info = await result.json();
+          const response = await result.json();
+          const info = await response.data;
           setStore(
             "accounts",
             info.id,

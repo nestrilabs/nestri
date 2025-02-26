@@ -44,10 +44,11 @@ export module AccountApi {
                 const actor = assertActor("user");
                 const currentUser = await User.fromID(actor.properties.userID)
                 if (!currentUser) return c.json({ error: "This account does not exist, it may have been deleted" }, 404)
-                const { email, name, polarCustomerID, avatarUrl, discriminator } = currentUser
+                const { id, email, name, polarCustomerID, avatarUrl, discriminator } = currentUser
 
                 return c.json({
                     data: {
+                        id,
                         email,
                         name,
                         avatarUrl,

@@ -6,7 +6,7 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
-import { useAuth } from './providers/auth';
+import { AuthProvider, useAuth } from './providers/auth';
 import { TeamCreate } from './pages/new';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
@@ -87,9 +87,11 @@ export const App: Component = () => {
                     {/* <Route path="/auth">{Auth}</Route> */}
                     <Route
                         path="*"
-                        // component={(props) => (
+                        component={(props) => (
+                            <AuthProvider>
+                                {props.children}
+                            </AuthProvider>
                             // <CommandBar>
-                            //     <AuthProvider>
                             //         <ReplicacheStatusProvider>
                             //             <DummyProvider>
                             //                 <DummyConfigProvider>
@@ -107,7 +109,7 @@ export const App: Component = () => {
                             //         </ReplicacheStatusProvider>
                             //     </AuthProvider>
                             // </CommandBar>
-                        // )}
+                        )}
                     >
                         {/* <Route path="local" component={Local} />
                         <Route path="debug" component={DebugRoute} />
