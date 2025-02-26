@@ -1,20 +1,11 @@
-import { auth } from "./auth";
 import "zod-openapi/extend";
-import { Resource } from "sst";
+import { Hono } from "hono";
+import { auth } from "./auth";
 import { ZodError } from "zod";
-// import { UserApi } from "./user";
-// import { TaskApi } from "./task";
-// import { GameApi } from "./game";
-// import { TeamApi } from "./team";
 import { logger } from "hono/logger";
-import { subjects } from "../subjects";
-// import { SessionApi } from "./session";
-// import { MachineApi } from "./machine";
+import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
-// import { SubscriptionApi } from "./subscription";
 import { VisibleError } from "@nestri/core/error";
-// import { ActorContext } from '@nestri/core/actor';
-import { Hono, type MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { handle, streamHandle } from "hono/aws-lambda";
 
@@ -28,14 +19,8 @@ app
     .use(auth)
 
 const routes = app
-    .get("/", (c) => c.text("Hello there 👋🏾"))
-    // .route("/users", UserApi.route)
-    // .route("/tasks", TaskApi.route)
-    // .route("/teams", TeamApi.route)
-    // .route("/games", GameApi.route)
-    // .route("/sessions", SessionApi.route)
-    // .route("/machines", MachineApi.route)
-    // .route("/subscriptions", SubscriptionApi.route)
+    .get("/", (c) => c.text("Hello World!"))
+    .route("/account", AccountApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {

@@ -1,5 +1,9 @@
 import { z } from "zod";
+import { eq } from "./drizzle";
+import { VisibleError } from "./error";
 import { createContext } from "./context";
+import { UserFlags, userTable } from "./user/user.sql";
+import { useTransaction } from "./drizzle/transaction";
 
 export const PublicActor = z.object({
   type: z.literal("public"),
@@ -19,7 +23,7 @@ export type UserActor = z.infer<typeof UserActor>;
 export const MemberActor = z.object({
   type: z.literal("member"),
   properties: z.object({
-    userID: z.string(),
+    memberID: z.string(),
     teamID: z.string(),
   }),
 });
@@ -46,6 +50,15 @@ const ActorContext = createContext<Actor>("actor");
 export const useActor = ActorContext.use;
 export const withActor = ActorContext.with;
 
+export function useUserID() {
+  const actor = ActorContext.use();
+  if (actor.type === "user") return actor.properties.userID;
+  throw new VisibleError(
+    "unauthorized",
+    `You don't have permission to access this resource`,
+  );
+}
+
 export function assertActor<T extends Actor["type"]>(type: T) {
   const actor = useActor();
   if (actor.type !== type) {
@@ -59,4 +72,21 @@ export function useTeam() {
   const actor = useActor();
   if ("teamID" in actor.properties) return actor.properties.teamID;
   throw new Error(`Expected actor to have teamID`);
+}
+
+export async function assertUserFlag(flag: keyof UserFlags) {
+  return useTransaction((tx) =>
+    tx
+      .select({ flags: userTable.flags })
+      .from(userTable)
+      .where(eq(userTable.id, useUserID()))
+      .then((rows) => {
+        const flags = rows[0]?.flags;
+        if (!flags)
+          throw new VisibleError(
+            "user.flags",
+            "Actor does not have " + flag + " flag",
+          );
+      }),
+  );
 }

@@ -9,7 +9,7 @@ function init() {
   const [store, setStore] = makePersisted(
     createStore({
       account: "",
-      workspace: "",
+      team: "",
       dummy: "",
     })
   );

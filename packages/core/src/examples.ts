@@ -23,7 +23,7 @@ export module Examples {
         id: Id("member"),
         email: "john@example.com",
         teamID: Id("team"),
-        timeSeen: "2025-02-23T13:39:52.249Z",
+        timeSeen: new Date("2025-02-23T13:39:52.249Z"),
     }
 
 }

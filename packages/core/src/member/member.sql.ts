@@ -2,7 +2,7 @@ import { teamIndexes } from "../team/team.sql";
 import { timestamps, utc, teamID } from "../drizzle/types";
 import { index, pgTable, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
-export const member = pgTable(
+export const memberTable = pgTable(
     "member",
     {
         ...teamID,

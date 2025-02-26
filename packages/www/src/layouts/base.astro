@@ -30,7 +30,8 @@ import { Resource } from "sst";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
+    <meta property="api-url" content={Resource.Urls.api} />
+    <meta property="auth-url" content={Resource.Urls.auth} />
     <meta
       name="theme-color"
       media="(prefers-color-scheme: light)"
@@ -93,42 +94,10 @@ import { Resource } from "sst";
       type="font/woff"
       crossorigin="anonymous"
     />
+    <meta name="generator" content={Astro.generator} />
     <title>Nestri - Your games. Your rules.</title>
-    <style>
-      @font-face {
-        font-family: "geist-mono";
-        src: url("/fonts/GeistMono.ttf") format("opentype-variations");
-        font-display: swap;
-        font-style: normal;
-        font-weight: 400 500 600 700 800;
-      }
-      @font-face {
-        font-family: "geist-sans";
-        src: url("/fonts/Geist.ttf") format("opentype-variations");
-        font-display: swap;
-        font-style: normal;
-        font-weight: 400 500 600 700 800;
-      }
-      @font-face {
-        font-family: "github-mona";
-        src:
-          url("/fonts/MonaSansVF-Regular.woff2") format("woff2-variations"),
-          url("/fonts/MonaSansVF-Regular.woff") format("woff-variations"),
-          url("/fonts/MonaSansVF-Regular.ttf") format("opentype-variations");
-        font-display: swap;
-        font-style: normal;
-        font-weight: 400 500 600 700 800 900;
-      }
-      @font-face {
-        font-family: "geist-fallback";
-        src: local("Courier New");
-        size-adjust: 100%;
-        ascent-override: 97%;
-        descent-override: 25%;
-        line-gap-override: 1%;
-      }
-    </style>
   </head>
+
   <body
     class="bg-secondary-100 font-sans text-secondary-950 dark:bg-secondary-900 dark:text-secondary-50 flex flex-col items-center justify-center overflow-x-hidden antialiased"
   >

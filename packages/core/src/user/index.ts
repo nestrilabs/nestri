@@ -1,14 +1,17 @@
 import { z } from "zod";
-import { user } from "./user.sql";
 import { bus } from "sst/aws/bus";
-import { withActor } from "../actor";
 import { Common } from "../common";
 import { createID, fn } from "../utils";
+import { userTable } from "./user.sql";
 import { createEvent } from "../event";
 import { Examples } from "../examples";
 import { Resource } from "sst/resource";
-import { and, eq, isNull, asc } from "../drizzle";
+import { teamTable } from "../team/team.sql";
+import { assertActor, withActor } from "../actor";
+import { memberTable } from "../member/member.sql";
+import { and, eq, isNull, asc, getTableColumns, sql } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { Team } from "../team";
 
 
 export module User {
@@ -86,8 +89,8 @@ export module User {
             const users = await useTransaction(async (tx) =>
                 tx
                     .select()
-                    .from(user)
-                    .where(and(eq(user.name, username), eq(user.discriminator, Number(discriminator))))
+                    .from(userTable)
+                    .where(and(eq(userTable.name, username), eq(userTable.discriminator, Number(discriminator))))
             )
 
             if (users.length === 0) {
@@ -122,18 +125,18 @@ export module User {
 
         createTransaction(async (tx) => {
             const id = input.id ?? userID;
-            await tx.insert(user).values({
+            await tx.insert(userTable).values({
                 id,
                 name: input.name,
                 avatarUrl: input.avatarUrl,
                 email: input.email,
                 discriminator: Number(discriminator),
-            });
+            })
             await afterTx(() =>
                 withActor({
                     type: "user",
                     properties: {
-                        userID,
+                        userID: id,
                         email: input.email
                     },
                 },
@@ -149,15 +152,28 @@ export module User {
         useTransaction(async (tx) =>
             tx
                 .select()
-                .from(user)
-                .where(and(eq(user.email, email), isNull(user.timeDeleted)))
-                .orderBy(asc(user.timeCreated))
-                .then((rows) => rows.map(serialize)),
+                .from(userTable)
+                .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
+                .orderBy(asc(userTable.timeCreated))
+                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.at(0))
         ),
     )
 
-    function serialize(
-        input: typeof user.$inferSelect,
+    export const fromID = fn(z.string(), async (id) =>
+        useTransaction(async (tx) =>
+            tx
+                .select()
+                .from(userTable)
+                .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted)))
+                .orderBy(asc(userTable.timeCreated))
+                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.at(0))
+        ),
+    )
+
+    export function serialize(
+        input: typeof userTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {
             id: input.id,
@@ -169,4 +185,35 @@ export module User {
         };
     }
 
+    export const remove = fn(Info.shape.id, (input) =>
+        useTransaction(async (tx) => {
+            await tx
+                .update(userTable)
+                .set({
+                    timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                })
+                .where(and(eq(userTable.id, input)))
+                .execute();
+            return input;
+        }),
+    );
+
+    export function teams() {
+        const actor = assertActor("user");
+        return useTransaction((tx) =>
+            tx
+                .select(getTableColumns(teamTable))
+                .from(teamTable)
+                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                .where(
+                    and(
+                        eq(memberTable.email, actor.properties.email),
+                        isNull(memberTable.timeDeleted),
+                        isNull(teamTable.timeDeleted),
+                    ),
+                )
+                .execute()
+                .then((rows) => rows.map(Team.serialize))
+        );
+    }
 }

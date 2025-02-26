@@ -125,7 +125,7 @@ const app = issuer({
             const matching = await User.fromEmail(email)
 
             //Sign Up
-            if (username && matching.length === 0) {
+            if (username && !matching) {
                 const userID = await User.create({
                     name: username,
                     email,
@@ -137,13 +137,13 @@ const app = issuer({
                     userID,
                     email
                 });
+            } else if (matching) {
+                //Sign In
+                return ctx.subject("user", {
+                    userID: matching.id,
+                    email
+                });
             }
-
-            //Sign In
-            return ctx.subject("user", {
-                userID: matching[0].id,
-                email
-            });
         }
 
         let user = undefined as OauthUser | undefined;
@@ -163,7 +163,7 @@ const app = issuer({
                 const matching = await User.fromEmail(user.primary.email);
 
                 //Sign Up
-                if (matching.length === 0) {
+                if (!matching) {
                     const userID = await User.create({
                         email: user.primary.email,
                         name: user.username,
@@ -176,13 +176,13 @@ const app = issuer({
                         userID,
                         email: user.primary.email
                     });
+                } else {
+                    //Sign In
+                    return await ctx.subject("user", {
+                        userID: matching.id,
+                        email: user.primary.email
+                    });
                 }
-
-                //Sign In
-                return await ctx.subject("user", {
-                    userID: matching[0].id,
-                    email: user.primary.email
-                });
 
             } catch (error) {
                 console.error("error registering the user", error)
