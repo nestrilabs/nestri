@@ -16,7 +16,7 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@console/web/*": [
+      "@nestri/www/*": [
         "./src/*"
       ]
     }

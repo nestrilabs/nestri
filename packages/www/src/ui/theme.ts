@@ -218,6 +218,21 @@ const light = (() => {
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(0,0,0,0.16)`;
     const focusColor = blue.d700
 
+    const text = {
+        primary: {
+            base: d1000.gray,
+            surface: gray.d900,
+        },
+        info: {
+            base: d1000.amber,
+            surface: amber.d900,
+        },
+        danger: {
+            base: d1000.red,
+            surface: red.d900,
+        },
+    };
+
     return {
         gray,
         blue,
@@ -232,7 +247,8 @@ const light = (() => {
         contrastFg,
         focusBorder,
         focusColor,
-        d1000
+        d1000,
+        text
     };
 })()
 
@@ -360,6 +376,21 @@ const dark = (() => {
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(255,255,255,0.24)`;
     const focusColor = blue.d900
 
+    const text = {
+        primary: {
+            base: d1000.gray,
+            surface: gray.d900,
+        },
+        info: {
+            base: d1000.amber,
+            surface: amber.d900,
+        },
+        danger: {
+            base: d1000.red,
+            surface: red.d900,
+        },
+    };
+
     return {
         gray,
         blue,
@@ -374,7 +405,8 @@ const dark = (() => {
         contrastFg,
         focusBorder,
         focusColor,
-        d1000
+        d1000,
+        text
     };
 })()
 

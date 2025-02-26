@@ -15,7 +15,7 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            "@console/web": path.resolve(__dirname, "./src"),
+            "@nestri/www": path.resolve(__dirname, "./src"),
         },
     },
 });
