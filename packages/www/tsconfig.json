@@ -1,26 +1,24 @@
 {
-  "extends": "astro/tsconfigs/strict",
-  "include": [
-    ".astro/types.d.ts",
-    "**/*",
-     "./*.d.ts", 
-     "./*.config.ts",
-     "./*.config.js"
-  ],
-  "exclude": [
-    "dist"
-  ],
   "compilerOptions": {
+    "strict": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "types": [
+      "vite/client"
+    ],
+    "noEmit": true,
+    "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@styles/*": [
-        "src/styles/*"
+      "@console/web/*": [
+        "./src/*"
       ]
-    },
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js"
-  },
-  "files": [
-      "./eslint.config.mjs"
-    ]
+    }
+  }
 }
