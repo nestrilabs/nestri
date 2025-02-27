@@ -1,17 +1,17 @@
-use crate::messages::{decode_message, encode_message, MessageBase, MessageLog};
+use crate::messages::{MessageBase, MessageLog, decode_message, encode_message};
+use futures_util::StreamExt;
 use futures_util::sink::SinkExt;
 use futures_util::stream::{SplitSink, SplitStream};
-use futures_util::StreamExt;
 use log::{Level, Log, Metadata, Record};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{Mutex, Notify, mpsc};
 use tokio::time::sleep;
 use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
-use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
 type Callback = Box<dyn Fn(String) + Send + Sync>;
 type WSRead = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
@@ -95,7 +95,9 @@ impl NestriWebSocket {
                 while let Some(message_result) = ws_read.next().await {
                     match message_result {
                         Ok(message) => {
-                            let data = message.into_text().expect("failed to turn message into text");
+                            let data = message
+                                .into_text()
+                                .expect("failed to turn message into text");
                             let base_message = match decode_message(data.to_string()) {
                                 Ok(base_message) => base_message,
                                 Err(e) => {

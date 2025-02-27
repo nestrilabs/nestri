@@ -4,13 +4,13 @@ mod gpu;
 mod latency;
 mod messages;
 mod nestrisink;
-mod websocket;
 mod proto;
+mod websocket;
 
 use crate::args::encoding_args;
+use crate::gpu::GPUVendor;
 use crate::nestrisink::NestriSignaller;
 use crate::websocket::NestriWebSocket;
-use crate::gpu::GPUVendor;
 use futures_util::StreamExt;
 use gst::prelude::*;
 use gstrswebrtc::signaller::Signallable;
@@ -55,12 +55,19 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
             gpu = filtered_gpus.get(args.device.gpu_index as usize).cloned();
         } else {
             // get first GPU
-            gpu = filtered_gpus.into_iter().find(|g| *g.vendor() != GPUVendor::UNKNOWN);
+            gpu = filtered_gpus
+                .into_iter()
+                .find(|g| *g.vendor() != GPUVendor::UNKNOWN);
         }
     }
     if gpu.is_none() {
-        println!("No GPU found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
-                 args.device.gpu_vendor, args.device.gpu_name, args.device.gpu_index, args.device.gpu_card_path);
+        println!(
+            "No GPU found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
+            args.device.gpu_vendor,
+            args.device.gpu_name,
+            args.device.gpu_index,
+            args.device.gpu_card_path
+        );
         return None;
     }
     let gpu = gpu.unwrap();
@@ -83,7 +90,11 @@ fn handle_encoder_video(args: &args::Args) -> Option<enc_helper::VideoEncoderInf
             encoder.codec.to_str(),
             encoder.encoder_api.to_str(),
             encoder.encoder_type.to_str(),
-            if let Some(gpu) = &encoder.gpu_info { gpu.device_name() } else { "CPU" },
+            if let Some(gpu) = &encoder.gpu_info {
+                gpu.device_name()
+            } else {
+                "CPU"
+            },
         );
     }
     // Pick most suitable video encoder based on given arguments
@@ -99,8 +110,12 @@ fn handle_encoder_video(args: &args::Args) -> Option<enc_helper::VideoEncoderInf
         );
     }
     if video_encoder.is_none() {
-        println!("No video encoder found with the specified parameters: name='{}', vcodec='{}', type='{}'",
-                 args.encoding.video.encoder, args.encoding.video.codec, args.encoding.video.encoder_type);
+        println!(
+            "No video encoder found with the specified parameters: name='{}', vcodec='{}', type='{}'",
+            args.encoding.video.encoder,
+            args.encoding.video.codec,
+            args.encoding.video.encoder_type
+        );
         return None;
     }
     let video_encoder = video_encoder.unwrap();
@@ -113,7 +128,8 @@ fn handle_encoder_video_settings(
     args: &args::Args,
     video_encoder: &enc_helper::VideoEncoderInfo,
 ) -> enc_helper::VideoEncoderInfo {
-    let mut optimized_encoder = enc_helper::encoder_low_latency_params(&video_encoder);
+    let mut optimized_encoder =
+        enc_helper::encoder_low_latency_params(&video_encoder, &args.encoding.video.rate_control);
     // Handle rate-control method
     match &args.encoding.video.rate_control {
         encoding_args::RateControl::CQP(cqp) => {
@@ -240,14 +256,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &match &args.encoding.audio.rate_control {
             encoding_args::RateControl::CBR(cbr) => cbr.target_bitrate * 1000i32,
             encoding_args::RateControl::VBR(vbr) => vbr.target_bitrate * 1000i32,
-            _ => 128i32,
+            _ => 128000i32,
         },
     );
 
     /* Video */
     // Video Source Element
     let video_source = gst::ElementFactory::make("waylanddisplaysrc").build()?;
-    video_source.set_property("render-node", &gpu.render_path());
+    video_source.set_property_from_str("render-node", gpu.render_path());
 
     // Caps Filter Element (resolution, fps)
     let caps_filter = gst::ElementFactory::make("capsfilter").build()?;
@@ -289,6 +305,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let webrtcsink = BaseWebRTCSink::with_signaller(Signallable::from(signaller.clone()));
     webrtcsink.set_property_from_str("stun-server", "stun://stun.l.google.com:19302");
     webrtcsink.set_property_from_str("congestion-control", "disabled");
+    webrtcsink.set_property("do-retransmission", false);
 
     // Add elements to the pipeline
     pipeline.add_many(&[
@@ -343,7 +360,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Optimize latency of pipeline
-    video_source.sync_state_with_parent().expect("failed to sync with parent");
+    video_source
+        .sync_state_with_parent()
+        .expect("failed to sync with parent");
     video_source.set_property("do-timestamp", &true);
     audio_source.set_property("do-timestamp", &true);
     pipeline.set_property("latency", &0u64);
