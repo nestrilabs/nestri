@@ -1,4 +1,5 @@
-use crate::gpu::{self, get_gpu_by_card_path, get_gpus_by_vendor, GPUInfo};
+use crate::args::encoding_args::RateControl;
+use crate::gpu::{self, GPUInfo, get_gpu_by_card_path, get_gpus_by_vendor};
 use gst::prelude::*;
 
 #[derive(Debug, Eq, PartialEq, Clone)]
@@ -245,7 +246,10 @@ pub fn encoder_gop_params(encoder: &VideoEncoderInfo, gop_size: u32) -> VideoEnc
     })
 }
 
-pub fn encoder_low_latency_params(encoder: &VideoEncoderInfo) -> VideoEncoderInfo {
+pub fn encoder_low_latency_params(
+    encoder: &VideoEncoderInfo,
+    rate_control: &RateControl,
+) -> VideoEncoderInfo {
     let mut encoder_optz = encoder_gop_params(encoder, 30);
 
     match encoder_optz.encoder_api {
@@ -283,13 +287,8 @@ pub fn encoder_low_latency_params(encoder: &VideoEncoderInfo) -> VideoEncoderInf
                 encoder_optz.set_parameter("tune", "zerolatency");
             }
             "svtav1enc" => {
-                encoder_optz.set_parameter("preset", "12");
-                let suffix = if encoder_optz.get_parameters_string().contains("cbr") {
-                    ":pred-struct=1"
-                } else {
-                    ""
-                };
-                encoder_optz.set_parameter("parameters-string", &format!("lookahead=0{}", suffix));
+                encoder_optz.set_parameter("preset", "11");
+                encoder_optz.set_parameter("parameters-string", "lookahead=0");
             }
             "av1enc" => {
                 encoder_optz.set_parameter("usage-profile", "realtime");

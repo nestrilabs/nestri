@@ -1,24 +1,24 @@
 use std::ops::Deref;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RateControlCQP {
     /// Constant Quantization Parameter (CQP) quality level
     pub quality: u32,
 }
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RateControlVBR {
     /// Target bitrate in kbps
     pub target_bitrate: i32,
     /// Maximum bitrate in kbps
     pub max_bitrate: i32,
 }
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RateControlCBR {
     /// Target bitrate in kbps
     pub target_bitrate: i32,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RateControl {
     /// Constant Quantization Parameter
     CQP(RateControlCQP),
