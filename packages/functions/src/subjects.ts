@@ -1,5 +1,4 @@
 import * as v from "valibot"
-import { Subscription } from "./type"
 import { createSubjects } from "@openauthjs/openauth/subject"
 
 export const subjects = createSubjects({
@@ -7,8 +6,7 @@ export const subjects = createSubjects({
     email: v.string(),
     userID: v.string(),
   }),
-  // device: v.object({
-  //   teamSlug: v.string(),
-  //   hostname: v.string(),
-  // })
+  machine: v.object({
+    machineID: v.string()
+  })
 })

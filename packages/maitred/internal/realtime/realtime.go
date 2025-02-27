@@ -1,10 +1,10 @@
-package party
+package realtime
 
 import (
 	"context"
 	"fmt"
-	"nestri/maitred/pkg/auth"
-	"nestri/maitred/pkg/resource"
+	"nestri/maitred/internal/auth"
+	"nestri/maitred/internal/resource"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,9 +16,9 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run(teamSlug string) {
-	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, teamSlug)
-	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
+func Run(machineID string) {
+	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, machineID)
+	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Realtime.Endpoint, resource.Resource.Realtime.Authorizer)
 	var clientID = generateClientID()
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -29,7 +29,7 @@ func Run(teamSlug string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	userTokens, err := auth.FetchUserToken(teamSlug)
+	userTokens, err := auth.FetchUserToken(secretToken)
 	if err != nil {
 		log.Error("Error trying to request for credentials", "err", err)
 		stop()

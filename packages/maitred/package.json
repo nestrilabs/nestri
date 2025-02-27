@@ -1,0 +1,11 @@
+{
+    "name": "@nestri/maitred",
+    "version": "0.1.0",
+    "type": "module",
+    "sideEffects": false,
+    "scripts": {
+      "dev": "sst dev --silent go run main.go"
+    },
+    "devDependencies": {},
+    "dependencies": {}
+  }
