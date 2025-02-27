@@ -18,6 +18,8 @@ type Flags struct {
 	WebRTCUDPStart int
 	WebRTCUDPEnd   int
 	STUNServer     string
+	UDPMuxPort     int
+	NAT11IP        string
 }
 
 func (flags *Flags) DebugLog() {
@@ -28,6 +30,8 @@ func (flags *Flags) DebugLog() {
 	log.Println("> WebRTC UDP Range Start: ", flags.WebRTCUDPStart)
 	log.Println("> WebRTC UDP Range End: ", flags.WebRTCUDPEnd)
 	log.Println("> WebRTC STUN Server: ", flags.STUNServer)
+	log.Println("> WebRTC UDP Mux Port: ", flags.UDPMuxPort)
+	log.Println("> WebRTC NAT 1-1 IP: ", flags.NAT11IP)
 }
 
 func getEnvAsInt(name string, defaultVal int) int {
@@ -66,6 +70,8 @@ func InitFlags() {
 	flag.IntVar(&globalFlags.WebRTCUDPStart, "webrtcUDPStart", getEnvAsInt("WEBRTC_UDP_START", 10000), "WebRTC UDP port range start")
 	flag.IntVar(&globalFlags.WebRTCUDPEnd, "webrtcUDPEnd", getEnvAsInt("WEBRTC_UDP_END", 20000), "WebRTC UDP port range end")
 	flag.StringVar(&globalFlags.STUNServer, "stunServer", getEnvAsString("STUN_SERVER", "stun.l.google.com:19302"), "WebRTC STUN server")
+	flag.IntVar(&globalFlags.UDPMuxPort, "webrtcUDPMux", getEnvAsInt("WEBRTC_UDP_MUX", 0), "WebRTC UDP mux port")
+	flag.StringVar(&globalFlags.NAT11IP, "webrtcNAT11IP", getEnvAsString("WEBRTC_NAT_IP", ""), "WebRTC NAT 1 to 1 IP")
 	// Parse flags
 	flag.Parse()
 
