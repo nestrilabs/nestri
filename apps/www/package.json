@@ -61,6 +61,7 @@
     "prettier": "3.3.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "semver": "^7.7.1",
     "typescript": "5.4.5",
     "undici": "*",
     "valibot": "^0.42.1",
