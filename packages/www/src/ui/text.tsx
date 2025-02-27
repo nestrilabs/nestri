@@ -4,7 +4,9 @@ import { utility } from "./utility";
 import { CSSProperties } from "@macaron-css/core";
 
 export const Text = styled("span", {
-    base: {},
+    base: {
+        textWrap: "balance"
+    },
     variants: {
         leading: {
             base: {
