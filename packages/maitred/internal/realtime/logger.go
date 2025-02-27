@@ -1,4 +1,4 @@
-package party
+package realtime
 
 import (
 	"github.com/charmbracelet/log"
