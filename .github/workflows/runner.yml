@@ -17,6 +17,7 @@ on:
             - "containers/runner.Containerfile"
             - ".github/workflows/runner.yml"
             - "packages/scripts/**"
+            - "packages/server/**"
         tags:
             - v*.*.*
     release:
