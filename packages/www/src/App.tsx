@@ -117,7 +117,7 @@ export const App: Component = () => {
                         <Route path="workspace" component={WorkspaceCreate} />
                         <Route path=":workspaceSlug">{WorkspaceRoute}</Route> */}
                     <Route path="new" component={TeamCreate} />
-                    <Route path="play/:room" component={PlayComponent} />
+                    <Route path="play/:id" component={PlayComponent} />
                     <Route
                         path="/"
                         component={() => {
