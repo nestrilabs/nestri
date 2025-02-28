@@ -82,16 +82,16 @@ export module Member {
             }),
     );
 
-    export const remove = fn(Info.shape.id, (input) =>
+    export const remove = fn(Info.shape.id, (id) =>
         useTransaction(async (tx) => {
             await tx
                 .update(memberTable)
                 .set({
                     timeDeleted: sql`CURRENT_TIMESTAMP()`,
                 })
-                .where(and(eq(memberTable.id, input), eq(memberTable.teamID, useTeam())))
+                .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam())))
                 .execute();
-            return input;
+            return id;
         }),
     );
 

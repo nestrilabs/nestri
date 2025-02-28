@@ -87,6 +87,19 @@ export module Task {
         })
     })
 
+    export const remove = fn(Info.shape.id, (id) =>
+            useTransaction(async (tx) => {
+                await tx
+                    .update(taskTable)
+                    .set({
+                        timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                    })
+                    .where(and(eq(taskTable.id, id)))
+                    .execute();
+                return id;
+            }),
+        );
+
     export const fromLocation = fn(Info.shape.location, async (location) => {
         useTransaction(async (tx) => {
             const sqlDistance = sql`location <-> point(${location.longitude}, ${location.latitude})`;
