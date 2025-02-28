@@ -7,6 +7,7 @@ import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
 import { TeamCreate } from './pages/new';
+import { PlayComponent } from './pages/play';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
 import { darkClass, lightClass, theme } from './ui/theme';
@@ -116,6 +117,7 @@ export const App: Component = () => {
                         <Route path="workspace" component={WorkspaceCreate} />
                         <Route path=":workspaceSlug">{WorkspaceRoute}</Route> */}
                     <Route path="new" component={TeamCreate} />
+                    <Route path="play/:room" component={PlayComponent} />
                     <Route
                         path="/"
                         component={() => {

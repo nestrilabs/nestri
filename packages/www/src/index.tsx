@@ -8,6 +8,7 @@ import { render } from "solid-js/web";
 import "modern-normalize/modern-normalize.css";
 import { App } from "./App";
 import { StorageProvider } from "./providers/account";
+import { ToastProvider, Toaster } from "solid-notifications";
 
 const root = document.getElementById("root");
 
@@ -19,9 +20,12 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 
 render(
   () => (
-    <StorageProvider>
-      <App />
-    </StorageProvider>
+    <ToastProvider>
+      <Toaster />
+      <StorageProvider>
+        <App />
+      </StorageProvider>
+    </ToastProvider>
   ),
   root!
 );
