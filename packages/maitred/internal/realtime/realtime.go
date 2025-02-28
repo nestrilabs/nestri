@@ -16,24 +16,28 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run(machineID string) {
-	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, machineID)
-	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Realtime.Endpoint, resource.Resource.Realtime.Authorizer)
-	var clientID = generateClientID()
+func Run() {
+	//Use hostname as the last part of this URL
 	hostname, err := os.Hostname()
 	if err != nil {
-		log.Fatal(" Could not get the hostname")
+		log.Fatal("Could not get the hostname")
 	}
+	// The explicitly set the machineID as the client ID
+	var clientID = generateClientID()
+	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, hostname)
+	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Realtime.Endpoint, resource.Resource.Realtime.Authorizer)
 
 	// App will run until cancelled by user (e.g. ctrl-c)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	userTokens, err := auth.FetchUserToken(secretToken)
+	userTokens, err := auth.FetchUserToken()
 	if err != nil {
 		log.Error("Error trying to request for credentials", "err", err)
 		stop()
 	}
+
+	//Use the userTokens to query for the current taskID
 
 	// We will connect to the Eclipse test server (note that you may see messages that other users publish)
 	u, err := url.Parse(serverURL)

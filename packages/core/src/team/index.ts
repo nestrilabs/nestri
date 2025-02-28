@@ -8,7 +8,7 @@ import { Examples } from "../examples";
 import { teamTable } from "./team.sql";
 import { createEvent } from "../event";
 import { assertActor } from "../actor";
-import { and, eq, sql } from "../drizzle";
+import { and, eq, sql, isNull } from "../drizzle";
 import { memberTable } from "../member/member.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
@@ -110,6 +110,7 @@ export module Team {
             tx
                 .select()
                 .from(teamTable)
+                .where(isNull(teamTable.timeDeleted))
                 .execute()
                 .then((rows) => rows.map(serialize)),
         ),
@@ -120,7 +121,7 @@ export module Team {
             return tx
                 .select()
                 .from(teamTable)
-                .where(eq(teamTable.id, id))
+                .where(and(eq(teamTable.id, id), isNull(teamTable.timeDeleted)))
                 .execute()
                 .then((rows) => rows.map(serialize))
                 .then((rows) => rows.at(0));
@@ -132,7 +133,7 @@ export module Team {
             return tx
                 .select()
                 .from(teamTable)
-                .where(eq(teamTable.slug, input))
+                .where(and(eq(teamTable.slug, input), isNull(teamTable.timeDeleted)))
                 .execute()
                 .then((rows) => rows.map(serialize))
                 .then((rows) => rows.at(0));

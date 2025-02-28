@@ -7,6 +7,9 @@ import (
 	"nestri/maitred/internal/resource"
 	"net/http"
 	"net/url"
+	"os"
+
+	"github.com/charmbracelet/log"
 )
 
 type UserCredentials struct {
@@ -15,11 +18,16 @@ type UserCredentials struct {
 }
 
 func FetchUserToken() (*UserCredentials, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal("Could not get the hostname")
+	}
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
-	data.Set("client_id", "machine")
+	data.Set("client_id", "task")
 	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	data.Set("provider", "machine")
+	data.Set("hostname", hostname)
+	data.Set("provider", "task")
 	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)
 	if err != nil {
 		return nil, err

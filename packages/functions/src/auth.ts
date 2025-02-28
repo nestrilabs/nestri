@@ -22,10 +22,11 @@ type OauthUser = {
     avatar: any;
     username: any;
 }
+
 const app = issuer({
     select: Select({
         providers: {
-            device: {
+            task: {
                 hide: true,
             },
         },
@@ -73,15 +74,11 @@ const app = issuer({
                 },
             }),
         ),
-        device: {
-            type: "device",
+        task: {
+            type: "task",
             async client(input) {
                 if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
                     throw new Error("Invalid authorization token");
-                }
-                const teamSlug = input.params.team;
-                if (!teamSlug) {
-                    throw new Error("Team slug is required");
                 }
 
                 const hostname = input.params.hostname;
@@ -91,11 +88,10 @@ const app = issuer({
 
                 return {
                     hostname,
-                    teamSlug
                 };
             },
             init() { }
-        } as Provider<{ teamSlug: string; hostname: string; }>,
+        } as Provider<{ hostname: string; }>,
     },
     allow: async (input) => {
         const url = new URL(input.redirectURI);
@@ -104,7 +100,7 @@ const app = issuer({
         if (hostname === "localhost") return true;
         return false;
     },
-    success: async (ctx, value) => {
+    success: async (ctx, value, req) => {
         // if (value.provider === "device") {
         //     const team = await Teams.fromSlug(value.teamSlug)
         //     console.log("team", team)
@@ -118,6 +114,13 @@ const app = issuer({
         //         })
         //     }
         // }
+
+        //TODO: This works, so use this while registering the task
+        // console.log("country_code", req.headers.get('CloudFront-Viewer-Country'))
+        // console.log("country_name", req.headers.get('CloudFront-Viewer-Country-Name'))
+        // console.log("latitude", req.headers.get('CloudFront-Viewer-Latitude'))
+        // console.log("longitude", req.headers.get('CloudFront-Viewer-Longitude'))
+        // console.log("timezone", req.headers.get('CloudFront-Viewer-Time-Zone'))
 
         if (value.provider === "password") {
             const email = value.email

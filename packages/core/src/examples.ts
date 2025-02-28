@@ -18,12 +18,21 @@ export module Examples {
         name: "John Does' Team",
         slug: "john_doe",
     }
-    
+
     export const Member = {
         id: Id("member"),
         email: "john@example.com",
         teamID: Id("team"),
         timeSeen: new Date("2025-02-23T13:39:52.249Z"),
+    }
+
+    export const Task = {
+        id: Id("task"),
+        country: "Kenya",
+        countryCode: "KE",
+        timezone: "Africa/Nairobi",
+        location: { latitude: 36.81550, longitude: -1.28410 },
+        fingerprint: "fc27f428f9ca47d4b41b707ae0c62090",
     }
 
 }

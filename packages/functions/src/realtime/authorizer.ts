@@ -19,11 +19,11 @@ export const handler = realtime.authorizer(async (token) => {
         };
     }
 
-    if (result.subject.type == "machine") {
+    if (result.subject.type == "task") {
         return {
             //It can publish and listen to other instances under this machineID
-            publish: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.machineID}/*`],
-            subscribe: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.machineID}/*`],
+            publish: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.hostname}/*`],
+            subscribe: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.hostname}/*`],
         };
     }
 

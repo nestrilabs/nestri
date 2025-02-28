@@ -60,6 +60,11 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Realtime": {
+      "authorizer": string
+      "endpoint": string
+      "type": "sst.aws.Realtime"
+    }
     "Urls": {
       "api": string
       "auth": string
