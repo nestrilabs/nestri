@@ -1,7 +1,7 @@
 import { component$, Slot } from "@builder.io/qwik";
 
 //font-sans or font-body
-import "@fontsource/geist-sans"
+import "@fontsource/geist-sans/400.css"
 import "@fontsource/geist-sans/500.css"
 import "@fontsource/geist-sans/600.css"
 import "@fontsource/geist-sans/700.css"
