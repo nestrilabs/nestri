@@ -1,7 +1,7 @@
 
 const dbProject = new neon.Project("Nestri", {
     historyRetentionSeconds: 86400,
-    // name:"Nestri"
+    name:"Nestri"
 })
 
 const dbBranchId = $app.stage !== "production" ?
