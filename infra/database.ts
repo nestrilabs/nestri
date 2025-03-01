@@ -1,7 +1,6 @@
-
-const dbProject = new neon.Project("Nestri", {
-    historyRetentionSeconds: 86400,
-    name:"Nestri"
+//Created manually from the dashboard and shared with the whole team/org
+const dbProject = neon.getProjectOutput({
+    id:"red-mud-17843368"
 })
 
 const dbBranchId = $app.stage !== "production" ?
