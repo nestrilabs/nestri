@@ -3,17 +3,17 @@
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoTimestampEntry {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub stage: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub time: ::core::option::Option<::prost_types::Timestamp>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoLatencyTracker {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub sequence_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag="2")]
+    #[prost(message, repeated, tag = "2")]
     pub timestamps: ::prost::alloc::vec::Vec<ProtoTimestampEntry>,
 }
 /// MouseMove message
@@ -21,11 +21,11 @@ pub struct ProtoLatencyTracker {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMouseMove {
     /// Fixed value "MouseMove"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub x: i32,
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag = "3")]
     pub y: i32,
 }
 /// MouseMoveAbs message
@@ -33,11 +33,11 @@ pub struct ProtoMouseMove {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMouseMoveAbs {
     /// Fixed value "MouseMoveAbs"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub x: i32,
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag = "3")]
     pub y: i32,
 }
 /// MouseWheel message
@@ -45,11 +45,11 @@ pub struct ProtoMouseMoveAbs {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMouseWheel {
     /// Fixed value "MouseWheel"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub x: i32,
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag = "3")]
     pub y: i32,
 }
 /// MouseKeyDown message
@@ -57,9 +57,9 @@ pub struct ProtoMouseWheel {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMouseKeyDown {
     /// Fixed value "MouseKeyDown"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub key: i32,
 }
 /// MouseKeyUp message
@@ -67,9 +67,9 @@ pub struct ProtoMouseKeyDown {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMouseKeyUp {
     /// Fixed value "MouseKeyUp"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub key: i32,
 }
 /// KeyDown message
@@ -77,9 +77,9 @@ pub struct ProtoMouseKeyUp {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoKeyDown {
     /// Fixed value "KeyDown"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub key: i32,
 }
 /// KeyUp message
@@ -87,53 +87,53 @@ pub struct ProtoKeyDown {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoKeyUp {
     /// Fixed value "KeyUp"
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub r#type: ::prost::alloc::string::String,
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag = "2")]
     pub key: i32,
 }
 /// Union of all Input types
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoInput {
-    #[prost(oneof="proto_input::InputType", tags="1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "proto_input::InputType", tags = "1, 2, 3, 4, 5, 6, 7")]
     pub input_type: ::core::option::Option<proto_input::InputType>,
 }
 /// Nested message and enum types in `ProtoInput`.
 pub mod proto_input {
     #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum InputType {
-        #[prost(message, tag="1")]
+        #[prost(message, tag = "1")]
         MouseMove(super::ProtoMouseMove),
-        #[prost(message, tag="2")]
+        #[prost(message, tag = "2")]
         MouseMoveAbs(super::ProtoMouseMoveAbs),
-        #[prost(message, tag="3")]
+        #[prost(message, tag = "3")]
         MouseWheel(super::ProtoMouseWheel),
-        #[prost(message, tag="4")]
+        #[prost(message, tag = "4")]
         MouseKeyDown(super::ProtoMouseKeyDown),
-        #[prost(message, tag="5")]
+        #[prost(message, tag = "5")]
         MouseKeyUp(super::ProtoMouseKeyUp),
-        #[prost(message, tag="6")]
+        #[prost(message, tag = "6")]
         KeyDown(super::ProtoKeyDown),
-        #[prost(message, tag="7")]
+        #[prost(message, tag = "7")]
         KeyUp(super::ProtoKeyUp),
     }
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMessageBase {
-    #[prost(string, tag="1")]
+    #[prost(string, tag = "1")]
     pub payload_type: ::prost::alloc::string::String,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub latency: ::core::option::Option<ProtoLatencyTracker>,
 }
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoMessageInput {
-    #[prost(message, optional, tag="1")]
+    #[prost(message, optional, tag = "1")]
     pub message_base: ::core::option::Option<ProtoMessageBase>,
-    #[prost(message, optional, tag="2")]
+    #[prost(message, optional, tag = "2")]
     pub data: ::core::option::Option<ProtoInput>,
 }
 // @@protoc_insertion_point(module)
