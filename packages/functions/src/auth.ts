@@ -111,7 +111,6 @@ const app = issuer({
             const fingerprint = value.fingerprint
 
             const existing = await Machine.fromFingerprint(fingerprint)
-            console.log("machine", existing)
             if (!existing) {
                 const machineID = await Machine.create({
                     countryCode,

@@ -3,11 +3,12 @@ import { subjects } from "../subjects";
 import { realtime } from "sst/aws/realtime";
 import { createClient } from "@openauthjs/openauth/client";
 
+const client = createClient({
+    clientID: "realtime",
+    issuer: Resource.Urls.auth
+});
+
 export const handler = realtime.authorizer(async (token) => {
-    const client = createClient({
-        clientID: "realtime",
-        issuer: Resource.Urls.auth
-    });
 
     const result = await client.verify(subjects, token);
 
@@ -19,11 +20,11 @@ export const handler = realtime.authorizer(async (token) => {
         };
     }
 
-    if (result.subject.type == "task") {
+    if (result.subject.type == "machine") {
         return {
             //It can publish and listen to other instances under this machineID
-            publish: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.hostname}/*`],
-            subscribe: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.hostname}/*`],
+            publish: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.fingerprint}/*`],
+            subscribe: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.fingerprint}/*`],
         };
     }
 

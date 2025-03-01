@@ -4,7 +4,7 @@
     "type": "module",
     "sideEffects": false,
     "scripts": {
-      "dev": "sst dev --silent go run main.go"
+      "dev": "sst shell go run main.go"
     },
     "devDependencies": {},
     "dependencies": {}
