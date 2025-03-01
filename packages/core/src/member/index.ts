@@ -68,7 +68,7 @@ export module Member {
                     id,
                     email: input.email,
                     teamID: useTeam(),
-                    timeSeen: input.first ? sql`CURRENT_TIMESTAMP()` : null,
+                    timeSeen: input.first ? sql`now()` : null,
                 }).onConflictDoUpdate({
                     target: memberTable.id,
                     set: {
@@ -87,7 +87,7 @@ export module Member {
             await tx
                 .update(memberTable)
                 .set({
-                    timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                    timeDeleted: sql`now()`,
                 })
                 .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam())))
                 .execute();
@@ -102,9 +102,8 @@ export module Member {
                 .from(memberTable)
                 .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
                 .orderBy(asc(memberTable.timeCreated))
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0))
-        ),
+                .then((rows) => rows.map(serialize).at(0))
+        )
     )
     
     export const fromID = fn(z.string(), async (id) =>
@@ -114,8 +113,7 @@ export module Member {
                 .from(memberTable)
                 .where(and(eq(memberTable.id, id), isNull(memberTable.timeDeleted)))
                 .orderBy(asc(memberTable.timeCreated))
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0))
+                .then((rows) => rows.map(serialize).at(0))
         ),
     )
 

@@ -6,8 +6,8 @@ export const subjects = createSubjects({
     email: v.string(),
     userID: v.string(),
   }),
-  task: v.object({
-    hostname: v.string(),
-    taskID: v.string(),
+  machine: v.object({
+    fingerprint: v.string(),
+    machineID: v.string(),
   })
 })

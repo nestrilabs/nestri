@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"nestri/maitred/internal/machine"
 	"nestri/maitred/internal/resource"
 	"net/http"
 	"net/url"
-	"os"
 
 	"github.com/charmbracelet/log"
 )
@@ -18,16 +18,16 @@ type UserCredentials struct {
 }
 
 func FetchUserToken() (*UserCredentials, error) {
-	hostname, err := os.Hostname()
+	machineID, err := machine.MachineID()
 	if err != nil {
-		log.Fatal("Could not get the hostname")
+		log.Error("Error getting machine id", "err", machineID)
 	}
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
-	data.Set("client_id", "task")
+	data.Set("client_id", "maitred")
 	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	data.Set("hostname", hostname)
-	data.Set("provider", "task")
+	data.Set("fingerprint", machineID)
+	data.Set("provider", "machine")
 	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)
 	if err != nil {
 		return nil, err

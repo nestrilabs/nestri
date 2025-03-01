@@ -26,8 +26,8 @@ export module Examples {
         timeSeen: new Date("2025-02-23T13:39:52.249Z"),
     }
 
-    export const Task = {
-        id: Id("task"),
+    export const Machine = {
+        id: Id("machine"),
         country: "Kenya",
         countryCode: "KE",
         timezone: "Africa/Nairobi",

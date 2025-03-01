@@ -9,6 +9,7 @@ import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index";
 import { handleDiscord, handleGithub } from "./utils";
 import { GithubAdapter } from "./ui/adapters/github";
+import { Machine } from "@nestri/core/machine/index"
 import { DiscordAdapter } from "./ui/adapters/discord";
 import { PasswordAdapter } from "./ui/adapters/password"
 import { type Provider } from "@openauthjs/openauth/provider/provider"
@@ -26,7 +27,7 @@ type OauthUser = {
 const app = issuer({
     select: Select({
         providers: {
-            task: {
+            machine: {
                 hide: true,
             },
         },
@@ -74,24 +75,24 @@ const app = issuer({
                 },
             }),
         ),
-        task: {
-            type: "task",
+        machine: {
+            type: "machine",
             async client(input) {
                 if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
                     throw new Error("Invalid authorization token");
                 }
 
-                const hostname = input.params.hostname;
-                if (!hostname) {
+                const fingerprint = input.params.fingerprint;
+                if (!fingerprint) {
                     throw new Error("Hostname is required");
                 }
 
                 return {
-                    hostname,
+                    fingerprint,
                 };
             },
             init() { }
-        } as Provider<{ hostname: string; }>,
+        } as Provider<{ fingerprint: string; }>,
     },
     allow: async (input) => {
         const url = new URL(input.redirectURI);
@@ -101,19 +102,38 @@ const app = issuer({
         return false;
     },
     success: async (ctx, value, req) => {
-        // if (value.provider === "device") {
-        //     const team = await Teams.fromSlug(value.teamSlug)
-        //     console.log("team", team)
-        //     console.log("teamSlug", value.teamSlug)
-        //     if (team) {
-        //         await Instances.create({ hostname: value.hostname, teamID: team.id })
+        if (value.provider === "machine") {
+            const countryCode = req.headers.get('CloudFront-Viewer-Country') || 'Unknown'
+            const country = req.headers.get('CloudFront-Viewer-Country-Name') || 'Unknown'
+            const latitude = Number(req.headers.get('CloudFront-Viewer-Latitude')) || 0
+            const longitude = Number(req.headers.get('CloudFront-Viewer-Longitude')) || 0
+            const timezone = req.headers.get('CloudFront-Viewer-Time-Zone') || 'Unknown'
+            const fingerprint = value.fingerprint
 
-        //         return await ctx.subject("device", {
-        //             teamSlug: value.teamSlug,
-        //             hostname: value.hostname,
-        //         })
-        //     }
-        // }
+            const existing = await Machine.fromFingerprint(fingerprint)
+            console.log("machine", existing)
+            if (!existing) {
+                const machineID = await Machine.create({
+                    countryCode,
+                    country,
+                    fingerprint,
+                    timezone,
+                    location: {
+                        latitude,
+                        longitude
+                    }
+                })
+                return ctx.subject("machine", {
+                    machineID,
+                    fingerprint
+                });
+            }
+
+            return ctx.subject("machine", {
+                machineID: existing.id,
+                fingerprint
+            });
+        }
 
         //TODO: This works, so use this while registering the task
         // console.log("country_code", req.headers.get('CloudFront-Viewer-Country'))

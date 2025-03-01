@@ -123,8 +123,7 @@ export module Team {
                 .from(teamTable)
                 .where(and(eq(teamTable.id, id), isNull(teamTable.timeDeleted)))
                 .execute()
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0));
+                .then((rows) => rows.map(serialize).at(0))
         }),
     );
 
@@ -135,8 +134,7 @@ export module Team {
                 .from(teamTable)
                 .where(and(eq(teamTable.slug, input), isNull(teamTable.timeDeleted)))
                 .execute()
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0));
+                .then((rows) => rows.map(serialize).at(0))
         }),
     );
 

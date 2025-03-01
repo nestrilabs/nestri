@@ -4,6 +4,7 @@ export const prefixes = {
   user: "usr",
   team: "tea",
   task: "tsk",
+  machine: "mch",
   member: "mbr",
 } as const;
 
