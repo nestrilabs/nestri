@@ -59,9 +59,9 @@ func InitWebRTCAPI() error {
 	// New in v4, reduces CPU usage and latency when enabled
 	settingEngine.EnableSCTPZeroChecksum(true)
 
-	nat11IP := GetFlags().NAT11IP
-	if len(nat11IP) > 0 {
-		settingEngine.SetNAT1To1IPs([]string{nat11IP}, webrtc.ICECandidateTypeHost)
+	nat11IPs := GetFlags().NAT11IPs
+	if len(nat11IPs) > 0 {
+		settingEngine.SetNAT1To1IPs(nat11IPs, webrtc.ICECandidateTypeHost)
 	}
 
 	muxPort := GetFlags().UDPMuxPort

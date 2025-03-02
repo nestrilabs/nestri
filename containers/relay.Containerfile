@@ -7,14 +7,20 @@ FROM docker.io/golang:1.24-alpine
 COPY --from=go-build /builder/relay /relay/relay
 WORKDIR /relay
 
+# TODO: Switch running layer to just alpine (doesn't need golang dev stack)
+
 # ENV flags
 ENV VERBOSE=false
+ENV DEBUG=false
 ENV ENDPOINT_PORT=8088
 ENV WEBRTC_UDP_START=10000
 ENV WEBRTC_UDP_END=20000
 ENV STUN_SERVER="stun.l.google.com:19302"
 ENV WEBRTC_UDP_MUX=8088
-ENV WEBRTC_NAT_IP=""
+ENV WEBRTC_NAT_IPS=""
+ENV AUTO_ADD_LOCAL_IP=true
+ENV TLS_CERT=""
+ENV TLS_KEY=""
 
 EXPOSE $ENDPOINT_PORT
 EXPOSE $WEBRTC_UDP_START-$WEBRTC_UDP_END/udp

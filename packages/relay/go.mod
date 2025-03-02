@@ -5,9 +5,9 @@ go 1.24
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
-	github.com/pion/ice/v4 v4.0.6
+	github.com/pion/ice/v4 v4.0.7
 	github.com/pion/interceptor v0.1.37
-	github.com/pion/webrtc/v4 v4.0.10
+	github.com/pion/webrtc/v4 v4.0.12
 	google.golang.org/protobuf v1.36.5
 )
 
@@ -18,7 +18,7 @@ require (
 	github.com/pion/mdns/v2 v2.0.7 // indirect
 	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pion/rtcp v1.2.15 // indirect
-	github.com/pion/rtp v1.8.11 // indirect
+	github.com/pion/rtp v1.8.12 // indirect
 	github.com/pion/sctp v1.8.36 // indirect
 	github.com/pion/sdp/v3 v3.0.10 // indirect
 	github.com/pion/srtp/v3 v3.0.4 // indirect
