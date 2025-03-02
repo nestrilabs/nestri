@@ -8,7 +8,6 @@ export function CreateTeamComponent() {
                 <Text align="center" spacing="lg" size="4xl" weight="semibold">
                     Your first deploy is just a sign-up away.
                 </Text>
-                
             </Container>
         </FullScreen>
     )

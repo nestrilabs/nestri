@@ -98,7 +98,7 @@ export const { use: useAuth, provider: AuthProvider } =
             authorization: `Bearer ${tokens.access}`,
           },
         }).then(async (response) => {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          await new Promise((resolve) => setTimeout(resolve, 10000));
 
           if (response.ok) {
             const result = await response.json();

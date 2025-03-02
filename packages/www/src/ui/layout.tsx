@@ -4,7 +4,6 @@ import { styled } from "@macaron-css/solid";
 export const FullScreen = styled("div", {
     base: {
         inset: 0,
-        zIndex: 0,
         display: "flex",
         position: "fixed",
         alignItems: "center",

@@ -96,7 +96,7 @@ const light = (() => {
         d100: 'hsla(0,0%,95%)',
         d200: 'hsla(0,0%,92%)',
         d300: 'hsla(0,0%,90%)',
-        d400: 'hsla(0,0%,92%)',
+        d400: 'hsla(0,0%,82%)',
         d500: 'hsla(0,0%,79%)',
         d600: 'hsla(0,0%,66%)',
         d700: 'hsla(0,0%,56%)',
@@ -210,8 +210,8 @@ const light = (() => {
     }
 
     const background = {
-        d100: 'hsla(0,0%,100%)',
-        d200: 'hsla(0,0%,98%)'
+        d200: '#f5f5f5',
+        d100: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)'
     };
 
     const contrastFg = '#ffffff';
@@ -369,9 +369,10 @@ const dark = (() => {
     }
 
     const background = {
-        d100: 'hsla(0,0%,4%)',
-        d200: 'hsla(0,0%,0%)'
+        d200: '#171717',
+        d100: "oklch(from #171717 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)"
     };
+
     const contrastFg = '#ffffff';
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(255,255,255,0.24)`;
     const focusColor = blue.d900
