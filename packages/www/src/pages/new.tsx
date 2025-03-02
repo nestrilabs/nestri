@@ -1,7 +1,7 @@
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { Text } from "@nestri/www/ui/text";
 
-export function TeamCreate() {
+export function CreateTeamComponent() {
     return (
         <FullScreen>
             <Container flow="column" >
