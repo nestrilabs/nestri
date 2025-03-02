@@ -1,8 +1,8 @@
 import { bus } from "./bus";
-import { database } from "./database";
 import { domain } from "./dns";
 import { email } from "./email";
 import { secret } from "./secret";
+import { database } from "./database";
 
 sst.Linkable.wrap(random.RandomString, (resource) => ({
     properties: {
