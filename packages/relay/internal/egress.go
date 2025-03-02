@@ -25,7 +25,7 @@ func participantHandler(participant *Participant, room *Room) {
 	}
 
 	// Data channel settings
-	settingOrdered := false
+	settingOrdered := true
 	settingMaxRetransmits := uint16(0)
 	dc, err := participant.PeerConnection.CreateDataChannel("data", &webrtc.DataChannelInit{
 		Ordered:        &settingOrdered,
@@ -75,13 +75,10 @@ func participantHandler(participant *Participant, room *Room) {
 					log.Printf("Failed to marshal input message for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 					return
 				}
-				if err = room.DataChannel.SendBinary(data); err != nil {
-					log.Printf("Failed to send input message to room: '%s' - reason: %s\n", room.Name, err)
-				}
-			} else {
-				if err = room.DataChannel.SendBinary(data); err != nil {
-					log.Printf("Failed to send input message to room: '%s' - reason: %s\n", room.Name, err)
-				}
+			}
+
+			if err = room.DataChannel.SendBinary(data); err != nil {
+				log.Printf("Failed to send input message to room: '%s' - reason: %s\n", room.Name, err)
 			}
 		}
 	})

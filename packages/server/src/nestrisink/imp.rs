@@ -1,6 +1,6 @@
 use crate::messages::{
-    decode_message_as, encode_message, AnswerType, JoinerType, MessageAnswer, MessageBase,
-    MessageICE, MessageJoin, MessageSDP,
+    AnswerType, JoinerType, MessageAnswer, MessageBase, MessageICE, MessageJoin, MessageSDP,
+    decode_message_as, encode_message,
 };
 use crate::proto::proto::proto_input::InputType::{
     KeyDown, KeyUp, MouseKeyDown, MouseKeyUp, MouseMove, MouseMoveAbs, MouseWheel,
@@ -10,7 +10,7 @@ use crate::websocket::NestriWebSocket;
 use glib::subclass::prelude::*;
 use gst::glib;
 use gst::prelude::*;
-use gst_webrtc::{gst_sdp, WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription, gst_sdp};
 use gstrswebrtc::signaller::{Signallable, SignallableImpl};
 use prost::Message;
 use std::collections::HashSet;
@@ -144,8 +144,9 @@ impl Signaller {
                             &[
                                 &"nestri-data-channel",
                                 &gst::Structure::builder("config")
-                                    .field("ordered", &false)
+                                    .field("ordered", &true)
                                     .field("max-retransmits", &0u32)
+                                    .field("priority", "high")
                                     .build(),
                             ],
                         ),
@@ -337,12 +338,14 @@ impl ObjectSubclass for Signaller {
 impl ObjectImpl for Signaller {
     fn properties() -> &'static [glib::ParamSpec] {
         static PROPS: LazyLock<Vec<glib::ParamSpec>> = LazyLock::new(|| {
-            vec![glib::ParamSpecBoolean::builder("manual-sdp-munging")
-                .nick("Manual SDP munging")
-                .blurb("Whether the signaller manages SDP munging itself")
-                .default_value(false)
-                .read_only()
-                .build()]
+            vec![
+                glib::ParamSpecBoolean::builder("manual-sdp-munging")
+                    .nick("Manual SDP munging")
+                    .blurb("Whether the signaller manages SDP munging itself")
+                    .default_value(false)
+                    .read_only()
+                    .build(),
+            ]
         });
 
         PROPS.as_ref()

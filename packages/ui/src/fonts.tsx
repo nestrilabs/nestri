@@ -10,10 +10,6 @@ import "@fontsource/geist-mono/400.css"
 import "@fontsource/geist-mono/700.css"
 //font-mona
 import "@fontsource-variable/mona-sans"
-// import "@fontsource/mona-sans/500.css"
-// import "@fontsource/mona-sans/600.css"
-// import "@fontsource/mona-sans/700.css"
-// import "@fontsource/mona-sans/800.css"
 //font-bricolage
 import '@fontsource-variable/bricolage-grotesque';
 
