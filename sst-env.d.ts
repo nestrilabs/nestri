@@ -6,17 +6,34 @@
 import "sst"
 declare module "sst" {
   export interface Resource {
+    "Api": {
+      "type": "sst.aws.Router"
+      "url": string
+    }
+    "ApiFn": {
+      "name": string
+      "type": "sst.aws.Function"
+      "url": string
+    }
+    "Auth": {
+      "type": "sst.aws.Auth"
+      "url": string
+    }
     "AuthFingerprintKey": {
       "type": "random.index/randomString.RandomString"
       "value": string
     }
-    "AwsAccessKey": {
-      "type": "sst.sst.Secret"
-      "value": string
+    "Bus": {
+      "arn": string
+      "name": string
+      "type": "sst.aws.Bus"
     }
-    "AwsSecretKey": {
-      "type": "sst.sst.Secret"
-      "value": string
+    "Database": {
+      "host": string
+      "name": string
+      "password": string
+      "type": "sst.sst.Linkable"
+      "user": string
     }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
@@ -34,40 +51,25 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "InstantAdminToken": {
+    "Mail": {
+      "configSet": string
+      "sender": string
+      "type": "sst.aws.Email"
+    }
+    "PolarSecret": {
       "type": "sst.sst.Secret"
-      "value": string
-    }
-    "InstantAppId": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "LoopsApiKey": {
-      "type": "sst.sst.Secret"
-      "value": string
-    }
-    "NestriGPUCluster": {
-      "type": "aws.ecs/cluster.Cluster"
-      "value": string
-    }
-    "NestriGPUTask": {
-      "type": "aws.ecs/taskDefinition.TaskDefinition"
       "value": string
     }
     "Urls": {
       "api": string
       "auth": string
+      "site": string
       "type": "sst.sst.Linkable"
     }
-  }
-}
-// cloudflare 
-import * as cloudflare from "@cloudflare/workers-types";
-declare module "sst" {
-  export interface Resource {
-    "Api": cloudflare.Service
-    "Auth": cloudflare.Service
-    "CloudflareAuthKV": cloudflare.KVNamespace
+    "Web": {
+      "type": "sst.aws.StaticSite"
+      "url": string
+    }
   }
 }
 

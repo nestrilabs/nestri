@@ -1,0 +1,32 @@
+{
+  "name": "@nestri/www",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "serve": "vite preview",
+    "typecheck": "tsc --noEmit --incremental"
+  },
+  "devDependencies": {
+    "@macaron-css/vite": "^1.5.1",
+    "@types/bun": "latest",
+    "vite": "5.4.12",
+    "vite-plugin-solid": "^2.11.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist-mono": "^5.0.1",
+    "@nestri/core": "*",
+    "@fontsource-variable/mona-sans": "^5.0.1",
+    "@fontsource/geist-sans": "^5.1.0",
+    "@macaron-css/core": "^1.5.2",
+    "@macaron-css/solid": "^1.5.3",
+    "@solid-primitives/storage": "^4.3.1",
+    "@solidjs/router": "^0.15.3",
+    "modern-normalize": "^3.0.1",
+    "solid-js": "^1.9.5"
+  }
+}

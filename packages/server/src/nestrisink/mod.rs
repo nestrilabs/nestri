@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use crate::websocket::NestriWebSocket;
 use gst::glib;
 use gst::subclass::prelude::*;
 use gstrswebrtc::signaller::Signallable;
-use crate::websocket::NestriWebSocket;
+use std::sync::Arc;
 
 mod imp;
 

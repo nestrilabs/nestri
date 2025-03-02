@@ -1,164 +1,152 @@
 import { z } from "zod";
-import databaseClient from "../database"
-import { fn } from "../utils";
-import { groupBy, map, pipe, values } from "remeda"
+import { Resource } from "sst";
+import { bus } from "sst/aws/bus";
 import { Common } from "../common";
+import { createID, fn } from "../utils";
+import { VisibleError } from "../error";
 import { Examples } from "../examples";
-import { useCurrentUser } from "../actor";
-import { id as createID } from "@instantdb/admin";
+import { teamTable } from "./team.sql";
+import { createEvent } from "../event";
+import { assertActor } from "../actor";
+import { and, eq, sql } from "../drizzle";
+import { memberTable } from "../member/member.sql";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
-export namespace Teams {
+export module Team {
     export const Info = z
         .object({
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.Team.id,
             }),
-            name: z.string().openapi({
-                description: "Name of the team",
-                example: Examples.Team.name,
-            }),
-            createdAt: z.string().or(z.number()).openapi({
-                description: "The time when this team was first created",
-                example: Examples.Team.createdAt,
-            }),
-            updatedAt: z.string().or(z.number()).openapi({
-                description: "The time when this team was last edited",
-                example: Examples.Team.updatedAt,
-            }),
-            // owner: z.boolean().openapi({
-            //     description: "Whether this team is owned by this user",
-            //     example: Examples.Team.owner,
-            // }),
             slug: z.string().openapi({
-                description: "This is the unique name identifier for the team",
+                description: "The unique and url-friendly slug of this team",
                 example: Examples.Team.slug
+            }),
+            name: z.string().openapi({
+                description: "The name of this team",
+                example: Examples.Team.name
             })
         })
         .openapi({
             ref: "Team",
-            description: "A group of users sharing the same machines for gaming.",
+            description: "Represents a team on Nestri",
             example: Examples.Team,
         });
 
     export type Info = z.infer<typeof Info>;
 
-    export const list = async () => {
-        const db = databaseClient()
-        const user = useCurrentUser()
+    export const Events = {
+        Created: createEvent(
+            "team.created",
+            z.object({
+                teamID: z.string().nonempty(),
+            }),
+        ),
+    };
 
-        const query = {
-            teams: {
-                $: {
-                    where: {
-                        members: user.id,
-                        deletedAt: { $isNull: true }
-                    }
-                },
-            }
+    export class WorkspaceExistsError extends VisibleError {
+        constructor(slug: string) {
+            super(
+                "team.slug_exists",
+                `there is already a workspace named "${slug}"`,
+            );
         }
-
-        const res = await db.query(query)
-
-        const teams = res.teams
-        if (!teams || teams.length === 0) {
-            return null
-        }
-
-        const result = pipe(
-            teams,
-            groupBy(x => x.id),
-            values(),
-            map((group): Info => ({
-                id: group[0].id,
-                name: group[0].name,
-                createdAt: group[0].createdAt,
-                updatedAt: group[0].updatedAt,
-                slug: group[0].slug,
-                //@ts-expect-error
-                owner: group[0].owner === user.id
-            }))
-        )
-
-        return result
     }
 
+    export const create = fn(
+        Info.pick({ slug: true, id: true, name: true }).partial({
+            id: true,
+        }), (input) => {
+            createTransaction(async (tx) => {
+                const id = input.id ?? createID("team");
+                const result = await tx.insert(teamTable).values({
+                    id,
+                    slug: input.slug,
+                    name: input.name
+                })
+                    .onConflictDoNothing()
+                    .returning({ insertedID: teamTable.id })
 
-    export const fromSlug = fn(z.string(), async (slug) => {
-        const db = databaseClient()
+                if (result.length === 0) throw new WorkspaceExistsError(input.slug);
 
-        const query = {
-            teams: {
-                $: {
-                    where: {
-                        slug,
-                        deletedAt: { $isNull: true }
-                    }
-                },
-            }
-        }
+                await afterTx(() =>
+                    bus.publish(Resource.Bus, Events.Created, {
+                        teamID: id,
+                    }),
+                );
+                return id;
+            })
+        })
 
-        const res = await db.query(query)
+    export const remove = fn(Info.shape.id, (input) =>
+        useTransaction(async (tx) => {
+            const account = assertActor("user");
+            const row = await tx
+                .select({
+                    teamID: memberTable.teamID,
+                })
+                .from(memberTable)
+                .where(
+                    and(
+                        eq(memberTable.teamID, input),
+                        eq(memberTable.email, account.properties.email),
+                    ),
+                )
+                .execute()
+                .then((rows) => rows.at(0));
+            if (!row) return;
+            await tx
+                .update(teamTable)
+                .set({
+                    timeDeleted: sql`now()`,
+                })
+                .where(eq(teamTable.id, row.teamID));
+        }),
+    );
 
-        const teams = res.teams
-        if (!teams || teams.length === 0) {
-            return null
-        }
+    export const list = fn(z.void(), () =>
+        useTransaction((tx) =>
+            tx
+                .select()
+                .from(teamTable)
+                .execute()
+                .then((rows) => rows.map(serialize)),
+        ),
+    );
 
-        const result = pipe(
-            teams,
-            groupBy(x => x.id),
-            values(),
-            map((group): Info => ({
-                id: group[0].id,
-                name: group[0].name,
-                slug: group[0].slug,
-                createdAt: group[0].createdAt,
-                updatedAt: group[0].updatedAt,
-                // owner: group[0].owner === user.id
-            }))
-        )
+    export const fromID = fn(z.string().min(1), async (id) =>
+        useTransaction(async (tx) => {
+            return tx
+                .select()
+                .from(teamTable)
+                .where(eq(teamTable.id, id))
+                .execute()
+                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.at(0));
+        }),
+    );
 
-        return result[0]
-    })
+    export const fromSlug = fn(z.string().min(1), async (input) =>
+        useTransaction(async (tx) => {
+            return tx
+                .select()
+                .from(teamTable)
+                .where(eq(teamTable.slug, input))
+                .execute()
+                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.at(0));
+        }),
+    );
 
-    export const create = fn(Info.pick({ name: true, slug: true }), async (input) => {
-        const id = createID()
-        const db = databaseClient()
-        const user = useCurrentUser()
-        const now = new Date().toISOString()
-
-        await db.transact(db.tx.teams[id]!.update({
+    export function serialize(
+        input: typeof teamTable.$inferSelect,
+    ): z.infer<typeof Info> {
+        return {
+            id: input.id,
             name: input.name,
             slug: input.slug,
-            createdAt: now,
-            updatedAt: now,
-        }).link({ owner: user.id, members: user.id }))
-
-        return id
-    })
-
-    export const remove = fn(z.string(), async (id) => {
-        const db = databaseClient()
-        const now = new Date().toISOString()
-
-        await db.transact(db.tx.teams[id]!.update({
-           deletedAt: now
-        }))
-
-        return "ok"
-    })
-
-    export const invite = fn(z.object({email:z.string(), id: z.string()}), async (input) => {
-        //TODO:
-        // const db = databaseClient()
-        // const now = new Date().toISOString()
-
-        // await db.transact(db.tx.teams[id]!.update({
-        //    deletedAt: now
-        // }))
-
-        return "ok"
-    })
+        };
+    }
 
 }

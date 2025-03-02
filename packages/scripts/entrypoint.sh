@@ -31,29 +31,42 @@ if [ ! -e "$PIPEWIRE_SOCKET" ]; then
     exit 1
 fi
 
-echo "Detecting GPU vendor and installing necessary GStreamer plugins..."
+echo "Detecting GPU vendor..."
 source /etc/nestri/gpu_helpers.sh
 
 get_gpu_info
 
-# Check vendors in priority order
+# Check for NVIDIA so we can apply a workaround
 if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
-    echo "NVIDIA GPU detected, assuming driver is linked and applying Vulkan fix..."
-    echo "{\"file_format_version\":\"1.0.0\",\"ICD\":{\"library_path\":\"libGLX_nvidia.so.0\",\"api_version\":\"1.3\"}}" > /usr/share/vulkan/icd.d/nvidia_icd.json
-elif [[ -n "${vendor_devices[intel]:-}" ]]; then
-    echo "Intel GPU detected, installing required packages..."
-    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va gst-plugin-qsv
-    pacman -Sy --noconfirm vpl-gpu-rt
-elif [[ -n "${vendor_devices[amd]:-}" ]]; then
-    echo "AMD GPU detected, installing required packages..."
-    pacman -Sy --noconfirm gstreamer-vaapi gst-plugin-va
-else
-    echo "Unknown GPU vendor. No additional packages will be installed"
-fi
+    echo "NVIDIA GPU detected, applying driver fix..."
+    # Determine NVIDIA driver version from host
+    if [ -f "/proc/driver/nvidia/version" ]; then
+        NVIDIA_DRIVER_VERSION=$(head -n1 /proc/driver/nvidia/version | awk '{for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+\.[0-9\.]+/) {print $i; exit}}')
+    elif command -v nvidia-smi &> /dev/null; then
+        NVIDIA_DRIVER_VERSION=$(nvidia-smi --version | grep -i 'driver version' | cut -d: -f2 | tr -d ' ')
+    else
+        echo "Failed to determine NVIDIA driver version. Exiting."
+        exit 1
+    fi
 
-# Clean up remainders
-echo "Cleaning up old package cache..."
-paccache -rk1
+    NVIDIA_DRIVER_ARCH=$(uname -m)
+    filename="NVIDIA-Linux-${NVIDIA_DRIVER_ARCH}-${NVIDIA_DRIVER_VERSION}.run"
+
+    cd /tmp/
+    if [ ! -f "${filename}" ]; then
+        # Attempt multiple download sources
+        if ! wget "https://international.download.nvidia.com/XFree86/Linux-${NVIDIA_DRIVER_ARCH}/${NVIDIA_DRIVER_VERSION}/${filename}"; then
+            if ! wget "https://international.download.nvidia.com/tesla/${NVIDIA_DRIVER_VERSION}/${filename}"; then
+                echo "Failed to download NVIDIA driver from both XFree86 and Tesla repositories"
+                exit 1
+            fi
+        fi
+
+        chmod +x "${filename}"
+        # Install driver components without kernel modules
+        sudo ./"${filename}" --silent --no-kernel-module --install-compat32-libs --no-nouveau-check --no-nvidia-modprobe --no-systemd --no-rpms --no-backup --no-check-for-alternate-installs
+    fi
+fi
 
 echo "Switching to nestri user for application startup..."
 exec sudo -E -u nestri /etc/nestri/entrypoint_nestri.sh

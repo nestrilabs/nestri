@@ -1,7 +1,6 @@
-import { Profiles } from "@nestri/core/profile/index"
-import { UnknownStateError } from "@openauthjs/openauth/error"
+// import { UnknownStateError } from "@openauthjs/openauth/error"
 import { Storage } from "@openauthjs/openauth/storage/storage"
-import { type Adapter } from "@openauthjs/openauth/adapter/adapter"
+import { type Provider } from "@openauthjs/openauth/provider/provider"
 import { generateUnbiasedDigits, timingSafeCompare } from "@openauthjs/openauth/random"
 
 export interface PasswordHasher<T> {
@@ -309,7 +308,7 @@ export function PasswordAdapter(config: PasswordConfig) {
         return transition({ type: "start", redirect: adapter.redirect })
       })
     },
-  } satisfies Adapter<{ email: string; username?:string }>
+  } satisfies Provider<{ email: string; username?:string }>
 }
 
 import * as jose from "jose"
@@ -378,6 +377,7 @@ export function PBKDF2Hasher(opts?: { interations?: number }): PasswordHasher<{
 }
 import { timingSafeEqual, randomBytes, scrypt } from "node:crypto"
 import { getRelativeUrl } from "@openauthjs/openauth/util"
+import { UnknownStateError } from "@openauthjs/openauth/error"
 
 export function ScryptHasher(opts?: {
   N?: number
