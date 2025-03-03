@@ -15,19 +15,20 @@ import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
 import TestComponent from './pages/test';
+import Root from './ui/root';
 
-const Root = styled("div", {
-    base: {
-        inset: 0,
-        lineHeight: 1,
-        fontSynthesis: "none",
-        color: theme.color.d1000.gray,
-        fontFamily: theme.font.family.body,
-        textRendering: "optimizeLegibility",
-        WebkitFontSmoothing: "antialised",
-        backgroundColor: theme.color.background.d100,
-    },
-});
+// const Root = styled("div", {
+//     base: {
+//         inset: 0,
+//         lineHeight: 1,
+//         fontSynthesis: "none",
+//         color: theme.color.d1000.gray,
+//         fontFamily: theme.font.family.body,
+//         textRendering: "optimizeLegibility",
+//         WebkitFontSmoothing: "antialised",
+//         backgroundColor: theme.color.background.d100,
+//     },
+// });
 
 globalStyle("html", {
     fontSize: 16,
@@ -65,25 +66,11 @@ globalStyle("*", {
 });
 
 export const App: Component = () => {
-    const [theme, setTheme] = createSignal<string>(
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light",
-    );
-
-    const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
-    const setColorScheme = (e: MediaQueryListEvent) => {
-        setTheme(e.matches ? "dark" : "light");
-    };
-    darkMode.addEventListener("change", setColorScheme);
-    onCleanup(() => {
-        darkMode.removeEventListener("change", setColorScheme);
-    });
-
+   
     const storage = useStorage();
 
     return (
-        <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
+        <Root>
             <Router>
                 <Route
                     path="*"

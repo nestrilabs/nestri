@@ -6,6 +6,7 @@ import { Keyboard, Mouse, WebRTCStream } from "@nestri/input";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { styled } from "@macaron-css/solid";
 import { lightClass, theme, darkClass } from "@nestri/www/ui/theme";
+import Root from "../ui/root";
 
 const Canvas = styled("canvas", {
   base: {
@@ -244,21 +245,6 @@ interface ModalProps {
 
 function createModal() {
   const [open, setOpen] = createSignal(false);
-  const [theme, setTheme] = createSignal<string>(
-    window.matchMedia("(prefers-color-scheme: dark)").matches
-      ? "dark"
-      : "light",
-  );
-
-  const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
-  const setColorScheme = (e: MediaQueryListEvent) => {
-    setTheme(e.matches ? "dark" : "light");
-  };
-  darkMode.addEventListener("change", setColorScheme);
-  onCleanup(() => {
-    darkMode.removeEventListener("change", setColorScheme);
-  });
-
 
   return {
     openModal() {
@@ -268,21 +254,22 @@ function createModal() {
       return (
         <Portal>
           <Show when={open()}>
-            <div
-              class={theme() === "light" ? lightClass : darkClass} id="styled"
-              style={`
+            <Root>
+              <div
+                style={`
                   position: absolute;
                   inset: 0;
                   display: flex;
                   justify-content: center;
                   align-items: center;
                 `}
-            >
-              <ModalContainer>
-                Hello from modal <br />
-                <button onClick={() => setOpen(false)}>close modal</button>
-              </ModalContainer>
-            </div>
+              >
+                <ModalContainer>
+                  Hello from modal <br />
+                  <button onClick={() => setOpen(false)}>close modal</button>
+                </ModalContainer>
+              </div>
+            </Root>
           </Show>
         </Portal>
       );
