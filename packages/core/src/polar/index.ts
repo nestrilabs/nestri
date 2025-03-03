@@ -7,7 +7,6 @@ import { createEvent } from "../event";
 import { polarTable, Standing } from "./polar.sql";
 import { Polar as PolarSdk } from "@polar-sh/sdk";
 import { useTransaction } from "../drizzle/transaction";
-import { Customer } from "@polar-sh/sdk/models/components/customer.js";
 
 const polar = new PolarSdk({ accessToken: Resource.PolarSecret.value, server: Resource.App.stage !== "production" ? "sandbox" : "production" });
 
