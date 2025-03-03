@@ -10,6 +10,8 @@ const client = createClient({
 
 export const handler = realtime.authorizer(async (token) => {
 
+    console.log("token", token)
+
     const result = await client.verify(subjects, token);
 
     if (result.err) {
@@ -21,6 +23,9 @@ export const handler = realtime.authorizer(async (token) => {
     }
 
     if (result.subject.type == "machine") {
+        console.log("machineID", result.subject.properties.machineID)
+        console.log("fingerprint", result.subject.properties.fingerprint)
+        
         return {
             //It can publish and listen to other instances under this machineID
             publish: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.fingerprint}/*`],

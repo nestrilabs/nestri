@@ -38,6 +38,8 @@ func Run() {
 		stop()
 	}
 
+	log.Info("API token to use", "token", userTokens.AccessToken)
+
 	u, err := url.Parse(serverURL)
 	if err != nil {
 		panic(err)
@@ -45,7 +47,7 @@ func Run() {
 
 	router := paho.NewStandardRouter()
 	router.DefaultHandler(func(p *paho.Publish) {
-		infoLogger.Info("Router", "info", fmt.Sprintf("default handler received message with topic: %s\n", p.Topic))
+		infoLogger.Info("Router", "message", fmt.Sprintf("default handler received message: %s\n", p.Payload))
 	})
 
 	cliCfg := autopaho.ClientConfig{

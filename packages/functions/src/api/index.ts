@@ -4,6 +4,7 @@ import { auth } from "./auth";
 import { ZodError } from "zod";
 import { logger } from "hono/logger";
 import { AccountApi } from "./account";
+import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
 import { VisibleError } from "@nestri/core/error";
 import { HTTPException } from "hono/http-exception";
@@ -21,6 +22,7 @@ app
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
     .route("/account", AccountApi.route)
+    .route("/machine", MachineApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {
@@ -47,10 +49,9 @@ const routes = app
         if (error instanceof HTTPException) {
             return c.json(
                 {
-                    code: "request",
-                    message: "Invalid request",
+                    message: error.message,
                 },
-                400,
+                error.status,
             );
         }
         return c.json(
@@ -81,13 +82,13 @@ app.get(
                     },
                     TeamID: {
                         type: "apiKey",
-                        description:"The team ID to use for this query",
+                        description: "The team ID to use for this query",
                         in: "header",
                         name: "x-nestri-team"
                     },
                 },
             },
-            security: [{ Bearer: [], TeamID:[] }],
+            security: [{ Bearer: [], TeamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
             ],
