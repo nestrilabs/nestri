@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from './providers/auth';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
+import TestComponent from './pages/test';
 
 const Root = styled("div", {
     base: {
@@ -87,12 +88,14 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        <AuthProvider>
-                            {props.children}
-                        </AuthProvider>
+                        // <AuthProvider>
+                            // {props.children}
+                            props.children
+                        // </AuthProvider>
                     )}
                 >
                     <Route path="play/:id" component={PlayComponent} />
+                    <Route path="test" component={TestComponent} />
                     <Route
                         path="/"
                         component={() => {
