@@ -1,10 +1,11 @@
-package party
+package realtime
 
 import (
 	"context"
 	"fmt"
-	"nestri/maitred/pkg/auth"
-	"nestri/maitred/pkg/resource"
+	"nestri/maitred/internal/auth"
+	"nestri/maitred/internal/machine"
+	"nestri/maitred/internal/resource"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,26 +17,29 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run(teamSlug string) {
-	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, teamSlug)
-	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Party.Endpoint, resource.Resource.Party.Authorizer)
-	var clientID = generateClientID()
-	hostname, err := os.Hostname()
+func Run() {
+	//Use hostname as the last part of this URL
+	machineID, err := machine.MachineID()
 	if err != nil {
-		log.Fatal(" Could not get the hostname")
+		log.Error("Error getting machine id", "err", machineID)
 	}
+	//FIXME:Use the userTokens to query for the current machineID
+	var clientID = generateClientID()
+	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, machineID)
+	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Realtime.Endpoint, resource.Resource.Realtime.Authorizer)
 
 	// App will run until cancelled by user (e.g. ctrl-c)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	userTokens, err := auth.FetchUserToken(teamSlug)
+	userTokens, err := auth.FetchUserToken()
 	if err != nil {
 		log.Error("Error trying to request for credentials", "err", err)
 		stop()
 	}
 
-	// We will connect to the Eclipse test server (note that you may see messages that other users publish)
+	log.Info("API token to use", "token", userTokens.AccessToken)
+
 	u, err := url.Parse(serverURL)
 	if err != nil {
 		panic(err)
@@ -43,7 +47,7 @@ func Run(teamSlug string) {
 
 	router := paho.NewStandardRouter()
 	router.DefaultHandler(func(p *paho.Publish) {
-		infoLogger.Info("Router", "info", fmt.Sprintf("default handler received message with topic: %s\n", p.Topic))
+		infoLogger.Info("Router", "message", fmt.Sprintf("default handler received message: %s\n", p.Payload))
 	})
 
 	cliCfg := autopaho.ClientConfig{
@@ -104,12 +108,12 @@ func Run(teamSlug string) {
 	// a handler
 	//TODO: Have different routes for different things, like starting a session, stopping a session, and stopping the container altogether
 	//TODO: Listen on team-slug/container-hostname topic only
-	router.RegisterHandler(fmt.Sprintf("%s/%s/start", topic, hostname), func(p *paho.Publish) {
+	router.RegisterHandler(fmt.Sprintf("%s/%s/start", topic, machineID), func(p *paho.Publish) {
 		infoLogger.Info("Router", "info", fmt.Sprintf("start a game: %s\n", p.Topic))
 	})
-	router.RegisterHandler(fmt.Sprintf("%s/%s/stop", topic, hostname), func(p *paho.Publish) { fmt.Printf("stop the game that is running: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/%s/download", topic, hostname), func(p *paho.Publish) { fmt.Printf("download a game: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/%s/quit", topic, hostname), func(p *paho.Publish) { stop() }) // Stop and quit this running container
+	router.RegisterHandler(fmt.Sprintf("%s/%s/stop", topic, machineID), func(p *paho.Publish) { fmt.Printf("stop the game that is running: %s\n", p.Topic) })
+	router.RegisterHandler(fmt.Sprintf("%s/%s/download", topic, machineID), func(p *paho.Publish) { fmt.Printf("download a game: %s\n", p.Topic) })
+	router.RegisterHandler(fmt.Sprintf("%s/%s/quit", topic, machineID), func(p *paho.Publish) { stop() }) // Stop and quit this running container
 
 	// We publish three messages to test out the various route handlers
 	// topics := []string{"test/test", "test/test/foo", "test/xxNoMatch", "test/quit"}

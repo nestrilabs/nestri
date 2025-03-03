@@ -17,7 +17,7 @@ type resource struct {
 	AuthFingerprintKey struct {
 		Value string `json:"value"`
 	}
-	Party struct {
+	Realtime struct {
 		Endpoint   string `json:"endpoint"`
 		Authorizer string `json:"authorizer"`
 	}

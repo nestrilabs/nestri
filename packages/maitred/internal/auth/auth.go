@@ -4,11 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"nestri/maitred/pkg/resource"
+	"nestri/maitred/internal/machine"
+	"nestri/maitred/internal/resource"
 	"net/http"
 	"net/url"
-	"os"
-	"os/exec"
 
 	"github.com/charmbracelet/log"
 )
@@ -18,18 +17,17 @@ type UserCredentials struct {
 	RefreshToken string `json:"refresh_token"`
 }
 
-func FetchUserToken(teamSlug string) (*UserCredentials, error) {
-	hostname, err := os.Hostname()
+func FetchUserToken() (*UserCredentials, error) {
+	machineID, err := machine.MachineID()
 	if err != nil {
-		log.Fatal("Could not get the hostname")
+		log.Error("Error getting machine id", "err", machineID)
 	}
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
-	data.Set("client_id", "device")
+	data.Set("client_id", "maitred")
 	data.Set("client_secret", resource.Resource.AuthFingerprintKey.Value)
-	data.Set("team", teamSlug)
-	data.Set("hostname", hostname)
-	data.Set("provider", "device")
+	data.Set("fingerprint", machineID)
+	data.Set("provider", "machine")
 	resp, err := http.PostForm(resource.Resource.Auth.Url+"/token", data)
 	if err != nil {
 		return nil, err
@@ -46,13 +44,4 @@ func FetchUserToken(teamSlug string) (*UserCredentials, error) {
 		return nil, err
 	}
 	return &credentials, nil
-}
-
-func GetHostname() string {
-	cmd, err := exec.Command("cat", "/etc/hostname").Output()
-	if err != nil {
-		log.Error("error getting container hostname", "err", err)
-	}
-	output := string(cmd)
-	return output
 }
