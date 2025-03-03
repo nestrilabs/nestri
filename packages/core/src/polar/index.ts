@@ -73,8 +73,10 @@ export module Polar {
             } else {
                 return customers.result.items[0]
             }
+
         } catch (err) {
-            console.log("error", err)
+            //FIXME: This is the issue [Polar.sh/#5147](https://github.com/polarsource/polar/issues/5147)
+            // console.log("error", err)
             return undefined
         }
     })
