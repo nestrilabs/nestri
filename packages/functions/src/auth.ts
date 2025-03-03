@@ -66,12 +66,12 @@ const app = issuer({
             PasswordUI({
                 sendCode: async (email, code) => {
                     console.log("email & code:", email, code)
-                    await Email.send(
-                        "auth",
-                        email,
-                        `Nestri code: ${code}`,
-                        `Your Nestri login code is ${code}`,
-                    )
+                    // await Email.send(
+                    //     "auth",
+                    //     email,
+                    //     `Nestri code: ${code}`,
+                    //     `Your Nestri login code is ${code}`,
+                    // )
                 },
             }),
         ),
