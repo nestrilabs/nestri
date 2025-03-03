@@ -7,7 +7,15 @@ import { Pool, neonConfig } from "@neondatabase/serverless";
 
 neonConfig.webSocketConstructor = ws;
 
-const client = new Pool({ connectionString: `postgres://${Resource.Database.user}:${Resource.Database.password}@${Resource.Database.host}/${Resource.Database.name}?sslmode=require` })
+function addPoolerSuffix(original: string): string {
+    const firstDotIndex = original.indexOf('.');
+    if (firstDotIndex === -1) return original + '-pooler';
+    return original.slice(0, firstDotIndex) + '-pooler' + original.slice(firstDotIndex);
+  }
+
+const dbHost = addPoolerSuffix(Resource.Database.host)
+
+const client = new Pool({ connectionString: `postgres://${Resource.Database.user}:${Resource.Database.password}@${dbHost}/${Resource.Database.name}?sslmode=require` })
 
 export const db = neonDrizzle(client, {
     logger:

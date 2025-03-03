@@ -1,6 +1,6 @@
-import { database } from "./database";
 import { email } from "./email";
 import { allSecrets } from "./secret";
+import { database } from "./database";
 
 export const bus = new sst.aws.Bus("Bus");
 
