@@ -1,27 +1,29 @@
 //Created manually from the dashboard and shared with the whole team/org
 const dbProject = neon.getProjectOutput({
-    id:"red-mud-17843368"
+    id: "little-band-76544985",
 })
 
 const dbBranchId = $app.stage !== "production" ?
-    new neon.Branch("DatabaseBranch", {
+    new neon.Branch("NeonBranch", {
         parentId: dbProject.defaultBranchId,
         projectId: dbProject.id,
         name: $app.stage,
     }).id : dbProject.defaultBranchId
 
-const dbEndpoint = new neon.Endpoint("NestriEndpoint", {
+const dbEndpoint = new neon.Endpoint("NeonEndpoint", {
     projectId: dbProject.id,
-    branchId: dbBranchId
+    branchId: dbBranchId,
+    poolerEnabled: true,
+    type: "read_write",
 })
 
-const dbRole = new neon.Role("AdminRole", {
+const dbRole = new neon.Role("NeonRole", {
     name: "admin",
     branchId: dbBranchId,
     projectId: dbProject.id,
 })
 
-const db = new neon.Database("NestriDatabase", {
+const db = new neon.Database("NeonDatabase", {
     branchId: dbBranchId,
     projectId: dbProject.id,
     ownerName: dbRole.name,
