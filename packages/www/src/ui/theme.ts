@@ -210,8 +210,8 @@ const light = (() => {
     }
 
     const background = {
-        d100: 'hsla(0,0%,100%)',
-        d200: 'hsla(0,0%,98%)'
+        d100: '#f5f5f5',
+        d200: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)'
     };
 
     const contrastFg = '#ffffff';
@@ -233,6 +233,7 @@ const light = (() => {
         },
     };
 
+    const boxShadow = "0 0 0 1px rgba(19,21,23,0.08), 0 3.3px 2.7px rgba(0,0,0,.03),0 8.3px 6.9px rgba(0,0,0,.04),0 17px 14.2px rgba(0,0,0,.05),0 35px 29.2px rgba(0,0,0,.06),0px -4px 4px 0px rgba(0,0,0,.07) inset";
     return {
         gray,
         blue,
@@ -248,7 +249,8 @@ const light = (() => {
         focusBorder,
         focusColor,
         d1000,
-        text
+        text,
+        boxShadow
     };
 })()
 
@@ -369,9 +371,10 @@ const dark = (() => {
     }
 
     const background = {
-        d100: 'hsla(0,0%,4%)',
-        d200: 'hsla(0,0%,0%)'
+        d200: '#171717',
+        d100: "oklch(from #171717 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)"
     };
+    
     const contrastFg = '#ffffff';
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(255,255,255,0.24)`;
     const focusColor = blue.d900
@@ -391,6 +394,8 @@ const dark = (() => {
         },
     };
 
+    const boxShadow = "0 0 0 1px rgba(255,255,255,0.08), 0 3.3px 2.7px rgba(0,0,0,.1),0 8.3px 6.9px rgba(0,0,0,.13),0 17px 14.2px rgba(0,0,0,.17),0 35px 29.2px rgba(0,0,0,.22),0px -4px 4px 0px rgba(0,0,0,.04) inset";
+
     return {
         gray,
         blue,
@@ -406,7 +411,8 @@ const dark = (() => {
         focusBorder,
         focusColor,
         d1000,
-        text
+        text,
+        boxShadow
     };
 })()
 
