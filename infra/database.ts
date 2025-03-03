@@ -1,6 +1,6 @@
 //Created manually from the dashboard and shared with the whole team/org
 const dbProject = neon.getProjectOutput({
-    id: "black-sky-26872933",
+    id: "black-sky-26872933"
 })
 
 const dbBranchId = $app.stage !== "production" ?

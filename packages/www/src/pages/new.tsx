@@ -1,5 +1,5 @@
-import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { Text } from "@nestri/www/ui/text";
+import { Container, FullScreen } from "@nestri/www/ui/layout";
 
 export function CreateTeamComponent() {
     return (
