@@ -1,9 +1,36 @@
 import { Text } from "@nestri/www/ui/text";
-import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, createEffect, onCleanup, onMount, Show} from "solid-js";
+import { Portal } from "solid-js/web";
 import { useParams } from "@solidjs/router";
 import { Keyboard, Mouse, WebRTCStream } from "@nestri/input";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
+import { styled } from "@macaron-css/solid";
+import { theme } from "../ui/theme";
 
+const Canvas = styled("canvas", {
+  base: {
+    aspectRatio: 16 / 9,
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    maxHeight: "100vh",
+  }});
+
+  const ModalContainer = styled("div", {
+    base: {
+      width: "100%",
+      maxWidth: 370,
+      maxHeight: "75vh",
+      borderRadius: 12,
+      borderWidth: 1,
+      borderStyle: "solid",
+      borderColor: theme.color.gray.d400,
+      backgroundColor: theme.color.pink.d400,
+      boxShadow: theme.color.boxShadow,
+      backdropFilter: "blur(20px)",
+      padding: "20px 25px"
+    }
+  })
 export function PlayComponent() {
     const params = useParams();
     const id = params.id;
@@ -149,7 +176,7 @@ export function PlayComponent() {
       setupPointerLockListener();
       video = document.createElement("video");
       video.style.visibility = "hidden";
-      webrtc = new WebRTCStream("https://relay.dathorse.com", id, async (mediaStream) => {
+      webrtc = new WebRTCStream("http://192.168.1.200:8088", id, async (mediaStream) => {
         if (video && mediaStream) {
           video.srcObject = mediaStream;
           setHasStream(true);
@@ -175,15 +202,23 @@ export function PlayComponent() {
       nestriMouse?.dispose();
     });
   
+    const { Modal, openModal } = createModal();
+
     return (
-      <FullScreen>
+      <>
+      <button type="button" onClick={openModal}>
+        open modal
+      </button>
+      <Modal />
+    </>
+      /*<FullScreen>
         {showOffline() ? (
           <div class="w-screen h-screen flex justify-center items-center">
             <span class="text-2xl font-semibold flex items-center gap-2">Offline</span>
             <button onClick={() =>setShowButtonModal(true)}>Show Modal</button>
           </div>
         ) : (
-          <canvas ref={setCanvas} onClick={lockPlay} class="aspect-video h-full w-full object-contain max-h-screen" />
+          <Canvas ref={setCanvas} onClick={lockPlay}/>
         )}
 
         <Modal show={showButtonModal}
@@ -191,7 +226,7 @@ export function PlayComponent() {
         closeOnBackdropClick={false}
         handleVideoInput={handleVideoInput}
         lockPlay={lockPlay} />
-      </FullScreen>
+      </FullScreen>*/
     );
   }
 
@@ -203,19 +238,43 @@ export function PlayComponent() {
     lockPlay?: () => Promise<void>;
   }
 
+  function createModal() {
+    const [open, setOpen] = createSignal(false);
+  
+    return {
+      openModal() {
+        setOpen(true);
+      },
+      Modal() {
+        return (
+          <Portal>
+            <Show when={open()}>
+              <div
+                style={`
+                  position: absolute;
+                  inset: 0;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                `}
+              >
+                 <ModalContainer>
+                  Hello from modal <br />
+                  <button onClick={() => setOpen(false)}>close modal</button>
+                </ModalContainer>
+              </div>
+            </Show>
+          </Portal>
+        );
+      },
+    };
+  }
+
   function Modal(props: ModalProps) {
     return (
-      <Show when={props.show()}>
-        <div
-          class="fixed inset-0 flex items-center justify-center dark:backdrop:bg-[#0009] backdrop:bg-[#b3b5b799] backdrop:backdrop-grayscale-[.3]"
-          onClick={() => props.closeOnBackdropClick && props.setShow(false)}
-        >
-          <div
-            class="
-            w-full max-w-[370px] max-h-[75vh] rounded-xl border dark:border-[#343434] border-[#e2e2e2]
-            dark:[box-shadow:0_0_0_1px_rgba(255,255,255,0.08),_0_3.3px_2.7px_rgba(0,0,0,.1),0_8.3px_6.9px_rgba(0,0,0,.13),0_17px_14.2px_rgba(0,0,0,.17),0_35px_29.2px_rgba(0,0,0,.22),0px_-4px_4px_0px_rgba(0,0,0,.04)_inset] dark:bg-[#222b]
-            [box-shadow:0_0_0_1px_rgba(19,21,23,0.08),_0_3.3px_2.7px_rgba(0,0,0,.03),0_8.3px_6.9px_rgba(0,0,0,.04),0_17px_14.2px_rgba(0,0,0,.05),0_35px_29.2px_rgba(0,0,0,.06),0px_-4px_4px_0px_rgba(0,0,0,.07)_inset] bg-[#fffd]
-            backdrop-blur-lg py-4 px-5 modal"
+      
+        
+          <ModalContainer
             onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
           >
             <div class="size-full flex flex-col">
@@ -238,8 +297,6 @@ export function PlayComponent() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      </Show>
+          </ModalContainer>
     );
   }
