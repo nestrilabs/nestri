@@ -1,3 +1,5 @@
+// FIXME: We need to make from the modal a reusable component
+// FIXME: The mousepointer lock is somehow shifted when the window gets resized
 import { Text } from "@nestri/www/ui/text";
 import { createSignal, createEffect, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
@@ -23,15 +25,30 @@ const ModalContainer = styled("div", {
     maxWidth: 370,
     maxHeight: "75vh",
     height: "auto",
-    // borderRadius: 12,
-    // borderWidth: 1,
-    // borderStyle: "solid",
-    // borderColor: theme.color.gray.d400,
-    // backgroundColor: theme.color.pink.d400,
-    backgroundColor: theme.color.red.d300,
-    // boxShadow: theme.color.boxShadow,
-    // backdropFilter: "blur(20px)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: theme.color.gray.d400,
+    backgroundColor: theme.color.gray.d200,
+    boxShadow: theme.color.boxShadow,
+    backdropFilter: "blur(20px)",
     padding: "20px 25px"
+  }
+})
+
+const Button = styled("button", {
+  base: {
+    outline: "none",
+    width: "100%",
+    backgroundColor: theme.color.background.d100,
+    padding: "12px 16px",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: theme.color.gray.d500,
+    ":hover": {
+      backgroundColor: theme.color.gray.d300,
+    }
   }
 })
 
@@ -53,6 +70,8 @@ export function PlayComponent() {
   let video: HTMLVideoElement;
   let webrtc: WebRTCStream;
   let nestriMouse: Mouse, nestriKeyboard: Keyboard;
+
+  const { Modal, openModal } = createModal();
 
   const initializeInputDevices = () => {
     const canvasElement = canvas();
@@ -134,7 +153,10 @@ export function PlayComponent() {
         if (!showBannerModal) {
           const playing = sessionStorage.getItem("showedBanner");
           setShowBannerModal(!playing || playing !== "true");
-          setShowButtonModal(playing === "false");
+          if(!playing) {
+            openModal();
+          }
+          
         }
 
 
@@ -206,31 +228,21 @@ export function PlayComponent() {
     nestriMouse?.dispose();
   });
 
-  const { Modal, openModal } = createModal();
-
-  return (
-    <>
-      <button type="button" onClick={openModal}>
-        open modal
-      </button>
-      <Modal />
-    </>
-    /*<FullScreen>
+  return (<FullScreen>
       {showOffline() ? (
         <div class="w-screen h-screen flex justify-center items-center">
           <span class="text-2xl font-semibold flex items-center gap-2">Offline</span>
-          <button onClick={() =>setShowButtonModal(true)}>Show Modal</button>
         </div>
       ) : (
         <Canvas ref={setCanvas} onClick={lockPlay}/>
       )}
 
-      <Modal show={showButtonModal}
-      setShow={setShowButtonModal}
-      closeOnBackdropClick={false}
-      handleVideoInput={handleVideoInput}
-      lockPlay={lockPlay} />
-    </FullScreen>*/
+    <Modal show={showButtonModal}
+        setShow={setShowButtonModal}
+        closeOnBackdropClick={false}
+        handleVideoInput={handleVideoInput}
+        lockPlay={lockPlay} />
+    </FullScreen>
   );
 }
 
@@ -242,6 +254,44 @@ interface ModalProps {
   lockPlay?: () => Promise<void>;
 }
 
+function createWelcomeModal() {
+  const [open, setOpen] = createSignal(false);
+
+  return {
+    openWelcomeModal() {
+      setOpen(true);
+    },
+    WelcomeModal(props: ModalProps) {
+      return (
+        <Portal mount={document.getElementById("styled")!}>
+          <Show when={open()}>
+            <div
+              style={`
+                  position: absolute;
+                  inset: 0;
+                  display: flex;
+                  justify-content: center;
+                  align-items: center;
+                `}
+            >
+              <ModalContainer>
+                <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+                  Happy that you use Nestri!
+                  <Button onClick={async () => {
+                    sessionStorage.setItem("showedBanner", "true");
+                    await props.handleVideoInput?.();
+                    await props.lockPlay?.();
+                  }}>Let's go</Button>
+                </div>
+              </ModalContainer>
+            </div>
+          </Show>
+        </Portal>
+      );
+    },
+  };
+}
+
 function createModal() {
   const [open, setOpen] = createSignal(false);
 
@@ -249,24 +299,30 @@ function createModal() {
     openModal() {
       setOpen(true);
     },
-    Modal() {
+    Modal(props: ModalProps) {
       return (
         <Portal mount={document.getElementById("styled")!}>
           <Show when={open()}>
-              <div
-                style={`
+            <div
+              style={`
                   position: absolute;
                   inset: 0;
                   display: flex;
                   justify-content: center;
                   align-items: center;
                 `}
-              >
-                <ModalContainer>
-                  Hello from modal <br />
-                  <button onClick={() => setOpen(false)}>close modal</button>
-                </ModalContainer>
-              </div>
+            >
+              <ModalContainer>
+                <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+                  <Button onClick={async () => {
+                    props.setShow(false);
+                    await props.handleVideoInput?.();
+                    await props.lockPlay?.();
+                  }}>Continue Playing</Button>
+                  <Button onClick={() => setOpen(false)}>Shutdown Nestri</Button>
+                </div>
+              </ModalContainer>
+            </div>
           </Show>
         </Portal>
       );
