@@ -210,8 +210,8 @@ const light = (() => {
     }
 
     const background = {
-        d200: '#f5f5f5',
-        d100: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)'
+        d100: '#f5f5f5',
+        d200: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)'
     };
 
     const contrastFg = '#ffffff';

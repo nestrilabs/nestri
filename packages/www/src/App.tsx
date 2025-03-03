@@ -34,12 +34,10 @@ globalStyle("html", {
     // Hardcode colors
     "@media": {
         "(prefers-color-scheme: light)": {
-            // backgroundColor: "hsla(0,0%,98%)",
             backgroundColor: "#f5f5f5",
         },
         "(prefers-color-scheme: dark)": {
-            // backgroundColor: "hsla(0,0%,0%)",
-            backgroundColor: "#171717",
+            backgroundColor: "#1e1e1e",
         },
     },
 });
