@@ -5,7 +5,7 @@ import { pgTable, text, varchar } from "drizzle-orm/pg-core";
 export const Standing = ["new", "good", "overdue"] as const;
 
 export const polarTable = pgTable(
-    "stripe",
+    "polar",
     {
         teamID: teamID.teamID.primaryKey().references(() => teamTable.id),
         ...timestamps,
