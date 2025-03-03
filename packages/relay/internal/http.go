@@ -2,6 +2,7 @@ package relay
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
@@ -10,7 +11,7 @@ import (
 
 var httpMux *http.ServeMux
 
-func InitHTTPEndpoint() {
+func InitHTTPEndpoint() error {
 	// Create HTTP mux which serves our WS endpoint
 	httpMux = http.NewServeMux()
 
@@ -20,15 +21,30 @@ func InitHTTPEndpoint() {
 
 	// Get our serving port
 	port := GetFlags().EndpointPort
+	tlsCert := GetFlags().TLSCert
+	tlsKey := GetFlags().TLSKey
 
 	// Log and start the endpoint server
-	log.Println("Starting HTTP endpoint server on :", strconv.Itoa(port))
-	go func() {
-		log.Fatal((&http.Server{
-			Handler: httpMux,
-			Addr:    ":" + strconv.Itoa(port),
-		}).ListenAndServe())
-	}()
+	if len(tlsCert) <= 0 && len(tlsKey) <= 0 {
+		log.Println("Starting HTTP endpoint server on :", strconv.Itoa(port))
+		go func() {
+			log.Fatal((&http.Server{
+				Handler: httpMux,
+				Addr:    ":" + strconv.Itoa(port),
+			}).ListenAndServe())
+		}()
+	} else if len(tlsCert) > 0 && len(tlsKey) > 0 {
+		log.Println("Starting HTTPS endpoint server on :", strconv.Itoa(port))
+		go func() {
+			log.Fatal((&http.Server{
+				Handler: httpMux,
+				Addr:    ":" + strconv.Itoa(port),
+			}).ListenAndServeTLS(tlsCert, tlsKey))
+		}()
+	} else {
+		return errors.New("no TLS certificate or TLS key provided")
+	}
+	return nil
 }
 
 // logHTTPError logs (if verbose) and sends an error code to requester
