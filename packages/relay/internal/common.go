@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 	"log"
@@ -38,7 +39,7 @@ func InitWebRTCAPI() error {
 			PayloadType:        49,
 		},
 	} {
-		if err := mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
+		if err = mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
 			return err
 		}
 	}
@@ -58,11 +59,27 @@ func InitWebRTCAPI() error {
 	// New in v4, reduces CPU usage and latency when enabled
 	settingEngine.EnableSCTPZeroChecksum(true)
 
-	// Set the UDP port range used by WebRTC
-	err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
-	if err != nil {
-		return err
+	nat11IPs := GetFlags().NAT11IPs
+	if len(nat11IPs) > 0 {
+		settingEngine.SetNAT1To1IPs(nat11IPs, webrtc.ICECandidateTypeHost)
 	}
+
+	muxPort := GetFlags().UDPMuxPort
+	if muxPort > 0 {
+		mux, err := ice.NewMultiUDPMuxFromPort(muxPort)
+		if err != nil {
+			return err
+		}
+		settingEngine.SetICEUDPMux(mux)
+	} else {
+		// Set the UDP port range used by WebRTC
+		err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
+		if err != nil {
+			return err
+		}
+	}
+
+	settingEngine.SetIncludeLoopbackCandidate(true) // Just in case
 
 	// Create a new API object with our customized settings
 	globalWebRTCAPI = webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine), webrtc.WithSettingEngine(settingEngine), webrtc.WithInterceptorRegistry(interceptorRegistry))
@@ -88,7 +105,7 @@ func CreatePeerConnection(onClose func()) (*webrtc.PeerConnection, error) {
 		if connectionState == webrtc.PeerConnectionStateFailed ||
 			connectionState == webrtc.PeerConnectionStateDisconnected ||
 			connectionState == webrtc.PeerConnectionStateClosed {
-			err := pc.Close()
+			err = pc.Close()
 			if err != nil {
 				log.Printf("Error closing PeerConnection: %s\n", err.Error())
 			}
