@@ -6,7 +6,6 @@ import { Keyboard, Mouse, WebRTCStream } from "@nestri/input";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { styled } from "@macaron-css/solid";
 import { lightClass, theme, darkClass } from "@nestri/www/ui/theme";
-import Root from "../ui/root";
 
 const Canvas = styled("canvas", {
   base: {
@@ -252,9 +251,8 @@ function createModal() {
     },
     Modal() {
       return (
-        <Portal>
+        <Portal mount={document.getElementById("styled")!}>
           <Show when={open()}>
-            <Root>
               <div
                 style={`
                   position: absolute;
@@ -269,7 +267,6 @@ function createModal() {
                   <button onClick={() => setOpen(false)}>close modal</button>
                 </ModalContainer>
               </div>
-            </Root>
           </Show>
         </Portal>
       );
