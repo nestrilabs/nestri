@@ -7,7 +7,7 @@ export const Button = styled("button", {
         border: "1px solid transparent",
         padding: `${theme.space[2]} ${theme.space[4]}`,
         fontWeight: 500,
-        letterSpacing: 0.3,
+        letterSpacing: 0.1,
         lineHeight: "normal",
         fontFamily: theme.font.family.heading,
         textAlign: "center",

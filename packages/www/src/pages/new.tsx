@@ -12,7 +12,8 @@ import { Button } from "@nestri/www/ui";
 
 const FieldList = styled("div", {
     base: {
-        width: 380,
+        width: "100%",
+        maxWidth: 380,
         ...utility.stack(5),
     },
 });
@@ -54,8 +55,8 @@ export function CreateTeamComponent() {
 
     return (
         <FullScreen>
-            <Container horizontal="start" style={{ "max-width": "380px" }} space="4" >
-                <Container style={{ "width": "100%" }} horizontal="start" space="3" >
+            <Container horizontal="center" style={{ width: "100%", padding: "1rem", }} space="1" >
+                <Container style={{ "width": "100%","max-width": "380px" }} horizontal="start" space="3" >
                     <Text font="heading" spacing="none" size="3xl" weight="semibold">
                         Create a Team
                     </Text>
@@ -64,7 +65,7 @@ export function CreateTeamComponent() {
                     </Text>
                     <Hr />
                 </Container>
-                <Form>
+                <Form style={{ width: "100%", "max-width": "380px" }}>
                     <FieldList>
                         <Field type="string" name="slug">
                             {(field, props) => (
@@ -100,8 +101,8 @@ export function CreateTeamComponent() {
                                         {...props}
                                         value={field.value}
                                         badges={[
-                                            {label:"Basic", color:"gray"},
-                                            {label:"Pro", color:"blue"}
+                                            { label: "Basic", color: "gray" },
+                                            { label: "Pro", color: "blue" }
                                         ]}
                                         options={[
                                             { label: "I'll be playing all by myself", value: 'Basic' },

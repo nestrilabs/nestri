@@ -135,8 +135,8 @@ export const InputRadio = styled("input", {
         placeContent: "center",
         ":before": {
             content: "",
-            width: "0.65em",
-            height: "0.65em",
+            width: "0.68em",
+            height: "0.68em",
             borderRadius: "50%",
             transform: " scale(0)",
             transition: "120ms transform ease-in-out",
