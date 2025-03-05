@@ -213,8 +213,9 @@ const light = (() => {
         teal: "hsla(171,80%,13%)",
         purple: "hsla(276,100%,15)",
         pink: "hsla(333,74%,15%)",
-        grayAlpha: " hsla(0,0%,0%,0.91)"
+        grayAlpha: " hsla(0,0%,0%,0.91)",
     }
+    const brand = "#FF4F01"
 
     const background = {
         d100: '#f5f5f5',
@@ -255,6 +256,7 @@ const light = (() => {
         focusBorder,
         focusColor,
         d1000,
+        brand,
         text
     };
 })()
@@ -372,8 +374,10 @@ const dark = (() => {
         teal: "hsla(166,71%,93%)",
         purple: "hsla(281,73%,96%)",
         pink: "hsla( 333,90%,96%)",
-        grayAlpha: "hsla(0,0%,100%,0.92)"
+        grayAlpha: "hsla(0,0%,100%,0.92)",
     }
+
+    const brand = "#FF4F01"
 
     const background = {
         d200: '#171717',
@@ -414,7 +418,8 @@ const dark = (() => {
         focusBorder,
         focusColor,
         d1000,
-        text
+        text,
+        brand
     };
 })()
 

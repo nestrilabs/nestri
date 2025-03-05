@@ -15,7 +15,7 @@ export const inputStyles: CSSProperties = {
     borderWidth: 1,
     borderStyle: "solid",
     borderColor: theme.color.gray.d400,
-    color: theme.color.gray.d900,
+    color: theme.color.d1000.gray,
     backgroundColor: theme.color.background.d100,
     // transition: `box-shadow ${theme.colorFadeDuration}`,
     // boxShadow: `
@@ -245,7 +245,7 @@ type SelectProps = {
     onChange: JSX.EventHandler<HTMLInputElement, Event>;
     onBlur: JSX.EventHandler<HTMLInputElement, FocusEvent>;
     options: { label: string; value: string }[];
-    badges?: { label: string; color: string }[];
+    badges?: { label: string; color: keyof typeof theme.color.d1000 }[];
     required?: boolean;
     class?: string;
 };
@@ -261,6 +261,18 @@ const InputRadioContainer = styled("div", {
     }
 })
 
+const Badge = styled("div", {
+    base: {
+        color: "#FFF",
+        marginLeft: "auto",
+        borderRadius: 9999,
+        letterSpacing: 0.5,
+        padding: "0 6px",
+        fontSize: theme.font.size.xs
+    }
+
+})
+
 export function Select(props: SelectProps) {
     // Split select element props
     const [, inputProps] = splitProps(props, [
@@ -269,15 +281,6 @@ export function Select(props: SelectProps) {
         'options',
         'badges',
     ]);
-
-    // Create values list
-    // const getValues = createMemo(() =>
-    //     Array.isArray(props.value)
-    //         ? props.value
-    //         : typeof props.value === 'string'
-    //             ? [props.value]
-    //             : []
-    // );
 
     return (
         <InputRadioContainer>
@@ -293,9 +296,9 @@ export function Select(props: SelectProps) {
                         {label}
                         <Show when={props.badges}>
                             {props.badges &&
-                                <div style={{ "background-color": props.badges[key()].color, "position": "absolute", right: 0 }}>
+                                <Badge style={{"background-color": theme.color[props.badges[key()].color].d700 }}>
                                     {props.badges[key()].label}
-                                </div>
+                                </Badge>
                             }
                         </Show>
                     </InputLabel>

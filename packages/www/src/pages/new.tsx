@@ -6,8 +6,9 @@ import { theme } from "@nestri/www/ui/theme";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { createForm, required, email, valiForm } from "@modular-forms/solid";
+import { Button } from "../ui";
 
-const nameRegex = /^[a-z]+$/
+// const nameRegex = /^[a-z]+$/
 
 const FieldList = styled("div", {
     base: {
@@ -41,7 +42,7 @@ const schema = v.object({
     slug: v.pipe(
         v.string(),
         v.minLength(2, 'Please use 2 characters at minimum.'),
-        v.regex(nameRegex, "Use only small letters, no numbers or special characters"),
+        // v.regex(nameRegex, "Use only small letters, no numbers or special characters"),
         v.maxLength(48, 'Please use 48 characters at maximum.'),
     )
 })
@@ -103,31 +104,18 @@ export function CreateTeamComponent() {
                                             {label:"Pro", color:"blue"}
                                         ]}
                                         options={[
-                                            { label: "I'm working on personal projects", value: 'Hobby' },
-                                            { label: "I'm working on commercial projects", value: 'Pro' },
+                                            { label: "I'll be playing all by myself", value: 'Basic' },
+                                            { label: "I'll be playing with friends and family", value: 'Pro' },
                                         ]}
                                     />
                                 </FormField>
                             )}
                         </Field>
+                        <Button color="brand">
+                            Continue
+                        </Button>
                     </FieldList>
                 </Form>
-                {/* <Form
-                    onSubmit={(values) => alert(JSON.stringify(values, null, 4))}
-                >
-                    <Field
-                        name="email"
-                        validate={[
-                            required('Please enter your email.'),
-                            email('The email address is badly formatted.'),
-                        ]}
-                    >
-                        {(field, props) => (
-                            <input />
-                        )}
-                    </Field>
-                </Form> */}
-
             </Container>
 
         </FullScreen>
