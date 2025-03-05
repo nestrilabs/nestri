@@ -6,7 +6,7 @@ import { theme } from "@nestri/www/ui/theme";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { createForm, required, email, valiForm } from "@modular-forms/solid";
-import { Button } from "../ui";
+import { Button } from "@nestri/www/ui";
 
 // const nameRegex = /^[a-z]+$/
 
