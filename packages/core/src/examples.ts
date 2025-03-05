@@ -1,4 +1,3 @@
-import { teamID } from "./drizzle/types";
 import { prefixes } from "./utils";
 export module Examples {
     export const Id = (prefix: keyof typeof prefixes) =>
@@ -18,10 +17,15 @@ export module Examples {
         name: "John Does' Team",
         slug: "john_doe",
     }
-    
+
     export const Member = {
         id: Id("member"),
         email: "john@example.com",
+        teamID: Id("team"),
+        timeSeen: new Date("2025-02-23T13:39:52.249Z"),
+    }
+
+    export const Polar = {
         teamID: Id("team"),
         timeSeen: new Date("2025-02-23T13:39:52.249Z"),
     }
