@@ -23,6 +23,8 @@ interface Storage {
   current?: string;
 }
 
+//TODO: Fix bug where authenticator deletes auth state for no reason
+
 export const client = createClient({
   issuer: import.meta.env.VITE_AUTH_URL,
   clientID: "web",
@@ -83,6 +85,7 @@ export const { use: useAuth, provider: AuthProvider } =
           access: account.access,
         })
         if (result.err) {
+          console.log("error", result.err)
           if ("id" in account)
             setStore(produce((state) => {
               delete state.accounts[account.id];
@@ -115,6 +118,7 @@ export const { use: useAuth, provider: AuthProvider } =
           }
 
           if (!response.ok)
+            console.log("error from account", response.json())
             setStore(
               produce((state) => {
                 delete state.accounts[account.id];

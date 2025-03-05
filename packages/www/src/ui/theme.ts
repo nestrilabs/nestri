@@ -2,7 +2,7 @@ import { createTheme } from "@macaron-css/core";
 
 const constants = {
     colorFadeDuration: "0.15s",
-    borderRadius: "4px",
+    borderRadius: "6px",
     textBoldWeight: "600",
     iconOpacity: "0.85",
     modalWidth: {
@@ -15,6 +15,13 @@ const constants = {
         stage: "52px",
     },
 };
+
+const formInput = {
+    size: {
+      base: "40px",
+      sm: "32px",
+    },
+  };
 
 const space = {
     px: "1px",
@@ -416,6 +423,7 @@ export const [lightClass, theme] = createTheme({
     space,
     font,
     color: light,
+    input: formInput
 });
 
 export const darkClass = createTheme(theme, {
@@ -424,4 +432,5 @@ export const darkClass = createTheme(theme, {
     space,
     font,
     color: dark,
+    input: formInput
 });
