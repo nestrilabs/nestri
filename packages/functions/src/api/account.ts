@@ -7,6 +7,7 @@ import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
 import { assertActor } from "@nestri/core/actor";
+import { Examples } from "@nestri/core/examples";
 
 export module AccountApi {
     export const route = new Hono()
@@ -22,8 +23,12 @@ export module AccountApi {
                             "application/json": {
                                 schema: Result(
                                     z.object({
-                                        ...User.Info.shape,
+                                        id: z.string(),
+                                        email: z.string(),
                                         teams: Team.Info.array(),
+                                    }).openapi({
+                                        example: { ...Examples.User, teams: [Examples.Team] },
+                                        description: "The user information associated with this account"
                                     })
                                 ),
                             },
@@ -41,7 +46,6 @@ export module AccountApi {
                 }
             }),
             async (c) => {
-                
                 const actor = assertActor("user");
                 // const [currentUser, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
 
@@ -51,11 +55,11 @@ export module AccountApi {
 
                 return c.json({
                     data: {
-                        // id: actor.properties.id,
-                        // name: actor.,
+                        id: actor.properties.userID,
+                        email: actor.properties.email,
+                        teams: await User.teams(),
                         // email,
                         // name,
-                        // teams: User.teams(),
                         // avatarUrl,
                         // discriminator,
                         // polarCustomerID,
