@@ -3,131 +3,149 @@ package realtime
 import (
 	"context"
 	"fmt"
+	"github.com/eclipse/paho.golang/autopaho"
+	"github.com/eclipse/paho.golang/paho"
+	"log/slog"
 	"nestri/maitred/internal/auth"
-	"nestri/maitred/internal/machine"
+	"nestri/maitred/internal/containers"
+	"nestri/maitred/internal/messages"
 	"nestri/maitred/internal/resource"
 	"net/url"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
-
-	"github.com/charmbracelet/log"
-	"github.com/eclipse/paho.golang/autopaho"
-	"github.com/eclipse/paho.golang/paho"
 )
 
-func Run() {
-	//Use hostname as the last part of this URL
-	machineID, err := machine.MachineID()
-	if err != nil {
-		log.Error("Error getting machine id", "err", machineID)
-	}
-	//FIXME:Use the userTokens to query for the current machineID
+func Run(ctx context.Context, machineID string, containerEngine containers.ContainerEngine, resource *resource.Resource) error {
 	var clientID = generateClientID()
-	var topic = fmt.Sprintf("%s/%s/%s", resource.Resource.App.Name, resource.Resource.App.Stage, machineID)
-	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Resource.Realtime.Endpoint, resource.Resource.Realtime.Authorizer)
+	var topic = fmt.Sprintf("%s/%s/%s", resource.App.Name, resource.App.Stage, machineID)
+	var serverURL = fmt.Sprintf("wss://%s/mqtt?x-amz-customauthorizer-name=%s", resource.Realtime.Endpoint, resource.Realtime.Authorizer)
 
-	// App will run until cancelled by user (e.g. ctrl-c)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	slog.Info("Realtime", "topic", topic)
 
-	userTokens, err := auth.FetchUserToken()
+	userTokens, err := auth.FetchUserToken(machineID, resource)
 	if err != nil {
-		log.Error("Error trying to request for credentials", "err", err)
-		stop()
+		return err
 	}
 
-	log.Info("API token to use", "token", userTokens.AccessToken)
+	slog.Info("Realtime", "token", userTokens.AccessToken)
 
 	u, err := url.Parse(serverURL)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	router := paho.NewStandardRouter()
 	router.DefaultHandler(func(p *paho.Publish) {
-		infoLogger.Info("Router", "message", fmt.Sprintf("default handler received message: %s\n", p.Payload))
+		slog.Debug("DefaultHandler", "topic", p.Topic, "message", fmt.Sprintf("default handler received message: %s - with topic: %s", p.Payload, p.Topic))
 	})
 
+	createTopic := fmt.Sprintf("%s/create", topic)
+	slog.Info("Registering handler", "topic", createTopic)
+	router.RegisterHandler(createTopic, func(p *paho.Publish) {
+		slog.Info("Router", "message", "received create message with payload", fmt.Sprintf("%s", p.Payload))
+
+		base, _, err := messages.ParseMessage(p.Payload)
+		if err != nil {
+			slog.Error("Router", "err", fmt.Sprintf("failed to parse message: %s", err))
+			return
+		}
+
+		if base.Type != "create" {
+			slog.Error("Router", "err", "unexpected message type")
+			return
+		}
+
+		// Create runner container
+		containerID, err := containers.CreateRunner(ctx, containerEngine)
+		if err != nil {
+			slog.Error("Router", "err", fmt.Sprintf("failed to create runner container: %s", err))
+			return
+		}
+
+		slog.Info("Router", "info", fmt.Sprintf("created runner container: %s", containerID))
+	})
+
+	startTopic := fmt.Sprintf("%s/start", topic)
+	slog.Info("Registering handler", "topic", startTopic)
+	router.RegisterHandler(startTopic, func(p *paho.Publish) {
+		slog.Info("Router", "message", "received start message with payload", fmt.Sprintf("%s", p.Payload))
+
+		base, payload, err := messages.ParseMessage(p.Payload)
+		if err != nil {
+			slog.Error("Router", "err", fmt.Sprintf("failed to parse message: %s", err))
+			return
+		}
+
+		if base.Type != "start" {
+			slog.Error("Router", "err", "unexpected message type")
+			return
+		}
+
+		// Get container ID
+		startPayload, ok := payload.(messages.StartPayload)
+		if !ok {
+			slog.Error("Router", "err", "failed to get payload")
+			return
+		}
+
+		// Start runner container
+		if err = containerEngine.StartContainer(ctx, startPayload.ContainerID); err != nil {
+			slog.Error("Router", "err", fmt.Sprintf("failed to start runner container: %s", err))
+			return
+		}
+
+		slog.Info("Router", "info", fmt.Sprintf("started runner container: %s", startPayload.ContainerID))
+	})
+
+	legacyLogger := slog.NewLogLogger(slog.NewTextHandler(os.Stdout, nil), slog.LevelError)
 	cliCfg := autopaho.ClientConfig{
-		ServerUrls:      []*url.URL{u},
-		ConnectUsername: "", // Must be empty for the authorizer
-		ConnectPassword: []byte(userTokens.AccessToken),
-		KeepAlive:       20, // Keepalive message should be sent every 20 seconds
-		// We don't want the broker to delete any session info when we disconnect
+		ServerUrls:                    []*url.URL{u},
+		ConnectUsername:               "",
+		ConnectPassword:               []byte(userTokens.AccessToken),
+		KeepAlive:                     20,
 		CleanStartOnInitialConnection: true,
-		SessionExpiryInterval:         60, // Session remains live 60 seconds after disconnect
+		SessionExpiryInterval:         60,
 		ReconnectBackoff:              autopaho.NewConstantBackoff(time.Second),
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
-			infoLogger.Info("Router", "info", "MQTT connection is up and running")
-			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+			slog.Info("Router", "info", "MQTT connection is up and running")
+			if _, err = cm.Subscribe(context.Background(), &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{
-					{Topic: fmt.Sprintf("%s/#", topic), QoS: 1}, //Listen to all messages from this team
+					{Topic: fmt.Sprintf("%s/#", topic), QoS: 1},
 				},
 			}); err != nil {
-				panic(fmt.Sprintf("failed to subscribe (%s). This is likely to mean no messages will be received.", err))
+				slog.Error("Router", "err", fmt.Sprint("failed to subscribe, likely no messages will be received: ", err))
 			}
 		},
-		Errors: logger{prefix: "subscribe"},
+		Errors: legacyLogger,
 		OnConnectError: func(err error) {
-			infoLogger.Error("Router", "err", fmt.Sprintf("error whilst attempting connection: %s\n", err))
+			slog.Error("Router", "err", fmt.Sprintf("error whilst attempting connection: %s", err))
 		},
-		// eclipse/paho.golang/paho provides base mqtt functionality, the below config will be passed in for each connection
 		ClientConfig: paho.ClientConfig{
-			// If you are using QOS 1/2, then it's important to specify a client id (which must be unique)
 			ClientID: clientID,
-			// OnPublishReceived is a slice of functions that will be called when a message is received.
-			// You can write the function(s) yourself or use the supplied Router
 			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
 				func(pr paho.PublishReceived) (bool, error) {
 					router.Route(pr.Packet.Packet())
-					return true, nil // we assume that the router handles all messages (todo: amend router API)
+					return true, nil
 				}},
-			OnClientError: func(err error) { infoLogger.Error("Router", "err", fmt.Sprintf("client error: %s\n", err)) },
+			OnClientError: func(err error) { slog.Error("Router", "err", fmt.Sprintf("client error: %s", err)) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {
-					infoLogger.Info("Router", "info", fmt.Sprintf("server requested disconnect: %s\n", d.Properties.ReasonString))
+					slog.Info("Router", "info", fmt.Sprintf("server requested disconnect: %s", d.Properties.ReasonString))
 				} else {
-					infoLogger.Info("Router", "info", fmt.Sprintf("server requested disconnect; reason code: %d\n", d.ReasonCode))
+					slog.Info("Router", "info", fmt.Sprintf("server requested disconnect; reason code: %d", d.ReasonCode))
 				}
 			},
 		},
 	}
 
-	c, err := autopaho.NewConnection(ctx, cliCfg) // starts process; will reconnect until context cancelled
+	c, err := autopaho.NewConnection(ctx, cliCfg)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if err = c.AwaitConnection(ctx); err != nil {
-		panic(err)
+		return err
 	}
 
-	// Handlers can be registered/deregistered at any time. It's important to note that you need to subscribe AND create
-	// a handler
-	//TODO: Have different routes for different things, like starting a session, stopping a session, and stopping the container altogether
-	//TODO: Listen on team-slug/container-hostname topic only
-	router.RegisterHandler(fmt.Sprintf("%s/%s/start", topic, machineID), func(p *paho.Publish) {
-		infoLogger.Info("Router", "info", fmt.Sprintf("start a game: %s\n", p.Topic))
-	})
-	router.RegisterHandler(fmt.Sprintf("%s/%s/stop", topic, machineID), func(p *paho.Publish) { fmt.Printf("stop the game that is running: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/%s/download", topic, machineID), func(p *paho.Publish) { fmt.Printf("download a game: %s\n", p.Topic) })
-	router.RegisterHandler(fmt.Sprintf("%s/%s/quit", topic, machineID), func(p *paho.Publish) { stop() }) // Stop and quit this running container
-
-	// We publish three messages to test out the various route handlers
-	// topics := []string{"test/test", "test/test/foo", "test/xxNoMatch", "test/quit"}
-	// for _, t := range topics {
-	// 	if _, err := c.Publish(ctx, &paho.Publish{
-	// 		QoS:     1,
-	// 		Topic:   fmt.Sprintf("%s/%s", topic, t),
-	// 		Payload: []byte("TestMessage on topic: " + t),
-	// 	}); err != nil {
-	// 		if ctx.Err() == nil {
-	// 			panic(err) // Publish will exit when context cancelled or if something went wrong
-	// 		}
-	// 	}
-	// }
-
-	<-c.Done() // Wait for clean shutdown (cancelling the context triggered the shutdown)
+	return nil
 }
