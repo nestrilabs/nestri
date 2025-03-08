@@ -7,8 +7,9 @@ import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
 import { assertActor } from "@nestri/core/actor";
+import { Examples } from "@nestri/core/examples";
 
-export module AccountApi {
+export namespace AccountApi {
     export const route = new Hono()
         .use(notPublic)
         .get("/",
@@ -22,8 +23,12 @@ export module AccountApi {
                             "application/json": {
                                 schema: Result(
                                     z.object({
-                                        ...User.Info.shape,
+                                        id: z.string(),
+                                        email: z.string(),
                                         teams: Team.Info.array(),
+                                    }).openapi({
+                                        example: { ...Examples.User, teams: [Examples.Team] },
+                                        description: "The user information associated with this account"
                                     })
                                 ),
                             },
@@ -42,21 +47,22 @@ export module AccountApi {
             }),
             async (c) => {
                 const actor = assertActor("user");
-                const [currentUser, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
+                // const [currentUser, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
 
-                if (!currentUser) return c.json({ error: "This account does not exist; it may have been deleted" }, 404)
+                // if (!currentUser) return c.json({ error: "This account does not exist; it may have been deleted" }, 404)
 
-                const { id, email, name, polarCustomerID, avatarUrl, discriminator } = currentUser
+                // const { id, email, name, polarCustomerID, avatarUrl, discriminator } = currentUser
 
                 return c.json({
                     data: {
-                        id,
-                        email,
-                        name,
-                        teams,
-                        avatarUrl,
-                        discriminator,
-                        polarCustomerID,
+                        id: actor.properties.userID,
+                        email: actor.properties.email,
+                        teams: await User.teams(),
+                        // email,
+                        // name,
+                        // avatarUrl,
+                        // discriminator,
+                        // polarCustomerID,
                     }
                 }, 200);
             },

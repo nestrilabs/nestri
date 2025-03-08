@@ -6,11 +6,11 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
+import { useAuth } from './providers/auth';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
 import { CreateTeamComponent } from './pages/new';
 import { darkClass, lightClass, theme } from './ui/theme';
-import { AuthProvider, useAuth } from './providers/auth';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
@@ -88,8 +88,8 @@ export const App: Component = () => {
                     path="*"
                     component={(props) => (
                         // <AuthProvider>
-                            // {props.children}
-                            props.children
+                        // {props.children}
+                        props.children
                         // </AuthProvider>
                     )}
                 >
