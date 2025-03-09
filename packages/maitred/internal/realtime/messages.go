@@ -1,4 +1,4 @@
-package messages
+package realtime
 
 import (
 	"encoding/json"

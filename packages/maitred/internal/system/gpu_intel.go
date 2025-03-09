@@ -177,6 +177,11 @@ func monitorIntelGPU(device PCIInfo) GPUUsage {
 		return GPUUsage{}
 	}
 
+	// PCIInfo also has the driver, let's warn if they don't match
+	if device.Driver != driver {
+		slog.Warn("driver mismatch", "card", cardX, "lspci driver", device.Driver, "sysfs driver", driver)
+	}
+
 	// Open DRM device
 	cardPath := "/dev/dri/" + cardX
 	fd, err := syscall.Open(cardPath, syscall.O_RDWR, 0)
@@ -196,7 +201,7 @@ func monitorIntelGPU(device PCIInfo) GPUUsage {
 		totalVRAM, usedVRAMFromIOCTL, err = queryMemoryRegionsXE(fd)
 	}
 	if err != nil {
-		slog.Warn("failed to get memory regions", "card", cardX, "error", err)
+		//slog.Debug("failed to get memory regions", "card", cardX, "error", err)
 		// Proceed with totalVRAM = 0 if ioctl fails
 	}
 
@@ -273,10 +278,7 @@ func monitorIntelGPU(device PCIInfo) GPUUsage {
 	}
 
 	return GPUUsage{
-		Info: GPUInfo{
-			Vendor: device.Vendor.Name,
-			Model:  device.Device.Name,
-		},
+		Info:         device,
 		UsagePercent: usagePercent,
 		VRAM: VRAMUsage{
 			Total:       totalVRAM,

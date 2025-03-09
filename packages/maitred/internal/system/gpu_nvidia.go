@@ -25,7 +25,7 @@ func monitorNVIDIAGPU(device PCIInfo) GPUUsage {
 			continue
 		}
 		busID := fields[0] // e.g., "0000:01:00.0"
-		if strings.HasSuffix(busID, device.Slot) {
+		if strings.Contains(busID, device.Slot) || strings.Contains(device.Slot, busID) {
 			usagePercent, _ := strconv.ParseFloat(fields[1], 64)
 			totalMiB, _ := strconv.ParseUint(fields[2], 10, 64)
 			usedMiB, _ := strconv.ParseUint(fields[3], 10, 64)
@@ -41,10 +41,7 @@ func monitorNVIDIAGPU(device PCIInfo) GPUUsage {
 			}
 
 			return GPUUsage{
-				Info: GPUInfo{
-					Vendor: device.Vendor.Name,
-					Model:  device.Device.Name,
-				},
+				Info:         device,
 				UsagePercent: usagePercent,
 				VRAM: VRAMUsage{
 					Total:       total,

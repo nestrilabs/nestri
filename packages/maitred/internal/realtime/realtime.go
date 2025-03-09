@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"nestri/maitred/internal/auth"
 	"nestri/maitred/internal/containers"
-	"nestri/maitred/internal/messages"
 	"nestri/maitred/internal/resource"
 	"net/url"
 	"os"
@@ -40,11 +39,11 @@ func Run(ctx context.Context, machineID string, containerEngine containers.Conta
 	})
 
 	createTopic := fmt.Sprintf("%s/create", topic)
-	slog.Info("Registering handler", "topic", createTopic)
+	slog.Debug("Registering handler", "topic", createTopic)
 	router.RegisterHandler(createTopic, func(p *paho.Publish) {
-		slog.Info("Router", "message", "received create message with payload", fmt.Sprintf("%s", p.Payload))
+		slog.Debug("Router", "message", "received create message with payload", fmt.Sprintf("%s", p.Payload))
 
-		base, _, err := messages.ParseMessage(p.Payload)
+		base, _, err := ParseMessage(p.Payload)
 		if err != nil {
 			slog.Error("Router", "err", fmt.Sprintf("failed to parse message: %s", err))
 			return
@@ -56,7 +55,7 @@ func Run(ctx context.Context, machineID string, containerEngine containers.Conta
 		}
 
 		// Create runner container
-		containerID, err := containers.CreateRunner(ctx, containerEngine)
+		containerID, err := CreateRunner(ctx, containerEngine)
 		if err != nil {
 			slog.Error("Router", "err", fmt.Sprintf("failed to create runner container: %s", err))
 			return
@@ -66,11 +65,11 @@ func Run(ctx context.Context, machineID string, containerEngine containers.Conta
 	})
 
 	startTopic := fmt.Sprintf("%s/start", topic)
-	slog.Info("Registering handler", "topic", startTopic)
+	slog.Debug("Registering handler", "topic", startTopic)
 	router.RegisterHandler(startTopic, func(p *paho.Publish) {
-		slog.Info("Router", "message", "received start message with payload", fmt.Sprintf("%s", p.Payload))
+		slog.Debug("Router", "message", "received start message with payload", fmt.Sprintf("%s", p.Payload))
 
-		base, payload, err := messages.ParseMessage(p.Payload)
+		base, payload, err := ParseMessage(p.Payload)
 		if err != nil {
 			slog.Error("Router", "err", fmt.Sprintf("failed to parse message: %s", err))
 			return
@@ -82,7 +81,7 @@ func Run(ctx context.Context, machineID string, containerEngine containers.Conta
 		}
 
 		// Get container ID
-		startPayload, ok := payload.(messages.StartPayload)
+		startPayload, ok := payload.(StartPayload)
 		if !ok {
 			slog.Error("Router", "err", "failed to get payload")
 			return
@@ -95,6 +94,38 @@ func Run(ctx context.Context, machineID string, containerEngine containers.Conta
 		}
 
 		slog.Info("Router", "info", fmt.Sprintf("started runner container: %s", startPayload.ContainerID))
+	})
+
+	stopTopic := fmt.Sprintf("%s/stop", topic)
+	slog.Debug("Registering handler", "topic", stopTopic)
+	router.RegisterHandler(stopTopic, func(p *paho.Publish) {
+		slog.Debug("Router", "message", "received stop message with payload", fmt.Sprintf("%s", p.Payload))
+
+		base, payload, err := ParseMessage(p.Payload)
+		if err != nil {
+			slog.Error("Router", "err", fmt.Sprintf("failed to parse message: %s", err))
+			return
+		}
+
+		if base.Type != "stop" {
+			slog.Error("Router", "err", "unexpected message type")
+			return
+		}
+
+		// Get container ID
+		stopPayload, ok := payload.(StopPayload)
+		if !ok {
+			slog.Error("Router", "err", "failed to get payload")
+			return
+		}
+
+		// Stop runner container
+		if err = containerEngine.StopContainer(ctx, stopPayload.ContainerID); err != nil {
+			slog.Error("Router", "err", fmt.Sprintf("failed to stop runner container: %s", err))
+			return
+		}
+
+		slog.Info("Router", "info", fmt.Sprintf("stopped runner container: %s", stopPayload.ContainerID))
 	})
 
 	legacyLogger := slog.NewLogLogger(slog.NewTextHandler(os.Stdout, nil), slog.LevelError)

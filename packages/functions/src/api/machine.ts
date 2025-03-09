@@ -6,7 +6,7 @@ import {describeRoute} from "hono-openapi";
 import {assertActor} from "@nestri/core/actor";
 import {Realtime} from "@nestri/core/realtime/index";
 import {validator} from "hono-openapi/zod";
-import {CreateMessageSchema, StartMessageSchema} from "./messages.ts";
+import {CreateMessageSchema, StartMessageSchema, StopMessageSchema} from "./messages.ts";
 
 export module MachineApi {
   export const route = new Hono()
@@ -160,6 +160,63 @@ export module MachineApi {
         return c.json({
           data: {
             message: "start request sent",
+          },
+        }, 200);
+      }
+    )
+    .post("/:machineID/stop",
+      describeRoute({
+        tags: ["Machine"],
+        summary: "Request to stop a container for a specific machine",
+        description: "Publishes a message to stop a container via MQTT for the given machine ID",
+        responses: {
+          200: {
+            content: {
+              "application/json": {
+                schema: Result(
+                  z.object({
+                    message: z.literal("stop request sent"),
+                  })
+                ),
+              },
+            },
+            description: "Stop request successfully sent to MQTT",
+          },
+          400: {
+            content: {
+              "application/json": {
+                schema: Result(
+                  z.object({error: z.string()})
+                ),
+              },
+            },
+            description: "Failed to publish start request",
+          },
+        },
+      }),
+      validator("json", StopMessageSchema.shape.payload), // Use the payload schema
+      async (c) => {
+        const actor = assertActor("machine");
+        const body = c.req.valid("json");
+
+        const message = {
+          type: "stop" as const,
+          payload: {
+            container_id: body.container_id,
+          },
+        };
+
+        try {
+          await Realtime.publish(message, "stop");
+          console.log("Published stop request");
+        } catch (error) {
+          console.error("Failed to publish to MQTT:", error);
+          return c.json({error: "Failed to send stop request"}, 400);
+        }
+
+        return c.json({
+          data: {
+            message: "stop request sent",
           },
         }, 200);
       }

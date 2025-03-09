@@ -3,7 +3,10 @@ package system
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -21,14 +24,17 @@ type infoPair struct {
 }
 
 type PCIInfo struct {
-	Slot    string
-	Class   infoPair
-	Vendor  infoPair
-	Device  infoPair
-	SVendor infoPair
-	SDevice infoPair
-	Rev     string
-	ProgIf  string
+	Slot       string
+	Class      infoPair
+	Vendor     infoPair
+	Device     infoPair
+	SVendor    infoPair
+	SDevice    infoPair
+	Rev        string
+	ProgIf     string
+	Driver     string
+	Modules    []string
+	IOMMUGroup string
 }
 
 const (
@@ -40,7 +46,7 @@ const (
 func GetAllGPUInfo() ([]PCIInfo, error) {
 	var gpus []PCIInfo
 
-	cmd := exec.Command("lspci", "-mmvvvnn")
+	cmd := exec.Command("lspci", "-mmvvvnnkD")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -77,6 +83,12 @@ func GetAllGPUInfo() ([]PCIInfo, error) {
 				info.Rev = value
 			case "ProgIf":
 				info.ProgIf = value
+			case "Driver":
+				info.Driver = value
+			case "Module":
+				info.Modules = append(info.Modules, value)
+			case "IOMMUGroup":
+				info.IOMMUGroup = value
 			}
 
 			if err != nil {
@@ -134,4 +146,39 @@ func parseHexID(id string) (int, error) {
 
 func isGPUClass(class int) bool {
 	return class == pciClassVGA || class == pciClass3D || class == pciClassDisplay || class == pciClassCoProcessor
+}
+
+// GetCardDevices returns the /dev/dri/cardX and /dev/dri/renderDXXX device
+func (info PCIInfo) GetCardDevices() (cardPath, renderPath string, err error) {
+	busID := strings.ToLower(info.Slot)
+	if !strings.HasPrefix(busID, "0000:") || len(busID) != 12 || busID[4] != ':' || busID[7] != ':' || busID[10] != '.' {
+		return "", "", fmt.Errorf("invalid PCI Bus ID format: %s (expected 0000:XX:YY.Z)", busID)
+	}
+
+	byPathDir := "/dev/dri/by-path/"
+	entries, err := os.ReadDir(byPathDir)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read %s: %v", byPathDir, err)
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "pci-"+busID+"-card") {
+			cardPath, err = filepath.EvalSymlinks(filepath.Join(byPathDir, name))
+			if err != nil {
+				return "", "", fmt.Errorf("failed to resolve card symlink %s: %v", name, err)
+			}
+		}
+		if strings.HasPrefix(name, "pci-"+busID+"-render") {
+			renderPath, err = filepath.EvalSymlinks(filepath.Join(byPathDir, name))
+			if err != nil {
+				return "", "", fmt.Errorf("failed to resolve render symlink %s: %v", name, err)
+			}
+		}
+	}
+
+	if cardPath == "" && renderPath == "" {
+		return "", "", fmt.Errorf("no DRM devices found for PCI Bus ID: %s", busID)
+	}
+	return cardPath, renderPath, nil
 }

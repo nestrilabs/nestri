@@ -41,7 +41,7 @@ export const StartMessageSchema = BaseMessageSchema.extend({
   type: z.literal("start"),
   payload: z.object({
     container_id: z.string(),
-  }).passthrough(), // Allow extra fields
+  }).passthrough(),
 });
 
 export const StopMessageSchema = BaseMessageSchema.extend({

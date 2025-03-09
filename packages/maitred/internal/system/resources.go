@@ -31,27 +31,23 @@ type CPUUsage struct {
 type MemoryUsage struct {
 	Total       uint64  `json:"total"`        // Total memory in bytes
 	Used        uint64  `json:"used"`         // Used memory in bytes
+	Available   uint64  `json:"available"`    // Available memory in bytes
 	Free        uint64  `json:"free"`         // Free memory in bytes
 	UsedPercent float64 `json:"used_percent"` // Used memory in percentage (0-100)
 }
 
-// DiskUsage contains disk usage metrics
-type DiskUsage struct {
+// FilesystemUsage contains usage metrics for a filesystem path
+type FilesystemUsage struct {
+	Path        string  `json:"path"`         // Filesystem path
 	Total       uint64  `json:"total"`        // Total disk space in bytes
 	Used        uint64  `json:"used"`         // Used disk space in bytes
 	Free        uint64  `json:"free"`         // Free disk space in bytes
 	UsedPercent float64 `json:"used_percent"` // Used disk space in percentage (0-100)
 }
 
-// GPUInfo contains GPU model information
-type GPUInfo struct {
-	Vendor string `json:"vendor"` // GPU vendor (e.g., "NVIDIA", "AMD", "Intel")
-	Model  string `json:"model"`  // GPU model name
-}
-
 // GPUUsage contains GPU usage metrics
 type GPUUsage struct {
-	Info         GPUInfo   `json:"info"`          // GPU vendor and model information
+	Info         PCIInfo   `json:"pci_info"`      // GPU PCI information
 	UsagePercent float64   `json:"usage_percent"` // GPU usage in percentage (0-100)
 	VRAM         VRAMUsage `json:"vram"`          // GPU memory usage metrics
 }
@@ -66,10 +62,10 @@ type VRAMUsage struct {
 
 // ResourceUsage contains resource usage metrics
 type ResourceUsage struct {
-	CPU    CPUUsage    `json:"cpu"`    // CPU usage metrics
-	Memory MemoryUsage `json:"memory"` // Memory usage metrics
-	Disk   DiskUsage   `json:"disk"`   // Disk usage metrics
-	GPUs   []GPUUsage  `json:"gpus"`   // Per-GPU usage metrics
+	CPU    CPUUsage        `json:"cpu"`    // CPU usage metrics
+	Memory MemoryUsage     `json:"memory"` // Memory usage metrics
+	Disk   FilesystemUsage `json:"disk"`   // Disk usage metrics
+	GPUs   []GPUUsage      `json:"gpus"`   // Per-GPU usage metrics
 }
 
 var (
@@ -110,21 +106,26 @@ func StartMonitoring(ctx context.Context, interval time.Duration) {
 // updateUsage collects and updates the lastUsage variable
 func updateUsage() {
 	// Collect CPU usage
-	cpu := getCPUUsage()
+	cpu := GetCPUUsage()
 
-	// Collect memory and disk usage
-	memory := getMemoryUsage()
-	disk := getDiskUsage()
+	// Collect memory usage
+	memory := GetMemoryUsage()
+
+	// Collect root filesystem usage
+	rootfs, err := GetFilesystemUsage("/")
+	if err != nil {
+		slog.Warn("Failed to get root filesystem usage", "error", err)
+	}
 
 	// Collect GPU usage
-	gpus := getGPUUsage()
+	gpus := GetGPUUsage()
 
 	// Update shared variable safely
 	lastUsageMutex.Lock()
 	lastUsage = ResourceUsage{
 		CPU:    cpu,
 		Memory: memory,
-		Disk:   disk,
+		Disk:   rootfs,
 		GPUs:   gpus,
 	}
 	lastUsageMutex.Unlock()
@@ -132,22 +133,30 @@ func updateUsage() {
 
 // PrettyString returns resource usage metrics in a human-readable format string
 func (r ResourceUsage) PrettyString() string {
-	res := "System Usage:\n"
+	res := "Resource Usage:\n"
 	res += fmt.Sprintf("  CPU:\n")
 	res += fmt.Sprintf("    Vendor: %s\n", r.CPU.Info.Vendor)
 	res += fmt.Sprintf("    Model: %s\n", r.CPU.Info.Model)
 	res += fmt.Sprintf("    Total Usage: %.2f%%\n", r.CPU.Total)
+	res += fmt.Sprintf("    Per-Core Usage:\n")
+	res += fmt.Sprintf("      [")
 	for i, coreUsage := range r.CPU.PerCore {
-		res += fmt.Sprintf("    Core %d: %.2f%%\n", i, coreUsage)
+		res += fmt.Sprintf("%.2f%%", coreUsage)
+		if i < len(r.CPU.PerCore)-1 {
+			res += ", "
+		}
 	}
+	res += "]\n"
 
 	res += fmt.Sprintf("  Memory:\n")
 	res += fmt.Sprintf("    Total: %d bytes\n", r.Memory.Total)
 	res += fmt.Sprintf("    Used: %d bytes\n", r.Memory.Used)
+	res += fmt.Sprintf("    Available: %d bytes\n", r.Memory.Available)
 	res += fmt.Sprintf("    Free: %d bytes\n", r.Memory.Free)
 	res += fmt.Sprintf("    Used Percent: %.2f%%\n", r.Memory.UsedPercent)
 
-	res += fmt.Sprintf("  Disk:\n")
+	res += fmt.Sprintf("  Filesystem:\n")
+	res += fmt.Sprintf("    Path: %s\n", r.Disk.Path)
 	res += fmt.Sprintf("    Total: %d bytes\n", r.Disk.Total)
 	res += fmt.Sprintf("    Used: %d bytes\n", r.Disk.Used)
 	res += fmt.Sprintf("    Free: %d bytes\n", r.Disk.Free)
@@ -155,9 +164,17 @@ func (r ResourceUsage) PrettyString() string {
 
 	res += fmt.Sprintf("  GPUs:\n")
 	for i, gpu := range r.GPUs {
+		cardDev, renderDev, err := gpu.Info.GetCardDevices()
+		if err != nil {
+			slog.Warn("Failed to get card and render devices", "error", err)
+		}
+
 		res += fmt.Sprintf("    GPU %d:\n", i)
-		res += fmt.Sprintf("      Vendor: %s\n", gpu.Info.Vendor)
-		res += fmt.Sprintf("      Model: %s\n", gpu.Info.Model)
+		res += fmt.Sprintf("      Vendor: %s\n", gpu.Info.Vendor.Name)
+		res += fmt.Sprintf("      Model: %s\n", gpu.Info.Device.Name)
+		res += fmt.Sprintf("      Driver: %s\n", gpu.Info.Driver)
+		res += fmt.Sprintf("      Card Device: %s\n", cardDev)
+		res += fmt.Sprintf("      Render Device: %s\n", renderDev)
 		res += fmt.Sprintf("      Usage Percent: %.2f%%\n", gpu.UsagePercent)
 		res += fmt.Sprintf("      VRAM:\n")
 		res += fmt.Sprintf("        Total: %d bytes\n", gpu.VRAM.Total)
@@ -170,7 +187,7 @@ func (r ResourceUsage) PrettyString() string {
 }
 
 // GetCPUUsage gathers CPU usage
-func getCPUUsage() CPUUsage {
+func GetCPUUsage() CPUUsage {
 	// Helper to read /proc/stat
 	readStat := func() (uint64, uint64, []uint64, []uint64) {
 		statBytes, err := os.ReadFile("/proc/stat")
@@ -270,7 +287,7 @@ func getCPUUsage() CPUUsage {
 }
 
 // GetMemoryUsage gathers memory usage from /proc/meminfo
-func getMemoryUsage() MemoryUsage {
+func GetMemoryUsage() MemoryUsage {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
 		panic(err)
@@ -296,6 +313,7 @@ func getMemoryUsage() MemoryUsage {
 	return MemoryUsage{
 		Total:       total * 1024, // Convert from KB to bytes
 		Used:        used * 1024,
+		Available:   available * 1024,
 		Free:        free * 1024,
 		UsedPercent: usedPercent,
 	}
@@ -308,35 +326,55 @@ func parseMemInfoLine(line string) uint64 {
 	return val
 }
 
-// GetDiskUsage gathers disk usage using the `df` command
-func getDiskUsage() DiskUsage {
-	cmd := exec.Command("df", "/")
+// GetFilesystemUsage gathers usage statistics for the specified path
+func GetFilesystemUsage(path string) (FilesystemUsage, error) {
+	cmd := exec.Command("df", path)
 	output, err := cmd.Output()
 	if err != nil {
-		panic(err)
+		return FilesystemUsage{}, err
 	}
 
 	lines := strings.Split(string(output), "\n")
 	if len(lines) < 2 {
-		panic("unexpected `df` output")
+		return FilesystemUsage{}, fmt.Errorf("unexpected `df` output format for path: %s", path)
 	}
 
 	fields := strings.Fields(lines[1])
-	total, _ := strconv.ParseUint(fields[1], 10, 64)
-	used, _ := strconv.ParseUint(fields[2], 10, 64)
-	free, _ := strconv.ParseUint(fields[3], 10, 64)
-	usedPercent, _ := strconv.ParseFloat(strings.TrimSuffix(fields[4], "%"), 64)
+	if len(fields) < 5 {
+		return FilesystemUsage{}, fmt.Errorf("insufficient fields in `df` output for path: %s", path)
+	}
 
-	return DiskUsage{
-		Total:       total * 1024, // Convert from KB to bytes
+	total, err := strconv.ParseUint(fields[1], 10, 64)
+	if err != nil {
+		return FilesystemUsage{}, fmt.Errorf("failed to parse total space: %v", err)
+	}
+
+	used, err := strconv.ParseUint(fields[2], 10, 64)
+	if err != nil {
+		return FilesystemUsage{}, fmt.Errorf("failed to parse used space: %v", err)
+	}
+
+	free, err := strconv.ParseUint(fields[3], 10, 64)
+	if err != nil {
+		return FilesystemUsage{}, fmt.Errorf("failed to parse free space: %v", err)
+	}
+
+	usedPercent, err := strconv.ParseFloat(strings.TrimSuffix(fields[4], "%"), 64)
+	if err != nil {
+		return FilesystemUsage{}, fmt.Errorf("failed to parse used percentage: %v", err)
+	}
+
+	return FilesystemUsage{
+		Path:        path,
+		Total:       total * 1024,
 		Used:        used * 1024,
 		Free:        free * 1024,
 		UsedPercent: usedPercent,
-	}
+	}, nil
 }
 
 // GetGPUUsage gathers GPU usage for all detected GPUs
-func getGPUUsage() []GPUUsage {
+func GetGPUUsage() []GPUUsage {
 	var gpus []GPUUsage
 
 	// Detect all GPUs
