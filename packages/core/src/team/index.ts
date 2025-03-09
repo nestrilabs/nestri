@@ -3,13 +3,13 @@ import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { createID, fn } from "../utils";
-import { VisibleError } from "../error";
 import { Examples } from "../examples";
 import { teamTable } from "./team.sql";
 import { createEvent } from "../event";
-import { assertActor } from "../actor";
+import { assertActor, withActor } from "../actor";
 import { and, eq, sql, isNull } from "../drizzle";
 import { memberTable } from "../member/member.sql";
+import { HTTPException } from 'hono/http-exception';
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 export module Team {
@@ -45,11 +45,11 @@ export module Team {
         ),
     };
 
-    export class WorkspaceExistsError extends VisibleError {
+    export class TeamExistsError extends HTTPException {
         constructor(slug: string) {
             super(
-                "team.slug_exists",
-                `there is already a workspace named "${slug}"`,
+                400,
+                { message: `There is already a team named "${slug}"`, }
             );
         }
     }
@@ -65,15 +65,16 @@ export module Team {
                     slug: input.slug,
                     name: input.name
                 })
-                    .onConflictDoNothing()
-                    .returning({ insertedID: teamTable.id })
+                    .onConflictDoNothing({ target: teamTable.slug })
 
-                if (result.length === 0) throw new WorkspaceExistsError(input.slug);
+                if (!result.rowCount) throw new TeamExistsError(input.slug);
 
                 await afterTx(() =>
-                    bus.publish(Resource.Bus, Events.Created, {
-                        teamID: id,
-                    }),
+                    withActor({ type: "system", properties: { teamID: id } }, () =>
+                        bus.publish(Resource.Bus, Events.Created, {
+                            teamID: id,
+                        })
+                    ),
                 );
                 return id;
             })

@@ -6,9 +6,9 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
-import { TeamCreate } from './pages/new';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
+import { CreateTeamComponent } from './pages/new';
 import { darkClass, lightClass, theme } from './ui/theme';
 import { AuthProvider, useAuth } from './providers/auth';
 import { Navigate, Route, Router } from "@solidjs/router";
@@ -34,10 +34,10 @@ globalStyle("html", {
     // Hardcode colors
     "@media": {
         "(prefers-color-scheme: light)": {
-            backgroundColor: "hsla(0,0%,98%)",
+            backgroundColor: "#f5f5f5",
         },
         "(prefers-color-scheme: dark)": {
-            backgroundColor: "hsla(0,0%,0%)",
+            backgroundColor: "#1e1e1e",
         },
     },
 });
@@ -87,35 +87,13 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        <AuthProvider>
-                            {props.children}
-                        </AuthProvider>
-                        // <CommandBar>
-                        //         <ReplicacheStatusProvider>
-                        //             <DummyProvider>
-                        //                 <DummyConfigProvider>
-                        //                     <FlagsProvider>
-                        //                         <RealtimeProvider />
-                        //                         <LocalProvider>
-                        //                             <LocalLogsProvider>
-                        //                                 <GlobalCommands />
-                        //                                 {props.children}
-                        //                             </LocalLogsProvider>
-                        //                         </LocalProvider>
-                        //                     </FlagsProvider>
-                        //                 </DummyConfigProvider>
-                        //             </DummyProvider>
-                        //         </ReplicacheStatusProvider>
-                        //     </AuthProvider>
-                        // </CommandBar>
+                        // <AuthProvider>
+                            // {props.children}
+                            props.children
+                        // </AuthProvider>
                     )}
                 >
-                    {/* <Route path="local" component={Local} />
-                        <Route path="debug" component={DebugRoute} />
-                        <Route path="design" component={Design} />
-                        <Route path="workspace" component={WorkspaceCreate} />
-                        <Route path=":workspaceSlug">{WorkspaceRoute}</Route> */}
-                    <Route path="new" component={TeamCreate} />
+                    <Route path="new" component={CreateTeamComponent} />
                     <Route
                         path="/"
                         component={() => {
