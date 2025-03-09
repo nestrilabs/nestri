@@ -8,6 +8,7 @@ import { Keyboard, Mouse, WebRTCStream } from "@nestri/input";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { styled } from "@macaron-css/solid";
 import { lightClass, theme, darkClass } from "@nestri/www/ui/theme";
+import { Modal, createModalController } from "../components/Modal";
 
 const Canvas = styled("canvas", {
   base: {
@@ -19,22 +20,7 @@ const Canvas = styled("canvas", {
   }
 });
 
-const ModalContainer = styled("div", {
-  base: {
-    width: "100%",
-    maxWidth: 370,
-    maxHeight: "75vh",
-    height: "auto",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: theme.color.gray.d400,
-    backgroundColor: theme.color.gray.d200,
-    boxShadow: theme.color.boxShadow,
-    backdropFilter: "blur(20px)",
-    padding: "20px 25px"
-  }
-})
+
 
 const Button = styled("button", {
   base: {
@@ -72,6 +58,7 @@ export function PlayComponent() {
   let nestriMouse: Mouse, nestriKeyboard: Keyboard;
 
   const { Modal, openModal } = createModal();
+  const { WelcomeModal, openWelcomeModal } = createWelcomeModal();
 
   const initializeInputDevices = () => {
     const canvasElement = canvas();
@@ -149,14 +136,17 @@ export function PlayComponent() {
       if (document.pointerLockElement === canvasElement) {
         initializeInputDevices();
       } else {
-
-        if (!showBannerModal) {
+        console.log("Pointer lock lost Show Banner Modal:", showBannerModal());
+        if (!showBannerModal()) {
+          console.log("Pointer lock lost, showing banner");
           const playing = sessionStorage.getItem("showedBanner");
           setShowBannerModal(!playing || playing !== "true");
-          if(!playing) {
+          openWelcomeModal();
+
+          if (playing) {
+            setShowButtonModal(true);
             openModal();
           }
-          
         }
 
 
@@ -202,11 +192,27 @@ export function PlayComponent() {
     setupPointerLockListener();
     video = document.createElement("video");
     video.style.visibility = "hidden";
-    webrtc = new WebRTCStream("http://192.168.1.200:8088", id, async (mediaStream) => {
+    webrtc = new WebRTCStream("https://relay.dathorse.com", id, async (mediaStream) => {
       if (video && mediaStream) {
         video.srcObject = mediaStream;
         setHasStream(true);
         setShowOffline(false);
+
+        const playing = sessionStorage.getItem("showedBanner")
+        console.log("Playing:", playing);
+        if (!playing || playing != "true") {
+          console.log("Showing banner: ", showBannerModal());
+          if (!showBannerModal()) {
+            setShowBannerModal(false)
+            openWelcomeModal();
+          }
+        } else {
+          if (!showButtonModal()) {
+            setShowButtonModal(true)
+            openModal();
+          }
+        }
+
         await handleVideoInput();
       } else if (mediaStream === null) {
         console.log("MediaStream is null, Room is offline");
@@ -229,20 +235,27 @@ export function PlayComponent() {
   });
 
   return (<FullScreen>
-      {showOffline() ? (
-        <div class="w-screen h-screen flex justify-center items-center">
-          <span class="text-2xl font-semibold flex items-center gap-2">Offline</span>
-        </div>
-      ) : (
-        <Canvas ref={setCanvas} onClick={lockPlay}/>
-      )}
+    {showOffline() ? (
+      <div class="w-screen h-screen flex justify-center items-center">
+        <span class="text-2xl font-semibold flex items-center gap-2">Offline</span>
+      </div>
+    ) : (
+      <Canvas ref={setCanvas} onClick={lockPlay} />
+    )}
+
+    <WelcomeModal
+      show={showBannerModal}
+      setShow={setShowBannerModal}
+      closeOnBackdropClick={false}
+      handleVideoInput={handleVideoInput}
+      lockPlay={lockPlay} />
 
     <Modal show={showButtonModal}
-        setShow={setShowButtonModal}
-        closeOnBackdropClick={false}
-        handleVideoInput={handleVideoInput}
-        lockPlay={lockPlay} />
-    </FullScreen>
+      setShow={setShowButtonModal}
+      closeOnBackdropClick={false}
+      handleVideoInput={handleVideoInput}
+      lockPlay={lockPlay} />
+  </FullScreen>
   );
 }
 
@@ -254,109 +267,60 @@ interface ModalProps {
   lockPlay?: () => Promise<void>;
 }
 
+type GameModalProps = ModalProps & {
+  handleVideoInput?: () => Promise<void>;
+  lockPlay?: () => Promise<void>;
+  setShow?: (show: boolean) => void;
+}
+
 function createWelcomeModal() {
-  const [open, setOpen] = createSignal(false);
+  const controller = createModalController();
 
   return {
-    openWelcomeModal() {
-      setOpen(true);
-    },
-    WelcomeModal(props: ModalProps) {
+    openWelcomeModal: controller.open,
+    WelcomeModal(props: GameModalProps) {
       return (
-        <Portal mount={document.getElementById("styled")!}>
-          <Show when={open()}>
-            <div
-              style={`
-                  position: absolute;
-                  inset: 0;
-                  display: flex;
-                  justify-content: center;
-                  align-items: center;
-                `}
-            >
-              <ModalContainer>
-                <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
-                  Happy that you use Nestri!
-                  <Button onClick={async () => {
-                    sessionStorage.setItem("showedBanner", "true");
-                    await props.handleVideoInput?.();
-                    await props.lockPlay?.();
-                  }}>Let's go</Button>
-                </div>
-              </ModalContainer>
-            </div>
-          </Show>
-        </Portal>
+        <Modal
+          isOpen={controller.isOpen()}
+          onClose={controller.close}
+        >
+          <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+            Happy that you use Nestri!
+            <Button onClick={async () => {
+              sessionStorage.setItem("showedBanner", "true");
+              await props.handleVideoInput?.();
+              await props.lockPlay?.();
+              controller.close();
+            }}>Let's go</Button>
+          </div>
+        </Modal>
       );
     },
   };
 }
 
 function createModal() {
-  const [open, setOpen] = createSignal(false);
+  const controller = createModalController();
 
   return {
-    openModal() {
-      setOpen(true);
-    },
-    Modal(props: ModalProps) {
+    openModal: controller.open,
+    Modal(props: GameModalProps) {
       return (
-        <Portal mount={document.getElementById("styled")!}>
-          <Show when={open()}>
-            <div
-              style={`
-                  position: absolute;
-                  inset: 0;
-                  display: flex;
-                  justify-content: center;
-                  align-items: center;
-                `}
-            >
-              <ModalContainer>
-                <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
-                  <Button onClick={async () => {
-                    props.setShow(false);
-                    await props.handleVideoInput?.();
-                    await props.lockPlay?.();
-                  }}>Continue Playing</Button>
-                  <Button onClick={() => setOpen(false)}>Shutdown Nestri</Button>
-                </div>
-              </ModalContainer>
-            </div>
-          </Show>
-        </Portal>
+        <Modal
+          isOpen={controller.isOpen()}
+          onClose={controller.close}
+        >
+          <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+            <Button onClick={async () => {
+              props.setShow?.(false);
+              await props.handleVideoInput?.();
+              await props.lockPlay?.();
+              controller.close();
+            }}>Continue Playing</Button>
+            <Button onClick={controller.close}>Shutdown Nestri</Button>
+          </div>
+        </Modal>
       );
     },
   };
-}
-
-function Modal(props: ModalProps) {
-  return (
-
-
-    <ModalContainer
-      onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
-    >
-      <div class="size-full flex flex-col">
-        <div class="flex flex-col gap-3">
-          <button
-            class="transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:dark:ring-gray-700 outline-none w-full hover:bg-gray-300 hover:dark:bg-gray-700 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center font-medium font-title rounded-lg flex py-3 px-4"
-            onClick={async () => {
-              props.setShow(false);
-              sessionStorage.setItem("showedBanner", "true");
-              await props.handleVideoInput?.();
-              await props.lockPlay?.();
-            }}
-          >
-            Continue Playing
-          </button>
-          <button
-            class="transition-all duration-200 focus:ring-2 focus:ring-gray-300 focus:dark:ring-gray-700 outline-none w-full hover:bg-gray-300 hover:dark:bg-gray-700 bg-gray-200 dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center font-medium font-title rounded-lg flex py-3 px-4"
-          >
-            Shutdown Nestri
-          </button>
-        </div>
-      </div>
-    </ModalContainer>
-  );
 }
