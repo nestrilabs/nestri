@@ -6,10 +6,10 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
-import { useAuth } from './providers/auth';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
 import { CreateTeamComponent } from './pages/new';
+import { AuthProvider, useAuth } from './providers/auth';
 import { darkClass, lightClass, theme } from './ui/theme';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
@@ -87,10 +87,10 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        // <AuthProvider>
-                        // {props.children}
-                        props.children
-                        // </AuthProvider>
+                        <AuthProvider>
+                            {props.children}
+                        </AuthProvider>
+                        // props.children
                     )}
                 >
                     <Route path="new" component={CreateTeamComponent} />

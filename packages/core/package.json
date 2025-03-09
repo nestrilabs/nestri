@@ -34,6 +34,7 @@
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-orm": "^0.39.3",
+        "sst": "^3.9.33",
         "ws": "^8.18.1"
     }
 }

@@ -9,13 +9,13 @@ import { createStore, produce, reconcile } from "solid-js/store";
 interface AccountInfo {
   id: string;
   email: string;
-  name: string;
+  // name: string;
   access: string;
   refresh: string;
-  avatarUrl: string;
+  // avatarUrl: string;
   teams: Team.Info[];
-  discriminator: number;
-  polarCustomerID: string | null;
+  // discriminator: number;
+  // polarCustomerID: string | null;
 }
 
 interface Storage {
