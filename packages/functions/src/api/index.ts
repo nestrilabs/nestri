@@ -47,10 +47,9 @@ const routes = app
         if (error instanceof HTTPException) {
             return c.json(
                 {
-                    code: "request",
-                    message: "Invalid request",
+                    message: error.message,
                 },
-                400,
+                error.status,
             );
         }
         return c.json(
@@ -81,13 +80,13 @@ app.get(
                     },
                     TeamID: {
                         type: "apiKey",
-                        description:"The team ID to use for this query",
+                        description: "The team ID to use for this query",
                         in: "header",
                         name: "x-nestri-team"
                     },
                 },
             },
-            security: [{ Bearer: [], TeamID:[] }],
+            security: [{ Bearer: [], TeamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
             ],

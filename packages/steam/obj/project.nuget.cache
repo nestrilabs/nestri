@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "dgSpecHash": "o+kQUzaoYaJiWxmZ2ic/uaqTF55F3ZS70cm6GsWy+JSbU4JxLqSZJLOwIxpMFLVEaEBBvYBvVI1mv15qTmhaBg==",
+  "success": true,
+  "projectFilePath": "/home/lauryn/steam/steam.csproj",
+  "expectedPackageFiles": [
+    "/home/lauryn/.nuget/packages/microsoft.netcore.platforms/5.0.0/microsoft.netcore.platforms.5.0.0.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/microsoft.win32.registry/5.0.0/microsoft.win32.registry.5.0.0.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/protobuf-net/3.2.46/protobuf-net.3.2.46.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/protobuf-net.core/3.2.46/protobuf-net.core.3.2.46.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/qrcoder/1.6.0/qrcoder.1.6.0.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/steamkit2/3.0.2/steamkit2.3.0.2.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/system.collections.immutable/7.0.0/system.collections.immutable.7.0.0.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/system.io.hashing/9.0.1/system.io.hashing.9.0.1.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/system.security.accesscontrol/5.0.0/system.security.accesscontrol.5.0.0.nupkg.sha512",
+    "/home/lauryn/.nuget/packages/system.security.principal.windows/5.0.0/system.security.principal.windows.5.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

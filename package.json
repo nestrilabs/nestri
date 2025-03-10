@@ -26,6 +26,6 @@
     "packages/*"
   ],
   "dependencies": {
-    "sst": "3.9.1"
+    "sst": "^3.9.33"
   }
 }
