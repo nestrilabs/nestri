@@ -87,10 +87,10 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        //  <AuthProvider>
-                        // {props.children}
-                        props.children
-                        // </AuthProvider>
+                         <AuthProvider>
+                        {props.children}
+                        </AuthProvider>
+                        // props.children
                     )}
                 >
                     <Route path="new" component={CreateTeamComponent} />

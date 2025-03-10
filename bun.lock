@@ -83,6 +83,7 @@
         "@aws-sdk/client-sesv2": "^3.753.0",
         "@instantdb/admin": "^0.17.7",
         "@neondatabase/serverless": "^0.10.4",
+        "@openauthjs/openauth": "0.4.3",
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-orm": "^0.39.3",
@@ -105,7 +106,7 @@
     "packages/functions": {
       "name": "@nestri/functions",
       "dependencies": {
-        "@openauthjs/openauth": "^0.3.9",
+        "@openauthjs/openauth": "0.4.3",
         "hono": "^4.6.15",
         "hono-openapi": "^0.3.1",
         "partysocket": "1.0.3",
@@ -197,6 +198,7 @@
         "@macaron-css/solid": "^1.5.3",
         "@modular-forms/solid": "^0.25.1",
         "@nestri/core": "*",
+        "@openauthjs/openauth": "0.4.3",
         "@solid-primitives/storage": "^4.3.1",
         "@solidjs/router": "^0.15.3",
         "modern-normalize": "^3.0.1",
@@ -781,7 +783,7 @@
 
     "@oddbird/popover-polyfill": ["@oddbird/popover-polyfill@0.4.3", "", {}, "sha512-kBS0ZAwH8kZqFl0mV89KPK4cLYl2ZoKSfYngK4dz1eLAhKzTK0yu4LrvLdMeM7JhjWK6GxBtiY+cl1s6vR2pUg=="],
 
-    "@openauthjs/openauth": ["@openauthjs/openauth@0.3.9", "", { "dependencies": { "@standard-schema/spec": "1.0.0-beta.3", "aws4fetch": "1.0.20", "jose": "5.9.6" }, "peerDependencies": { "arctic": "^2.2.2", "hono": "^4.0.0" } }, "sha512-a8UGz9iLQnB8TmY4bMDkCvMEWLHPEtDlXGnYNoFbEOxO13cCPu1pSS0DcUvKzHBAhXWnAMU01sSDMNZQr+aKWg=="],
+    "@openauthjs/openauth": ["@openauthjs/openauth@0.4.3", "", { "dependencies": { "@standard-schema/spec": "1.0.0-beta.3", "aws4fetch": "1.0.20", "jose": "5.9.6" }, "peerDependencies": { "arctic": "^2.2.2", "hono": "^4.0.0" } }, "sha512-RlnjqvHzqcbFVymEwhlUEuac4utA5h4nhSK/i2szZuQmxTIqbGUxZ+nM+avM+VV4Ing+/ZaNLKILoXS3yrkOOw=="],
 
     "@openauthjs/openevent": ["@openauthjs/openevent@0.0.27", "", { "dependencies": { "@standard-schema/spec": "1.0.0-beta.3", "aws4fetch": "1.0.20", "jose": "5.9.6", "ulid": "2.3.0" }, "peerDependencies": { "drizzle-orm": "^0.x", "mysql2": "^3.x", "postgres": "^3.x" }, "optionalPeers": ["drizzle-orm", "mysql2", "postgres"] }, "sha512-Peyl8hWGPmwTPC9gp3ufjEQ55mu64sSa9suBdW7SfHFBMnvxwD+XIoErneXyAH/ydomRghlh6t4N9mCCHjaF4g=="],
 
