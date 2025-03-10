@@ -1,9 +1,9 @@
 import { theme } from "./theme";
+import { utility } from "./utility";
+import { Container } from "./layout";
 import { styled } from "@macaron-css/solid"
 import { CSSProperties } from "@macaron-css/core";
-import { ComponentProps, createMemo, For, JSX, Show, splitProps } from "solid-js";
-import { Container } from "./layout";
-import { utility } from "./utility";
+import { ComponentProps, For, JSX, Show, splitProps } from "solid-js";
 
 // FIXME: Make sure the focus ring goes to red when the input is invalid
 

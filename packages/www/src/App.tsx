@@ -7,12 +7,13 @@ import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
 import { styled } from "@macaron-css/solid";
-import { useStorage } from './providers/account';
-import { CreateTeamComponent } from './pages/new';
-import { darkClass, lightClass, theme } from './ui/theme';
-import { AuthProvider, useAuth } from './providers/auth';
+import { TeamRoute } from '@nestri/www/pages/team';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
+import { useStorage } from '@nestri/www/providers/account';
+import { CreateTeamComponent } from '@nestri/www/pages/new';
+import { AuthProvider, useAuth } from '@nestri/www/providers/auth';
+import { darkClass, lightClass, theme } from '@nestri/www/ui/theme';
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
 
 const Root = styled("div", {
@@ -34,10 +35,10 @@ globalStyle("html", {
     // Hardcode colors
     "@media": {
         "(prefers-color-scheme: light)": {
-            backgroundColor: "#f5f5f5",
+            backgroundColor: "#ebebeb",
         },
         "(prefers-color-scheme: dark)": {
-            backgroundColor: "#1e1e1e",
+            backgroundColor: "#171717",
         },
     },
 });
@@ -93,6 +94,7 @@ export const App: Component = () => {
                         props.children
                     )}
                 >
+                    <Route path=":teamSlug">{TeamRoute}</Route>
                     <Route path="new" component={CreateTeamComponent} />
                     <Route
                         path="/"

@@ -3,13 +3,12 @@ import { Button } from "@nestri/www/ui";
 import { Text } from "@nestri/www/ui/text";
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
-import { globalStyle } from "@macaron-css/core";
 import { utility } from "@nestri/www/ui/utility";
+import { createForm,valiForm } from "@modular-forms/solid";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
-import { createForm, required, email, valiForm } from "@modular-forms/solid";
 
-const nameRegex = /^[a-z]+$/
+const nameRegex = /^[a-z0-9\-]+$/
 
 const FieldList = styled("div", {
     base: {
@@ -35,18 +34,18 @@ const Plan = {
 
 const schema = v.object({
     plan: v.pipe(
-        v.enum(Plan, "Please choose a plan"),
+        v.enum(Plan, "Choose a valid plan"),
     ),
     name: v.pipe(
         v.string(),
-        v.minLength(2, 'Please use 2 characters at minimum.'),
-        v.maxLength(32, 'Please use 32 characters at maximum.'),
+        v.minLength(2, 'Use 2 characters at minimum.'),
+        v.maxLength(32, 'Use 32 characters at maximum.'),
     ),
     slug: v.pipe(
         v.string(),
-        v.regex(nameRegex, "Please use a small letters, no numbers or spaces"),
-        v.minLength(2, 'Please use 2 characters at minimum.'),
-        v.maxLength(48, 'Please use 48 characters at maximum.'),
+        v.regex(nameRegex, "Use a URL friendly name."),
+        v.minLength(2, 'Use 2 characters at minimum.'),
+        v.maxLength(48, 'Use 48 characters at maximum.'),
     )
 })
 
