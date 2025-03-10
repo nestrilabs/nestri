@@ -10,6 +10,7 @@ import { utility } from "./utility";
 export const inputStyles: CSSProperties = {
     lineHeight: theme.font.lineHeight,
     appearance: "none",
+    width: "100%",
     fontSize: theme.font.size.sm,
     borderRadius: theme.borderRadius,
     padding: `0 ${theme.space[3]}`,
@@ -57,12 +58,7 @@ export const Root = styled("label", {
                 color: theme.color.gray.d900
             },
             danger: {
-                color: theme.color.red.d900,
-                // selectors: {
-                //     "&:has(input)": {
-                //         ...inputDangerFocusStyles
-                //     }
-                // }
+                color: theme.color.gray.d900,
             },
         },
     },
@@ -88,6 +84,12 @@ export const Input = styled("input", {
         "::placeholder": {
             color: theme.color.gray.d800
         },
+        selectors: {
+            "[data-type='url'] &": {
+                borderTopLeftRadius: 0,
+                borderBottomLeftRadius: 0,
+            }
+        }
         // ":invalid":{
         //     ...inputDangerFocusStyles
         // },

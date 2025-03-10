@@ -194,8 +194,8 @@
         "@fontsource-variable/geist-mono": "^5.0.1",
         "@fontsource-variable/mona-sans": "^5.0.1",
         "@fontsource/geist-sans": "^5.1.0",
-        "@macaron-css/core": "^1.5.2",
-        "@macaron-css/solid": "^1.5.3",
+        "@macaron-css/core": "1.5.1",
+        "@macaron-css/solid": "1.5.3",
         "@modular-forms/solid": "^0.25.1",
         "@nestri/core": "*",
         "@openauthjs/openauth": "0.4.3",
@@ -207,7 +207,7 @@
         "zod": "^3.24.2",
       },
       "devDependencies": {
-        "@macaron-css/vite": "^1.5.1",
+        "@macaron-css/vite": "1.5.1",
         "@types/bun": "latest",
         "vite": "5.4.12",
         "vite-plugin-solid": "^2.11.2",
@@ -659,7 +659,7 @@
 
     "@macaron-css/babel": ["@macaron-css/babel@1.5.1", "", { "dependencies": { "@babel/core": "^7.18.2", "@babel/generator": "^7.18.2", "@babel/helper-module-imports": "^7.16.7", "@babel/preset-typescript": "^7.22.5", "@emotion/hash": "^0.8.0", "@types/babel__core": "^7.1.19" } }, "sha512-gN/ju/21avvQBeT3gGX/nLnWRrIcOIYcleKKZRi1hWK1b1lxJy7uMdNMFLf/4QpvlOTsqzu53I5seGatb445qg=="],
 
-    "@macaron-css/core": ["@macaron-css/core@1.5.2", "", { "dependencies": { "@vanilla-extract/css": "^1.7.1", "@vanilla-extract/dynamic": "^2.0.3", "@vanilla-extract/recipes": "^0.2.5" } }, "sha512-oF/JOQ1s1jUD8/RA7PrpdozyXUtz3MsZviw8rCepmh6Olds/y+KAdpB1EprDRG7VmRd4MfOcEjb68pWrTwVsRg=="],
+    "@macaron-css/core": ["@macaron-css/core@1.5.1", "", { "dependencies": { "@vanilla-extract/css": "^1.7.1", "@vanilla-extract/dynamic": "^2.0.3", "@vanilla-extract/recipes": "^0.2.5" } }, "sha512-mEZ5ZENNgjDUWomzy3pkUcHqP0c66zrkqfjoHlzjkyukN/H7kbCe5+ygzPBeGm4UnZJOBRU0MDYdQR7yViyWxA=="],
 
     "@macaron-css/integration": ["@macaron-css/integration@1.5.1", "", { "dependencies": { "@babel/core": "^7.18.2", "@babel/plugin-syntax-jsx": "^7.17.12", "@macaron-css/babel": "1.5.1", "@vanilla-extract/integration": "^6.0.0", "esbuild": "^0.14.42" } }, "sha512-7qUKOFfiLge+zJDWreU5JouwVUaxe9AiIRHzN32/NxOBiZDEkEvzVtix0+wDZhnv4//+zLbSux5btTc2j662RA=="],
 
@@ -3872,6 +3872,8 @@
     "@macaron-css/babel/@emotion/hash": ["@emotion/hash@0.8.0", "", {}, "sha512-kBJtf7PH6aWwZ6fka3zQ0p6SBYzx4fl1LoZXE2RrnYST9Xljm7WfKJrU4g/Xr3Beg72MLrp1AWNUmuYJTL7Cow=="],
 
     "@macaron-css/integration/esbuild": ["esbuild@0.14.54", "", { "optionalDependencies": { "@esbuild/linux-loong64": "0.14.54", "esbuild-android-64": "0.14.54", "esbuild-android-arm64": "0.14.54", "esbuild-darwin-64": "0.14.54", "esbuild-darwin-arm64": "0.14.54", "esbuild-freebsd-64": "0.14.54", "esbuild-freebsd-arm64": "0.14.54", "esbuild-linux-32": "0.14.54", "esbuild-linux-64": "0.14.54", "esbuild-linux-arm": "0.14.54", "esbuild-linux-arm64": "0.14.54", "esbuild-linux-mips64le": "0.14.54", "esbuild-linux-ppc64le": "0.14.54", "esbuild-linux-riscv64": "0.14.54", "esbuild-linux-s390x": "0.14.54", "esbuild-netbsd-64": "0.14.54", "esbuild-openbsd-64": "0.14.54", "esbuild-sunos-64": "0.14.54", "esbuild-windows-32": "0.14.54", "esbuild-windows-64": "0.14.54", "esbuild-windows-arm64": "0.14.54" }, "bin": { "esbuild": "bin/esbuild" } }, "sha512-Cy9llcy8DvET5uznocPyqL3BFRrFXSVqbgpMJ9Wz8oVjZlh/zUSNbPRbov0VX7VxN2JH1Oa0uNxZ7eLRb62pJA=="],
+
+    "@macaron-css/solid/@macaron-css/core": ["@macaron-css/core@1.5.2", "", { "dependencies": { "@vanilla-extract/css": "^1.7.1", "@vanilla-extract/dynamic": "^2.0.3", "@vanilla-extract/recipes": "^0.2.5" } }, "sha512-oF/JOQ1s1jUD8/RA7PrpdozyXUtz3MsZviw8rCepmh6Olds/y+KAdpB1EprDRG7VmRd4MfOcEjb68pWrTwVsRg=="],
 
     "@mapbox/node-pre-gyp/nopt": ["nopt@8.1.0", "", { "dependencies": { "abbrev": "^3.0.0" }, "bin": { "nopt": "bin/nopt.js" } }, "sha512-ieGu42u/Qsa4TFktmaKEwM6MQH0pOWnaB3htzh0JRtx84+Mebc0cbZYN5bC+6WTZ4+77xrL9Pn5m7CV6VIkV7A=="],
 
