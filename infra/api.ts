@@ -55,6 +55,12 @@ export const auth = new sst.aws.Auth("Auth", {
 
 export const apiFunction = new sst.aws.Function("ApiFn", {
     handler: "packages/functions/src/api/index.handler",
+    permissions: [
+        {
+            actions: ["iot:*"],
+            resources: ["*"],
+        },
+    ],
     link: [
         bus,
         urls,
