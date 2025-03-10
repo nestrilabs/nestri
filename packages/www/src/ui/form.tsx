@@ -5,6 +5,8 @@ import { ComponentProps, createMemo, For, JSX, Show, splitProps } from "solid-js
 import { Container } from "./layout";
 import { utility } from "./utility";
 
+// FIXME: Make sure the focus ring goes to red when the input is invalid
+
 export const inputStyles: CSSProperties = {
     lineHeight: theme.font.lineHeight,
     appearance: "none",
@@ -17,11 +19,6 @@ export const inputStyles: CSSProperties = {
     borderColor: theme.color.gray.d400,
     color: theme.color.d1000.gray,
     backgroundColor: theme.color.background.d100,
-    // transition: `box-shadow ${theme.colorFadeDuration}`,
-    // boxShadow: `
-    //   0 0 0 1px inset ${theme.color.input.border},
-    //   ${theme.color.input.shadow}
-    // `,
 };
 
 export const inputDisabledStyles: CSSProperties = {
@@ -60,7 +57,12 @@ export const Root = styled("label", {
                 color: theme.color.gray.d900
             },
             danger: {
-                color: theme.color.red.d900
+                color: theme.color.red.d900,
+                // selectors: {
+                //     "&:has(input)": {
+                //         ...inputDangerFocusStyles
+                //     }
+                // }
             },
         },
     },
@@ -85,11 +87,14 @@ export const Input = styled("input", {
         },
         "::placeholder": {
             color: theme.color.gray.d800
-        }
-        // selectors: {
-        // [`${Root.selector({ color: "danger" })} &`]: {
-        //     ...inputDangerFocusStyles,
+        },
+        // ":invalid":{
+        //     ...inputDangerFocusStyles
         // },
+        // selectors: {
+        //     [`${Root.selector({ color: "danger" })} &`]: {
+        //         ...inputDangerFocusStyles,
+        //     },
         // },
     },
     variants: {
@@ -204,7 +209,7 @@ const InputLabel = styled("label", {
 
 const Hint = styled("p", {
     base: {
-        fontSize: theme.font.size.sm,
+        fontSize: theme.font.size.xs,
         lineHeight: theme.font.lineHeight,
         color: theme.color.gray.d800,
     },
@@ -254,6 +259,7 @@ const InputRadioContainer = styled("div", {
     base: {
         ...inputStyles,
         display: "flex",
+        userSelect: "none",
         flexDirection: "column",
         height: "auto",
         position: "relative",
@@ -296,7 +302,7 @@ export function Select(props: SelectProps) {
                         {label}
                         <Show when={props.badges}>
                             {props.badges &&
-                                <Badge style={{"background-color": theme.color[props.badges[key()].color].d700 }}>
+                                <Badge style={{ "background-color": theme.color[props.badges[key()].color].d700 }}>
                                     {props.badges[key()].label}
                                 </Badge>
                             }

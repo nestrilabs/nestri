@@ -31,6 +31,7 @@
         "@aws-sdk/client-sesv2": "^3.753.0",
         "@instantdb/admin": "^0.17.7",
         "@neondatabase/serverless": "^0.10.4",
+        "@openauthjs/openauth": "0.4.3",
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-orm": "^0.39.3",
