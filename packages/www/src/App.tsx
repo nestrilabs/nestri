@@ -87,9 +87,9 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        // <AuthProvider>
-                            // {props.children}
-                            props.children
+                        //  <AuthProvider>
+                        // {props.children}
+                        props.children
                         // </AuthProvider>
                     )}
                 >
