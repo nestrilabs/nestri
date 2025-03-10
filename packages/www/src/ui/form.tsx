@@ -259,6 +259,7 @@ const InputRadioContainer = styled("div", {
     base: {
         ...inputStyles,
         display: "flex",
+        userSelect: "none",
         flexDirection: "column",
         height: "auto",
         position: "relative",
