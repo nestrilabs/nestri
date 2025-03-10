@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"nestri/maitred/internal"
 	"nestri/maitred/internal/containers"
 	"strings"
 	"sync"
@@ -38,6 +39,12 @@ var (
 
 // InitializeManager handles the initialization of the managed containers and pulls their latest images
 func InitializeManager(ctx context.Context, ctrEngine containers.ContainerEngine) error {
+	// If debug, override the images
+	if internal.GetFlags().Debug {
+		nestriRunnerImage = "ghcr.io/datcaptainhorse/nestri-cachyos:latest-v3"
+		nestriRelayImage = "ghcr.io/datcaptainhorse/nestri-relay:latest"
+	}
+
 	// Look for existing stopped runner containers and remove them
 	slog.Info("Checking and removing old runner containers")
 	oldRunners, err := ctrEngine.ListContainersByImage(ctx, nestriRunnerImage)
@@ -58,10 +65,12 @@ func InitializeManager(ctx context.Context, ctrEngine containers.ContainerEngine
 		}
 	}
 
-	// Pull the runner image
-	slog.Info("Pulling runner image", "image", nestriRunnerImage)
-	if err := ctrEngine.PullImage(ctx, nestriRunnerImage); err != nil {
-		return fmt.Errorf("failed to pull runner image: %w", err)
+	// Pull the runner image if not in debug mode
+	if !internal.GetFlags().Debug {
+		slog.Info("Pulling runner image", "image", nestriRunnerImage)
+		if err := ctrEngine.PullImage(ctx, nestriRunnerImage); err != nil {
+			return fmt.Errorf("failed to pull runner image: %w", err)
+		}
 	}
 
 	// Look for existing stopped relay containers and remove them
@@ -84,10 +93,12 @@ func InitializeManager(ctx context.Context, ctrEngine containers.ContainerEngine
 		}
 	}
 
-	// Pull the relay image
-	slog.Info("Pulling relay image", "image", nestriRelayImage)
-	if err := ctrEngine.PullImage(ctx, nestriRelayImage); err != nil {
-		return fmt.Errorf("failed to pull relay image: %w", err)
+	// Pull the relay image if not in debug mode
+	if !internal.GetFlags().Debug {
+		slog.Info("Pulling relay image", "image", nestriRelayImage)
+		if err := ctrEngine.PullImage(ctx, nestriRelayImage); err != nil {
+			return fmt.Errorf("failed to pull relay image: %w", err)
+		}
 	}
 
 	return nil
@@ -101,7 +112,7 @@ func CreateRunner(ctx context.Context, ctrEngine containers.ContainerEngine) (st
 	}
 
 	// Create the container
-	containerID, err := ctrEngine.NewContainer(ctx, nestriRunnerImage)
+	containerID, err := ctrEngine.NewContainer(ctx, nestriRunnerImage, nil)
 	if err != nil {
 		return "", err
 	}
@@ -193,8 +204,11 @@ func CreateRelay(ctx context.Context, ctrEngine containers.ContainerEngine) (str
 		return "", fmt.Errorf("maximum number of relays reached")
 	}
 
+	// TODO: Placeholder for control secret, should be generated at runtime
+	secretEnv := fmt.Sprintf("CONTROL_SECRET=%s", "1234")
+
 	// Create the container
-	containerID, err := ctrEngine.NewContainer(ctx, nestriRelayImage)
+	containerID, err := ctrEngine.NewContainer(ctx, nestriRelayImage, []string{secretEnv})
 	if err != nil {
 		return "", err
 	}

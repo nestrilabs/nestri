@@ -72,9 +72,11 @@ func (d *DockerEngine) ListContainersByImage(ctx context.Context, img string) ([
 	return result, nil
 }
 
-func (d *DockerEngine) NewContainer(ctx context.Context, img string) (string, error) {
+func (d *DockerEngine) NewContainer(ctx context.Context, img string, envs []string) (string, error) {
+	// Create a new container with the given image and environment variables
 	resp, err := d.cli.ContainerCreate(ctx, &container.Config{
 		Image: img,
+		Env:   envs,
 	}, &container.HostConfig{
 		NetworkMode: "host",
 	}, nil, nil, "")
@@ -281,8 +283,9 @@ func (d *DockerEngine) waitForContainer(ctx context.Context, id, desiredState st
 			// Container is in the desired state (e.g., "running")
 			return nil
 		case "exited", "dead", "removing":
-			// Container failed or stopped unexpectedly
-			return fmt.Errorf("container entered terminal state: %s", currentState)
+			// Container failed or stopped unexpectedly, get logs and return error
+			logs, _ := d.LogsContainer(ctx, id)
+			return fmt.Errorf("container failed to reach %s state, logs: %s", desiredState, logs)
 		}
 
 		// Wait before polling again

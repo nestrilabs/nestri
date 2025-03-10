@@ -18,7 +18,7 @@ type ContainerEngine interface {
 	Close() error
 	ListContainers(ctx context.Context) ([]Container, error)
 	ListContainersByImage(ctx context.Context, img string) ([]Container, error)
-	NewContainer(ctx context.Context, img string) (string, error)
+	NewContainer(ctx context.Context, img string, envs []string) (string, error)
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error

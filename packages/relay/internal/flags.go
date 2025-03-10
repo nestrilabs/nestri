@@ -3,7 +3,7 @@ package relay
 import (
 	"flag"
 	"github.com/pion/webrtc/v4"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -13,8 +13,8 @@ import (
 var globalFlags *Flags
 
 type Flags struct {
-	Verbose        bool     // Verbose mode - log more information to console
-	Debug          bool     // Debug mode - log deeper debug information to console
+	Verbose        bool     // Log everything to console
+	Debug          bool     // Enable debug mode, implies Verbose
 	EndpointPort   int      // Port for HTTP/S and WS/S endpoint (TCP)
 	WebRTCUDPStart int      // WebRTC UDP port range start - ignored if UDPMuxPort is set
 	WebRTCUDPEnd   int      // WebRTC UDP port range end - ignored if UDPMuxPort is set
@@ -24,23 +24,24 @@ type Flags struct {
 	NAT11IPs       []string // WebRTC NAT 1 to 1 IP(s) - allows specifying host IP(s) if behind NAT
 	TLSCert        string   // Path to TLS certificate
 	TLSKey         string   // Path to TLS key
+	ControlSecret  string   // Shared secret for this relay's control endpoint
 }
 
 func (flags *Flags) DebugLog() {
-	log.Println("Relay Flags:")
-	log.Println("> Verbose: ", flags.Verbose)
-	log.Println("> Debug: ", flags.Debug)
-	log.Println("> Endpoint Port: ", flags.EndpointPort)
-	log.Println("> WebRTC UDP Range Start: ", flags.WebRTCUDPStart)
-	log.Println("> WebRTC UDP Range End: ", flags.WebRTCUDPEnd)
-	log.Println("> WebRTC STUN Server: ", flags.STUNServer)
-	log.Println("> WebRTC UDP Mux Port: ", flags.UDPMuxPort)
-	log.Println("> Auto Add Local IP: ", flags.AutoAddLocalIP)
-	for i, ip := range flags.NAT11IPs {
-		log.Printf("> WebRTC NAT 1 to 1 IP (%d): %s\n", i, ip)
-	}
-	log.Println("> Path to TLS Cert: ", flags.TLSCert)
-	log.Println("> Path to TLS Key: ", flags.TLSKey)
+	slog.Info("Relay flags",
+		"verbose", flags.Verbose,
+		"debug", flags.Debug,
+		"endpointPort", flags.EndpointPort,
+		"webrtcUDPStart", flags.WebRTCUDPStart,
+		"webrtcUDPEnd", flags.WebRTCUDPEnd,
+		"stunServer", flags.STUNServer,
+		"webrtcUDPMux", flags.UDPMuxPort,
+		"autoAddLocalIP", flags.AutoAddLocalIP,
+		"webrtcNAT11IPs", strings.Join(flags.NAT11IPs, ","),
+		"tlsCert", flags.TLSCert,
+		"tlsKey", flags.TLSKey,
+		"controlSecret", flags.ControlSecret,
+	)
 }
 
 func getEnvAsInt(name string, defaultVal int) int {
@@ -86,8 +87,16 @@ func InitFlags() {
 	flag.StringVar(&nat11IPs, "webrtcNAT11IPs", getEnvAsString("WEBRTC_NAT_IPS", ""), "WebRTC NAT 1 to 1 IP(s)")
 	flag.StringVar(&globalFlags.TLSCert, "tlsCert", getEnvAsString("TLS_CERT", ""), "Path to TLS certificate")
 	flag.StringVar(&globalFlags.TLSKey, "tlsKey", getEnvAsString("TLS_KEY", ""), "Path to TLS key")
+	flag.StringVar(&globalFlags.ControlSecret, "controlSecret", getEnvAsString("CONTROL_SECRET", ""), "Shared secret for control endpoint")
 	// Parse flags
 	flag.Parse()
+
+	// If debug is enabled, verbose is also enabled
+	if globalFlags.Debug {
+		globalFlags.Verbose = true
+		// If Debug is enabled, set ControlSecret to 1234
+		globalFlags.ControlSecret = "1234"
+	}
 
 	// ICE STUN servers
 	globalWebRTCConfig.ICEServers = []webrtc.ICEServer{
