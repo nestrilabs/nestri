@@ -1,30 +1,13 @@
 export * from "drizzle-orm";
-import ws from 'ws';
 import { Resource } from "sst";
-import {  drizzle as neonDrizzle, NeonDatabase } from "drizzle-orm/neon-serverless";
-// import { drizzle } from 'drizzle-orm/postgres-js';
-import { Pool, neonConfig } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/aws-data-api/pg";
+import { RDSDataClient } from "@aws-sdk/client-rds-data";
 
-neonConfig.webSocketConstructor = ws;
-
-function addPoolerSuffix(original: string): string {
-    const firstDotIndex = original.indexOf('.');
-    if (firstDotIndex === -1) return original + '-pooler';
-    return original.slice(0, firstDotIndex) + '-pooler' + original.slice(firstDotIndex);
-  }
-
-const dbHost = addPoolerSuffix(Resource.Database.host)
-
-const client = new Pool({ connectionString: `postgres://${Resource.Database.user}:${Resource.Database.password}@${dbHost}/${Resource.Database.name}?sslmode=require` })
-
-export const db = neonDrizzle(client, {
-    logger:
-        process.env.DRIZZLE_LOG === "true"
-            ? {
-                logQuery(query, params) {
-                    console.log("query", query);
-                    console.log("params", params);
-                },
-            }
-            : undefined,
+export const db = drizzle(new RDSDataClient({}), {
+    // @ts-ignore
+    database: Resource.Database.database,
+    // @ts-ignore
+    secretArn: Resource.Database.secretArn,
+    // @ts-ignore
+    resourceArn: Resource.Database.clusterArn,
 });

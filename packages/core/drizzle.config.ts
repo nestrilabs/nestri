@@ -1,20 +1,16 @@
 import { Resource } from "sst";
 import { defineConfig } from "drizzle-kit";
 
-function addPoolerSuffix(original: string): string {
-    const firstDotIndex = original.indexOf('.');
-    if (firstDotIndex === -1) return original + '-pooler';
-    return original.slice(0, firstDotIndex) + '-pooler' + original.slice(firstDotIndex);
-  }
-
-const dbHost = addPoolerSuffix(Resource.Database.host)
-
 export default defineConfig({
-    schema: "./src/**/*.sql.ts",
+    verbose: true,
+    strict: true,
     out: "./migrations",
     dialect: "postgresql",
-    verbose: true,
+    schema: "./src/**/*.sql.ts",
+    driver: "aws-data-api",
     dbCredentials: {
-        url: `postgresql://${Resource.Database.user}:${Resource.Database.password}@${dbHost}/${Resource.Database.name}?sslmode=require`,
+        database: Resource.Postgres.database,
+        secretArn: Resource.Postgres.secretArn,
+        resourceArn: Resource.Postgres.clusterArn,
     },
 });

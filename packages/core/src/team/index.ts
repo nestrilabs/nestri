@@ -4,7 +4,7 @@ import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { createID, fn } from "../utils";
 import { Examples } from "../examples";
-import { teamTable } from "./team.sql";
+import { PlanType, teamTable } from "./team.sql";
 import { createEvent } from "../event";
 import { assertActor, withActor } from "../actor";
 import { and, eq, sql } from "../drizzle";
@@ -26,6 +26,10 @@ export module Team {
             name: z.string().openapi({
                 description: "The name of this team",
                 example: Examples.Team.name
+            }),
+            planType: z.enum(PlanType).openapi({
+                description: "The type of Plan this team is subscribed to",
+                example: Examples.Team.planType
             })
         })
         .openapi({
@@ -55,7 +59,7 @@ export module Team {
     }
 
     export const create = fn(
-        Info.pick({ slug: true, id: true, name: true }).partial({
+        Info.pick({ slug: true, id: true, name: true, planType: true }).partial({
             id: true,
         }), (input) => {
             createTransaction(async (tx) => {
@@ -63,11 +67,12 @@ export module Team {
                 const result = await tx.insert(teamTable).values({
                     id,
                     slug: input.slug,
+                    planType: input.planType,
                     name: input.name
                 })
                     .onConflictDoNothing({ target: teamTable.slug })
 
-                if (!result.rowCount) throw new TeamExistsError(input.slug);
+                if (!result.numberOfRecordsUpdated) throw new TeamExistsError(input.slug);
 
                 await afterTx(() =>
                     withActor({ type: "system", properties: { teamID: id } }, () =>
@@ -147,6 +152,7 @@ export module Team {
             id: input.id,
             name: input.name,
             slug: input.slug,
+            planType: input.planType,
         };
     }
 

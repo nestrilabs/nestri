@@ -10,20 +10,20 @@ const dbBranchId = $app.stage !== "production" ?
         name: $app.stage,
     }).id : dbProject.defaultBranchId
 
-const dbEndpoint = new neon.Endpoint("NeonEndpoint", {
+export const dbEndpoint = new neon.Endpoint("NeonEndpoint", {
     projectId: dbProject.id,
     branchId: dbBranchId,
     poolerEnabled: true,
     type: "read_write",
 })
 
-const dbRole = new neon.Role("NeonRole", {
+export const dbRole = new neon.Role("NeonRole", {
     name: "admin",
     branchId: dbBranchId,
     projectId: dbProject.id,
 })
 
-const db = new neon.Database("NeonDatabase", {
+export const db = new neon.Database("NeonDatabase", {
     branchId: dbBranchId,
     projectId: dbProject.id,
     ownerName: dbRole.name,
