@@ -6,8 +6,8 @@ export default defineConfig({
     strict: true,
     out: "./migrations",
     dialect: "postgresql",
-    schema: "./src/**/*.sql.ts",
     driver: "aws-data-api",
+    schema: "./src/**/*.sql.ts",
     dbCredentials: {
         database: Resource.Postgres.database,
         secretArn: Resource.Postgres.secretArn,

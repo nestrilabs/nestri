@@ -13,7 +13,6 @@ export const authFingerprintKey = new random.RandomString(
 
 export const auth = new sst.aws.Auth("Auth", {
     issuer: {
-        // vpc,
         timeout: "3 minutes",
         handler: "./packages/functions/src/auth.handler",
         link: [

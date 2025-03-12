@@ -152,6 +152,7 @@ export const zero = new sst.aws.Service("Zero", {
         ? {
             cpu: "2 vCPU",
             memory: "4 GB",
+            capacity: "spot"
         }
         : {
             capacity: "spot"
@@ -172,9 +173,9 @@ export const zero = new sst.aws.Service("Zero", {
     },
     wait: true,
     health: {
+        retries: 3,
         command: ["CMD-SHELL", "curl -f http://localhost:4848/ || exit 1"],
         interval: "5 seconds",
-        retries: 3,
         startPeriod: "300 seconds",
     },
     loadBalancer: {
