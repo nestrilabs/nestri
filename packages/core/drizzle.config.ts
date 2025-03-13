@@ -1,16 +1,19 @@
 import { Resource } from "sst";
 import { defineConfig } from "drizzle-kit";
 
+const connection = {
+    user: Resource.Postgres.username,
+    password: Resource.Postgres.password,
+    host: Resource.Postgres.host,
+};
+
 export default defineConfig({
     verbose: true,
     strict: true,
     out: "./migrations",
     dialect: "postgresql",
-    driver: "aws-data-api",
-    schema: "./src/**/*.sql.ts",
     dbCredentials: {
-        database: Resource.Postgres.database,
-        secretArn: Resource.Postgres.secretArn,
-        resourceArn: Resource.Postgres.clusterArn,
+        url: `postgres://${connection.user}:${connection.password}@${connection.host}/nestri`,
     },
+    schema: "./src/**/*.sql.ts",
 });

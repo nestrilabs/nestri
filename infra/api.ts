@@ -1,3 +1,4 @@
+import { vpc } from "./vpc";
 import { bus } from "./bus";
 import { domain } from "./dns";
 import { secret } from "./secret";
@@ -18,6 +19,7 @@ export const urls = new sst.Linkable("Urls", {
 });
 
 export const apiFunction = new sst.aws.Function("ApiFn", {
+    vpc,
     handler: "packages/functions/src/api/index.handler",
     link: [
         bus,

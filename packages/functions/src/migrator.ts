@@ -1,5 +1,5 @@
 import { db } from "@nestri/core/drizzle/index";
-import { migrate } from "drizzle-orm/aws-data-api/pg/migrator";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 export const handler = async (event: any) => {
   await migrate(db, {

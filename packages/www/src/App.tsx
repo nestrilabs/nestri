@@ -88,10 +88,10 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        //  <AuthProvider>
-                        // {props.children}
-                        // </AuthProvider>
-                        props.children
+                        <AuthProvider>
+                            {props.children}
+                        </AuthProvider>
+                        // props.children
                     )}
                 >
                     <Route path=":teamSlug">{TeamRoute}</Route>

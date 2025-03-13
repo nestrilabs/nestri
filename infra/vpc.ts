@@ -10,4 +10,8 @@
 
 export const vpc = new sst.aws.Vpc("NestriVpc", {
   az: 2,
+  // For lambdas to work in this VPC
+  nat: "ec2",
+  // For SST tunnel to work
+  bastion: true
 })

@@ -1,16 +1,23 @@
 import { vpc } from "./vpc";
 import { isPermanentStage } from "./stage";
 
+// TODO: Add a dev db to use, this will help with running zero locally... and testing it
 export const postgres = new sst.aws.Aurora("Postgres", {
   vpc,
   engine: "postgres",
-  dataApi: true,
+  // dataApi: true,
   scaling: isPermanentStage
     ? undefined
     : {
       min: "0 ACU",
       max: "1 ACU",
     },
+  // dev: {
+  //   username: "postgres",
+  //   password: "password",
+  //   database: "local",
+  //   port: 5432
+  // },
   transform: {
     clusterParameterGroup: {
       parameters: [
@@ -38,6 +45,30 @@ export const postgres = new sst.aws.Aurora("Postgres", {
     },
   },
 });
+
+// const cwd = process.cwd();
+
+// new sst.x.DevCommand("LocalDB", {
+//   dev: {
+//     command: [
+//       "docker",
+//       "--rm",
+//       "-it",
+//       "-p 5432:5432",
+//       "-v",
+//       `${cwd}/.sst/storage/postgres:/var/lib/postgresql/data`,
+//       "-e",
+//       "POSTGRES_USER=postgres",
+//       "-e",
+//       "POSTGRES_PASSWORD=password",
+//       "-e",
+//       "POSTGRES_DB=local",
+//       "postgres:16.4"
+//     ].join(" "),
+//     autostart: true,
+//   },
+// });
+
 
 // new sst.x.DevCommand("Studio", {
 //   link: [postgres],

@@ -3,18 +3,14 @@ import {
   PgTransaction,
   PgTransactionConfig
 } from "drizzle-orm/pg-core";
-import type {
-  AwsDataApiPgQueryResultHKT,
-} from "drizzle-orm/aws-data-api/pg";
-// import {
-//   PostgresJsQueryResultHKT
-// } from "drizzle-orm/postgres-js";
+import {
+  PostgresJsQueryResultHKT
+} from "drizzle-orm/postgres-js";
 import { ExtractTablesWithRelations } from "drizzle-orm";
 import { createContext } from "../context";
 
 export type Transaction = PgTransaction<
-  // PostgresJsQueryResultHKT,
-  AwsDataApiPgQueryResultHKT,
+  PostgresJsQueryResultHKT,
   Record<string, never>,
   ExtractTablesWithRelations<Record<string, never>>
 >;

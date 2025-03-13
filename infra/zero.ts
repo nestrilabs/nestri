@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { postgres } from "./postgres";
 
 // const connectionString = $interpolate`postgresql://${postgres.username}:${postgres.password}@${postgres.host}/${postgres.database}`
-const connectionString = $interpolate`postgresql://${postgres.username}:${postgres.password}@${postgres.host}/${postgres.database}`;
+const connectionString = $interpolate`postgresql://${postgres.username}:${postgres.password}@${postgres.host}:${postgres.port}/${postgres.database}`;
 
 const tag = $dev
     ? `latest`
@@ -15,8 +15,8 @@ const tag = $dev
     ).version.replace("+", "-");
 
 const zeroEnv = {
-    NO_COLOR: "1",
     FORCE: "1",
+    NO_COLOR: "1",
     ZERO_LOG_LEVEL: "info",
     ZERO_LITESTREAM_LOG_LEVEL: "info",
     ZERO_UPSTREAM_DB: connectionString,

@@ -57,6 +57,7 @@ declare module "sst" {
       "type": "sst.aws.Email"
     }
     "NestriVpc": {
+      "bastion": string
       "type": "sst.aws.Vpc"
     }
     "PolarSecret": {
