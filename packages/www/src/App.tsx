@@ -12,8 +12,9 @@ import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { useStorage } from '@nestri/www/providers/account';
 import { CreateTeamComponent } from '@nestri/www/pages/new';
-import { AuthProvider, useAuth } from '@nestri/www/providers/auth';
+import { OpenAuthProvider, useOpenAuth } from "@openauthjs/solid";
 import { darkClass, lightClass, theme } from '@nestri/www/ui/theme';
+import { AccountProvider, useAccount } from '@nestri/www/providers/account';
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
 
 const Root = styled("div", {
@@ -83,45 +84,51 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
-            <Router>
-                <Route
-                    path="*"
-                    component={(props) => (
-                        <AuthProvider>
-                            {props.children}
-                        </AuthProvider>
-                        // props.children
-                    )}
-                >
-                    <Route path=":teamSlug">{TeamRoute}</Route>
-                    <Route path="new" component={CreateTeamComponent} />
+        <OpenAuthProvider
+            issuer={import.meta.env.VITE_AUTH_URL}
+            clientID="web"
+        >
+            <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
+                <Router>
                     <Route
-                        path="/"
-                        component={() => {
-                            const auth = useAuth();
-                            return (
-                                <Switch>
-                                    <Match when={auth.current.teams.length > 0}>
-                                        <Navigate
-                                            href={`/${(
-                                                auth.current.teams.find(
-                                                    (w) => w.id === storage.value.team,
-                                                ) || auth.current.teams[0]
-                                            ).slug
-                                                }`}
-                                        />
-                                    </Match>
-                                    <Match when={true}>
-                                        <Navigate href={`/new`} />
-                                    </Match>
-                                </Switch>
-                            );
-                        }}
-                    />
-                    {/* <Route path="*" component={() => <NotFound />} /> */}
-                </Route>
-            </Router>
-        </Root>
+                        path="*"
+                        component={(props) => (
+                            <AccountProvider>
+                                {props.children}
+                            </AccountProvider>
+                            // props.children
+                        )}
+                    >
+                        <Route path=":teamSlug">{TeamRoute}</Route>
+                        <Route path="new" component={CreateTeamComponent} />
+                        <Route
+                            path="/"
+                            component={() => {
+                                const auth = useOpenAuth();
+                                const account = useAccount();
+                                return (
+                                    <Switch>
+                                        <Match when={account.current.teams.length > 0}>
+                                            <Navigate
+                                                href={`/${(
+                                                    account.current.teams.find(
+                                                        (w) => w.id === storage.value.team,
+                                                    ) || account.current.teams[0]
+                                                ).slug
+                                                    }`}
+                                            />
+                                        </Match>
+                                        <Match when={true}>
+                                            <Navigate href={`/new`} />
+                                        </Match>
+                                    </Switch>
+                                );
+                            }}
+                        />
+                        {/* <Route path="*" component={() => <NotFound />} /> */}
+                    </Route>
+                </Router>
+            </Root>
+        </OpenAuthProvider>
     )
 }
