@@ -14,9 +14,9 @@ export const authFingerprintKey = new random.RandomString(
 
 export const auth = new sst.aws.Auth("Auth", {
     issuer: {
-        // vpc,
+        vpc,
         timeout: "3 minutes",
-        handler: "packages/functions/src/auth2.handler",
+        handler: "packages/functions/src/auth.handler",
         link: [
             bus,
             email,

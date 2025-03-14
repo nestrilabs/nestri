@@ -28,7 +28,7 @@
         "@aws-sdk/client-rds-data": "^3.758.0",
         "@aws-sdk/client-sesv2": "^3.753.0",
         "@instantdb/admin": "^0.17.7",
-        "@openauthjs/openauth": "0.4.3",
+        "@openauthjs/openauth": "*",
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",

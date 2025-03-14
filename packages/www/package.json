@@ -25,7 +25,7 @@
     "@macaron-css/solid": "1.5.3",
     "@modular-forms/solid": "^0.25.1",
     "@nestri/core": "*",
-    "@openauthjs/openauth": "0.4.3",
+    "@openauthjs/openauth": "*",
     "@openauthjs/solid": "0.0.0-20250311201457",
     "@solid-primitives/storage": "^4.3.1",
     "@solidjs/router": "^0.15.3",
