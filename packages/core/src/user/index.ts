@@ -188,7 +188,7 @@ export module User {
             await tx
                 .update(userTable)
                 .set({
-                    timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                    timeDeleted: sql`now()`,
                 })
                 .where(and(eq(userTable.id, input)))
                 .execute();

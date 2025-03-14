@@ -71,17 +71,10 @@ export module Team {
                 planType: input.planType,
                 name: input.name
             })
-                .onConflictDoNothing({ target: [teamTable.slug, teamTable.id] })
+                .onConflictDoNothing({ target: teamTable.slug })
 
             if (result.count === 0) throw new TeamExistsError(input.slug);
-
-            await afterTx(() =>
-                withActor({ type: "system", properties: { teamID: id } }, () =>
-                    bus.publish(Resource.Bus, Events.Created, {
-                        teamID: id,
-                    })
-                ),
-            );
+            
             return id;
         })
     )

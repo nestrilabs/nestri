@@ -96,7 +96,6 @@ export const App: Component = () => {
                             <AccountProvider>
                                 {props.children}
                             </AccountProvider>
-                            // props.children
                         )}
                     >
                         <Route path=":teamSlug">{TeamRoute}</Route>
@@ -104,7 +103,6 @@ export const App: Component = () => {
                         <Route
                             path="/"
                             component={() => {
-                                const auth = useOpenAuth();
                                 const account = useAccount();
                                 return (
                                     <Switch>

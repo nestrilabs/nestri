@@ -13,14 +13,14 @@ export const PlanType = ["Hosted", "BYOG"] as const;
 export const teamTable = pgTable(
   "team",
   {
-    id: id.id,
+    ...id,
     ...timestamps,
     name: varchar("name", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 255 }).notNull(),
     planType: text("plan_type", { enum: PlanType }).notNull()
   },
   (table) => [
-    uniqueIndex("team_slug").on(table.slug)
+    uniqueIndex("slug").on(table.slug)
   ],
 );
 

@@ -68,13 +68,14 @@ export module Member {
                     id,
                     teamID: useTeam(),
                     email: input.email,
-                    timeSeen: input.first ? sql`CURRENT_TIMESTAMP()` : null,
-                }).onConflictDoUpdate({
-                    target: memberTable.id,
-                    set: {
-                        timeDeleted: null,
-                    }
+                    timeSeen: input.first ? sql`now()` : null,
                 })
+                // .onConflictDoUpdate({
+                //     target: memberTable.id,
+                //     set: {
+                //         timeDeleted: null,
+                //     }
+                // })
                 await afterTx(() =>
                     async () => bus.publish(Resource.Bus, Events.Created, { memberID: id }),
                 );
@@ -87,7 +88,7 @@ export module Member {
             await tx
                 .update(memberTable)
                 .set({
-                    timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                    timeDeleted: sql`now()`,
                 })
                 .where(and(eq(memberTable.id, input), eq(memberTable.teamID, useTeam())))
                 .execute();

@@ -38,7 +38,7 @@ const Plan = {
 } as const;
 
 const schema = v.object({
-    plan: v.pipe(
+    planType: v.pipe(
         v.enum(Plan, "Choose a valid plan"),
     ),
     name: v.pipe(
@@ -133,8 +133,8 @@ export function CreateTeamComponent() {
                     <Hr />
                 </Container>
                 <Form style={{ width: "100%", "max-width": "380px" }}
-                    onsubmit={async (data) => {
-                        console.log("submitting", data);
+                    onSubmit={async (data) => {
+                        console.log("submitting");
                         const result = await fetch(
                             import.meta.env.VITE_API_URL + "/team",
                             {
@@ -150,10 +150,9 @@ export function CreateTeamComponent() {
                             setError(form, "slug", "Team slug is already taken.");
                             return;
                         }
-                        const team = (await result.json()).data as Team.Info;
                         await account.refresh(account.current.email);
                         await new Promise(resolve => setTimeout(resolve, 1000));
-                        nav(`/${team.slug}`);
+                        nav(`/${data.slug}`);
                     }}
                 >
                     <FieldList>
@@ -203,7 +202,7 @@ export function CreateTeamComponent() {
                                 </FormField>
                             )}
                         </Field>
-                        <Field type="string" name="plan">
+                        <Field type="string" name="planType">
                             {(field, props) => (
                                 <FormField
                                     label="Plan Type"
@@ -240,7 +239,7 @@ export function CreateTeamComponent() {
                             </Summary>
                         </Details> */}
                         <Button color="brand" disabled={form.submitting} >
-                            <Show when={form.submitting} fallback="Continue">
+                            <Show when={form.submitting} fallback="Create">
                                 Creating&hellip;
                             </Show>
                         </Button>
