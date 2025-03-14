@@ -66,8 +66,8 @@ export module Member {
                 const id = input.id ?? createID("member");
                 await tx.insert(memberTable).values({
                     id,
-                    email: input.email,
                     teamID: useTeam(),
+                    email: input.email,
                     timeSeen: input.first ? sql`CURRENT_TIMESTAMP()` : null,
                 }).onConflictDoUpdate({
                     target: memberTable.id,

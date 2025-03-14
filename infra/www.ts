@@ -15,8 +15,8 @@ new sst.aws.StaticSite("Web", {
     },
     environment: {
         VITE_API_URL: api.url,
-        VITE_AUTH_URL: auth.url,
         VITE_STAGE: $app.stage,
+        VITE_AUTH_URL: auth.url,
         VITE_ZERO_URL: `https://zero.${domain}`,
     },
 })

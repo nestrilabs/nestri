@@ -3,10 +3,15 @@ import { Button } from "@nestri/www/ui";
 import { Text } from "@nestri/www/ui/text";
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
+import { useNavigate } from "@solidjs/router";
+import { useOpenAuth } from "@openauthjs/solid";
 import { utility } from "@nestri/www/ui/utility";
-import { createForm,valiForm } from "@modular-forms/solid";
+import { useAccount } from "../providers/account";
+import { createForm, getValue, setError, valiForm } from "@modular-forms/solid";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
+import { Team } from "@nestri/core/team/index";
+import { Show } from "solid-js";
 
 const nameRegex = /^[a-z0-9\-]+$/
 
@@ -91,8 +96,8 @@ const UrlParent = styled("div", {
 
 const UrlTitle = styled("span", {
     base: {
-        borderWidth:1,
-        borderRight:0,
+        borderWidth: 1,
+        borderRight: 0,
         display: "flex",
         alignItems: "center",
         borderStyle: "solid",
@@ -111,6 +116,10 @@ export function CreateTeamComponent() {
         validate: valiForm(schema),
     });
 
+    const nav = useNavigate();
+    const auth = useOpenAuth();
+    const account = useAccount();
+
     return (
         <FullScreen>
             <Container horizontal="center" style={{ width: "100%", padding: "1rem", }} space="1" >
@@ -119,11 +128,34 @@ export function CreateTeamComponent() {
                         Create a Team
                     </Text>
                     <Text style={{ color: theme.color.gray.d900 }} size="sm">
-                        Choose something that your teammates will recognize
+                        Choose something that your team mates will recognize
                     </Text>
                     <Hr />
                 </Container>
-                <Form style={{ width: "100%", "max-width": "380px" }}>
+                <Form style={{ width: "100%", "max-width": "380px" }}
+                    onsubmit={async (data) => {
+                        console.log("submitting", data);
+                        const result = await fetch(
+                            import.meta.env.VITE_API_URL + "/team",
+                            {
+                                method: "POST",
+                                headers: {
+                                    authorization: `Bearer ${await auth.access()}`,
+                                    "content-type": "application/json",
+                                },
+                                body: JSON.stringify(data),
+                            },
+                        );
+                        if (!result.ok) {
+                            setError(form, "slug", "Team slug is already taken.");
+                            return;
+                        }
+                        const team = (await result.json()).data as Team.Info;
+                        await account.refresh(account.current.email);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        nav(`/${team.slug}`);
+                    }}
+                >
                     <FieldList>
                         <Field type="string" name="name">
                             {(field, props) => (
@@ -162,7 +194,10 @@ export function CreateTeamComponent() {
                                         <Input
                                             {...props}
                                             autofocus
-                                            placeholder="janes-team"
+                                            placeholder={
+                                                getValue(form, "name")?.toString()
+                                                    .split(" ").join("-")
+                                                    .toLowerCase() || "janes-team"}
                                         />
                                     </UrlParent>
                                 </FormField>
@@ -204,8 +239,10 @@ export function CreateTeamComponent() {
                                 </div>
                             </Summary>
                         </Details> */}
-                        <Button color="brand">
-                            Continue
+                        <Button color="brand" disabled={form.submitting} >
+                            <Show when={form.submitting} fallback="Continue">
+                                Creating&hellip;
+                            </Show>
                         </Button>
                     </FieldList>
                 </Form>
