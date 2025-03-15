@@ -9,6 +9,7 @@ import '@fontsource/geist-sans/900.css';
 import { PlayComponent } from './pages/play';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
+import { CreateTeamComponent } from './pages/new';
 import { darkClass, lightClass, theme } from './ui/theme';
 import { AuthProvider, useAuth } from './providers/auth';
 import { Navigate, Route, Router } from "@solidjs/router";
@@ -88,14 +89,14 @@ export const App: Component = () => {
                 <Route
                     path="*"
                     component={(props) => (
-                        // <AuthProvider>
-                            // {props.children}
-                            props.children
-                        // </AuthProvider>
+                         <AuthProvider>
+                        {props.children}
+                        </AuthProvider>
+                        // props.children
                     )}
                 >
                     <Route path="play/:id" component={PlayComponent} />
-                    <Route path="test" component={TestComponent} />
+                    <Route path="new" component={CreateTeamComponent} />
                     <Route
                         path="/"
                         component={() => {

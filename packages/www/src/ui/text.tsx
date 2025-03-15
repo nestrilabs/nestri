@@ -4,9 +4,9 @@ import { utility } from "./utility";
 import { CSSProperties } from "@macaron-css/core";
 
 export const Text = styled("span", {
-    base: {
-        textWrap: "balance"
-    },
+    // base: {
+    //     textWrap: "balance"
+    // },
     variants: {
         leading: {
             base: {
@@ -118,6 +118,15 @@ export const Text = styled("span", {
             for (const [key, value] of Object.entries(theme.font.size)) {
                 result[key as keyof typeof theme.font.size] = {
                     fontSize: value,
+                };
+            }
+            return result;
+        })(),
+        font: (() => {
+            const result = {} as Record<`${keyof typeof theme.font.family}`, any>;
+            for (const [key, value] of Object.entries(theme.font.family)) {
+                result[key as keyof typeof theme.font.family] = {
+                    fontFamily: value,
                 };
             }
             return result;
