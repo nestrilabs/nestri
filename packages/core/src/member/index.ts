@@ -70,12 +70,7 @@ export module Member {
                     email: input.email,
                     timeSeen: input.first ? sql`now()` : null,
                 })
-                // .onConflictDoUpdate({
-                //     target: memberTable.id,
-                //     set: {
-                //         timeDeleted: null,
-                //     }
-                // })
+
                 await afterTx(() =>
                     async () => bus.publish(Resource.Bus, Events.Created, { memberID: id }),
                 );

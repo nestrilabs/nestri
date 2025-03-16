@@ -1,3 +1,4 @@
+import { vpc } from "./vpc";
 import { auth } from "./auth";
 import { domain } from "./dns";
 import { readFileSync } from "fs";
@@ -82,65 +83,44 @@ const replicationManager = !$dev
         },
     }) : undefined;
 
-if ($app.stage === "production" && false) {
-    new sst.aws.Service(`ZeroReplicationTest`, {
-        cluster,
-        ...($app.stage === "production"
-            ? {
-                cpu: "2 vCPU",
-                memory: "4 GB",
-            }
-            : {}),
-        image: zeroEnv.ZERO_IMAGE_URL,
-        wait: true,
-        link: [storage, postgres],
-        health: {
-            command: ["CMD-SHELL", "curl -f http://localhost:4849/ || exit 1"],
-            interval: "5 seconds",
-            retries: 3,
-            startPeriod: "300 seconds",
-        },
-        environment: {
-            ...zeroEnv,
-            ZERO_CHANGE_MAX_CONNS: "3",
-            ZERO_NUM_SYNC_WORKERS: "0",
-            ZERO_SHARD_ID: $app.stage + "_test",
-            ZERO_LITESTREAM_BACKUP_URL: undefined,
-        },
-        logging: {
-            retention: "1 month",
-        },
-        transform: {
-            service: {
-                healthCheckGracePeriodSeconds: 900,
-            },
-            taskDefinition: {
-                ephemeralStorage: {
-                    sizeInGib: 200,
-                },
-            },
-            loadBalancer: {
-                idleTimeout: 60 * 60,
-            },
-        },
-    });
-}
+// Permissions deployment
+const permissions = new sst.aws.Function(
+    "ZeroPermissions",
+    {
+        vpc,
+        link: [postgres],
+        handler: "packages/functions/src/zero.handler",
+        // environment: { ["ZERO_UPSTREAM_DB"]: connectionString },
+        copyFiles: [{
+            from: "packages/zero/.permissions.sql",
+            to: "./.permissions.sql"
+        }],
+    }
+);
 
 if (replicationManager) {
-    new command.local.Command(
-        "ZeroPermission",
+    new aws.lambda.Invocation(
+        "ZeroPermissionsInvocation",
         {
-            dir: process.cwd() + "/packages/zero",
-            environment: {
-                ZERO_UPSTREAM_DB: connectionString,
-            },
-            create: "bun run zero-deploy-permissions",
-            triggers: [Date.now()],
+            input: Date.now().toString(),
+            functionName: permissions.name,
         },
-        {
-            dependsOn: [replicationManager],
-        },
+        { dependsOn: replicationManager }
     );
+    // new command.local.Command(
+    //     "ZeroPermission",
+    //     {
+    //         dir: process.cwd() + "/packages/zero",
+    //         environment: {
+    //             ZERO_UPSTREAM_DB: connectionString,
+    //         },
+    //         create: "bun run zero-deploy-permissions",
+    //         triggers: [Date.now()],
+    //     },
+    //     {
+    //         dependsOn: [replicationManager],
+    //     },
+    // );
 }
 
 export const zero = new sst.aws.Service("Zero", {
@@ -214,7 +194,3 @@ export const zero = new sst.aws.Service("Zero", {
         url: "http://localhost:4848",
     },
 });
-
-export const outputs = {
-    zero: `https://zero.${domain}`
-}

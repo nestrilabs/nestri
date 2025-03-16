@@ -7,11 +7,10 @@ import {
     definePermissions,
 } from "@rocicorp/zero";
 
-// TODO: Add the user's here as well :)
+// TODO: Add Steam, and Machines here
 
 const timestamps = {
     time_created: number(),
-    time_updated: number(),
     time_deleted: number().optional(),
 } as const;
 
@@ -31,7 +30,6 @@ const member = table("member")
         email: string(),
         team_id: string(),
         time_created: number(),
-        time_updated: number(),
         time_seen: number().optional(),
         time_deleted: number().optional(),
     })

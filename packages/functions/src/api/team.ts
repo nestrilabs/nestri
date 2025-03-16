@@ -50,10 +50,6 @@ export module TeamApi {
                             "application/json": {
                                 schema: Result(
                                     z.literal("ok")
-                                    // Team.Info.openapi({
-                                    //     description: "Team information",
-                                    //     example: Examples.Team
-                                    // })
                                 )
                             }
                         },
@@ -78,7 +74,6 @@ export module TeamApi {
                 const actor = assertActor("user");
 
                 const teamID = await Team.create(body);
-                // const team = await Team.fromID(teamID);
 
                 await withActor(
                     {
@@ -94,7 +89,6 @@ export module TeamApi {
                         }),
                 );
 
-                // return c.json({ data: team })
                 return c.json({ data: "ok" })
             }
         )

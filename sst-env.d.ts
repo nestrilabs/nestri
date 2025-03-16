@@ -35,6 +35,10 @@ declare module "sst" {
       "type": "sst.sst.Linkable"
       "user": string
     }
+    "DatabaseMigrator": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -93,6 +97,10 @@ declare module "sst" {
       "service": string
       "type": "sst.aws.Service"
       "url": string
+    }
+    "ZeroPermissions": {
+      "name": string
+      "type": "sst.aws.Function"
     }
   }
 }

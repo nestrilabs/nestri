@@ -67,7 +67,8 @@ export module Team {
             const id = input.id ?? createID("team");
             const result = await tx.insert(teamTable).values({
                 id,
-                slug: input.slug,
+                //Remove spaces and make sure it is lowercase (this is just to make sure the frontend did this)
+                slug: input.slug.toLowerCase().replace(/[\s]/g, ''),
                 planType: input.planType,
                 name: input.name
             })

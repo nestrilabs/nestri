@@ -1,6 +1,7 @@
 // This is the website part where people play and connect
 import { api } from "./api";
 import { auth } from "./auth";
+import { zero } from "./zero";
 import { domain } from "./dns";
 
 new sst.aws.StaticSite("Web", {
@@ -17,6 +18,6 @@ new sst.aws.StaticSite("Web", {
         VITE_API_URL: api.url,
         VITE_STAGE: $app.stage,
         VITE_AUTH_URL: auth.url,
-        VITE_ZERO_URL: `https://zero.${domain}`,
+        VITE_ZERO_URL: zero.url,
     },
 })

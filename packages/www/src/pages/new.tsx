@@ -1,4 +1,5 @@
 import * as v from "valibot"
+import { Show } from "solid-js";
 import { Button } from "@nestri/www/ui";
 import { Text } from "@nestri/www/ui/text";
 import { styled } from "@macaron-css/solid";
@@ -7,11 +8,9 @@ import { useNavigate } from "@solidjs/router";
 import { useOpenAuth } from "@openauthjs/solid";
 import { utility } from "@nestri/www/ui/utility";
 import { useAccount } from "../providers/account";
-import { createForm, getValue, setError, valiForm } from "@modular-forms/solid";
 import { Container, FullScreen } from "@nestri/www/ui/layout";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
-import { Team } from "@nestri/core/team/index";
-import { Show } from "solid-js";
+import { createForm, getValue, setError, valiForm } from "@modular-forms/solid";
 
 const nameRegex = /^[a-z0-9\-]+$/
 

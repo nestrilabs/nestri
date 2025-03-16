@@ -5,19 +5,12 @@ import { isPermanentStage } from "./stage";
 export const postgres = new sst.aws.Aurora("Postgres", {
   vpc,
   engine: "postgres",
-  // dataApi: true,
   scaling: isPermanentStage
     ? undefined
     : {
       min: "0 ACU",
       max: "1 ACU",
     },
-  // dev: {
-  //   username: "postgres",
-  //   password: "password",
-  //   database: "local",
-  //   port: 5432
-  // },
   transform: {
     clusterParameterGroup: {
       parameters: [
@@ -46,53 +39,30 @@ export const postgres = new sst.aws.Aurora("Postgres", {
   },
 });
 
-// const cwd = process.cwd();
 
-// new sst.x.DevCommand("LocalDB", {
-//   dev: {
-//     command: [
-//       "docker",
-//       "--rm",
-//       "-it",
-//       "-p 5432:5432",
-//       "-v",
-//       `${cwd}/.sst/storage/postgres:/var/lib/postgresql/data`,
-//       "-e",
-//       "POSTGRES_USER=postgres",
-//       "-e",
-//       "POSTGRES_PASSWORD=password",
-//       "-e",
-//       "POSTGRES_DB=local",
-//       "postgres:16.4"
-//     ].join(" "),
-//     autostart: true,
-//   },
-// });
+new sst.x.DevCommand("Studio", {
+  link: [postgres],
+  dev: {
+    command: "bun db studio",
+    directory: "packages/core",
+    autostart: true,
+  },
+});
 
+const migrator = new sst.aws.Function("DatabaseMigrator", {
+  handler: "packages/functions/src/migrator.handler",
+  link: [postgres],
+  copyFiles: [
+    {
+      from: "packages/core/migrations",
+      to: "./migrations",
+    },
+  ],
+});
 
-// new sst.x.DevCommand("Studio", {
-//   link: [postgres],
-//   dev: {
-//     command: "bun pg studio",
-//     directory: "packages/core",
-//     autostart: true,
-//   },
-// });
-
-// const migrator = new sst.aws.Function("DatabaseMigrator", {
-//   handler: "packages/functions/src/migrator.handler",
-//   link: [postgres],
-//   copyFiles: [
-//     {
-//       from: "packages/core/migrations",
-//       to: "./migrations",
-//     },
-//   ],
-// });
-
-// if (!$dev) {
-//   new aws.lambda.Invocation("DatabaseMigratorInvocation", {
-//     input: Date.now().toString(),
-//     functionName: migrator.name,
-//   });
-// }
+if (!$dev) {
+  new aws.lambda.Invocation("DatabaseMigratorInvocation", {
+    input: Date.now().toString(),
+    functionName: migrator.name,
+  });
+}

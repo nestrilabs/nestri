@@ -10,7 +10,7 @@ import { handle, streamHandle } from "hono/aws-lambda";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 
-const app = new Hono();
+export const app = new Hono();
 app
     .use(logger(), async (c, next) => {
         c.header("Cache-Control", "no-store");
