@@ -149,8 +149,23 @@ const NavLink = styled(A, {
     base: {
         color: theme.color.gray.d900,
         textDecoration: "none",
+        border: `2px solid ${theme.color.gray.d400}`,
+        height: 32,
+        padding: "0 8px",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: 8,
+        gap: theme.space["2"],
+        lineHeight: 1.5,
         fontSize: theme.font.size.sm,
-        fontWeight: theme.font.weight.regular
+        fontWeight: theme.font.weight.regular,
+        transitionProperty: "border-color, background, color, transform, box-shadow",
+        transitionDuration: ".15s",
+        transitionTimingFunction: "ease",
+        ":hover": {
+            backgroundColor: theme.color.background.d200,
+        }
     }
 })
 
@@ -239,18 +254,33 @@ export function Header() {
             <RightRoot>
                 <Show when={team}>
                     <NavRoot>
-                        <NavLink href="machines">Machines</NavLink>
-                        <NavLink href="library">Library</NavLink>
+                        <NavLink href="machines">
+                            <svg style={{ "margin-bottom": "1px" }} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16">
+                                <g fill="currentColor"><path d="M4 8a1.5 1.5 0 1 1 3 0a1.5 1.5 0 0 1-3 0m7.5-1.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3" />
+                                    <path d="M0 1.5A.5.5 0 0 1 .5 1h1a.5.5 0 0 1 .5.5V4h13.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5H2v2.5a.5.5 0 0 1-1 0V2H.5a.5.5 0 0 1-.5-.5m5.5 4a2.5 2.5 0 1 0 0 5a2.5 2.5 0 0 0 0-5M9 8a2.5 2.5 0 1 0 5 0a2.5 2.5 0 0 0-5 0" />
+                                    <path d="M3 12.5h3.5v1a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5zm4 1v-1h4v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5" />
+                                </g>
+                            </svg>
+                            Machines
+                        </NavLink>
+                        <NavLink href="library">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 32 32">
+                                <path fill="currentColor" d="M15.974 0C7.573 0 .682 6.479.031 14.714l8.573 3.547a4.5 4.5 0 0 1 2.552-.786c.083 0 .167.005.25.005l3.813-5.521v-.078c0-3.328 2.703-6.031 6.031-6.031s6.036 2.708 6.036 6.036a6.04 6.04 0 0 1-6.036 6.031h-.135l-5.438 3.88c0 .073.005.141.005.214c0 2.5-2.021 4.526-4.521 4.526c-2.177 0-4.021-1.563-4.443-3.635L.583 20.36c1.901 6.719 8.063 11.641 15.391 11.641c8.833 0 15.995-7.161 15.995-16s-7.161-16-15.995-16zm-5.922 24.281l-1.964-.813a3.4 3.4 0 0 0 1.755 1.667a3.404 3.404 0 0 0 4.443-1.833a3.38 3.38 0 0 0 .005-2.599a3.36 3.36 0 0 0-1.839-1.844a3.38 3.38 0 0 0-2.5-.042l2.026.839c1.276.536 1.88 2 1.349 3.276s-2 1.88-3.276 1.349zm15.219-12.406a4.025 4.025 0 0 0-4.016-4.021a4.02 4.02 0 1 0 0 8.042a4.02 4.02 0 0 0 4.016-4.021m-7.026-.005c0-1.672 1.349-3.021 3.016-3.021s3.026 1.349 3.026 3.021c0 1.667-1.359 3.021-3.026 3.021s-3.016-1.354-3.016-3.021" />
+                            </svg>
+                            Library
+                        </NavLink>
                     </NavRoot>
                 </Show>
-                <Switch>
-                    <Match when={!account.current.avatarUrl} >
-                        <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
-                    </Match>
-                    <Match when={account.current.avatarUrl}>
-                        <Avatar size={32} name={`${account.current.name}#${account.current.discriminator}`} />
-                    </Match>
-                </Switch>
+                <div style={{ "margin-bottom": "2px" }} >
+                    <Switch>
+                        <Match when={account.current.avatarUrl} >
+                            <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
+                        </Match>
+                        <Match when={!account.current.avatarUrl}>
+                            <Avatar size={32} name={`${account.current.name}#${account.current.discriminator}`} />
+                        </Match>
+                    </Switch>
+                </div>
             </RightRoot>
         </Root >
     )
