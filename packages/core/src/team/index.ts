@@ -19,7 +19,7 @@ export module Team {
                 description: Common.IdDescription,
                 example: Examples.Team.id,
             }),
-            slug: z.string().openapi({
+            slug: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
                 description: "The unique and url-friendly slug of this team",
                 example: Examples.Team.slug
             }),
@@ -68,14 +68,14 @@ export module Team {
             const result = await tx.insert(teamTable).values({
                 id,
                 //Remove spaces and make sure it is lowercase (this is just to make sure the frontend did this)
-                slug: input.slug.toLowerCase().replace(/[\s]/g, ''),
+                slug: input.slug, //.toLowerCase().replace(/[\s]/g, ''),
                 planType: input.planType,
                 name: input.name
             })
                 .onConflictDoNothing({ target: teamTable.slug })
 
             if (result.count === 0) throw new TeamExistsError(input.slug);
-            
+
             return id;
         })
     )
