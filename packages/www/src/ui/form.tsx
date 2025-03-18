@@ -278,7 +278,6 @@ const Badge = styled("div", {
         padding: "0 6px",
         fontSize: theme.font.size.xs
     }
-
 })
 
 export function Select(props: SelectProps) {

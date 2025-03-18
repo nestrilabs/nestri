@@ -1,4 +1,4 @@
-import { Header } from "./header";
+import { Header } from "@nestri/www/pages/team/header";
 import { FullScreen } from "@nestri/www/ui/layout";
 
 export function HomeRoute() {

@@ -2,6 +2,7 @@ import { HomeRoute } from "./home";
 import { useOpenAuth } from "@openauthjs/solid";
 import { Route, useParams } from "@solidjs/router";
 import { ApiProvider } from "@nestri/www/providers/api";
+import { NotAllowed } from "@nestri/www/pages/not-found";
 import { ZeroProvider } from "@nestri/www/providers/zero";
 import { TeamContext } from "@nestri/www/providers/context";
 import { createEffect, createMemo, Match, Switch } from "solid-js";
@@ -45,11 +46,11 @@ export const TeamRoute = (
                 </Match>
                 <Match when={team()}>
                     <TeamContext.Provider value={() => team()!}>
-                        <ZeroProvider>
+                        {/* <ZeroProvider> */}
                             <ApiProvider>
                                 {props.children}
                             </ApiProvider>
-                        </ZeroProvider>
+                        {/* </ZeroProvider> */}
                     </TeamContext.Provider>
                 </Match>
             </Switch>
