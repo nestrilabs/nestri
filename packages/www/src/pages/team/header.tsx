@@ -125,9 +125,32 @@ const AvatarImg = styled("img", {
     }
 })
 
-const AvatarRoot = styled("div", {
+const RightRoot = styled("div", {
     base: {
-        marginLeft: "auto"
+        marginLeft: "auto",
+        display: "flex",
+        gap: theme.space["4"],
+        alignItems: "center",
+        justifyContent: "center",
+    }
+})
+
+const NavRoot = styled("div", {
+    base: {
+        display: "flex",
+        height: "100%",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: theme.space["4"],
+    }
+})
+
+const NavLink = styled(A, {
+    base: {
+        color: theme.color.gray.d900,
+        textDecoration: "none",
+        fontSize: theme.font.size.sm,
+        fontWeight: theme.font.weight.regular
     }
 })
 
@@ -213,7 +236,13 @@ export function Header() {
                     </LogoRoot>
                 </Show>
             </Container>
-            <AvatarRoot>
+            <RightRoot>
+                <Show when={team}>
+                    <NavRoot>
+                        <NavLink href="machines">Machines</NavLink>
+                        <NavLink href="library">Library</NavLink>
+                    </NavRoot>
+                </Show>
                 <Switch>
                     <Match when={account.current.avatarUrl} >
                         <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
@@ -222,7 +251,7 @@ export function Header() {
                         <Avatar size={25} name={`${account.current.name}#${account.current.discriminator}`} />
                     </Match>
                 </Switch>
-            </AvatarRoot>
+            </RightRoot>
         </Root >
     )
 }
