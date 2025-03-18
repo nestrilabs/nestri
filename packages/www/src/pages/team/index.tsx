@@ -2,10 +2,10 @@ import { HomeRoute } from "./home";
 import { useOpenAuth } from "@openauthjs/solid";
 import { Route, useParams } from "@solidjs/router";
 import { ApiProvider } from "@nestri/www/providers/api";
-import { NotAllowed } from "@nestri/www/pages/not-found";
 import { ZeroProvider } from "@nestri/www/providers/zero";
 import { TeamContext } from "@nestri/www/providers/context";
 import { createEffect, createMemo, Match, Switch } from "solid-js";
+import { NotAllowed, NotFound } from "@nestri/www/pages/not-found";
 import { useAccount, useStorage } from "@nestri/www/providers/account";
 
 export const TeamRoute = (
@@ -20,6 +20,8 @@ export const TeamRoute = (
                 (item) => item.slug === params.teamSlug,
             ),
         );
+
+        console.log("team", team())
 
         createEffect(() => {
             const t = team();
@@ -41,22 +43,22 @@ export const TeamRoute = (
         return (
             <Switch>
                 <Match when={!team()}>
-                    {/*TODO: Add a public page for teams*/}
+                    {/*TODO: Add a public page for (other) teams*/}
                     <NotAllowed header />
                 </Match>
                 <Match when={team()}>
                     <TeamContext.Provider value={() => team()!}>
-                        {/* <ZeroProvider> */}
+                        <ZeroProvider>
                             <ApiProvider>
                                 {props.children}
                             </ApiProvider>
-                        {/* </ZeroProvider> */}
+                        </ZeroProvider>
                     </TeamContext.Provider>
                 </Match>
             </Switch>
         )
-
     }}>
         <Route path="" component={HomeRoute} />
+        <Route path="*" component={() => <NotFound header />} />
     </Route>
 )

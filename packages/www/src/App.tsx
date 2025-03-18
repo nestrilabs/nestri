@@ -6,8 +6,11 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
+import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
+import { FullScreen } from '@nestri/www/ui/layout';
 import { TeamRoute } from '@nestri/www/pages/team';
+import { NotFound } from '@nestri/www/pages/not-found';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { useStorage } from '@nestri/www/providers/account';
@@ -93,7 +96,12 @@ export const App: Component = () => {
                     <Route
                         path="*"
                         component={(props) => (
-                            <AccountProvider>
+                            <AccountProvider
+                                loadingUI={
+                                    <FullScreen>
+                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                                    </FullScreen>
+                                }>
                                 {props.children}
                             </AccountProvider>
                         )}
@@ -123,7 +131,7 @@ export const App: Component = () => {
                                 );
                             }}
                         />
-                        {/* <Route path="*" component={() => <NotFound />} /> */}
+                        <Route path="*" component={() => <NotFound />} />
                     </Route>
                 </Router>
             </Root>

@@ -41,7 +41,7 @@ type Storage = {
   accounts: Record<string, {
     id: string
     email: string
-    avatarUrl: string
+    avatarUrl?: string
     discriminator: number
     name: string;
     polarCustomerID: string;
