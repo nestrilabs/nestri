@@ -244,11 +244,11 @@ export function Header() {
                     </NavRoot>
                 </Show>
                 <Switch>
-                    <Match when={account.current.avatarUrl} >
+                    <Match when={!account.current.avatarUrl} >
                         <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
                     </Match>
-                    <Match when={!account.current.avatarUrl}>
-                        <Avatar size={25} name={`${account.current.name}#${account.current.discriminator}`} />
+                    <Match when={account.current.avatarUrl}>
+                        <Avatar size={32} name={`${account.current.name}#${account.current.discriminator}`} />
                     </Match>
                 </Switch>
             </RightRoot>
