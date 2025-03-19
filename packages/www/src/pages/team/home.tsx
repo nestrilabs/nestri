@@ -5,7 +5,9 @@ export function HomeRoute() {
     return (
         <>
             <Header />
-            <FullScreen inset="header" />
+            <FullScreen inset="header">
+                
+            </FullScreen>
         </>
     )
 }

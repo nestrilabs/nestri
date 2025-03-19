@@ -7,6 +7,7 @@ import { useAccount } from "@nestri/www/providers/account";
 import { Match, Show, Switch, useContext } from "solid-js";
 import { TeamContext } from "@nestri/www/providers/context";
 
+// FIXME: Make sure this works on mobile, then add the command bar for teams and right modal for the profile
 const Root = styled("div", {
     base: {
         top: "0",

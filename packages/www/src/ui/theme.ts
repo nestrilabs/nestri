@@ -218,8 +218,8 @@ const light = (() => {
     const brand = "#FF4F01"
 
     const background = {
+        d200: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)',
         d100: '#f5f5f5',
-        d200: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)'
     };
 
     const contrastFg = '#ffffff';
@@ -380,8 +380,8 @@ const dark = (() => {
     const brand = "#FF4F01"
 
     const background = {
+        d100: "oklch(from #171717 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)",
         d200: '#171717',
-        d100: "oklch(from #171717 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)"
     };
 
     const contrastFg = '#ffffff';

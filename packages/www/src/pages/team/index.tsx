@@ -21,8 +21,6 @@ export const TeamRoute = (
             ),
         );
 
-        console.log("team", team())
-
         createEffect(() => {
             const t = team();
             if (!t) return;
