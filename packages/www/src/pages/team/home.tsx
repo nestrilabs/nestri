@@ -23,10 +23,10 @@ const Root = styled("div", {
 const Stepper = styled("div", {
     base: {
         // marginTop: 16,
-        height: 408,
+        width: 408,
         marginBottom: 8,
         display: "flex",
-        flexDirection: "column",
+        flexDirection: "row",
     }
 })
 
@@ -62,7 +62,6 @@ const StepLabel = styled("span", {
 const StepTimeline = styled("div", {
     base: {
         display: "flex",
-        flexDirection: "column",
         justifyContent: "center",
         alignItems: "center",
     }
@@ -71,7 +70,7 @@ const StepTimeline = styled("div", {
 const StepLeftTrack = styled("div", {
     base: {
         backgroundColor: theme.color.grayAlpha.d400,
-        width: 4,
+        height: 4,
         flex: "1 1 10px",
         selectors: {
             [`${Step}:first-child &`]: {
@@ -89,7 +88,7 @@ const StepLeftTrack = styled("div", {
 
 const StepRightTrack = styled("div", {
     base: {
-        width: 4,
+        height: 4,
         flex: "1 1 10px",
         backgroundColor: theme.color.grayAlpha.d400,
         selectors: {
@@ -130,30 +129,30 @@ export function HomeRoute() {
             <Root>
                 <OnboardingSection>
                     <Stepper>
-                        <Step data-state="active" >
-                            {/* <StepLabel>
+                        <Step data-state="completed" >
+                            <StepLabel>
                                 Steam
-                            </StepLabel> */}
+                            </StepLabel>
                             <StepTimeline>
                                 <StepLeftTrack />
                                 <StepDot></StepDot>
                                 <StepRightTrack />
                             </StepTimeline>
                         </Step>
-                        <Step>
-                            {/* <StepLabel>
+                        <Step data-state="completed">
+                            <StepLabel>
                                 Machine
-                            </StepLabel> */}
+                            </StepLabel>
                             <StepTimeline>
                                 <StepLeftTrack />
                                 <StepDot></StepDot>
                                 <StepRightTrack />
                             </StepTimeline>
                         </Step>
-                        <Step>
-                            {/* <StepLabel>
+                        <Step data-state="active">
+                            <StepLabel>
                                 Games
-                            </StepLabel> */}
+                            </StepLabel>
                             <StepTimeline>
                                 <StepLeftTrack />
                                 <StepDot></StepDot>
