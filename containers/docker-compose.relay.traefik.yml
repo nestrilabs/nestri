@@ -15,23 +15,23 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.web-secure.address=:443"
       - "--certificatesresolvers.default.acme.tlschallenge=true"
-      - "--certificatesresolvers.default.acme.email=foo@example.com" #your email for tls challenge
+      - "--certificatesresolvers.default.acme.email=foo@example.com" # Your email for tls challenge
       - "--certificatesresolvers.default.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - "./letsencrypt:/letsencrypt" #your letsencrypt folder for certificate persistence
+      - "./letsencrypt:/letsencrypt" # Your letsencrypt folder for certificate persistence
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
     restart:
       unless-stopped
   relay:
-    #image: ghcr.io/nestrilabs/nestri/relay:nightly
-    image: ghcr.io/datcaptainhorse/nestri-relay:latest
+    #image: ghcr.io/nestrilabs/nestri/relay:nightly # Offical relay image
+    image: ghcr.io/datcaptainhorse/nestri-relay:latest # Most current relay image
     container_name: relay
     environment:
-      - AUTO_ADD_LOCAL_IP=false
-      - WEBRTC_NAT_IPS=1.2.3.4 #put your ip of the relay server here
+      - AUTO_ADD_LOCAL_IP=false # Use with WEBRTC_NAT_IPS
+      #- WEBRTC_NAT_IPS=1.2.3.4 # Add the LAN IP of your container here if connections fail
       - VERBOSE=true
       - DEBUG=true
     ports:
@@ -42,7 +42,7 @@ services:
       unless-stopped
     labels:
       - traefik.enable=true
-      - traefik.http.routers.relay.rule=Host(`relay.example.com`) #your domain for tls challenge
+      - traefik.http.routers.relay.rule=Host(`relay.example.com`) # Your domain for tls challenge
       - traefik.http.routers.relay.tls=true
       - traefik.http.routers.relay.tls.certresolver=default
       - traefik.http.routers.relay.entrypoints=web-secure
