@@ -1,0 +1,33 @@
+services:
+  caddy:
+    image: caddy:latest
+    container_name: caddy
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile #your caddyfile
+      - ./cert:/etc/caddy/certs
+    depends_on:
+      - relay
+    networks:
+      - relay_network
+    restart: unless-stopped
+
+  relay:
+    #image: ghcr.io/nestrilabs/nestri/relay:nightly
+    image: ghcr.io/datcaptainhorse/nestri-relay:latest
+    container_name: relay
+    environment:
+     - AUTO_ADD_LOCAL_IP=false
+     - WEBRTC_NAT_IPS=1.2.3.4 #put your ip of the relay server here
+     - VERBOSE=true
+     - DEBUG=true
+    ports:
+      - "8088:8088/udp"
+    networks:
+      - relay_network
+    restart:
+      unless-stopped
+networks:
+  relay_network:
+    driver: bridge
