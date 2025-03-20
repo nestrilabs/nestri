@@ -122,13 +122,54 @@ const StepDot = styled("div", {
         }
     }
 })
+
+const HorizontalStepper = styled("div", {
+    base: {
+        counterReset: "step",
+    }
+})
+
+const HorizontalStep = styled("div", {
+    base: {
+        borderWidth: 0,
+        borderLeft: 4,
+        position: "relative",
+        borderStyle: "solid",
+        borderColor: theme.color.gray.d400,
+        paddingLeft: 20,
+        marginLeft: 10,
+        paddingBottom: 64
+    }
+})
+
+const HorizontalStepDot = styled("div", {
+    base: {
+        position: "absolute",
+        top: -2,
+        left: -2,
+        height: 10,
+    }
+})
+
+const StepDotChild = styled("div", {
+    base: {
+        borderRadius: 10,
+        width: 20,
+        height: 20,
+        border: `4px solid ${theme.color.grayAlpha.d400}`,
+        position: "absolute",
+        left: "50%",
+        top: "50%",
+        transform: "translate(-50%,-50%)",
+    }
+})
 export function HomeRoute() {
     return (
         <>
             <Header />
             <Root>
                 <OnboardingSection>
-                    <Stepper>
+                    {/* <Stepper>
                         <Step data-state="completed" >
                             <StepLabel>
                                 Steam
@@ -159,7 +200,16 @@ export function HomeRoute() {
                                 <StepRightTrack />
                             </StepTimeline>
                         </Step>
-                    </Stepper>
+                    </Stepper> */}
+                    <HorizontalStepper>
+                        <HorizontalStep>
+                            <HorizontalStepDot>
+                                <StepDotChild>
+
+                                </StepDotChild>
+                            </HorizontalStepDot>
+                        </HorizontalStep>
+                    </HorizontalStepper>
                 </OnboardingSection>
             </Root>
         </>

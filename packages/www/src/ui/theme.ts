@@ -89,7 +89,7 @@ const font = {
         mono_2xl: "1.375rem",
         "2xl": "1.5rem",
         "3xl": "1.875rem",
-        "4xl": "2.25rem",
+        "4xl": "2rem",
         "5xl": "3rem",
         "6xl": "3.75rem",
         "7xl": "4.5rem",
@@ -225,6 +225,7 @@ const light = (() => {
     const contrastFg = '#ffffff';
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(0,0,0,0.16)`;
     const focusColor = blue.d700
+    const hoverColor = "hsl(0,0%,22%)"
 
     const text = {
         primary: {
@@ -257,7 +258,8 @@ const light = (() => {
         focusColor,
         d1000,
         brand,
-        text
+        text,
+        hoverColor
     };
 })()
 
@@ -387,6 +389,7 @@ const dark = (() => {
     const contrastFg = '#ffffff';
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(255,255,255,0.24)`;
     const focusColor = blue.d900
+    const hoverColor = "hsl(0,0%,80%)"
 
     const text = {
         primary: {
@@ -419,7 +422,8 @@ const dark = (() => {
         focusColor,
         d1000,
         text,
-        brand
+        brand,
+        hoverColor
     };
 })()
 
