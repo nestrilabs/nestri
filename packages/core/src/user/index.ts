@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { Polar } from "../polar";
+import { Team } from "../team";
 import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { createID, fn } from "../utils";
@@ -11,7 +13,6 @@ import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { and, eq, isNull, asc, getTableColumns, sql } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { Team } from "../team";
 
 
 export module User {
@@ -106,12 +107,8 @@ export module User {
 
         //FIXME: Do this much later, as Polar.sh has so many inconsistencies for fuck's sake
 
-        // const customer = await Polar.client.customers.create({
-        //     email: input.email,
-        //     metadata: {
-        //         userID,
-        //     },
-        // });
+        const customer = await Polar.fromUserEmail(input.email)
+        console.log("customer", customer)
 
         const name = sanitizeUsername(input.name);
 
@@ -131,6 +128,7 @@ export module User {
                 avatarUrl: input.avatarUrl,
                 email: input.email,
                 discriminator: Number(discriminator),
+                polarCustomerID: customer?.id
             })
             await afterTx(() =>
                 withActor({

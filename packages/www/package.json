@@ -19,14 +19,18 @@
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.0.1",
-    "@nestri/core": "*",
     "@fontsource-variable/mona-sans": "^5.0.1",
     "@fontsource/geist-sans": "^5.1.0",
     "@macaron-css/core": "^1.5.2",
     "@macaron-css/solid": "^1.5.3",
+    "@modular-forms/solid": "^0.25.1",
+    "@nestri/core": "*",
+    "@openauthjs/openauth": "0.4.3",
     "@solid-primitives/storage": "^4.3.1",
     "@solidjs/router": "^0.15.3",
     "modern-normalize": "^3.0.1",
-    "solid-js": "^1.9.5"
+    "solid-js": "^1.9.5",
+    "valibot": "^1.0.0-rc.3",
+    "zod": "^3.24.2"
   }
 }

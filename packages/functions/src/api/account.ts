@@ -42,8 +42,10 @@ export module AccountApi {
             }),
             async (c) => {
                 const actor = assertActor("user");
-                const currentUser = await User.fromID(actor.properties.userID)
-                if (!currentUser) return c.json({ error: "This account does not exist, it may have been deleted" }, 404)
+                const [currentUser, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
+
+                if (!currentUser) return c.json({ error: "This account does not exist; it may have been deleted" }, 404)
+
                 const { id, email, name, polarCustomerID, avatarUrl, discriminator } = currentUser
 
                 return c.json({
@@ -51,10 +53,10 @@ export module AccountApi {
                         id,
                         email,
                         name,
+                        teams,
                         avatarUrl,
                         discriminator,
                         polarCustomerID,
-                        teams: await User.teams(),
                     }
                 }, 200);
             },

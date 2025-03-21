@@ -1,13 +1,5 @@
 {
   "name": "nestri",
-  "private": true,
-  "scripts": {
-    "build": "turbo build",
-    "dev": "turbo dev",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "lint": "turbo lint",
-    "sso": "aws sso login --sso-session=nestri --no-browser --use-device-code"
-  },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20240821.1",
     "@pulumi/pulumi": "^3.134.0",
@@ -18,15 +10,20 @@
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "bun@1.1.18",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "packageManager": "bun@1.2.4",
+  "private": true,
+  "scripts": {
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "sso": "aws sso login --sso-session=nestri --no-browser --use-device-code"
+  },
   "trustedDependencies": [
     "core-js-pure",
     "esbuild",
     "workerd"
+  ],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
   ],
   "dependencies": {
     "sst": "3.9.1"
