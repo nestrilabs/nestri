@@ -1,4 +1,5 @@
 import { useTeam } from "./context";
+import { EventSource } from 'eventsource'
 import { useOpenAuth } from "@openauthjs/solid";
 import { createSignal, onCleanup } from "solid-js";
 import { createInitializedContext } from "../common/context";
@@ -64,12 +65,18 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
 
                     try {
                         const token = await auth.access();
-                        // Create the URL with the token as a query parameter
-                        const sseUrl = new URL(`${import.meta.env.VITE_STEAM_URL}/login`);
-                        sseUrl.searchParams.append('token', token!);
-                        sseUrl.searchParams.append('team', team().id);
 
-                        eventSource = new EventSource(sseUrl.toString());
+                        eventSource = new EventSource(`${import.meta.env.VITE_STEAM_URL}/login`, {
+                            fetch: (input, init) =>
+                                fetch(input, {
+                                    ...init,
+                                    headers: {
+                                        ...init?.headers,
+                                        'Authorization': `Bearer ${token}`,
+                                        'x-nestri-team': team().id
+                                    },
+                                }),
+                        });
 
                         eventSource.onopen = () => {
                             console.log('Connected to Steam login stream');

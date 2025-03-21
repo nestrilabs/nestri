@@ -32,6 +32,7 @@
     "@rocicorp/zero": "*",
     "@solid-primitives/storage": "^4.3.1",
     "@solidjs/router": "^0.15.3",
+    "eventsource": "^3.0.5",
     "hono": "^4.7.4",
     "modern-normalize": "^3.0.1",
     "solid-js": "^1.9.5",

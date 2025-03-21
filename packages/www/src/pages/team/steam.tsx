@@ -5,6 +5,13 @@ import { styled } from "@macaron-css/solid";
 import { useSteam } from "@nestri/www/providers/steam";
 import { createEffect, onCleanup } from "solid-js";
 
+// FIXME: Remove this route, or move it to machines
+
+// The idea has changed, let the user login to Steam from the / route
+// Let the machines route remain different from the main page
+// Why? It becomes much simpler for routing and onboarding, plus how often will you move to the machines route?
+// Now it will be the home page's problem with making sure the user can download and install games on whatever machine they need/want
+
 const Root = styled("div", {
     base: {
         display: "grid",
