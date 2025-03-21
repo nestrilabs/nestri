@@ -8,8 +8,11 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 // FYI: Am very new to C# if you find any bugs or have any feedback hit me up :P
 // TBH i dunno what this code does, only God and Claude know(in the slightest) what it does. 
-// And yes! It does not sit right with me - learning C# on the job, i guess 🤧
-// This is the server to connect to the Steam APIs and do stuff like authenticate a user, get their library, generate .vdf files for Steam Client, etc etc
+// And yes! It does not sit right with me - am learning C# as we go, i guess 🤧
+// This is the server to connect to the Steam APIs and do stuff like:
+//  - authenticate a user, 
+//  - get their library, 
+//  - generate .vdf files for Steam Client (Steam manifest files), etc etc
 var builder = WebApplication.CreateBuilder(args);
 
 // Add JWT Authentication
