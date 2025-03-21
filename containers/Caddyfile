@@ -1,0 +1,9 @@
+relay.example.com {
+        @ws {
+                header Connection Upgrade
+                header Upgrade websocket
+        }
+        tls you@example.com
+        reverse_proxy @ws relay:8088
+        reverse_proxy relay:8088
+}
