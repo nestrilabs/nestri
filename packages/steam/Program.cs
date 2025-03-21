@@ -7,7 +7,8 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 // FYI: Am very new to C# if you find any bugs or have any feedback hit me up :P
-// TBH i dunno what this code does, only God and Claude have (in the slightest) what it does. And yes! It definitely does not sit right with me - learning C# on the job, i guess 🤧
+// TBH i dunno what this code does, only God and Claude know(in the slightest) what it does. 
+// And yes! It does not sit right with me - learning C# on the job, i guess 🤧
 // This is the server to connect to the Steam APIs and do stuff like authenticate a user, get their library, generate .vdf files for Steam Client, etc etc
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,7 +19,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = Environment.GetEnvironmentVariable("NESTRI_AUTH_JWKS_URL"), // Or the expected issuer value
+            ValidIssuer = Environment.GetEnvironmentVariable("NESTRI_AUTH_JWKS_URL"),
             ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
@@ -182,16 +183,6 @@ async Task<(bool IsValid, string? UserId, string? Email)> ValidateJwtToken(strin
         var httpClient = new HttpClient();
         var jwksJson = await httpClient.GetStringAsync($"{jwksUrl}/.well-known/jwks.json");
         var jwks = JsonSerializer.Deserialize<JsonWebKeySet>(jwksJson);
-
-        // Check that the issuer matches our expected authority
-        var issuer = jwtToken.Claims.FirstOrDefault(c => c.Type == "iss")?.Value;
-        if (issuer != jwksUrl)
-        {
-            Console.WriteLine($"Issuer mismatch: {issuer} vs {jwksUrl}");
-            // Consider if you need exact match or if the JWKS_URL is just the base URL
-            // If JWKS_URL is https://auth.example.com but issuer is https://auth.example.com/tenant
-            // you might want to check if issuer.StartsWith(jwksUrl) instead
-        }
 
         // Extract the properties claim which contains nested JSON
         var propertiesClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "properties")?.Value;
