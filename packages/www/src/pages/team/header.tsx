@@ -202,17 +202,19 @@ export function Header() {
                     }
                 >
                     <LogoRoot>
-                        <NestriLogo
-                            width={32}
-                            height={32}
-                            viewBox="0 0 12.8778 9.7377253"
-                            version="1.1"
-                            id="svg1"
-                            xmlns="http://www.w3.org/2000/svg">
-                            <path
-                                d="m 2.093439,1.7855532 h 8.690922 V 2.2639978 H 2.093439 Z m 0,2.8440874 h 8.690922 V 5.1080848 H 2.093439 Z m 0,2.8440866 h 8.690922 V 7.952172 H 2.093439 Z"
-                                style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
-                        </NestriLogo>
+                        <A href={`/${team!().slug}`} >
+                            <NestriLogo
+                                width={32}
+                                height={32}
+                                viewBox="0 0 12.8778 9.7377253"
+                                version="1.1"
+                                id="svg1"
+                                xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    d="m 2.093439,1.7855532 h 8.690922 V 2.2639978 H 2.093439 Z m 0,2.8440874 h 8.690922 V 5.1080848 H 2.093439 Z m 0,2.8440866 h 8.690922 V 7.952172 H 2.093439 Z"
+                                    style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
+                            </NestriLogo>
+                        </A>
                         <LineSvg
                             height="16"
                             stroke-linejoin="round"
