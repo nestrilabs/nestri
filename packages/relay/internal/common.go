@@ -4,7 +4,7 @@ import (
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
-	"log"
+	"log/slog"
 )
 
 var globalWebRTCAPI *webrtc.API
@@ -107,7 +107,7 @@ func CreatePeerConnection(onClose func()) (*webrtc.PeerConnection, error) {
 			connectionState == webrtc.PeerConnectionStateClosed {
 			err = pc.Close()
 			if err != nil {
-				log.Printf("Error closing PeerConnection: %s\n", err.Error())
+				slog.Error("Failed to close PeerConnection", "err", err)
 			}
 			onClose()
 		}

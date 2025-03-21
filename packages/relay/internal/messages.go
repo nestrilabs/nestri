@@ -5,9 +5,6 @@ import (
 	"time"
 )
 
-// OnMessageCallback is a callback for messages of given type
-type OnMessageCallback func(data []byte)
-
 // MessageBase is the base type for WS/DC messages.
 type MessageBase struct {
 	PayloadType string          `json:"payload_type"`
@@ -83,6 +80,57 @@ type MessageAnswer struct {
 	AnswerType AnswerType `json:"answer_type"`
 }
 
+// MessageForwardSDP is used to relay SDP messages between relays
+type MessageForwardSDP struct {
+	MessageBase
+	ParticipantID string                    `json:"participant_id"`
+	SDP           webrtc.SessionDescription `json:"sdp"`
+}
+
+// MessageForwardICE is used to relay ICE candidates between relays
+type MessageForwardICE struct {
+	MessageBase
+	ParticipantID string                  `json:"participant_id"`
+	Candidate     webrtc.ICECandidateInit `json:"candidate"`
+}
+
+// MessageMeshHandshake is sent when a relay connects to another relay.
+type MessageMeshHandshake struct {
+	MessageBase
+	RelayID string `json:"relay_id"`
+}
+
+// MessageMeshHandshakeResponse is sent back after a successful handshake.
+type MessageMeshHandshakeResponse struct {
+	MessageBase
+	RelayID string `json:"relay_id"`
+}
+
+// MessageStreamRequest is sent to request a stream from another relay
+type MessageStreamRequest struct {
+	MessageBase
+	RoomName string `json:"room_name"`
+}
+
+// MessageStreamForward is sent to forward stream data from one relay to another
+type MessageStreamForward struct {
+	MessageBase
+	RoomName string `json:"room_name"`
+	TrackID  string `json:"track_id"`
+}
+
+// MessageForwardIngest is used to forward ingest to another relay
+type MessageForwardIngest struct {
+	MessageBase
+	RoomName string `json:"room_name"`
+}
+
+// MessageStateSync is used to synchronize the state of the room between relays
+type MessageStateSync struct {
+	MessageBase
+	State map[string]RoomState `json:"state"`
+}
+
 // SendLogMessageWS sends a log message to the given WebSocket connection.
 func (ws *SafeWebSocket) SendLogMessageWS(level, message string) error {
 	msg := MessageLog{
@@ -129,6 +177,80 @@ func (ws *SafeWebSocket) SendAnswerMessageWS(answer AnswerType) error {
 	msg := MessageAnswer{
 		MessageBase: MessageBase{PayloadType: "answer"},
 		AnswerType:  answer,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendForwardSDPMessageWS sends an SDP relay message to a peer relay
+func (ws *SafeWebSocket) SendForwardSDPMessageWS(participantID string, sdp webrtc.SessionDescription) error {
+	msg := MessageForwardSDP{
+		MessageBase:   MessageBase{PayloadType: "forward_sdp"},
+		ParticipantID: participantID,
+		SDP:           sdp,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendForwardICEMessageWS sends an ICE candidate relay message to a peer relay
+func (ws *SafeWebSocket) SendForwardICEMessageWS(participantID string, candidate webrtc.ICECandidateInit) error {
+	msg := MessageForwardICE{
+		MessageBase:   MessageBase{PayloadType: "forward_ice"},
+		ParticipantID: participantID,
+		Candidate:     candidate,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendMeshHandshake sends a handshake message to another relay.
+func (ws *SafeWebSocket) SendMeshHandshake(relayID string) error {
+	msg := MessageMeshHandshake{
+		MessageBase: MessageBase{PayloadType: "mesh_handshake"},
+		RelayID:     relayID,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendMeshHandshakeResponse sends a handshake response to a relay.
+func (ws *SafeWebSocket) SendMeshHandshakeResponse(relayID string) error {
+	msg := MessageMeshHandshakeResponse{
+		MessageBase: MessageBase{PayloadType: "mesh_handshake_response"},
+		RelayID:     relayID,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendStreamRequest sends a stream request to another relay
+func (ws *SafeWebSocket) SendStreamRequest(roomName string) error {
+	msg := MessageStreamRequest{
+		MessageBase: MessageBase{PayloadType: "stream_request"},
+		RoomName:    roomName,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendStreamForward sends stream information to another relay
+func (ws *SafeWebSocket) SendStreamForward(roomName, trackID string) error {
+	msg := MessageStreamForward{
+		MessageBase: MessageBase{PayloadType: "stream_forward"},
+		RoomName:    roomName,
+		TrackID:     trackID,
+	}
+	return ws.SendJSON(msg)
+}
+
+func (ws *SafeWebSocket) SendForwardIngestMessageWS(roomName string) error {
+	msg := MessageForwardIngest{
+		MessageBase: MessageBase{PayloadType: "forward_ingest"},
+		RoomName:    roomName,
+	}
+	return ws.SendJSON(msg)
+}
+
+// SendStateSyncMessageWS sends a state sync message to the given WebSocket connection.
+func (ws *SafeWebSocket) SendStateSyncMessageWS(state map[string]RoomState) error {
+	msg := MessageStateSync{
+		MessageBase: MessageBase{PayloadType: "state_sync"},
+		State:       state,
 	}
 	return ws.SendJSON(msg)
 }
