@@ -5,6 +5,7 @@ import { ApiProvider } from "@nestri/www/providers/api";
 import { SteamRoute } from "@nestri/www/pages/team/steam";
 import { ZeroProvider } from "@nestri/www/providers/zero";
 import { TeamContext } from "@nestri/www/providers/context";
+import { SteamProvider } from "@nestri/www/providers/steam";
 import { createEffect, createMemo, Match, Switch } from "solid-js";
 import { NotAllowed, NotFound } from "@nestri/www/pages/not-found";
 import { useAccount, useStorage } from "@nestri/www/providers/account";
@@ -49,7 +50,9 @@ export const TeamRoute = (
                     <TeamContext.Provider value={() => team()!}>
                         <ZeroProvider>
                             <ApiProvider>
-                                {props.children}
+                                <SteamProvider>
+                                    {props.children}
+                                </SteamProvider>
                             </ApiProvider>
                         </ZeroProvider>
                     </TeamContext.Provider>

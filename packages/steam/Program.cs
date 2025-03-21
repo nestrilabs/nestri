@@ -1,7 +1,11 @@
 using System.Text;
 using Microsoft.AspNetCore.Http.Features;
 
+//FYI: Am very new to C# if you find any bugs or have any feedback hit me up :P
+// This is the server to connect to the Steam APIs and do stuff like authenticate a user, get their library, generate .vdf files for Steam Client, etc etc
+
 var builder = WebApplication.CreateBuilder(args);
+
 var app = builder.Build();
 
 app.MapGet("/", () => "Hello World!");
