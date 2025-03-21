@@ -13,18 +13,49 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+   .AddJwtBearer(options =>
     {
-        options.Authority = Environment.GetEnvironmentVariable("NESTRI_AUTH_JWKS_URL");
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
+            ValidIssuer = Environment.GetEnvironmentVariable("NESTRI_AUTH_JWKS_URL"), // Or the expected issuer value
             ValidateAudience = false,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             RequireSignedTokens = true,
             RequireExpirationTime = true,
-            ClockSkew = TimeSpan.Zero
+            ClockSkew = TimeSpan.Zero,
+
+            // Configure the issuer signing key provider
+            IssuerSigningKeyResolver = (token, securityToken, kid, validationParameters) =>
+            {
+                // Fetch the JWKS manually
+                var jwksUrl = $"{Environment.GetEnvironmentVariable("NESTRI_AUTH_JWKS_URL")}/.well-known/jwks.json";
+                var httpClient = new HttpClient();
+                var jwksJson = httpClient.GetStringAsync(jwksUrl).Result;
+                var jwks = JsonSerializer.Deserialize<JsonWebKeySet>(jwksJson);
+
+                // Return all keys or filter by kid if provided
+                if (string.IsNullOrEmpty(kid))
+                    return jwks?.Keys;
+                else
+                    return jwks?.Keys.Where(k => k.Kid == kid);
+            }
+        };
+
+        // Add logging for debugging
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                Console.WriteLine("Token successfully validated");
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -53,7 +84,7 @@ app.UseAuthorization();
 
 app.MapGet("/", () => "Hello World!");
 
-app.MapGet("/login", async (HttpContext context, SteamService steamService) =>
+app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamService) =>
 {
     // Validate JWT
     var jwtToken = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
