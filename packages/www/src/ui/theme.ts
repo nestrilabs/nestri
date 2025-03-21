@@ -241,6 +241,7 @@ const light = (() => {
         },
     };
 
+    const boxShadow = "0 0 0 1px rgba(19,21,23,0.08), 0 3.3px 2.7px rgba(0,0,0,.03),0 8.3px 6.9px rgba(0,0,0,.04),0 17px 14.2px rgba(0,0,0,.05),0 35px 29.2px rgba(0,0,0,.06),0px -4px 4px 0px rgba(0,0,0,.07) inset";
     return {
         gray,
         blue,
@@ -256,6 +257,7 @@ const light = (() => {
         focusBorder,
         focusColor,
         d1000,
+        boxShadow,
         brand,
         text
     };
@@ -403,6 +405,8 @@ const dark = (() => {
         },
     };
 
+    const boxShadow = "0 0 0 1px rgba(255,255,255,0.08), 0 3.3px 2.7px rgba(0,0,0,.1),0 8.3px 6.9px rgba(0,0,0,.13),0 17px 14.2px rgba(0,0,0,.17),0 35px 29.2px rgba(0,0,0,.22),0px -4px 4px 0px rgba(0,0,0,.04) inset";
+
     return {
         gray,
         blue,
@@ -419,6 +423,7 @@ const dark = (() => {
         focusColor,
         d1000,
         text,
+        boxShadow,
         brand
     };
 })()

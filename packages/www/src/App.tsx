@@ -6,6 +6,7 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
+import { PlayComponent } from './pages/play';
 import { styled } from "@macaron-css/solid";
 import { useStorage } from './providers/account';
 import { CreateTeamComponent } from './pages/new';
@@ -14,6 +15,7 @@ import { AuthProvider, useAuth } from './providers/auth';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
+import TestComponent from './pages/test';
 
 const Root = styled("div", {
     base: {
@@ -93,6 +95,7 @@ export const App: Component = () => {
                         // props.children
                     )}
                 >
+                    <Route path="play/:id" component={PlayComponent} />
                     <Route path="new" component={CreateTeamComponent} />
                     <Route
                         path="/"
