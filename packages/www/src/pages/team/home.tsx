@@ -1,7 +1,9 @@
 import { styled } from "@macaron-css/solid";
 import { Header } from "@nestri/www/pages/team/header";
+import { useSteam } from "@nestri/www/providers/steam";
 import { theme } from "@nestri/www/ui";
 import { FullScreen } from "@nestri/www/ui/layout";
+import { createEffect, onCleanup } from "solid-js";
 
 const OnboardingSection = styled("section", {
     base: {
@@ -164,6 +166,18 @@ const StepDotChild = styled("div", {
     }
 })
 export function HomeRoute() {
+
+    const steam = useSteam();
+
+    // Connect to the login stream when component mounts
+    createEffect(() => {
+        steam.client.loginStream.connect();
+
+        // Clean up on component unmount
+        onCleanup(() => {
+            steam.client.loginStream.disconnect();
+        });
+    });
     return (
         <>
             <Header />
@@ -201,7 +215,7 @@ export function HomeRoute() {
                             </StepTimeline>
                         </Step>
                     </Stepper> */}
-                    <HorizontalStepper>
+                    {/* <HorizontalStepper>
                         <HorizontalStep>
                             <HorizontalStepDot>
                                 <StepDotChild>
@@ -209,7 +223,20 @@ export function HomeRoute() {
                                 </StepDotChild>
                             </HorizontalStepDot>
                         </HorizontalStep>
-                    </HorizontalStepper>
+                    </HorizontalStepper> */}
+                    <div class="connection-status">
+                        Status: {steam.client.loginStream.isConnected() ? "Connected" : "Connecting..."}
+                    </div>
+
+                    <div class="qr-container">
+                        {/* <img
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent( || '')}`}
+                            alt="Steam Login QR Code"
+                            width="200"
+                            height="200"
+                        /> */}
+                        URL: {steam.client.loginStream.loginUrl()}
+                    </div>
                 </OnboardingSection>
             </Root>
         </>

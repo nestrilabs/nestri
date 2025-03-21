@@ -79,6 +79,11 @@ declare module "sst" {
       "type": "sst.aws.Aurora"
       "username": string
     }
+    "Steam": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
     "Storage": {
       "name": string
       "type": "sst.aws.Bucket"

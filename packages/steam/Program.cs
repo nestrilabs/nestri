@@ -53,11 +53,13 @@ app.UseAuthorization();
 
 app.MapGet("/", () => "Hello World!");
 
-app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamService) =>
+app.MapGet("/login", async (HttpContext context, SteamService steamService) =>
 {
     // Validate JWT
     var jwtToken = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
     var (isValid, userId, email) = await ValidateJwtToken(jwtToken);
+
+    Console.WriteLine($"User data: {userId}:{email}");
 
     if (!isValid)
     {
@@ -76,9 +78,9 @@ app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamS
     }
 
     // Set SSE headers
-    context.Response.Headers.Append("Content-Type", "text/event-stream");
-    context.Response.Headers.Append("Cache-Control", "no-cache");
     context.Response.Headers.Append("Connection", "keep-alive");
+    context.Response.Headers.Append("Cache-Control", "no-cache");
+    context.Response.Headers.Append("Content-Type", "text/event-stream");
     context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
 
     // Disable response buffering
@@ -138,23 +140,55 @@ async Task<(bool IsValid, string? UserId, string? Email)> ValidateJwtToken(strin
         var handler = new JwtSecurityTokenHandler();
         var jwtToken = handler.ReadJwtToken(token);
 
+        // Log all claims for debugging
+        // Console.WriteLine("JWT Claims:");
+        // foreach (var claim in jwtToken.Claims)
+        // {
+        //     Console.WriteLine($"  {claim.Type}: {claim.Value}");
+        // }
+
         // Validate token using JWKS
         var httpClient = new HttpClient();
         var jwksJson = await httpClient.GetStringAsync($"{jwksUrl}/.well-known/jwks.json");
         var jwks = JsonSerializer.Deserialize<JsonWebKeySet>(jwksJson);
 
-        // Here you would validate the token signature against the JWKS
-        // For simplicity, we'll just check the required claims
-
-        var email = jwtToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
-        var userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "userID")?.Value;
-
-        if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+        // Check that the issuer matches our expected authority
+        var issuer = jwtToken.Claims.FirstOrDefault(c => c.Type == "iss")?.Value;
+        if (issuer != jwksUrl)
         {
-            return (false, null, null);
+            Console.WriteLine($"Issuer mismatch: {issuer} vs {jwksUrl}");
+            // Consider if you need exact match or if the JWKS_URL is just the base URL
+            // If JWKS_URL is https://auth.example.com but issuer is https://auth.example.com/tenant
+            // you might want to check if issuer.StartsWith(jwksUrl) instead
         }
 
-        return (true, userId, email);
+        // Extract the properties claim which contains nested JSON
+        var propertiesClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "properties")?.Value;
+        if (!string.IsNullOrEmpty(propertiesClaim))
+        {
+            // Parse the nested JSON
+            var properties = JsonSerializer.Deserialize<Dictionary<string, string>>(propertiesClaim);
+
+            // Extract userID from properties
+            var email = properties?.GetValueOrDefault("email");
+            var userId = properties?.GetValueOrDefault("userID");
+
+            if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+            {
+                // Also check standard claims as fallback
+                userId = jwtToken.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+                email = jwtToken.Claims.FirstOrDefault(c => c.Type == "email")?.Value;
+
+                if (string.IsNullOrEmpty(userId) || string.IsNullOrEmpty(email))
+                {
+                    return (false, null, null);
+                }
+            }
+
+            return (true, userId, email);
+        }
+
+        return (false, null, null);
     }
     catch (Exception ex)
     {
