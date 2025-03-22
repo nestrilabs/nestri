@@ -16,10 +16,21 @@ export default $config({
         cloudflare: "5.49.0",
         random: "4.17.0",
         neon: "0.6.3",
+        command: "1.0.2",
       },
     };
   },
   async run() {
+    
+    $transform(sst.aws.Function, (args) => {
+      args.environment = $resolve([args.environment]).apply(([environment]) => {
+        return {
+          ...environment,
+          NODE_OPTIONS: "--experimental-websocket",
+        };
+      });
+    });
+
     const outputs = {};
     for (const value of readdirSync("./infra/")) {
       const result = await import("./infra/" + value);

@@ -1,0 +1,35 @@
+diff --git a/node_modules/@macaron-css/solid/.bun-tag-1514d668548fb0b3 b/.bun-tag-1514d668548fb0b3
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/node_modules/@macaron-css/solid/.bun-tag-9d48210b8d0a8094 b/.bun-tag-9d48210b8d0a8094
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/package.json b/package.json
+index c3f06bb43f13f07c712043f8e3beac3a0ea1b8fa..86af93a7f500de2117b91ee3424f3e109b1ea597 100644
+--- a/package.json
++++ b/package.json
+@@ -2,7 +2,6 @@
+   "name": "@macaron-css/solid",
+   "version": "1.5.3",
+   "license": "MIT",
+-  "type": "module",
+   "repository": {
+     "type": "git",
+     "url": "https://github.com/mokshit06/macaron.git",
+@@ -11,12 +10,14 @@
+   "exports": {
+     ".": {
+       "types": "./dist/index.d.mts",
+-      "import": "./dist/index.mjs"
++      "import": "./dist/index.mjs",
++      "require": "./dist/index.js"
+     },
+     "./dist/*": "./dist/*",
+     "./runtime": {
+       "types": "./dist/runtime.d.mts",
+-      "import": "./dist/runtime.mjs"
++      "import": "./dist/runtime.mjs",
++      "require": "./dist/runtime.js"
+     }
+   },
+   "dependencies": {

@@ -11,6 +11,7 @@ export const Button = styled("button", {
         lineHeight: "normal",
         fontFamily: theme.font.family.heading,
         textAlign: "center",
+        cursor: "pointer",
         transitionDelay: "0s, 0s",
         transitionDuration: "0.2s, 0.2s",
         transitionProperty: "background-color, border",

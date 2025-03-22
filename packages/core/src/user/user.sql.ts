@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { id, timestamps } from "../drizzle/types";
-import { integer, pgTable, text, uniqueIndex, varchar,json } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, uniqueIndex, varchar, json } from "drizzle-orm/pg-core";
 
 // Whether this user is part of the Nestri Team, comes with privileges
 export const UserFlags = z.object({
@@ -15,13 +15,13 @@ export const userTable = pgTable(
         ...id,
         ...timestamps,
         avatarUrl: text("avatar_url"),
-        email: varchar("email", { length: 255 }).notNull(),
         name: varchar("name", { length: 255 }).notNull(),
         discriminator: integer("discriminator").notNull(),
+        email: varchar("email", { length: 255 }).notNull(),
         polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique(),
         flags: json("flags").$type<UserFlags>().default({}),
     },
     (user) => [
         uniqueIndex("user_email").on(user.email),
-    ],
+    ]
 );

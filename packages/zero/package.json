@@ -1,0 +1,12 @@
+{
+  "name": "@nestri/zero",
+  "version": "0.0.0",
+  "type": "module",
+  "dependencies": {
+    "@rocicorp/zero": "*",
+    "@nestri/core": "*"
+  },
+  "scripts": {
+    "dev": "zero-deploy-permissions --output-format=sql --output-file=.permissions.sql && zero-deploy-permissions && zero-cache"
+  }
+}

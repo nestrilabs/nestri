@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { Polar } from "../polar";
 import { Team } from "../team";
 import { bus } from "sst/aws/bus";
 import { Common } from "../common";
+import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
 import { createEvent } from "../event";
@@ -188,7 +188,7 @@ export module User {
             await tx
                 .update(userTable)
                 .set({
-                    timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                    timeDeleted: sql`now()`,
                 })
                 .where(and(eq(userTable.id, input)))
                 .execute();

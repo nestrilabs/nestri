@@ -1,0 +1,26 @@
+diff --git a/aws-data-api/pg/driver.cjs b/aws-data-api/pg/driver.cjs
+index d57ac748a6a1e206e1b47375d7b9e0d727f59413..23fa1b3f26ef3977e346bbb383643d4a54e83db2 100644
+--- a/aws-data-api/pg/driver.cjs
++++ b/aws-data-api/pg/driver.cjs
+@@ -93,7 +93,7 @@ function construct(client, config) {
+   return db;
+ }
+ function drizzle(...params) {
+-  if (params[0] instanceof import_client_rds_data.RDSDataClient) {
++  if (params[0].constructor.name === "RDSDataClient") {
+     return construct(params[0], params[1]);
+   }
+   if (params[0].client) {
+diff --git a/aws-data-api/pg/driver.js b/aws-data-api/pg/driver.js
+index a83341a2bbe741d104d50a22d66ae88dba649ed4..d0e2b0bbeb6eea0a28b440acf391f463e5e90295 100644
+--- a/aws-data-api/pg/driver.js
++++ b/aws-data-api/pg/driver.js
+@@ -71,7 +71,7 @@ function construct(client, config) {
+   return db;
+ }
+ function drizzle(...params) {
+-  if (params[0] instanceof RDSDataClient) {
++  if (params[0].constructor.name === "RDSDataClient") {
+     return construct(params[0], params[1]);
+   }
+   if (params[0].client) {

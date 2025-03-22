@@ -12,7 +12,7 @@ export const memberTable = pgTable(
     },
     (table) => [
         ...teamIndexes(table),
-        uniqueIndex("member_email").on(table.teamID, table.email),
         index("email_global").on(table.email),
+        uniqueIndex("member_email").on(table.teamID, table.email),
     ],
 );

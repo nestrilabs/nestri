@@ -1,15 +1,16 @@
 import { theme } from "./theme";
+import { utility } from "./utility";
+import { Container } from "./layout";
 import { styled } from "@macaron-css/solid"
 import { CSSProperties } from "@macaron-css/core";
-import { ComponentProps, createMemo, For, JSX, Show, splitProps } from "solid-js";
-import { Container } from "./layout";
-import { utility } from "./utility";
+import { ComponentProps, For, JSX, Show, splitProps } from "solid-js";
 
 // FIXME: Make sure the focus ring goes to red when the input is invalid
 
 export const inputStyles: CSSProperties = {
     lineHeight: theme.font.lineHeight,
     appearance: "none",
+    width: "100%",
     fontSize: theme.font.size.sm,
     borderRadius: theme.borderRadius,
     padding: `0 ${theme.space[3]}`,
@@ -57,12 +58,7 @@ export const Root = styled("label", {
                 color: theme.color.gray.d900
             },
             danger: {
-                color: theme.color.red.d900,
-                // selectors: {
-                //     "&:has(input)": {
-                //         ...inputDangerFocusStyles
-                //     }
-                // }
+                color: theme.color.gray.d900,
             },
         },
     },
@@ -88,6 +84,12 @@ export const Input = styled("input", {
         "::placeholder": {
             color: theme.color.gray.d800
         },
+        selectors: {
+            "[data-type='url'] &": {
+                borderTopLeftRadius: 0,
+                borderBottomLeftRadius: 0,
+            }
+        }
         // ":invalid":{
         //     ...inputDangerFocusStyles
         // },
@@ -276,7 +278,6 @@ const Badge = styled("div", {
         padding: "0 6px",
         fontSize: theme.font.size.xs
     }
-
 })
 
 export function Select(props: SelectProps) {

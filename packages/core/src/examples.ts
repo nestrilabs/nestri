@@ -16,6 +16,7 @@ export module Examples {
         id: Id("team"),
         name: "John Does' Team",
         slug: "john_doe",
+        planType: "BYOG" as const
     }
 
     export const Member = {
