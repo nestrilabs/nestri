@@ -5,6 +5,7 @@ using System.IdentityModel.Tokens.Jwt;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 
 // FYI: Am very new to C# if you find any bugs or have any feedback hit me up :P
 // TBH i dunno what this code does, only God and Claude know(in the slightest) what it does. 
@@ -79,6 +80,9 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddSingleton<SteamService>();
 
+builder.Services.AddDbContext<SteamDbContext>(options =>
+    options.UseSqlite($"Data Source=/tmp/steam.db"));
+
 var app = builder.Build();
 
 app.UseCors();
@@ -87,6 +91,39 @@ app.UseAuthorization();
 
 
 app.MapGet("/", () => "Hello World!");
+
+app.MapGet("/status", [Authorize] async (HttpContext context, SteamService steamService) =>
+{
+    // Validate JWT
+    var jwtToken = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+    var (isValid, userId, email) = await ValidateJwtToken(jwtToken);
+
+    if (!isValid)
+    {
+        return Results.Unauthorized();
+    }
+
+    // Get team ID
+    var teamId = context.Request.Headers["x-nestri-team"].ToString();
+    if (string.IsNullOrEmpty(teamId))
+    {
+        return Results.BadRequest("Missing team ID");
+    }
+
+    // Check if user is authenticated with Steam
+    var userInfo = await steamService.GetUserInfoFromStoredCredentials(teamId, userId!);
+    if (userInfo == null)
+    {
+        return Results.Ok(new { isAuthenticated = false });
+    }
+
+    return Results.Ok(new
+    {
+        isAuthenticated = true,
+        steamId = userInfo.SteamId,
+        username = userInfo.Username
+    });
+});
 
 app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamService) =>
 {
@@ -130,7 +167,7 @@ app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamS
     var cancellationToken = context.RequestAborted;
 
     // Start Steam authentication
-    await steamService.StartAuthentication(clientId);
+    await steamService.StartAuthentication(teamId, userId!);
 
     // Register for updates
     var subscription = steamService.Subscribe(clientId, async (url) =>
@@ -164,6 +201,73 @@ app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamS
     {
         steamService.Unsubscribe(clientId, subscription);
     }
+});
+
+app.MapGet("/user", [Authorize] async (HttpContext context, SteamService steamService) =>
+{
+    // Validate JWT
+    var jwtToken = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+    var (isValid, userId, email) = await ValidateJwtToken(jwtToken);
+
+    if (!isValid)
+    {
+        return Results.Unauthorized();
+    }
+
+    // Get team ID
+    var teamId = context.Request.Headers["x-nestri-team"].ToString();
+    if (string.IsNullOrEmpty(teamId))
+    {
+        return Results.BadRequest("Missing team ID");
+    }
+
+    // Get user info from stored credentials
+    var userInfo = await steamService.GetUserInfoFromStoredCredentials(teamId, userId);
+    if (userInfo == null)
+    {
+        return Results.NotFound(new { error = "User not authenticated with Steam" });
+    }
+
+    return Results.Ok(new
+    {
+        steamId = userInfo.SteamId,
+        username = userInfo.Username
+    });
+});
+
+app.MapPost("/logout", [Authorize] async (HttpContext context, SteamService steamService) =>
+{
+    // Validate JWT
+    var jwtToken = context.Request.Headers["Authorization"].ToString().Replace("Bearer ", "");
+    var (isValid, userId, email) = await ValidateJwtToken(jwtToken);
+
+    if (!isValid)
+    {
+        return Results.Unauthorized();
+    }
+
+    // Get team ID
+    var teamId = context.Request.Headers["x-nestri-team"].ToString();
+    if (string.IsNullOrEmpty(teamId))
+    {
+        return Results.BadRequest("Missing team ID");
+    }
+
+    // Delete the stored credentials
+    using var scope = context.RequestServices.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
+
+    var credentials = await dbContext.SteamUserCredentials
+        .FirstOrDefaultAsync(c => c.TeamId == teamId && c.UserId == userId);
+
+    if (credentials != null)
+    {
+        dbContext.SteamUserCredentials.Remove(credentials);
+        await dbContext.SaveChangesAsync();
+        return Results.Ok(new { message = "Steam authentication revoked" });
+    }
+
+    return Results.NotFound(new { error = "No Steam authentication found" });
 });
 
 // JWT validation function
