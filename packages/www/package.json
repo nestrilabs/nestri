@@ -30,6 +30,7 @@
     "@openauthjs/openauth": "*",
     "@openauthjs/solid": "0.0.0-20250311201457",
     "@rocicorp/zero": "*",
+    "@solid-primitives/event-listener": "^2.4.0",
     "@solid-primitives/storage": "^4.3.1",
     "@solidjs/router": "^0.15.3",
     "eventsource": "^3.0.5",
