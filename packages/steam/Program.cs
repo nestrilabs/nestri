@@ -170,21 +170,22 @@ app.MapGet("/login", [Authorize] async (HttpContext context, SteamService steamS
     await steamService.StartAuthentication(teamId, userId!);
 
     // Register for updates
-    var subscription = steamService.Subscribe(clientId, async (url) =>
+    var subscription = steamService.SubscribeToEvents(clientId, async (evt) =>
     {
-        string eventMessage = $"data: {url}\n\n";
-        byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
-
         try
         {
+            // Serialize the event to SSE format
+            string eventMessage = evt.Serialize();
+            byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
+
             await context.Response.Body.WriteAsync(buffer, 0, buffer.Length, cancellationToken);
             await context.Response.Body.FlushAsync(cancellationToken);
 
-            Console.WriteLine($"Sent QR URL to client {clientId}");
+            Console.WriteLine($"Sent event type '{evt.Type}' to client {clientId}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error sending to client {clientId}: {ex.Message}");
+            Console.WriteLine($"Error sending event to client {clientId}: {ex.Message}");
         }
     });
 
