@@ -60,7 +60,7 @@ public class SteamClientHandler
     public SteamClientHandler(string clientId)
     {
         _clientId = clientId;
-        _steamClient = new SteamClient();
+        _steamClient = new SteamClient(SteamConfiguration.Create(e => e.WithConnectionTimeout(TimeSpan.FromSeconds(120))));
         _manager = new CallbackManager(_steamClient);
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
         
