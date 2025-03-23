@@ -245,9 +245,9 @@ export function FormField(props: FormFieldProps) {
 }
 
 type SelectProps = {
-    ref: (element: HTMLInputElement) => void;
     name: string;
     value: any;
+    ref: (element: HTMLInputElement) => void;
     onInput: JSX.EventHandler<HTMLInputElement, InputEvent>;
     onChange: JSX.EventHandler<HTMLInputElement, Event>;
     onBlur: JSX.EventHandler<HTMLInputElement, FocusEvent>;

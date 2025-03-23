@@ -180,12 +180,12 @@ export function SteamRoute() {
     const steam = useSteam();
 
     createEffect(() => {
-        steam.client.loginStream.connect();
+        // steam.client.loginStream.connect();
 
         // Clean up on component unmount
-        onCleanup(() => {
-            steam.client.loginStream.disconnect();
-        });
+        // onCleanup(() => {
+        //     steam.client.loginStream.disconnect();
+        // });
     });
 
     return (
@@ -226,7 +226,7 @@ export function SteamRoute() {
                                 </SteamLogoContainer>
                                 <Text align="center" style={{ "letter-spacing": "-0.3px" }} size="base" >
                                     {/* After connecting your Steam account, your games will appear here */}
-                                    URL: {steam.client.loginStream.loginUrl()}
+                                    {/* URL: {steam.client.loginStream.loginUrl()} */}
                                 </Text>
                             </EmptyState>
                         </GamesContainer>

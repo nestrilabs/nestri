@@ -1,18 +1,20 @@
-import { theme } from "@nestri/www/ui";
+import { FullScreen, theme } from "@nestri/www/ui";
 import { styled } from "@macaron-css/solid";
 import { Header } from "@nestri/www/pages/team/header";
 import { useSteam } from "@nestri/www/providers/steam";
+import { Modal } from "@nestri/www/ui/modal";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 
 const Root = styled("div", {
     base: {
         padding: theme.space[4],
         backgroundColor: theme.color.background.d200,
+        display: "flex",
     },
 });
 
 export function HomeRoute() {
-    
+
     // const steam = useSteam();
     // const [loginUrl, setLoginUrl] = createSignal<string | null>(null);
     // const [loginStatus, setLoginStatus] = createSignal<string | null>("Not connected");
@@ -59,9 +61,16 @@ export function HomeRoute() {
     return (
         <>
             <Header />
-            <Root>
-               
-            </Root>
+            <FullScreen inset="header">
+                <Modal.Root>
+                    <Modal.Trigger>
+                        Open Modal
+                    </Modal.Trigger>
+                    <Modal.Panel>
+                        Blah blah blah
+                    </Modal.Panel>
+                </Modal.Root>
+            </FullScreen>
         </>
     )
 }

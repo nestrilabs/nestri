@@ -204,9 +204,12 @@
         "@openauthjs/openauth": "*",
         "@openauthjs/solid": "0.0.0-20250311201457",
         "@rocicorp/zero": "*",
+        "@solid-primitives/event-listener": "^2.4.0",
         "@solid-primitives/storage": "^4.3.1",
         "@solidjs/router": "^0.15.3",
+        "body-scroll-lock-upgrade": "^1.1.0",
         "eventsource": "^3.0.5",
+        "focus-trap": "^7.6.4",
         "hono": "^4.7.4",
         "modern-normalize": "^3.0.1",
         "solid-js": "^1.9.5",
@@ -1286,6 +1289,8 @@
     "@smithy/util-waiter": ["@smithy/util-waiter@4.0.2", "", { "dependencies": { "@smithy/abort-controller": "^4.0.1", "@smithy/types": "^4.1.0", "tslib": "^2.6.2" } }, "sha512-piUTHyp2Axx3p/kc2CIJkYSv0BAaheBQmbACZgQSSfWUumWNW+R1lL+H9PDBxKJkvOeEX+hKYEFiwO8xagL8AQ=="],
 
     "@socket.io/component-emitter": ["@socket.io/component-emitter@3.1.2", "", {}, "sha512-9BCxFwvbGg/RsZK9tjXd8s4UcwR0MWeFQ1XEKIQVVvAGJyINdrqKMcTRyLoK8Rse1GjzLV9cwjWV1olXRWEXVA=="],
+
+    "@solid-primitives/event-listener": ["@solid-primitives/event-listener@2.4.0", "", { "dependencies": { "@solid-primitives/utils": "^6.3.0" }, "peerDependencies": { "solid-js": "^1.6.12" } }, "sha512-TSfR1PNTfojFEYGSxSMCnUhXsaYWBo4p+cm73QmWODa9YnaQAk6PB7VjzG2bOT2D817VlvuOqTj0Qdq+MZrdGg=="],
 
     "@solid-primitives/storage": ["@solid-primitives/storage@4.3.1", "", { "dependencies": { "@solid-primitives/utils": "^6.3.0" }, "peerDependencies": { "@tauri-apps/plugin-store": "*", "solid-js": "^1.6.12" }, "optionalPeers": ["@tauri-apps/plugin-store"] }, "sha512-xAJsY2pvXrAaCai4N2grmWY3xh5om9suTDVzGkRF5JBpDzs3Apk+xIovdTErbW0iCzXIEefENXb9xmSzdjuLYA=="],
 
