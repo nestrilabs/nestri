@@ -39,10 +39,10 @@ globalStyle("html", {
     // Hardcode colors
     "@media": {
         "(prefers-color-scheme: light)": {
-            backgroundColor: "#ebebeb",
+            backgroundColor: "rgba(255,255,255,0.8)",
         },
         "(prefers-color-scheme: dark)": {
-            backgroundColor: "#171717",
+            backgroundColor: "rgb(19,21,23)",
         },
     },
 });
