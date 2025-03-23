@@ -218,9 +218,11 @@ const light = (() => {
     const brand = "#FF4F01"
 
     const background = {
-        d200: 'oklch(from #f5f5f5 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)',
-        d100: '#f5f5f5',
+        d200: 'rgba(255,255,255,0.8)',
+        d100: '#f4f5f6',
     };
+
+    const headerGradient = "linear-gradient(rgba(66, 144, 243, 0.2) 0%, rgba(206, 127, 243, 0.1) 52.58%, rgba(248, 236, 215, 0) 100%)"
 
     const contrastFg = '#ffffff';
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(0,0,0,0.16)`;
@@ -259,6 +261,7 @@ const light = (() => {
         d1000,
         brand,
         text,
+        headerGradient,
         hoverColor
     };
 })()
@@ -382,14 +385,15 @@ const dark = (() => {
     const brand = "#FF4F01"
 
     const background = {
-        d100: "oklch(from #171717 calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c h)",
-        d200: '#171717',
+        d100: "rgba(255,255,255,0.04)",
+        d200: 'rgb(19,21,23)',
     };
 
     const contrastFg = '#ffffff';
     const focusBorder = `0 0 0 1px ${grayAlpha.d600}, 0px 0px 0px 4px rgba(255,255,255,0.24)`;
     const focusColor = blue.d900
     const hoverColor = "hsl(0,0%,80%)"
+    const headerGradient = "linear-gradient(rgba(66, 144, 243, 0.2) 0%, rgba(239, 148, 225, 0.1) 50%, rgba(191, 124, 7, 0) 100%)"
 
     const text = {
         primary: {
@@ -423,6 +427,7 @@ const dark = (() => {
         d1000,
         text,
         brand,
+        headerGradient,
         hoverColor
     };
 })()

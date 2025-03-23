@@ -123,11 +123,8 @@ export const Input = styled("input", {
 export const InputRadio = styled("input", {
     base: {
         padding: 0,
-        // borderRadius: 0,
         WebkitAppearance: "none",
         appearance: "none",
-        /* For iOS < 15 to remove gradient background */
-        backgroundColor: theme.color.background.d100,
         /* Not removed via appearance */
         margin: 0,
         font: "inherit",
@@ -181,6 +178,7 @@ const InputLabel = styled("label", {
         borderColor: theme.color.gray.d400,
         color: theme.color.gray.d800,
         backgroundColor: theme.color.background.d100,
+        transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
         position: "relative",
         display: "flex",
         alignItems: "center",
@@ -199,7 +197,8 @@ const InputLabel = styled("label", {
             borderBottomLeftRadius: theme.borderRadius,
         },
         ":hover": {
-            backgroundColor: theme.color.background.d200,
+            backgroundColor: theme.color.grayAlpha.d200,
+            color: theme.color.d1000.gray
         },
         selectors: {
             "&:has(input:checked)": {
