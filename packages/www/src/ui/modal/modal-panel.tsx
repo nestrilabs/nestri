@@ -29,7 +29,7 @@ export const HModalPanel = (props: ComponentProps<'dialog'>) => {
         const dialog = panelRef();
         if (!dialog) return;
 
-        if (context.showSig()) {
+        if (context.show()) {
             // Handle iOS scroll position issue
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
             let originalRAF;
@@ -100,9 +100,9 @@ export const HModalPanel = (props: ComponentProps<'dialog'>) => {
             id={`${context.localId}-root`}
             aria-labelledby={`${context.localId}-title`}
             aria-describedby={`${context.localId}-description`}
-            data-state={context.showSig() ? 'open' : 'closed'}
-            data-open={context.showSig() ? '' : undefined}
-            data-closed={!context.showSig() ? '' : undefined}
+            data-state={context.show() ? 'open' : 'closed'}
+            data-open={context.show() ? '' : undefined}
+            data-closed={!context.show() ? '' : undefined}
             role={context.alert === true ? 'alertdialog' : 'dialog'}
             onKeyDown={handleKeyDown}
             ref={setPanelRef}

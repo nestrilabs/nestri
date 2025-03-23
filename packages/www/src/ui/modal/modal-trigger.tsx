@@ -12,9 +12,9 @@ export const HModalTrigger = (props: ComponentProps<"button">) => {
         <button
             aria-haspopup="dialog"
             aria-label="Open Theme Customization Panel"
-            aria-expanded={modal.showSig()}
-            data-open={modal.showSig() ? '' : undefined}
-            data-closed={!modal.showSig() ? '' : undefined}
+            aria-expanded={modal.show()}
+            data-open={modal.show() ? '' : undefined}
+            data-closed={!modal.show() ? '' : undefined}
             onClick={[handleClick, props.onClick]}
             {...props}
         >

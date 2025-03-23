@@ -11,7 +11,7 @@ export function useModal() {
 export type ModalContext = {
   // core state
   localId: string;
-  showSig: Accessor<boolean>;
+  show: Accessor<boolean>;
   setShow: Setter<boolean>;
   onShow?: () => void;
   onClose?: () => void;

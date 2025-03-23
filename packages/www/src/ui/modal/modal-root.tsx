@@ -22,10 +22,10 @@ export const HModalRoot = (props: ModalRootProps) => {
     ]);
 
     const [defaultShowSig, setDefaultShowSig] = createSignal<boolean>(false);
-    const showSig = props["bind:show"] ?? defaultShowSig;
+    const show = props["bind:show"] ?? defaultShowSig;
 
     return (
-        <ModalContext.Provider value={{ ...modalProps, setShow: setDefaultShowSig, showSig, localId }} >
+        <ModalContext.Provider value={{ ...modalProps, setShow: setDefaultShowSig, show, localId }} >
             <div {...divProps}>
                 {props.children}
             </div>
