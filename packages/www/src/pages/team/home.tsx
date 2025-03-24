@@ -9,20 +9,6 @@ import { QRCode } from "@nestri/www/ui/custom-qr";
 import { globalStyle, keyframes } from "@macaron-css/core";
 import { A } from "@solidjs/router";
 
-const Root = styled("div", {
-    base: {
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        textAlign: "center",
-        paddingTop: `calc(1px + ${theme.headerHeight.root})`,
-        width: "100%",
-        minHeight: `calc(100dvh - ${theme.headerHeight.root})`,
-        gap: theme.space[3],
-        justifyContent: "center"
-    },
-});
-
 const EmptyState = styled("div", {
     base: {
         padding: "0 40px",
@@ -123,6 +109,122 @@ const LogoIcon = styled("svg", {
     }
 })
 
+const LastPlayedWrapper = styled("div", {
+    base: {
+        position: "relative",
+        width: "100%",
+        justifyContent: "center",
+        minHeight: 700,
+        height: "50vw",
+        maxHeight: 800,
+        WebkitBoxPack: "center",
+        display: "flex",
+        flexDirection: "column",
+        ":after": {
+            content: "",
+            pointerEvents: "none",
+            userSelect: "none",
+            background: `linear-gradient(to bottom,transparent,${theme.color.background.d200})`,
+            width: "100%",
+            left: 0,
+            position: "fixed",
+            bottom: -1,
+            zIndex: 3,
+            height: 320,
+            backdropFilter: "blur(2px)",
+            WebkitBackdropFilter: "blur(1px)",
+            WebkitMaskImage: `linear-gradient(to top,${theme.color.background.d200} 25%,transparent)`,
+            maskImage: `linear-gradient(to top,${theme.color.background.d200} 25%,transparent)`
+        }
+    }
+})
+
+const LastPlayedFader = styled("div", {
+    base: {
+        position: "absolute",
+        width: "100%",
+        height: "3rem",
+        backgroundColor: "rgba(0,0,0,.08)",
+        mixBlendMode: "multiply",
+        backdropFilter: "saturate(160%) blur(60px)",
+        WebkitBackdropFilter: "saturate(160%) blur(60px)",
+        maskImage: "linear-gradient(to top,rgba(0,0,0,.15) 0%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)",
+        // background: "linear-gradient(rgb(0, 0, 0) 0%, rgba(0, 0, 0, 0.3) 50%, rgba(10, 0, 0, 0.15) 65%, rgba(0, 0, 0, 0.075) 75.5%, rgba(0, 0, 0, 0.035) 82.85%, rgba(0, 0, 0, 0.02) 88%, rgba(0, 0, 0, 0) 100%)",
+        opacity: 0.6,
+        // backdropFilter: "blur(16px)",
+        pointerEvents: "none",
+        zIndex: 1,
+        top: 0,
+        left: 0,
+    }
+})
+
+const BackgroundImage = styled("div", {
+    base: {
+        position: "absolute",
+        inset: 0,
+        backgroundColor: theme.color.background.d200,
+        backgroundSize: "cover",
+        zIndex: 0,
+        transitionDuration: "0.2s",
+        transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
+        transitionProperty: "opacity",
+        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/ss_bac60bacbf5da8945103648c08d27d5e202444ca.jpg)"
+        // backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/ss_668dafe477743f8b50b818d5bbfcec669e9ba93e.jpg)"
+        // backgroundImage: "url(https://store-images.s-microsoft.com/image/apps.58752.13942869738016799.078aba97-2f28-440f-97b6-b852e1af307a.95fdf1a1-efd6-4938-8100-8abae91695d6?q=90&w=1280&h=720)"
+    }
+})
+
+const LogoBackgroundImage = styled("div", {
+    base: {
+        position: "absolute",
+        top: "2rem",
+        height: 240,
+        // width: 320,
+        aspectRatio: "640 / 320",
+        left: "50%",
+        transform: "translate(-50%,0%)",
+        backgroundSize: "cover",
+        zIndex: 1,
+        transitionDuration: "0.2s",
+        transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
+        transitionProperty: "opacity",
+        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/logo_2x.png)"
+    }
+})
+
+const Material = styled("div", {
+    base: {
+        backdropFilter: "saturate(160%) blur(60px)",
+        WebkitBackdropFilter: "saturate(160%) blur(60px)",
+        backgroundSize: "cover",
+        backgroundRepeat: "no-repeat",
+        position: "absolute",
+        borderRadius: 6,
+        left: 0,
+        top: 0,
+        height: "100%",
+        width: "100%",
+        maskImage: "linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 40.82%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)",
+        WebkitMaskImage: "linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 40.82%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)"
+    }
+})
+
+const JoeColor = styled("div", {
+    base: {
+        backgroundColor: "rgba(0,0,0,.08)",
+        mixBlendMode: "multiply",
+        position: "absolute",
+        borderRadius: 6,
+        left: 0,
+        top: 0,
+        height: "100%",
+        width: "100%",
+        maskImage: "linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 40.82%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)",
+        WebkitMaskImage: "linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 40.82%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)"
+    }
+})
+
 export function HomeRoute() {
 
     // const steam = useSteam();
@@ -170,9 +272,9 @@ export function HomeRoute() {
 
     return (
         <>
-            <Header>
-                <Root>
-                    <EmptyState
+            <Header whiteColor>
+                <FullScreen >
+                    {/* <EmptyState
                         style={{
                             "--nestri-qr-dot-color": theme.color.d1000.gray,
                             "--nestri-body-background": theme.color.gray.d100
@@ -196,8 +298,15 @@ export function HomeRoute() {
                         </QRWrapper>
                         <EmptyStateHeader>Sign in to your Steam account</EmptyStateHeader>
                         <EmptyStateSubHeader>Use your Steam Mobile App to sign in via QR code.&nbsp;<SteamMobileLink href="https://store.steampowered.com/mobile" target="_blank">Learn More<svg data-testid="geist-icon" height="20" stroke-linejoin="round" viewBox="0 0 16 16" width="20" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.5 9.75V11.25C11.5 11.3881 11.3881 11.5 11.25 11.5H4.75C4.61193 11.5 4.5 11.3881 4.5 11.25L4.5 4.75C4.5 4.61193 4.61193 4.5 4.75 4.5H6.25H7V3H6.25H4.75C3.7835 3 3 3.7835 3 4.75V11.25C3 12.2165 3.7835 13 4.75 13H11.25C12.2165 13 13 12.2165 13 11.25V9.75V9H11.5V9.75ZM8.5 3H9.25H12.2495C12.6637 3 12.9995 3.33579 12.9995 3.75V6.75V7.5H11.4995V6.75V5.56066L8.53033 8.52978L8 9.06011L6.93934 7.99945L7.46967 7.46912L10.4388 4.5H9.25H8.5V3Z" fill="currentColor"></path></svg></SteamMobileLink></EmptyStateSubHeader>
-                    </EmptyState>
-                </Root>
+                    </EmptyState> */}
+                    <LastPlayedWrapper>
+                        <LastPlayedFader />
+                        <LogoBackgroundImage />
+                        <BackgroundImage />
+                        {/* <Material /> */}
+                        {/* <JoeColor /> */}
+                    </LastPlayedWrapper>
+                </FullScreen>
             </Header>
         </>
     )

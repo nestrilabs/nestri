@@ -10,7 +10,7 @@ import { Match, ParentProps, Show, Switch, useContext } from "solid-js";
 const PageWrapper = styled("div", {
     base: {
         minHeight: "100dvh",
-        paddingBottom: "4rem",
+        // paddingBottom: "4rem",
         backgroundColor: theme.color.background.d200
     }
 })
@@ -152,7 +152,7 @@ const NavLink = styled(A, {
         lineHeight: 1.5,
         fontSize: theme.font.size.sm,
         fontWeight: theme.font.weight.regular,
-        transition:"all 0.3s cubic-bezier(0.4,0,0.2,1)",
+        transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
         ":hover": {
             color: theme.color.d1000.gray
         }
@@ -164,7 +164,7 @@ const NavWrapper = styled("div", {
         // borderBottom: "1px solid white",
         zIndex: 10,
         position: "fixed",
-        backdropFilter: "blur(16px)",
+        backdropFilter: "saturate(60%) blur(3px)",
         height: theme.headerHeight.root,
         transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
         width: "100%",
@@ -196,13 +196,13 @@ const Nav = styled("nav", {
     }
 })
 
-export function Header(props: ParentProps) {
+export function Header(props: { whiteColor?: boolean } & ParentProps) {
     const team = useContext(TeamContext)
     const account = useAccount()
     return (
         <PageWrapper>
-            <NavWrapper>
-                <Background />
+            <NavWrapper style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }} >
+                {/* <Background /> */}
                 <Nav>
                     <Container space="4" vertical="center">
                         <Show when={team}
@@ -256,7 +256,7 @@ export function Header(props: ParentProps) {
                                 </LineSvg>
                                 <TeamRoot>
                                     <Avatar size={21} name={team!().slug} />
-                                    <TeamLabel>{team!().name}</TeamLabel>
+                                    <TeamLabel style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }}>{team!().name}</TeamLabel>
                                     <Switch>
                                         <Match when={team!().planType === "BYOG"}>
                                             <Badge style={{ "background-color": theme.color.purple.d700 }}>

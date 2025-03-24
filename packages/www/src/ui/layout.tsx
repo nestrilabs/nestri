@@ -3,18 +3,20 @@ import { styled } from "@macaron-css/solid";
 
 export const FullScreen = styled("div", {
     base: {
-        inset: 0,
         display: "flex",
-        position: "fixed",
+        flexDirection: "column",
         alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: theme.color.background.d200,
+        textAlign: "center",
+        width: "100%",
+        gap: theme.space[3],
+        justifyContent: "center"
     },
     variants: {
         inset: {
             none: {},
             header: {
-                top: theme.headerHeight.root,
+                paddingTop: `calc(1px + ${theme.headerHeight.root})`,
+                minHeight: `calc(100dvh - ${theme.headerHeight.root})`,
             },
         },
     },
