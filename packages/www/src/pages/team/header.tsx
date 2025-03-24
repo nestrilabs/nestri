@@ -154,7 +154,6 @@ const NavLink = styled(A, {
         fontWeight: theme.font.weight.regular,
         transition:"all 0.3s cubic-bezier(0.4,0,0.2,1)",
         ":hover": {
-            // backgroundColor: theme.color.gray.d200,
             color: theme.color.d1000.gray
         }
     }
@@ -164,7 +163,9 @@ const NavWrapper = styled("div", {
     base: {
         // borderBottom: "1px solid white",
         zIndex: 10,
+        position: "fixed",
         backdropFilter: "blur(16px)",
+        height: theme.headerHeight.root,
         transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
         width: "100%",
         backgroundColor: "transparent"

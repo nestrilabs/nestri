@@ -218,8 +218,8 @@ const light = (() => {
     const brand = "#FF4F01"
 
     const background = {
-        d200: 'rgba(255,255,255,0.8)',
-        d100: '#f4f5f6',
+        d100: 'rgba(255,255,255,0.8)',
+        d200: '#f4f5f6',
     };
 
     const headerGradient = "linear-gradient(rgba(66, 144, 243, 0.2) 0%, rgba(206, 127, 243, 0.1) 52.58%, rgba(248, 236, 215, 0) 100%)"

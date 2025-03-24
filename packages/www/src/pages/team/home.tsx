@@ -5,6 +5,8 @@ import { useSteam } from "@nestri/www/providers/steam";
 import { Modal } from "@nestri/www/ui/modal";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { Text } from "@nestri/www/ui/text"
+import { QRCode } from "@nestri/www/ui/custom-qr";
+import { globalStyle, keyframes } from "@macaron-css/core";
 
 const Root = styled("div", {
     base: {
@@ -12,66 +14,151 @@ const Root = styled("div", {
         flexDirection: "column",
         alignItems: "center",
         textAlign: "center",
-        paddingTop:"calc(1px + 3.25rem)",
-        width:"100%",
-        height:"100%",
+        paddingTop: `calc(1px + ${theme.headerHeight.root})`,
+        width: "100%",
+        minHeight: `calc(100dvh - ${theme.headerHeight.root})`,
         gap: theme.space[3],
-        // maxWidth: 380
+        justifyContent: "center"
     },
 });
 
-const Heading = styled("h1", {
+const EmptyState = styled("div", {
     base: {
-        fontFamily: theme.font.family.heading,
-        fontSize: theme.font.size["2xl"]
-    }
-})
-
-const SubHeading = styled("span", {
-    base: {
-        fontSize: theme.font.size.base,
-        color: theme.color.gray.d900,
-        lineHeight: 1.2
-    }
-})
-
-const QRButton = styled("button", {
-    base: {
-        height: 40,
-        borderRadius: theme.borderRadius,
-        backgroundColor: theme.color.d1000.gray,
-        color: theme.color.gray.d100,
-        fontSize: theme.font.size.sm,
-        textWrap: "nowrap",
-        border: "1px solid transparent",
-        padding: `${theme.space[2]} ${theme.space[4]}`,
-        letterSpacing: 0.1,
-        lineHeight: "1.25rem",
-        fontFamily: theme.font.family.body,
-        fontWeight: theme.font.weight.medium,
-        cursor: "pointer",
-        transitionDelay: "0s, 0s",
-        transitionDuration: "0.2s, 0.2s",
-        transitionProperty: "background-color, border",
-        transitionTimingFunction: "ease-out, ease-out",
-        display: "inline-flex",
-        gap: theme.space[2],
+        padding: "0 40px",
+        display: "flex",
+        gap: 10,
+        flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        ":disabled": {
-            pointerEvents: "none",
-        },
-        ":hover": {
-            background: theme.color.hoverColor
-        }
+        margin: "auto"
     }
 })
 
-const ButtonText = styled("span", {
+const EmptyStateHeader = styled("h2", {
     base: {
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
+        textAlign: "center",
+        fontSize: theme.font.size["2xl"],
+        fontFamily: theme.font.family.heading,
+        fontWeight: theme.font.weight.medium,
+        letterSpacing: -0.5,
+    }
+})
+
+const EmptyStateSubHeader = styled("p", {
+    base: {
+        fontWeight: theme.font.weight.regular,
+        color: theme.color.gray.d900,
+        fontSize: theme.font.size["lg"],
+        textAlign: "center",
+        maxWidth: 380,
+        letterSpacing: -0.4
+    }
+})
+
+const bgRotate = keyframes({
+    'to': { transform: 'rotate(1turn)' },
+});
+
+// const QRContainer = styled("div", {
+//     base: {
+//         position: "relative",
+//         display: "flex",
+//         justifyContent: "center",
+//         alignItems: "center",
+//         overflow: "hidden",
+//         borderRadius: 25,
+//         padding: 5,
+//         isolation: "isolate",
+//         ":before": {
+//             content: "",
+//             backgroundImage: "conic-gradient(from 0deg,transparent 0,#4DAFFE 10%,#4DAFFE 25%,transparent 35%)",
+//             animation: `${bgRotate} 1.25s linear infinite`,
+//             width: "200%",
+//             height: "200%",
+//             zIndex: 0,
+//             top: "-50%",
+//             left: "-50%",
+//             position: "absolute"
+//         },
+//         ":after": {
+//             content: "",
+//             zIndex: 1,
+//             inset: 5,
+//             backgroundColor: theme.color.background.d100,
+//             borderRadius: 22,
+//             position: "absolute"
+//         }
+//     },
+// })
+
+// const QRWrapper = styled("div", {
+//     base: {
+//         backgroundColor: theme.color.background.d100,
+//         border: `1px solid ${theme.color.gray.d400}`,
+//         position: "relative",
+//         display: "flex",
+//         justifyContent: "center",
+//         alignItems: "center",
+//         overflow: "hidden",
+//         borderRadius: 22,
+//         zIndex:3,
+//         padding: 20,
+//     }
+// })
+
+const QRContainer = styled("div", {
+    base: {
+        position: "relative",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
         overflow: "hidden",
+        borderRadius: 25,
+        padding: 5,
+        isolation: "isolate", // Create stacking context
+        ":before": {
+            content: '""',
+            backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.blue.d500} 10%,${theme.color.blue.d500} 25%,transparent 35%)`,
+            animation: `${bgRotate} 1.25s linear infinite`,
+            width: "200%",
+            height: "200%",
+            zIndex: -2,
+            top: "-50%",
+            left: "-50%",
+            position: "absolute"
+        },
+        ":after": {
+            content: '""',
+            zIndex: -1,
+            inset: 5,
+            backgroundColor: theme.color.background.d100,
+            borderRadius: 22,
+            position: "absolute"
+        }
+    },
+})
+
+const QRWrapper = styled("div", {
+    base: {
+        backgroundColor: theme.color.background.d100, // Add a solid white background
+        position: "relative",
+        border: `1px solid ${theme.color.gray.d400}`,
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        overflow: "hidden",
+        borderRadius: 22,
+        zIndex: 1, // Ensure it's above the animation
+        padding: 20,
+    }
+})
+
+// Add an additional wrapper for the QR code
+const QRInnerWrapper = styled("div", {
+    base: {
+        backgroundColor: theme.color.background.d100, // Ensure background for QR code
+        borderRadius: 18,
+        padding: 10,
     }
 })
 
@@ -123,34 +210,29 @@ export function HomeRoute() {
     return (
         <>
             <Header>
-                {/* <FullScreen inset="header"> */}
                 <Root>
-                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-                        <path fill="currentColor" d="M15.974 0C7.573 0 .682 6.479.031 14.714l8.573 3.547a4.5 4.5 0 0 1 2.552-.786c.083 0 .167.005.25.005l3.813-5.521v-.078c0-3.328 2.703-6.031 6.031-6.031s6.036 2.708 6.036 6.036a6.04 6.04 0 0 1-6.036 6.031h-.135l-5.438 3.88c0 .073.005.141.005.214c0 2.5-2.021 4.526-4.521 4.526c-2.177 0-4.021-1.563-4.443-3.635L.583 20.36c1.901 6.719 8.063 11.641 15.391 11.641c8.833 0 15.995-7.161 15.995-16s-7.161-16-15.995-16zm-5.922 24.281l-1.964-.813a3.4 3.4 0 0 0 1.755 1.667a3.404 3.404 0 0 0 4.443-1.833a3.38 3.38 0 0 0 .005-2.599a3.36 3.36 0 0 0-1.839-1.844a3.38 3.38 0 0 0-2.5-.042l2.026.839c1.276.536 1.88 2 1.349 3.276s-2 1.88-3.276 1.349zm15.219-12.406a4.025 4.025 0 0 0-4.016-4.021a4.02 4.02 0 1 0 0 8.042a4.02 4.02 0 0 0 4.016-4.021m-7.026-.005c0-1.672 1.349-3.021 3.016-3.021s3.026 1.349 3.026 3.021c0 1.667-1.359 3.021-3.026 3.021s-3.016-1.354-3.016-3.021" />
-                    </svg>
-                    <Heading>
-                        Steam Library
-                    </Heading>
-                    <SubHeading>
-                        Link your account to install games directly from your Steam account to your Nestri Machine
-                    </SubHeading>
-                    <Modal.Root>
-                        <Modal.Trigger>
-                            <QRButton>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 32 32">
-                                    <path fill="currentColor" d="M15.974 0C7.573 0 .682 6.479.031 14.714l8.573 3.547a4.5 4.5 0 0 1 2.552-.786c.083 0 .167.005.25.005l3.813-5.521v-.078c0-3.328 2.703-6.031 6.031-6.031s6.036 2.708 6.036 6.036a6.04 6.04 0 0 1-6.036 6.031h-.135l-5.438 3.88c0 .073.005.141.005.214c0 2.5-2.021 4.526-4.521 4.526c-2.177 0-4.021-1.563-4.443-3.635L.583 20.36c1.901 6.719 8.063 11.641 15.391 11.641c8.833 0 15.995-7.161 15.995-16s-7.161-16-15.995-16zm-5.922 24.281l-1.964-.813a3.4 3.4 0 0 0 1.755 1.667a3.404 3.404 0 0 0 4.443-1.833a3.38 3.38 0 0 0 .005-2.599a3.36 3.36 0 0 0-1.839-1.844a3.38 3.38 0 0 0-2.5-.042l2.026.839c1.276.536 1.88 2 1.349 3.276s-2 1.88-3.276 1.349zm15.219-12.406a4.025 4.025 0 0 0-4.016-4.021a4.02 4.02 0 1 0 0 8.042a4.02 4.02 0 0 0 4.016-4.021m-7.026-.005c0-1.672 1.349-3.021 3.016-3.021s3.026 1.349 3.026 3.021c0 1.667-1.359 3.021-3.026 3.021s-3.016-1.354-3.016-3.021" />
-                                </svg>
-                                <ButtonText>
-                                    Connect Steam
-                                </ButtonText>
-                            </QRButton>
-                        </Modal.Trigger>
-                        <Modal.Panel>
-                            Blah blah blah
-                        </Modal.Panel>
-                    </Modal.Root>
+                    <EmptyState
+                        style={{
+                            "--nestri-qr-dot-color": theme.color.d1000.gray,
+                            "--nestri-body-background": theme.color.gray.d100
+                        }}
+                    >
+                        <QRContainer>
+                            <QRWrapper>
+                                <QRInnerWrapper>
+                                    <QRCode
+                                        uri={"https://github.com/family/connectkit/blob/9a3c16c781d8a60853eff0c4988e22926a3f91ce"}
+                                        size={180}
+                                        ecl="M"
+                                    // clearArea={!!(imagePosition === 'center' && image)}
+                                    />
+                                </QRInnerWrapper>
+                            </QRWrapper>
+                        </QRContainer>
+                        <EmptyStateHeader>Dot for Web is for subscribers only</EmptyStateHeader>
+                        <EmptyStateSubHeader>Scan the code to subscribe in the iOS app.</EmptyStateSubHeader>
+                    </EmptyState>
                 </Root>
-                {/* </FullScreen> */}
             </Header>
         </>
     )
