@@ -36,7 +36,7 @@ export function QRCode({
     image,
     imageBackground = 'transparent',
 }: Props) {
-    const logoSize = clearArea ? 76 : 0;
+    const logoSize = clearArea ? 32 : 0;
     const size = sizeProp - 10 * 2;
 
     const dots = createMemo(() => {
