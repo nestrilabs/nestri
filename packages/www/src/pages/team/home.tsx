@@ -7,6 +7,7 @@ import { createEffect, createSignal, onCleanup } from "solid-js";
 import { Text } from "@nestri/www/ui/text"
 import { QRCode } from "@nestri/www/ui/custom-qr";
 import { globalStyle, keyframes } from "@macaron-css/core";
+import { A } from "@solidjs/router";
 
 const Root = styled("div", {
     base: {
@@ -39,7 +40,7 @@ const EmptyStateHeader = styled("h2", {
         textAlign: "center",
         fontSize: theme.font.size["2xl"],
         fontFamily: theme.font.family.heading,
-        fontWeight: theme.font.weight.medium,
+        fontWeight: theme.font.weight.semibold,
         letterSpacing: -0.5,
     }
 })
@@ -51,114 +52,41 @@ const EmptyStateSubHeader = styled("p", {
         fontSize: theme.font.size["lg"],
         textAlign: "center",
         maxWidth: 380,
-        letterSpacing: -0.4
+        letterSpacing: -0.4,
+        lineHeight: 1.1,
     }
-})
-
-const bgRotate = keyframes({
-    'to': { transform: 'rotate(1turn)' },
-});
-
-// const QRContainer = styled("div", {
-//     base: {
-//         position: "relative",
-//         display: "flex",
-//         justifyContent: "center",
-//         alignItems: "center",
-//         overflow: "hidden",
-//         borderRadius: 25,
-//         padding: 5,
-//         isolation: "isolate",
-//         ":before": {
-//             content: "",
-//             backgroundImage: "conic-gradient(from 0deg,transparent 0,#4DAFFE 10%,#4DAFFE 25%,transparent 35%)",
-//             animation: `${bgRotate} 1.25s linear infinite`,
-//             width: "200%",
-//             height: "200%",
-//             zIndex: 0,
-//             top: "-50%",
-//             left: "-50%",
-//             position: "absolute"
-//         },
-//         ":after": {
-//             content: "",
-//             zIndex: 1,
-//             inset: 5,
-//             backgroundColor: theme.color.background.d100,
-//             borderRadius: 22,
-//             position: "absolute"
-//         }
-//     },
-// })
-
-// const QRWrapper = styled("div", {
-//     base: {
-//         backgroundColor: theme.color.background.d100,
-//         border: `1px solid ${theme.color.gray.d400}`,
-//         position: "relative",
-//         display: "flex",
-//         justifyContent: "center",
-//         alignItems: "center",
-//         overflow: "hidden",
-//         borderRadius: 22,
-//         zIndex:3,
-//         padding: 20,
-//     }
-// })
-
-const QRContainer = styled("div", {
-    base: {
-        position: "relative",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        overflow: "hidden",
-        borderRadius: 25,
-        padding: 5,
-        isolation: "isolate", // Create stacking context
-        ":before": {
-            content: '""',
-            backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.blue.d500} 10%,${theme.color.blue.d500} 25%,transparent 35%)`,
-            animation: `${bgRotate} 1.25s linear infinite`,
-            width: "200%",
-            height: "200%",
-            zIndex: -2,
-            top: "-50%",
-            left: "-50%",
-            position: "absolute"
-        },
-        ":after": {
-            content: '""',
-            zIndex: -1,
-            inset: 5,
-            backgroundColor: theme.color.background.d100,
-            borderRadius: 22,
-            position: "absolute"
-        }
-    },
 })
 
 const QRWrapper = styled("div", {
     base: {
-        backgroundColor: theme.color.background.d100, // Add a solid white background
+        backgroundColor: theme.color.background.d100,
         position: "relative",
+        marginBottom: 20,
+        textWrap: "balance",
         border: `1px solid ${theme.color.gray.d400}`,
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
         overflow: "hidden",
         borderRadius: 22,
-        zIndex: 1, // Ensure it's above the animation
         padding: 20,
     }
 })
 
-// Add an additional wrapper for the QR code
-const QRInnerWrapper = styled("div", {
+const SteamMobileLink = styled(A, {
     base: {
-        backgroundColor: theme.color.background.d100, // Ensure background for QR code
-        borderRadius: 18,
-        padding: 10,
+        textUnderlineOffset: 2,
+        textDecoration: "none",
+        color: theme.color.blue.d900,
+        display: "inline-flex",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 1,
+        width: "max-content",
+        textTransform: "capitalize",
+        ":hover": {
+            textDecoration: "underline"
+        }
     }
 })
 
@@ -217,20 +145,16 @@ export function HomeRoute() {
                             "--nestri-body-background": theme.color.gray.d100
                         }}
                     >
-                        <QRContainer>
-                            <QRWrapper>
-                                <QRInnerWrapper>
-                                    <QRCode
-                                        uri={"https://github.com/family/connectkit/blob/9a3c16c781d8a60853eff0c4988e22926a3f91ce"}
-                                        size={180}
-                                        ecl="M"
-                                    // clearArea={!!(imagePosition === 'center' && image)}
-                                    />
-                                </QRInnerWrapper>
-                            </QRWrapper>
-                        </QRContainer>
-                        <EmptyStateHeader>Dot for Web is for subscribers only</EmptyStateHeader>
-                        <EmptyStateSubHeader>Scan the code to subscribe in the iOS app.</EmptyStateSubHeader>
+                        <QRWrapper>
+                            <QRCode
+                                uri={"https://github.com/family/connectkit/blob/9a3c16c781d8a60853eff0c4988e22926a3f91ce"}
+                                size={180}
+                                ecl="M"
+                            // clearArea={!!(imagePosition === 'center' && image)}
+                            />
+                        </QRWrapper>
+                        <EmptyStateHeader>Sign in to your Steam account</EmptyStateHeader>
+                        <EmptyStateSubHeader>Use your Steam Mobile App to sign in via QR code.&nbsp;<SteamMobileLink href="https://store.steampowered.com/mobile" target="_blank">Learn More<svg data-testid="geist-icon" height="16" stroke-linejoin="round" viewBox="0 0 16 16" width="16" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.5 9.75V11.25C11.5 11.3881 11.3881 11.5 11.25 11.5H4.75C4.61193 11.5 4.5 11.3881 4.5 11.25L4.5 4.75C4.5 4.61193 4.61193 4.5 4.75 4.5H6.25H7V3H6.25H4.75C3.7835 3 3 3.7835 3 4.75V11.25C3 12.2165 3.7835 13 4.75 13H11.25C12.2165 13 13 12.2165 13 11.25V9.75V9H11.5V9.75ZM8.5 3H9.25H12.2495C12.6637 3 12.9995 3.33579 12.9995 3.75V6.75V7.5H11.4995V6.75V5.56066L8.53033 8.52978L8 9.06011L6.93934 7.99945L7.46967 7.46912L10.4388 4.5H9.25H8.5V3Z" fill="currentColor"></path></svg></SteamMobileLink></EmptyStateSubHeader>
                     </EmptyState>
                 </Root>
             </Header>
