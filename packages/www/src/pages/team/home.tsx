@@ -169,7 +169,8 @@ const BackgroundImage = styled("div", {
         transitionDuration: "0.2s",
         transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
         transitionProperty: "opacity",
-        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1086940/ss_c73bc54415178c07fef85f54ee26621728c77504.jpg)"
+        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1203190/ss_97ea9b0b5a6adf3436b31d389cd18d3a647ee4bf.jpg)"
+        // backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/3373660/c4993923f605b608939536b5f2521913850b028a/ss_c4993923f605b608939536b5f2521913850b028a.jpg)"
     }
 })
 
@@ -179,7 +180,7 @@ const LogoBackgroundImage = styled("div", {
         top: "2rem",
         height: 240,
         // width: 320,
-        aspectRatio: "640 / 320",
+        aspectRatio: "16 / 9",
         left: "50%",
         transform: "translate(-50%,0%)",
         backgroundSize: "cover",
@@ -187,7 +188,7 @@ const LogoBackgroundImage = styled("div", {
         transitionDuration: "0.2s",
         transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
         transitionProperty: "opacity",
-        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1086940/logo_2x.png)"
+        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1203190/logo_2x.png)"
     }
 })
 
@@ -228,7 +229,8 @@ const GamesContainer = styled("div", {
         width: "100%",
         display: "flex",
         alignItems: "center",
-        zIndex: 5,
+        flexDirection: "column",
+        zIndex: 3,
         backgroundColor: theme.color.background.d200,
     }
 })
@@ -237,7 +239,7 @@ const GamesWrapper = styled("div", {
     base: {
         maxWidth: "70vw",
         width: "100%",
-        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
         margin: "0 auto",
         display: "grid",
         marginTop: -80,
@@ -252,6 +254,60 @@ const GameImage = styled("img", {
         height: "100%",
         aspectRatio: "460/215",
         borderRadius: 10,
+    }
+})
+
+const GameSquareImage = styled("img", {
+    base: {
+        width: "100%",
+        height: "100%",
+        aspectRatio: "1/1",
+        borderRadius: 10,
+        transitionDuration: "0.2s",
+        transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
+        transitionProperty: "all",
+        cursor:"pointer",
+        border:`2px solid transparent`,
+        ":hover":{
+            transform:"scale(1.05)",
+            outline:`2px solid ${theme.color.brand}`
+        }
+    }
+})
+
+const GameImageCapsule = styled("img", {
+    base: {
+        width: "100%",
+        height: "100%",
+        aspectRatio: "374/448",
+        borderRadius: 10,
+    }
+})
+
+const SteamLibrary = styled("div", {
+    base: {
+        borderTop: `1px solid ${theme.color.gray.d400}`,
+        padding: "20px 0",
+        margin: "20px auto",
+        width: "100%",
+        display: "grid",
+        // backgroundColor: "red",
+        maxWidth: "70vw",
+        gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+        columnGap: 12,
+        rowGap: 10,
+    }
+})
+
+const SteamLibraryTitle = styled("h3", {
+    base: {
+        textAlign: "left",
+        fontFamily: theme.font.family.heading,
+        fontWeight: theme.font.weight.medium,
+        fontSize: theme.font.size["2xl"],
+        letterSpacing: -0.7,
+        gridColumn: "1/-1",
+        marginBottom:20,
     }
 })
 
@@ -338,10 +394,20 @@ export function HomeRoute() {
                     </LastPlayedWrapper>
                     <GamesContainer>
                         <GamesWrapper>
-                            <GameImage alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/3159330/header_2x.jpg" />
-                            <GameImage alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1422440/header_2x.jpg" />
-                            <GameImage alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2767030/header_2x.jpg" />
+                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/05/15/acshadows-1715789601294.jpg" />
+                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2022/09/22/slime-rancher-2-button-02-1663890048548.jpg" />
+                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2023/05/19/cataclismo-button-1684532710313.jpg" />
+                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/03/27/marvelrivals-1711557092104.jpg" />
                         </GamesWrapper>
+                        <SteamLibrary>
+                            <SteamLibraryTitle>Games we think you will like</SteamLibraryTitle>
+                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2625420/hero_capsule.jpg?t=1742853642" />
+                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2486740/hero_capsule.jpg?t=1742596243" />
+                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/870780/hero_capsule.jpg?t=1737800535" />
+                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2050650/hero_capsule.jpg?t=1737800535" />
+                            {/* <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/hero_capsule.jpg?t=1737800535" />
+                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1568400/hero_capsule.jpg?t=1737800535" /> */}
+                        </SteamLibrary>
                     </GamesContainer>
                 </FullScreen>
             </Header>

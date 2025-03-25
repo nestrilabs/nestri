@@ -21,6 +21,28 @@ export const FullScreen = styled("div", {
     },
 })
 
+export const Screen = styled("div", {
+    base: {
+        display: "flex",
+        position: "fixed",
+        inset: 0,
+        flexDirection: "column",
+        alignItems: "center",
+        textAlign: "center",
+        width: "100%",
+        justifyContent: "center"
+    },
+    variants: {
+        inset: {
+            none: {},
+            header: {
+                paddingTop: `calc(1px + ${theme.headerHeight.root})`,
+                minHeight: `calc(100dvh - ${theme.headerHeight.root})`,
+            },
+        },
+    },
+})
+
 // export const Container = styled("div", {
 //     base: {
 //         backgroundColor: theme.color.background.d100,

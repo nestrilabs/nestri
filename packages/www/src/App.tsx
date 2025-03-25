@@ -8,7 +8,7 @@ import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
 import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
-import { FullScreen } from '@nestri/www/ui/layout';
+import { Screen as FullScreen } from '@nestri/www/ui/layout';
 import { TeamRoute } from '@nestri/www/pages/team';
 import { OpenAuthProvider } from "@openauthjs/solid";
 import { NotFound } from '@nestri/www/pages/not-found';
@@ -92,28 +92,29 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        <OpenAuthProvider
-            issuer={import.meta.env.VITE_AUTH_URL}
-            clientID="web"
-        >
+        // <OpenAuthProvider
+        //     issuer={import.meta.env.VITE_AUTH_URL}
+        //     clientID="web"
+        // >
             <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
                 <Router>
                     <Route
                         path="*"
                         component={(props) => (
-                            <AccountProvider
-                                loadingUI={
-                                    <FullScreen>
-                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                                    </FullScreen>
-                                }>
-                                {props.children}
-                            </AccountProvider>
+                            // <AccountProvider
+                            //     loadingUI={
+                            //         <FullScreen>
+                            //             <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                            //         </FullScreen>
+                            //     }>
+                                props.children
+                                // {props.children}
+                            // </AccountProvider>
                         )}
                     >
                         <Route path=":teamSlug">{TeamRoute}</Route>
                         <Route path="new" component={CreateTeamComponent} />
-                        <Route
+                        {/* <Route
                             path="/"
                             component={() => {
                                 const account = useAccount();
@@ -135,11 +136,11 @@ export const App: Component = () => {
                                     </Switch>
                                 );
                             }}
-                        />
+                        /> */}
                         <Route path="*" component={() => <NotFound />} />
                     </Route>
                 </Router>
             </Root>
-        </OpenAuthProvider>
+        // </OpenAuthProvider>
     )
 }
