@@ -197,7 +197,7 @@ const Nav = styled("nav", {
 
 export function Header(props: { whiteColor?: boolean } & ParentProps) {
     const team = useContext(TeamContext)
-    // const account = useAccount()
+    const account = useAccount()
     return (
         <PageWrapper>
             <NavWrapper style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }} >
@@ -303,7 +303,7 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                                 </NavLink>
                             </NavRoot>
                         </Show>
-                        {/* <div style={{ "margin-bottom": "2px" }} >
+                        <div style={{ "margin-bottom": "2px" }} >
                             <Switch>
                                 <Match when={account.current.avatarUrl} >
                                     <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
@@ -312,7 +312,7 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                                     <Avatar size={32} name={`${account.current.name}#${account.current.discriminator}`} />
                                 </Match>
                             </Switch>
-                        </div> */}
+                        </div>
                     </RightRoot>
                 </Nav>
             </NavWrapper>
