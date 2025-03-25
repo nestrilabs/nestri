@@ -164,7 +164,7 @@ const NavWrapper = styled("div", {
         // borderBottom: "1px solid white",
         zIndex: 10,
         position: "fixed",
-        backdropFilter: "saturate(60%) blur(3px)",
+        // backdropFilter: "saturate(60%) blur(3px)",
         height: theme.headerHeight.root,
         transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
         width: "100%",

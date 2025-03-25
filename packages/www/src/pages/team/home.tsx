@@ -127,7 +127,7 @@ const LastPlayedWrapper = styled("div", {
             background: `linear-gradient(to bottom,transparent,${theme.color.background.d200})`,
             width: "100%",
             left: 0,
-            position: "fixed",
+            position: "absolute",
             bottom: -1,
             zIndex: 3,
             height: 320,
@@ -161,7 +161,7 @@ const LastPlayedFader = styled("div", {
 
 const BackgroundImage = styled("div", {
     base: {
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         backgroundColor: theme.color.background.d200,
         backgroundSize: "cover",
@@ -169,15 +169,13 @@ const BackgroundImage = styled("div", {
         transitionDuration: "0.2s",
         transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
         transitionProperty: "opacity",
-        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/ss_bac60bacbf5da8945103648c08d27d5e202444ca.jpg)"
-        // backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/ss_668dafe477743f8b50b818d5bbfcec669e9ba93e.jpg)"
-        // backgroundImage: "url(https://store-images.s-microsoft.com/image/apps.58752.13942869738016799.078aba97-2f28-440f-97b6-b852e1af307a.95fdf1a1-efd6-4938-8100-8abae91695d6?q=90&w=1280&h=720)"
+        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1086940/ss_c73bc54415178c07fef85f54ee26621728c77504.jpg)"
     }
 })
 
 const LogoBackgroundImage = styled("div", {
     base: {
-        position: "absolute",
+        position: "fixed",
         top: "2rem",
         height: 240,
         // width: 320,
@@ -189,7 +187,7 @@ const LogoBackgroundImage = styled("div", {
         transitionDuration: "0.2s",
         transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
         transitionProperty: "opacity",
-        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1174180/logo_2x.png)"
+        backgroundImage: "url(https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1086940/logo_2x.png)"
     }
 })
 
@@ -222,6 +220,38 @@ const JoeColor = styled("div", {
         width: "100%",
         maskImage: "linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 40.82%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)",
         WebkitMaskImage: "linear-gradient(180deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 40.82%,rgba(0,0,0,.15) 50%,rgba(0,0,0,.65) 57.14%,rgba(0,0,0,.9) 67.86%,#000 79.08%)"
+    }
+})
+
+const GamesContainer = styled("div", {
+    base: {
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        zIndex: 5,
+        backgroundColor: theme.color.background.d200,
+    }
+})
+
+const GamesWrapper = styled("div", {
+    base: {
+        maxWidth: "70vw",
+        width: "100%",
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        margin: "0 auto",
+        display: "grid",
+        marginTop: -80,
+        columnGap: 12,
+        rowGap: 10
+    }
+})
+
+const GameImage = styled("img", {
+    base: {
+        width: "100%",
+        height: "100%",
+        aspectRatio: "460/215",
+        borderRadius: 10,
     }
 })
 
@@ -306,6 +336,13 @@ export function HomeRoute() {
                         {/* <Material /> */}
                         {/* <JoeColor /> */}
                     </LastPlayedWrapper>
+                    <GamesContainer>
+                        <GamesWrapper>
+                            <GameImage alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/3159330/header_2x.jpg" />
+                            <GameImage alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/1422440/header_2x.jpg" />
+                            <GameImage alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2767030/header_2x.jpg" />
+                        </GamesWrapper>
+                    </GamesContainer>
                 </FullScreen>
             </Header>
         </>

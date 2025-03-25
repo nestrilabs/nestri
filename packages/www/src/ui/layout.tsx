@@ -8,7 +8,6 @@ export const FullScreen = styled("div", {
         alignItems: "center",
         textAlign: "center",
         width: "100%",
-        gap: theme.space[3],
         justifyContent: "center"
     },
     variants: {
