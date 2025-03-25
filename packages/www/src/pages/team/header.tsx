@@ -139,7 +139,7 @@ const NavRoot = styled("div", {
 
 const NavLink = styled(A, {
     base: {
-        color: theme.color.gray.d900,
+        color: theme.color.d1000.gray,
         textDecoration: "none",
         // border: `2px solid ${theme.color.gray.d400}`,
         height: 32,
@@ -153,9 +153,9 @@ const NavLink = styled(A, {
         fontSize: theme.font.size.sm,
         fontWeight: theme.font.weight.regular,
         transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
-        ":hover": {
-            color: theme.color.d1000.gray
-        }
+        // ":hover": {
+        //     color: theme.color.d1000.gray
+        // }
     }
 })
 
@@ -283,19 +283,27 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                         </Show>
                     </Container>
                     <RightRoot>
-                        {/* <Show when={team}>
+                        <Show when={team}>
                             <NavRoot>
                                 <NavLink href={`/${team!().slug}/machines`}>
-                                    <svg style={{ "margin-bottom": "1px" }} xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 16 16">
+                                    {/* <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+                                        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.5 17.5L22 22m-2-11a9 9 0 1 0-18 0a9 9 0 0 0 18 0" color="currentColor" />
+                                    </svg> */}
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
+                                        <path fill="currentColor" d="M3.441 9.956a4.926 4.926 0 0 0 6.233 7.571l4.256 4.257a.773.773 0 0 0 1.169-1.007l-.075-.087l-4.217-4.218A4.927 4.927 0 0 0 3.44 9.956m13.213 6.545c-.225 1.287-.548 2.456-.952 3.454l.03.028l.124.14c.22.295.344.624.378.952a10.03 10.03 0 0 0 4.726-4.574zM12.25 16.5l2.284 2.287c.202-.6.381-1.268.53-1.992l.057-.294zm-2.936-5.45a3.38 3.38 0 1 1-4.78 4.779a3.38 3.38 0 0 1 4.78-4.78M15.45 10h-3.7a5.94 5.94 0 0 1 .892 5h2.71a26 26 0 0 0 .132-4.512zm1.507 0a28 28 0 0 1-.033 4.42l-.057.58h4.703a10.05 10.05 0 0 0 .258-5zm-2.095-7.593c.881 1.35 1.536 3.329 1.883 5.654l.062.44h4.59a10.03 10.03 0 0 0-6.109-5.958l-.304-.1zm-2.836-.405c-1.277 0-2.561 2.382-3.158 5.839c.465.16.912.38 1.331.658l5.088.001c-.54-3.809-1.905-6.498-3.261-6.498m-2.837.405A10.03 10.03 0 0 0 2.654 8.5h.995a5.92 5.92 0 0 1 3.743-.968c.322-1.858.846-3.47 1.527-4.68l.162-.275z" />
+                                    </svg>
+                                    {/* Machines */}
+                                </NavLink>
+                                <NavLink href={`/${team!().slug}/machines`}>
+                                    <svg style={{ "margin-bottom": "1px" }} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16">
                                         <g fill="currentColor"><path d="M4 8a1.5 1.5 0 1 1 3 0a1.5 1.5 0 0 1-3 0m7.5-1.5a1.5 1.5 0 1 0 0 3a1.5 1.5 0 0 0 0-3" />
                                             <path d="M0 1.5A.5.5 0 0 1 .5 1h1a.5.5 0 0 1 .5.5V4h13.5a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5H2v2.5a.5.5 0 0 1-1 0V2H.5a.5.5 0 0 1-.5-.5m5.5 4a2.5 2.5 0 1 0 0 5a2.5 2.5 0 0 0 0-5M9 8a2.5 2.5 0 1 0 5 0a2.5 2.5 0 0 0-5 0" />
                                             <path d="M3 12.5h3.5v1a.5.5 0 0 1-.5.5H3.5a.5.5 0 0 1-.5-.5zm4 1v-1h4v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5" />
                                         </g>
                                     </svg>
-                                    Machines
                                 </NavLink>
                             </NavRoot>
-                        </Show> */}
+                        </Show>
                         <div style={{ "margin-bottom": "2px" }} >
                             <Switch>
                                 <Match when={account.current.avatarUrl} >
