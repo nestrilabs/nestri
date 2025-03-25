@@ -35,6 +35,10 @@ declare module "sst" {
       "type": "sst.sst.Linkable"
       "user": string
     }
+    "DatabaseMigrator": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -56,9 +60,33 @@ declare module "sst" {
       "sender": string
       "type": "sst.aws.Email"
     }
+    "NestriVpc": {
+      "bastion": string
+      "type": "sst.aws.Vpc"
+    }
     "PolarSecret": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "Postgres": {
+      "clusterArn": string
+      "database": string
+      "host": string
+      "password": string
+      "port": number
+      "reader": string
+      "secretArn": string
+      "type": "sst.aws.Aurora"
+      "username": string
+    }
+    "Steam": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "Storage": {
+      "name": string
+      "type": "sst.aws.Bucket"
     }
     "Urls": {
       "api": string
@@ -69,6 +97,15 @@ declare module "sst" {
     "Web": {
       "type": "sst.aws.StaticSite"
       "url": string
+    }
+    "Zero": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "ZeroPermissions": {
+      "name": string
+      "type": "sst.aws.Function"
     }
   }
 }

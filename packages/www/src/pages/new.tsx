@@ -1,14 +1,18 @@
 import * as v from "valibot"
-import { styled } from "@macaron-css/solid";
-import { Text } from "@nestri/www/ui/text";
-import { utility } from "@nestri/www/ui/utility";
-import { theme } from "@nestri/www/ui/theme";
-import { FormField, Input, Select } from "@nestri/www/ui/form";
-import { Container, FullScreen } from "@nestri/www/ui/layout";
-import { createForm, required, email, valiForm } from "@modular-forms/solid";
+import { Show } from "solid-js";
 import { Button } from "@nestri/www/ui";
+import { Text } from "@nestri/www/ui/text";
+import { styled } from "@macaron-css/solid";
+import { theme } from "@nestri/www/ui/theme";
+import { useNavigate } from "@solidjs/router";
+import { useOpenAuth } from "@openauthjs/solid";
+import { utility } from "@nestri/www/ui/utility";
+import { useAccount } from "../providers/account";
+import { Container, FullScreen } from "@nestri/www/ui/layout";
+import { FormField, Input, Select } from "@nestri/www/ui/form";
+import { createForm, getValue, setError, valiForm } from "@modular-forms/solid";
 
-// const nameRegex = /^[a-z]+$/
+const nameRegex = /^[a-z0-9\-]+$/
 
 const FieldList = styled("div", {
     base: {
@@ -33,19 +37,19 @@ const Plan = {
 } as const;
 
 const schema = v.object({
-    plan: v.pipe(
-        v.enum(Plan),
-        v.minLength(2,"Please choose a plan"),
+    planType: v.pipe(
+        v.enum(Plan, "Choose a valid plan"),
     ),
-    display_name: v.pipe(
+    name: v.pipe(
         v.string(),
-        v.maxLength(32, 'Please use 32 characters at maximum.'),
+        v.minLength(2, 'Use 2 characters at minimum.'),
+        v.maxLength(32, 'Use 32 characters at maximum.'),
     ),
     slug: v.pipe(
         v.string(),
-        v.minLength(2, 'Please use 2 characters at minimum.'),
-        // v.regex(nameRegex, "Use only small letters, no numbers or special characters"),
-        v.maxLength(48, 'Please use 48 characters at maximum.'),
+        v.regex(nameRegex, "Use a URL friendly name."),
+        v.minLength(2, 'Use 2 characters at minimum.'),
+        v.maxLength(48, 'Use 48 characters at maximum.'),
     )
 })
 
@@ -82,10 +86,38 @@ const schema = v.object({
 //     }
 // })
 
+const UrlParent = styled("div", {
+    base: {
+        display: "flex",
+        width: "100%",
+    }
+})
+
+const UrlTitle = styled("span", {
+    base: {
+        borderWidth: 1,
+        borderRight: 0,
+        display: "flex",
+        alignItems: "center",
+        borderStyle: "solid",
+        color: theme.color.gray.d900,
+        fontSize: theme.font.size.sm,
+        padding: `0 ${theme.space[3]}`,
+        height: theme.input.size.base,
+        borderColor: theme.color.gray.d400,
+        borderTopLeftRadius: theme.borderRadius,
+        borderBottomLeftRadius: theme.borderRadius,
+    }
+})
+
 export function CreateTeamComponent() {
     const [form, { Form, Field }] = createForm({
         validate: valiForm(schema),
     });
+
+    const nav = useNavigate();
+    const auth = useOpenAuth();
+    const account = useAccount();
 
     return (
         <FullScreen>
@@ -95,20 +127,41 @@ export function CreateTeamComponent() {
                         Create a Team
                     </Text>
                     <Text style={{ color: theme.color.gray.d900 }} size="sm">
-                        Choose something that your teammates will recognize
+                        Choose something that your team mates will recognize
                     </Text>
                     <Hr />
                 </Container>
-                <Form style={{ width: "100%", "max-width": "380px" }}>
+                <Form style={{ width: "100%", "max-width": "380px" }}
+                    onSubmit={async (data) => {
+                        console.log("submitting");
+                        const result = await fetch(
+                            import.meta.env.VITE_API_URL + "/team",
+                            {
+                                method: "POST",
+                                headers: {
+                                    authorization: `Bearer ${await auth.access()}`,
+                                    "content-type": "application/json",
+                                },
+                                body: JSON.stringify(data),
+                            },
+                        );
+                        if (!result.ok) {
+                            setError(form, "slug", "Team slug is already taken.");
+                            return;
+                        }
+                        await account.refresh(account.current.email);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        nav(`/${data.slug}`);
+                    }}
+                >
                     <FieldList>
-                        <Field type="string" name="slug">
+                        <Field type="string" name="name">
                             {(field, props) => (
                                 <FormField
                                     label="Team Name"
                                     hint={
                                         field.error
                                         && field.error
-                                        // : "Needs to be lowercase, unique, and URL friendly."
                                     }
                                     color={field.error ? "danger" : "primary"}
                                 >
@@ -120,19 +173,47 @@ export function CreateTeamComponent() {
                                 </FormField>
                             )}
                         </Field>
-                        <Field type="string" name="plan">
+                        <Field type="string" name="slug">
+                            {(field, props) => (
+                                <FormField
+                                    label="Team Slug"
+                                    hint={
+                                        field.error
+                                        && field.error
+                                    }
+                                    color={field.error ? "danger" : "primary"}
+                                >
+                                    <UrlParent
+                                        data-type='url'
+                                    >
+                                        <UrlTitle>
+                                            nestri.io/
+                                        </UrlTitle>
+                                        <Input
+                                            {...props}
+                                            autofocus
+                                            placeholder={
+                                                getValue(form, "name")?.toString()
+                                                    .split(" ").join("-")
+                                                    .toLowerCase() || "janes-team"}
+                                        />
+                                    </UrlParent>
+                                </FormField>
+                            )}
+                        </Field>
+                        <Field type="string" name="planType">
                             {(field, props) => (
                                 <FormField
                                     label="Plan Type"
                                     hint={
                                         field.error
                                         && field.error
-                                        // : "Needs to be lowercase, unique, and URL friendly."
                                     }
                                     color={field.error ? "danger" : "primary"}
                                 >
                                     <Select
                                         {...props}
+                                        required
                                         value={field.value}
                                         badges={[
                                             { label: "BYOG", color: "purple" },
@@ -156,8 +237,10 @@ export function CreateTeamComponent() {
                                 </div>
                             </Summary>
                         </Details> */}
-                        <Button color="brand">
-                            Continue
+                        <Button color="brand" disabled={form.submitting} >
+                            <Show when={form.submitting} fallback="Create">
+                                Creating&hellip;
+                            </Show>
                         </Button>
                     </FieldList>
                 </Form>

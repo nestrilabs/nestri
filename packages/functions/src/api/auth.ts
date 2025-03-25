@@ -1,11 +1,9 @@
 import { Resource } from "sst";
 import { subjects } from "../subjects";
 import { type MiddlewareHandler } from "hono";
-// import { User } from "@nestri/core/user/index";
-import { VisibleError } from "@nestri/core/error";
-import { HTTPException } from "hono/http-exception";
 import { useActor, withActor } from "@nestri/core/actor";
 import { createClient } from "@openauthjs/openauth/client";
+import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 const client = createClient({
   issuer: Resource.Urls.auth,
@@ -15,7 +13,11 @@ const client = createClient({
 export const notPublic: MiddlewareHandler = async (c, next) => {
   const actor = useActor();
   if (actor.type === "public")
-    throw new HTTPException(401, { message: "Unauthorized" });
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      "Missing authorization header",
+    );
   return next();
 };
 
@@ -26,16 +28,19 @@ export const auth: MiddlewareHandler = async (c, next) => {
   const match = authHeader.match(/^Bearer (.+)$/);
   if (!match) {
     throw new VisibleError(
-      "auth.token",
-      "Bearer token not found or improperly formatted",
+      "authentication",
+      ErrorCodes.Authentication.INVALID_TOKEN,
+      "Invalid personal access token",
     );
   }
   const bearerToken = match[1];
   let result = await client.verify(subjects, bearerToken!);
   if (result.err) {
-    throw new HTTPException(401, {
-      message: "Unauthorized",
-    });
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.INVALID_TOKEN,
+      "Invalid bearer token",
+    );
   }
 
   if (result.subject.type === "user") {
@@ -50,20 +55,20 @@ export const auth: MiddlewareHandler = async (c, next) => {
         },
       },
       next
-    //   async () => {
-    //     const user = await User.fromEmail(email);
-    //     if (!user || user.length === 0) {
-    //       c.status(401);
-    //       return c.text("Unauthorized");
-    //     }
-    //     return withActor(
-    //       {
-    //         type: "member",
-    //         properties: { userID: user[0].id, workspaceID: user.workspaceID },
-    //       },
-    //       next,
-    //     );
-    //   },
+      //   async () => {
+      //     const user = await User.fromEmail(email);
+      //     if (!user || user.length === 0) {
+      //       c.status(401);
+      //       return c.text("Unauthorized");
+      //     }
+      //     return withActor(
+      //       {
+      //         type: "member",
+      //         properties: { userID: user[0].id, workspaceID: user.workspaceID },
+      //       },
+      //       next,
+      //     );
+      //   },
     );
   }
 };
