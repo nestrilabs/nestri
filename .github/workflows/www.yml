@@ -1,4 +1,4 @@
-name: Build apps/www
+name: Build www
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   deploy-www-pr:
-    name: Build apps/www on pull request
+    name: Build www on pull request
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'pull_request' }}
     defaults:
@@ -41,7 +41,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
   deploy-www-main:
-    name: Build apps/www on main
+    name: Build www on main
     runs-on: ubuntu-latest
     if: ${{ github.ref == 'refs/heads/main' }}
     defaults:
