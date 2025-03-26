@@ -28,13 +28,6 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bus"
     }
-    "Database": {
-      "host": string
-      "name": string
-      "password": string
-      "type": "sst.sst.Linkable"
-      "user": string
-    }
     "DatabaseMigrator": {
       "name": string
       "type": "sst.aws.Function"

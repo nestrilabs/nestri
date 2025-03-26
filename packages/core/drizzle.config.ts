@@ -2,9 +2,9 @@ import { Resource } from "sst";
 import { defineConfig } from "drizzle-kit";
 
 const connection = {
-    user: Resource.Postgres.username,
-    password: Resource.Postgres.password,
-    host: Resource.Postgres.host,
+    user: Resource.Database.username,
+    password: Resource.Database.password,
+    host: Resource.Database.host,
 };
 
 export default defineConfig({
