@@ -6,7 +6,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	relay "relay/internal"
+	relay2 "relay/internal"
+	"relay/internal/common"
 	"syscall"
 )
 
@@ -15,11 +16,11 @@ func main() {
 	mainCtx, mainStopper := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	// Get flags and log them
-	relay.InitFlags()
-	relay.GetFlags().DebugLog()
+	common.InitFlags()
+	common.GetFlags().DebugLog()
 
 	logLevel := slog.LevelInfo
-	if relay.GetFlags().Verbose {
+	if common.GetFlags().Verbose {
 		logLevel = slog.LevelDebug
 	}
 
@@ -27,12 +28,12 @@ func main() {
 	baseHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
 	})
-	customHandler := &relay.CustomHandler{Handler: baseHandler}
+	customHandler := &common.CustomHandler{Handler: baseHandler}
 	logger := slog.New(customHandler)
 	slog.SetDefault(logger)
 
 	// Start relay
-	err := relay.InitRelay(mainCtx, mainStopper)
+	err := relay2.InitRelay(mainCtx, mainStopper)
 	if err != nil {
 		slog.Error("Failed to initialize relay", "err", err)
 		mainStopper()

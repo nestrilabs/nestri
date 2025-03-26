@@ -1,4 +1,4 @@
-package relay
+package internal
 
 import (
 	"encoding/json"
@@ -7,48 +7,23 @@ import (
 	"github.com/pion/webrtc/v4"
 	"io"
 	"log/slog"
+	"relay/internal/common"
+	"relay/internal/connections"
 	"strings"
 )
 
-func ingestHandler(room *Room) {
+func IngestHandler(room *Room) {
 	relay := GetRelay()
-	if relay == nil || relay.MeshManager == nil {
-		slog.Error("Mesh system not initialized, defaulting to local ingest", "room", room.Name)
-	} else {
-		remoteState, exists := relay.MeshManager.GetRoomInfo(room.Name)
-		if exists && remoteState.HostingRelayID != relay.ID {
-			slog.Info("Redirecting ingest request to remote room", "room", room.Name, "relayID", remoteState.HostingRelayID)
-
-			relay.MeshManager.mutex.RLock()
-			peerWS, wsExists := relay.MeshManager.relayWebSockets[remoteState.HostingRelayID]
-			relay.MeshManager.mutex.RUnlock()
-
-			if wsExists {
-				err := peerWS.SendForwardIngestMessageWS(room.Name)
-				if err != nil {
-					slog.Error("Failed to forward ingest request", "room", room.Name, "relayID", remoteState.HostingRelayID, "err", err)
-				} else {
-					slog.Info("Successfully forwarded ingest request", "room", room.Name, "relayID", remoteState.HostingRelayID)
-					if room.WebSocket != nil {
-						room.WebSocket.Close()
-					}
-				}
-			} else {
-				slog.Error("Relay WebSocket not found for forwarding", "relayID", remoteState.HostingRelayID)
-			}
-			return
-		}
-	}
 
 	// Callback for closing PeerConnection
 	onPCClose := func() {
 		slog.Debug("ingest PeerConnection closed", "room", room.Name)
 		room.Online = false
-		DeleteRoomIfEmpty(room)
+		relay.DeleteRoomIfEmpty(room)
 	}
 
 	var err error
-	room.PeerConnection, err = CreatePeerConnection(onPCClose)
+	room.PeerConnection, err = common.CreatePeerConnection(onPCClose)
 	if err != nil {
 		slog.Error("Failed to create ingest PeerConnection", "room", room.Name, "err", err)
 		return
@@ -65,12 +40,6 @@ func ingestHandler(room *Room) {
 		// Set track and let Room handle state
 		room.SetTrack(remoteTrack.Kind(), localTrack)
 
-		// Update the mesh state about room streaming
-		if relay != nil && relay.MeshManager != nil {
-			relay.MeshManager.state.UpdateRoom(room.Name, relay.ID, true, relay.ID)
-			slog.Debug("Updated mesh state for room streaming", "room", room.Name, "relayID", relay.ID)
-		}
-
 		rtpBuffer := make([]byte, 1400)
 		for {
 			read, _, err := remoteTrack.Read(rtpBuffer)
@@ -80,6 +49,7 @@ func ingestHandler(room *Room) {
 				}
 				break
 			}
+
 			_, err = localTrack.Write(rtpBuffer[:read])
 			if err != nil && !errors.Is(err, io.ErrClosedPipe) {
 				slog.Error("Failed to write RTP to local track for room", "room", room.Name, "err", err)
@@ -94,7 +64,7 @@ func ingestHandler(room *Room) {
 	})
 
 	room.PeerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {
-		room.DataChannel = NewNestriDataChannel(dc)
+		room.DataChannel = connections.NewNestriDataChannel(dc)
 		slog.Debug("ingest received data channel for room", "room", room.Name)
 
 		room.DataChannel.RegisterOnOpen(func() {
@@ -123,7 +93,7 @@ func ingestHandler(room *Room) {
 
 	// ICE callback
 	room.WebSocket.RegisterMessageCallback("ice", func(data []byte) {
-		var iceMsg MessageICECandidate
+		var iceMsg connections.MessageICECandidate
 		if err = json.Unmarshal(data, &iceMsg); err != nil {
 			slog.Error("Failed to decode ICE candidate message from ingest for room", "room", room.Name, "err", err)
 			return
@@ -149,7 +119,7 @@ func ingestHandler(room *Room) {
 
 	// SDP offer callback
 	room.WebSocket.RegisterMessageCallback("sdp", func(data []byte) {
-		var sdpMsg MessageSDP
+		var sdpMsg connections.MessageSDP
 		if err = json.Unmarshal(data, &sdpMsg); err != nil {
 			slog.Error("Failed to decode SDP message from ingest for room", "room", room.Name, "err", err)
 			return
@@ -166,7 +136,7 @@ func ingestHandler(room *Room) {
 
 	// Log callback
 	room.WebSocket.RegisterMessageCallback("log", func(data []byte) {
-		var logMsg MessageLog
+		var logMsg connections.MessageLog
 		if err = json.Unmarshal(data, &logMsg); err != nil {
 			slog.Error("Failed to decode log message from ingest for room", "room", room.Name, "err", err)
 			return
@@ -176,7 +146,7 @@ func ingestHandler(room *Room) {
 
 	// Metrics callback
 	room.WebSocket.RegisterMessageCallback("metrics", func(data []byte) {
-		var metricsMsg MessageMetrics
+		var metricsMsg connections.MessageMetrics
 		if err = json.Unmarshal(data, &metricsMsg); err != nil {
 			slog.Error("Failed to decode metrics message from ingest for room", "room", room.Name, "err", err)
 			return
@@ -189,13 +159,13 @@ func ingestHandler(room *Room) {
 	})
 
 	slog.Info("Room is ready, sending OK answer to ingest", "room", room.Name)
-	if err = room.WebSocket.SendAnswerMessageWS(AnswerOK); err != nil {
+	if err = room.WebSocket.SendAnswerMessageWS(connections.AnswerOK); err != nil {
 		slog.Error("Failed to send OK answer message to ingest for room", "room", room.Name, "err", err)
 	}
 }
 
 // SDP offer handler, returns SDP answer
-func handleIngestSDP(room *Room, offerMsg MessageSDP) *webrtc.SessionDescription {
+func handleIngestSDP(room *Room, offerMsg connections.MessageSDP) *webrtc.SessionDescription {
 	var err error
 
 	sdpOffer := offerMsg.SDP.SDP

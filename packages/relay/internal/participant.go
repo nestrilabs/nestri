@@ -1,21 +1,22 @@
-package relay
+package internal
 
 import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
 	"math/rand"
+	"relay/internal/connections"
 )
 
 type Participant struct {
 	ID             uuid.UUID //< Internal IDs are useful to keeping unique internal track and not have conflicts later
 	Name           string
-	WebSocket      *SafeWebSocket
+	WebSocket      *connections.SafeWebSocket
 	PeerConnection *webrtc.PeerConnection
-	DataChannel    *NestriDataChannel
+	DataChannel    *connections.NestriDataChannel
 }
 
-func NewParticipant(ws *SafeWebSocket) *Participant {
+func NewParticipant(ws *connections.SafeWebSocket) *Participant {
 	return &Participant{
 		ID:        uuid.New(),
 		Name:      createRandomName(),
@@ -23,7 +24,7 @@ func NewParticipant(ws *SafeWebSocket) *Participant {
 	}
 }
 
-func (p *Participant) addTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
+func (p *Participant) AddTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
 	rtpSender, err := p.PeerConnection.AddTrack(trackLocal)
 	if err != nil {
 		return err
@@ -41,7 +42,7 @@ func (p *Participant) addTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
 	return nil
 }
 
-func (p *Participant) signalOffer() error {
+func (p *Participant) SignalOffer() error {
 	if p.PeerConnection == nil {
 		return fmt.Errorf("peer connection is nil for participant: '%s' - cannot signal offer", p.ID)
 	}

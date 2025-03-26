@@ -1,4 +1,4 @@
-package relay
+package connections
 
 import (
 	"encoding/json"
@@ -18,6 +18,7 @@ type SafeWebSocket struct {
 	closeCallback func()                       // Callback to call on close
 	closeChan     chan struct{}                // Channel to signal closure
 	callbacks     map[string]OnMessageCallback // MessageBase type -> callback
+	sharedSecret  []byte
 }
 
 // NewSafeWebSocket creates a new SafeWebSocket from *websocket.Conn
@@ -28,6 +29,7 @@ func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 		closeCallback: nil,
 		closeChan:     make(chan struct{}),
 		callbacks:     make(map[string]OnMessageCallback),
+		sharedSecret:  nil,
 	}
 
 	// Launch a goroutine to handle messages
@@ -58,7 +60,7 @@ func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 				// Handle message type callback
 				if callback, ok := ws.callbacks[msg.PayloadType]; ok {
 					callback(data)
-				} // TODO: Log unknown message type?
+				} // TODO: Log unknown message payload type?
 				break
 			case websocket.BinaryMessage:
 				break
@@ -77,6 +79,20 @@ func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 	}()
 
 	return ws
+}
+
+// SetSharedSecret sets the shared secret for the websocket
+func (ws *SafeWebSocket) SetSharedSecret(secret []byte) {
+	ws.Lock()
+	defer ws.Unlock()
+	ws.sharedSecret = secret
+}
+
+// GetSharedSecret returns the shared secret for the websocket
+func (ws *SafeWebSocket) GetSharedSecret() []byte {
+	ws.Lock()
+	defer ws.Unlock()
+	return ws.sharedSecret
 }
 
 // SendJSON writes JSON to a websocket with a mutex

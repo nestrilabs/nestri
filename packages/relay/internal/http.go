@@ -1,13 +1,14 @@
-package relay
+package internal
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"log/slog"
 	"net/http"
+	"relay/internal/common"
+	"relay/internal/connections"
 	"strconv"
 )
 
@@ -20,7 +21,7 @@ func InitHTTPEndpoint(_ context.Context, ctxCancel context.CancelFunc) error {
 	// Endpoints themselves
 	httpMux.Handle("/", http.NotFoundHandler())
 	// If control endpoint secret is set, enable the control endpoint
-	if len(GetFlags().ControlSecret) > 0 {
+	if len(common.GetFlags().ControlSecret) > 0 {
 		httpMux.HandleFunc("/api/control", corsAnyHandler(controlHandler))
 	}
 	// WS endpoint
@@ -29,9 +30,9 @@ func InitHTTPEndpoint(_ context.Context, ctxCancel context.CancelFunc) error {
 	httpMux.HandleFunc("/api/mesh", corsAnyHandler(meshHandler))
 
 	// Get our serving port
-	port := GetFlags().EndpointPort
-	tlsCert := GetFlags().TLSCert
-	tlsKey := GetFlags().TLSKey
+	port := common.GetFlags().EndpointPort
+	tlsCert := common.GetFlags().TLSCert
+	tlsKey := common.GetFlags().TLSKey
 
 	// Log and start the endpoint server
 	if len(tlsCert) <= 0 && len(tlsKey) <= 0 {
@@ -58,7 +59,7 @@ func InitHTTPEndpoint(_ context.Context, ctxCancel context.CancelFunc) error {
 
 // logHTTPError logs (if verbose) and sends an error code to requester
 func logHTTPError(w http.ResponseWriter, err string, code int) {
-	if GetFlags().Verbose {
+	if common.GetFlags().Verbose {
 		slog.Error("HTTP error", "code", code, "message", err)
 	}
 	http.Error(w, err, code)
@@ -87,8 +88,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rel := GetRelay()
 	// Get or create room in any case
-	room := GetOrCreateRoom(roomName)
+	room := rel.GetOrCreateRoom(roomName)
 
 	// Upgrade to WebSocket
 	upgrader := websocket.Upgrader{
@@ -103,10 +105,10 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create SafeWebSocket
-	ws := NewSafeWebSocket(wsConn)
+	ws := connections.NewSafeWebSocket(wsConn)
 	// Assign message handler for join request
 	ws.RegisterMessageCallback("join", func(data []byte) {
-		var joinMsg MessageJoin
+		var joinMsg connections.MessageJoin
 		if err = json.Unmarshal(data, &joinMsg); err != nil {
 			slog.Error("Failed to unmarshal join message", "err", err)
 			return
@@ -116,27 +118,27 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Handle join request, depending if it's from ingest/node or participant/client
 		switch joinMsg.JoinerType {
-		case JoinerNode:
+		case connections.JoinerNode:
 			// If room already online, send InUse answer
 			if room.Online {
-				if err = ws.SendAnswerMessageWS(AnswerInUse); err != nil {
+				if err = ws.SendAnswerMessageWS(connections.AnswerInUse); err != nil {
 					slog.Error("Failed to send InUse answer to node", "room", room.Name, "err", err)
 				}
 				return
 			}
-			room.assignWebSocket(ws)
-			go ingestHandler(room)
-		case JoinerClient:
+			room.AssignWebSocket(ws)
+			go IngestHandler(room)
+		case connections.JoinerClient:
 			// Create participant and add to room regardless of online status
 			participant := NewParticipant(ws)
-			room.addParticipant(participant)
+			room.AddParticipant(participant)
 			// If room not online, send Offline answer
 			if !room.Online {
-				if err = ws.SendAnswerMessageWS(AnswerOffline); err != nil {
+				if err = ws.SendAnswerMessageWS(connections.AnswerOffline); err != nil {
 					slog.Error("Failed to send offline answer to participant", "room", room.Name, "err", err)
 				}
 			}
-			go participantHandler(participant, room)
+			go ParticipantHandler(participant, room)
 		default:
 			slog.Error("Unknown joiner type", "joinerType", joinMsg.JoinerType)
 		}
@@ -156,7 +158,7 @@ type controlMessage struct {
 func controlHandler(w http.ResponseWriter, r *http.Request) {
 	// Check for control secret in Authorization header
 	authHeader := r.Header.Get("Authorization")
-	if len(authHeader) <= 0 || authHeader != GetFlags().ControlSecret {
+	if len(authHeader) <= 0 || authHeader != common.GetFlags().ControlSecret {
 		logHTTPError(w, "missing or invalid Authorization header", http.StatusUnauthorized)
 		return
 	}
@@ -204,61 +206,60 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	safeWS := NewSafeWebSocket(conn)
+	safeWS := connections.NewSafeWebSocket(conn)
 	relay := GetRelay()
 
 	safeWS.RegisterMessageCallback("mesh_handshake", func(data []byte) {
-		var msg MessageMeshHandshake
-		if err := json.Unmarshal(data, &msg); err != nil {
-			slog.Error("Failed to parse mesh handshake request", "err", err)
-			return
-		}
-		peerRelayID, err := uuid.Parse(msg.RelayID)
-		if err != nil {
-			slog.Error("Invalid relay ID in handshake request", "err", err)
-			return
-		}
-		slog.Info("Received mesh handshake from relay", "peerRelayID", peerRelayID)
-		relay.MeshManager.mutex.Lock()
-		relay.MeshManager.relayWebSockets[peerRelayID] = safeWS
-		relay.MeshManager.mutex.Unlock()
-		if err := safeWS.SendMeshHandshakeResponse(relay.ID.String()); err != nil {
-			slog.Error("Failed to send handshake response", "err", err)
-			return
-		}
+		relay.MeshManager.handleIncomingHandshake(safeWS, data)
 	})
 
-	safeWS.RegisterMessageCallback("state_sync", func(data []byte) {
-		var msg MessageStateSync
+	safeWS.RegisterMessageCallback("mesh_state_sync", func(data []byte) {
+		var msg connections.MessageMeshStateSync
 		if err := json.Unmarshal(data, &msg); err != nil {
 			slog.Error("Failed to decode state sync message", "err", err)
 			return
 		}
-		remoteState := NewMeshState()
-		remoteState.Rooms = msg.State
-		relay.MeshManager.state.Merge(remoteState)
+		stateData, err := relay.MeshManager.decodeState(msg.State, safeWS.GetSharedSecret())
+		if err != nil {
+			slog.Error("Failed to decode state", "err", err)
+			return
+		}
+		var remoteState common.MeshState
+		if err := json.Unmarshal(stateData, &remoteState); err != nil {
+			slog.Error("Failed to unmarshal state", "err", err)
+			return
+		}
+		relay.MeshManager.State.Merge(&remoteState)
 	})
 
-	safeWS.RegisterMessageCallback("forward_sdp", func(data []byte) {
-		var msg MessageForwardSDP
+	safeWS.RegisterMessageCallback("mesh_forward_sdp", func(data []byte) {
+		var msg connections.MessageMeshForwardSDP
 		if err := json.Unmarshal(data, &msg); err != nil {
 			slog.Error("Failed to decode forwarded SDP message", "err", err)
 			return
 		}
-		relay.MeshManager.HandleForwardedSDP(safeWS, msg)
+		err = relay.MeshManager.HandleForwardedSDP(safeWS, msg)
+		if err != nil {
+			slog.Error("Failed to handle forwarded SDP message", "err", err)
+			return
+		}
 	})
 
-	safeWS.RegisterMessageCallback("forward_ice", func(data []byte) {
-		var msg MessageForwardICE
+	safeWS.RegisterMessageCallback("mesh_forward_ice", func(data []byte) {
+		var msg connections.MessageMeshForwardICE
 		if err := json.Unmarshal(data, &msg); err != nil {
 			slog.Error("Failed to decode forwarded ICE candidate", "err", err)
 			return
 		}
-		relay.MeshManager.HandleForwardedICE(safeWS, msg)
+		err = relay.MeshManager.HandleForwardedICE(safeWS, msg)
+		if err != nil {
+			slog.Error("Failed to handle forwarded ICE candidate", "err", err)
+			return
+		}
 	})
 
-	safeWS.RegisterMessageCallback("forward_ingest", func(data []byte) {
-		var msg MessageForwardIngest
+	safeWS.RegisterMessageCallback("mesh_forward_ingest", func(data []byte) {
+		var msg connections.MessageMeshForwardIngest
 		if err := json.Unmarshal(data, &msg); err != nil {
 			slog.Error("Failed to decode forwarded ingest message", "err", err)
 			return
@@ -266,12 +267,12 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 		relay.MeshManager.HandleForwardedIngest(safeWS, msg)
 	})
 
-	safeWS.RegisterMessageCallback("stream_request", func(data []byte) {
-		var msg MessageStreamRequest
+	safeWS.RegisterMessageCallback("mesh_stream_request", func(data []byte) {
+		var msg connections.MessageMeshStreamRequest
 		if err := json.Unmarshal(data, &msg); err != nil {
 			slog.Error("Failed to decode stream request", "err", err)
 			return
 		}
-		relay.MeshManager.HandleStreamRequest(safeWS, msg)
+		relay.MeshManager.handleStreamRequest(safeWS, msg)
 	})
 }

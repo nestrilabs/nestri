@@ -1,4 +1,4 @@
-package relay
+package connections
 
 import (
 	"github.com/pion/webrtc/v4"

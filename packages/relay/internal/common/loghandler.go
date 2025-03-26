@@ -1,4 +1,4 @@
-package relay
+package common
 
 import (
 	"context"
