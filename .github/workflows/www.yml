@@ -13,9 +13,8 @@ on:
 
 jobs:
   deploy-www-pr:
-    name: Build www on PR
+    name: Build and deploy www
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
     defaults:
       run:
         working-directory: "apps/www"
@@ -37,33 +36,5 @@ jobs:
           wranglerVersion: "3.93.0"
           workingDirectory: "apps/www"
           command: pages deploy ./dist --project-name=${{ vars.CF_WWW_PAGES_PROJECT_NAME }} --commit-dirty=true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-
-  deploy-www-main:
-    name: Build www on main
-    runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/main' }}
-    defaults:
-      run:
-        working-directory: "apps/www"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v1
-        with:
-          bun-version: latest
-      - name: Install dependencies
-        run: bun install
-      - name: Build Project Artifacts
-        run: bun run build
-      - name: Deploy Project Artifacts to Cloudflare
-        uses: cloudflare/wrangler-action@v3
-        with:
-          packageManager: bun
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          wranglerVersion: "3.93.0"
-          workingDirectory: "apps/www"
-          command: pages deploy ./dist --project-name=${{ vars.CF_WWW_PAGES_PROJECT_NAME }} --commit-dirty=true --branch=main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
