@@ -1,5 +1,5 @@
 import { vpc } from "./vpc";
-import { email } from "./email";
+// import { email } from "./email";
 import { allSecrets } from "./secret";
 import { postgres } from "./postgres";
 
@@ -9,7 +9,7 @@ bus.subscribe("Event", {
   vpc,
   handler: "./packages/functions/src/event/event.handler",
   link: [
-    email,
+    // email,
     postgres,
     ...allSecrets
   ],
