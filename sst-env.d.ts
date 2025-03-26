@@ -28,6 +28,17 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bus"
     }
+    "Database": {
+      "clusterArn": string
+      "database": string
+      "host": string
+      "password": string
+      "port": number
+      "reader": string
+      "secretArn": string
+      "type": "sst.aws.Aurora"
+      "username": string
+    }
     "DatabaseMigrator": {
       "name": string
       "type": "sst.aws.Function"
@@ -40,6 +51,11 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Email": {
+      "configSet": string
+      "sender": string
+      "type": "sst.aws.Email"
+    }
     "GithubClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -48,29 +64,9 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Mail": {
-      "configSet": string
-      "sender": string
-      "type": "sst.aws.Email"
-    }
-    "NestriVpc": {
-      "bastion": string
-      "type": "sst.aws.Vpc"
-    }
     "PolarSecret": {
       "type": "sst.sst.Secret"
       "value": string
-    }
-    "Postgres": {
-      "clusterArn": string
-      "database": string
-      "host": string
-      "password": string
-      "port": number
-      "reader": string
-      "secretArn": string
-      "type": "sst.aws.Aurora"
-      "username": string
     }
     "Steam": {
       "service": string
@@ -86,6 +82,10 @@ declare module "sst" {
       "auth": string
       "site": string
       "type": "sst.sst.Linkable"
+    }
+    "VPC": {
+      "bastion": string
+      "type": "sst.aws.Vpc"
     }
     "Web": {
       "type": "sst.aws.StaticSite"
