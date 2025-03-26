@@ -67,12 +67,6 @@ export module Member {
                 await tx.insert(memberTable).values({
                     id,
                     teamID: useTeam(),
-                    timeSeen: input.first ? sql`now()` : null,
-                }).onConflictDoUpdate({
-                    target: memberTable.id,
-                    set: {
-                        timeDeleted: null,
-                    }
                     email: input.email,
                     timeSeen: input.first ? sql`now()` : null,
                 })
@@ -107,7 +101,7 @@ export module Member {
                 .then((rows) => rows.map(serialize).at(0))
         )
     )
-    
+
     export const fromID = fn(z.string(), async (id) =>
         useTransaction(async (tx) =>
             tx

@@ -99,7 +99,7 @@ export module Machine {
             await tx
                 .update(machineTable)
                 .set({
-                    timeDeleted: sql`CURRENT_TIMESTAMP()`,
+                    timeDeleted: sql`now()`,
                 })
                 .where(and(eq(machineTable.id, id)))
                 .execute();
