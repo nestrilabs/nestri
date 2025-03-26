@@ -3,9 +3,8 @@ name: Build the website
 on:
   push:
     paths:
-      - apps/www/**
-
-
+      -" apps/www/**"
+      - ".github/workflows/www.yml"
 
 jobs:
   deploy-preview:
