@@ -1,9 +1,14 @@
 name: Build the website
 
 on:
-  push:
+  pull_request:
     paths:
-      -" apps/www/**"
+      - "apps/www/**"
+      - ".github/workflows/www.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/www/**"
       - ".github/workflows/www.yml"
 
 jobs:
