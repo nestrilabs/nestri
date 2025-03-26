@@ -1,1 +1,0 @@
-ALTER TABLE "user" ALTER COLUMN "polar_customer_id" DROP NOT NULL;

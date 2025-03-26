@@ -66,7 +66,6 @@ export module Member {
                 const id = input.id ?? createID("member");
                 await tx.insert(memberTable).values({
                     id,
-                    email: input.email,
                     teamID: useTeam(),
                     timeSeen: input.first ? sql`now()` : null,
                 }).onConflictDoUpdate({
@@ -74,7 +73,10 @@ export module Member {
                     set: {
                         timeDeleted: null,
                     }
+                    email: input.email,
+                    timeSeen: input.first ? sql`now()` : null,
                 })
+
                 await afterTx(() =>
                     async () => bus.publish(Resource.Bus, Events.Created, { memberID: id }),
                 );

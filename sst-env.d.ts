@@ -29,11 +29,19 @@ declare module "sst" {
       "type": "sst.aws.Bus"
     }
     "Database": {
+      "clusterArn": string
+      "database": string
       "host": string
-      "name": string
       "password": string
-      "type": "sst.sst.Linkable"
-      "user": string
+      "port": number
+      "reader": string
+      "secretArn": string
+      "type": "sst.aws.Aurora"
+      "username": string
+    }
+    "DatabaseMigrator": {
+      "name": string
+      "type": "sst.aws.Function"
     }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
@@ -43,6 +51,11 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Email": {
+      "configSet": string
+      "sender": string
+      "type": "sst.aws.Email"
+    }
     "GithubClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -50,11 +63,6 @@ declare module "sst" {
     "GithubClientSecret": {
       "type": "sst.sst.Secret"
       "value": string
-    }
-    "Mail": {
-      "configSet": string
-      "sender": string
-      "type": "sst.aws.Email"
     }
     "PolarSecret": {
       "type": "sst.sst.Secret"
@@ -65,15 +73,37 @@ declare module "sst" {
       "endpoint": string
       "type": "sst.aws.Realtime"
     }
+    "Steam": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "Storage": {
+      "name": string
+      "type": "sst.aws.Bucket"
+    }
     "Urls": {
       "api": string
       "auth": string
       "site": string
       "type": "sst.sst.Linkable"
     }
+    "VPC": {
+      "bastion": string
+      "type": "sst.aws.Vpc"
+    }
     "Web": {
       "type": "sst.aws.StaticSite"
       "url": string
+    }
+    "Zero": {
+      "service": string
+      "type": "sst.aws.Service"
+      "url": string
+    }
+    "ZeroPermissions": {
+      "name": string
+      "type": "sst.aws.Function"
     }
   }
 }

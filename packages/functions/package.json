@@ -1,7 +1,9 @@
 {
   "name": "@nestri/functions",
-  "module": "index.ts",
   "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
   "devDependencies": {
     "@aws-sdk/client-ecs": "^3.738.0",
     "@aws-sdk/client-sqs": "^3.734.0",
@@ -14,9 +16,10 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@openauthjs/openauth": "^0.3.9",
+    "@openauthjs/openauth": "*",
     "hono": "^4.6.15",
     "hono-openapi": "^0.3.1",
-    "partysocket": "1.0.3"
+    "partysocket": "1.0.3",
+    "postgres": "^3.4.5"
   }
 }

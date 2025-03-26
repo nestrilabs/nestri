@@ -2,6 +2,7 @@ import { timestamps, teamID } from "../drizzle/types";
 import { teamIndexes, teamTable } from "../team/team.sql";
 import { pgTable, text, varchar } from "drizzle-orm/pg-core";
 
+// FIXME: This is causing errors while trying to db push
 export const Standing = ["new", "good", "overdue"] as const;
 
 export const polarTable = pgTable(
@@ -16,7 +17,7 @@ export const polarTable = pgTable(
         }),
         standing: text("standing", { enum: Standing }).notNull(),
     },
-    (table) => ({
+    (table) => [
         ...teamIndexes(table),
-    })
+    ]
 )

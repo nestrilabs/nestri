@@ -158,12 +158,17 @@ const app = issuer({
                 return ctx.subject("user", {
                     userID,
                     email
+                }, {
+                    subject: email
                 });
+
             } else if (matching) {
                 //Sign In
                 return ctx.subject("user", {
                     userID: matching.id,
                     email
+                }, {
+                    subject: email
                 });
             }
         }
@@ -197,12 +202,16 @@ const app = issuer({
                     return ctx.subject("user", {
                         userID,
                         email: user.primary.email
+                    }, {
+                        subject: user.primary.email
                     });
                 } else {
                     //Sign In
                     return await ctx.subject("user", {
                         userID: matching.id,
                         email: user.primary.email
+                    }, {
+                        subject: user.primary.email
                     });
                 }
 
