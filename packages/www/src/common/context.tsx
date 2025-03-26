@@ -1,4 +1,4 @@
-import { ParentProps, Show, createContext, useContext } from "solid-js";
+import { JSX, ParentProps, Show, createContext, useContext } from "solid-js";
 
 export function createInitializedContext<
     Name extends string,
@@ -12,10 +12,12 @@ export function createInitializedContext<
             if (!context) throw new Error(`No ${name} context`);
             return context;
         },
-        provider: (props: ParentProps) => {
+        provider: (props: ParentProps & { loadingUI?: JSX.Element }) => {
             const value = cb();
             return (
-                <Show when={value.ready}>
+                <Show
+                    fallback={props.loadingUI}
+                    when={value.ready}>
                     <ctx.Provider value={value} {...props}>
                         {props.children}
                     </ctx.Provider>

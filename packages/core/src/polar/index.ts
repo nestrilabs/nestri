@@ -4,7 +4,7 @@ import { Resource } from "sst";
 import { eq, and } from "../drizzle";
 import { useTeam } from "../actor";
 import { createEvent } from "../event";
-import { polarTable, Standing } from "./polar.sql";
+// import { polarTable, Standing } from "./polar.sql.ts.test";
 import { Polar as PolarSdk } from "@polar-sh/sdk";
 import { useTransaction } from "../drizzle/transaction";
 
@@ -15,10 +15,10 @@ export module Polar {
 
     export const Info = z.object({
         teamID: z.string(),
-        customerID: z.string(),
         subscriptionID: z.string().nullable(),
+        customerID: z.string(),
         subscriptionItemID: z.string().nullable(),
-        standing: z.enum(Standing),
+        // standing: z.enum(Standing),
     });
 
     export type Info = z.infer<typeof Info>;
@@ -53,16 +53,16 @@ export module Polar {
         ),
     };
 
-    export function get() {
-        return useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(polarTable)
-                .where(eq(polarTable.teamID, useTeam()))
-                .execute()
-                .then((rows) => rows.map(serialize).at(0)),
-        );
-    }
+    // export function get() {
+    //     return useTransaction(async (tx) =>
+    //         tx
+    //             .select()
+    //             .from(polarTable)
+    //             .where(eq(polarTable.teamID, useTeam()))
+    //             .execute()
+    //             .then((rows) => rows.map(serialize).at(0)),
+    //     );
+    // }
 
     export const fromUserEmail = fn(z.string().min(1), async (email) => {
         try {
@@ -81,89 +81,89 @@ export module Polar {
         }
     })
 
-    export const setCustomerID = fn(Info.shape.customerID, async (customerID) =>
-        useTransaction(async (tx) =>
-            tx
-                .insert(polarTable)
-                .values({
-                    teamID: useTeam(),
-                    customerID,
-                    standing: "new",
-                })
-                .execute(),
-        ),
-    );
+    // export const setCustomerID = fn(Info.shape.customerID, async (customerID) =>
+    //     useTransaction(async (tx) =>
+    //         tx
+    //             .insert(polarTable)
+    //             .values({
+    //                 teamID: useTeam(),
+    //                 customerID,
+    //                 standing: "new",
+    //             })
+    //             .execute(),
+    //     ),
+    // );
 
-    export const setSubscription = fn(
-        Info.pick({
-            subscriptionID: true,
-            subscriptionItemID: true,
-        }),
-        (input) =>
-            useTransaction(async (tx) =>
-                tx
-                    .update(polarTable)
-                    .set({
-                        subscriptionID: input.subscriptionID,
-                        subscriptionItemID: input.subscriptionItemID,
-                    })
-                    .where(eq(polarTable.teamID, useTeam()))
-                    .returning()
-                    .execute()
-                    .then((rows) => rows.map(serialize).at(0)),
-            ),
-    );
+    // export const setSubscription = fn(
+    //     Info.pick({
+    //         subscriptionID: true,
+    //         subscriptionItemID: true,
+    //     }),
+    //     (input) =>
+    //         useTransaction(async (tx) =>
+    //             tx
+    //                 .update(polarTable)
+    //                 .set({
+    //                     subscriptionID: input.subscriptionID,
+    //                     subscriptionItemID: input.subscriptionItemID,
+    //                 })
+    //                 .where(eq(polarTable.teamID, useTeam()))
+    //                 .returning()
+    //                 .execute()
+    //                 .then((rows) => rows.map(serialize).at(0)),
+    //         ),
+    // );
 
-    export const removeSubscription = fn(
-        z.string().min(1),
-        (stripeSubscriptionID) =>
-            useTransaction((tx) =>
-                tx
-                    .update(polarTable)
-                    .set({
-                        subscriptionItemID: null,
-                        subscriptionID: null,
-                    })
-                    .where(and(eq(polarTable.subscriptionID, stripeSubscriptionID)))
-                    .execute(),
-            ),
-    );
+    // export const removeSubscription = fn(
+    //     z.string().min(1),
+    //     (stripeSubscriptionID) =>
+    //         useTransaction((tx) =>
+    //             tx
+    //                 .update(polarTable)
+    //                 .set({
+    //                     subscriptionItemID: null,
+    //                     subscriptionID: null,
+    //                 })
+    //                 .where(and(eq(polarTable.subscriptionID, stripeSubscriptionID)))
+    //                 .execute(),
+    //         ),
+    // );
 
-    export const setStanding = fn(
-        Info.pick({
-            subscriptionID: true,
-            standing: true,
-        }),
-        (input) =>
-            useTransaction((tx) =>
-                tx
-                    .update(polarTable)
-                    .set({ standing: input.standing })
-                    .where(and(eq(polarTable.subscriptionID, input.subscriptionID!)))
-                    .execute(),
-            ),
-    );
+    // export const setStanding = fn(
+    //     Info.pick({
+    //         subscriptionID: true,
+    //         standing: true,
+    //     }),
+    //     (input) =>
+    //         useTransaction((tx) =>
+    //             tx
+    //                 .update(polarTable)
+    //                 .set({ standing: input.standing })
+    //                 .where(and(eq(polarTable.subscriptionID, input.subscriptionID!)))
+    //                 .execute(),
+    //         ),
+    // );
 
-    export const fromCustomerID = fn(Info.shape.customerID, (customerID) =>
-        useTransaction((tx) =>
-            tx
-                .select()
-                .from(polarTable)
-                .where(and(eq(polarTable.customerID, customerID)))
-                .execute()
-                .then((rows) => rows.map(serialize).at(0)),
-        ),
-    );
+    // export const fromCustomerID = fn(Info.shape.customerID, (customerID) =>
+    //     useTransaction((tx) =>
+    //         tx
+    //             .select()
+    //             .from(polarTable)
+    //             .where(and(eq(polarTable.customerID, customerID)))
+    //             .execute()
+    //             .then((rows) => rows.map(serialize).at(0)),
+    //     ),
+    // );
 
-    function serialize(
-        input: typeof polarTable.$inferSelect,
-    ): z.infer<typeof Info> {
-        return {
-            teamID: input.teamID,
-            customerID: input.customerID,
-            subscriptionID: input.subscriptionID,
-            subscriptionItemID: input.subscriptionItemID,
-            standing: input.standing,
-        };
-    }
+    // function serialize(
+    //     input: typeof polarTable.$inferSelect,
+    // ): z.infer<typeof Info> {
+    //     return {
+    //         teamID: input.teamID,
+    //         customerID: input.customerID,
+    //         subscriptionID: input.subscriptionID,
+    //         subscriptionItemID: input.subscriptionItemID,
+    //         standing: input.standing,
+    //     };
+    // }
 }

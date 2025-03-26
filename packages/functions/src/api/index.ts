@@ -1,16 +1,16 @@
 import "zod-openapi/extend";
 import { Hono } from "hono";
 import { auth } from "./auth";
-import { ZodError } from "zod";
+import { TeamApi } from "./team";
 import { logger } from "hono/logger";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
-import { VisibleError } from "@nestri/core/error";
 import { HTTPException } from "hono/http-exception";
 import { handle, streamHandle } from "hono/aws-lambda";
+import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 
-const app = new Hono();
+export const app = new Hono();
 app
     .use(logger(), async (c, next) => {
         c.header("Cache-Control", "no-store");
@@ -20,47 +20,38 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
+    .route("/team", TeamApi.route)
     .route("/account", AccountApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {
-            return c.json(
-                {
-                    code: error.code,
-                    message: error.message,
-                },
-                400
-            );
+            console.error("api error:", error);
+            // @ts-expect-error
+            return c.json(error.toResponse(), error.statusCode());
         }
-        if (error instanceof ZodError) {
-            const e = error.errors[0];
-            if (e) {
-                return c.json(
-                    {
-                        code: e?.code,
-                        message: e?.message,
-                    },
-                    400,
-                );
-            }
-        }
+        // Handle HTTP exceptions
         if (error instanceof HTTPException) {
+            console.error("http error:", error);
             return c.json(
                 {
-                    code: "request",
+                    type: "validation",
+                    code: ErrorCodes.Validation.INVALID_PARAMETER,
                     message: "Invalid request",
                 },
                 400,
             );
         }
+        console.error("unhandled error:", error);
         return c.json(
             {
-                code: "internal",
+                type: "internal",
+                code: ErrorCodes.Server.INTERNAL_ERROR,
                 message: "Internal server error",
             },
             500,
         );
     });
+
 
 app.get(
     "/doc",
@@ -68,9 +59,8 @@ app.get(
         documentation: {
             info: {
                 title: "Nestri API",
-                description:
-                    "The Nestri API gives you the power to run your own customized cloud gaming platform.",
-                version: "0.3.0",
+                description: "The Nestri API gives you the power to run your own customized cloud gaming platform.",
+                version: "0.0.1",
             },
             components: {
                 securitySchemes: {
@@ -81,13 +71,13 @@ app.get(
                     },
                     TeamID: {
                         type: "apiKey",
-                        description:"The team ID to use for this query",
+                        description: "The team ID to use for this query",
                         in: "header",
                         name: "x-nestri-team"
                     },
                 },
             },
-            security: [{ Bearer: [], TeamID:[] }],
+            security: [{ Bearer: [], TeamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
             ],
