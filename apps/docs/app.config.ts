@@ -15,7 +15,7 @@ export default defineAppConfig({
       darkModeToggle: true,
       logo: {
         light: '/logo.webp',
-        dark: '/logo-dark.svg',
+        dark: '/logo.webp',
       },
       nav: [{
         title: 'Star on GitHub',
