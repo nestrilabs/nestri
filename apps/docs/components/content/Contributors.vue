@@ -22,7 +22,7 @@
           }"
         >
           <UTooltip class="w-full text-orange-500" :text="contributor.login">
-            <NuxtImg
+            <img
               :src="contributor.avatar_url"
               provider="ipx"
               densities="x1 x2"
