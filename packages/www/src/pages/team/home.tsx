@@ -294,8 +294,8 @@ const SteamLibrary = styled("div", {
         display: "grid",
         // backgroundColor: "red",
         maxWidth: "70vw",
-        gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-        columnGap: 12,
+        gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+        columnGap: 20,
         rowGap: 10,
     }
 })
@@ -308,6 +308,39 @@ const Title = styled("h3", {
         fontSize: theme.font.size["2xl"],
         letterSpacing: -0.7,
         gridColumn: "1/-1",
+        marginBottom: 20,
+    }
+})
+
+const SteamGameTitle = styled("h3", {
+    base: {
+        textAlign: "left",
+        fontFamily: theme.font.family.heading,
+        fontWeight: theme.font.weight.medium,
+        fontSize: theme.font.size["xl"],
+        letterSpacing: -0.7,
+    }
+})
+
+const SteamGameSubTitle = styled("span", {
+    base: {
+        textAlign: "left",
+        fontWeight: theme.font.weight.regular,
+        color: theme.color.gray.d900,
+        fontSize: theme.font.size["base"],
+        letterSpacing: -0.4,
+    }
+})
+
+const SubTitle = styled("span", {
+    base: {
+        textAlign: "left",
+        fontWeight: theme.font.weight.regular,
+        color: theme.color.gray.d900,
+        fontSize: theme.font.size["base"],
+        letterSpacing: -0.4,
+        gridColumn: "1/-1",
+        marginTop: -20,
         marginBottom: 20,
     }
 })
@@ -329,6 +362,7 @@ const FriendsList = styled("div", {
 const FriendContainer = styled("div", {
     base: {
         width: "100%",
+        display: "flex",
         minHeight: "calc(100% + 20px)",
         aspectRatio: "300/380",
         borderRadius: 15,
@@ -336,7 +370,6 @@ const FriendContainer = styled("div", {
         padding: "35px 17px",
         border: `1px solid ${theme.color.gray.d500}`,
         backgroundColor: theme.color.background.d100,
-        display: "flex",
         flexDirection: "column",
         alignItems: "center",
     }
@@ -370,10 +403,73 @@ const FriendsInviteButton = styled("button", {
         fontWeight: theme.font.weight.bold,
         fontFamily: theme.font.family.heading,
         border: `1px solid ${theme.color.gray.d100}`,
-        backgroundColor: theme.color.blue.d900,
-        transition:"all 0.2s cubic-bezier(0.4,0,0.2,1)",
-        ":hover":{
-            transform:"scale(1.05)"
+        backgroundColor: theme.color.blue.d700,
+        transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
+        ":hover": {
+            transform: "scale(1.05)"
+        }
+    }
+})
+
+const SteamGameContainer = styled("div", {
+    base: {
+        padding: "20px 0",
+        width: "100%",
+        minHeight: 72,
+        display: "flex",
+        flexDirection: "row",
+        selectors: {
+            "&:not(:last-of-type)": {
+                borderBottom: `1px solid ${theme.color.gray.d400}`
+            },
+            "&:not(:first-of-type)": {
+                borderTop: `1px solid ${theme.color.gray.d400}`
+            }
+        }
+    }
+})
+
+const SteamGameImg = styled("img", {
+    base: {
+        border: "none",
+        outline: "none",
+        aspectRatio: "1/1",
+        height: 80,
+        borderRadius: 8
+    }
+})
+
+const SteamGameText = styled("div", {
+    base: {
+        paddingRight: "3em",
+        marginLeft: 30,
+        display: "flex",
+        gap: 8,
+        flexDirection: "column",
+        alignSelf: "center",
+    }
+})
+const SteamGameBtn = styled("button", {
+    base: {
+        minWidth: 48,
+        borderRadius: 9999,
+        textAlign: "center",
+        padding: "0px 24px",
+        fontSize: theme.font.size["base"],
+        lineHeight: "1.75",
+        // marginTop: 20,
+        // marginRight: 1,
+        margin: "0 1px 0 auto",
+        cursor: "pointer",
+        alignSelf: "center",
+        fontWeight: theme.font.weight.bold,
+        fontFamily: theme.font.family.heading,
+        color: theme.color.blue.d900,
+        border: `1px solid ${theme.color.gray.d100}`,
+        backgroundColor: theme.color.blue.d300,
+        transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)",
+        ":hover": {
+            transform: "scale(1.05)"
         }
     }
 })
@@ -461,13 +557,14 @@ export function HomeRoute() {
                     </LastPlayedWrapper>
                     <GamesContainer>
                         <GamesWrapper>
-                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/05/15/acshadows-1715789601294.jpg" />
-                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2022/09/22/slime-rancher-2-button-02-1663890048548.jpg" />
-                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2023/05/19/cataclismo-button-1684532710313.jpg" />
-                            <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/03/27/marvelrivals-1711557092104.jpg" />
+                            <GameSquareImage draggable={false} alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/05/15/acshadows-1715789601294.jpg" />
+                            <GameSquareImage draggable={false} alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2022/09/22/slime-rancher-2-button-02-1663890048548.jpg" />
+                            <GameSquareImage draggable={false} alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2023/05/19/cataclismo-button-1684532710313.jpg" />
+                            <GameSquareImage draggable={false} alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/03/27/marvelrivals-1711557092104.jpg" />
                         </GamesWrapper>
                         <FriendsList>
-                            <Title>Friends Suggestions</Title>
+                            <Title>Team Mate Suggestions</Title>
+                            <SubTitle>Invite people to join your team and play together</SubTitle>
                             <FriendContainer>
                                 <Avatar size={100} name="Wanjohi Ryan" />
                                 <FriendsText>Wanjohi Ryan</FriendsText>
@@ -500,11 +597,68 @@ export function HomeRoute() {
                             </FriendContainer>
                         </FriendsList>
                         <SteamLibrary>
-                            <Title>Games we think you will like</Title>
-                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2625420/hero_capsule.jpg?t=1742853642" />
-                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2486740/hero_capsule.jpg?t=1742596243" />
-                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/870780/hero_capsule.jpg?t=1737800535" />
-                            <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2050650/hero_capsule.jpg?t=1737800535" />
+                            <Title>Your Steam library</Title>
+                            <SubTitle>These titles from your Steam Library are fully functional on Nestri</SubTitle>
+                            <div>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2023/05/27/alanwake2-1685200534966.jpg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Alan Wake II</SteamGameTitle>
+                                        <SteamGameSubTitle>Action, Adventure, Horror</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Install</SteamGameBtn>
+                                </SteamGameContainer>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2022/09/22/slime-rancher-2-button-02-1663890048548.jpg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Slime Rancher 2</SteamGameTitle>
+                                        <SteamGameSubTitle>Action, Adventure, Casual, Indie</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Install</SteamGameBtn>
+                                </SteamGameContainer>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets1.ignimgs.com/2019/07/17/doom-eternal---button-fin-1563400339680.jpg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Doom Eternal</SteamGameTitle>
+                                        <SteamGameSubTitle>Action</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Install</SteamGameBtn>
+                                </SteamGameContainer>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2022/06/03/resident-evil-4-remake-button-001-1654224044946.jpg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Resident Evil 4</SteamGameTitle>
+                                        <SteamGameSubTitle>Action, Adventure</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Install</SteamGameBtn>
+                                </SteamGameContainer>
+                            </div>
+                            <div>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2022/10/12/dead-space-2023-button-3-1665603079064.jpg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Dead Space</SteamGameTitle>
+                                        <SteamGameSubTitle>Action, Adventure</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Update</SteamGameBtn>
+                                </SteamGameContainer>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2023/01/25/hifirush-1674680068070.jpg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Hi-Fi Rush</SteamGameTitle>
+                                        <SteamGameSubTitle>Action</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Install</SteamGameBtn>
+                                </SteamGameContainer>
+                                <SteamGameContainer>
+                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2023/08/24/baldursg3-1692894717196.jpeg" />
+                                    <SteamGameText>
+                                        <SteamGameTitle>Baldur's Gate 3</SteamGameTitle>
+                                        <SteamGameSubTitle>Adventure, RPG, Strategy</SteamGameSubTitle>
+                                    </SteamGameText>
+                                    <SteamGameBtn>Install</SteamGameBtn>
+                                </SteamGameContainer>
+                            </div>
                         </SteamLibrary>
                     </GamesContainer>
                 </FullScreen>
@@ -512,3 +666,11 @@ export function HomeRoute() {
         </>
     )
 }
+
+/* 
+<GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2625420/hero_capsule.jpg?t=1742853642" />
+<GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2486740/hero_capsule.jpg?t=1742596243" />
+<GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/870780/hero_capsule.jpg?t=1737800535" />
+<GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2050650/hero_capsule.jpg?t=1737800535" /> 
+*/
+
