@@ -107,6 +107,7 @@ export const App: Component = () => {
                                         <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
                                     </FullScreen>
                                 }>
+                                {/* props.children */}
                                 {props.children}
                             </AccountProvider>
                         )}
