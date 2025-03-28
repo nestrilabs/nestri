@@ -8,6 +8,7 @@ import { Text } from "@nestri/www/ui/text"
 import { QRCode } from "@nestri/www/ui/custom-qr";
 import { globalStyle, keyframes } from "@macaron-css/core";
 import { A } from "@solidjs/router";
+import Avatar from "@nestri/www/ui/avatar";
 
 const EmptyState = styled("div", {
     base: {
@@ -299,7 +300,7 @@ const SteamLibrary = styled("div", {
     }
 })
 
-const SteamLibraryTitle = styled("h3", {
+const Title = styled("h3", {
     base: {
         textAlign: "left",
         fontFamily: theme.font.family.heading,
@@ -308,6 +309,72 @@ const SteamLibraryTitle = styled("h3", {
         letterSpacing: -0.7,
         gridColumn: "1/-1",
         marginBottom: 20,
+    }
+})
+
+const FriendsList = styled("div", {
+    base: {
+        borderTop: `1px solid ${theme.color.gray.d400}`,
+        padding: "20px 0",
+        margin: "20px auto",
+        width: "100%",
+        display: "grid",
+        maxWidth: "70vw",
+        gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+        columnGap: 12,
+        rowGap: 10,
+    }
+})
+
+const FriendContainer = styled("div", {
+    base: {
+        width: "100%",
+        minHeight: "calc(100% + 20px)",
+        aspectRatio: "300/380",
+        borderRadius: 15,
+        position: "relative",
+        padding: "35px 17px",
+        border: `1px solid ${theme.color.gray.d500}`,
+        backgroundColor: theme.color.background.d100,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+    }
+})
+
+const FriendsSubText = styled("span", {
+    base: {
+        color: theme.color.gray.d900,
+        fontSize: theme.font.size.sm,
+        marginTop: 10,
+    }
+})
+const FriendsText = styled("h3", {
+    base: {
+        fontSize: theme.font.size["lg"],
+        fontFamily: theme.font.family.heading,
+        marginTop: 20,
+    }
+})
+
+const FriendsInviteButton = styled("button", {
+    base: {
+        minWidth: 48,
+        borderRadius: 9999,
+        textAlign: "center",
+        padding: "0px 24px",
+        fontSize: theme.font.size["base"],
+        lineHeight: "1.75",
+        marginTop: 20,
+        cursor: "pointer",
+        fontWeight: theme.font.weight.bold,
+        fontFamily: theme.font.family.heading,
+        border: `1px solid ${theme.color.gray.d100}`,
+        backgroundColor: theme.color.blue.d900,
+        transition:"all 0.2s cubic-bezier(0.4,0,0.2,1)",
+        ":hover":{
+            transform:"scale(1.05)"
+        }
     }
 })
 
@@ -399,8 +466,41 @@ export function HomeRoute() {
                             <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2023/05/19/cataclismo-button-1684532710313.jpg" />
                             <GameSquareImage alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/03/27/marvelrivals-1711557092104.jpg" />
                         </GamesWrapper>
+                        <FriendsList>
+                            <Title>Friends Suggestions</Title>
+                            <FriendContainer>
+                                <Avatar size={100} name="Wanjohi Ryan" />
+                                <FriendsText>Wanjohi Ryan</FriendsText>
+                                <FriendsSubText>From your Steam Friends</FriendsSubText>
+                                <FriendsInviteButton>Invite</FriendsInviteButton>
+                            </FriendContainer>
+                            <FriendContainer>
+                                <Avatar size={100} name="Tracy Jones" />
+                                <FriendsText>Tracy Jones</FriendsText>
+                                <FriendsSubText>From your Steam Friends</FriendsSubText>
+                                <FriendsInviteButton>Invite</FriendsInviteButton>
+                            </FriendContainer>
+                            <FriendContainer>
+                                <Avatar size={100} name="The65th" />
+                                <FriendsText>The65th</FriendsText>
+                                <FriendsSubText>From your Steam Friends</FriendsSubText>
+                                <FriendsInviteButton>Invite</FriendsInviteButton>
+                            </FriendContainer>
+                            <FriendContainer>
+                                <Avatar size={100} name="Menstral" />
+                                <FriendsText>Menstral</FriendsText>
+                                <FriendsSubText>From your Steam Friends</FriendsSubText>
+                                <FriendsInviteButton>Invite</FriendsInviteButton>
+                            </FriendContainer>
+                            <FriendContainer>
+                                <Avatar size={100} name="AstroHot" />
+                                <FriendsText>AstroHot</FriendsText>
+                                <FriendsSubText>From your Steam Friends</FriendsSubText>
+                                <FriendsInviteButton>Invite</FriendsInviteButton>
+                            </FriendContainer>
+                        </FriendsList>
                         <SteamLibrary>
-                            <SteamLibraryTitle>Games we think you will like</SteamLibraryTitle>
+                            <Title>Games we think you will like</Title>
                             <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2625420/hero_capsule.jpg?t=1742853642" />
                             <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/2486740/hero_capsule.jpg?t=1742596243" />
                             <GameImageCapsule alt="Assasin's Creed Shadows" src="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/870780/hero_capsule.jpg?t=1737800535" />
