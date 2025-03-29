@@ -1,44 +1,79 @@
-// https://github.com/nuxt-themes/docus/blob/main/nuxt.schema.ts
 export default defineAppConfig({
-  docus: {
-    title: 'Nestri',
-    description: 'An open-source, self-hosted Geforce Now alternative',
-    image: 'https://feat-relay-hetzner.nestri.pages.dev/logo.webp',
-    socials: {
-      twitter: 'nestriness',
-      github: 'nestriness/nestri',
-      reddit: '/r/nestri',
-      website: {
-        label: 'Website',
-        icon: 'lucide:house',
-        href: 'https://nestri.io'
-      }
+  shadcnDocs: {
+    site: {
+      name: 'Nestri Docs',
+      description: 'Beautifully designed Nuxt Content template built with shadcn-vue. Customizable. Compatible. Open Source.',
     },
-    github: {
-      dir: 'apps/docs/content',
-      branch: 'main',
-      repo: 'nestri',
-      owner: 'nestriness',
-      edit: true
+    theme: {
+      customizable: false,
+      color: 'orange',
+      radius: 0.5,
+    },
+    header: {
+      title: 'Nestri Docs',
+      showTitle: true,
+      darkModeToggle: true,
+      logo: {
+        light: '/logo.webp',
+        dark: '/logo.webp',
+      },
+      nav: [{
+        title: 'Star on GitHub',
+        icon: 'lucide:star',
+        to: 'https://github.com/nestrilabs/nestri',
+        target: '_blank',
+      }, {
+        title: 'Create Issues',
+        icon: 'lucide:circle-dot',
+        to: 'https://github.com/nestrilabs/nestri/issues',
+        target: '_blank',
+      }],
+      links: [
+      {
+        icon: 'lucide:github',
+        to: 'https://github.com/nestrilabs/nestri',
+        target: '_blank',
+      }],
     },
     aside: {
-      level: 0,
-      collapsed: false,
-      exclude: []
+      useLevel: true,
+      collapse: false,
     },
     main: {
-      padded: true,
-      fluid: true
-    },
-    logo: "/nestri-logo.svg",
-    header: {
-      logo: true,
-      showLinkIcon: true,
-      exclude: [],
-      fluid: true
+      breadCrumb: true,
+      showTitle: true,
     },
     footer: {
-      credits: false,
+      credits: 'Copyright © 2025',
+      links: [{
+        icon: 'lucide:github',
+        to: 'https://github.com/nestrilabs/nestri',
+        target: '_blank',
+      },
+      {
+        icon: 'ri:discord-line',
+        to: 'https://discord.com/invite/Y6etn3qKZ3',
+        target: '_blank',
+      }],
+    },
+    toc: {
+      enable: true,
+      title: 'On This Page',
+      links: [{
+        title: 'Star on GitHub',
+        icon: 'lucide:star',
+        to: 'https://github.com/nestrilabs/nestri',
+        target: '_blank',
+      }, {
+        title: 'Create Issues',
+        icon: 'lucide:circle-dot',
+        to: 'https://github.com/nestrilabs/nestri/issues',
+        target: '_blank',
+      }],
+    },
+    search: {
+      enable: true,
+      inAside: false,
     }
   }
-})
+});
