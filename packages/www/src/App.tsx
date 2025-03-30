@@ -92,55 +92,54 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        <OpenAuthProvider
-            issuer={import.meta.env.VITE_AUTH_URL}
-            clientID="web"
-        >
+        // <OpenAuthProvider
+        //     issuer={import.meta.env.VITE_AUTH_URL}
+        //     clientID="web"
+        // >
             <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
                 <Router>
                     <Route
                         path="*"
-                        component={(props) => (
-                            <AccountProvider
-                                loadingUI={
-                                    <FullScreen>
-                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                                    </FullScreen>
-                                }>
-                                {/* props.children */}
-                                {props.children}
-                            </AccountProvider>
-                        )}
+                        // component={(props) => (
+                        //     <AccountProvider
+                        //         loadingUI={
+                        //             <FullScreen>
+                        //                 <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                        //             </FullScreen>
+                        //         }>
+                        //         {props.children}
+                        //     </AccountProvider>
+                        // )}
                     >
                         <Route path=":teamSlug">{TeamRoute}</Route>
                         <Route path="new" component={CreateTeamComponent} />
                         <Route
                             path="/"
-                            component={() => {
-                                const account = useAccount();
-                                return (
-                                    <Switch>
-                                        <Match when={account.current.teams.length > 0}>
-                                            <Navigate
-                                                href={`/${(
-                                                    account.current.teams.find(
-                                                        (w) => w.id === storage.value.team,
-                                                    ) || account.current.teams[0]
-                                                ).slug
-                                                    }`}
-                                            />
-                                        </Match>
-                                        <Match when={true}>
-                                            <Navigate href={`/new`} />
-                                        </Match>
-                                    </Switch>
-                                );
-                            }}
+                            // component={() => {
+                            //     const account = useAccount();
+                            //     return (
+                            //         <Switch>
+                            //             <Match when={account.current.teams.length > 0}>
+                            //                 <Navigate
+                            //                     href={`/${(
+                            //                         account.current.teams.find(
+                            //                             (w) => w.id === storage.value.team,
+                            //                         ) || account.current.teams[0]
+                            //                     ).slug
+                            //                         }`}
+                            //                 />
+                            //             </Match>
+                            //             <Match when={true}>
+                            //                 <Navigate href={`/new`} />
+                            //             </Match>
+                            //         </Switch>
+                            //     );
+                            // }}
                         />
                         <Route path="*" component={() => <NotFound />} />
                     </Route>
                 </Router>
             </Root>
-        </OpenAuthProvider>
+        // </OpenAuthProvider>
     )
 }

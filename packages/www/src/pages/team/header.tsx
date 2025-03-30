@@ -5,7 +5,7 @@ import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
 import { useAccount } from "@nestri/www/providers/account";
 import { TeamContext } from "@nestri/www/providers/context";
-import { Match, ParentProps, Show, Switch, useContext } from "solid-js";
+import { createSignal, Match, ParentProps, Show, Switch, useContext } from "solid-js";
 
 const PageWrapper = styled("div", {
     base: {
@@ -196,15 +196,21 @@ const Nav = styled("nav", {
 })
 
 export function Header(props: { whiteColor?: boolean } & ParentProps) {
-    const team = useContext(TeamContext)
-    const account = useAccount()
+    // const team = useContext(TeamContext)
+    const [team,] = createSignal({
+        id: "tea_01JPACSPYWTTJ66F32X3AWWFWE",
+        slug: "wanjohiryan",
+        name: "Wanjohi",
+        planType: "BYOG"
+    })
+    // const account = useAccount()
     return (
         <PageWrapper>
-            <NavWrapper style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }} >
+            <NavWrapper>
                 {/* <Background /> */}
                 <Nav>
                     <Container space="4" vertical="center">
-                        <Show when={team}
+                        {/* <Show when={team}
                             fallback={
                                 <Link href="/">
                                     <NestriLogoBig
@@ -228,70 +234,67 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                                     </LogoName>
                                 </Link>
                             }
-                        >
-                            <LogoRoot>
-                                <A href={`/${team!().slug}`} >
-                                    <NestriLogo
-                                        width={32}
-                                        height={32}
-                                        viewBox="0 0 12.8778 9.7377253"
-                                        version="1.1"
-                                        id="svg1"
-                                        xmlns="http://www.w3.org/2000/svg">
-                                        <path
-                                            d="m 2.093439,1.7855532 h 8.690922 V 2.2639978 H 2.093439 Z m 0,2.8440874 h 8.690922 V 5.1080848 H 2.093439 Z m 0,2.8440866 h 8.690922 V 7.952172 H 2.093439 Z"
-                                            style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
-                                    </NestriLogo>
-                                </A>
-                                <LineSvg
-                                    height="16"
-                                    stroke-linejoin="round"
-                                    viewBox="0 0 16 16"
-                                    width="16">
+                        > */}
+                        <LogoRoot>
+                            <A href={`/${team!().slug}`} >
+                                <NestriLogo
+                                    width={32}
+                                    height={32}
+                                    viewBox="0 0 12.8778 9.7377253"
+                                    version="1.1"
+                                    id="svg1"
+                                    xmlns="http://www.w3.org/2000/svg">
                                     <path
-                                        fill-rule="evenodd"
-                                        clip-rule="evenodd"
-                                        d="M4.01526 15.3939L4.3107 14.7046L10.3107 0.704556L10.6061 0.0151978L11.9849 0.606077L11.6894 1.29544L5.68942 15.2954L5.39398 15.9848L4.01526 15.3939Z" fill="currentColor"></path>
-                                </LineSvg>
-                                <TeamRoot>
-                                    <Avatar size={21} name={team!().slug} />
-                                    <TeamLabel style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }}>{team!().name}</TeamLabel>
-                                    <Switch>
-                                        <Match when={team!().planType === "BYOG"}>
-                                            <Badge style={{ "background-color": theme.color.purple.d700 }}>
-                                                <span style={{ "line-height": 0 }} >BYOG</span>
-                                            </Badge>
-                                        </Match>
-                                        <Match when={team!().planType === "Hosted"}>
-                                            <Badge style={{ "background-color": theme.color.blue.d700 }}>
-                                                <span style={{ "line-height": 0 }}>Hosted</span>
-                                            </Badge>
-                                        </Match>
-                                    </Switch>
-                                    <DropIcon
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width="32"
-                                        height="32"
-                                        viewBox="0 0 256 256">
-                                        <path
-                                            fill="currentColor"
-                                            d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" />
-                                    </DropIcon>
-                                </TeamRoot>
-                            </LogoRoot>
-                        </Show>
+                                        d="m 2.093439,1.7855532 h 8.690922 V 2.2639978 H 2.093439 Z m 0,2.8440874 h 8.690922 V 5.1080848 H 2.093439 Z m 0,2.8440866 h 8.690922 V 7.952172 H 2.093439 Z"
+                                        style="font-size:12px;fill:#ff4f01;fill-opacity:1;fill-rule:evenodd;stroke:#ff4f01;stroke-width:1.66201;stroke-linecap:round;stroke-dasharray:none;stroke-opacity:1" />
+                                </NestriLogo>
+                            </A>
+                            <LineSvg
+                                height="16"
+                                stroke-linejoin="round"
+                                viewBox="0 0 16 16"
+                                width="16">
+                                <path
+                                    fill-rule="evenodd"
+                                    clip-rule="evenodd"
+                                    d="M4.01526 15.3939L4.3107 14.7046L10.3107 0.704556L10.6061 0.0151978L11.9849 0.606077L11.6894 1.29544L5.68942 15.2954L5.39398 15.9848L4.01526 15.3939Z" fill="currentColor"></path>
+                            </LineSvg>
+                            <TeamRoot>
+                                <Avatar
+                                    size={21}
+                                    name={team!().slug}
+                                />
+                                <TeamLabel style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }}>{team!().name}</TeamLabel>
+                                <Switch>
+                                    <Match when={team!().planType === "BYOG"}>
+                                        <Badge style={{ "background-color": theme.color.purple.d700 }}>
+                                            <span style={{ "line-height": 0 }} >BYOG</span>
+                                        </Badge>
+                                    </Match>
+                                    <Match when={team!().planType === "Hosted"}>
+                                        <Badge style={{ "background-color": theme.color.blue.d700 }}>
+                                            <span style={{ "line-height": 0 }}>Hosted</span>
+                                        </Badge>
+                                    </Match>
+                                </Switch>
+                                <DropIcon
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width="32"
+                                    height="32"
+                                    viewBox="0 0 256 256">
+                                    <path
+                                        fill="currentColor"
+                                        d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" />
+                                </DropIcon>
+                            </TeamRoot>
+                        </LogoRoot>
+                        {/* </Show> */}
                     </Container>
                     <RightRoot>
                         <Show when={team}>
                             <NavRoot>
-                                <NavLink href={`/${team!().slug}/machines`}>
-                                    {/* <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                                        <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17.5 17.5L22 22m-2-11a9 9 0 1 0-18 0a9 9 0 0 0 18 0" color="currentColor" />
-                                    </svg> */}
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                                        <path fill="currentColor" d="M3.441 9.956a4.926 4.926 0 0 0 6.233 7.571l4.256 4.257a.773.773 0 0 0 1.169-1.007l-.075-.087l-4.217-4.218A4.927 4.927 0 0 0 3.44 9.956m13.213 6.545c-.225 1.287-.548 2.456-.952 3.454l.03.028l.124.14c.22.295.344.624.378.952a10.03 10.03 0 0 0 4.726-4.574zM12.25 16.5l2.284 2.287c.202-.6.381-1.268.53-1.992l.057-.294zm-2.936-5.45a3.38 3.38 0 1 1-4.78 4.779a3.38 3.38 0 0 1 4.78-4.78M15.45 10h-3.7a5.94 5.94 0 0 1 .892 5h2.71a26 26 0 0 0 .132-4.512zm1.507 0a28 28 0 0 1-.033 4.42l-.057.58h4.703a10.05 10.05 0 0 0 .258-5zm-2.095-7.593c.881 1.35 1.536 3.329 1.883 5.654l.062.44h4.59a10.03 10.03 0 0 0-6.109-5.958l-.304-.1zm-2.836-.405c-1.277 0-2.561 2.382-3.158 5.839c.465.16.912.38 1.331.658l5.088.001c-.54-3.809-1.905-6.498-3.261-6.498m-2.837.405A10.03 10.03 0 0 0 2.654 8.5h.995a5.92 5.92 0 0 1 3.743-.968c.322-1.858.846-3.47 1.527-4.68l.162-.275z" />
-                                    </svg>
-                                    {/* Machines */}
+                                <NavLink style={{ "margin-right": "-8px" }} href={`/${team!().slug}/machines`}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21l-4.343-4.343m0 0A8 8 0 1 0 5.343 5.343a8 8 0 0 0 11.314 11.314" /></svg>
                                 </NavLink>
                                 <NavLink href={`/${team!().slug}/machines`}>
                                     <svg style={{ "margin-bottom": "1px" }} xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16">
@@ -304,14 +307,15 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                             </NavRoot>
                         </Show>
                         <div style={{ "margin-bottom": "2px" }} >
-                            <Switch>
+                            <AvatarImg src={"https://avatars.githubusercontent.com/u/71614375?v=4"} alt={`Wanjohi's avatar`} />
+                            {/* <Switch>
                                 <Match when={account.current.avatarUrl} >
-                                    <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
+                                <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
                                 </Match>
                                 <Match when={!account.current.avatarUrl}>
                                     <Avatar size={32} name={`${account.current.name}#${account.current.discriminator}`} />
                                 </Match>
-                            </Switch>
+                            </Switch> */}
                         </div>
                     </RightRoot>
                 </Nav>

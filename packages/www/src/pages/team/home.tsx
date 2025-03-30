@@ -9,6 +9,7 @@ import { QRCode } from "@nestri/www/ui/custom-qr";
 import { globalStyle, keyframes } from "@macaron-css/core";
 import { A } from "@solidjs/router";
 import Avatar from "@nestri/www/ui/avatar";
+import { Portal } from "@nestri/www/common/portal";
 
 const EmptyState = styled("div", {
     base: {
@@ -231,7 +232,8 @@ const GamesContainer = styled("div", {
         display: "flex",
         alignItems: "center",
         flexDirection: "column",
-        zIndex: 3,
+        zIndex: 10,
+        isolation:"isolate",
         backgroundColor: theme.color.background.d200,
     }
 })
@@ -474,6 +476,17 @@ const SteamGameBtn = styled("button", {
     }
 })
 
+const PortalContainer = styled("div", {
+    base: {
+        zIndex: 4,
+        isolation: "isolate",
+        position: "fixed",
+        bottom: "20vh",
+        left:"50%",
+        transform: "translateX(-50%)"
+    }
+})
+
 export function HomeRoute() {
 
     // const steam = useSteam();
@@ -554,6 +567,9 @@ export function HomeRoute() {
                         <BackgroundImage />
                         {/* <Material />
                         <JoeColor /> */}
+                        <PortalContainer>
+                            <Portal />
+                        </PortalContainer>
                     </LastPlayedWrapper>
                     <GamesContainer>
                         <GamesWrapper>
