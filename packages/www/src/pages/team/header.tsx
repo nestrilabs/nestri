@@ -1,3 +1,4 @@
+import { animate, scroll } from "motion"
 import { A } from "@solidjs/router";
 import { Container } from "@nestri/www/ui";
 import Avatar from "@nestri/www/ui/avatar";
@@ -5,12 +6,11 @@ import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
 import { useAccount } from "@nestri/www/providers/account";
 import { TeamContext } from "@nestri/www/providers/context";
-import { createSignal, Match, ParentProps, Show, Switch, useContext } from "solid-js";
+import { createEffect, createSignal, Match, onCleanup, ParentProps, Show, Switch, useContext } from "solid-js";
 
 const PageWrapper = styled("div", {
     base: {
         minHeight: "100dvh",
-        // paddingBottom: "4rem",
         backgroundColor: theme.color.background.d200
     }
 })
@@ -160,14 +160,19 @@ const NavLink = styled(A, {
 
 const NavWrapper = styled("div", {
     base: {
-        // borderBottom: "1px solid white",
-        zIndex: 10,
+        zIndex: 100,
         position: "fixed",
-        // backdropFilter: "saturate(60%) blur(3px)",
         height: theme.headerHeight.root,
         transition: "all 0.3s cubic-bezier(0.4,0,0.2,1)",
         width: "100%",
-        backgroundColor: "transparent"
+    },
+    variants: {
+        scrolled: {
+            true: {
+                backgroundColor: theme.color.background.d200,
+                boxShadow: `0 2px 20px 1px ${theme.color.gray.d300}`
+            }
+        }
     }
 })
 
@@ -197,17 +202,32 @@ const Nav = styled("nav", {
 
 export function Header(props: { whiteColor?: boolean } & ParentProps) {
     // const team = useContext(TeamContext)
+    const [hasScrolled, setHasScrolled] = createSignal(false)
     const [team,] = createSignal({
         id: "tea_01JPACSPYWTTJ66F32X3AWWFWE",
         slug: "wanjohiryan",
         name: "Wanjohi",
         planType: "BYOG"
     })
+
+    createEffect(() => {
+        // const animation = animate(`${NavWrapper}`, {
+        //     backgroundColor: theme.color.background.d200,
+        //     boxShadow: `0 2px 20px 1px ${theme.color.gray.d300}`
+        // })
+
+        // scroll(animation,{})
+        document.addEventListener("scroll", () => { setHasScrolled(window.scrollY > 0) })
+
+    })
+
+    onCleanup(() => {
+        document.removeEventListener("scroll", () => { setHasScrolled(window.scrollY > 0) })
+    });
     // const account = useAccount()
     return (
         <PageWrapper>
-            <NavWrapper>
-                {/* <Background /> */}
+            <NavWrapper scrolled={hasScrolled()}>
                 <Nav>
                     <Container space="4" vertical="center">
                         {/* <Show when={team}

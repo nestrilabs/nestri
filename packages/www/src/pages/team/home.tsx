@@ -534,7 +534,7 @@ export function HomeRoute() {
 
     return (
         <>
-            <Header whiteColor>
+            <Header>
                 <FullScreen >
                     {/* <EmptyState
                         style={{
@@ -637,14 +637,6 @@ export function HomeRoute() {
                                     <SteamGameText>
                                         <SteamGameTitle>Doom Eternal</SteamGameTitle>
                                         <SteamGameSubTitle>Action</SteamGameSubTitle>
-                                    </SteamGameText>
-                                    <SteamGameBtn>Install</SteamGameBtn>
-                                </SteamGameContainer>
-                                <SteamGameContainer>
-                                    <SteamGameImg draggable={false} src="https://assets-prd.ignimgs.com/2022/06/03/resident-evil-4-remake-button-001-1654224044946.jpg" />
-                                    <SteamGameText>
-                                        <SteamGameTitle>Resident Evil 4</SteamGameTitle>
-                                        <SteamGameSubTitle>Action, Adventure</SteamGameSubTitle>
                                     </SteamGameText>
                                     <SteamGameBtn>Install</SteamGameBtn>
                                 </SteamGameContainer>
