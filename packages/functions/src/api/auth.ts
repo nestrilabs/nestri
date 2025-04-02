@@ -24,7 +24,7 @@ export const notPublic: MiddlewareHandler = async (c, next) => {
 export const auth: MiddlewareHandler = async (c, next) => {
   const authHeader =
     c.req.query("authorization") ?? c.req.header("authorization");
-  if (!authHeader) return next();
+  if (!authHeader) return withActor({ type: "public", properties: {} }, next);
   const match = authHeader.match(/^Bearer (.+)$/);
   if (!match) {
     throw new VisibleError(
