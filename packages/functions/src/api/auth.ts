@@ -6,7 +6,7 @@ import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 const client = createClient({
-  issuer: Resource.Urls.auth,
+  issuer: Resource.Auth.url,
   clientID: "api",
 });
 

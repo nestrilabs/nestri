@@ -5,6 +5,12 @@ import { domain } from "./dns";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 
+sst.Linkable.wrap(random.RandomString, (resource) => ({
+    properties: {
+        value: resource.result,
+    },
+}));
+
 export const authFingerprintKey = new random.RandomString(
     "AuthFingerprintKey",
     {

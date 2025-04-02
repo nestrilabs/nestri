@@ -6,7 +6,6 @@ import { logger } from "hono/logger";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
 import { HTTPException } from "hono/http-exception";
-import { handle, streamHandle } from "hono/aws-lambda";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 
@@ -85,5 +84,12 @@ app.get(
     }),
 );
 
-export type Routes = typeof routes;
-export const handler = process.env.SST_DEV ? handle(app) : streamHandle(app);
+
+import { patchLogger } from "../log-polyfill";
+
+patchLogger();
+
+export default {
+  port: 3001,
+  fetch: app.fetch,
+};
