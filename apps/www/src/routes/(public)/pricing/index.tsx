@@ -521,8 +521,8 @@ export default component$(() => {
             </MotionComponent>
             <Footer client:load>
                 <div class="w-full flex justify-center flex-col items-center gap-3">
-                    <Link href="/auth/login" prefetch={false} class="flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
-                        Get early access
+                    <Link href="https://discord.gg/6um5K6jrYj" prefetch={false} class="flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+                        Join our Discord
                     </Link>
                     <div class="mt-6 flex w-full items-center justify-center gap-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-400">
                         <span class="hover:text-primary-500 transition-colors duration-200">
