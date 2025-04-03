@@ -15,7 +15,6 @@ export default $config({
         },
         cloudflare: "5.49.0",
         random: "4.17.0",
-        neon: "0.6.3",
         command: "1.0.2",
       },
     };

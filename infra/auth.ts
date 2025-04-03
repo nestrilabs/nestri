@@ -1,7 +1,7 @@
 import { vpc } from "./vpc";
 import { bus } from "./bus";
 import { domain } from "./dns";
-import { email } from "./email";
+// import { email } from "./email";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 
@@ -19,7 +19,7 @@ export const auth = new sst.aws.Auth("Auth", {
         handler: "packages/functions/src/auth.handler",
         link: [
             bus,
-            email,
+            // email,
             postgres,
             authFingerprintKey,
             secret.PolarSecret,
