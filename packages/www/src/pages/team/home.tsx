@@ -15,7 +15,7 @@ const EmptyState = styled("div", {
     base: {
         padding: "0 40px",
         display: "flex",
-        height:"100dvh",
+        height: "100dvh",
         gap: 10,
         flexDirection: "column",
         alignItems: "center",
@@ -23,6 +23,7 @@ const EmptyState = styled("div", {
         margin: "auto"
     }
 })
+
 
 const EmptyStateHeader = styled("h2", {
     base: {
@@ -38,7 +39,7 @@ const EmptyStateSubHeader = styled("p", {
     base: {
         fontWeight: theme.font.weight.regular,
         color: theme.color.gray.d900,
-        fontSize: theme.font.size["lg"],
+        fontSize: theme.font.size["base"],
         textAlign: "center",
         maxWidth: 380,
         letterSpacing: -0.4,
@@ -46,11 +47,47 @@ const EmptyStateSubHeader = styled("p", {
     }
 })
 
+const bgRotate = keyframes({
+    'to': { transform: 'rotate(1turn)' },
+});
+
+const QRContainer = styled("div", {
+    base: {
+        position: "relative",
+        display: "flex",
+        marginBottom: 20,
+        justifyContent: "center",
+        alignItems: "center",
+        overflow: "hidden",
+        borderRadius: 25,
+        padding: 5,
+        isolation: "isolate",
+        ":before": {
+            content: "",
+            backgroundImage: "conic-gradient(from 0deg,transparent 0,#4DAFFE 10%,#4DAFFE 25%,transparent 35%)",
+            animation: `${bgRotate} 1.25s linear infinite`,
+            width: "200%",
+            height: "200%",
+            zIndex: -2,
+            top: "-50%",
+            left: "-50%",
+            position: "absolute"
+        },
+        ":after": {
+            content: "",
+            zIndex: -1,
+            inset: 5,
+            backgroundColor: theme.color.background.d100,
+            borderRadius: 22,
+            position: "absolute"
+        }
+    },
+})
+
 const QRWrapper = styled("div", {
     base: {
         backgroundColor: theme.color.background.d100,
         position: "relative",
-        marginBottom: 20,
         textWrap: "balance",
         border: `1px solid ${theme.color.gray.d400}`,
         display: "flex",
@@ -59,6 +96,16 @@ const QRWrapper = styled("div", {
         overflow: "hidden",
         borderRadius: 22,
         padding: 20,
+    }
+})
+
+const QRBg = styled("div", {
+    base: {
+        backgroundColor: theme.color.background.d200,
+        position: "absolute",
+        inset: 0,
+        margin: 5,
+        borderRadius: 20
     }
 })
 
@@ -490,41 +537,41 @@ const PortalContainer = styled("div", {
 
 export function HomeRoute() {
 
-    const steam = useSteam();
-    const [loginUrl, setLoginUrl] = createSignal<string | null>(null);
-    const [loginStatus, setLoginStatus] = createSignal<string | null>("Not connected");
-    const [userData, setUserData] = createSignal<{ username?: string, steamId?: string } | null>(null);
+    // const steam = useSteam();
+    // const [loginUrl, setLoginUrl] = createSignal<string | null>(null);
+    // const [loginStatus, setLoginStatus] = createSignal<string | null>("Not connected");
+    // const [userData, setUserData] = createSignal<{ username?: string, steamId?: string } | null>(null);
 
-    createEffect(async () => {
-        // Connect to the Steam login stream
-        const steamConnection = await steam.client.login.connect();
+    // createEffect(async () => {
+    //     // Connect to the Steam login stream
+    //     const steamConnection = await steam.client.login.connect();
 
-        // Set up event listeners for different event types
-        const urlUnsubscribe = steamConnection.addEventListener('challenge', (data) => {
-            setLoginUrl(data.url);
-            setLoginStatus('Scan QR code with Steam mobile app');
-        });
+    //     // Set up event listeners for different event types
+    //     const urlUnsubscribe = steamConnection.addEventListener('challenge', (data) => {
+    //         setLoginUrl(data.url);
+    //         setLoginStatus('Scan QR code with Steam mobile app');
+    //     });
 
-        const loginAttemptUnsubscribe = steamConnection.addEventListener('connected', (data) => {
-            setLoginStatus(`Attempting to login`);
-        });
+    //     const loginAttemptUnsubscribe = steamConnection.addEventListener('connected', (data) => {
+    //         setLoginStatus(`Attempting to login`);
+    //     });
 
-        const loginSuccessUnsubscribe = steamConnection.addEventListener('completed', (data) => {
-            setLoginStatus(`Successfully logged in`);
-        });
+    //     const loginSuccessUnsubscribe = steamConnection.addEventListener('completed', (data) => {
+    //         setLoginStatus(`Successfully logged in`);
+    //     });
 
-        const loginUnsuccessfulUnsubscribe = steamConnection.addEventListener('error', (data) => {
-            setLoginStatus(`Login failed: ${data.message}`);
-        });
+    //     const loginUnsuccessfulUnsubscribe = steamConnection.addEventListener('error', (data) => {
+    //         setLoginStatus(`Login failed: ${data.message}`);
+    //     });
 
-        onCleanup(() => {
-            urlUnsubscribe();
-            loginAttemptUnsubscribe();
-            loginSuccessUnsubscribe();
-            loginUnsuccessfulUnsubscribe();
-            steamConnection.disconnect();
-        });
-    })
+    //     onCleanup(() => {
+    //         urlUnsubscribe();
+    //         loginAttemptUnsubscribe();
+    //         loginSuccessUnsubscribe();
+    //         loginUnsuccessfulUnsubscribe();
+    //         steamConnection.disconnect();
+    //     });
+    // })
 
     return (
         <>
@@ -536,29 +583,33 @@ export function HomeRoute() {
                             "--nestri-body-background": theme.color.gray.d100
                         }}
                     >
-                        <Switch>
-                            <Match when={loginUrl()} >
-                                <QRWrapper>
-                                    <LogoContainer>
-                                        <LogoIcon
-                                            xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16">
-                                            <g fill="currentColor">
-                                                <path d="M.329 10.333A8.01 8.01 0 0 0 7.99 16C12.414 16 16 12.418 16 8s-3.586-8-8.009-8A8.006 8.006 0 0 0 0 7.468l.003.006l4.304 1.769A2.2 2.2 0 0 1 5.62 8.88l1.96-2.844l-.001-.04a3.046 3.046 0 0 1 3.042-3.043a3.046 3.046 0 0 1 3.042 3.043a3.047 3.047 0 0 1-3.111 3.044l-2.804 2a2.223 2.223 0 0 1-3.075 2.11a2.22 2.22 0 0 1-1.312-1.568L.33 10.333Z" /><path d="M4.868 12.683a1.715 1.715 0 0 0 1.318-3.165a1.7 1.7 0 0 0-1.263-.02l1.023.424a1.261 1.261 0 1 1-.97 2.33l-.99-.41a1.7 1.7 0 0 0 .882.84Zm3.726-6.687a2.03 2.03 0 0 0 2.027 2.029a2.03 2.03 0 0 0 2.027-2.029a2.03 2.03 0 0 0-2.027-2.027a2.03 2.03 0 0 0-2.027 2.027m2.03-1.527a1.524 1.524 0 1 1-.002 3.048a1.524 1.524 0 0 1 .002-3.048" />
-                                            </g>
-                                        </LogoIcon>
-                                    </LogoContainer>
-                                    <QRCode
-                                        uri={loginUrl()!}
-                                        size={180}
-                                        ecl="M"
-                                        clearArea={true}
-                                    />
-                                </QRWrapper>
-                            </Match>
+                        {/* <Switch>
+                            <Match when={loginUrl()} > */}
+                        <QRContainer>
+                            <QRBg />
+                            <QRWrapper>
+                                <LogoContainer>
+                                    <LogoIcon
+                                        xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 16 16">
+                                        <g fill="currentColor">
+                                            <path d="M.329 10.333A8.01 8.01 0 0 0 7.99 16C12.414 16 16 12.418 16 8s-3.586-8-8.009-8A8.006 8.006 0 0 0 0 7.468l.003.006l4.304 1.769A2.2 2.2 0 0 1 5.62 8.88l1.96-2.844l-.001-.04a3.046 3.046 0 0 1 3.042-3.043a3.046 3.046 0 0 1 3.042 3.043a3.047 3.047 0 0 1-3.111 3.044l-2.804 2a2.223 2.223 0 0 1-3.075 2.11a2.22 2.22 0 0 1-1.312-1.568L.33 10.333Z" /><path d="M4.868 12.683a1.715 1.715 0 0 0 1.318-3.165a1.7 1.7 0 0 0-1.263-.02l1.023.424a1.261 1.261 0 1 1-.97 2.33l-.99-.41a1.7 1.7 0 0 0 .882.84Zm3.726-6.687a2.03 2.03 0 0 0 2.027 2.029a2.03 2.03 0 0 0 2.027-2.029a2.03 2.03 0 0 0-2.027-2.027a2.03 2.03 0 0 0-2.027 2.027m2.03-1.527a1.524 1.524 0 1 1-.002 3.048a1.524 1.524 0 0 1 .002-3.048" />
+                                        </g>
+                                    </LogoIcon>
+                                </LogoContainer>
+                                <QRCode
+                                    // uri={loginUrl()!}
+                                    uri={"https://example.com"}
+                                    size={180}
+                                    ecl="M"
+                                    clearArea={true}
+                                />
+                            </QRWrapper>
+                        </QRContainer>
+                        {/* </Match>
                             <Match when={true}>
                                 <div>Attempting to connect to Steam</div>
                             </Match>
-                        </Switch>
+                        </Switch> */}
                         <EmptyStateHeader>Sign in to your Steam account</EmptyStateHeader>
                         <EmptyStateSubHeader>Use your Steam Mobile App to sign in via QR code.&nbsp;<SteamMobileLink href="https://store.steampowered.com/mobile" target="_blank">Learn More<svg data-testid="geist-icon" height="20" stroke-linejoin="round" viewBox="0 0 16 16" width="20" style="color: currentcolor;"><path fill-rule="evenodd" clip-rule="evenodd" d="M11.5 9.75V11.25C11.5 11.3881 11.3881 11.5 11.25 11.5H4.75C4.61193 11.5 4.5 11.3881 4.5 11.25L4.5 4.75C4.5 4.61193 4.61193 4.5 4.75 4.5H6.25H7V3H6.25H4.75C3.7835 3 3 3.7835 3 4.75V11.25C3 12.2165 3.7835 13 4.75 13H11.25C12.2165 13 13 12.2165 13 11.25V9.75V9H11.5V9.75ZM8.5 3H9.25H12.2495C12.6637 3 12.9995 3.33579 12.9995 3.75V6.75V7.5H11.4995V6.75V5.56066L8.53033 8.52978L8 9.06011L6.93934 7.99945L7.46967 7.46912L10.4388 4.5H9.25H8.5V3Z" fill="currentColor"></path></svg></SteamMobileLink></EmptyStateSubHeader>
                     </EmptyState>

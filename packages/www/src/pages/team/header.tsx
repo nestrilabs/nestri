@@ -139,7 +139,7 @@ const NavRoot = styled("div", {
 
 const NavLink = styled(A, {
     base: {
-        color: "#FFF",
+        color: theme.color.d1000.gray,
         textDecoration: "none",
         height: 32,
         padding: "0 8px",
@@ -284,7 +284,7 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                                     size={21}
                                     name={team!().slug}
                                 />
-                                <TeamLabel style={{ color: props.whiteColor ? "#FFF" : theme.color.d1000.gray }}>{team!().name}</TeamLabel>
+                                <TeamLabel style={{ color:theme.color.d1000.gray }}>{team!().name}</TeamLabel>
                                 <Switch>
                                     <Match when={team!().planType === "BYOG"}>
                                         <Badge style={{ "background-color": theme.color.purple.d700 }}>
