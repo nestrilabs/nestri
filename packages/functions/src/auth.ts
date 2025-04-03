@@ -10,7 +10,7 @@ import { Email } from "@nestri/core/email/index";
 import { handleDiscord, handleGithub } from "./utils";
 import { GithubAdapter } from "./ui/adapters/github";
 import { DiscordAdapter } from "./ui/adapters/discord";
-import { PasswordAdapter } from "./ui/adapters/password"
+import { PasswordAdapter } from "./ui/adapters/password";
 import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
 
 type OauthUser = {

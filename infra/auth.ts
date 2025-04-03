@@ -79,17 +79,4 @@ export const auth = new sst.aws.Service("Auth", {
                 max: 10,
             }
             : undefined,
-    // transform: {
-    //     taskDefinition: {
-    //         volumes: [{
-    //             name: "persist",
-    //             dockerVolumeConfiguration: {
-    //                 autoprovision: true,
-    //                 scope: "shared",
-    //                 driver: "local"
-    //             },
-    //             hostPath: "/ecs/persist"
-    //         }]
-    //     }
-    // }
 });
