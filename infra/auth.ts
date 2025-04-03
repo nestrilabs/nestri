@@ -22,6 +22,7 @@ export const auth = new sst.aws.Service("Auth", {
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
     memory: $app.stage === "production" ? "2 GB" : undefined,
     cluster,
+    command: ["bun", "run", "./src/auth.ts"],
     link: [
         bus,
         postgres,
@@ -32,7 +33,7 @@ export const auth = new sst.aws.Service("Auth", {
         secret.DiscordClientSecret,
     ],
     image: {
-        dockerfile: "packages/functions/auth.Dockerfile",
+        dockerfile: "packages/functions/Containerfile",
     },
     environment: {
         NO_COLOR: "1",

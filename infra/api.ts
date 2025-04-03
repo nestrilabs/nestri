@@ -16,7 +16,7 @@ export const api = new sst.aws.Service("Api", {
         secret.PolarSecret,
     ],
     image: {
-        dockerfile: "packages/functions/api.Dockerfile",
+        dockerfile: "packages/functions/Containerfile",
     },
     environment: {
         NO_COLOR: "1",

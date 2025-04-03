@@ -11,4 +11,5 @@ ADD ./packages/functions ./packages/functions
 ADD ./packages/core ./packages/core
 
 WORKDIR ./packages/functions
-CMD ["bun", "run", "./src/auth.ts"]
+
+CMD ["bun", "run", "./src/api/index.ts"]
