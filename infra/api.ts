@@ -9,6 +9,7 @@ export const api = new sst.aws.Service("Api", {
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
     memory: $app.stage === "production" ? "4 GB" : undefined,
     cluster,
+    command: ["bun", "run", "./src/api/index.ts"],
     link: [
         bus,
         auth,
@@ -34,21 +35,6 @@ export const api = new sst.aws.Service("Api", {
             },
         ],
     },
-    // permissions: [
-    //     {
-    //         resources: ["*"],
-    //         actions: [
-    //             "sts:*",
-    //             "logs:*",
-    //             "ses:*",
-    //             "iot:*",
-    //             "s3:*",
-    //             "ssm:*",
-    //             "cloudwatch:*",
-    //             "iam:PassRole",
-    //         ],
-    //     },
-    // ],
     dev: {
         command: "bun dev:api",
         directory: "packages/functions",
@@ -62,7 +48,3 @@ export const api = new sst.aws.Service("Api", {
             }
             : undefined,
 });
-
-// export const outputs = {
-//     api: api.url,
-// };
