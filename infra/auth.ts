@@ -4,6 +4,7 @@ import { domain } from "./dns";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 import { cluster } from "./cluster";
+import { vpc } from "./vpc";
 
 // sst.Linkable.wrap(random.RandomString, (resource) => ({
 //     properties: {
@@ -17,6 +18,8 @@ import { cluster } from "./cluster";
 //         length: 32,
 //     },
 // );
+
+const fileSystem = new sst.aws.Efs("AuthFS", { vpc })
 
 export const auth = new sst.aws.Service("Auth", {
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
@@ -37,6 +40,7 @@ export const auth = new sst.aws.Service("Auth", {
     },
     environment: {
         NO_COLOR: "1",
+        STORAGE: $dev ? "/tmp/persist.json" : "/mnt/efs/persist.json"
     },
     loadBalancer: {
         domain: "auth." + domain,
@@ -57,6 +61,12 @@ export const auth = new sst.aws.Service("Auth", {
             resources: ["*"],
         },
     ],
+    volumes: [
+        {
+            efs: fileSystem,
+            path: "/mnt/efs"
+        }
+    ],
     dev: {
         command: "bun dev:auth",
         directory: "packages/functions",
@@ -69,4 +79,17 @@ export const auth = new sst.aws.Service("Auth", {
                 max: 10,
             }
             : undefined,
+    // transform: {
+    //     taskDefinition: {
+    //         volumes: [{
+    //             name: "persist",
+    //             dockerVolumeConfiguration: {
+    //                 autoprovision: true,
+    //                 scope: "shared",
+    //                 driver: "local"
+    //             },
+    //             hostPath: "/ecs/persist"
+    //         }]
+    //     }
+    // }
 });
