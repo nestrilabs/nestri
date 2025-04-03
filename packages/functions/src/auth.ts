@@ -2,7 +2,6 @@ import { Resource } from "sst"
 import { Select } from "./ui/select";
 import { subjects } from "./subjects"
 import { logger } from "hono/logger";
-import { handle } from "hono/aws-lambda";
 import { PasswordUI } from "./ui/password"
 import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index"
@@ -11,7 +10,7 @@ import { handleDiscord, handleGithub } from "./utils";
 import { GithubAdapter } from "./ui/adapters/github";
 import { DiscordAdapter } from "./ui/adapters/discord";
 import { PasswordAdapter } from "./ui/adapters/password"
-import { type Provider } from "@openauthjs/openauth/provider/provider"
+import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
 
 type OauthUser = {
     primary: {
@@ -29,6 +28,9 @@ const app = issuer({
                 hide: true,
             },
         },
+    }),
+    storage: MemoryStorage({
+        persist: "/tmp/persist.json",
     }),
     theme: {
         title: "Nestri | Auth",
@@ -73,29 +75,29 @@ const app = issuer({
                 },
             }),
         ),
-        device: {
-            type: "device",
-            async client(input) {
-                if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
-                    throw new Error("Invalid authorization token");
-                }
-                const teamSlug = input.params.team;
-                if (!teamSlug) {
-                    throw new Error("Team slug is required");
-                }
+        // device: {
+        //     type: "device",
+        //     async client(input) {
+        //         if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
+        //             throw new Error("Invalid authorization token");
+        //         }
+        //         const teamSlug = input.params.team;
+        //         if (!teamSlug) {
+        //             throw new Error("Team slug is required");
+        //         }
 
-                const hostname = input.params.hostname;
-                if (!hostname) {
-                    throw new Error("Hostname is required");
-                }
+        //         const hostname = input.params.hostname;
+        //         if (!hostname) {
+        //             throw new Error("Hostname is required");
+        //         }
 
-                return {
-                    hostname,
-                    teamSlug
-                };
-            },
-            init() { }
-        } as Provider<{ teamSlug: string; hostname: string; }>,
+        //         return {
+        //             hostname,
+        //             teamSlug
+        //         };
+        //     },
+        //     init() { }
+        // } as Provider<{ teamSlug: string; hostname: string; }>,
     },
     allow: async (input) => {
         const url = new URL(input.redirectURI);
@@ -203,4 +205,12 @@ const app = issuer({
     },
 }).use(logger())
 
-export const handler = handle(app)
+export default {
+    port: 3002,
+    // idleTimeout: 255,
+    fetch: (req: Request) =>
+        app.fetch(req, undefined, {
+            waitUntil: (fn) => fn,
+            passThroughOnException: () => { },
+        }),
+};

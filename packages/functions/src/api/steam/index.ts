@@ -9,8 +9,8 @@ import path from "node:path"
 
 export module SteamApi {
     export const route = new Hono()
-        // .use(notPublic)
-        .get("/",
+        .use(notPublic)
+        .get("/login",
             describeRoute({
                 tags: ["Steam"],
                 summary: "Login to Steam",

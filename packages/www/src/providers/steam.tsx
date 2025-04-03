@@ -115,7 +115,7 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
               const token = await auth.access();
 
               // Create new EventSource connection
-              eventSource = new EventSource(`${import.meta.env.VITE_API_URL}/steam`, {
+              eventSource = new EventSource(`${import.meta.env.VITE_API_URL}/steam/login`, {
                 fetch: (input, init) =>
                   fetch(input, {
                     ...init,

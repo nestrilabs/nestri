@@ -5,7 +5,8 @@
     "./*": "./src/*.ts"
   },
   "scripts": {
-    "dev": "bun run --watch ./src/api/index.ts"
+    "dev:auth": "bun run --watch ./src/auth.ts",
+    "dev:api": "bun run --watch ./src/api/index.ts"
   },
   "devDependencies": {
     "@aws-sdk/client-ecs": "^3.738.0",

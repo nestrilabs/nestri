@@ -12,12 +12,9 @@ declare module "sst" {
       "url": string
     }
     "Auth": {
-      "type": "sst.aws.Auth"
+      "service": string
+      "type": "sst.aws.Service"
       "url": string
-    }
-    "AuthFingerprintKey": {
-      "type": "random.index/randomString.RandomString"
-      "value": string
     }
     "Bus": {
       "arn": string

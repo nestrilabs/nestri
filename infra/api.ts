@@ -16,7 +16,7 @@ export const api = new sst.aws.Service("Api", {
         secret.PolarSecret,
     ],
     image: {
-        dockerfile: "packages/functions/Dockerfile",
+        dockerfile: "packages/functions/api.Dockerfile",
     },
     environment: {
         NO_COLOR: "1",
@@ -50,7 +50,7 @@ export const api = new sst.aws.Service("Api", {
     //     },
     // ],
     dev: {
-        command: "bun dev",
+        command: "bun dev:api",
         directory: "packages/functions",
         url: "http://localhost:3001",
     },
