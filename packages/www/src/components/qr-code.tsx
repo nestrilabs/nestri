@@ -216,6 +216,20 @@ const SteamMobileLink = styled(A, {
     }
 })
 
+/**
+ * Manages the Steam authentication flow via a reactive hook.
+ *
+ * This hook connects to Steam's login stream for QR code authentication, updating the internal state through reactive signals. It sets up event listeners to capture authentication challenges (setting the login URL) and errors (flagging login errors), and it provides methods to initiate and re-establish the connection.
+ *
+ * The returned object includes:
+ * - loginError: A signal that indicates whether an authentication error has occurred.
+ * - loginUrl: A signal that holds the URL received on a successful authentication challenge.
+ * - isConnecting: A signal that reflects whether the authentication process is currently in progress.
+ * - authenticateSteam: A function that initiates the authentication process, sets up event listeners, and returns cleanup and reset functions.
+ * - reconnect: A function that cleans up any existing connection and initiates a new authentication attempt.
+ *
+ * @returns An object with authentication state signals and functions to manage the connection.
+ */
 export function useSteamAuth() {
     const [loginError, setLoginError] = createSignal<boolean>(false);
     const [loginUrl, setLoginUrl] = createSignal<string | undefined>();
@@ -288,6 +302,16 @@ export function useSteamAuth() {
     };
 }
 
+/**
+ * Renders a Steam QR code authentication interface.
+ *
+ * On mount, the component initiates the Steam authentication process using a custom hook and sets up a cleanup routine upon unmounting. It conditionally displays a QR code for signing in when a valid login URL is available, a reload button if an error occurs, or a timeout message if the request times out.
+ *
+ * @example
+ * <QrCodeComponent />
+ *
+ * @returns A Solid.js component that provides a QR code authentication UI for Steam.
+ */
 export function QrCodeComponent() {
     const { loginError, loginUrl, isConnecting, authenticateSteam, reconnect } = useSteamAuth();
 

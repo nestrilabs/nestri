@@ -28,6 +28,22 @@ type Props = {
     imageBackground?: string;
 };
 
+/**
+ * Renders an SVG element displaying a QR code generated from a URI.
+ *
+ * This component creates a QR code matrix based on the provided URI and error correction level, then renders
+ * the QR code using SVG elements. It highlights finder patterns and conditionally renders QR code dots,
+ * while optionally embedding a logo in the center with a specified background and an adjustable clear area.
+ *
+ * @param ecl - The error correction level for the QR code (defaults to 'M').
+ * @param size - The overall size (in pixels) of the QR code, including margins (defaults to 200).
+ * @param uri - The URI to encode into the QR code.
+ * @param clearArea - When true, reserves extra space in the QR code for an embedded logo.
+ * @param image - An optional JSX element to render as a central logo within the QR code.
+ * @param imageBackground - The background color for the logo area (defaults to 'transparent').
+ *
+ * @returns An SVG element representing the generated QR code.
+ */
 export function QRCode({
     ecl = 'M',
     size: sizeProp = 200,
