@@ -318,7 +318,7 @@ export function QrCodeComponent() {
                     <Show
                         when={!loginError() && loginUrl()}
                         fallback={
-                            <div style={{ height: "180px", width: "180px" }} />
+                            <div style={{ height: "220px", width: "220px" }} />
                         }
                     >
                         <QRCode

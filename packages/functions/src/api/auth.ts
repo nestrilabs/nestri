@@ -44,9 +44,8 @@ export const auth: MiddlewareHandler = async (c, next) => {
   }
 
   if (result.subject.type === "user") {
-    const teamID = c.req.header("x-nestri-team") //|| c.req.query("teamID");
+    const teamID = c.req.header("x-nestri-team");
     if (!teamID) return withActor(result.subject, next);
-    // const email = result.subject.properties.email;
     return withActor(
       {
         type: "system",
@@ -54,21 +53,12 @@ export const auth: MiddlewareHandler = async (c, next) => {
           teamID,
         },
       },
-      next
-      //   async () => {
-      //     const user = await User.fromEmail(email);
-      //     if (!user || user.length === 0) {
-      //       c.status(401);
-      //       return c.text("Unauthorized");
-      //     }
-      //     return withActor(
-      //       {
-      //         type: "member",
-      //         properties: { userID: user[0].id, workspaceID: user.workspaceID },
-      //       },
-      //       next,
-      //     );
-      //   },
+      async () => {
+        return withActor(
+          result.subject,
+          next,
+        );
+      },
     );
   }
 };

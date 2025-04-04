@@ -5,6 +5,9 @@ import { EventEmitter } from "events";
 export interface SteamCredentials {
     username: string;
     accessToken: string;
+    personaName: string;
+    avatarUrl: string;
+    country: string;
     [key: string]: any; // For any additional fields
 }
 

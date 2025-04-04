@@ -98,11 +98,10 @@ export module Member {
                 .from(memberTable)
                 .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
                 .orderBy(asc(memberTable.timeCreated))
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0))
-        ),
+                .then((rows) => rows.map(serialize).at(0))
+        )
     )
-    
+
     export const fromID = fn(z.string(), async (id) =>
         useTransaction(async (tx) =>
             tx
@@ -110,8 +109,7 @@ export module Member {
                 .from(memberTable)
                 .where(and(eq(memberTable.id, id), isNull(memberTable.timeDeleted)))
                 .orderBy(asc(memberTable.timeCreated))
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0))
+                .then((rows) => rows.map(serialize).at(0))
         ),
     )
 

@@ -1,11 +1,15 @@
 import { z } from "zod"
 import { Hono } from "hono";
+import path from "node:path"
 import { Steam } from "./steamAuth"
 import { notPublic } from "../auth";
 import { streamSSE } from "hono/streaming";
 import { describeRoute } from "hono-openapi";
-import path from "node:path"
+import { Steam as SteamDB } from "@nestri/core/steam/index"
 // import { ErrorResponses, Result } from "./common";
+
+// FIXME: The "credentials" event handler is not being called as expect
+// FIXME: The redo button is not working as expected... it does not reinitialise the connection
 
 export module SteamApi {
     export const route = new Hono()
@@ -65,19 +69,12 @@ export module SteamApi {
                     });
 
                     steam.on('error', async (error) => {
-                        await stream.writeSSE({
-                            event: 'error',
-                            data: JSON.stringify({ message: error.message || 'Authentication error' })
-                        });
+
                     });
 
                     // Listen for completion
                     steam.on('completed', async (result) => {
-                        await stream.writeSSE({
-                            event: 'complete',
-                            data: JSON.stringify({ sessionID })
-                        });
-                        
+
                         isCompleted = true;
                         await stream.close();
                     });
@@ -92,6 +89,7 @@ export module SteamApi {
                     steam.on('credentials', (credentials) => {
                         console.log("steam credentials received:", credentials);
                         // Don't send credentials directly to client for security reasons
+                        // c.executionCtx.waitUntil(SteamDB.create(credentials))
                     });
 
                     try {
@@ -100,8 +98,24 @@ export module SteamApi {
                         // Create a promise that only resolves when authentication completes or errors
                         await new Promise<void>((resolve) => {
                             // Already registered these events earlier, just need to add resolve() to them
-                            steam.once('completed', () => resolve());
-                            steam.once('error', () => resolve());
+                            steam.once('completed', async () => {
+                                await stream.writeSSE({
+                                    event: 'complete',
+                                    data: JSON.stringify({ sessionID })
+                                });
+
+                                setTimeout(() => resolve(), 1000)
+                            });
+
+                            steam.once('error', async (error) => {
+
+                                await stream.writeSSE({
+                                    event: 'error',
+                                    data: JSON.stringify({ message: error.message || 'Authentication error' })
+                                });
+
+                                setTimeout(() => resolve(), 1000)
+                            });
 
                             // Set timeout
                             setTimeout(() => {

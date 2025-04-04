@@ -11,6 +11,9 @@ const MAX_RECONNECT_ATTEMPTS = 1;
 let isConnecting = false;
 let activeConnection: SteamConnection | null = null;
 
+// FIXME: The "credentials" event handler is not being called as expect
+// FIXME: The redo button is not working as expected... it does not reinitialise the connection
+
 // Type definitions for the events
 interface SteamEventTypes {
   'connected': { sessionID: string };
@@ -45,7 +48,7 @@ interface SteamContext {
 
 // Create the initialized context
 export const { use: useSteam, provider: SteamProvider } = createInitializedContext(
-  "Steam",
+  "SteamContext",
   () => {
     const team = useTeam();
     const auth = useOpenAuth();
@@ -135,6 +138,7 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
               console.log(`Maximum reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
               notifyListeners('error', { message: 'Connection to Steam authentication failed after multiple attempts' });
               isConnecting = false;
+              disconnect()
               return;
             }
 

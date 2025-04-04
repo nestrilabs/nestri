@@ -31,4 +31,14 @@ export module Examples {
         timeSeen: new Date("2025-02-23T13:39:52.249Z"),
     }
 
+    export const Steam = {
+        id: Id("steam"),
+        userID: Id("user"),
+        personaName: "John",
+        username: "johnsteamaccount",
+        email: "john@example.com",
+        avatarUrl: "https://avatars.akamai.steamstatic.com/XXXXXXXXXXXX_full.jpg",
+        country: "KE",
+    }
+
 }

@@ -2,6 +2,7 @@ using System;
 using SteamKit2;
 using System.Text.Json;
 using SteamKit2.Authentication;
+
 // create our steamclient instance
 var steamClient = new SteamClient();
 // create the callback manager which will route callbacks to function calls
@@ -9,6 +10,14 @@ var manager = new CallbackManager(steamClient);
 
 // get the steamuser handler, which is used for logging on after successfully connecting
 var steamUser = steamClient.GetHandler<SteamUser>();
+var steamFriends = steamClient.GetHandler<SteamFriends>();
+
+// Create an instance to store user data
+var userData = new UserData
+{
+    Success = true,
+    Timestamp = DateTime.UtcNow
+};
 
 // register a few callbacks we're interested in
 // these are registered upon creation to a callback manager, which will then route the callbacks
@@ -59,15 +68,9 @@ async void OnConnected(SteamClient.ConnectedCallback callback)
 
     Console.WriteLine($"Logging in as '{pollResponse.AccountName}'...");
 
-    var credentialData = new
-    {
-        success = true,
-        username = pollResponse.AccountName,
-        accessToken = pollResponse.RefreshToken,
-        timestamp = DateTime.UtcNow
-    };
-
-    Console.WriteLine(JsonSerializer.Serialize(credentialData));
+    // Store username and access token
+    userData.Username = pollResponse.AccountName;
+    userData.AccessToken = pollResponse.RefreshToken;
 
     Random random = new();
 
@@ -104,8 +107,8 @@ void OnLoggedOn(SteamUser.LoggedOnCallback callback)
         return;
     }
 
-    // for this sample we'll just log off
-    steamUser.LogOff();
+    // We'll wait for all data to be collected before logging off
+    // The account info and persona state callbacks will be called first
 }
 
 void OnLoggedOff(SteamUser.LoggedOffCallback callback)
@@ -115,12 +118,9 @@ void OnLoggedOff(SteamUser.LoggedOffCallback callback)
 
 void OnAccountInfo(SteamUser.AccountInfoCallback callback)
 {
-    // before being able to interact with friends, you must wait for the account info callback
-    // this callback is posted shortly after a successful logon
-
-    var name = callback.PersonaName;
-    var country = callback.Country;
-    var steamFriends = steamClient.GetHandler<SteamFriends>();
+    // Store persona name and country
+    userData.PersonaName = callback.PersonaName;
+    userData.Country = callback.Country;
 
     // We need to explicitly make a request for our user to obtain avatar
     if (steamFriends != null && steamUser.SteamID != null)
@@ -132,7 +132,14 @@ void OnPersonaState(SteamFriends.PersonaStateCallback callback)
     if (callback.FriendID == steamUser?.SteamID && callback.AvatarHash is not null)
     {
         var avatarStr = BitConverter.ToString(callback.AvatarHash).Replace("-", "").ToLowerInvariant();
-        var AvatarUrl = $"https://avatars.akamai.steamstatic.com/{avatarStr}_full.jpg";
+        userData.AvatarUrl = $"https://avatars.akamai.steamstatic.com/{avatarStr}_full.jpg";
+
+        // Now that we have all the user data, emit the complete JSON and log off
+        userData.Timestamp = DateTime.UtcNow; // Update timestamp to current time
+        Console.WriteLine(JsonSerializer.Serialize(userData, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+
+        // Now we can log off
+        steamUser.LogOff();
     }
 }
 
@@ -146,4 +153,16 @@ void OutputUrl(QrAuthSession authSession)
 
     string jsonOutput = JsonSerializer.Serialize(challengeData);
     Console.WriteLine(jsonOutput);
+}
+
+// Create a class to store all user data
+class UserData
+{
+    public bool Success { get; set; }
+    public string Username { get; set; }
+    public string AccessToken { get; set; }
+    public string PersonaName { get; set; }
+    public string Country { get; set; }
+    public string AvatarUrl { get; set; }
+    public DateTime Timestamp { get; set; }
 }

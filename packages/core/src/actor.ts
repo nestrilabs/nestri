@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { eq } from "./drizzle";
-import { VisibleError } from "./error";
+import { ErrorCodes, VisibleError } from "./error";
 import { createContext } from "./context";
 import { UserFlags, userTable } from "./user/user.sql";
 import { useTransaction } from "./drizzle/transaction";
@@ -54,7 +54,18 @@ export function useUserID() {
   const actor = ActorContext.use();
   if (actor.type === "user") return actor.properties.userID;
   throw new VisibleError(
-    "unauthorized",
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `You don't have permission to access this resource`,
+  );
+}
+
+export function useUser() {
+  const actor = ActorContext.use();
+  if (actor.type === "user") return actor.properties;
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
     `You don't have permission to access this resource`,
   );
 }
@@ -84,7 +95,8 @@ export async function assertUserFlag(flag: keyof UserFlags) {
         const flags = rows[0]?.flags;
         if (!flags)
           throw new VisibleError(
-            "user.flags",
+            "validation",
+            ErrorCodes.Validation.MISSING_REQUIRED_FIELD,
             "Actor does not have " + flag + " flag",
           );
       }),

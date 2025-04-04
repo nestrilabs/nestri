@@ -15,6 +15,13 @@
       "when": 1741955636085,
       "tag": "0001_nifty_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1743794969007,
+      "tag": "0002_simple_outlaw_kid",
+      "breakpoints": true
     }
   ]
 }
