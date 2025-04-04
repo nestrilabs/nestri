@@ -83,6 +83,15 @@ export module Steam {
                 .then((rows) => rows.map(serialize)),
         )
 
+    /**
+     * Serializes a raw Steam table record into a standardized Info object.
+     *
+     * This function maps the fields from a database record (retrieved from the Steam table) to the
+     * corresponding properties defined in the Info schema.
+     *
+     * @param input - A raw record from the Steam table containing user information.
+     * @returns An object conforming to the Info schema.
+     */
     export function serialize(
         input: typeof steamTable.$inferSelect,
     ): z.infer<typeof Info> {

@@ -200,6 +200,18 @@ const Nav = styled("nav", {
     }
 })
 
+/**
+ * Renders the application's header, featuring navigation, branding, and team details.
+ *
+ * This component displays a navigation bar that includes the logo, team avatar, team name, a badge 
+ * reflecting the team's plan type, and navigation links. It adjusts its styling based on the scroll
+ * position by toggling visual effects on the navigation wrapper. A scroll event listener is added
+ * on mount to update the header's appearance when the user scrolls and is removed on unmount.
+ *
+ * @param props.whiteColor - (optional) Flag to apply a white color styling to the header.
+ * @param props.children - Optional child elements rendered below the header component.
+ * @returns The header component element.
+ */
 export function Header(props: { whiteColor?: boolean } & ParentProps) {
     // const team = useContext(TeamContext)
     const [hasScrolled, setHasScrolled] = createSignal(false)

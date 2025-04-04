@@ -388,6 +388,13 @@ const PortalContainer = styled("div", {
     }
 })
 
+/**
+ * Renders the home page layout for the gaming platform.
+ *
+ * This component wraps its content within a header and a full-screen container,
+ * currently displaying a QR code component. Commented sections indicate planned
+ * enhancements such as game previews, team mate suggestions, and a Steam library.
+ */
 export function HomeRoute() {
 
     return (

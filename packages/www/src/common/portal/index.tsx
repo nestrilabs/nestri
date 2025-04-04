@@ -42,6 +42,13 @@ const CanvasTwo = styled("canvas", {
         borderRadius: 999,
     }
 })
+/**
+ * Renders a portal play button with animated canvas icons.
+ *
+ * This Solid.js component manages two canvas elements that display an animated portal button and its icon. It asynchronously loads a set of image assets and uses instances of PortalButton and PortalIcon to render various animation states—including intro, idle, exit, and loop—on the canvases. Image loading errors are logged to the console.
+ *
+ * @returns A JSX element containing a styled button with two canvases for rendering animations.
+ */
 export function Portal() {
     const [iconRef, setIconRef] = createSignal<HTMLCanvasElement | undefined>();
     const [buttonRef, setButtonRef] = createSignal<HTMLCanvasElement | undefined>();
