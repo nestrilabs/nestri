@@ -52,7 +52,7 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
           const [isConnected, setIsConnected] = createSignal(false);
           // Track reconnection attempts
           const [reconnectAttempts, setReconnectAttempts] = createSignal(0);
-          const MAX_RECONNECT_ATTEMPTS = 5;
+          const MAX_RECONNECT_ATTEMPTS = 3;
 
           // Store event listeners
           const listeners: Record<string, Array<(data: any) => void>> = {

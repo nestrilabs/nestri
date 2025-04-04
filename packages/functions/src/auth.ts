@@ -168,7 +168,7 @@ patchLogger();
 
 export default {
     port: 3002,
-    // idleTimeout: 255,
+    idleTimeout: 255,
     fetch: (req: Request) =>
         app.fetch(req, undefined, {
             waitUntil: (fn) => fn,
