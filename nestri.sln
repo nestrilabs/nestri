@@ -4,7 +4,13 @@ VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "packages", "packages", "{809F86A1-1C4C-B159-0CD4-DF9D33D876CE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "steam", "packages\steam\steam.csproj", "{96118F95-BF02-0ED3-9042-36FA1B740D67}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "functions", "functions", "{2EFAA112-2B63-A5C2-656A-8B1A98FAAF7D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{CAC19006-8214-BFC5-3AAC-FEECBCBB359C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "api", "api", "{37CCF74B-C6C1-7AE4-9454-F68830C0A14C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "steam", "packages\functions\src\api\steam\steam.csproj", "{BDA947AA-FB20-12FF-DC74-B93E086F1BB2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -12,18 +18,21 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{96118F95-BF02-0ED3-9042-36FA1B740D67}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{96118F95-BF02-0ED3-9042-36FA1B740D67}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{96118F95-BF02-0ED3-9042-36FA1B740D67}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{96118F95-BF02-0ED3-9042-36FA1B740D67}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BDA947AA-FB20-12FF-DC74-B93E086F1BB2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BDA947AA-FB20-12FF-DC74-B93E086F1BB2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BDA947AA-FB20-12FF-DC74-B93E086F1BB2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BDA947AA-FB20-12FF-DC74-B93E086F1BB2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{96118F95-BF02-0ED3-9042-36FA1B740D67} = {809F86A1-1C4C-B159-0CD4-DF9D33D876CE}
+		{2EFAA112-2B63-A5C2-656A-8B1A98FAAF7D} = {809F86A1-1C4C-B159-0CD4-DF9D33D876CE}
+		{CAC19006-8214-BFC5-3AAC-FEECBCBB359C} = {2EFAA112-2B63-A5C2-656A-8B1A98FAAF7D}
+		{37CCF74B-C6C1-7AE4-9454-F68830C0A14C} = {CAC19006-8214-BFC5-3AAC-FEECBCBB359C}
+		{BDA947AA-FB20-12FF-DC74-B93E086F1BB2} = {37CCF74B-C6C1-7AE4-9454-F68830C0A14C}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {526AD703-4D15-43CF-B7C0-83F10D3158DB}
+		SolutionGuid = {DF9627AC-C008-4DBC-AAFC-E2766F0B3C50}
 	EndGlobalSection
 EndGlobal

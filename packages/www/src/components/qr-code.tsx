@@ -1,10 +1,10 @@
-import { theme } from "../ui";
+import { theme } from "@nestri/www/ui";
+import { A } from "@solidjs/router";
 import { styled } from "@macaron-css/solid";
 import { useSteam } from "../providers/steam";
 import { keyframes } from "@macaron-css/core";
 import { QRCode } from "@nestri/www/ui/custom-qr";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
-import { A } from "@solidjs/router";
 
 const EmptyState = styled("div", {
     base: {
@@ -57,20 +57,6 @@ const QRContainer = styled("div", {
         borderRadius: 25,
         padding: 5,
         isolation: "isolate",
-        ":before": {
-            content: "",
-            // backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.red.d600} 10%,${theme.color.red.d600} 25%,transparent 35%)`,
-            // backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.blue.d600} 10%,${theme.color.blue.d600} 25%,transparent 35%)`,
-            // backgroundColor: theme.color.red.d600,
-            // animation: `${bgRotate} 1.25s linear infinite`,
-            // animation: `${bgRotate} 2.25s linear infinite`,
-            width: "200%",
-            height: "200%",
-            zIndex: -2,
-            top: "-50%",
-            left: "-50%",
-            position: "absolute"
-        },
         ":after": {
             content: "",
             zIndex: -1,
@@ -80,6 +66,23 @@ const QRContainer = styled("div", {
             position: "absolute"
         }
     },
+    variants: {
+        login: {
+            true: {
+                ":before": {
+                    content: "",
+                    backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.blue.d600} 10%,${theme.color.blue.d600} 25%,transparent 35%)`,
+                    animation: `${bgRotate} 2.25s linear infinite`,
+                    width: "200%",
+                    height: "200%",
+                    zIndex: -2,
+                    top: "-50%",
+                    left: "-50%",
+                    position: "absolute"
+                },
+            }
+        }
+    }
 })
 
 const QRWrapper = styled("div", {
@@ -215,7 +218,7 @@ const SteamMobileLink = styled(A, {
 
 export function useSteamAuth() {
     const [loginError, setLoginError] = createSignal<boolean>(false);
-    const [loginUrl, setLoginUrl] = createSignal<string | null>(null);
+    const [loginUrl, setLoginUrl] = createSignal<string | undefined>();
     const [isConnecting, setIsConnecting] = createSignal<boolean>(false);
     const [disconnectFn, setDisconnectFn] = createSignal<(() => void) | null>(null);
     const steam = useSteam()
@@ -301,7 +304,7 @@ export function QrCodeComponent() {
                 "--nestri-body-background": theme.color.gray.d100
             }}
         >
-            <QRContainer>
+            <QRContainer login={typeof loginUrl() === "string" && !loginError()}>
                 <QRBg />
                 <QRWrapper>
                     <LogoContainer>

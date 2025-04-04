@@ -2,7 +2,6 @@ using System;
 using SteamKit2;
 using System.Text.Json;
 using SteamKit2.Authentication;
-
 // create our steamclient instance
 var steamClient = new SteamClient();
 // create the callback manager which will route callbacks to function calls
@@ -19,6 +18,9 @@ manager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
 
 manager.Subscribe<SteamUser.LoggedOnCallback>(OnLoggedOn);
 manager.Subscribe<SteamUser.LoggedOffCallback>(OnLoggedOff);
+
+manager.Subscribe<SteamUser.AccountInfoCallback>(OnAccountInfo);
+manager.Subscribe<SteamFriends.PersonaStateCallback>(OnPersonaState);
 
 var isRunning = true;
 
@@ -67,10 +69,13 @@ async void OnConnected(SteamClient.ConnectedCallback callback)
 
     Console.WriteLine(JsonSerializer.Serialize(credentialData));
 
+    Random random = new();
+
     // Logon to Steam with the access token we have received
     steamUser.LogOn(new SteamUser.LogOnDetails
     {
         Username = pollResponse.AccountName,
+        LoginID = (uint?)random.Next(), //allow multiple sessions from this IP Address
         AccessToken = pollResponse.RefreshToken,
     });
 }
@@ -106,6 +111,29 @@ void OnLoggedOn(SteamUser.LoggedOnCallback callback)
 void OnLoggedOff(SteamUser.LoggedOffCallback callback)
 {
     Console.WriteLine("Logged off of Steam: {0}", callback.Result);
+}
+
+void OnAccountInfo(SteamUser.AccountInfoCallback callback)
+{
+    // before being able to interact with friends, you must wait for the account info callback
+    // this callback is posted shortly after a successful logon
+
+    var name = callback.PersonaName;
+    var country = callback.Country;
+    var steamFriends = steamClient.GetHandler<SteamFriends>();
+
+    // We need to explicitly make a request for our user to obtain avatar
+    if (steamFriends != null && steamUser.SteamID != null)
+        steamFriends.RequestFriendInfo([steamUser.SteamID]);
+}
+
+void OnPersonaState(SteamFriends.PersonaStateCallback callback)
+{
+    if (callback.FriendID == steamUser?.SteamID && callback.AvatarHash is not null)
+    {
+        var avatarStr = BitConverter.ToString(callback.AvatarHash).Replace("-", "").ToLowerInvariant();
+        var AvatarUrl = $"https://avatars.akamai.steamstatic.com/{avatarStr}_full.jpg";
+    }
 }
 
 void OutputUrl(QrAuthSession authSession)
