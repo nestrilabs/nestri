@@ -86,6 +86,8 @@ async void OnConnected(SteamClient.ConnectedCallback callback)
 void OnDisconnected(SteamClient.DisconnectedCallback callback)
 {
     Console.WriteLine("Disconnected from Steam");
+    userData = new UserData { Success = false };
+    Console.WriteLine(JsonSerializer.Serialize(userData));
 
     isRunning = false;
 }
@@ -159,10 +161,10 @@ void OutputUrl(QrAuthSession authSession)
 class UserData
 {
     public bool Success { get; set; }
-    public string Username { get; set; }
-    public string AccessToken { get; set; }
-    public string PersonaName { get; set; }
-    public string Country { get; set; }
-    public string AvatarUrl { get; set; }
+    public string? Username { get; set; }
+    public string? AccessToken { get; set; }
+    public string? PersonaName { get; set; }
+    public string? Country { get; set; }
+    public string? AvatarUrl { get; set; }
     public DateTime Timestamp { get; set; }
 }

@@ -126,7 +126,7 @@ export async function assertUserFlag(flag: keyof UserFlags) {
         const flags = rows[0]?.flags;
         if (!flags)
           throw new VisibleError(
-            "validation",
+            "not_found",
             ErrorCodes.Validation.MISSING_REQUIRED_FIELD,
             "Actor does not have " + flag + " flag",
           );

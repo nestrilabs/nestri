@@ -1,4 +1,4 @@
-import { createEffect, createSignal } from "solid-js";
+import { createEffect, createSignal, onCleanup } from "solid-js";
 import portalbtn, { PortalButton, PortalIcon } from "./button";
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui";
@@ -14,8 +14,8 @@ const PlayBtn = styled("button", {
         margin: 0,
         height: 100,
         borderRadius: 999,
-        ":focus":{
-            outline:`3px solid ${theme.color.brand}`
+        ":focus": {
+            outline: `3px solid ${theme.color.brand}`
         }
     }
 })
@@ -24,7 +24,6 @@ const CanvasOne = styled("canvas", {
     base: {
         position: "absolute",
         inset: 0,
-        // backgroundColor:"red",
         height: "100%",
         width: "100%",
         borderRadius: 999,
@@ -35,7 +34,6 @@ const CanvasTwo = styled("canvas", {
     base: {
         position: "relative",
         inset: 0,
-        // backgroundColor:"red",
         zIndex: 1,
         height: "100%",
         width: "100%",
@@ -52,7 +50,6 @@ const CanvasTwo = styled("canvas", {
 export function Portal() {
     const [iconRef, setIconRef] = createSignal<HTMLCanvasElement | undefined>();
     const [buttonRef, setButtonRef] = createSignal<HTMLCanvasElement | undefined>();
-    // const [imagesLoaded, setImagesLoaded] = createSignal(false);
 
     const imageUrls = [
         portalbtn.assets.button_assets["intro"].image,
@@ -77,34 +74,43 @@ export function Portal() {
     }
 
     createEffect(() => {
-
         (async () => {
             const btnRef = buttonRef()
             const icnRef = iconRef()
+            let isActive = true;
 
             if (icnRef && btnRef) {
-                const [introImg, idleImg, exitImg, , loopImg] = await loadImages();
+                try {
 
-                const button = new PortalButton(btnRef);
-                const icon = new PortalIcon(icnRef)
-                // if (!isMounted) return;
+                    // Destructure images for each animation type - skipping introIconImg at index 3
+                    const [introImg, idleImg, exitImg, , loopImg] = await loadImages();
 
-                await button.render("intro", false, introImg as HTMLImageElement);
-                await icon.render("exit", false, exitImg as HTMLImageElement, false);
-                await button.render("idle", true, idleImg as HTMLImageElement, 3);
+                    const button = new PortalButton(btnRef);
+                    const icon = new PortalIcon(icnRef)
+                    if (!isActive) return;
 
-                // Intro and loop animation
-                await Promise.all([
-                    (async () => {
-                        if (icnRef) {
-                            await icon.render("loop", false, loopImg as HTMLImageElement, true);
-                            await icon.render("loop", false, loopImg as HTMLImageElement, true);
-                            await icon.render("exit", false, exitImg as HTMLImageElement, true);
-                        }
-                    })(),
-                    button.render("idle", true, idleImg as HTMLImageElement, 2),
-                ]);
+                    await button.render("intro", false, introImg as HTMLImageElement);
+                    await icon.render("exit", false, exitImg as HTMLImageElement, false);
+                    await button.render("idle", true, idleImg as HTMLImageElement, 3);
+
+                    // Intro and loop animation
+                    await Promise.all([
+                        (async () => {
+                            if (icnRef) {
+                                await icon.render("loop", false, loopImg as HTMLImageElement, true);
+                                await icon.render("loop", false, loopImg as HTMLImageElement, true);
+                                await icon.render("exit", false, exitImg as HTMLImageElement, true);
+                            }
+                        })(),
+                        button.render("idle", true, idleImg as HTMLImageElement, 2),
+                    ]);
+                } catch (err) {
+                    console.error("Failed to load animation images:", err);
+                }
             }
+            onCleanup(() => {
+                isActive = false;
+            });
         })()
     });
 

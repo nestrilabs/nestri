@@ -13,8 +13,8 @@ import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 export const app = new Hono();
 app
-    .use(cors())
     .use(logger())
+    .use(cors())
     .use(async (c, next) => {
         c.header("Cache-Control", "no-store");
         return next();

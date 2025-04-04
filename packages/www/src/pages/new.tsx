@@ -191,7 +191,6 @@ export function CreateTeamComponent() {
                                         </UrlTitle>
                                         <Input
                                             {...props}
-                                            autofocus
                                             placeholder={
                                                 getValue(form, "name")?.toString()
                                                     .split(" ").join("-")

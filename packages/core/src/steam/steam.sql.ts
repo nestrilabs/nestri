@@ -9,6 +9,7 @@ export const steamTable = pgTable(
         avatarUrl: text("avatar_url").notNull(),
         accessToken: text("access_token").notNull(),
         email: varchar("email", { length: 255 }).notNull(),
+        //TODO: Use Steam email?
         // steamEmail: varchar("steam_email", { length: 255 }).notNull(),
         country: varchar("country", { length: 255 }).notNull(),
         username: varchar("username", { length: 255 }).notNull(),
@@ -18,7 +19,6 @@ export const steamTable = pgTable(
         primaryKey({
             columns: [table.userID, table.id],
         }),
-        index("global_steam_email").on(table.email),
         uniqueIndex("steam_email").on(table.userID, table.email),
     ],
 );
