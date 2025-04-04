@@ -285,8 +285,9 @@ export function useSteamAuth() {
     // Function to reconnect
     const reconnect = async () => {
         // Clean up existing connection if any
-        if (disconnectFn()) {
-            disconnectFn()!();
+        const currentDisconnectFn = disconnectFn();
+        if (currentDisconnectFn) {
+            currentDisconnectFn();
         }
 
         // Start a new connection

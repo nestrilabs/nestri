@@ -129,7 +129,7 @@ void OnAccountInfo(SteamUser.AccountInfoCallback callback)
 
 void OnPersonaState(SteamFriends.PersonaStateCallback callback)
 {
-    if (callback.FriendID == steamUser?.SteamID && callback.AvatarHash is not null)
+    if (callback.FriendID == steamUser?.SteamID && callback.AvatarHash is not null && steamUser != null)
     {
         var avatarStr = BitConverter.ToString(callback.AvatarHash).Replace("-", "").ToLowerInvariant();
         userData.AvatarUrl = $"https://avatars.akamai.steamstatic.com/{avatarStr}_full.jpg";

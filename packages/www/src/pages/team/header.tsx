@@ -222,19 +222,16 @@ export function Header(props: ParentProps) {
     })
 
     createEffect(() => {
-        // const animation = animate(`${NavWrapper}`, {
-        //     backgroundColor: theme.color.background.d200,
-        //     boxShadow: `0 2px 20px 1px ${theme.color.gray.d300}`
-        // })
+        const handleScroll = () => { setHasScrolled(window.scrollY > 0); }
 
-        // scroll(animation,{})
-        document.addEventListener("scroll", () => { setHasScrolled(window.scrollY > 0) })
+        document.addEventListener("scroll", handleScroll);
+
+        onCleanup(() => {
+            document.removeEventListener("scroll", handleScroll);
+        });
 
     })
-
-    onCleanup(() => {
-        document.removeEventListener("scroll", () => { setHasScrolled(window.scrollY > 0) })
-    });
+    
     // const account = useAccount()
     return (
         <PageWrapper>

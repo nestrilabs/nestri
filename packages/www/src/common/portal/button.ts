@@ -121,7 +121,7 @@ export class PortalButton {
 
                     const scaleFactor = Math.min(targetDim / newSize.w, targetDim / newSize.h);
                     const scaledWidth = newSize.w * scaleFactor;
-                    const scaledHeight = newSize.w * scaleFactor;
+                    const scaledHeight = newSize.h * scaleFactor;
 
                     // Calculate the center position to draw the resized image
                     const x = (targetDim - scaledWidth) / 2;
