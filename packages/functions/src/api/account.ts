@@ -9,7 +9,7 @@ import { Examples } from "@nestri/core/examples";
 import { ErrorResponses, Result } from "./common";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
-export module AccountApi {
+export namespace AccountApi {
     export const route = new Hono()
         .use(notPublic)
         .get("/",

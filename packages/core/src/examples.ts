@@ -1,5 +1,5 @@
 import { prefixes } from "./utils";
-export module Examples {
+export namespace Examples {
     export const Id = (prefix: keyof typeof prefixes) =>
         `${prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
 

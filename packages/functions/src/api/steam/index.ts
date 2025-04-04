@@ -10,7 +10,7 @@ import { Steam as SteamDB } from "@nestri/core/steam/index"
 
 // FIXME: The "credentials" event handler is not being called as expected, so nothing is going to the db
 
-export module SteamApi {
+export namespace SteamApi {
     export const route = new Hono()
         .use(notPublic)
         .get("/login",

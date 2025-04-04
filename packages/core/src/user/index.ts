@@ -15,7 +15,7 @@ import { and, eq, isNull, asc, getTableColumns, sql } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 
-export module User {
+export namespace User {
     const MAX_ATTEMPTS = 50;
 
     export const Info = z

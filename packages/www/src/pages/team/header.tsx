@@ -208,11 +208,10 @@ const Nav = styled("nav", {
  * position by toggling visual effects on the navigation wrapper. A scroll event listener is added
  * on mount to update the header's appearance when the user scrolls and is removed on unmount.
  *
- * @param props.whiteColor - (optional) Flag to apply a white color styling to the header.
  * @param props.children - Optional child elements rendered below the header component.
  * @returns The header component element.
  */
-export function Header(props: { whiteColor?: boolean } & ParentProps) {
+export function Header(props: ParentProps) {
     // const team = useContext(TeamContext)
     const [hasScrolled, setHasScrolled] = createSignal(false)
     const [team,] = createSignal({
@@ -296,7 +295,7 @@ export function Header(props: { whiteColor?: boolean } & ParentProps) {
                                     size={21}
                                     name={team!().slug}
                                 />
-                                <TeamLabel style={{ color:theme.color.d1000.gray }}>{team!().name}</TeamLabel>
+                                <TeamLabel style={{ color: theme.color.d1000.gray }}>{team!().name}</TeamLabel>
                                 <Switch>
                                     <Match when={team!().planType === "BYOG"}>
                                         <Badge style={{ "background-color": theme.color.purple.d700 }}>

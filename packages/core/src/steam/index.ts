@@ -7,7 +7,7 @@ import { steamTable } from "./steam.sql";
 import { eq, and, isNull } from "../drizzle";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
-export module Steam {
+export namespace Steam {
     export const Info = z
         .object({
             id: z.string().openapi({
