@@ -8,8 +8,7 @@ import { describeRoute } from "hono-openapi";
 import { Steam as SteamDB } from "@nestri/core/steam/index"
 // import { ErrorResponses, Result } from "./common";
 
-// FIXME: The "credentials" event handler is not being called as expect
-// FIXME: The redo button is not working as expected... it does not reinitialise the connection
+// FIXME: The "credentials" event handler is not being called as expected, so nothing is going to the db
 
 export module SteamApi {
     export const route = new Hono()
