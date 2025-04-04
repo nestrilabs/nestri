@@ -112,9 +112,13 @@ export class Steam extends EventEmitter {
                                 if (jsonData.challengeUrl) {
                                     const newUrl = jsonData.challengeUrl;
                                     // Always emit the event, even if the URL is the same
-                                    console.log("Found challenge URL:", newUrl);
                                     this.challengeUrl = newUrl; // Update the stored URL
                                     this.emit('challengeUrl', newUrl);
+                                }
+
+                                if (jsonData.error && jsonData.message) {
+                                    console.log("Found error:", jsonData.message);
+                                    this.emit('error', jsonData.message);
                                 }
 
                                 // Check if this JSON contains credentials
@@ -130,17 +134,6 @@ export class Steam extends EventEmitter {
                         }
                     } catch (e) {
                         // Not valid JSON, continue listening
-                    }
-
-                    // As a fallback, check for the original format
-                    const urlMatch = output.match(/Challenge URL: (https:\/\/[^\s]+)/);
-                    if (urlMatch && urlMatch[1]) {
-                        const newUrl = urlMatch[1];
-                        if (this.challengeUrl !== newUrl) {
-                            this.challengeUrl = newUrl;
-                            console.log("Found challenge URL (old format):", this.challengeUrl);
-                            this.emit('challengeUrl', this.challengeUrl);
-                        }
                     }
                 });
             }

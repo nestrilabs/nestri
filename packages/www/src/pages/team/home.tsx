@@ -11,23 +11,6 @@ import Avatar from "@nestri/www/ui/avatar";
 import { Portal } from "@nestri/www/common/portal";
 import { QrCodeComponent } from "@nestri/www/components"
 
-const SteamMobileLink = styled(A, {
-    base: {
-        textUnderlineOffset: 2,
-        textDecoration: "none",
-        color: theme.color.blue.d900,
-        display: "inline-flex",
-        justifyContent: "center",
-        alignItems: "center",
-        gap: 1,
-        width: "max-content",
-        textTransform: "capitalize",
-        ":hover": {
-            textDecoration: "underline"
-        }
-    }
-})
-
 
 const LastPlayedWrapper = styled("div", {
     base: {

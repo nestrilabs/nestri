@@ -56,7 +56,7 @@ export module SteamApi {
                         // Remove this check if you want to send every event even if URL is the same
                         if (!sentUrls.has(url)) {
                             sentUrls.add(url);
-                            console.log("Sending challenge URL to client:", url);
+                            // console.log("Sending challenge URL to client:", url);
                             await stream.writeSSE({
                                 event: 'challenge',
                                 data: JSON.stringify({ url, sessionID })
@@ -77,6 +77,7 @@ export module SteamApi {
                             event: 'complete',
                             data: JSON.stringify({ sessionID })
                         });
+                        
                         isCompleted = true;
                         await stream.close();
                     });

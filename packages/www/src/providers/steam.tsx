@@ -4,6 +4,13 @@ import { useOpenAuth } from "@openauthjs/solid";
 import { createSignal, onCleanup } from "solid-js";
 import { createInitializedContext } from "../common/context";
 
+// Global connection state to prevent multiple instances
+let globalEventSource: EventSource | null = null;
+let globalReconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 1;
+let isConnecting = false;
+let activeConnection: SteamConnection | null = null;
+
 // Type definitions for the events
 interface SteamEventTypes {
   'connected': { sessionID: string };
@@ -48,11 +55,28 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
       // SSE connection factory for login
       login: {
         connect: async (): Promise<SteamConnection> => {
-          let eventSource: EventSource | null = null;
+          // Return existing connection if active
+          if (activeConnection && globalEventSource && globalEventSource.readyState !== 2) {
+            return activeConnection;
+          }
+
+          // Prevent multiple simultaneous connection attempts
+          if (isConnecting) {
+            console.log("Connection attempt already in progress, waiting...");
+            // Wait for existing connection attempt to finish
+            return new Promise((resolve) => {
+              const checkInterval = setInterval(() => {
+                if (!isConnecting && activeConnection) {
+                  clearInterval(checkInterval);
+                  resolve(activeConnection);
+                }
+              }, 100);
+            });
+          }
+
+          isConnecting = true;
+
           const [isConnected, setIsConnected] = createSignal(false);
-          // Track reconnection attempts
-          const [reconnectAttempts, setReconnectAttempts] = createSignal(0);
-          const MAX_RECONNECT_ATTEMPTS = 3;
 
           // Store event listeners
           const listeners: Record<string, Array<(data: any) => void>> = {
@@ -107,15 +131,23 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
 
           // Initialize connection
           const initConnection = async () => {
-            if (eventSource) {
-              eventSource.close();
+            if (globalReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+              console.log(`Maximum reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached. Giving up.`);
+              notifyListeners('error', { message: 'Connection to Steam authentication failed after multiple attempts' });
+              isConnecting = false;
+              return;
+            }
+
+            if (globalEventSource) {
+              globalEventSource.close();
+              globalEventSource = null;
             }
 
             try {
               const token = await auth.access();
 
               // Create new EventSource connection
-              eventSource = new EventSource(`${import.meta.env.VITE_API_URL}/steam/login`, {
+              globalEventSource = new EventSource(`${import.meta.env.VITE_API_URL}/steam/login`, {
                 fetch: (input, init) =>
                   fetch(input, {
                     ...init,
@@ -127,15 +159,16 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
                   }),
               });
 
-              eventSource.onopen = () => {
+              globalEventSource.onopen = () => {
                 console.log('Connected to Steam login stream');
                 setIsConnected(true);
-                setReconnectAttempts(0); // Reset reconnect counter on successful connection
+                globalReconnectAttempts = 0; // Reset reconnect counter on successful connection
+                isConnecting = false;
               };
 
               // Set up event handlers for all specific events
               ['connected', 'challenge', 'completed'].forEach((eventType) => {
-                eventSource!.addEventListener(eventType, (event) => {
+                globalEventSource!.addEventListener(eventType, (event) => {
                   try {
                     const data = JSON.parse(event.data);
                     console.log(`Received ${eventType} event:`, data);
@@ -146,52 +179,45 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
                 });
               });
 
-              // // Special handling for error events from the server (not connection errors)
-              // eventSource.addEventListener('error', (event) => {
-              //   try {
-              //     // Only try to parse if there's actual data
-              //     if (event.) {
-              //       const data = JSON.parse(event.data);
-              //       console.log(`Received error event:`, data);
-              //       notifyListeners('error', data);
-              //     }
-              //   } catch (error) {
-              //     console.error(`Error parsing error event data:`, error);
-              //     // Don't try to reconnect for JSON parsing errors
-              //   }
-              // });
-
               // Handle connection errors (this is different from server-sent 'error' events)
-              eventSource.onerror = (error) => {
+              globalEventSource.onerror = (error) => {
                 console.error('Steam login stream connection error:', error);
                 setIsConnected(false);
 
+                // Close the connection to prevent automatic browser reconnect
+                if (globalEventSource) {
+                  globalEventSource.close();
+                }
+
                 // Check if we should attempt to reconnect
-                const attempts = reconnectAttempts();
-                if (attempts < MAX_RECONNECT_ATTEMPTS) {
-                  console.log(`Reconnecting (attempt ${attempts + 1}/${MAX_RECONNECT_ATTEMPTS})...`);
-                  setReconnectAttempts(attempts + 1);
+                if (globalReconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
+                  const currentAttempt = globalReconnectAttempts + 1;
+                  console.log(`Reconnecting (attempt ${currentAttempt}/${MAX_RECONNECT_ATTEMPTS})...`);
+                  globalReconnectAttempts = currentAttempt;
 
                   // Exponential backoff for reconnection
-                  const delay = Math.min(1000 * Math.pow(2, attempts), 30000);
+                  const delay = Math.min(1000 * Math.pow(2, globalReconnectAttempts), 30000);
                   setTimeout(initConnection, delay);
                 } else {
                   console.error(`Maximum reconnection attempts (${MAX_RECONNECT_ATTEMPTS}) reached`);
                   // Notify listeners about connection failure
                   notifyListeners('error', { message: 'Connection to Steam authentication failed after multiple attempts' });
+                  disconnect();
+                  isConnecting = false;
                 }
               };
             } catch (error) {
               console.error('Failed to connect to Steam login stream:', error);
               setIsConnected(false);
+              isConnecting = false;
             }
           };
 
           // Disconnection function
           const disconnect = () => {
-            if (eventSource) {
-              eventSource.close();
-              eventSource = null;
+            if (globalEventSource) {
+              globalEventSource.close();
+              globalEventSource = null;
               setIsConnected(false);
               console.log('Disconnected from Steam login stream');
 
@@ -199,6 +225,8 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
               Object.keys(listeners).forEach(key => {
                 listeners[key] = [];
               });
+
+              activeConnection = null;
             }
           };
 
@@ -213,9 +241,17 @@ export const { use: useSteam, provider: SteamProvider } = createInitializedConte
             isConnected: () => isConnected()
           };
 
+          // Store the active connection
+          activeConnection = connection;
+
           // Clean up on context destruction
           onCleanup(() => {
-            disconnect();
+            // Instead of disconnecting on cleanup, we'll leave the connection
+            // active for other components to use
+            // Only disconnect if no components are using it
+            if (!isConnected()) {
+              disconnect();
+            }
           });
 
           return connection;
