@@ -1,10 +1,7 @@
-﻿// UnixSocketServer.cs
-using System;
+﻿using System.Text;
 using System.Net.Sockets;
-using System.Text;
-using System.Threading;
 
-public class UnixSocketServer
+public class SteamSocketServer
 {
     private const string SocketPath = "/tmp/steam.sock";
     private static bool _isRunning = true;
@@ -12,7 +9,7 @@ public class UnixSocketServer
     public static void Main()
     {
         // Cleanup previous socket file
-        try { System.IO.File.Delete(SocketPath); } catch { }
+        try { File.Delete(SocketPath); } catch { }
 
         // Create Unix domain socket endpoint
         var endpoint = new UnixDomainSocketEndPoint(SocketPath);
