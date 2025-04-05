@@ -2,15 +2,16 @@ package internal
 
 import (
 	"fmt"
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pion/webrtc/v4"
 	"log/slog"
+	"relay/internal/common"
 	"relay/internal/connections"
 	"sync"
 )
 
 type RoomInfo struct {
-	ID     uuid.UUID `json:"id"`
+	ID     ulid.ULID `json:"id"`
 	Name   string    `json:"name"`
 	Online bool      `json:"online"`
 }
@@ -22,19 +23,24 @@ type Room struct {
 	AudioTrack        *webrtc.TrackLocalStaticRTP
 	VideoTrack        *webrtc.TrackLocalStaticRTP
 	DataChannel       *connections.NestriDataChannel
-	Participants      map[uuid.UUID]*Participant
+	Participants      map[ulid.ULID]*Participant
 	ParticipantsMutex sync.RWMutex
 	Relay             *Relay // Reference to access MeshManager
 }
 
 func NewRoom(name string) *Room {
+	id, err := common.NewULID()
+	if err != nil {
+		slog.Error("Failed to generate ULID for room", "name", name, "err", err)
+		return nil
+	}
 	return &Room{
 		RoomInfo: RoomInfo{
-			ID:     uuid.New(),
+			ID:     id,
 			Name:   name,
 			Online: false,
 		},
-		Participants: make(map[uuid.UUID]*Participant),
+		Participants: make(map[ulid.ULID]*Participant),
 	}
 }
 
@@ -55,7 +61,7 @@ func (r *Room) AddParticipant(participant *Participant) {
 }
 
 // Removes a Participant from a Room by participant's ID
-func (r *Room) removeParticipantByID(pID uuid.UUID) {
+func (r *Room) removeParticipantByID(pID ulid.ULID) {
 	r.ParticipantsMutex.Lock()
 	if _, ok := r.Participants[pID]; ok {
 		delete(r.Participants, pID)
@@ -103,15 +109,23 @@ func (r *Room) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.TrackLocalS
 		slog.Warn("Unknown track type", "room", r.Name, "trackType", trackType)
 	}
 
-	newOnline := r.AudioTrack != nil || r.VideoTrack != nil
+	newOnline := r.AudioTrack != nil && r.VideoTrack != nil
 	if r.Online != newOnline {
 		r.Online = newOnline
 		if r.Online {
-			r.Relay.MeshManager.State.AddRoom(r.Name)
+			r.Relay.MeshManager.State.AddRoom(r.Name, r.Relay.ID)
+			err := r.Relay.MeshManager.broadcastStateUpdate()
+			if err != nil {
+				slog.Error("Failed to broadcast state update", "room", r.Name, "err", err)
+			}
 			slog.Debug("Room online and receiving, signaling participants", "room", r.Name)
 			r.signalParticipantsWithTracks()
 		} else {
 			r.Relay.MeshManager.State.DeleteRoom(r.Name)
+			err := r.Relay.MeshManager.broadcastStateUpdate()
+			if err != nil {
+				slog.Error("Failed to broadcast state update", "room", r.Name, "err", err)
+			}
 			slog.Debug("Room offline and not receiving, signaling participants", "room", r.Name)
 			r.signalParticipantsOffline()
 		}

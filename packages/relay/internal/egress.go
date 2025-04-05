@@ -19,7 +19,9 @@ func ParticipantHandler(participant *Participant, room *Room) {
 		if relay.MeshManager.State.IsRoomActive(room.Name) && !room.Online {
 			slog.Debug("Room is active in mesh but not local, requesting stream", "room", room.Name)
 			// Request stream from any relay hosting it (we'll broadcast the request)
-			relay.MeshManager.broadcastStreamRequest(room.Name)
+			if err := relay.MeshManager.broadcastStreamRequest(room.Name); err != nil {
+				slog.Error("Failed to broadcast stream request", "room", room.Name, "err", err)
+			}
 			// Stream will be set up asynchronously, Room.SetTrack will signal participants
 		} else if room.Online {
 			slog.Debug("Room is local and online, proceeding with participant", "room", room.Name)

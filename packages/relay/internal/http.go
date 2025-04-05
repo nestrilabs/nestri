@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/gorilla/websocket"
+	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"net/http"
 	"relay/internal/common"
 	"relay/internal/connections"
+	gen "relay/internal/proto"
 	"strconv"
 )
 
@@ -134,6 +136,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			room.AddParticipant(participant)
 			// If room not online, send Offline answer
 			if !room.Online {
+				// Check if room is online in Mesh network (i.e. any other relay)
+				if rel.MeshManager.State.IsRoomActive(room.Name) {
+					if err := rel.MeshManager.broadcastStreamRequest(room.Name); err != nil {
+						slog.Error("Failed to broadcast stream request", "room", room.Name, "err", err)
+					}
+				}
 				if err = ws.SendAnswerMessageWS(connections.AnswerOffline); err != nil {
 					slog.Error("Failed to send offline answer to participant", "room", room.Name, "err", err)
 				}
@@ -209,70 +217,22 @@ func meshHandler(w http.ResponseWriter, r *http.Request) {
 	safeWS := connections.NewSafeWebSocket(conn)
 	relay := GetRelay()
 
-	safeWS.RegisterMessageCallback("mesh_handshake", func(data []byte) {
-		relay.MeshManager.handleIncomingHandshake(safeWS, data)
-	})
+	// Handle initial handshake
+	safeWS.RegisterBinaryMessageCallback(func(data []byte) {
+		var msg gen.MeshMessage
+		if err := proto.Unmarshal(data, &msg); err != nil {
+			logHTTPError(w, "failed to unmarshal mesh message", http.StatusBadRequest)
+			return
+		}
 
-	safeWS.RegisterMessageCallback("mesh_state_sync", func(data []byte) {
-		var msg connections.MessageMeshStateSync
-		if err := json.Unmarshal(data, &msg); err != nil {
-			slog.Error("Failed to decode state sync message", "err", err)
-			return
+		switch t := msg.Type.(type) {
+		case *gen.MeshMessage_Handshake:
+			if err := relay.MeshManager.handleHandshake(safeWS, t.Handshake); err != nil {
+				logHTTPError(w, "failed to handle incoming handshake", http.StatusInternalServerError)
+				return
+			}
+		default:
+			logHTTPError(w, "unknown initial mesh connection message type", http.StatusBadRequest)
 		}
-		stateData, err := relay.MeshManager.decodeState(msg.State, safeWS.GetSharedSecret())
-		if err != nil {
-			slog.Error("Failed to decode state", "err", err)
-			return
-		}
-		var remoteState common.MeshState
-		if err := json.Unmarshal(stateData, &remoteState); err != nil {
-			slog.Error("Failed to unmarshal state", "err", err)
-			return
-		}
-		relay.MeshManager.State.Merge(&remoteState)
-	})
-
-	safeWS.RegisterMessageCallback("mesh_forward_sdp", func(data []byte) {
-		var msg connections.MessageMeshForwardSDP
-		if err := json.Unmarshal(data, &msg); err != nil {
-			slog.Error("Failed to decode forwarded SDP message", "err", err)
-			return
-		}
-		err = relay.MeshManager.HandleForwardedSDP(safeWS, msg)
-		if err != nil {
-			slog.Error("Failed to handle forwarded SDP message", "err", err)
-			return
-		}
-	})
-
-	safeWS.RegisterMessageCallback("mesh_forward_ice", func(data []byte) {
-		var msg connections.MessageMeshForwardICE
-		if err := json.Unmarshal(data, &msg); err != nil {
-			slog.Error("Failed to decode forwarded ICE candidate", "err", err)
-			return
-		}
-		err = relay.MeshManager.HandleForwardedICE(safeWS, msg)
-		if err != nil {
-			slog.Error("Failed to handle forwarded ICE candidate", "err", err)
-			return
-		}
-	})
-
-	safeWS.RegisterMessageCallback("mesh_forward_ingest", func(data []byte) {
-		var msg connections.MessageMeshForwardIngest
-		if err := json.Unmarshal(data, &msg); err != nil {
-			slog.Error("Failed to decode forwarded ingest message", "err", err)
-			return
-		}
-		relay.MeshManager.HandleForwardedIngest(safeWS, msg)
-	})
-
-	safeWS.RegisterMessageCallback("mesh_stream_request", func(data []byte) {
-		var msg connections.MessageMeshStreamRequest
-		if err := json.Unmarshal(data, &msg); err != nil {
-			slog.Error("Failed to decode stream request", "err", err)
-			return
-		}
-		relay.MeshManager.handleStreamRequest(safeWS, msg)
 	})
 }

@@ -1,23 +1,19 @@
 package common
 
 import (
-	"encoding/json"
+	"github.com/oklog/ulid/v2"
 	"log/slog"
-	"sync"
+	gen "relay/internal/proto"
 )
 
 type MeshState struct {
-	AddSet             map[string]struct{}
-	RemoveSet          map[string]struct{}
+	entities           *SafeMap[string, *gen.EntityState]
 	onRoomActiveChange func(roomName string, active bool)
-	sync.RWMutex
 }
 
-// NewMeshState initializes a new MeshState
 func NewMeshState() *MeshState {
 	return &MeshState{
-		AddSet:    make(map[string]struct{}),
-		RemoveSet: make(map[string]struct{}),
+		entities: NewSafeMap[string, *gen.EntityState](),
 	}
 }
 
@@ -25,113 +21,52 @@ func (ms *MeshState) SetOnRoomActiveChange(callback func(roomName string, active
 	ms.onRoomActiveChange = callback
 }
 
-// AddRoom adds a room to the AddSet
-func (ms *MeshState) AddRoom(roomName string) {
-	ms.Lock()
-	defer ms.Unlock()
+func (ms *MeshState) AddRoom(roomName string, ownerRelayID ulid.ULID) {
 	wasActive := ms.IsRoomActive(roomName)
-	ms.AddSet[roomName] = struct{}{}
-	// Remove it from RemoveSet if it exists to allow re-adding
-	if _, exists := ms.RemoveSet[roomName]; exists {
-		delete(ms.RemoveSet, roomName)
-	}
+	ms.entities.Set(roomName, &gen.EntityState{
+		EntityType:   "room",
+		EntityId:     roomName,
+		Active:       true,
+		OwnerRelayId: ownerRelayID.String(),
+	})
 	if !wasActive && ms.onRoomActiveChange != nil {
 		ms.onRoomActiveChange(roomName, true)
 	}
-	slog.Debug("Added room to state", "roomName", roomName)
+	slog.Debug("Added room", "roomName", roomName, "owner", ownerRelayID)
 }
 
-// DeleteRoom adds a room to the RemoveSet, marking it as deleted
 func (ms *MeshState) DeleteRoom(roomName string) {
-	ms.Lock()
-	defer ms.Unlock()
 	wasActive := ms.IsRoomActive(roomName)
-	ms.RemoveSet[roomName] = struct{}{}
+	if entity, exists := ms.entities.Get(roomName); exists {
+		entity.Active = false
+	} else {
+		ms.entities.Set(roomName, &gen.EntityState{
+			EntityType: "room",
+			EntityId:   roomName,
+			Active:     false,
+		})
+	}
 	if wasActive && ms.onRoomActiveChange != nil {
 		ms.onRoomActiveChange(roomName, false)
 	}
-	slog.Debug("Deleted room from state", "roomName", roomName)
+	slog.Debug("Deleted room", "roomName", roomName)
 }
 
-// IsRoomActive checks if a room is active (in AddSet and not in RemoveSet)
 func (ms *MeshState) IsRoomActive(roomName string) bool {
-	ms.RLock()
-	defer ms.RUnlock()
-	_, inAdd := ms.AddSet[roomName]
-	_, inRemove := ms.RemoveSet[roomName]
-	return inAdd && !inRemove
+	if entity, exists := ms.entities.Get(roomName); exists {
+		return entity.Active
+	}
+	return false
 }
 
-// GetActiveRooms returns all active rooms
-func (ms *MeshState) GetActiveRooms() []string {
-	ms.RLock()
-	defer ms.RUnlock()
-	var activeRooms []string
-	for roomName := range ms.AddSet {
-		if _, inRemove := ms.RemoveSet[roomName]; !inRemove {
-			activeRooms = append(activeRooms, roomName)
-		}
+func (ms *MeshState) SerializeEntities() map[string]*gen.EntityState {
+	result := make(map[string]*gen.EntityState)
+	for k, v := range ms.entities.Copy() {
+		result[k] = v
 	}
-	return activeRooms
+	return result
 }
 
-// GetStateForSync returns the AddSet and RemoveSet as a serializable struct
-func (ms *MeshState) GetStateForSync() map[string][]string {
-	ms.RLock()
-	defer ms.RUnlock()
-	addList := make([]string, 0, len(ms.AddSet))
-	for roomName := range ms.AddSet {
-		addList = append(addList, roomName)
-	}
-	removeList := make([]string, 0, len(ms.RemoveSet))
-	for roomName := range ms.RemoveSet {
-		removeList = append(removeList, roomName)
-	}
-	return map[string][]string{
-		"add":    addList,
-		"remove": removeList,
-	}
-}
-
-// Merge combines another MeshState into this one
-func (ms *MeshState) Merge(other *MeshState) {
-	ms.Lock()
-	defer ms.Unlock()
-	other.RLock()
-	defer other.RUnlock()
-
-	for roomName := range other.AddSet {
-		ms.AddSet[roomName] = struct{}{}
-	}
-	for roomName := range other.RemoveSet {
-		ms.RemoveSet[roomName] = struct{}{}
-	}
-	slog.Debug("Merged state", "addCount", len(ms.AddSet), "removeCount", len(ms.RemoveSet))
-}
-
-// MarshalJSON customizes JSON serialization
-func (ms *MeshState) MarshalJSON() ([]byte, error) {
-	return json.Marshal(ms.GetStateForSync())
-}
-
-// UnmarshalJSON customizes JSON deserialization
-func (ms *MeshState) UnmarshalJSON(data []byte) error {
-	var state struct {
-		Add    []string `json:"add"`
-		Remove []string `json:"remove"`
-	}
-	if err := json.Unmarshal(data, &state); err != nil {
-		return err
-	}
-	ms.Lock()
-	defer ms.Unlock()
-	ms.AddSet = make(map[string]struct{})
-	ms.RemoveSet = make(map[string]struct{})
-	for _, roomName := range state.Add {
-		ms.AddSet[roomName] = struct{}{}
-	}
-	for _, roomName := range state.Remove {
-		ms.RemoveSet[roomName] = struct{}{}
-	}
-	return nil
+func (ms *MeshState) GetEntities() *SafeMap[string, *gen.EntityState] {
+	return ms.entities
 }

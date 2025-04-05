@@ -2,122 +2,118 @@ package connections
 
 import (
 	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
+	gen "relay/internal/proto"
 )
-
-// MessageMeshHandshake is sent when a relay connects to another mesh relay.
-type MessageMeshHandshake struct {
-	MessageBase
-	RelayID     string `json:"relay_id"`
-	DHPublicKey string `json:"dh_public_key"` // base64 encoded Diffie-Hellman public key
-}
-
-// MessageMeshHandshakeResponse is sent back after a successful handshake.
-type MessageMeshHandshakeResponse struct {
-	MessageBase
-	RelayID     string            `json:"relay_id"`
-	DHPublicKey string            `json:"dh_public_key"`
-	Approvals   map[string]string `json:"approvals"` // RelayID -> Signature
-}
-
-// MessageMeshStreamRequest is sent to request a stream from another mesh relay
-type MessageMeshStreamRequest struct {
-	MessageBase
-	RoomName string `json:"room_name"`
-}
-
-// MessageMeshForwardSDP is used to relay SDP messages between mesh relays
-type MessageMeshForwardSDP struct {
-	MessageBase
-	RoomName      string                    `json:"room_name,omitempty"`
-	ParticipantID string                    `json:"participant_id,omitempty"`
-	SDP           webrtc.SessionDescription `json:"sdp"`
-}
-
-// MessageMeshForwardICE is used to relay ICE candidates between mesh relays
-type MessageMeshForwardICE struct {
-	MessageBase
-	RoomName      string                  `json:"room_name"`
-	ParticipantID string                  `json:"participant_id"`
-	Candidate     webrtc.ICECandidateInit `json:"candidate"`
-}
-
-// MessageMeshForwardIngest is used to forward ingest to another mesh relay
-type MessageMeshForwardIngest struct {
-	MessageBase
-	RoomName string `json:"room_name"`
-}
-
-type MessageMeshStateChange struct {
-	MessageBase
-	Action   string `json:"action"` // "add", "remove"..
-	RoomName string `json:"roomName"`
-}
 
 // SendMeshHandshake sends a handshake message to another relay.
 func (ws *SafeWebSocket) SendMeshHandshake(relayID, publicKey string) error {
-	msg := MessageMeshHandshake{
-		MessageBase: MessageBase{PayloadType: "mesh_handshake"},
-		RelayID:     relayID,
-		DHPublicKey: publicKey,
+	msg := &gen.MeshMessage{
+		Type: &gen.MeshMessage_Handshake{
+			Handshake: &gen.Handshake{
+				RelayId:     relayID,
+				DhPublicKey: publicKey,
+			},
+		},
 	}
-	return ws.SendJSON(msg)
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return ws.SendBinary(data)
 }
 
 // SendMeshHandshakeResponse sends a handshake response to a relay.
 func (ws *SafeWebSocket) SendMeshHandshakeResponse(relayID, dhPublicKey string, approvals map[string]string) error {
-	msg := MessageMeshHandshakeResponse{
-		MessageBase: MessageBase{PayloadType: "mesh_handshake_response"},
-		RelayID:     relayID,
-		DHPublicKey: dhPublicKey,
-		Approvals:   approvals,
+	msg := &gen.MeshMessage{
+		Type: &gen.MeshMessage_HandshakeResponse{
+			HandshakeResponse: &gen.HandshakeResponse{
+				RelayId:     relayID,
+				DhPublicKey: dhPublicKey,
+				Approvals:   approvals,
+			},
+		},
 	}
-	return ws.SendJSON(msg)
-}
-
-// SendMeshStreamRequest sends a stream request to another relay
-func (ws *SafeWebSocket) SendMeshStreamRequest(roomName string) error {
-	msg := MessageMeshStreamRequest{
-		MessageBase: MessageBase{PayloadType: "mesh_stream_request"},
-		RoomName:    roomName,
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
 	}
-	return ws.SendJSON(msg)
+	return ws.SendBinary(data)
 }
 
 // SendMeshForwardSDP sends a forwarded SDP message to another relay
 func (ws *SafeWebSocket) SendMeshForwardSDP(roomName, participantID string, sdp webrtc.SessionDescription) error {
-	msg := MessageMeshForwardSDP{
-		MessageBase:   MessageBase{PayloadType: "mesh_forward_sdp"},
-		RoomName:      roomName,
-		ParticipantID: participantID,
-		SDP:           sdp,
+	msg := &gen.MeshMessage{
+		Type: &gen.MeshMessage_ForwardSdp{
+			ForwardSdp: &gen.ForwardSDP{
+				RoomName:      roomName,
+				ParticipantId: participantID,
+				Sdp:           sdp.SDP,
+				Type:          sdp.Type.String(),
+			},
+		},
 	}
-	return ws.SendJSON(msg)
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return ws.SendBinary(data)
 }
 
 // SendMeshForwardICE sends a forwarded ICE candidate to another relay
 func (ws *SafeWebSocket) SendMeshForwardICE(roomName, participantID string, candidate webrtc.ICECandidateInit) error {
-	msg := MessageMeshForwardICE{
-		MessageBase:   MessageBase{PayloadType: "mesh_forward_ice"},
-		RoomName:      roomName,
-		ParticipantID: participantID,
-		Candidate:     candidate,
+	var sdpMLineIndex uint32
+	if candidate.SDPMLineIndex != nil {
+		sdpMLineIndex = uint32(*candidate.SDPMLineIndex)
 	}
-	return ws.SendJSON(msg)
+
+	msg := &gen.MeshMessage{
+		Type: &gen.MeshMessage_ForwardIce{
+			ForwardIce: &gen.ForwardICE{
+				RoomName:      roomName,
+				ParticipantId: participantID,
+				Candidate: &gen.ICECandidateInit{
+					Candidate:        candidate.Candidate,
+					SdpMid:           candidate.SDPMid,
+					SdpMLineIndex:    &sdpMLineIndex,
+					UsernameFragment: candidate.UsernameFragment,
+				},
+			},
+		},
+	}
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return ws.SendBinary(data)
 }
 
 func (ws *SafeWebSocket) SendMeshForwardIngest(roomName string) error {
-	msg := MessageMeshForwardIngest{
-		MessageBase: MessageBase{PayloadType: "mesh_forward_ingest"},
-		RoomName:    roomName,
+	msg := &gen.MeshMessage{
+		Type: &gen.MeshMessage_ForwardIngest{
+			ForwardIngest: &gen.ForwardIngest{
+				RoomName: roomName,
+			},
+		},
 	}
-	return ws.SendJSON(msg)
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return ws.SendBinary(data)
 }
 
-func (ws *SafeWebSocket) SendMeshStateChange(action string, roomName string) error {
-	msg := MessageMeshStateChange{
-		MessageBase: MessageBase{PayloadType: "mesh_state_change"},
-		Action:      action,
-		RoomName:    roomName,
+func (ws *SafeWebSocket) SendMeshStreamRequest(roomName string) error {
+	msg := &gen.MeshMessage{
+		Type: &gen.MeshMessage_StreamRequest{
+			StreamRequest: &gen.StreamRequest{
+				RoomName: roomName,
+			},
+		},
 	}
-	return ws.SendJSON(msg)
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+	return ws.SendBinary(data)
 }

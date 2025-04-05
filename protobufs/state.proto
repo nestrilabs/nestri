@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+option go_package = "relay/internal/proto";
+
+package proto;
+
+// EntityState represents the state of an entity in the mesh (e.g., a room).
+message EntityState {
+  string entity_type = 1;    // Type of entity (e.g., "room")
+  string entity_id = 2;      // Unique identifier (e.g., room name)
+  bool active = 3;           // Whether the entity is active
+  string owner_relay_id = 4; // Relay ID that owns this entity
+}

@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+option go_package = "relay/internal/proto";
+
+package proto;
+
+import "google/protobuf/timestamp.proto";
+import "state.proto";
+import "webrtc.proto";
+
+// MeshMessage is the top-level message for all relay-to-relay communication.
+message MeshMessage {
+  oneof type {
+    // Level 0
+    StateUpdate state_update = 1;
+    Ack ack = 2;
+    RetransmissionRequest retransmission_request = 3;
+    Retransmission retransmission = 4;
+    Heartbeat heartbeat = 5;
+    SuspectRelay suspect_relay = 6;
+    Disconnect disconnect = 7;
+    // Level 1
+    ForwardSDP forward_sdp = 8;
+    ForwardICE forward_ice = 9;
+    ForwardIngest forward_ingest = 10;
+    StreamRequest stream_request = 11;
+    // Level 2
+    Handshake handshake = 12;
+    HandshakeResponse handshake_response = 13;
+  }
+}
+
+// Handshake to inititiate new connection to mesh.
+message Handshake {
+  string relay_id = 1;      // UUID of the relay
+  string dh_public_key = 2; // base64 encoded Diffie-Hellman public key
+}
+
+// HandshakeResponse to respond to a mesh joiner.
+message HandshakeResponse {
+  string relay_id = 1;
+  string dh_public_key = 2;
+  map<string, string> approvals = 3; // relay id to signature
+}
+
+// Forwarded SDP from another relay.
+message ForwardSDP {
+  string room_name = 1;
+  string participant_id = 2;
+  string sdp = 3;
+  string type = 4; // "offer" or "answer"
+}
+
+// Forwarded ICE candidate from another relay.
+message ForwardICE {
+  string room_name = 1;
+  string participant_id = 2;
+  ICECandidateInit candidate = 3;
+}
+
+// Forwarded ingest room from another relay.
+message ForwardIngest {
+  string room_name = 1;
+}
+
+// Stream request from mesh.
+message StreamRequest {
+  string room_name = 1;
+}
+
+// StateUpdate propagates entity state changes across the mesh.
+message StateUpdate {
+  uint64 sequence_number = 1;           // Unique sequence number for this update
+  map<string, EntityState> entities = 2; // Key: entity_id (e.g., room name), Value: EntityState
+}
+
+// Ack acknowledges receipt of a StateUpdate.
+message Ack {
+  string relay_id = 1;         // UUID of the acknowledging relay
+  uint64 sequence_number = 2;  // Sequence number being acknowledged
+}
+
+// RetransmissionRequest requests a missed StateUpdate.
+message RetransmissionRequest {
+  string relay_id = 1;         // UUID of the requesting relay
+  uint64 sequence_number = 2;  // Sequence number of the missed update
+}
+
+// Retransmission resends a StateUpdate.
+message Retransmission {
+  string relay_id = 1;         // UUID of the sending relay
+  StateUpdate state_update = 2; // The retransmitted update
+}
+
+// Heartbeat signals relay liveness.
+message Heartbeat {
+  string relay_id = 1;                 // UUID of the sending relay
+  google.protobuf.Timestamp timestamp = 2; // Time of the heartbeat
+}
+
+// SuspectRelay marks a relay as potentially unresponsive.
+message SuspectRelay {
+  string relay_id = 1;  // UUID of the suspected relay
+  string reason = 2;    // Reason for suspicion (e.g., "no heartbeat")
+}
+
+// Disconnect signals to remove a relay from the mesh.
+message Disconnect {
+  string relay_id = 1;  // UUID of the relay to disconnect
+  string reason = 2;    // Reason for disconnection (e.g., "unresponsive")
+}

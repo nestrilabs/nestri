@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 	"io"
 	"log/slog"
@@ -19,6 +20,7 @@ func IngestHandler(room *Room) {
 	onPCClose := func() {
 		slog.Debug("ingest PeerConnection closed", "room", room.Name)
 		room.Online = false
+		room.signalParticipantsOffline()
 		relay.DeleteRoomIfEmpty(room)
 	}
 
@@ -30,7 +32,7 @@ func IngestHandler(room *Room) {
 	}
 
 	room.PeerConnection.OnTrack(func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		localTrack, err := webrtc.NewTrackLocalStaticRTP(remoteTrack.Codec().RTPCodecCapability, remoteTrack.Kind().String(), fmt.Sprint("nestri-", room.Name))
+		localTrack, err := webrtc.NewTrackLocalStaticRTP(remoteTrack.Codec().RTPCodecCapability, remoteTrack.Kind().String(), fmt.Sprintf("nestri-%s-%s", room.Name, remoteTrack.Kind().String()))
 		if err != nil {
 			slog.Error("Failed to create local track for room", "room", room.Name, "kind", remoteTrack.Kind(), "err", err)
 			return
@@ -40,9 +42,19 @@ func IngestHandler(room *Room) {
 		// Set track and let Room handle state
 		room.SetTrack(remoteTrack.Kind(), localTrack)
 
-		rtpBuffer := make([]byte, 1400)
+		// Prepare PlayoutDelayExtension so we don't need to recreate it for each packet
+		playoutExt := &rtp.PlayoutDelayExtension{
+			MinDelay: 0,
+			MaxDelay: 0,
+		}
+		playoutPayload, err := playoutExt.Marshal()
+		if err != nil {
+			slog.Error("Failed to marshal PlayoutDelayExtension for room", "room", room.Name, "err", err)
+			return
+		}
+
 		for {
-			read, _, err := remoteTrack.Read(rtpBuffer)
+			rtpPacket, _, err := remoteTrack.ReadRTP()
 			if err != nil {
 				if !errors.Is(err, io.EOF) {
 					slog.Error("Failed to read RTP from remote track for room", "room", room.Name, "err", err)
@@ -50,7 +62,13 @@ func IngestHandler(room *Room) {
 				break
 			}
 
-			_, err = localTrack.Write(rtpBuffer[:read])
+			// Use PlayoutDelayExtension for low latency
+			if err := rtpPacket.SetExtension(common.ExtensionMap[common.ExtensionPlayoutDelay], playoutPayload); err != nil {
+				slog.Error("Failed to set PlayoutDelayExtension for room", "room", room.Name, "err", err)
+				continue
+			}
+
+			err = localTrack.WriteRTP(rtpPacket)
 			if err != nil && !errors.Is(err, io.ErrClosedPipe) {
 				slog.Error("Failed to write RTP to local track for room", "room", room.Name, "err", err)
 				break

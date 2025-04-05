@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option go_package = "relay/internal/proto";
+
+package proto;
+
+message ICECandidateInit {
+  string candidate = 1;
+  optional string sdp_mid = 2;
+  optional uint32 sdp_m_line_index = 3;
+  optional string username_fragment = 4;
+}

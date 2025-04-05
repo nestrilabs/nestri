@@ -14,22 +14,24 @@ type OnMessageCallback func(data []byte)
 type SafeWebSocket struct {
 	*websocket.Conn
 	sync.Mutex
-	closed        bool
-	closeCallback func()                       // Callback to call on close
-	closeChan     chan struct{}                // Channel to signal closure
-	callbacks     map[string]OnMessageCallback // MessageBase type -> callback
-	sharedSecret  []byte
+	closed         bool
+	closeCallback  func()                       // Callback to call on close
+	closeChan      chan struct{}                // Channel to signal closure
+	callbacks      map[string]OnMessageCallback // MessageBase type -> callback
+	binaryCallback OnMessageCallback            // Binary message callback
+	sharedSecret   []byte
 }
 
 // NewSafeWebSocket creates a new SafeWebSocket from *websocket.Conn
 func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 	ws := &SafeWebSocket{
-		Conn:          conn,
-		closed:        false,
-		closeCallback: nil,
-		closeChan:     make(chan struct{}),
-		callbacks:     make(map[string]OnMessageCallback),
-		sharedSecret:  nil,
+		Conn:           conn,
+		closed:         false,
+		closeCallback:  nil,
+		closeChan:      make(chan struct{}),
+		callbacks:      make(map[string]OnMessageCallback),
+		binaryCallback: nil,
+		sharedSecret:   nil,
 	}
 
 	// Launch a goroutine to handle messages
@@ -63,6 +65,10 @@ func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 				} // TODO: Log unknown message payload type?
 				break
 			case websocket.BinaryMessage:
+				// Handle binary message callback
+				if ws.binaryCallback != nil {
+					ws.binaryCallback(data)
+				}
 				break
 			default:
 				slog.Warn("Unknown WebSocket message type", "type", kind)
@@ -83,15 +89,11 @@ func NewSafeWebSocket(conn *websocket.Conn) *SafeWebSocket {
 
 // SetSharedSecret sets the shared secret for the websocket
 func (ws *SafeWebSocket) SetSharedSecret(secret []byte) {
-	ws.Lock()
-	defer ws.Unlock()
 	ws.sharedSecret = secret
 }
 
 // GetSharedSecret returns the shared secret for the websocket
 func (ws *SafeWebSocket) GetSharedSecret() []byte {
-	ws.Lock()
-	defer ws.Unlock()
 	return ws.sharedSecret
 }
 
@@ -111,30 +113,35 @@ func (ws *SafeWebSocket) SendBinary(data []byte) error {
 
 // RegisterMessageCallback sets the callback for binary message of given type
 func (ws *SafeWebSocket) RegisterMessageCallback(msgType string, callback OnMessageCallback) {
-	ws.Lock()
-	defer ws.Unlock()
 	if ws.callbacks == nil {
 		ws.callbacks = make(map[string]OnMessageCallback)
 	}
 	ws.callbacks[msgType] = callback
 }
 
+// RegisterBinaryMessageCallback sets the callback for all binary messages
+func (ws *SafeWebSocket) RegisterBinaryMessageCallback(callback OnMessageCallback) {
+	ws.binaryCallback = callback
+}
+
 // UnregisterMessageCallback removes the callback for binary message of given type
 func (ws *SafeWebSocket) UnregisterMessageCallback(msgType string) {
-	ws.Lock()
-	defer ws.Unlock()
 	if ws.callbacks != nil {
 		delete(ws.callbacks, msgType)
 	}
+}
+
+// UnregisterBinaryMessageCallback removes the callback for all binary messages
+func (ws *SafeWebSocket) UnregisterBinaryMessageCallback() {
+	ws.binaryCallback = nil
 }
 
 // RegisterOnClose sets the callback for websocket closing
 func (ws *SafeWebSocket) RegisterOnClose(callback func()) {
 	ws.closeCallback = func() {
 		// Clear our callbacks
-		ws.Lock()
 		ws.callbacks = nil
-		ws.Unlock()
+		ws.binaryCallback = nil
 		// Call the callback
 		callback()
 	}

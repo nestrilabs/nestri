@@ -21,6 +21,19 @@ func InitWebRTCAPI() error {
 	// Media engine
 	mediaEngine := &webrtc.MediaEngine{}
 
+	// Register additional header extensions to reduce latency
+	// Playout Delay
+	if err := mediaEngine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{
+		URI: ExtensionPlayoutDelay,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		return err
+	}
+	if err := mediaEngine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{
+		URI: ExtensionPlayoutDelay,
+	}, webrtc.RTPCodecTypeAudio); err != nil {
+		return err
+	}
+
 	// Default codecs cover most of our needs
 	err = mediaEngine.RegisterDefaultCodecs()
 	if err != nil {

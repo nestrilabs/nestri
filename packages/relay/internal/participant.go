@@ -2,14 +2,16 @@ package internal
 
 import (
 	"fmt"
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pion/webrtc/v4"
+	"log/slog"
 	"math/rand"
+	"relay/internal/common"
 	"relay/internal/connections"
 )
 
 type Participant struct {
-	ID             uuid.UUID //< Internal IDs are useful to keeping unique internal track and not have conflicts later
+	ID             ulid.ULID //< Internal IDs are useful to keeping unique internal track and not have conflicts later
 	Name           string
 	WebSocket      *connections.SafeWebSocket
 	PeerConnection *webrtc.PeerConnection
@@ -17,8 +19,13 @@ type Participant struct {
 }
 
 func NewParticipant(ws *connections.SafeWebSocket) *Participant {
+	id, err := common.NewULID()
+	if err != nil {
+		slog.Error("Failed to create ULID for Participant", "err", err)
+		return nil
+	}
 	return &Participant{
-		ID:        uuid.New(),
+		ID:        id,
 		Name:      createRandomName(),
 		WebSocket: ws,
 	}

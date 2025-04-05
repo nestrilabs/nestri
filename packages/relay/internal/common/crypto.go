@@ -9,8 +9,14 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"github.com/oklog/ulid/v2"
 	"io"
+	"time"
 )
+
+func NewULID() (ulid.ULID, error) {
+	return ulid.New(ulid.Timestamp(time.Now()), ulid.Monotonic(rand.Reader, 0))
+}
 
 func GenerateECDHKeyPair() (*ecdsa.PrivateKey, error) {
 	return ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

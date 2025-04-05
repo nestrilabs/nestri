@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	relay2 "relay/internal"
+	"relay/internal"
 	"relay/internal/common"
 	"syscall"
 )
@@ -33,7 +33,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Start relay
-	err := relay2.InitRelay(mainCtx, mainStopper)
+	err := internal.InitRelay(mainCtx, mainStopper)
 	if err != nil {
 		slog.Error("Failed to initialize relay", "err", err)
 		mainStopper()

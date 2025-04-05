@@ -2,7 +2,7 @@ package internal
 
 import (
 	"context"
-	"github.com/google/uuid"
+	"github.com/oklog/ulid/v2"
 	"log/slog"
 	"relay/internal/common"
 	"sync"
@@ -11,19 +11,30 @@ import (
 var globalRelay *Relay
 
 type Relay struct {
-	ID          uuid.UUID
-	MeshID      uuid.UUID
-	Rooms       map[uuid.UUID]*Room
+	ID          ulid.ULID
+	MeshID      ulid.ULID
+	Rooms       map[ulid.ULID]*Room
 	RoomsMutex  sync.RWMutex
 	MeshManager *MeshManager
 	MeshMutex   sync.RWMutex
 }
 
 func NewRelay(ctx context.Context) *Relay {
+	id, err := common.NewULID()
+	if err != nil {
+		slog.Error("Failed to create ULID for Relay", "err", err)
+		return nil
+	}
+	meshID, err := common.NewULID()
+	if err != nil {
+		slog.Error("Failed to create ULID for Relay Mesh", "err", err)
+		return nil
+	}
+
 	r := &Relay{
-		ID:     uuid.New(),
-		MeshID: uuid.New(),
-		Rooms:  make(map[uuid.UUID]*Room),
+		ID:     id,
+		MeshID: meshID,
+		Rooms:  make(map[ulid.ULID]*Room),
 	}
 	r.MeshManager = NewMeshManager(r)
 	return r
@@ -48,7 +59,7 @@ func GetRelay() *Relay {
 	return globalRelay
 }
 
-func (r *Relay) GetRoomByID(id uuid.UUID) *Room {
+func (r *Relay) GetRoomByID(id ulid.ULID) *Room {
 	r.RoomsMutex.RLock()
 	defer r.RoomsMutex.RUnlock()
 	if room, ok := r.Rooms[id]; ok {
@@ -94,7 +105,7 @@ func (r *Relay) GetOrCreateRoom(name string) *Room {
 
 	slog.Debug("Created new room", "name", name, "id", room.ID)
 	if r.MeshManager != nil {
-		r.MeshManager.State.AddRoom(name)
+		r.MeshManager.State.AddRoom(name, r.ID)
 	}
 	return room
 }
@@ -108,14 +119,24 @@ func (r *Relay) DeleteRoomIfEmpty(room *Room) {
 		return
 	}
 
-	slog.Debug("Deleting room since it's empty", "name", room.Name, "id", room.ID)
+	slog.Info("Deleting room since empty", "name", room.Name, "id", room.ID)
 	r.RoomsMutex.Lock()
 	delete(r.Rooms, room.ID)
 	r.RoomsMutex.Unlock()
 	r.MeshManager.State.DeleteRoom(room.Name)
+
+	// Clean up mesh resources
+	if pc, exists := r.MeshManager.relayPCs.Get(room.Name); exists {
+		_ = pc.Close()
+		r.MeshManager.relayPCs.Delete(room.Name)
+	}
+	if dc, exists := r.MeshManager.relayDCs.Get(room.Name); exists {
+		_ = dc.Close()
+		r.MeshManager.relayDCs.Delete(room.Name)
+	}
 }
 
-func (r *Relay) GetParticipantByID(participantID uuid.UUID) *Participant {
+func (r *Relay) GetParticipantByID(participantID ulid.ULID) *Participant {
 	r.RoomsMutex.RLock()
 	defer r.RoomsMutex.RUnlock()
 
