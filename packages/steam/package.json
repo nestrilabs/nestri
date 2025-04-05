@@ -1,7 +1,18 @@
 {
-    "name": "@nestri/steam",
-    "scripts": {
-        "dev": "dotnet run",
-        "build": "dotnet build"
-    }
+  "name": "@nestri/steam",
+  "scripts": {
+    "dev": "dotnet run",
+    "build": "dotnet build"
+  },
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/qrcode-terminal": "^0.12.2",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
 }
