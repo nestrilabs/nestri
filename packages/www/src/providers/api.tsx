@@ -6,7 +6,7 @@ import { createInitializedContext } from "@nestri/www/common/context";
 
 
 export const { use: useApi, provider: ApiProvider } = createInitializedContext(
-    "Api",
+    "ApiContext",
     () => {
         const team = useTeam();
         const auth = useOpenAuth();

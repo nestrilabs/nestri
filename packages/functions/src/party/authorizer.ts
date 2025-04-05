@@ -10,7 +10,7 @@ export const handler = realtime.authorizer(async (token) => {
 
     const client = createClient({
         clientID: "api",
-        issuer: Resource.Urls.auth
+        issuer: Resource.Auth.url
     });
 
     const result = await client.verify(subjects, token);
@@ -23,7 +23,7 @@ export const handler = realtime.authorizer(async (token) => {
         };
     }
 
-    if (result.subject.type != "device") {
+    if (result.subject.type != "user") {
         return {
             subscribe: [],
             publish: [],
@@ -32,7 +32,7 @@ export const handler = realtime.authorizer(async (token) => {
 
     return {
         //It can publish and listen to other instances under this team
-        subscribe: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.teamSlug}/*`],
-        publish: [`${Resource.App.name}/${Resource.App.stage}/${result.subject.properties.teamSlug}/*`],
+        subscribe: [`${Resource.App.name}/${Resource.App.stage}/*`],
+        publish: [`${Resource.App.name}/${Resource.App.stage}/*`],
     };
 });

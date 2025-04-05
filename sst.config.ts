@@ -1,5 +1,4 @@
 /// <reference path="./.sst/platform/config.d.ts" />
-import { readdirSync } from "fs";
 export default $config({
   app(input) {
     return {
@@ -20,6 +19,7 @@ export default $config({
     };
   },
   async run() {
+    const fs = await import("fs")
     
     $transform(sst.aws.Function, (args) => {
       args.environment = $resolve([args.environment]).apply(([environment]) => {
@@ -31,7 +31,7 @@ export default $config({
     });
 
     const outputs = {};
-    for (const value of readdirSync("./infra/")) {
+    for (const value of fs.readdirSync("./infra/")) {
       const result = await import("./infra/" + value);
       if (result.outputs) Object.assign(outputs, result.outputs);
     }

@@ -1,18 +1,21 @@
 import "zod-openapi/extend";
 import { Hono } from "hono";
 import { auth } from "./auth";
+import { cors } from "hono/cors";
 import { TeamApi } from "./team";
+import { SteamApi } from "./steam";
 import { logger } from "hono/logger";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
+import { patchLogger } from "../log-polyfill";
 import { HTTPException } from "hono/http-exception";
-import { handle, streamHandle } from "hono/aws-lambda";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-
 
 export const app = new Hono();
 app
-    .use(logger(), async (c, next) => {
+    .use(logger())
+    .use(cors())
+    .use(async (c, next) => {
         c.header("Cache-Control", "no-store");
         return next();
     })
@@ -21,9 +24,9 @@ app
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
     .route("/team", TeamApi.route)
+    .route("/steam", SteamApi.route)
     .route("/account", AccountApi.route)
     .onError((error, c) => {
-        console.warn(error);
         if (error instanceof VisibleError) {
             console.error("api error:", error);
             // @ts-expect-error
@@ -51,7 +54,6 @@ const routes = app
             500,
         );
     });
-
 
 app.get(
     "/doc",
@@ -85,5 +87,14 @@ app.get(
     }),
 );
 
-export type Routes = typeof routes;
-export const handler = process.env.SST_DEV ? handle(app) : streamHandle(app);
+patchLogger();
+
+export default {
+    port: 3001,
+    idleTimeout: 255,
+    fetch: (req: Request) =>
+        app.fetch(req, undefined, {
+            waitUntil: (fn) => fn,
+            passThroughOnException: () => { },
+        }),
+};

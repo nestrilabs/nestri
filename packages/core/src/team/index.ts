@@ -12,7 +12,7 @@ import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
-export module Team {
+export namespace Team {
     export const Info = z
         .object({
             id: z.string().openapi({
@@ -123,8 +123,7 @@ export module Team {
                 .from(teamTable)
                 .where(eq(teamTable.id, id))
                 .execute()
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0));
+                .then((rows) => rows.map(serialize).at(0))
         }),
     );
 
@@ -135,8 +134,7 @@ export module Team {
                 .from(teamTable)
                 .where(eq(teamTable.slug, input))
                 .execute()
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0));
+                .then((rows) => rows.map(serialize).at(0))
         }),
     );
 
