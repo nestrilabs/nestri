@@ -4,6 +4,7 @@ import { auth } from "./auth";
 import { TeamApi } from "./team";
 import { logger } from "hono/logger";
 import { AccountApi } from "./account";
+import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
 import { HTTPException } from "hono/http-exception";
 import { handle, streamHandle } from "hono/aws-lambda";
@@ -22,6 +23,7 @@ const routes = app
     .get("/", (c) => c.text("Hello World!"))
     .route("/team", TeamApi.route)
     .route("/account", AccountApi.route)
+    .route("/machine", MachineApi.route)
     .onError((error, c) => {
         console.warn(error);
         if (error instanceof VisibleError) {
@@ -38,7 +40,7 @@ const routes = app
                     code: ErrorCodes.Validation.INVALID_PARAMETER,
                     message: "Invalid request",
                 },
-                400,
+                error.status,
             );
         }
         console.error("unhandled error:", error);

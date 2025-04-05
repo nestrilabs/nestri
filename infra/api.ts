@@ -21,6 +21,12 @@ export const urls = new sst.Linkable("Urls", {
 export const apiFunction = new sst.aws.Function("ApiFn", {
     vpc,
     handler: "packages/functions/src/api/index.handler",
+    permissions: [
+        {
+            actions: ["iot:*"],
+            resources: ["*"],
+        },
+    ],
     link: [
         bus,
         urls,

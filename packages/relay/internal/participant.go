@@ -1,21 +1,22 @@
-package relay
+package internal
 
 import (
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/pion/webrtc/v4"
 	"math/rand"
+	"relay/internal/connections"
 )
 
 type Participant struct {
 	ID             uuid.UUID //< Internal IDs are useful to keeping unique internal track and not have conflicts later
 	Name           string
-	WebSocket      *SafeWebSocket
+	WebSocket      *connections.SafeWebSocket
 	PeerConnection *webrtc.PeerConnection
-	DataChannel    *NestriDataChannel
+	DataChannel    *connections.NestriDataChannel
 }
 
-func NewParticipant(ws *SafeWebSocket) *Participant {
+func NewParticipant(ws *connections.SafeWebSocket) *Participant {
 	return &Participant{
 		ID:        uuid.New(),
 		Name:      createRandomName(),
@@ -23,8 +24,8 @@ func NewParticipant(ws *SafeWebSocket) *Participant {
 	}
 }
 
-func (vw *Participant) addTrack(trackLocal *webrtc.TrackLocal) error {
-	rtpSender, err := vw.PeerConnection.AddTrack(*trackLocal)
+func (p *Participant) AddTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
+	rtpSender, err := p.PeerConnection.AddTrack(trackLocal)
 	if err != nil {
 		return err
 	}
@@ -41,22 +42,22 @@ func (vw *Participant) addTrack(trackLocal *webrtc.TrackLocal) error {
 	return nil
 }
 
-func (vw *Participant) signalOffer() error {
-	if vw.PeerConnection == nil {
-		return fmt.Errorf("peer connection is nil for participant: '%s' - cannot signal offer", vw.ID)
+func (p *Participant) SignalOffer() error {
+	if p.PeerConnection == nil {
+		return fmt.Errorf("peer connection is nil for participant: '%s' - cannot signal offer", p.ID)
 	}
 
-	offer, err := vw.PeerConnection.CreateOffer(nil)
+	offer, err := p.PeerConnection.CreateOffer(nil)
 	if err != nil {
 		return err
 	}
 
-	err = vw.PeerConnection.SetLocalDescription(offer)
+	err = p.PeerConnection.SetLocalDescription(offer)
 	if err != nil {
 		return err
 	}
 
-	return vw.WebSocket.SendSDPMessageWS(offer)
+	return p.WebSocket.SendSDPMessageWS(offer)
 }
 
 var namesFirst = []string{"Happy", "Sad", "Angry", "Calm", "Excited", "Bored", "Confused", "Confident", "Curious", "Depressed", "Disappointed", "Embarrassed", "Energetic", "Fearful", "Frustrated", "Glad", "Guilty", "Hopeful", "Impatient", "Jealous", "Lonely", "Motivated", "Nervous", "Optimistic", "Pessimistic", "Proud", "Relaxed", "Shy", "Stressed", "Surprised", "Tired", "Worried"}
