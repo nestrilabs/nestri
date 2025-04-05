@@ -8,8 +8,4 @@
     <OutDir>bin</OutDir>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Steamkit2" Version="3.0.2" />
-  </ItemGroup>
-
 </Project>
