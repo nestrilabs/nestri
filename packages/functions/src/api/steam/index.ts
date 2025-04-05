@@ -8,8 +8,6 @@ import { describeRoute } from "hono-openapi";
 import { Steam as SteamDB } from "@nestri/core/steam/index"
 // import { ErrorResponses, Result } from "./common";
 
-// FIXME: The "credentials" event handler is not being called as expected, so nothing is going to the db
-
 export namespace SteamApi {
     export const route = new Hono()
         .use(notPublic)
@@ -36,12 +34,14 @@ export namespace SteamApi {
             }),
             async (c) => {
                 let isCompleted = false;
+                let hasError = false;
                 const sessionID = crypto.randomUUID();
 
                 return streamSSE(c, async (stream) => {
-
                     // Initialize Steam auth
                     const steam = new Steam(path.join(__dirname, "/bin/steam"));
+
+                    console.log("Starting Steam auth session:", sessionID);
 
                     await stream.writeSSE({
                         event: 'connected',
@@ -53,97 +53,148 @@ export namespace SteamApi {
                     // Track URLs we've already sent to avoid duplicates if needed
                     const sentUrls = new Set();
 
-                    // Listen for challenge URL - this will now catch ALL URL updates
+                    // Listen for challenge URL
                     steam.on('challengeUrl', async (url) => {
-                        // Optional: Check if we've already sent this exact URL to avoid duplicate events
-                        // Remove this check if you want to send every event even if URL is the same
-                        if (!sentUrls.has(url)) {
-                            sentUrls.add(url);
-                            // console.log("Sending challenge URL to client:", url);
-                            await stream.writeSSE({
-                                event: 'challenge',
-                                data: JSON.stringify({ url, sessionID })
-                            });
+                        try {
+                            // Optional: Check if we've already sent this exact URL to avoid duplicate events
+                            if (!sentUrls.has(url)) {
+                                sentUrls.add(url);
+                                console.log(`[${sessionID}] Sending challenge URL to client`);
+                                await stream.writeSSE({
+                                    event: 'challenge',
+                                    data: JSON.stringify({ url, sessionID })
+                                });
+                            }
+                        } catch (e) {
+                            console.error(`[${sessionID}] Error sending challenge URL:`, e);
                         }
                     });
 
+                    // Listen for errors and actually handle them
                     steam.on('error', async (error) => {
+                        try {
+                            hasError = true;
+                            console.error(`[${sessionID}] Steam auth error:`, error);
 
+                            await stream.writeSSE({
+                                event: 'error',
+                                data: JSON.stringify({
+                                    message: error.message || 'Authentication error',
+                                    sessionID
+                                })
+                            });
+                        } catch (e) {
+                            console.error(`[${sessionID}] Error sending error event:`, e);
+                        }
                     });
 
                     // Listen for completion
                     steam.on('completed', async (result) => {
 
-                        isCompleted = true;
-                        await stream.close();
                     });
 
                     // Handle client disconnect
                     stream.onAbort(() => {
-                        console.log('Client disconnected, cancelling Steam auth');
+                        console.log(`[${sessionID}] Client disconnected, cancelling Steam auth`);
                         steam.cancel();
                     });
 
-                    // Listen for credentials
-                    steam.on('credentials', (credentials) => {
-                        console.log("steam credentials received:", credentials);
-                        // Don't send credentials directly to client for security reasons
-                        // c.executionCtx.waitUntil(SteamDB.create(credentials))
+                    // Listen for credentials 
+                    steam.on('credentials', async (credentials) => {
+                        try {
+                            console.log(`[${sessionID}] Steam credentials received!`);
+
+                            // Store credentials in database (uncomment when ready)
+                            // await SteamDB.create(credentials);
+
+                            // Note: Don't call complete here - the 'completed' event will fire
+                            // when the process is done, and we'll send the complete event then
+                        } catch (e) {
+                            console.error(`[${sessionID}] Error processing credentials:`, e);
+                        }
                     });
 
                     try {
                         await steam.startAuth();
 
-                        // Create a promise that only resolves when authentication completes or errors
+                        // Create a promise that resolves when authentication completes or times out
                         await new Promise<void>((resolve) => {
-                            // Already registered these events earlier, just need to add resolve() to them
-                            steam.once('completed', async () => {
-                                await stream.writeSSE({
-                                    event: 'complete',
-                                    data: JSON.stringify({ sessionID })
-                                });
-
-                                setTimeout(() => resolve(), 1000)
-                            });
-
-                            steam.once('error', async (error) => {
-
-                                await stream.writeSSE({
-                                    event: 'error',
-                                    data: JSON.stringify({ message: error.message || 'Authentication error' })
-                                });
-
-                                setTimeout(() => resolve(), 1000)
-                            });
-
-                            // Set timeout
-                            setTimeout(() => {
+                            // Set timeout - longer than the internal Steam auth timeout
+                            const timeout = setTimeout(() => {
                                 if (!isCompleted) {
+                                    console.log(`[${sessionID}] Auth timed out at API level`);
                                     stream.writeSSE({
                                         event: 'error',
                                         data: JSON.stringify({
-                                            message: 'Authentication timed out'
+                                            message: 'Authentication timed out',
+                                            sessionID
                                         })
+                                    }).finally(() => {
+                                        resolve();
                                     });
-                                    resolve();
                                 }
-                            }, 120000); // 2 minutes timeout
+                            }, 125000); // 2 minutes + 5s buffer
+
+                            // Clean up the timeout when we're done
+                            steam.once('completed', async(result) => {
+                                try {
+                                    console.log(`[${sessionID}] Auth completed with result:`, result);
+                                    isCompleted = true;
+
+                                    // Only send completion if we successfully got credentials
+                                    if (result.credentials) {
+                                        await stream.writeSSE({
+                                            event: 'complete',
+                                            data: JSON.stringify({
+                                                success: true,
+                                                sessionID
+                                            })
+                                        });
+                                    } else if (!hasError) {
+                                        // If we didn't get credentials and there wasn't already an error sent
+                                        await stream.writeSSE({
+                                            event: 'error',
+                                            data: JSON.stringify({
+                                                message: result.error || 'Authentication failed to obtain credentials',
+                                                sessionID
+                                            })
+                                        });
+                                    }
+
+                                    // Give time for the event to be sent before closing
+                                    setTimeout(async () => {
+                                        await stream.close();
+                                    }, 1000);
+                                } catch (e) {
+                                    console.error(`[${sessionID}] Error sending completion event:`, e);
+                                    await stream.close();
+                                }
+
+                                clearTimeout(timeout);
+                                resolve();
+                            });
                         });
                     }
                     catch (error: any) {
-                        console.error("error handling steam authentication");
+                        console.error(`[${sessionID}] Fatal error in Steam auth:`, error);
 
-                        await stream.writeSSE({
-                            event: 'error',
-                            data: JSON.stringify({ message: error.message || 'Authentication error' })
-                        });
+                        try {
+                            await stream.writeSSE({
+                                event: 'error',
+                                data: JSON.stringify({
+                                    message: error.message || 'Fatal authentication error',
+                                    sessionID
+                                })
+                            });
+                        } catch (e) {
+                            console.error(`[${sessionID}] Error sending fatal error event:`, e);
+                        }
+
+                        // Give time for the event to be sent before closing
+                        setTimeout(async () => {
+                            await stream.close();
+                        }, 1000);
                     }
-
-                    // Only close if not already closed
-                    if (!isCompleted) {
-                        await stream.close();
-                    }
-
                 })
             }
         )

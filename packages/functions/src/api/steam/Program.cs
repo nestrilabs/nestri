@@ -161,10 +161,10 @@ void OutputUrl(QrAuthSession authSession)
 class UserData
 {
     public bool Success { get; set; }
-    public string? Username { get; set; }
-    public string? AccessToken { get; set; }
-    public string? PersonaName { get; set; }
-    public string? Country { get; set; }
-    public string? AvatarUrl { get; set; }
+    public string Username { get; set; }
+    public string AccessToken { get; set; }
+    public string PersonaName { get; set; }
+    public string Country { get; set; }
+    public string AvatarUrl { get; set; }
     public DateTime Timestamp { get; set; }
 }

@@ -1,4 +1,3 @@
-// steam.ts
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 
@@ -32,6 +31,7 @@ export class Steam extends EventEmitter {
     private challengeUrl: string | null = null;
     private credentials: SteamCredentials | null = null;
     private timeout: NodeJS.Timeout | null = null;
+    private errorOccurred: boolean = false;
 
     /**
      * Creates a new Steam authentication client
@@ -63,7 +63,7 @@ export class Steam extends EventEmitter {
         try {
             const { exec } = await import("child_process");
             return new Promise((resolve, reject) => {
-                console.log("dirname", __dirname)
+                console.log("Setting executable permissions for", this.csharpAppPath);
                 exec(`chmod +x ${this.csharpAppPath}`, (error) => {
                     if (error) {
                         reject(new Error(`Failed to set executable permissions: ${error.message}`));
@@ -89,6 +89,7 @@ export class Steam extends EventEmitter {
         try {
             // Clean up any previous state
             this.cleanup();
+            this.errorOccurred = false;
 
             // Ensure executable permissions first
             await this.ensureExecutable();
@@ -97,11 +98,16 @@ export class Steam extends EventEmitter {
             this.authProcess = spawn(this.csharpAppPath, [], {
                 stdio: ['pipe', 'pipe', 'pipe']
             });
+            
+            if (!this.authProcess) {
+                throw new Error("Failed to spawn Steam authentication process");
+            }
+            
             if (this.authProcess.stdout) {
                 // Listen for data from stdout
                 this.authProcess.stdout.on("data", (data) => {
                     const output = data.toString();
-                    console.log("C# output:", output);
+                    console.log("C# raw output:", output);
 
                     // Try to parse any JSON in the output
                     try {
@@ -109,51 +115,89 @@ export class Steam extends EventEmitter {
                         const jsonMatches = output.match(/(\{.*?\})/g);
                         if (jsonMatches) {
                             for (const jsonStr of jsonMatches) {
-                                const jsonData = JSON.parse(jsonStr);
+                                try {
+                                    const jsonData = JSON.parse(jsonStr);
+                                    console.log("Parsed JSON:", jsonData);
 
-                                // Check if this JSON contains a challenge URL - emit for ALL URL updates
-                                if (jsonData.challengeUrl) {
-                                    const newUrl = jsonData.challengeUrl;
-                                    // Always emit the event, even if the URL is the same
-                                    this.challengeUrl = newUrl; // Update the stored URL
-                                    this.emit('challengeUrl', newUrl);
-                                }
+                                    // Check if this JSON contains a challenge URL
+                                    if (jsonData.challengeUrl) {
+                                        const newUrl = jsonData.challengeUrl;
+                                        this.challengeUrl = newUrl;
+                                        this.emit('challengeUrl', newUrl);
+                                    }
 
-                                if (jsonData.error && jsonData.message) {
-                                    console.log("Found error:", jsonData.message);
-                                    this.emit('error', jsonData.message);
-                                }
+                                    // Check for errors
+                                    if (jsonData.error || jsonData.message) {
+                                        const errorMsg = jsonData.error || jsonData.message;
+                                        console.log("Found error:", errorMsg);
+                                        this.errorOccurred = true;
+                                        this.emit('error', new Error(errorMsg));
+                                    }
 
-                                // Check if this JSON contains credentials
-                                if (jsonData.username && jsonData.accessToken) {
-                                    this.credentials = jsonData;
-                                    console.log("Found login credentials");
-                                    this.emit('credentials', this.credentials);
-
-                                    // Once we have credentials, we can complete the process
-                                    this.completeAuth();
+                                    // More flexible credentials detection: 
+                                    // Look for typical Steam credential fields
+                                    const possibleCredFields = [
+                                        'username', 'accessToken', 'steamId', 'token',
+                                        'personaName', 'avatarUrl', 'accountName'
+                                    ];
+                                    
+                                    // Check if the JSON has enough credential-like fields
+                                    const credFieldsFound = possibleCredFields.filter(
+                                        field => jsonData[field] !== undefined
+                                    );
+                                    
+                                    // If we have at least username or access token plus one more field,
+                                    // consider it credentials
+                                    if ((jsonData.username || jsonData.accessToken) && 
+                                        credFieldsFound.length >= 2) {
+                                        console.log("Found credential-like data with fields:", credFieldsFound);
+                                        
+                                        // Ensure we have the required fields
+                                        const credentials: SteamCredentials = {
+                                            username: jsonData.username || jsonData.accountName || "unknown",
+                                            accessToken: jsonData.accessToken || jsonData.token || "unknown",
+                                            personaName: jsonData.personaName || jsonData.username || "unknown",
+                                            avatarUrl: jsonData.avatarUrl || "",
+                                            country: jsonData.country || "",
+                                            ...jsonData // Include all other fields
+                                        };
+                                        
+                                        this.credentials = credentials;
+                                        console.log("Emitting credentials event");
+                                        this.emit('credentials', this.credentials);
+                                    }
+                                } catch (innerError) {
+                                    console.error("Error parsing JSON object:", innerError);
                                 }
                             }
                         }
                     } catch (e) {
+                        console.log("Not valid JSON or error parsing:", e);
                         // Not valid JSON, continue listening
                     }
                 });
             }
 
-
-            if (this.authProcess.stderr)
+            if (this.authProcess.stderr) {
                 // Handle errors
                 this.authProcess.stderr.on("data", (data) => {
-                    console.error("C# error:", data.toString());
+                    const errorMsg = data.toString();
+                    console.error("C# error:", errorMsg);
+                    this.errorOccurred = true;
+                    this.emit('error', new Error(errorMsg));
                 });
+            }
 
             // Process completion
             this.authProcess.on("close", (code) => {
-                if (!this.credentials && !this.challengeUrl) {
-                    const error = new Error(`C# process exited with code ${code} before providing any useful data`);
+                console.log(`C# process exited with code ${code}`);
+                
+                if (code !== 0 && !this.errorOccurred) {
+                    this.errorOccurred = true;
+                    const error = new Error(`C# process exited with code ${code}`);
                     this.emit('error', error);
                 }
+                
                 this.completeAuth();
             });
 
@@ -161,12 +205,14 @@ export class Steam extends EventEmitter {
             this.timeout = setTimeout(() => {
                 const timeoutError = new Error("Timeout waiting for authentication");
                 console.error(timeoutError.message);
+                this.errorOccurred = true;
                 this.emit('error', timeoutError);
                 this.completeAuth();
             }, this.timeoutDuration);
 
         } catch (error: any) {
             console.error("Steam authentication error:", error.message);
+            this.errorOccurred = true;
             this.emit('error', error);
             this.completeAuth();
         }
@@ -186,7 +232,8 @@ export class Steam extends EventEmitter {
     getState(): SteamAuthResult {
         return {
             challengeUrl: this.challengeUrl || undefined,
-            credentials: this.credentials || undefined
+            credentials: this.credentials || undefined,
+            error: this.errorOccurred ? "An error occurred during authentication" : undefined
         };
     }
 
@@ -197,10 +244,11 @@ export class Steam extends EventEmitter {
     private completeAuth(): void {
         const result: SteamAuthResult = this.getState();
 
-        if (!this.credentials && this.challengeUrl) {
+        if (!this.credentials && this.challengeUrl && !this.errorOccurred) {
             result.error = "Process completed before obtaining credentials";
         }
 
+        console.log("Authentication completed with result:", result);
         this.emit('completed', result);
         this.cleanup();
     }
