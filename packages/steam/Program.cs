@@ -1,7 +1,7 @@
-﻿using System.Net.Sockets;
-using System.Text;
-using System.Text.Json;
+﻿using System.Text;
 using SteamSocketAuth;
+using System.Text.Json;
+using System.Net.Sockets;
 
 namespace SteamSocketServer
 {
@@ -84,13 +84,15 @@ namespace SteamSocketServer
 
                                 // Check if we have credentials for direct login
                                 if (request.TryGetProperty("username", out var usernameElement) && 
-                                    request.TryGetProperty("refreshToken", out var tokenElement))
+                                    request.TryGetProperty("refreshToken", out var tokenElement) &&
+                                    request.TryGetProperty("loginID", out var loginIDElement))
                                 {
                                     string username = usernameElement.GetString() ?? string.Empty;
                                     string refreshToken = tokenElement.GetString() ?? string.Empty;
+                                    uint loginID = loginIDElement.GetUInt32();
                                     
                                     Console.WriteLine($"Using provided credentials for {username}");
-                                    steamLoginComponent.SetCredentials(username, refreshToken);
+                                    steamLoginComponent.SetCredentials(username, refreshToken, loginID);
                                 }
                                 
                                 // Begin login process

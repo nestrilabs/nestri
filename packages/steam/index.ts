@@ -8,255 +8,321 @@ const SOCKET_PATH = '/tmp/steam.sock';
 
 // Types for messages
 interface BaseMessage {
-  type: string;
+    type: string;
 }
 
 interface LoginRequest extends BaseMessage {
-  type: 'login';
-  username?: string;
-  refreshToken?: string;
+    type: 'login';
+    username?: string;
+    refreshToken?: string;
+    loginID?: number;
 }
 
 interface DisconnectRequest extends BaseMessage {
-  type: 'disconnect';
+    type: 'disconnect';
 }
 
 interface ChallengeUrlResponse extends BaseMessage {
-  type: 'challenge_url';
-  url: string;
-  timestamp: string;
+    type: 'challenge_url';
+    url: string;
+    timestamp: string;
 }
 
 interface CredentialsResponse extends BaseMessage {
-  type: 'credentials';
-  username: string;
-  refreshToken: string;
+    type: 'credentials';
+    username: string;
+    refreshToken: string;
+    loginID: number;
 }
 
 interface StatusResponse extends BaseMessage {
-  type: 'status';
-  message: string; 
+    type: 'status';
+    message: string;
 }
 
 interface ErrorResponse extends BaseMessage {
-  type: 'error';
-  message: string;
+    type: 'error';
+    message: string;
 }
 
 interface AccountInfoResponse extends BaseMessage {
-  type: 'account_info';
-  personaName: string;
-  country: string;
+    type: 'account_info';
+    personaName: string;
+    country: string;
 }
 
 interface UserDataResponse extends BaseMessage {
-  type: 'user_data';
-  username: string;
-  personaName: string;
-  avatarUrl: string;
-  timestamp: string;
+    type: 'user_data';
+    username: string;
+    personaName: string;
+    avatarUrl: string;
+    timestamp: string;
 }
 
-type ServerResponse = 
-  | ChallengeUrlResponse
-  | CredentialsResponse
-  | StatusResponse
-  | ErrorResponse
-  | AccountInfoResponse
-  | UserDataResponse;
+type ServerResponse =
+    | ChallengeUrlResponse
+    | CredentialsResponse
+    | StatusResponse
+    | ErrorResponse
+    | AccountInfoResponse
+    | UserDataResponse;
 
 class SteamSocketClient {
-  private socket: net.Socket | null = null;
-  private connected = false;
-  private rl: readline.Interface;
-  private credentials: { username: string; refreshToken: string } | null = null;
-  private credentialsFile = '/tmp/steam_credentials.json';
+    private socket: net.Socket | null = null;
+    private rl: readline.Interface;
+    private isConnected = false;
+    private credentials: { username: string; refreshToken: string; loginID: number; } | null = null;
+    private credentialsFile = '/tmp/steam_credentials.json';
+    private dataBuffer = '';  // Buffer to store incoming data
 
-  constructor() {
-    this.rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-  }
-
-  async start() {
-    console.log('Steam Socket Client starting...');
-    
-    try {
-      this.loadCredentials();
-      
-      this.socket = net.createConnection(SOCKET_PATH);
-      
-      this.socket.on('connect', () => this.onConnected());
-      this.socket.on('data', (data) => this.onDataReceived(data));
-      this.socket.on('error', (err) => {
-        console.error('Socket error:', err.message);
-        this.cleanup();
-      });
-      this.socket.on('close', () => {
-        console.log('Connection closed');
-        this.cleanup();
-      });
-    } catch (err) {
-      console.error('Failed to start client:', err);
-      this.cleanup();
-    }
-  }
-
-  private onConnected() {
-    console.log('Connected to server');
-    this.connected = true;
-    
-    if (this.credentials) {
-      this.askUseCredentials();
-    } else {
-      this.promptForLoginMethod();
-    }
-  }
-
-  private promptForLoginMethod() {
-    this.rl.question('Do you want to use QR code login (q) or direct login with credentials (d)? ', (answer) => {
-      if (answer.toLowerCase() === 'd') {
-        this.promptForCredentials();
-      } else {
-        this.sendMessage({ type: 'login' });
-        console.log('Starting QR code login. Please wait for the QR code...');
-      }
-    });
-  }
-
-  private askUseCredentials() {
-    this.rl.question(`Saved credentials found for ${this.credentials!.username}. Use them? (y/n) `, (answer) => {
-      if (answer.toLowerCase() === 'y') {
-        this.sendMessage({
-          type: 'login',
-          username: this.credentials!.username,
-          refreshToken: this.credentials!.refreshToken
+    constructor() {
+        this.rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
         });
-        console.log(`Attempting login with saved credentials for ${this.credentials!.username}...`);
-      } else {
-        this.promptForLoginMethod();
-      }
-    });
-  }
+    }
 
-  private promptForCredentials() {
-    this.rl.question('Enter username: ', (username) => {
-      this.rl.question('Enter refresh token: ', (refreshToken) => {
-        this.sendMessage({
-          type: 'login',
-          username,
-          refreshToken
+    async start() {
+        console.log('Steam Socket Client starting...');
+
+        try {
+            this.loadCredentials();
+
+            this.socket = net.createConnection(SOCKET_PATH);
+
+            this.socket.on('connect', () => this.onConnected());
+            this.socket.on('data', (data) => this.onDataReceived(data));
+            this.socket.on('error', (err) => {
+                console.error('Socket error:', err.message);
+                this.cleanup();
+            });
+            this.socket.on('close', () => {
+                console.log('Connection closed');
+                this.cleanup();
+            });
+        } catch (err) {
+            console.error('Failed to start client:', err);
+            this.cleanup();
+        }
+    }
+
+    private onConnected() {
+        console.log('Connected to server');
+        this.isConnected = true;
+
+        if (this.credentials) {
+            this.askUseCredentials();
+        } else {
+            this.promptForLoginMethod();
+        }
+    }
+
+    private promptForLoginMethod() {
+        this.rl.question('Do you want to use QR code login (q) or direct login with credentials (d)? ', (answer) => {
+            if (answer.toLowerCase() === 'd') {
+                this.promptForCredentials();
+            } else {
+                this.sendMessage({ type: 'login' });
+                console.log('Starting QR code login. Please wait for the QR code...');
+            }
         });
-        console.log(`Attempting login with provided credentials for ${username}...`);
-      });
-    });
-  }
-
-  private onDataReceived(data: Buffer) {
-    try {
-      const message = JSON.parse(data.toString()) as ServerResponse;
-      
-      switch (message.type) {
-        case 'challenge_url':
-          this.handleChallengeUrl(message);
-          break;
-        case 'credentials':
-          this.handleCredentials(message);
-          break;
-        case 'account_info':
-        case 'user_data':
-          console.log(`\n${message.type.toUpperCase()}:`);
-          console.log(JSON.stringify(message, null, 2));
-          break;
-        case 'status':
-          console.log(`\nSTATUS: ${message.message}`);
-          break;
-        case 'error':
-          console.error(`\nERROR: ${message.message}`);
-          break;
-        default:
-          console.log('\nRECEIVED:', JSON.stringify(message, null, 2));
-      }
-    } catch (err) {
-      console.error('Error parsing message:', data.toString(), err);
     }
-  }
 
-  private handleChallengeUrl(message: ChallengeUrlResponse) {
-    console.log('\n========== QR CODE LOGIN URL ==========');
-    console.log(message.url);
-    console.log('Scan this URL with the Steam mobile app');
-    console.log('=======================================\n');
-
-    // Generate QR code in terminal
-    qrcode.generate(message.url, { small: true }, (qrcode) => {
-      console.log(qrcode);
-    });
-  }
-
-  private handleCredentials(message: CredentialsResponse) {
-    console.log('\n========== CREDENTIALS RECEIVED ==========');
-    console.log('Username:', message.username);
-    console.log('Refresh Token:', message.refreshToken);
-    console.log('==========================================\n');
-    
-    // Save credentials
-    this.credentials = {
-      username: message.username,
-      refreshToken: message.refreshToken
-    };
-    
-    this.saveCredentials();
-  }
-
-  private loadCredentials() {
-    try {
-      if (fs.existsSync(this.credentialsFile)) {
-        const data = fs.readFileSync(this.credentialsFile, 'utf8');
-        this.credentials = JSON.parse(data);
-        console.log(`Found saved credentials for ${this.credentials!.username}`);
-      }
-    } catch (err) {
-      console.log('No saved credentials found or error loading them');
+    private askUseCredentials() {
+        this.rl.question(`Saved credentials found for ${this.credentials!.username}. Use them? (y/n) `, (answer) => {
+            if (answer.toLowerCase() === 'y') {
+                this.sendMessage({
+                    type: 'login',
+                    username: this.credentials!.username,
+                    refreshToken: this.credentials!.refreshToken,
+                    loginID: this.credentials!.loginID,
+                });
+                console.log(`Attempting login with saved credentials for ${this.credentials!.username}...`);
+            } else {
+                this.promptForLoginMethod();
+            }
+        });
     }
-  }
 
-  private saveCredentials() {
-    if (this.credentials) {
-      fs.writeFileSync(this.credentialsFile, JSON.stringify(this.credentials, null, 2));
-      console.log('Credentials saved for future use');
+    private promptForCredentials() {
+        this.rl.question('Enter username: ', (username) => {
+            this.rl.question('Enter refresh token: ', (refreshToken) => {
+                this.rl.question('Enter loginID: ', (loginID) => {
+                    this.sendMessage({
+                        type: 'login',
+                        username,
+                        refreshToken,
+                        loginID: Number(loginID)
+                    });
+                    console.log(`Attempting login with provided credentials for ${username}...`);
+                })
+            });
+        });
     }
-  }
 
-  private sendMessage(message: LoginRequest | DisconnectRequest) {
-    if (this.socket && this.connected) {
-      this.socket.write(JSON.stringify(message));
-    } else {
-      console.error('Cannot send message: not connected');
-    }
-  }
+    private onDataReceived(data: Buffer) {
+        // Append new data to existing buffer
+        this.dataBuffer += data.toString();
 
-  public disconnect() {
-    if (this.socket && this.connected) {
-      this.sendMessage({ type: 'disconnect' });
+        // Process the buffer for complete JSON objects
+        this.processBuffer();
     }
-  }
 
-  private cleanup() {
-    if (this.socket) {
-      try {
-        this.socket.end();
-      } catch (err) {
-        // Ignore errors on cleanup
-      }
-      this.socket = null;
+    private processBuffer() {
+        try {
+            // Try to parse the entire buffer as a single JSON object
+            const message = JSON.parse(this.dataBuffer) as ServerResponse;
+            this.handleMessage(message);
+            this.dataBuffer = ''; // Clear buffer after successful parsing
+            return;
+        } catch (err) {
+            // If parsing fails, we may have multiple JSON objects or incomplete data
+        }
+
+        // Look for JSON objects by finding matching braces
+        let startIndex = this.dataBuffer.indexOf('{');
+        if (startIndex === -1) {
+            // No JSON object start found, clear buffer
+            this.dataBuffer = '';
+            return;
+        }
+
+        let depth = 0;
+        let endIndex = -1;
+
+        // Find the end of the first complete JSON object
+        for (let i = startIndex; i < this.dataBuffer.length; i++) {
+            if (this.dataBuffer[i] === '{') {
+                depth++;
+            } else if (this.dataBuffer[i] === '}') {
+                depth--;
+                if (depth === 0) {
+                    endIndex = i;
+                    break;
+                }
+            }
+        }
+
+        if (endIndex !== -1) {
+            // We found a complete JSON object
+            const jsonStr = this.dataBuffer.substring(startIndex, endIndex + 1);
+            try {
+                const message = JSON.parse(jsonStr) as ServerResponse;
+                this.handleMessage(message);
+            } catch (err) {
+                console.error('Error parsing JSON object:', err);
+            }
+
+            // Remove processed object from buffer and process remaining data
+            this.dataBuffer = this.dataBuffer.substring(endIndex + 1);
+
+            // Process any remaining data in the buffer
+            if (this.dataBuffer.trim().length > 0) {
+                this.processBuffer();
+            }
+        }
     }
-    
-    if (this.rl) {
-      this.rl.close();
+
+    private handleMessage(message: ServerResponse) {
+        switch (message.type) {
+            case 'challenge_url':
+                this.handleChallengeUrl(message);
+                break;
+            case 'credentials':
+                this.handleCredentials(message);
+                break;
+            case 'account_info':
+            case 'user_data':
+                console.log(`\n${message.type.toUpperCase()}:`);
+                console.log(JSON.stringify(message, null, 2));
+                break;
+            case 'status':
+                console.log(`\nSTATUS: ${message.message}`);
+                break;
+            case 'error':
+                console.error(`\nERROR: ${message.message}`);
+                break;
+            default:
+                console.log('\nRECEIVED:', JSON.stringify(message, null, 2));
+        }
     }
-  }
+
+    private handleChallengeUrl(message: ChallengeUrlResponse) {
+        console.log('\n========== QR CODE LOGIN URL ==========');
+        console.log(message.url);
+        console.log('Scan this URL with the Steam mobile app');
+        console.log('=======================================\n');
+
+        // Generate QR code in terminal
+        qrcode.generate(message.url, { small: true }, (qrcode) => {
+            console.log(qrcode);
+        });
+    }
+
+    private handleCredentials(message: CredentialsResponse) {
+        console.log('\n========== CREDENTIALS RECEIVED ==========');
+        console.log('Username:', message.username);
+        console.log('LoginID:', message.loginID);
+        console.log('Refresh Token:', message.refreshToken);
+        console.log('==========================================\n');
+
+        // Save credentials
+        this.credentials = {
+            username: message.username,
+            loginID: message.loginID,
+            refreshToken: message.refreshToken
+        };
+
+        this.saveCredentials();
+    }
+
+    private loadCredentials() {
+        try {
+            if (fs.existsSync(this.credentialsFile)) {
+                const data = fs.readFileSync(this.credentialsFile, 'utf8');
+                this.credentials = JSON.parse(data);
+                console.log(`Found saved credentials for ${this.credentials!.username}`);
+            }
+        } catch (err) {
+            console.log('No saved credentials found or error loading them');
+        }
+    }
+
+    private saveCredentials() {
+        if (this.credentials) {
+            fs.writeFileSync(this.credentialsFile, JSON.stringify(this.credentials, null, 2));
+            console.log('Credentials saved for future use');
+        }
+    }
+
+    private sendMessage(message: LoginRequest | DisconnectRequest) {
+        if (this.socket && this.isConnected) {
+            this.socket.write(JSON.stringify(message));
+        } else {
+            console.error('Cannot send message: not connected');
+        }
+    }
+
+    public disconnect() {
+        if (this.socket && this.isConnected) {
+            this.sendMessage({ type: 'disconnect' });
+        }
+    }
+
+    private cleanup() {
+        if (this.socket) {
+            try {
+                this.socket.end();
+            } catch (err) {
+                // Ignore errors on cleanup
+            }
+            this.socket = null;
+        }
+
+        if (this.rl) {
+            this.rl.close();
+        }
+    }
 }
 
 // Create and start the client
@@ -265,7 +331,7 @@ client.start();
 
 // Handle process termination
 process.on('SIGINT', () => {
-  console.log('\nDisconnecting...');
-  client.disconnect();
-  setTimeout(() => process.exit(0), 500);
+    console.log('\nDisconnecting...');
+    client.disconnect();
+    setTimeout(() => process.exit(0), 500);
 });
