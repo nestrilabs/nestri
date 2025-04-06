@@ -185,7 +185,6 @@ namespace SteamSocketAuth
                     avatarUrl,
                     username = _username,
                     personaName = callback.Name,
-                    timestamp = DateTime.UtcNow
                 };
 
                 SendToClient(userData);

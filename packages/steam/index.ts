@@ -54,7 +54,6 @@ interface UserDataResponse extends BaseMessage {
     username: string;
     personaName: string;
     avatarUrl: string;
-    timestamp: string;
 }
 
 type ServerResponse =
