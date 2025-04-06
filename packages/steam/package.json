@@ -1,7 +1,8 @@
 {
     "name": "@nestri/steam",
     "scripts": {
-        "dev": "dotnet run",
+        "dev": "dotnet watch run",
+        "client": "bun index",
         "build": "dotnet build"
     }
 }
