@@ -20,7 +20,9 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@actor-core/bun": "^0.7.9",
     "@openauthjs/openauth": "*",
+    "actor-core": "^0.7.9",
     "hono": "^4.6.15",
     "hono-openapi": "^0.3.1",
     "partysocket": "1.0.3",

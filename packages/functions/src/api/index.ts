@@ -3,13 +3,23 @@ import { Hono } from "hono";
 import { auth } from "./auth";
 import { cors } from "hono/cors";
 import { TeamApi } from "./team";
-import { SteamApi } from "./steam";
+// import { SteamApi } from "./steam";
+import { setup } from "actor-core";
 import { logger } from "hono/logger";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
+import chatRoom from "./realtime/actor-core";
 import { patchLogger } from "../log-polyfill";
+import { createRouter } from "@actor-core/bun";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
+
+const realtimeApp = setup({
+    actors: { chatRoom },
+    basePath: "/realtime"
+});
+
+const { router: actorRouter, webSocketHandler } = createRouter(realtimeApp);
 
 export const app = new Hono();
 app
@@ -23,8 +33,9 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
+    .route("/realtime", actorRouter)
     .route("/team", TeamApi.route)
-    .route("/steam", SteamApi.route)
+    // .route("/steam", SteamApi.route)
     .route("/account", AccountApi.route)
     .onError((error, c) => {
         if (error instanceof VisibleError) {
@@ -92,6 +103,7 @@ patchLogger();
 export default {
     port: 3001,
     idleTimeout: 255,
+    webSocketHandler,
     fetch: (req: Request) =>
         app.fetch(req, undefined, {
             waitUntil: (fn) => fn,
