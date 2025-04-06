@@ -89,7 +89,7 @@ namespace SteamSocketServer
                                     string username = usernameElement.GetString() ?? string.Empty;
                                     string refreshToken = tokenElement.GetString() ?? string.Empty;
                                     
-                                    Console.WriteLine($"Using provided credentials for {username}");
+                                    Console.WriteLine("Using provided credentials for user login.");
                                     steamLoginComponent.SetCredentials(username, refreshToken);
                                 }
                                 
@@ -103,6 +103,9 @@ namespace SteamSocketServer
                                 steamLoginComponent.StopProcess();
                                 break;
                             }
+                        } else {
+                             SendErrorResponse(client, "Missing request type");
+                             Console.WriteLine($"Error parsing JSON: No request type found");
                         }
                     }
                     catch (JsonException ex)

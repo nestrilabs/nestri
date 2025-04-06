@@ -84,6 +84,7 @@ app.get(
             security: [{ Bearer: [], TeamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
+                { description: "Sandbox", url: "https://api.dev.nestri.io" },
             ],
         },
     }),
