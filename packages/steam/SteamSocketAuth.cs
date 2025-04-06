@@ -68,14 +68,13 @@ namespace SteamSocketAuth
                 SendToClient(new { type = "status", message = "Connected to Steam" });
 
                 // If we have credentials, use them directly
-                if (!string.IsNullOrEmpty(_refreshToken) && !string.IsNullOrEmpty(_username) && _loginID.HasValue)
+                if (!string.IsNullOrEmpty(_refreshToken) && !string.IsNullOrEmpty(_username))
                 {
                     SendToClient(new { type = "status", message = $"Logging in as '{_username}'..." });
 
                     _steamUser.LogOn(new SteamUser.LogOnDetails
                     {
                         Username = _username,
-                        // LoginID = _loginID, //Allows us to login multiple endpoints from the same IpAddress
                         AccessToken = _refreshToken,
                         MachineName = "Nestri"
                     });
@@ -100,9 +99,6 @@ namespace SteamSocketAuth
                     // Store credentials for future use
                     _username = pollResponse.AccountName;
                     _refreshToken = pollResponse.RefreshToken;
-                    // Log on using obtained credentials
-                    Random random = new Random();
-                    _loginID = (uint?)random.Next();
 
                     SendToClient(new
                     {
@@ -116,7 +112,6 @@ namespace SteamSocketAuth
                     _steamUser.LogOn(new SteamUser.LogOnDetails
                     {
                         Username = pollResponse.AccountName,
-                        LoginID = _loginID,
                         AccessToken = pollResponse.RefreshToken,
                     });
                 }
@@ -240,14 +235,11 @@ namespace SteamSocketAuth
         // Store credentials for direct login
         private string _refreshToken;
         private string _username;
-        private uint? _loginID;
-
         // Method to set credentials for direct login
-        public void SetCredentials(string username, string refreshToken, uint? loginID)
+        public void SetCredentials(string username, string refreshToken)
         {
             _username = username;
             _refreshToken = refreshToken;
-            _loginID = loginID;
         }
 
         public void StopProcess()
@@ -262,6 +254,5 @@ namespace SteamSocketAuth
         public required string Type { get; set; }
         public string? Username { get; set; }
         public string? RefreshToken { get; set; }
-        public uint? LoginID { get; set; }
     }
 }

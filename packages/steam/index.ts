@@ -15,7 +15,6 @@ interface LoginRequest extends BaseMessage {
     type: 'login';
     username?: string;
     refreshToken?: string;
-    loginID?: number;
 }
 
 interface DisconnectRequest extends BaseMessage {
@@ -32,7 +31,6 @@ interface CredentialsResponse extends BaseMessage {
     type: 'credentials';
     username: string;
     refreshToken: string;
-    loginID: number;
 }
 
 interface StatusResponse extends BaseMessage {
@@ -71,7 +69,7 @@ class SteamSocketClient {
     private socket: net.Socket | null = null;
     private rl: readline.Interface;
     private isConnected = false;
-    private credentials: { username: string; refreshToken: string; loginID: number; } | null = null;
+    private credentials: { username: string; refreshToken: string; } | null = null;
     private credentialsFile = '/tmp/steam_credentials.json';
     private dataBuffer = '';  // Buffer to store incoming data
 
@@ -135,7 +133,6 @@ class SteamSocketClient {
                     type: 'login',
                     username: this.credentials!.username,
                     refreshToken: this.credentials!.refreshToken,
-                    loginID: this.credentials!.loginID,
                 });
                 console.log(`Attempting login with saved credentials for ${this.credentials!.username}...`);
             } else {
@@ -147,15 +144,12 @@ class SteamSocketClient {
     private promptForCredentials() {
         this.rl.question('Enter username: ', (username) => {
             this.rl.question('Enter refresh token: ', (refreshToken) => {
-                this.rl.question('Enter loginID: ', (loginID) => {
-                    this.sendMessage({
-                        type: 'login',
-                        username,
-                        refreshToken,
-                        loginID: Number(loginID)
-                    });
-                    console.log(`Attempting login with provided credentials for ${username}...`);
-                })
+                this.sendMessage({
+                    type: 'login',
+                    username,
+                    refreshToken,
+                });
+                console.log(`Attempting login with provided credentials for ${username}...`);
             });
         });
     }
@@ -262,14 +256,12 @@ class SteamSocketClient {
     private handleCredentials(message: CredentialsResponse) {
         console.log('\n========== CREDENTIALS RECEIVED ==========');
         console.log('Username:', message.username);
-        console.log('LoginID:', message.loginID);
         console.log('Refresh Token:', message.refreshToken);
         console.log('==========================================\n');
 
         // Save credentials
         this.credentials = {
             username: message.username,
-            loginID: message.loginID,
             refreshToken: message.refreshToken
         };
 
