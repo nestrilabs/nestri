@@ -33,7 +33,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Start relay
-	err := internal.InitRelay(mainCtx, mainStopper)
+	err := internal.InitRelay(mainCtx, mainStopper, common.GetFlags().MeshPort)
 	if err != nil {
 		slog.Error("Failed to initialize relay", "err", err)
 		mainStopper()

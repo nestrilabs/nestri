@@ -1,10 +1,13 @@
 package common
 
 import (
+	"fmt"
+	"github.com/libp2p/go-reuseport"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 	"log/slog"
+	"strconv"
 )
 
 var globalWebRTCAPI *webrtc.API
@@ -79,17 +82,23 @@ func InitWebRTCAPI() error {
 
 	muxPort := GetFlags().UDPMuxPort
 	if muxPort > 0 {
-		mux, err := ice.NewMultiUDPMuxFromPort(muxPort)
+		// Use reuseport to allow multiple listeners on the same port
+		pktListener, err := reuseport.ListenPacket("udp", ":"+strconv.Itoa(muxPort))
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create UDP listener: %w", err)
 		}
+
+		mux := ice.NewMultiUDPMuxDefault(ice.NewUDPMuxDefault(ice.UDPMuxParams{
+			UDPConn: pktListener,
+		}))
+		slog.Info("Using UDP Mux for WebRTC", "port", muxPort)
 		settingEngine.SetICEUDPMux(mux)
-	} else {
-		// Set the UDP port range used by WebRTC
-		err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
-		if err != nil {
-			return err
-		}
+	}
+
+	// Set the UDP port range used by WebRTC
+	err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
+	if err != nil {
+		return err
 	}
 
 	settingEngine.SetIncludeLoopbackCandidate(true) // Just in case

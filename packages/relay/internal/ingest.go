@@ -62,7 +62,7 @@ func IngestHandler(room *Room) {
 				break
 			}
 
-			// Use PlayoutDelayExtension for low latency
+			// Use PlayoutDelayExtension for low latency, only for video tracks
 			if err := rtpPacket.SetExtension(common.ExtensionMap[common.ExtensionPlayoutDelay], playoutPayload); err != nil {
 				slog.Error("Failed to set PlayoutDelayExtension for room", "room", room.Name, "err", err)
 				continue
@@ -83,7 +83,7 @@ func IngestHandler(room *Room) {
 
 	room.PeerConnection.OnDataChannel(func(dc *webrtc.DataChannel) {
 		room.DataChannel = connections.NewNestriDataChannel(dc)
-		slog.Debug("ingest received data channel for room", "room", room.Name)
+		slog.Debug("Ingest received DataChannel for room", "room", room.Name)
 
 		room.DataChannel.RegisterOnOpen(func() {
 			slog.Debug("ingest DataChannel opened for room", "room", room.Name)
@@ -126,7 +126,7 @@ func IngestHandler(room *Room) {
 						slog.Error("Failed to add held ICE candidate for room", "room", room.Name, "err", err)
 					}
 				}
-				iceHolder = nil
+				iceHolder = make([]webrtc.ICECandidateInit, 0)
 			} else {
 				iceHolder = append(iceHolder, iceMsg.Candidate)
 			}
@@ -174,6 +174,9 @@ func IngestHandler(room *Room) {
 
 	room.WebSocket.RegisterOnClose(func() {
 		slog.Debug("ingest WebSocket closed for room", "room", room.Name)
+		room.Online = false
+		room.signalParticipantsOffline()
+		relay.DeleteRoomIfEmpty(room)
 	})
 
 	slog.Info("Room is ready, sending OK answer to ingest", "room", room.Name)

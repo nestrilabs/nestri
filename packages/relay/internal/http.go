@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gorilla/websocket"
-	"google.golang.org/protobuf/proto"
+	"github.com/libp2p/go-reuseport"
 	"log/slog"
 	"net/http"
 	"relay/internal/common"
 	"relay/internal/connections"
-	gen "relay/internal/proto"
 	"strconv"
 )
 
@@ -28,19 +28,23 @@ func InitHTTPEndpoint(_ context.Context, ctxCancel context.CancelFunc) error {
 	}
 	// WS endpoint
 	httpMux.HandleFunc("/api/ws/{roomName}", corsAnyHandler(wsHandler))
-	// Mesh endpoint
-	httpMux.HandleFunc("/api/mesh", corsAnyHandler(meshHandler))
 
 	// Get our serving port
 	port := common.GetFlags().EndpointPort
 	tlsCert := common.GetFlags().TLSCert
 	tlsKey := common.GetFlags().TLSKey
 
+	// Create re-usable listener port
+	httpListener, err := reuseport.Listen("tcp", ":"+strconv.Itoa(port))
+	if err != nil {
+		return fmt.Errorf("failed to create TCP listener: %w", err)
+	}
+
 	// Log and start the endpoint server
 	if len(tlsCert) <= 0 && len(tlsKey) <= 0 {
 		slog.Info("Starting HTTP endpoint server", "port", port)
 		go func() {
-			if err := http.ListenAndServe(":"+strconv.Itoa(port), httpMux); err != nil {
+			if err := http.Serve(httpListener, httpMux); err != nil {
 				slog.Error("Failed to start HTTP server", "err", err)
 				ctxCancel()
 			}
@@ -48,7 +52,7 @@ func InitHTTPEndpoint(_ context.Context, ctxCancel context.CancelFunc) error {
 	} else if len(tlsCert) > 0 && len(tlsKey) > 0 {
 		slog.Info("Starting HTTPS endpoint server", "port", port)
 		go func() {
-			if err := http.ListenAndServeTLS(":"+strconv.Itoa(port), tlsCert, tlsKey, httpMux); err != nil {
+			if err := http.ServeTLS(httpListener, httpMux, tlsCert, tlsKey); err != nil {
 				slog.Error("Failed to start HTTPS server", "err", err)
 				ctxCancel()
 			}
@@ -136,17 +140,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			room.AddParticipant(participant)
 			// If room not online, send Offline answer
 			if !room.Online {
-				// Check if room is online in Mesh network (i.e. any other relay)
-				if rel.MeshManager.State.IsRoomActive(room.Name) {
-					if err := rel.MeshManager.broadcastStreamRequest(room.Name); err != nil {
-						slog.Error("Failed to broadcast stream request", "room", room.Name, "err", err)
-					}
-				}
 				if err = ws.SendAnswerMessageWS(connections.AnswerOffline); err != nil {
 					slog.Error("Failed to send offline answer to participant", "room", room.Name, "err", err)
 				}
 			}
-			go ParticipantHandler(participant, room)
+			go ParticipantHandler(participant, room, rel)
 		default:
 			slog.Error("Unknown joiner type", "joinerType", joinMsg.JoinerType)
 		}
@@ -184,7 +182,7 @@ func controlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	relay := GetRelay()
+	//relay := GetRelay()
 	switch msg.Type {
 	case "join_mesh":
 		// Join the mesh network, get relay address from msg.Value
@@ -192,47 +190,13 @@ func controlHandler(w http.ResponseWriter, r *http.Request) {
 			logHTTPError(w, "missing relay address", http.StatusBadRequest)
 			return
 		}
-
-		if err := relay.MeshManager.ConnectToRelay(msg.Value); err != nil {
-			logHTTPError(w, "failed to join mesh network", http.StatusInternalServerError)
+		ctx := r.Context()
+		if err := GetRelay().ConnectToRelay(ctx, msg.Value); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to connect: %v", err), http.StatusInternalServerError)
 			return
 		}
+		w.Write([]byte("Successfully connected to relay"))
 	default:
 		logHTTPError(w, "unknown control message type", http.StatusBadRequest)
 	}
-}
-
-// meshHandler processes mesh-related requests
-func meshHandler(w http.ResponseWriter, r *http.Request) {
-	upgrader := websocket.Upgrader{
-		CheckOrigin: func(r *http.Request) bool { return true },
-	}
-
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		logHTTPError(w, "WebSocket upgrade failed", http.StatusInternalServerError)
-		return
-	}
-
-	safeWS := connections.NewSafeWebSocket(conn)
-	relay := GetRelay()
-
-	// Handle initial handshake
-	safeWS.RegisterBinaryMessageCallback(func(data []byte) {
-		var msg gen.MeshMessage
-		if err := proto.Unmarshal(data, &msg); err != nil {
-			logHTTPError(w, "failed to unmarshal mesh message", http.StatusBadRequest)
-			return
-		}
-
-		switch t := msg.Type.(type) {
-		case *gen.MeshMessage_Handshake:
-			if err := relay.MeshManager.handleHandshake(safeWS, t.Handshake); err != nil {
-				logHTTPError(w, "failed to handle incoming handshake", http.StatusInternalServerError)
-				return
-			}
-		default:
-			logHTTPError(w, "unknown initial mesh connection message type", http.StatusBadRequest)
-		}
-	})
 }

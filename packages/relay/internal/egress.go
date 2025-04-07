@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
@@ -10,24 +11,7 @@ import (
 	gen "relay/internal/proto"
 )
 
-func ParticipantHandler(participant *Participant, room *Room) {
-	relay := GetRelay()
-	if relay == nil || relay.MeshManager == nil {
-		slog.Debug("Mesh system not initialized, defaulting to local room handling", "room", room.Name)
-	} else {
-		// Check if room is active in the mesh but not local
-		if relay.MeshManager.State.IsRoomActive(room.Name) && !room.Online {
-			slog.Debug("Room is active in mesh but not local, requesting stream", "room", room.Name)
-			// Request stream from any relay hosting it (we'll broadcast the request)
-			if err := relay.MeshManager.broadcastStreamRequest(room.Name); err != nil {
-				slog.Error("Failed to broadcast stream request", "room", room.Name, "err", err)
-			}
-			// Stream will be set up asynchronously, Room.SetTrack will signal participants
-		} else if room.Online {
-			slog.Debug("Room is local and online, proceeding with participant", "room", room.Name)
-		}
-	}
-
+func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 	onPCClose := func() {
 		slog.Debug("Participant PeerConnection closed", "participant", participant.ID, "room", room.Name)
 		room.removeParticipantByID(participant.ID)
@@ -140,9 +124,18 @@ func ParticipantHandler(participant *Participant, room *Room) {
 
 	// If room is online, also send offer
 	if room.Online {
-		err = room.signalParticipantWithTracks(participant)
-		if err != nil {
+		if err = room.signalParticipantWithTracks(participant); err != nil {
 			slog.Error("Failed to signal participant with tracks", "participant", participant.ID, "room", room.Name, "err", err)
+		}
+	} else {
+		active, provider := relay.IsRoomActive(room.ID)
+		if active {
+			slog.Debug("Room active remotely, requesting stream", "room", room.Name, "provider", provider)
+			if _, err := relay.requestStream(context.Background(), room.Name, room.ID, provider); err != nil {
+				slog.Error("Failed to request stream", "room", room.Name, "err", err)
+			} else {
+				slog.Debug("Stream requested successfully", "room", room.Name, "provider", provider)
+			}
 		}
 	}
 }
@@ -163,8 +156,6 @@ func handleParticipantSDP(participant *Participant, answerMsg connections.Messag
 }
 
 func ForwardParticipantDataChannelMessage(participant *Participant, room *Room, data []byte) {
-	relay := GetRelay()
-
 	// Debug mode: Add latency timestamp
 	if common.GetFlags().Debug {
 		var inputMsg gen.ProtoMessageInput
@@ -191,17 +182,6 @@ func ForwardParticipantDataChannelMessage(participant *Participant, room *Room, 
 	if room.DataChannel != nil {
 		if err := room.DataChannel.SendBinary(data); err != nil {
 			slog.Error("Failed to send input message to room", "participant", participant.ID, "room", room.Name, "err", err)
-		}
-	}
-
-	// Forward to mesh DataChannel if connected
-	if relay != nil && relay.MeshManager != nil {
-		pc, pcExists := relay.MeshManager.getPeerConnectionForRoom(room.Name)
-		relayDC, dcExists := relay.MeshManager.getDataChannelForRoom(room.Name)
-		if dcExists && pcExists && pc.ConnectionState() == webrtc.PeerConnectionStateConnected {
-			if err := relayDC.SendBinary(data); err != nil {
-				slog.Error("Failed to send participant message to Relay 1", "participant", participant.ID, "room", room.Name, "err", err)
-			}
 		}
 	}
 }

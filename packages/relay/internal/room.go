@@ -1,46 +1,43 @@
 package internal
 
 import (
+	"context"
 	"fmt"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/oklog/ulid/v2"
 	"github.com/pion/webrtc/v4"
 	"log/slog"
 	"relay/internal/common"
 	"relay/internal/connections"
-	"sync"
 )
 
 type RoomInfo struct {
-	ID     ulid.ULID `json:"id"`
-	Name   string    `json:"name"`
-	Online bool      `json:"online"`
+	ID      ulid.ULID `json:"id"`
+	Name    string    `json:"name"`
+	Online  bool      `json:"online"`
+	OwnerID peer.ID   `json:"owner_id"`
 }
 
 type Room struct {
 	RoomInfo
-	WebSocket         *connections.SafeWebSocket
-	PeerConnection    *webrtc.PeerConnection
-	AudioTrack        *webrtc.TrackLocalStaticRTP
-	VideoTrack        *webrtc.TrackLocalStaticRTP
-	DataChannel       *connections.NestriDataChannel
-	Participants      map[ulid.ULID]*Participant
-	ParticipantsMutex sync.RWMutex
-	Relay             *Relay // Reference to access MeshManager
+	WebSocket      *connections.SafeWebSocket
+	PeerConnection *webrtc.PeerConnection
+	AudioTrack     *webrtc.TrackLocalStaticRTP
+	VideoTrack     *webrtc.TrackLocalStaticRTP
+	DataChannel    *connections.NestriDataChannel
+	Participants   *common.SafeMap[ulid.ULID, *Participant]
+	Relay          *Relay
 }
 
-func NewRoom(name string) *Room {
-	id, err := common.NewULID()
-	if err != nil {
-		slog.Error("Failed to generate ULID for room", "name", name, "err", err)
-		return nil
-	}
+func NewRoom(name string, roomID ulid.ULID, ownerID peer.ID) *Room {
 	return &Room{
 		RoomInfo: RoomInfo{
-			ID:     id,
-			Name:   name,
-			Online: false,
+			ID:      roomID,
+			Name:    name,
+			Online:  false,
+			OwnerID: ownerID,
 		},
-		Participants: make(map[ulid.ULID]*Participant),
+		Participants: common.NewSafeMap[ulid.ULID, *Participant](),
 	}
 }
 
@@ -55,46 +52,38 @@ func (r *Room) AssignWebSocket(ws *connections.SafeWebSocket) {
 // AddParticipant adds a Participant to a Room
 func (r *Room) AddParticipant(participant *Participant) {
 	slog.Debug("Adding participant to room", "participant", participant.ID, "room", r.Name)
-	r.ParticipantsMutex.Lock()
-	r.Participants[participant.ID] = participant
-	r.ParticipantsMutex.Unlock()
+	r.Participants.Set(participant.ID, participant)
 }
 
 // Removes a Participant from a Room by participant's ID
 func (r *Room) removeParticipantByID(pID ulid.ULID) {
-	r.ParticipantsMutex.Lock()
-	if _, ok := r.Participants[pID]; ok {
-		delete(r.Participants, pID)
+	if _, ok := r.Participants.Get(pID); ok {
+		r.Participants.Delete(pID)
 	}
-	r.ParticipantsMutex.Unlock()
 }
 
 // Removes a Participant from a Room by participant's name
 func (r *Room) removeParticipantByName(pName string) {
-	r.ParticipantsMutex.Lock()
-	for id, participant := range r.Participants {
+	for id, participant := range r.Participants.Copy() {
 		if participant.Name == pName {
 			if err := r.signalParticipantOffline(participant); err != nil {
 				slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
 			}
-			delete(r.Participants, id)
+			r.Participants.Delete(id)
 			break
 		}
 	}
-	r.ParticipantsMutex.Unlock()
 }
 
 // Removes all participants from a Room
 func (r *Room) removeAllParticipants() {
-	r.ParticipantsMutex.Lock()
-	for id := range r.Participants {
-		if err := r.signalParticipantOffline(r.Participants[id]); err != nil {
-			slog.Error("Failed to signal participant offline", "participant", r.Participants[id].ID, "room", r.Name, "err", err)
+	for id, participant := range r.Participants.Copy() {
+		if err := r.signalParticipantOffline(participant); err != nil {
+			slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
 		}
-		delete(r.Participants, id)
+		r.Participants.Delete(id)
 		slog.Debug("Removed participant from room", "participant", id, "room", r.Name)
 	}
-	r.ParticipantsMutex.Unlock()
 }
 
 func (r *Room) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.TrackLocalStaticRTP) {
@@ -113,29 +102,24 @@ func (r *Room) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.TrackLocalS
 	if r.Online != newOnline {
 		r.Online = newOnline
 		if r.Online {
-			r.Relay.MeshManager.State.AddRoom(r.Name, r.Relay.ID)
-			err := r.Relay.MeshManager.broadcastStateUpdate()
-			if err != nil {
-				slog.Error("Failed to broadcast state update", "room", r.Name, "err", err)
-			}
-			slog.Debug("Room online and receiving, signaling participants", "room", r.Name)
+			slog.Debug("Room online, participants will be signaled", "room", r.Name)
 			r.signalParticipantsWithTracks()
 		} else {
-			r.Relay.MeshManager.State.DeleteRoom(r.Name)
-			err := r.Relay.MeshManager.broadcastStateUpdate()
-			if err != nil {
-				slog.Error("Failed to broadcast state update", "room", r.Name, "err", err)
-			}
-			slog.Debug("Room offline and not receiving, signaling participants", "room", r.Name)
+			slog.Debug("Room offline, signaling participants", "room", r.Name)
 			r.signalParticipantsOffline()
 		}
+
+		// Publish updated state to mesh
+		go func() {
+			if err := r.Relay.publishRoomStates(context.Background()); err != nil {
+				slog.Error("Failed to publish room states on change", "room", r.Name, "err", err)
+			}
+		}()
 	}
 }
 
 func (r *Room) signalParticipantsWithTracks() {
-	r.ParticipantsMutex.RLock()
-	defer r.ParticipantsMutex.RUnlock()
-	for _, participant := range r.Participants {
+	for _, participant := range r.Participants.Copy() {
 		if err := r.signalParticipantWithTracks(participant); err != nil {
 			slog.Error("Failed to signal participant with tracks", "participant", participant.ID, "room", r.Name, "err", err)
 		}
@@ -144,25 +128,23 @@ func (r *Room) signalParticipantsWithTracks() {
 
 func (r *Room) signalParticipantWithTracks(participant *Participant) error {
 	if r.AudioTrack != nil {
-		if err := participant.AddTrack(r.AudioTrack); err != nil {
+		if err := participant.addTrack(r.AudioTrack); err != nil {
 			return fmt.Errorf("failed to add audio track: %w", err)
 		}
 	}
 	if r.VideoTrack != nil {
-		if err := participant.AddTrack(r.VideoTrack); err != nil {
+		if err := participant.addTrack(r.VideoTrack); err != nil {
 			return fmt.Errorf("failed to add video track: %w", err)
 		}
 	}
-	if err := participant.SignalOffer(); err != nil {
+	if err := participant.signalOffer(); err != nil {
 		return fmt.Errorf("failed to signal offer: %w", err)
 	}
 	return nil
 }
 
 func (r *Room) signalParticipantsOffline() {
-	r.ParticipantsMutex.RLock()
-	defer r.ParticipantsMutex.RUnlock()
-	for _, participant := range r.Participants {
+	for _, participant := range r.Participants.Copy() {
 		if err := r.signalParticipantOffline(participant); err != nil {
 			slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
 		}

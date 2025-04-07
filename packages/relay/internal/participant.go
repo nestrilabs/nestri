@@ -31,7 +31,7 @@ func NewParticipant(ws *connections.SafeWebSocket) *Participant {
 	}
 }
 
-func (p *Participant) AddTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
+func (p *Participant) addTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
 	rtpSender, err := p.PeerConnection.AddTrack(trackLocal)
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func (p *Participant) AddTrack(trackLocal *webrtc.TrackLocalStaticRTP) error {
 	return nil
 }
 
-func (p *Participant) SignalOffer() error {
+func (p *Participant) signalOffer() error {
 	if p.PeerConnection == nil {
 		return fmt.Errorf("peer connection is nil for participant: '%s' - cannot signal offer", p.ID)
 	}

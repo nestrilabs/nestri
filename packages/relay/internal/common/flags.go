@@ -16,6 +16,7 @@ type Flags struct {
 	Verbose        bool     // Log everything to console
 	Debug          bool     // Enable debug mode, implies Verbose
 	EndpointPort   int      // Port for HTTP/S and WS/S endpoint (TCP)
+	MeshPort       int      // Port for Mesh connections (TCP)
 	WebRTCUDPStart int      // WebRTC UDP port range start - ignored if UDPMuxPort is set
 	WebRTCUDPEnd   int      // WebRTC UDP port range end - ignored if UDPMuxPort is set
 	STUNServer     string   // WebRTC STUN server
@@ -32,6 +33,7 @@ func (flags *Flags) DebugLog() {
 		"verbose", flags.Verbose,
 		"debug", flags.Debug,
 		"endpointPort", flags.EndpointPort,
+		"meshPort", flags.MeshPort,
 		"webrtcUDPStart", flags.WebRTCUDPStart,
 		"webrtcUDPEnd", flags.WebRTCUDPEnd,
 		"stunServer", flags.STUNServer,
@@ -77,6 +79,7 @@ func InitFlags() {
 	flag.BoolVar(&globalFlags.Verbose, "verbose", getEnvAsBool("VERBOSE", false), "Verbose mode")
 	flag.BoolVar(&globalFlags.Debug, "debug", getEnvAsBool("DEBUG", false), "Debug mode")
 	flag.IntVar(&globalFlags.EndpointPort, "endpointPort", getEnvAsInt("ENDPOINT_PORT", 8088), "HTTP endpoint port")
+	flag.IntVar(&globalFlags.MeshPort, "meshPort", getEnvAsInt("MESH_PORT", 8089), "Mesh connections TCP port")
 	flag.IntVar(&globalFlags.WebRTCUDPStart, "webrtcUDPStart", getEnvAsInt("WEBRTC_UDP_START", 10000), "WebRTC UDP port range start")
 	flag.IntVar(&globalFlags.WebRTCUDPEnd, "webrtcUDPEnd", getEnvAsInt("WEBRTC_UDP_END", 20000), "WebRTC UDP port range end")
 	flag.StringVar(&globalFlags.STUNServer, "stunServer", getEnvAsString("STUN_SERVER", "stun.l.google.com:19302"), "WebRTC STUN server")
@@ -84,7 +87,7 @@ func InitFlags() {
 	flag.BoolVar(&globalFlags.AutoAddLocalIP, "autoAddLocalIP", getEnvAsBool("AUTO_ADD_LOCAL_IP", true), "Automatically add local IP to NAT 1 to 1 IPs")
 	// String with comma separated IPs
 	nat11IPs := ""
-	flag.StringVar(&nat11IPs, "webrtcNAT11IPs", getEnvAsString("WEBRTC_NAT_IPS", ""), "WebRTC NAT 1 to 1 IP(s)")
+	flag.StringVar(&nat11IPs, "webrtcNAT11IPs", getEnvAsString("WEBRTC_NAT_IPS", ""), "WebRTC NAT 1 to 1 IP(s), comma delimited")
 	flag.StringVar(&globalFlags.TLSCert, "tlsCert", getEnvAsString("TLS_CERT", ""), "Path to TLS certificate")
 	flag.StringVar(&globalFlags.TLSKey, "tlsKey", getEnvAsString("TLS_KEY", ""), "Path to TLS key")
 	flag.StringVar(&globalFlags.ControlSecret, "controlSecret", getEnvAsString("CONTROL_SECRET", ""), "Shared secret for control endpoint")
