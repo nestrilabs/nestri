@@ -21,6 +21,10 @@ interface DisconnectRequest extends BaseMessage {
     type: 'disconnect';
 }
 
+interface AccountInfoRequest extends BaseMessage {
+    type: 'account_info';
+}
+
 interface ChallengeUrlResponse extends BaseMessage {
     type: 'challenge_url';
     url: string;
@@ -225,12 +229,14 @@ class SteamSocketClient {
                 this.handleCredentials(message);
                 break;
             case 'account_info':
-            case 'user_data':
                 console.log(`\n${message.type.toUpperCase()}:`);
                 console.log(JSON.stringify(message, null, 2));
                 break;
             case 'status':
                 console.log(`\nSTATUS: ${message.message}`);
+                // if (message.message === 'Successfully retrieved 202 games') {
+                //     setTimeout(() => this.sendMessage({ type: 'account_info' }), 1000)
+                // }
                 break;
             case 'error':
                 console.error(`\nERROR: ${message.message}`);
@@ -286,7 +292,7 @@ class SteamSocketClient {
         }
     }
 
-    private sendMessage(message: LoginRequest | DisconnectRequest) {
+    private sendMessage(message: LoginRequest | DisconnectRequest | AccountInfoRequest) {
         if (this.socket && this.isConnected) {
             this.socket.write(JSON.stringify(message));
         } else {

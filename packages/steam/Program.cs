@@ -18,7 +18,7 @@ namespace SteamSocketServer
             // Create Unix domain socket endpoint
             var endpoint = new UnixDomainSocketEndPoint(SocketPath);
             using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-            
+
             listener.Bind(endpoint);
             listener.Listen(10); // Max pending connections
             Console.WriteLine("Steam Socket Server listening on " + SocketPath);
@@ -36,6 +36,8 @@ namespace SteamSocketServer
                 try
                 {
                     var client = listener.Accept();
+                    client.ReceiveTimeout = 60000; // 1 minute timeout
+                    client.SendTimeout = 60000;
                     Console.WriteLine("Client connected.");
                     if (client != null)
                     {
@@ -53,6 +55,7 @@ namespace SteamSocketServer
         {
             var steamLoginComponent = new SteamLoginComponent();
             steamLoginComponent.SetClientSocket(client);
+            bool loginProcessed = false;
 
             try
             {
@@ -72,40 +75,68 @@ namespace SteamSocketServer
 
                     try
                     {
-                        var request = JsonSerializer.Deserialize<JsonElement>(message);
-                        if (request.TryGetProperty("type", out var typeElement))
+                        // Handle multiple JSON messages that might be concatenated
+                        string[] jsonMessages = message.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var jsonMessage in jsonMessages)
                         {
-                            string requestType = typeElement.GetString() ?? string.Empty;
-                            
-                            if (requestType == "login")
-                            {
-                                // Handle login request
-                                var loginRequest = new LoginRequest { Type = "login" };
+                            if (string.IsNullOrWhiteSpace(jsonMessage))
+                                continue;
 
-                                // Check if we have credentials for direct login
-                                if (request.TryGetProperty("username", out var usernameElement) && 
-                                    request.TryGetProperty("refreshToken", out var tokenElement))
-                                {
-                                    string username = usernameElement.GetString() ?? string.Empty;
-                                    string refreshToken = tokenElement.GetString() ?? string.Empty;
-                                    
-                                    Console.WriteLine("Using provided credentials for user login.");
-                                    steamLoginComponent.SetCredentials(username, refreshToken);
-                                }
-                                
-                                // Begin login process
-                                await steamLoginComponent.HandleLoginRequest(loginRequest);
-                            }
-                            else if (requestType == "disconnect")
+                            var request = JsonSerializer.Deserialize<JsonElement>(jsonMessage);
+                            if (request.TryGetProperty("type", out var typeElement))
                             {
-                                // Client requested to disconnect
-                                Console.WriteLine("Client requested disconnect");
-                                steamLoginComponent.StopProcess();
-                                break;
+                                string requestType = typeElement.GetString() ?? string.Empty;
+
+                                switch (requestType.ToLower())
+                                {
+
+                                    case "login":
+                                        if (loginProcessed)
+                                        {
+                                            SendErrorResponse(client, "Already logged in");
+                                            continue;
+                                        }
+                                        // Handle login request
+                                        var loginRequest = new LoginRequest { Type = "login" };
+                                        // Check if we have credentials for direct login
+                                        if (request.TryGetProperty("username", out var usernameElement) &&
+                                            request.TryGetProperty("refreshToken", out var tokenElement))
+                                        {
+                                            string username = usernameElement.GetString() ?? string.Empty;
+                                            string refreshToken = tokenElement.GetString() ?? string.Empty;
+
+                                            Console.WriteLine("Using provided credentials for user login.");
+                                            steamLoginComponent.SetCredentials(username, refreshToken);
+                                        }
+
+                                        // Begin login process
+                                        await steamLoginComponent.HandleLoginRequest(loginRequest);
+                                        loginProcessed = true;
+                                        break;
+                                    case "games":
+                                        await steamLoginComponent.ProcessClientQuery("games");
+                                        break;
+                                    case "friends":
+                                        await steamLoginComponent.ProcessClientQuery("friends");
+                                        break;
+                                    case "account_info":
+                                        await steamLoginComponent.ProcessClientQuery("account_info");
+                                        break;
+                                    case "disconnect":
+                                        // Client requested to disconnect
+                                        Console.WriteLine("Client requested disconnect");
+                                        steamLoginComponent.StopProcess();
+                                        break;
+                                    default:
+                                        SendErrorResponse(client, $"Unknown request type: {requestType}");
+                                        break;
+                                }
                             }
-                        } else {
-                             SendErrorResponse(client, "Missing request type");
-                             Console.WriteLine($"Error parsing JSON: No request type found");
+                            else
+                            {
+                                SendErrorResponse(client, "Missing request type");
+                                Console.WriteLine($"Error parsing JSON: No request type found");
+                            }
                         }
                     }
                     catch (JsonException ex)
