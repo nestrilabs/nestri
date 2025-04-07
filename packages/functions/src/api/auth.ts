@@ -1,14 +1,19 @@
 import { Resource } from "sst";
 import { subjects } from "../subjects";
 import { type MiddlewareHandler } from "hono";
+import { VisibleError } from "@nestri/core/error";
+import { ActorContext } from "@nestri/core/actor";
+import { HTTPException } from "hono/http-exception";
 import { useActor, withActor } from "@nestri/core/actor";
 import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 const client = createClient({
-  issuer: Resource.Urls.auth,
   clientID: "api",
+  issuer: Resource.Urls.auth
 });
+
+
 
 export const notPublic: MiddlewareHandler = async (c, next) => {
   const actor = useActor();
@@ -42,16 +47,22 @@ export const auth: MiddlewareHandler = async (c, next) => {
       "Invalid bearer token",
     );
   }
+    
+    if (result.subject.type === "machine") {
+      console.log("machine detected")
+      return withActor(result.subject, next);
+    }
 
-  if (result.subject.type === "user") {
-    const teamID = c.req.header("x-nestri-team") //|| c.req.query("teamID");
-    if (!teamID) return withActor(result.subject, next);
-    // const email = result.subject.properties.email;
-    return withActor(
-      {
-        type: "system",
-        properties: {
-          teamID,
+    if (result.subject.type === "user") {
+      const teamID = c.req.header("x-nestri-team") //|| c.req.query("teamID");
+      if (!teamID) return withActor(result.subject, next);
+      // const email = result.subject.properties.email;
+      return withActor(
+        {
+          type: "system",
+          properties: {
+            teamID,
+          },
         },
       },
       next
@@ -71,4 +82,5 @@ export const auth: MiddlewareHandler = async (c, next) => {
       //   },
     );
   }
+  return ActorContext.with({ type: "public", properties: {} }, next);
 };

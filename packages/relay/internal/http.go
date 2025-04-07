@@ -1,45 +1,61 @@
-package relay
+package internal
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gorilla/websocket"
-	"log"
+	"github.com/libp2p/go-reuseport"
+	"log/slog"
 	"net/http"
+	"relay/internal/common"
+	"relay/internal/connections"
 	"strconv"
 )
 
 var httpMux *http.ServeMux
 
-func InitHTTPEndpoint() error {
+func InitHTTPEndpoint(_ context.Context, ctxCancel context.CancelFunc) error {
 	// Create HTTP mux which serves our WS endpoint
 	httpMux = http.NewServeMux()
 
 	// Endpoints themselves
 	httpMux.Handle("/", http.NotFoundHandler())
+	// If control endpoint secret is set, enable the control endpoint
+	if len(common.GetFlags().ControlSecret) > 0 {
+		httpMux.HandleFunc("/api/control", corsAnyHandler(controlHandler))
+	}
+	// WS endpoint
 	httpMux.HandleFunc("/api/ws/{roomName}", corsAnyHandler(wsHandler))
 
 	// Get our serving port
-	port := GetFlags().EndpointPort
-	tlsCert := GetFlags().TLSCert
-	tlsKey := GetFlags().TLSKey
+	port := common.GetFlags().EndpointPort
+	tlsCert := common.GetFlags().TLSCert
+	tlsKey := common.GetFlags().TLSKey
+
+	// Create re-usable listener port
+	httpListener, err := reuseport.Listen("tcp", ":"+strconv.Itoa(port))
+	if err != nil {
+		return fmt.Errorf("failed to create TCP listener: %w", err)
+	}
 
 	// Log and start the endpoint server
 	if len(tlsCert) <= 0 && len(tlsKey) <= 0 {
-		log.Println("Starting HTTP endpoint server on :", strconv.Itoa(port))
+		slog.Info("Starting HTTP endpoint server", "port", port)
 		go func() {
-			log.Fatal((&http.Server{
-				Handler: httpMux,
-				Addr:    ":" + strconv.Itoa(port),
-			}).ListenAndServe())
+			if err := http.Serve(httpListener, httpMux); err != nil {
+				slog.Error("Failed to start HTTP server", "err", err)
+				ctxCancel()
+			}
 		}()
 	} else if len(tlsCert) > 0 && len(tlsKey) > 0 {
-		log.Println("Starting HTTPS endpoint server on :", strconv.Itoa(port))
+		slog.Info("Starting HTTPS endpoint server", "port", port)
 		go func() {
-			log.Fatal((&http.Server{
-				Handler: httpMux,
-				Addr:    ":" + strconv.Itoa(port),
-			}).ListenAndServeTLS(tlsCert, tlsKey))
+			if err := http.ServeTLS(httpListener, httpMux, tlsCert, tlsKey); err != nil {
+				slog.Error("Failed to start HTTPS server", "err", err)
+				ctxCancel()
+			}
 		}()
 	} else {
 		return errors.New("no TLS certificate or TLS key provided")
@@ -49,8 +65,8 @@ func InitHTTPEndpoint() error {
 
 // logHTTPError logs (if verbose) and sends an error code to requester
 func logHTTPError(w http.ResponseWriter, err string, code int) {
-	if GetFlags().Verbose {
-		log.Println(err)
+	if common.GetFlags().Verbose {
+		slog.Error("HTTP error", "code", code, "message", err)
 	}
 	http.Error(w, err, code)
 }
@@ -78,8 +94,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rel := GetRelay()
 	// Get or create room in any case
-	room := GetOrCreateRoom(roomName)
+	room := rel.GetOrCreateRoom(roomName)
 
 	// Upgrade to WebSocket
 	upgrader := websocket.Upgrader{
@@ -94,47 +111,92 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create SafeWebSocket
-	ws := NewSafeWebSocket(wsConn)
+	ws := connections.NewSafeWebSocket(wsConn)
 	// Assign message handler for join request
 	ws.RegisterMessageCallback("join", func(data []byte) {
-		var joinMsg MessageJoin
+		var joinMsg connections.MessageJoin
 		if err = json.Unmarshal(data, &joinMsg); err != nil {
-			log.Printf("Failed to decode join message: %s\n", err)
+			slog.Error("Failed to unmarshal join message", "err", err)
 			return
 		}
 
-		if GetFlags().Verbose {
-			log.Printf("Join request for room: '%s' from: '%s'\n", room.Name, joinMsg.JoinerType.String())
-		}
+		slog.Debug("Join message", "room", room.Name, "joinerType", joinMsg.JoinerType)
 
 		// Handle join request, depending if it's from ingest/node or participant/client
 		switch joinMsg.JoinerType {
-		case JoinerNode:
+		case connections.JoinerNode:
 			// If room already online, send InUse answer
 			if room.Online {
-				if err = ws.SendAnswerMessageWS(AnswerInUse); err != nil {
-					log.Printf("Failed to send InUse answer for Room: '%s' - reason: %s\n", room.Name, err)
+				if err = ws.SendAnswerMessageWS(connections.AnswerInUse); err != nil {
+					slog.Error("Failed to send InUse answer to node", "room", room.Name, "err", err)
 				}
 				return
 			}
-			room.assignWebSocket(ws)
-			go ingestHandler(room)
-		case JoinerClient:
+			room.AssignWebSocket(ws)
+			go IngestHandler(room)
+		case connections.JoinerClient:
 			// Create participant and add to room regardless of online status
 			participant := NewParticipant(ws)
-			room.addParticipant(participant)
+			room.AddParticipant(participant)
 			// If room not online, send Offline answer
 			if !room.Online {
-				if err = ws.SendAnswerMessageWS(AnswerOffline); err != nil {
-					log.Printf("Failed to send Offline answer for Room: '%s' - reason: %s\n", room.Name, err)
+				if err = ws.SendAnswerMessageWS(connections.AnswerOffline); err != nil {
+					slog.Error("Failed to send offline answer to participant", "room", room.Name, "err", err)
 				}
 			}
-			go participantHandler(participant, room)
+			go ParticipantHandler(participant, room, rel)
 		default:
-			log.Printf("Unknown joiner type: %d\n", joinMsg.JoinerType)
+			slog.Error("Unknown joiner type", "joinerType", joinMsg.JoinerType)
 		}
 
 		// Unregister ourselves, if something happens on the other side they should just reconnect?
 		ws.UnregisterMessageCallback("join")
 	})
+}
+
+// controlMessage is the JSON struct for the control messages
+type controlMessage struct {
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+// controlHandler is the handler for the /api/control endpoint, for controlling this relay
+func controlHandler(w http.ResponseWriter, r *http.Request) {
+	// Check for control secret in Authorization header
+	authHeader := r.Header.Get("Authorization")
+	if len(authHeader) <= 0 || authHeader != common.GetFlags().ControlSecret {
+		logHTTPError(w, "missing or invalid Authorization header", http.StatusUnauthorized)
+		return
+	}
+
+	// Handle CORS preflight request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Decode the control message
+	var msg controlMessage
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		logHTTPError(w, "failed to decode control message", http.StatusBadRequest)
+		return
+	}
+
+	//relay := GetRelay()
+	switch msg.Type {
+	case "join_mesh":
+		// Join the mesh network, get relay address from msg.Value
+		if len(msg.Value) <= 0 {
+			logHTTPError(w, "missing relay address", http.StatusBadRequest)
+			return
+		}
+		ctx := r.Context()
+		if err := GetRelay().ConnectToRelay(ctx, msg.Value); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to connect: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte("Successfully connected to relay"))
+	default:
+		logHTTPError(w, "unknown control message type", http.StatusBadRequest)
+	}
 }

@@ -68,6 +68,11 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Realtime": {
+      "authorizer": string
+      "endpoint": string
+      "type": "sst.aws.Realtime"
+    }
     "Steam": {
       "service": string
       "type": "sst.aws.Service"

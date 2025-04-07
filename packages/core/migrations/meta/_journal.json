@@ -15,6 +15,13 @@
       "when": 1741955636085,
       "tag": "0001_nifty_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1743028682022,
+      "tag": "0002_tiny_toad_men",
+      "breakpoints": true
     }
   ]
 }
