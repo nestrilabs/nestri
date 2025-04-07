@@ -6,7 +6,7 @@ import { domain } from "./dns";
 import { steam } from "./steam";
 
 new sst.aws.StaticSite("Web", {
-    path: "./packages/www",
+    path: "packages/www",
     build: {
         output: "./dist",
         command: "bun run build",
