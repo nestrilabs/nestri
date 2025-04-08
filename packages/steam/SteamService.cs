@@ -72,7 +72,7 @@ public class SteamService
             else
             {
                 // Create new record
-                dbContext.SteamUserCredentials.Add(new SteamUserCredential
+                dbContext.SteamUserCredentials.Add(new SteamUserCredentials
                 {
                     UserId = userId,
                     AccountName = accountName,
@@ -114,7 +114,8 @@ public class SteamService
         var handler = new SteamClientHandler(clientId);
         var success = await handler.LoginWithStoredCredentialsAsync(
             storedCredential.AccountName,
-            storedCredential.RefreshToken);
+            storedCredential.RefreshToken
+        );
 
         if (success)
         {

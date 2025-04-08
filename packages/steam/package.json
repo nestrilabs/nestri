@@ -7,7 +7,8 @@
     "dev": "dotnet watch run",
     "client": "bun index",
     "client:node": "ts-node index",
-    "build": "dotnet build"
+    "build": "dotnet build",
+    "db:migrate": "dotnet ef migrations add"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -17,6 +18,9 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "eventsource": "^3.0.6",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
     "ws": "^8.18.1"
   }
 }

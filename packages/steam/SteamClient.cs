@@ -48,6 +48,12 @@ public class SteamClientHandler
 
         // Connect to Steam
         Console.WriteLine($"[{_clientId}] Connecting to Steam with stored credentials...");
+
+        NotifyEvent(new ServerSentEvent("status", new
+        {
+            message = $"Connecting to Steam with stored credentials..."
+        }));
+
         _steamClient.Connect();
 
         // Start callback loop
@@ -66,6 +72,12 @@ public class SteamClientHandler
         {
             // Once connected, try to log in with stored credentials
             Console.WriteLine($"[{_clientId}] Connected to Steam, logging in with stored credentials");
+
+            NotifyEvent(new ServerSentEvent("status", new
+            {
+                message = $"Connected to Steam, logging in with stored credentials"
+            }));
+
             _steamUser.LogOn(new SteamUser.LogOnDetails
             {
                 Username = accountName,
@@ -81,10 +93,16 @@ public class SteamClientHandler
             if (callback.Result == EResult.OK)
             {
                 Console.WriteLine($"[{_clientId}] Successfully logged on with stored credentials");
+
+                NotifyEvent(new ServerSentEvent("status", new
+                {
+                    message = $"Successfully logged on with stored credentials"
+                }));
+
                 _isAuthenticated = true;
                 UserInfo = new SteamUserInfo
                 {
-                    SteamId = callback.ClientSteamID.ToString(),
+                    SteamId = callback.ClientSteamID?.ConvertToUInt64(),
                     Username = accountName
                 };
                 loginResultTask.TrySetResult(true);
@@ -108,6 +126,12 @@ public class SteamClientHandler
             if (completedTask == timeoutTask)
             {
                 Console.WriteLine($"[{_clientId}] Login with stored credentials timed out");
+
+                NotifyEvent(new ServerSentEvent("status", new
+                {
+                    message = $"Login with stored credentials timed out"
+                }));
+
                 Shutdown();
                 return false;
             }
@@ -143,6 +167,12 @@ public class SteamClientHandler
 
         // Connect to Steam
         Console.WriteLine($"[{_clientId}] Connecting to Steam...");
+
+        NotifyEvent(new ServerSentEvent("status", new
+        {
+            message = $"Connecting to Steam..."
+        }));
+
         _steamClient.Connect();
 
         // Start callback loop
@@ -171,6 +201,11 @@ public class SteamClientHandler
     {
         Console.WriteLine($"[{_clientId}] Connected to Steam");
 
+        NotifyEvent(new ServerSentEvent("status", new
+        {
+            message = $"Connected to Steam"
+        }));
+
         try
         {
             // Start QR authentication session
@@ -180,11 +215,17 @@ public class SteamClientHandler
             _authSession.ChallengeURLChanged = () =>
             {
                 Console.WriteLine($"[{_clientId}] QR challenge URL refreshed");
-                NotifyEvent(new ServerSentEvent("url", _authSession.ChallengeURL));
+
+                NotifyEvent(new ServerSentEvent("status", new
+                {
+                    message = $"QR challenge URL refreshed"
+                }));
+
+                NotifyEvent(new ServerSentEvent("challenge_url", new { url = _authSession.ChallengeURL }));
             };
 
             // Send initial QR code URL
-            NotifyEvent(new ServerSentEvent("url", _authSession.ChallengeURL));
+            NotifyEvent(new ServerSentEvent("challenge_url", new { url = _authSession.ChallengeURL }));
 
             // Start polling for authentication result
             await Task.Run(async () =>
@@ -194,6 +235,11 @@ public class SteamClientHandler
                     var pollResponse = await _authSession.PollingWaitForResultAsync();
 
                     Console.WriteLine($"[{_clientId}] Logging in as '{pollResponse.AccountName}'");
+
+                    NotifyEvent(new ServerSentEvent("status", new
+                    {
+                        message = $" Logging in as '{pollResponse.AccountName}'"
+                    }));
 
                     // Send login attempt event
                     NotifyEvent(new ServerSentEvent("login-attempt", new { username = pollResponse.AccountName }));
@@ -209,6 +255,12 @@ public class SteamClientHandler
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[{_clientId}] Authentication polling error: {ex.Message}");
+
+                    NotifyEvent(new ServerSentEvent("status", new
+                    {
+                        message = $" Authentication polling error: {ex.Message}"
+                    }));
+
                     NotifyEvent(new ServerSentEvent("login-unsuccessful", new { error = ex.Message }));
                 }
             });
@@ -216,6 +268,12 @@ public class SteamClientHandler
         catch (Exception ex)
         {
             Console.WriteLine($"[{_clientId}] Error starting authentication: {ex.Message}");
+
+            NotifyEvent(new ServerSentEvent("status", new
+            {
+                message = $"Error starting authentication: {ex.Message}"
+            }));
+
             NotifyEvent(new ServerSentEvent("login-unsuccessful", new { error = ex.Message }));
         }
     }
@@ -224,6 +282,11 @@ public class SteamClientHandler
     {
         Console.WriteLine($"[{_clientId}] Disconnected from Steam");
 
+        NotifyEvent(new ServerSentEvent("status", new
+        {
+            message = $"Disconnected from Steam"
+        }));
+
         _isAuthenticated = false;
         UserInfo = null;
 
@@ -231,6 +294,10 @@ public class SteamClientHandler
         if (_callbackTask != null && !_cts!.IsCancellationRequested)
         {
             Console.WriteLine($"[{_clientId}] Reconnecting...");
+            NotifyEvent(new ServerSentEvent("status", new
+            {
+                message = $"Reconnecting..."
+            }));
             _steamClient.Connect();
         }
     }
@@ -240,6 +307,12 @@ public class SteamClientHandler
         if (callback.Result != EResult.OK)
         {
             Console.WriteLine($"[{_clientId}] Unable to log on to Steam: {callback.Result} / {callback.ExtendedResult}");
+
+            NotifyEvent(new ServerSentEvent("status", new
+            {
+                message = $"Unable to log on to Steam: {callback.Result} / {callback.ExtendedResult}"
+            }));
+
             NotifyEvent(new ServerSentEvent("login-unsuccessful", new
             {
                 error = $"Steam login failed: {callback.Result}",
@@ -258,14 +331,14 @@ public class SteamClientHandler
 
         UserInfo = new SteamUserInfo
         {
-            SteamId = callback.ClientSteamID.ToString(),
+            SteamId = callback.ClientSteamID?.ConvertToUInt64(),
             Username = accountName
         };
 
         // Send login success event
         NotifyEvent(new ServerSentEvent("login-success", new
         {
-            steamId = callback.ClientSteamID.ToString(),
+            steamId = callback.ClientSteamID,
             username = accountName
         }));
 
@@ -279,6 +352,11 @@ public class SteamClientHandler
     private void OnLoggedOff(SteamUser.LoggedOffCallback callback)
     {
         Console.WriteLine($"[{_clientId}] Logged off of Steam: {callback.Result}");
+
+        NotifyEvent(new ServerSentEvent("status", new
+        {
+            message = $"Logged off of Steam: {callback.Result}"
+        }));
 
         _isAuthenticated = false;
         UserInfo = null;
@@ -353,6 +431,6 @@ public class SteamClientHandler
 
 public class SteamUserInfo
 {
-    public string SteamId { get; set; } = string.Empty;
+    public ulong? SteamId { get; set; }
     public string Username { get; set; } = string.Empty;
 }

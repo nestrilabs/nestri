@@ -1,155 +1,149 @@
-import WebSocket from 'ws';
-import http from 'http';
-import url from "url"
-// import net from 'net';
+import * as http from 'http';
+import * as qrcode from 'qrcode-terminal';
 
-// Path to Unix socket
-const SOCKET_PATH = '/tmp/steam.sock';
+class Steam {
+    httpClient: http.ClientRequest | null = null;
+    socketPath: string = '/tmp/steam.sock';
 
-function makeHttpRequest(path: string) {
-    return new Promise((resolve, reject) => {
+    constructor() { }
+
+    login() {
         const options = {
-            socketPath: SOCKET_PATH,
-            path: path,
-            method: 'GET'
+            socketPath: this.socketPath,
+            path: '/login',
+            method: 'GET',
+            headers: {
+                'Accept': 'text/event-stream',
+                'user-id': 'usr_XXXXXXXXXXXXXXX'
+            }
         };
 
         const req = http.request(options, (res) => {
-            let data = '';
+            let buffer = '';
 
             res.on('data', (chunk) => {
-                data += chunk;
+                // Append the new chunk to our buffer
+                buffer += chunk.toString();
+
+                // Process complete events (separated by double newlines)
+                const eventBlocks = buffer.split('\n\n');
+                // Keep the last incomplete block (if any) in the buffer
+                buffer = eventBlocks.pop() || '';
+
+                // Process each complete event block
+                for (const block of eventBlocks) {
+                    if (block.trim() === '') continue;
+
+                    const lines = block.split('\n');
+                    let eventType = '';
+                    let eventData = '';
+
+                    // Parse the event and data from each block
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) {
+                            eventType = line.substring(6).trim();
+                        } else if (line.startsWith('data:')) {
+                            eventData = line.substring(5).trim();
+                        }
+                    }
+
+                    // Process the event based on its type
+                    this.handleEvent(eventType, eventData);
+                }
             });
 
             res.on('end', () => {
-                console.log(`HTTP Status Code: ${res.statusCode}`);
-                resolve(data);
+                console.log('Login stream connection closed');
             });
         });
 
         req.on('error', (error) => {
-            console.error(`Error making request: ${error.message}`);
-            reject(error);
+            console.error(`Error in login process: ${error.message}`);
         });
 
         req.end();
-    });
-}
-
-// Function to connect via WebSocket
-async function connectWebSocket() {
-    try {
-        // We can use a Unix socket with the ws library by providing a custom connection
-        const ws = new WebSocket('unix:/tmp/steam.sock');
-
-        ws.addEventListener('open', () => {
-            console.log('Bun WebSocket connected!');
-            ws.send('Hello from Bun client!');
-
-            // Send periodic messages
-            const interval = setInterval(() => {
-                if (ws.readyState === ws.OPEN) {
-                    ws.send(`Bun ping at ${new Date().toISOString()}`);
-                } else {
-                    clearInterval(interval);
-                }
-            }, 10000);
-        });
-
-        ws.addEventListener('message', (event) => {
-            console.log(`Received from server: ${event.data}`);
-        });
-
-        ws.addEventListener('close', () => {
-            console.log('WebSocket connection closed');
-        });
-
-        ws.addEventListener('error', (error) => {
-            console.error('WebSocket error:', error);
-        });
-
-        return ws;
-    } catch (error) {
-        console.error('Error creating WebSocket:', error);
-
-        // Fall back to regular HTTP-based communication
-        console.log('Falling back to HTTP communication');
-        const rootResponse = await makeHttpRequest('/');
-        console.log('Server root response:', rootResponse);
     }
 
-}
+    handleEvent(eventType: string, eventData: string) {
+        console.log(`Received event: ${eventType}\n`);
 
-// Function to access the SSE endpoint for long-running process
-function connectToLongProcess() {
-    console.log('\nStarting long process with progress updates:');
+        try {
+            const data = eventData ? JSON.parse(eventData) : {};
 
-    const options = {
-        socketPath: SOCKET_PATH,
-        path: '/api/longprocess',
-        method: 'GET',
-        headers: {
-            'Accept': 'text/event-stream'
-        }
-    };
+            switch (eventType) {
+                case 'auth_required':
+                    console.log('Authentication required');
+                    break;
 
-    const req = http.request(options, (res) => {
-        res.on('data', (chunk) => {
-            const lines = chunk.toString().split('\n\n');
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    const data = line.substring(6);
-                    try {
-                        const parsedData = JSON.parse(data);
-                        if (parsedData.progress !== undefined) {
-                            console.log(`Progress: ${parsedData.progress}%`);
-                        } else if (parsedData.status === 'completed') {
-                            console.log('Long process completed!');
-                        }
-                    } catch (e) {
-                        console.log(`Raw progress data: ${data}`);
+                case 'challenge_url':
+                    if (data.url) {
+                        console.log('\n========== QR CODE LOGIN URL ==========');
+                        console.log(data.url);
+                        console.log('Scan this URL with the Steam mobile app');
+                        console.log('=======================================\n');
+
+                        qrcode.generate(data.url, { small: true }, (qrcode) => {
+                            console.log(qrcode);
+                        });
                     }
-                }
+                    break;
+
+                case 'status':
+                    console.log(`STATUS: ${data.message}\n`);
+                    break;
+
+                case 'success':
+                    console.log('Login successful!\n');
+                    console.log(`User: ${data.username || 'Unknown'}\n`);
+                    break;
+
+                case 'error':
+                    console.error(`Login error: ${data.message || 'Unknown error'}\n`);
+                    break;
+
+                case 'login-unsuccessful':
+                    console.error(`Login unsuccesful: ${data.message || 'Unknown error'}\n`);
+                    break;
+                
+                case 'login-attempt':
+                    console.error(`Attempting to login to Steam\n`);
+                    break;
+
+                case 'login-successful':
+                    console.error(`Login succesful: ${data.username}\n`);
+                    break;
+
+                case 'timeout':
+                    console.log('Login request timed out\n');
+                    break;
+
+                default:
+                    console.log(`Unhandled event type: ${eventType}\n`);
+                    console.log('Data:', data);
             }
-        });
+        } catch (e) {
+            console.error(`Error processing event data: ${e}\n`);
+            console.log(`Raw event data: ${eventData}\n`);
+        }
+    }
 
-        res.on('end', () => {
-            console.log('Long process connection closed');
-        });
-    });
-
-    req.on('error', (error) => {
-        console.error(`Error in long process: ${error.message}`);
-    });
-
-    req.end();
-}
-
-// Main function
-async function runClient() {
-    try {
-        console.log('Connecting to Unix socket server...');
-
-        // Connect to the WebSocket for real-time updates
-        await connectWebSocket();
-
-        // Connect to the long process endpoint after a delay
-        setTimeout(() => {
-            connectToLongProcess();
-        }, 3000);
-
-        // Keep the process running
-        process.on('SIGINT', () => {
-            console.log('Closing connections...');
-            setTimeout(() => process.exit(0), 1000);
-        });
-
-        console.log('Press Ctrl+C to exit');
-
-    } catch (error) {
-        console.error('Client error:', error);
+    // Add a method to gracefully close the connection
+    disconnect() {
+        if (this.httpClient) {
+            this.httpClient.destroy();
+            this.httpClient = null;
+            console.log('Disconnected from Steam login service');
+        }
     }
 }
 
-// Run the client
-runClient();
+// Example usage:
+const steam = new Steam();
+steam.login();
+
+// Handle process termination
+process.on('SIGINT', () => {
+    console.log('Closing connections...');
+    steam.disconnect();
+    setTimeout(() => process.exit(0), 1000);
+});

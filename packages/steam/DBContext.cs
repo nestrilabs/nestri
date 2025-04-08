@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 
 public class SteamDbContext : DbContext
 {
-    public DbSet<SteamUserCredential> SteamUserCredentials { get; set; }
+    public DbSet<SteamUserCredentials> SteamUserCredentials { get; set; }
     
     public SteamDbContext(DbContextOptions<SteamDbContext> options) : base(options)
     {
@@ -11,7 +11,7 @@ public class SteamDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Create a unique index on TeamId and UserId
-        modelBuilder.Entity<SteamUserCredential>()
+        modelBuilder.Entity<SteamUserCredentials>()
             .HasIndex(c => new { c.UserId })
             .IsUnique();
     }

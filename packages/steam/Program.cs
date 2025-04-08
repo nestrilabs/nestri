@@ -40,9 +40,6 @@ namespace Steam
 
             var app = builder.Build();
 
-            // Configure endpoints
-            app.UseWebSockets();
-
             // REST endpoints
             app.MapGet("/", () => "Hello World");
 
@@ -87,75 +84,66 @@ namespace Steam
 
 
             app.MapGet("/login", async (HttpContext context, SteamService steamService) =>
+            {
+                var userID = context.Request.Headers["user-id"].ToString();
+                if (string.IsNullOrEmpty(userID))
                 {
-                    var userID = context.Request.Headers["user-id"].ToString();
-                    if (string.IsNullOrEmpty(userID))
+                    return Results.BadRequest("Missing user ID");
+                }
+                // Set SSE headers
+                context.Response.Headers.Append("Connection", "keep-alive");
+                context.Response.Headers.Append("Cache-Control", "no-cache");
+                context.Response.Headers.Append("Content-Type", "text/event-stream");
+                context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+                var responseBodyFeature = context.Features.Get<IHttpResponseBodyFeature>();
+                responseBodyFeature?.DisableBuffering();
+                var clientId = userID;
+                var cancellationToken = context.RequestAborted;
+                try
+                {
+                    // Start Steam authentication
+                    await steamService.StartAuthentication(userID!);
+                    // Register for updates
+                    var subscription = steamService.SubscribeToEvents(clientId, async (evt) =>
                     {
-                        return Results.BadRequest("Missing user ID");
-                    }
-
-                    // Set SSE headers
-                    context.Response.Headers.Append("Connection", "keep-alive");
-                    context.Response.Headers.Append("Cache-Control", "no-cache");
-                    context.Response.Headers.Append("Content-Type", "text/event-stream");
-                    context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
-
-                    var responseBodyFeature = context.Features.Get<IHttpResponseBodyFeature>();
-                    responseBodyFeature?.DisableBuffering();
-
-                    var clientId = userID;
-                    var cancellationToken = context.RequestAborted;
-
-                    try
-                    {
-                        // Start Steam authentication
-                        await steamService.StartAuthentication(userID!);
-
-                        // Register for updates
-                        var subscription = steamService.SubscribeToEvents(clientId, async (evt) =>
-                        {
-                            try
-                            {
-                                // Serialize the event to SSE format
-                                string eventMessage = evt.Serialize();
-                                byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
-
-                                await context.Response.Body.WriteAsync(buffer, cancellationToken);
-                                await context.Response.Body.FlushAsync(cancellationToken);
-
-                                Console.WriteLine($"Sent event type '{evt.Type}' to client {clientId}");
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Error sending event to client {clientId}: {ex.Message}");
-                            }
-                        });
-
                         try
                         {
-                            await Task.Delay(Timeout.Infinite, cancellationToken);
+                            // Serialize the event to SSE format
+                            string eventMessage = evt.Serialize();
+                            byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
+                            await context.Response.Body.WriteAsync(buffer, cancellationToken);
+                            await context.Response.Body.FlushAsync(cancellationToken);
+                            Console.WriteLine($"Sent event type '{evt.Type}' to client {clientId}");
                         }
-                        catch (TaskCanceledException)
+                        catch (Exception ex)
                         {
-                            Console.WriteLine($"Client {clientId} disconnected");
+                            Console.WriteLine($"Error sending event to client {clientId}: {ex.Message}");
                         }
-                        finally
-                        {
-                            steamService.Unsubscribe(clientId, subscription);
-                        }
-                    }
-                    catch (Exception ex)
+                    });
+                    try
                     {
-                        Console.WriteLine($"Error during authentication for client {clientId}: {ex.Message}");
-                        return Results.Problem("An error occurred during authentication.");
+                        await Task.Delay(Timeout.Infinite, cancellationToken);
                     }
-                    return Results.Ok();
-                });
+                    catch (TaskCanceledException)
+                    {
+                        Console.WriteLine($"Client {clientId} disconnected");
+                    }
+                    finally
+                    {
+                        steamService.Unsubscribe(clientId, subscription);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error during authentication for client {clientId}: {ex.Message}");
+                    return Results.Problem("An error occurred during authentication.");
+                }
+                return Results.Ok();
+            });
 
 
             app.MapGet("/user", async (HttpContext context, SteamService steamService) =>
             {
-                // Validate JWT
                 var userID = context.Request.Headers["user-id"].ToString();
                 if (string.IsNullOrEmpty(userID))
                 {
@@ -177,6 +165,17 @@ namespace Steam
             });
 
 
+            Console.WriteLine("Server started. Press Ctrl+C to stop.");
+            
+            using (var scope = app.Services.CreateScope())
+            {
+                var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
+                // dbContext.Database.EnsureDeleted();  // Only use during development!
+                // dbContext.Database.EnsureCreated();
+                dbContext.Database.Migrate();
+            }
+
+            app.Run();
         }
     }
 }
