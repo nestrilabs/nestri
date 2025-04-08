@@ -1,0 +1,22 @@
+{
+  "name": "steam",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "dotnet watch run",
+    "client": "bun index",
+    "client:node": "ts-node index",
+    "build": "dotnet build"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "ts-node": "^10.9.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "ws": "^8.18.1"
+  }
+}
