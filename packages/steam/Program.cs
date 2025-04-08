@@ -1,6 +1,5 @@
-using Microsoft.AspNetCore.WebSockets;
-using System.Collections.Concurrent;
-using System.Net.WebSockets;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.EntityFrameworkCore;
 using System.Text;
 
 namespace Steam
@@ -8,10 +7,6 @@ namespace Steam
     public class Program
     {
         const string UnixSocketPath = "/tmp/steam.sock";
-        private static readonly ConcurrentDictionary<string, WebSocket> _connectedClients = new();
-        private static int _connectionCounter = 0;
-        private static readonly CancellationTokenSource _broadcastCts = new();
-
         public static void Main(string[] args)
         {
             // Delete the socket file if it exists
@@ -21,192 +16,167 @@ namespace Steam
             }
 
             var builder = WebApplication.CreateBuilder(args);
-            
+
             // Configure Kestrel to listen on Unix socket
             builder.WebHost.ConfigureKestrel(options =>
             {
                 options.ListenUnixSocket(UnixSocketPath);
-                
+
                 // Set keep-alive timeout - this affects how long idle connections stay open
                 options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(10);
-                
+
                 // Set request timeout
                 options.Limits.RequestHeadersTimeout = TimeSpan.FromMinutes(5);
             });
 
+
             builder.Services.AddControllers();
-            builder.Services.AddWebSockets(options =>
-            {
-                // Configure WebSocket options
-                options.KeepAliveInterval = TimeSpan.FromSeconds(30);
-            });
+
+            builder.Services.AddSingleton<SteamService>();
+
+            builder.Services.AddDbContext<SteamDbContext>(options =>
+                options.UseSqlite($"Data Source=/tmp/steam.db"));
+
 
             var app = builder.Build();
 
             // Configure endpoints
             app.UseWebSockets();
-            
+
             // REST endpoints
-            app.MapGet("/", () => "Real-time Unix Socket Server - Connect to /ws for WebSocket communication");
-            
+            app.MapGet("/", () => "Hello World");
+
+            app.MapGet("/status", async (HttpContext context, SteamService steamService) =>
+            {
+                var userID = context.Request.Headers["user-id"].ToString();
+                if (string.IsNullOrEmpty(userID))
+                {
+                    return Results.BadRequest("Missing user ID");
+                }
+                var userInfo = await steamService.GetUserInfoFromStoredCredentials(userID!);
+                if (userInfo == null)
+                {
+                    return Results.Ok(new { isAuthenticated = false });
+                }
+
+                return Results.Ok(new
+                {
+                    isAuthenticated = true,
+                    steamId = userInfo.SteamId,
+                    username = userInfo.Username
+                });
+            });
+
             // Long-running processing with progress updates endpoint
-            app.MapGet("/api/longprocess", async (HttpResponse response) => 
+            app.MapGet("/api/longprocess", async (HttpResponse response) =>
             {
                 response.Headers.Append("Content-Type", "text/event-stream");
                 response.Headers.Append("Cache-Control", "no-cache");
                 response.Headers.Append("Connection", "keep-alive");
-                
+
                 for (int i = 0; i <= 100; i += 10)
                 {
                     await response.WriteAsync($"data: {{\"progress\": {i}}}\n\n");
                     await response.Body.FlushAsync();
                     await Task.Delay(1000); // Simulate work being done
                 }
-                
+
                 await response.WriteAsync($"data: {{\"status\": \"completed\"}}\n\n");
                 await response.Body.FlushAsync();
             });
 
-            // WebSocket endpoint
-            app.Use(async (context, next) =>
-            {
-                if (context.Request.Path == "/ws")
+
+            app.MapGet("/login", async (HttpContext context, SteamService steamService) =>
                 {
-                    if (context.WebSockets.IsWebSocketRequest)
+                    var userID = context.Request.Headers["user-id"].ToString();
+                    if (string.IsNullOrEmpty(userID))
                     {
-                        string clientId = Interlocked.Increment(ref _connectionCounter).ToString();
-                        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-                        _connectedClients.TryAdd(clientId, webSocket);
-                        
-                        Console.WriteLine($"Client {clientId} connected");
-                        
-                        // Send welcome message
-                        await SendMessageAsync(webSocket, $"Welcome! You are client #{clientId}");
-                        
+                        return Results.BadRequest("Missing user ID");
+                    }
+
+                    // Set SSE headers
+                    context.Response.Headers.Append("Connection", "keep-alive");
+                    context.Response.Headers.Append("Cache-Control", "no-cache");
+                    context.Response.Headers.Append("Content-Type", "text/event-stream");
+                    context.Response.Headers.Append("Access-Control-Allow-Origin", "*");
+
+                    var responseBodyFeature = context.Features.Get<IHttpResponseBodyFeature>();
+                    responseBodyFeature?.DisableBuffering();
+
+                    var clientId = userID;
+                    var cancellationToken = context.RequestAborted;
+
+                    try
+                    {
+                        // Start Steam authentication
+                        await steamService.StartAuthentication(userID!);
+
+                        // Register for updates
+                        var subscription = steamService.SubscribeToEvents(clientId, async (evt) =>
+                        {
+                            try
+                            {
+                                // Serialize the event to SSE format
+                                string eventMessage = evt.Serialize();
+                                byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
+
+                                await context.Response.Body.WriteAsync(buffer, cancellationToken);
+                                await context.Response.Body.FlushAsync(cancellationToken);
+
+                                Console.WriteLine($"Sent event type '{evt.Type}' to client {clientId}");
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error sending event to client {clientId}: {ex.Message}");
+                            }
+                        });
+
                         try
                         {
-                            await HandleWebSocketConnection(clientId, webSocket);
+                            await Task.Delay(Timeout.Infinite, cancellationToken);
+                        }
+                        catch (TaskCanceledException)
+                        {
+                            Console.WriteLine($"Client {clientId} disconnected");
                         }
                         finally
                         {
-                            _connectedClients.TryRemove(clientId, out _);
-                            Console.WriteLine($"Client {clientId} disconnected");
+                            steamService.Unsubscribe(clientId, subscription);
                         }
-                    }
-                    else
-                    {
-                        context.Response.StatusCode = 400;
-                    }
-                }
-                else
-                {
-                    await next();
-                }
-            });
-
-            // Start the background task that simulates real-time updates
-            _ = StartPeriodicUpdatesAsync();
-
-            Console.WriteLine($"Server starting on Unix socket: {UnixSocketPath}");
-            Console.WriteLine("WebSocket endpoint available at /ws");
-            Console.WriteLine("HTTP SSE endpoint available at /api/longprocess");
-            
-            app.Run();
-            
-            // Clean up
-            _broadcastCts.Cancel();
-        }
-
-        private static async Task HandleWebSocketConnection(string clientId, WebSocket webSocket)
-        {
-            var buffer = new byte[1024 * 4];
-            var receiveResult = await webSocket.ReceiveAsync(
-                new ArraySegment<byte>(buffer), CancellationToken.None);
-
-            while (!receiveResult.CloseStatus.HasValue)
-            {
-                // Echo received message back to client
-                var receivedMessage = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
-                Console.WriteLine($"Message from client {clientId}: {receivedMessage}");
-                
-                // Echo back to sender
-                await SendMessageAsync(webSocket, $"Echo: {receivedMessage}");
-                
-                // Broadcast to all other clients
-                await BroadcastMessageAsync($"Client {clientId} says: {receivedMessage}", exceptClientId: clientId);
-
-                // Get next message
-                receiveResult = await webSocket.ReceiveAsync(
-                    new ArraySegment<byte>(buffer), CancellationToken.None);
-            }
-
-            await webSocket.CloseAsync(
-                receiveResult.CloseStatus.Value,
-                receiveResult.CloseStatusDescription,
-                CancellationToken.None);
-        }
-
-        private static async Task SendMessageAsync(WebSocket socket, string message)
-        {
-            var bytes = Encoding.UTF8.GetBytes(message);
-            await socket.SendAsync(
-                new ArraySegment<byte>(bytes, 0, bytes.Length),
-                WebSocketMessageType.Text,
-                true,
-                CancellationToken.None);
-        }
-
-        private static async Task BroadcastMessageAsync(string message, string? exceptClientId = null)
-        {
-            foreach (var client in _connectedClients)
-            {
-                if (exceptClientId != null && client.Key == exceptClientId)
-                    continue;
-                    
-                if (client.Value.State == WebSocketState.Open)
-                {
-                    try
-                    {
-                        await SendMessageAsync(client.Value, message);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error sending to client {client.Key}: {ex.Message}");
-                        // In a production app, you'd handle this better
+                        Console.WriteLine($"Error during authentication for client {clientId}: {ex.Message}");
+                        return Results.Problem("An error occurred during authentication.");
                     }
-                }
-            }
-        }
+                    return Results.Ok();
+                });
 
-        private static async Task StartPeriodicUpdatesAsync()
-        {
-            try
+
+            app.MapGet("/user", async (HttpContext context, SteamService steamService) =>
             {
-                var random = new Random();
-                while (!_broadcastCts.Token.IsCancellationRequested)
+                // Validate JWT
+                var userID = context.Request.Headers["user-id"].ToString();
+                if (string.IsNullOrEmpty(userID))
                 {
-                    // Simulate some dynamic data that changes frequently
-                    var data = new
-                    {
-                        timestamp = DateTime.Now.ToString("HH:mm:ss"),
-                        value = random.Next(1, 100),
-                        connectedClients = _connectedClients.Count
-                    };
-                    
-                    await BroadcastMessageAsync($"UPDATE: {System.Text.Json.JsonSerializer.Serialize(data)}");
-                    
-                    // Wait before next update (5 seconds)
-                    await Task.Delay(5000, _broadcastCts.Token);
+                    return Results.BadRequest("Missing user ID");
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                // Normal cancellation, ignore
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error in periodic updates: {ex.Message}");
-            }
+
+                // Get user info from stored credentials
+                var userInfo = await steamService.GetUserInfoFromStoredCredentials(userID);
+                if (userInfo == null)
+                {
+                    return Results.NotFound(new { error = "User not authenticated with Steam" });
+                }
+
+                return Results.Ok(new
+                {
+                    steamId = userInfo.SteamId,
+                    username = userInfo.Username
+                });
+            });
+
+
         }
     }
 }
