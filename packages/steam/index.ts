@@ -1,5 +1,6 @@
 import * as http from 'http';
 import * as qrcode from 'qrcode-terminal';
+import { json } from 'stream/consumers';
 
 class Steam {
     httpClient: http.ClientRequest | null = null;
@@ -10,7 +11,7 @@ class Steam {
     login() {
         const options = {
             socketPath: this.socketPath,
-            path: '/login',
+            path: "/login",
             method: 'GET',
             headers: {
                 'Accept': 'text/event-stream',
@@ -18,7 +19,8 @@ class Steam {
             }
         };
 
-        const req = http.request(options, (res) => {
+
+        this.httpClient = http.request(options, (res) => {
             let buffer = '';
 
             res.on('data', (chunk) => {
@@ -57,11 +59,11 @@ class Steam {
             });
         });
 
-        req.on('error', (error) => {
+        this.httpClient.on('error', (error) => {
             console.error(`Error in login process: ${error.message}`);
         });
 
-        req.end();
+        this.httpClient.end();
     }
 
     handleEvent(eventType: string, eventData: string) {
@@ -104,7 +106,7 @@ class Steam {
                 case 'login-unsuccessful':
                     console.error(`Login unsuccesful: ${data.message || 'Unknown error'}\n`);
                     break;
-                
+
                 case 'login-attempt':
                     console.error(`Attempting to login to Steam\n`);
                     break;
@@ -127,6 +129,47 @@ class Steam {
         }
     }
 
+    makeGetRequest(path: string) {
+        return new Promise((resolve, reject) => {
+            const options = {
+                socketPath: this.socketPath,
+                path: path,
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'user-id': 'usr_XXXXXXXXXXXXXXX'
+                }
+            };
+
+            this.httpClient = http.request(options, (res) => {
+                let data = '';
+
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+
+                res.on('end', () => {
+                    console.log(`Status Code: ${res.statusCode}`);
+                    resolve(data);
+                });
+            });
+
+            this.httpClient.on('error', (error) => {
+                console.error(`Error making request: ${error.message}`);
+                reject(error);
+            });
+
+            // req.write(body);
+            this.httpClient.end();
+        });
+    }
+
+    async getUser() {
+        console.log('\nMaking GET request to /user endpoint:');
+        const userResponse = await this.makeGetRequest('/user');
+        console.log('Response:', JSON.parse(userResponse as any));
+    }
+
     // Add a method to gracefully close the connection
     disconnect() {
         if (this.httpClient) {
@@ -138,12 +181,16 @@ class Steam {
 }
 
 // Example usage:
-const steam = new Steam();
-steam.login();
+(async () => {
+    const steam = new Steam();
+    // steam.login();
+    await steam.getUser();
+
+    process.on('SIGINT', () => {
+        console.log('Closing connections...');
+        steam.disconnect();
+        setTimeout(() => process.exit(0), 1000);
+    });
+})()
 
 // Handle process termination
-process.on('SIGINT', () => {
-    console.log('Closing connections...');
-    steam.disconnect();
-    setTimeout(() => process.exit(0), 1000);
-});

@@ -37,32 +37,31 @@ namespace Steam
             builder.Services.AddDbContext<SteamDbContext>(options =>
                 options.UseSqlite($"Data Source=/tmp/steam.db"));
 
-
             var app = builder.Build();
 
             // REST endpoints
             app.MapGet("/", () => "Hello World");
 
-            app.MapGet("/status", async (HttpContext context, SteamService steamService) =>
-            {
-                var userID = context.Request.Headers["user-id"].ToString();
-                if (string.IsNullOrEmpty(userID))
-                {
-                    return Results.BadRequest("Missing user ID");
-                }
-                var userInfo = await steamService.GetUserInfoFromStoredCredentials(userID!);
-                if (userInfo == null)
-                {
-                    return Results.Ok(new { isAuthenticated = false });
-                }
+            // app.MapGet("/status", async (HttpContext context, SteamService steamService) =>
+            // {
+            //     var userID = context.Request.Headers["user-id"].ToString();
+            //     if (string.IsNullOrEmpty(userID))
+            //     {
+            //         return Results.BadRequest("Missing user ID");
+            //     }
+            //     var userInfo = await steamService.GetUserInfoFromStoredCredentials(userID!);
+            //     if (userInfo == null)
+            //     {
+            //         return Results.Ok(new { isAuthenticated = false });
+            //     }
 
-                return Results.Ok(new
-                {
-                    isAuthenticated = true,
-                    steamId = userInfo.SteamId,
-                    username = userInfo.Username
-                });
-            });
+            //     return Results.Ok(new
+            //     {
+            //         isAuthenticated = true,
+            //         steamId = userInfo.SteamId,
+            //         username = userInfo.Username
+            //     });
+            // });
 
             // Long-running processing with progress updates endpoint
             app.MapGet("/api/longprocess", async (HttpResponse response) =>
@@ -103,12 +102,18 @@ namespace Steam
                 responseBodyFeature?.DisableBuffering();
                 var clientId = userID;
                 var cancellationToken = context.RequestAborted;
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var linkedToken = cts.Token;
 
                 try
                 {
-                    // Start Steam authentication
-                    await steamService.StartAuthentication(userID!);
-                    // Register for updates
+                    // Set up initial heartbeat and connection confirmation
+                    string initialEvent = new ServerSentEvent("connected", new { message = "SSE connection established" }).Serialize();
+                    byte[] initialBuffer = Encoding.UTF8.GetBytes(initialEvent);
+                    await context.Response.Body.WriteAsync(initialBuffer, linkedToken);
+                    await context.Response.Body.FlushAsync(linkedToken);
+
+                    // Register for updates *before* starting authentication
                     var subscription = steamService.SubscribeToEvents(clientId, async (evt) =>
                     {
                         try
@@ -116,23 +121,82 @@ namespace Steam
                             // Serialize the event to SSE format
                             string eventMessage = evt.Serialize();
                             byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
-                            await context.Response.Body.WriteAsync(buffer, cancellationToken);
-                            await context.Response.Body.FlushAsync(cancellationToken);
+                            await context.Response.Body.WriteAsync(buffer, linkedToken);
+                            await context.Response.Body.FlushAsync(linkedToken);
                             Console.WriteLine($"Sent event type '{evt.Type}' to client {clientId}");
+
+                            // If we receive a login-success or login-unsuccessful event, we can complete the process
+                            if (evt.Type == "login-success" || evt.Type == "login-unsuccessful")
+                            {
+                                // Allow time for the event to be sent before ending
+                                await Task.Delay(1000, linkedToken);
+                                cts.Cancel();
+                            }
                         }
                         catch (Exception ex)
                         {
                             Console.WriteLine($"Error sending event to client {clientId}: {ex.Message}");
+                            // Try to cancel on error
+                            try { cts.Cancel(); } catch { }
                         }
+                    });
+
+                    // Start Steam authentication process after subscriber is registered
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await steamService.StartAuthentication(userID);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Authentication error for {clientId}: {ex.Message}");
+                            try { cts.Cancel(); } catch { }
+                        }
+                    }, linkedToken);
+
+                    // Set up a heartbeat to keep the connection alive
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            while (!linkedToken.IsCancellationRequested)
+                            {
+                                await Task.Delay(30000, linkedToken); // Every 30 seconds
+                                if (!linkedToken.IsCancellationRequested)
+                                {
+                                    string heartbeat = ":\n\n"; // SSE comment for heartbeat
+                                    byte[] heartbeatBuffer = Encoding.UTF8.GetBytes(heartbeat);
+                                    await context.Response.Body.WriteAsync(heartbeatBuffer, linkedToken);
+                                    await context.Response.Body.FlushAsync(linkedToken);
+                                }
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Expected when token is cancelled
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Heartbeat error for {clientId}: {ex.Message}");
+                        }
+                    }, linkedToken);
+
+                    // Set a reasonable timeout (5 minutes) in case nothing happens
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(TimeSpan.FromMinutes(5), CancellationToken.None);
+                        try { cts.Cancel(); } catch { }
                     });
 
                     try
                     {
-                        await Task.Delay(Timeout.Infinite, cancellationToken);
+                        // Wait for cancellation
+                        await Task.Delay(Timeout.Infinite, linkedToken);
                     }
-                    catch (TaskCanceledException)
+                    catch (OperationCanceledException)
                     {
-                        Console.WriteLine($"Client {clientId} disconnected");
+                        Console.WriteLine($"Client {clientId} connection ending - authentication completed or cancelled");
                     }
                     finally
                     {
@@ -141,13 +205,70 @@ namespace Steam
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error during authentication for client {clientId}: {ex.Message}");
+                    Console.WriteLine($"Error during connection for client {clientId}: {ex.Message}");
                     if (!context.Response.HasStarted)
                     {
                         context.Response.StatusCode = 500;
                         await context.Response.WriteAsync("An error occurred during authentication.");
                     }
+                    else
+                    {
+                        // Try to send error as SSE
+                        try
+                        {
+                            string errorEvent = new ServerSentEvent("error", new { message = "Internal server error" }).Serialize();
+                            byte[] errorBuffer = Encoding.UTF8.GetBytes(errorEvent);
+                            await context.Response.Body.WriteAsync(errorBuffer, CancellationToken.None);
+                            await context.Response.Body.FlushAsync(CancellationToken.None);
+                        }
+                        catch { /* Ignore */ }
+                    }
                 }
+
+                // try
+                // {
+                //     // Start Steam authentication
+                //     await steamService.StartAuthentication(userID!);
+                //     // Register for updates
+                //     var subscription = steamService.SubscribeToEvents(clientId, async (evt) =>
+                //     {
+                //         try
+                //         {
+                //             // Serialize the event to SSE format
+                //             string eventMessage = evt.Serialize();
+                //             byte[] buffer = Encoding.UTF8.GetBytes(eventMessage);
+                //             await context.Response.Body.WriteAsync(buffer, cancellationToken);
+                //             await context.Response.Body.FlushAsync(cancellationToken);
+                //             Console.WriteLine($"Sent event type '{evt.Type}' to client {clientId}");
+                //         }
+                //         catch (Exception ex)
+                //         {
+                //             Console.WriteLine($"Error sending event to client {clientId}: {ex.Message}");
+                //         }
+                //     });
+
+                //     try
+                //     {
+                //         await Task.Delay(Timeout.Infinite, cancellationToken);
+                //     }
+                //     catch (TaskCanceledException)
+                //     {
+                //         Console.WriteLine($"Client {clientId} disconnected");
+                //     }
+                //     finally
+                //     {
+                //         steamService.Unsubscribe(clientId, subscription);
+                //     }
+                // }
+                // catch (Exception ex)
+                // {
+                //     Console.WriteLine($"Error during authentication for client {clientId}: {ex.Message}");
+                //     if (!context.Response.HasStarted)
+                //     {
+                //         context.Response.StatusCode = 500;
+                //         await context.Response.WriteAsync("An error occurred during authentication.");
+                //     }
+                // }
 
                 // No return statement with Results.Ok() - we're handling the response manually
             });

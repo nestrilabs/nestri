@@ -1,10 +1,11 @@
+using SteamAuth;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 
 // Steam Service
 public class SteamService
 {
-    private readonly ConcurrentDictionary<string, SteamClientHandler> _clientHandlers = new();
+    private readonly ConcurrentDictionary<string, SteamAuthComponent> _clientHandlers = new();
     private readonly IServiceProvider _serviceProvider;
 
     public SteamService(IServiceProvider serviceProvider)
@@ -21,34 +22,35 @@ public class SteamService
 
         return () => { }; // Empty unsubscribe function
     }
+
     public async Task StartAuthentication(string userId)
     {
-        var clientId = $"{userId}";
-
         // Check if we already have stored credentials
         using var scope = _serviceProvider.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
         var storedCredential = await dbContext.SteamUserCredentials
             .FirstOrDefaultAsync(c => c.UserId == userId);
 
-        var handler = _clientHandlers.GetOrAdd(clientId, id => new SteamClientHandler(id, dbContext, userId,
+        // Pass service provider instead of dbContext
+        var handler = _clientHandlers.GetOrAdd(userId, id => new SteamAuthComponent(_serviceProvider, userId,
                     async (accountName, refreshToken) => await SaveCredentials(userId, accountName, refreshToken)));
 
         if (storedCredential != null)
         {
-            // We have stored credentials, try to use them
-            var success = await handler.LoginWithStoredCredentialsAsync(storedCredential.AccountName, storedCredential.RefreshToken);
-
-            // If login failed, start fresh authentication
-            if (!success)
-            {
-                await handler.StartAuthenticationAsync();
-            }
-            return;
+            handler.SetCredentials(storedCredential.AccountName, storedCredential.RefreshToken);
         }
 
-        // No stored credentials, start fresh authentication
-        await handler.StartAuthenticationAsync();
+        await handler.HandleLoginRequest();
+        handler.Disconnect();
+    }
+
+    public void DisconnectUser(string userId)
+    {
+        if (_clientHandlers.TryGetValue(userId, out var handler))
+        {
+            handler.Disconnect();
+            _clientHandlers.TryRemove(userId, out _);
+        }
     }
 
     private async Task SaveCredentials(string userId, string accountName, string refreshToken)
@@ -88,47 +90,47 @@ public class SteamService
         }
     }
 
-    public async Task<SteamUserInfo?> GetUserInfoFromStoredCredentials(string userId)
-    {
-        try
-        {
-            // Check if we have an active session
-            if (_clientHandlers.TryGetValue(userId, out var activeHandler) && activeHandler.UserInfo != null)
-            {
-                return activeHandler.UserInfo;
-            }
+    // public async Task<SteamUserInfo?> GetUserInfoFromStoredCredentials(string userId)
+    // {
+    //     try
+    //     {
+    //         // Check if we have an active session
+    //         if (_clientHandlers.TryGetValue(userId, out var activeHandler) && activeHandler.UserInfo != null)
+    //         {
+    //             return activeHandler.UserInfo;
+    //         }
 
-            // Try to get stored credentials
-            using var scope = _serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
-            var storedCredential = await dbContext.SteamUserCredentials
-                .FirstOrDefaultAsync(c => c.UserId == userId);
+    //         // Try to get stored credentials
+    //         using var scope = _serviceProvider.CreateScope();
+    //         var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
+    //         var storedCredential = await dbContext.SteamUserCredentials
+    //             .FirstOrDefaultAsync(c => c.UserId == userId);
 
-            if (storedCredential == null)
-            {
-                return null;
-            }
+    //         if (storedCredential == null)
+    //         {
+    //             return null;
+    //         }
 
-            //Create a new handler and try to log in
-            var handler = new SteamClientHandler(userId, dbContext, userId);
-            var success = await handler.LoginWithStoredCredentialsAsync(
-                storedCredential.AccountName,
-                storedCredential.RefreshToken
-            );
+    //         // Create a new handler with service provider instead of dbContext
+    //         var handler = new SteamClientHandler(userId, _serviceProvider, userId);
+    //         var success = await handler.LoginWithStoredCredentialsAsync(
+    //             storedCredential.AccountName,
+    //             storedCredential.RefreshToken
+    //         );
 
-            if (success)
-            {
-                _clientHandlers.TryAdd(userId, handler);
-                return handler.UserInfo;
-            }
-            return null;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error retrieving cached user info: {ex.Message}");
-            return null;
-        }
-    }
+    //         if (success)
+    //         {
+    //             _clientHandlers.TryAdd(userId, handler);
+    //             return handler.UserInfo;
+    //         }
+    //         return null;
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         Console.WriteLine($"Error retrieving cached user info: {ex.Message}");
+    //         return null;
+    //     }
+    // }
 
     public async Task<SteamAccountInfo?> GetCachedUserInfoAsync(string userId)
     {
@@ -154,10 +156,10 @@ public class SteamService
     {
         if (string.IsNullOrEmpty(userId))
             return false;
-            
+
         try
         {
-             using var scope = _serviceProvider.CreateScope();
+            using var scope = _serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
             return await dbContext.SteamAccountInfo
                 .AnyAsync(info => info.UserId == userId);
@@ -169,28 +171,18 @@ public class SteamService
         }
     }
 
-    public Action Subscribe(string clientId, Action<string> callback)
-    {
-        if (_clientHandlers.TryGetValue(clientId, out var handler))
-        {
-            return handler.Subscribe(callback);
-        }
-
-        return () => { }; // Empty unsubscribe function
-    }
-
     public void Unsubscribe(string clientId, Action unsubscribeAction)
     {
         unsubscribeAction();
     }
 
-    public SteamUserInfo? GetUserInfo(string clientId)
-    {
-        if (_clientHandlers.TryGetValue(clientId, out var handler))
-        {
-            return handler.UserInfo;
-        }
+    // public SteamUserInfo? GetUserInfo(string clientId)
+    // {
+    //     if (_clientHandlers.TryGetValue(clientId, out var handler))
+    //     {
+    //         return handler.UserInfo;
+    //     }
 
-        return null;
-    }
+    //     return null;
+    // }
 }

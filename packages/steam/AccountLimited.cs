@@ -1,7 +1,7 @@
 using SteamKit2;
 using SteamKit2.Internal;
 
-namespace SteamSocketAuth.SteamDataClient;
+namespace SteamAuth.SteamDataClient;
 
 class AccountLimitation : ClientMsgHandler
 {
@@ -25,6 +25,8 @@ class AccountLimitation : ClientMsgHandler
     {
         var isLimitedAccountMsg = new ClientMsgProtobuf<CMsgClientIsLimitedAccount>(packetMsg);
 
+        Console.WriteLine($"Getting account isLimited stuff...");
+        
         var limited = isLimitedAccountMsg.Body.bis_limited_account;
         var communityBanned = isLimitedAccountMsg.Body.bis_community_banned;
         var locked = isLimitedAccountMsg.Body.bis_locked_account;
