@@ -1,10 +1,13 @@
-package relay
+package common
 
 import (
+	"fmt"
+	"github.com/libp2p/go-reuseport"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
-	"log"
+	"log/slog"
+	"strconv"
 )
 
 var globalWebRTCAPI *webrtc.API
@@ -20,6 +23,19 @@ func InitWebRTCAPI() error {
 
 	// Media engine
 	mediaEngine := &webrtc.MediaEngine{}
+
+	// Register additional header extensions to reduce latency
+	// Playout Delay
+	if err := mediaEngine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{
+		URI: ExtensionPlayoutDelay,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		return err
+	}
+	if err := mediaEngine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{
+		URI: ExtensionPlayoutDelay,
+	}, webrtc.RTPCodecTypeAudio); err != nil {
+		return err
+	}
 
 	// Default codecs cover most of our needs
 	err = mediaEngine.RegisterDefaultCodecs()
@@ -66,17 +82,23 @@ func InitWebRTCAPI() error {
 
 	muxPort := GetFlags().UDPMuxPort
 	if muxPort > 0 {
-		mux, err := ice.NewMultiUDPMuxFromPort(muxPort)
+		// Use reuseport to allow multiple listeners on the same port
+		pktListener, err := reuseport.ListenPacket("udp", ":"+strconv.Itoa(muxPort))
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create UDP listener: %w", err)
 		}
+
+		mux := ice.NewMultiUDPMuxDefault(ice.NewUDPMuxDefault(ice.UDPMuxParams{
+			UDPConn: pktListener,
+		}))
+		slog.Info("Using UDP Mux for WebRTC", "port", muxPort)
 		settingEngine.SetICEUDPMux(mux)
-	} else {
-		// Set the UDP port range used by WebRTC
-		err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
-		if err != nil {
-			return err
-		}
+	}
+
+	// Set the UDP port range used by WebRTC
+	err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
+	if err != nil {
+		return err
 	}
 
 	settingEngine.SetIncludeLoopbackCandidate(true) // Just in case
@@ -107,7 +129,7 @@ func CreatePeerConnection(onClose func()) (*webrtc.PeerConnection, error) {
 			connectionState == webrtc.PeerConnectionStateClosed {
 			err = pc.Close()
 			if err != nil {
-				log.Printf("Error closing PeerConnection: %s\n", err.Error())
+				slog.Error("Failed to close PeerConnection", "err", err)
 			}
 			onClose()
 		}

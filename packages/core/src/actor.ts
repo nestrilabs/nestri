@@ -37,15 +37,25 @@ export const SystemActor = z.object({
 });
 export type SystemActor = z.infer<typeof SystemActor>;
 
+export const MachineActor = z.object({
+  type: z.literal("machine"),
+  properties: z.object({
+    fingerprint: z.string(),
+    machineID: z.string(),
+  }),
+});
+export type MachineActor = z.infer<typeof MachineActor>;
+
 export const Actor = z.discriminatedUnion("type", [
   MemberActor,
   UserActor,
   PublicActor,
   SystemActor,
+  MachineActor
 ]);
 export type Actor = z.infer<typeof Actor>;
 
-const ActorContext = createContext<Actor>("actor");
+export const ActorContext = createContext<Actor>("actor");
 
 export const useActor = ActorContext.use;
 export const withActor = ActorContext.with;
@@ -103,6 +113,12 @@ export function useTeam() {
   const actor = useActor();
   if ("teamID" in actor.properties) return actor.properties.teamID;
   throw new Error(`Expected actor to have teamID`);
+}
+
+export function useMachine() {
+  const actor = useActor();
+  if ("machineID" in actor.properties) return actor.properties.fingerprint;
+  throw new Error(`Expected actor to have fingerprint`);
 }
 
 /**

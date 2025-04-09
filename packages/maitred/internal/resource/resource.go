@@ -7,7 +7,7 @@ import (
 	"reflect"
 )
 
-type resource struct {
+type Resource struct {
 	Api struct {
 		Url string `json:"url"`
 	}
@@ -17,7 +17,7 @@ type resource struct {
 	AuthFingerprintKey struct {
 		Value string `json:"value"`
 	}
-	Party struct {
+	Realtime struct {
 		Endpoint   string `json:"endpoint"`
 		Authorizer string `json:"authorizer"`
 	}
@@ -27,20 +27,20 @@ type resource struct {
 	}
 }
 
-var Resource resource
-
-func init() {
-	val := reflect.ValueOf(&Resource).Elem()
+func NewResource() (*Resource, error) {
+	resource := Resource{}
+	val := reflect.ValueOf(&resource).Elem()
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		typeField := val.Type().Field(i)
 		envVarName := fmt.Sprintf("SST_RESOURCE_%s", typeField.Name)
 		envValue, exists := os.LookupEnv(envVarName)
 		if !exists {
-			panic(fmt.Sprintf("Environment variable %s is required", envVarName))
+			return nil, fmt.Errorf("missing environment variable %s", envVarName)
 		}
 		if err := json.Unmarshal([]byte(envValue), field.Addr().Interface()); err != nil {
-			panic(err)
+			return nil, fmt.Errorf("error unmarshalling %s: %w", envVarName, err)
 		}
 	}
+	return &resource, nil
 }

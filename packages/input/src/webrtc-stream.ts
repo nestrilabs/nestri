@@ -14,10 +14,10 @@ import {
 export class WebRTCStream {
   private _ws: WebSocket | undefined = undefined;
   private _pc: RTCPeerConnection | undefined = undefined;
-  private _mediaStream: MediaStream | undefined = undefined;
+  private _audioTrack: MediaStreamTrack | undefined = undefined;
+  private _videoTrack: MediaStreamTrack | undefined = undefined;
   private _dataChannel: RTCDataChannel | undefined = undefined;
   private _onConnected: ((stream: MediaStream | null) => void) | undefined = undefined;
-  private _connectionTimeout: number = 7000;
   private _connectionTimer: NodeJS.Timeout | NodeJS.Timer | undefined = undefined;
   private _serverURL: string | undefined = undefined;
   private _roomName: string | undefined = undefined;
@@ -163,12 +163,13 @@ export class WebRTCStream {
       ],
     });
 
-    // Start connection timeout
-    this._startConnectionTimer();
-
     this._pc.ontrack = (e) => {
       console.log("Track received: ", e.track);
-      this._mediaStream = e.streams[e.streams.length - 1];
+      if (e.track.kind === "audio")
+        this._audioTrack = e.track;
+      else if (e.track.kind === "video")
+        this._videoTrack = e.track;
+
       this._checkConnectionState();
     };
 
@@ -184,6 +185,7 @@ export class WebRTCStream {
 
     this._pc.onicegatheringstatechange = () => {
       console.log("ICE gathering state changed to: ", this._pc!.iceGatheringState);
+      this._checkConnectionState();
     };
 
     this._pc.onicecandidate = (e) => {
@@ -208,16 +210,31 @@ export class WebRTCStream {
     console.log("Checking connection state:", {
       connectionState: this._pc.connectionState,
       iceConnectionState: this._pc.iceConnectionState,
-      hasMediaStream: !!this._mediaStream,
+      hasAudioTrack: !!this._audioTrack,
+      hasVideoTrack: !!this._videoTrack,
       isConnected: this._isConnected
     });
 
-    if (this._pc.connectionState === "connected" && this._mediaStream) {
+    if (this._pc.connectionState === "connected" && this._audioTrack !== undefined && this._videoTrack !== undefined) {
       this._clearConnectionTimer();
-      if (!this._isConnected) { // Only trigger callback if not already connected
+      if (!this._isConnected) {
+        // Only trigger callback if not already connected
         this._isConnected = true;
-        if (this._onConnected) {
-          this._onConnected(this._mediaStream);
+        if (this._onConnected !== undefined) {
+          this._onConnected(new MediaStream([this._audioTrack, this._videoTrack]));
+
+          // Continuously set low-latency target
+          this._pc.getReceivers().forEach((receiver: RTCRtpReceiver) => {
+            let intervalLoop = setInterval(async () => {
+              if (receiver.track.readyState !== "live" || receiver.transport.state !== "connected") {
+                clearInterval(intervalLoop);
+                return;
+              } else {
+                // @ts-ignore
+                receiver.jitterBufferTarget = receiver.jitterBufferDelayHint = receiver.playoutDelayHint = 0;
+              }
+            }, 15);
+          });
         }
       }
 
@@ -247,14 +264,6 @@ export class WebRTCStream {
     }
   }
 
-  private _startConnectionTimer() {
-    this._clearConnectionTimer();
-    this._connectionTimer = setTimeout(() => {
-      console.log("Connection timeout reached");
-      this._handleConnectionFailure();
-    }, this._connectionTimeout);
-  }
-
   private _cleanupPeerConnection() {
     if (this._pc) {
       try {
@@ -265,13 +274,17 @@ export class WebRTCStream {
       this._pc = undefined;
     }
 
-    if (this._mediaStream) {
+    if (this._audioTrack || this._videoTrack) {
       try {
-        this._mediaStream.getTracks().forEach(track => track.stop());
+        if (this._audioTrack)
+          this._audioTrack.stop();
+        if (this._videoTrack)
+          this._videoTrack.stop();
       } catch (err) {
         console.error("Error stopping media tracks:", err);
       }
-      this._mediaStream = undefined;
+      this._audioTrack = undefined;
+      this._videoTrack = undefined;
     }
 
     if (this._dataChannel) {
@@ -301,11 +314,10 @@ export class WebRTCStream {
   }
 
   private _gatherFrameRate() {
-    if (this._pc === undefined || this._mediaStream === undefined)
+    if (this._pc === undefined || this._videoTrack === undefined)
       return;
 
     const videoInfoPromise = new Promise<{ fps: number}>((resolve) => {
-      const track = this._mediaStream!.getVideoTracks()[0];
       // Keep trying to get fps until it's found
       const interval = setInterval(async () => {
         if (this._pc === undefined) {
@@ -313,7 +325,7 @@ export class WebRTCStream {
           return;
         }
 
-        const stats = await this._pc!.getStats(track);
+        const stats = await this._pc!.getStats(this._videoTrack);
         stats.forEach((report) => {
           if (report.type === "inbound-rtp") {
             clearInterval(interval);

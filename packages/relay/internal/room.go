@@ -1,179 +1,164 @@
-package relay
+package internal
 
 import (
-	"github.com/google/uuid"
+	"context"
+	"fmt"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/oklog/ulid/v2"
 	"github.com/pion/webrtc/v4"
-	"log"
-	"sync"
+	"log/slog"
+	"relay/internal/common"
+	"relay/internal/connections"
 )
 
-var Rooms = make(map[uuid.UUID]*Room) //< Room ID -> Room
-var RoomsMutex = sync.RWMutex{}
-
-func GetRoomByID(id uuid.UUID) *Room {
-	RoomsMutex.RLock()
-	defer RoomsMutex.RUnlock()
-	if room, ok := Rooms[id]; ok {
-		return room
-	}
-	return nil
-}
-
-func GetRoomByName(name string) *Room {
-	RoomsMutex.RLock()
-	defer RoomsMutex.RUnlock()
-	for _, room := range Rooms {
-		if room.Name == name {
-			return room
-		}
-	}
-	return nil
-}
-
-func GetOrCreateRoom(name string) *Room {
-	if room := GetRoomByName(name); room != nil {
-		return room
-	}
-	RoomsMutex.Lock()
-	room := NewRoom(name)
-	Rooms[room.ID] = room
-	if GetFlags().Verbose {
-		log.Printf("New room: '%s'\n", room.Name)
-	}
-	RoomsMutex.Unlock()
-	return room
-}
-
-func DeleteRoomIfEmpty(room *Room) {
-	room.ParticipantsMutex.RLock()
-	defer room.ParticipantsMutex.RUnlock()
-	if !room.Online && len(room.Participants) <= 0 {
-		RoomsMutex.Lock()
-		delete(Rooms, room.ID)
-		RoomsMutex.Unlock()
-	}
+type RoomInfo struct {
+	ID      ulid.ULID `json:"id"`
+	Name    string    `json:"name"`
+	Online  bool      `json:"online"`
+	OwnerID peer.ID   `json:"owner_id"`
 }
 
 type Room struct {
-	ID                uuid.UUID //< Internal IDs are useful to keeping unique internal track
-	Name              string
-	Online            bool //< Whether the room is currently online, i.e. receiving data from a nestri-server
-	WebSocket         *SafeWebSocket
-	PeerConnection    *webrtc.PeerConnection
-	AudioTrack        webrtc.TrackLocal
-	VideoTrack        webrtc.TrackLocal
-	DataChannel       *NestriDataChannel
-	Participants      map[uuid.UUID]*Participant
-	ParticipantsMutex sync.RWMutex
+	RoomInfo
+	WebSocket      *connections.SafeWebSocket
+	PeerConnection *webrtc.PeerConnection
+	AudioTrack     *webrtc.TrackLocalStaticRTP
+	VideoTrack     *webrtc.TrackLocalStaticRTP
+	DataChannel    *connections.NestriDataChannel
+	Participants   *common.SafeMap[ulid.ULID, *Participant]
+	Relay          *Relay
 }
 
-func NewRoom(name string) *Room {
+func NewRoom(name string, roomID ulid.ULID, ownerID peer.ID) *Room {
 	return &Room{
-		ID:           uuid.New(),
-		Name:         name,
-		Online:       false,
-		Participants: make(map[uuid.UUID]*Participant),
+		RoomInfo: RoomInfo{
+			ID:      roomID,
+			Name:    name,
+			Online:  false,
+			OwnerID: ownerID,
+		},
+		Participants: common.NewSafeMap[ulid.ULID, *Participant](),
 	}
 }
 
-// Assigns a WebSocket connection to a Room
-func (r *Room) assignWebSocket(ws *SafeWebSocket) {
-	// If WS already assigned, warn
+// AssignWebSocket assigns a WebSocket connection to a Room
+func (r *Room) AssignWebSocket(ws *connections.SafeWebSocket) {
 	if r.WebSocket != nil {
-		log.Printf("Warning: Room '%s' already has a WebSocket assigned\n", r.Name)
+		slog.Warn("WebSocket already assigned to room", "room", r.Name)
 	}
 	r.WebSocket = ws
 }
 
-// Adds a Participant to a Room
-func (r *Room) addParticipant(participant *Participant) {
-	r.ParticipantsMutex.Lock()
-	r.Participants[participant.ID] = participant
-	r.ParticipantsMutex.Unlock()
+// AddParticipant adds a Participant to a Room
+func (r *Room) AddParticipant(participant *Participant) {
+	slog.Debug("Adding participant to room", "participant", participant.ID, "room", r.Name)
+	r.Participants.Set(participant.ID, participant)
 }
 
-// Removes a Participant from a Room by participant's ID.
-// If Room is offline and this is the last participant, the room is deleted
-func (r *Room) removeParticipantByID(pID uuid.UUID) {
-	r.ParticipantsMutex.Lock()
-	delete(r.Participants, pID)
-	r.ParticipantsMutex.Unlock()
-	DeleteRoomIfEmpty(r)
+// Removes a Participant from a Room by participant's ID
+func (r *Room) removeParticipantByID(pID ulid.ULID) {
+	if _, ok := r.Participants.Get(pID); ok {
+		r.Participants.Delete(pID)
+	}
 }
 
-// Removes a Participant from a Room by participant's name.
-// If Room is offline and this is the last participant, the room is deleted
+// Removes a Participant from a Room by participant's name
 func (r *Room) removeParticipantByName(pName string) {
-	r.ParticipantsMutex.Lock()
-	for id, p := range r.Participants {
-		if p.Name == pName {
-			delete(r.Participants, id)
+	for id, participant := range r.Participants.Copy() {
+		if participant.Name == pName {
+			if err := r.signalParticipantOffline(participant); err != nil {
+				slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
+			}
+			r.Participants.Delete(id)
 			break
 		}
 	}
-	r.ParticipantsMutex.Unlock()
-	DeleteRoomIfEmpty(r)
 }
 
-// Signals all participants with offer and add tracks to their PeerConnections
+// Removes all participants from a Room
+func (r *Room) removeAllParticipants() {
+	for id, participant := range r.Participants.Copy() {
+		if err := r.signalParticipantOffline(participant); err != nil {
+			slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
+		}
+		r.Participants.Delete(id)
+		slog.Debug("Removed participant from room", "participant", id, "room", r.Name)
+	}
+}
+
+func (r *Room) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.TrackLocalStaticRTP) {
+	switch trackType {
+	case webrtc.RTPCodecTypeAudio:
+		r.AudioTrack = track
+		slog.Debug("Audio track set", "room", r.Name, "track", track != nil)
+	case webrtc.RTPCodecTypeVideo:
+		r.VideoTrack = track
+		slog.Debug("Video track set", "room", r.Name, "track", track != nil)
+	default:
+		slog.Warn("Unknown track type", "room", r.Name, "trackType", trackType)
+	}
+
+	newOnline := r.AudioTrack != nil && r.VideoTrack != nil
+	if r.Online != newOnline {
+		r.Online = newOnline
+		if r.Online {
+			slog.Debug("Room online, participants will be signaled", "room", r.Name)
+			r.signalParticipantsWithTracks()
+		} else {
+			slog.Debug("Room offline, signaling participants", "room", r.Name)
+			r.signalParticipantsOffline()
+		}
+
+		// Publish updated state to mesh
+		go func() {
+			if err := r.Relay.publishRoomStates(context.Background()); err != nil {
+				slog.Error("Failed to publish room states on change", "room", r.Name, "err", err)
+			}
+		}()
+	}
+}
+
 func (r *Room) signalParticipantsWithTracks() {
-	r.ParticipantsMutex.RLock()
-	for _, participant := range r.Participants {
-		// Add tracks to participant's PeerConnection
-		if r.AudioTrack != nil {
-			if err := participant.addTrack(&r.AudioTrack); err != nil {
-				log.Printf("Failed to add audio track to participant: '%s' - reason: %s\n", participant.ID, err)
-			}
-		}
-		if r.VideoTrack != nil {
-			if err := participant.addTrack(&r.VideoTrack); err != nil {
-				log.Printf("Failed to add video track to participant: '%s' - reason: %s\n", participant.ID, err)
-			}
-		}
-		// Signal participant with offer
-		if err := participant.signalOffer(); err != nil {
-			log.Printf("Error signaling participant: %v\n", err)
+	for _, participant := range r.Participants.Copy() {
+		if err := r.signalParticipantWithTracks(participant); err != nil {
+			slog.Error("Failed to signal participant with tracks", "participant", participant.ID, "room", r.Name, "err", err)
 		}
 	}
-	r.ParticipantsMutex.RUnlock()
 }
 
-// Signals all participants that the Room is offline
+func (r *Room) signalParticipantWithTracks(participant *Participant) error {
+	if r.AudioTrack != nil {
+		if err := participant.addTrack(r.AudioTrack); err != nil {
+			return fmt.Errorf("failed to add audio track: %w", err)
+		}
+	}
+	if r.VideoTrack != nil {
+		if err := participant.addTrack(r.VideoTrack); err != nil {
+			return fmt.Errorf("failed to add video track: %w", err)
+		}
+	}
+	if err := participant.signalOffer(); err != nil {
+		return fmt.Errorf("failed to signal offer: %w", err)
+	}
+	return nil
+}
+
 func (r *Room) signalParticipantsOffline() {
-	r.ParticipantsMutex.RLock()
-	for _, participant := range r.Participants {
-		if err := participant.WebSocket.SendAnswerMessageWS(AnswerOffline); err != nil {
-			log.Printf("Failed to send Offline answer for participant: '%s' - reason: %s\n", participant.ID, err)
+	for _, participant := range r.Participants.Copy() {
+		if err := r.signalParticipantOffline(participant); err != nil {
+			slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
 		}
 	}
-	r.ParticipantsMutex.RUnlock()
 }
 
-// Broadcasts a message to Room's Participant's - excluding one given ID of
-func (r *Room) broadcastMessage(msg webrtc.DataChannelMessage, excludeID uuid.UUID) {
-	r.ParticipantsMutex.RLock()
-	for d, participant := range r.Participants {
-		if participant.DataChannel != nil {
-			if d != excludeID { // Don't send back to the sender
-				if err := participant.DataChannel.SendText(string(msg.Data)); err != nil {
-					log.Printf("Error broadcasting to %s: %v\n", participant.Name, err)
-				}
-			}
-		}
+// signalParticipantOffline signals a single participant offline
+func (r *Room) signalParticipantOffline(participant *Participant) error {
+	// Skip if websocket is nil or closed
+	if participant.WebSocket == nil || participant.WebSocket.IsClosed() {
+		return nil
 	}
-	if r.DataChannel != nil {
-		if err := r.DataChannel.SendText(string(msg.Data)); err != nil {
-			log.Printf("Error broadcasting to Room: %v\n", err)
-		}
+	if err := participant.WebSocket.SendAnswerMessageWS(connections.AnswerOffline); err != nil {
+		return err
 	}
-	r.ParticipantsMutex.RUnlock()
-}
-
-// Sends message to Room (nestri-server)
-func (r *Room) sendToRoom(msg webrtc.DataChannelMessage) {
-	if r.DataChannel != nil {
-		if err := r.DataChannel.SendText(string(msg.Data)); err != nil {
-			log.Printf("Error broadcasting to Room: %v\n", err)
-		}
-	}
+	return nil
 }

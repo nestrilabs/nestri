@@ -1,9 +1,9 @@
-package relay
+package connections
 
 import (
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
-	"log"
+	"log/slog"
 	gen "relay/internal/proto"
 )
 
@@ -30,7 +30,7 @@ func NewNestriDataChannel(dc *webrtc.DataChannel) *NestriDataChannel {
 		// Decode message
 		var base gen.ProtoMessageInput
 		if err := proto.Unmarshal(msg.Data, &base); err != nil {
-			log.Printf("Failed to decode binary DataChannel message, reason: %s\n", err)
+			slog.Error("failed to decode binary DataChannel message", "err", err)
 			return
 		}
 

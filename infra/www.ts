@@ -5,7 +5,7 @@ import { zero } from "./zero";
 import { domain } from "./dns";
 
 new sst.aws.StaticSite("Web", {
-    path: "./packages/www",
+    path: "packages/www",
     build: {
         output: "./dist",
         command: "bun run build",

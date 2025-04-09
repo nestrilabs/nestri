@@ -1,9 +1,9 @@
-package relay
+package common
 
 import (
 	"flag"
 	"github.com/pion/webrtc/v4"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"strconv"
@@ -13,9 +13,10 @@ import (
 var globalFlags *Flags
 
 type Flags struct {
-	Verbose        bool     // Verbose mode - log more information to console
-	Debug          bool     // Debug mode - log deeper debug information to console
+	Verbose        bool     // Log everything to console
+	Debug          bool     // Enable debug mode, implies Verbose
 	EndpointPort   int      // Port for HTTP/S and WS/S endpoint (TCP)
+	MeshPort       int      // Port for Mesh connections (TCP)
 	WebRTCUDPStart int      // WebRTC UDP port range start - ignored if UDPMuxPort is set
 	WebRTCUDPEnd   int      // WebRTC UDP port range end - ignored if UDPMuxPort is set
 	STUNServer     string   // WebRTC STUN server
@@ -24,23 +25,25 @@ type Flags struct {
 	NAT11IPs       []string // WebRTC NAT 1 to 1 IP(s) - allows specifying host IP(s) if behind NAT
 	TLSCert        string   // Path to TLS certificate
 	TLSKey         string   // Path to TLS key
+	ControlSecret  string   // Shared secret for this relay's control endpoint
 }
 
 func (flags *Flags) DebugLog() {
-	log.Println("Relay Flags:")
-	log.Println("> Verbose: ", flags.Verbose)
-	log.Println("> Debug: ", flags.Debug)
-	log.Println("> Endpoint Port: ", flags.EndpointPort)
-	log.Println("> WebRTC UDP Range Start: ", flags.WebRTCUDPStart)
-	log.Println("> WebRTC UDP Range End: ", flags.WebRTCUDPEnd)
-	log.Println("> WebRTC STUN Server: ", flags.STUNServer)
-	log.Println("> WebRTC UDP Mux Port: ", flags.UDPMuxPort)
-	log.Println("> Auto Add Local IP: ", flags.AutoAddLocalIP)
-	for i, ip := range flags.NAT11IPs {
-		log.Printf("> WebRTC NAT 1 to 1 IP (%d): %s\n", i, ip)
-	}
-	log.Println("> Path to TLS Cert: ", flags.TLSCert)
-	log.Println("> Path to TLS Key: ", flags.TLSKey)
+	slog.Info("Relay flags",
+		"verbose", flags.Verbose,
+		"debug", flags.Debug,
+		"endpointPort", flags.EndpointPort,
+		"meshPort", flags.MeshPort,
+		"webrtcUDPStart", flags.WebRTCUDPStart,
+		"webrtcUDPEnd", flags.WebRTCUDPEnd,
+		"stunServer", flags.STUNServer,
+		"webrtcUDPMux", flags.UDPMuxPort,
+		"autoAddLocalIP", flags.AutoAddLocalIP,
+		"webrtcNAT11IPs", strings.Join(flags.NAT11IPs, ","),
+		"tlsCert", flags.TLSCert,
+		"tlsKey", flags.TLSKey,
+		"controlSecret", flags.ControlSecret,
+	)
 }
 
 func getEnvAsInt(name string, defaultVal int) int {
@@ -76,6 +79,7 @@ func InitFlags() {
 	flag.BoolVar(&globalFlags.Verbose, "verbose", getEnvAsBool("VERBOSE", false), "Verbose mode")
 	flag.BoolVar(&globalFlags.Debug, "debug", getEnvAsBool("DEBUG", false), "Debug mode")
 	flag.IntVar(&globalFlags.EndpointPort, "endpointPort", getEnvAsInt("ENDPOINT_PORT", 8088), "HTTP endpoint port")
+	flag.IntVar(&globalFlags.MeshPort, "meshPort", getEnvAsInt("MESH_PORT", 8089), "Mesh connections TCP port")
 	flag.IntVar(&globalFlags.WebRTCUDPStart, "webrtcUDPStart", getEnvAsInt("WEBRTC_UDP_START", 10000), "WebRTC UDP port range start")
 	flag.IntVar(&globalFlags.WebRTCUDPEnd, "webrtcUDPEnd", getEnvAsInt("WEBRTC_UDP_END", 20000), "WebRTC UDP port range end")
 	flag.StringVar(&globalFlags.STUNServer, "stunServer", getEnvAsString("STUN_SERVER", "stun.l.google.com:19302"), "WebRTC STUN server")
@@ -83,11 +87,19 @@ func InitFlags() {
 	flag.BoolVar(&globalFlags.AutoAddLocalIP, "autoAddLocalIP", getEnvAsBool("AUTO_ADD_LOCAL_IP", true), "Automatically add local IP to NAT 1 to 1 IPs")
 	// String with comma separated IPs
 	nat11IPs := ""
-	flag.StringVar(&nat11IPs, "webrtcNAT11IPs", getEnvAsString("WEBRTC_NAT_IPS", ""), "WebRTC NAT 1 to 1 IP(s)")
+	flag.StringVar(&nat11IPs, "webrtcNAT11IPs", getEnvAsString("WEBRTC_NAT_IPS", ""), "WebRTC NAT 1 to 1 IP(s), comma delimited")
 	flag.StringVar(&globalFlags.TLSCert, "tlsCert", getEnvAsString("TLS_CERT", ""), "Path to TLS certificate")
 	flag.StringVar(&globalFlags.TLSKey, "tlsKey", getEnvAsString("TLS_KEY", ""), "Path to TLS key")
+	flag.StringVar(&globalFlags.ControlSecret, "controlSecret", getEnvAsString("CONTROL_SECRET", ""), "Shared secret for control endpoint")
 	// Parse flags
 	flag.Parse()
+
+	// If debug is enabled, verbose is also enabled
+	if globalFlags.Debug {
+		globalFlags.Verbose = true
+		// If Debug is enabled, set ControlSecret to 1234
+		globalFlags.ControlSecret = "1234"
+	}
 
 	// ICE STUN servers
 	globalWebRTCConfig.ICEServers = []webrtc.ICEServer{

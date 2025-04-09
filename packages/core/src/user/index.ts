@@ -183,16 +183,16 @@ export namespace User {
         };
     }
 
-    export const remove = fn(Info.shape.id, (input) =>
+    export const remove = fn(Info.shape.id, (id) =>
         useTransaction(async (tx) => {
             await tx
                 .update(userTable)
                 .set({
                     timeDeleted: sql`now()`,
                 })
-                .where(and(eq(userTable.id, input)))
+                .where(and(eq(userTable.id, id)))
                 .execute();
-            return input;
+            return id;
         }),
     );
 

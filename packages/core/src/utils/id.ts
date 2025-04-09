@@ -3,8 +3,10 @@ import { ulid } from "ulid";
 export const prefixes = {
   user: "usr",
   team: "tea",
+  task: "tsk",
+  machine: "mch",
   member: "mbr",
-  steam: "stm"
+  steam: "stm",
 } as const;
 
 /**

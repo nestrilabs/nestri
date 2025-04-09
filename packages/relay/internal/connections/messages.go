@@ -1,17 +1,15 @@
-package relay
+package connections
 
 import (
 	"github.com/pion/webrtc/v4"
+	"relay/internal/common"
 	"time"
 )
 
-// OnMessageCallback is a callback for messages of given type
-type OnMessageCallback func(data []byte)
-
 // MessageBase is the base type for WS/DC messages.
 type MessageBase struct {
-	PayloadType string          `json:"payload_type"`
-	Latency     *LatencyTracker `json:"latency,omitempty"`
+	PayloadType string                 `json:"payload_type"`
+	Latency     *common.LatencyTracker `json:"latency,omitempty"`
 }
 
 // MessageLog represents a log message.

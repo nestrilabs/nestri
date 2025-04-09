@@ -7,6 +7,7 @@ import { TeamApi } from "./team";
 import { logger } from "hono/logger";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
+import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
 import { patchLogger } from "../log-polyfill";
 import { HTTPException } from "hono/http-exception";
@@ -28,6 +29,7 @@ const routes = app
     .route("/team", TeamApi.route)
     // .route("/steam", SteamApi.route)
     .route("/account", AccountApi.route)
+    .route("/machine", MachineApi.route)
     .onError((error, c) => {
         if (error instanceof VisibleError) {
             console.error("api error:", error);
@@ -43,7 +45,7 @@ const routes = app
                     code: ErrorCodes.Validation.INVALID_PARAMETER,
                     message: "Invalid request",
                 },
-                400,
+                error.status,
             );
         }
         console.error("unhandled error:", error);

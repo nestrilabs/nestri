@@ -1,26 +1,26 @@
-package relay
+package internal
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/pion/webrtc/v4"
 	"google.golang.org/protobuf/proto"
-	"log"
+	"log/slog"
+	"relay/internal/common"
+	"relay/internal/connections"
 	gen "relay/internal/proto"
 )
 
-func participantHandler(participant *Participant, room *Room) {
-	// Callback for closing PeerConnection
+func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 	onPCClose := func() {
-		if GetFlags().Verbose {
-			log.Printf("Closed PeerConnection for participant: '%s'\n", participant.ID)
-		}
+		slog.Debug("Participant PeerConnection closed", "participant", participant.ID, "room", room.Name)
 		room.removeParticipantByID(participant.ID)
 	}
 
 	var err error
-	participant.PeerConnection, err = CreatePeerConnection(onPCClose)
+	participant.PeerConnection, err = common.CreatePeerConnection(onPCClose)
 	if err != nil {
-		log.Printf("Failed to create PeerConnection for participant: '%s' - reason: %s\n", participant.ID, err)
+		slog.Error("Failed to create participant PeerConnection", "participant", participant.ID, "room", room.Name, "err", err)
 		return
 	}
 
@@ -32,67 +32,32 @@ func participantHandler(participant *Participant, room *Room) {
 		MaxRetransmits: &settingMaxRetransmits,
 	})
 	if err != nil {
-		log.Printf("Failed to create data channel for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+		slog.Error("Failed to create data channel for participant", "participant", participant.ID, "room", room.Name, "err", err)
 		return
 	}
-	participant.DataChannel = NewNestriDataChannel(dc)
+	participant.DataChannel = connections.NewNestriDataChannel(dc)
 
 	// Register channel opening handling
 	participant.DataChannel.RegisterOnOpen(func() {
-		if GetFlags().Verbose {
-			log.Printf("DataChannel open for participant: %s\n", participant.ID)
-		}
+		slog.Debug("DataChannel opened for participant", "participant", participant.ID, "room", room.Name)
 	})
 
 	// Register channel closing handling
 	participant.DataChannel.RegisterOnClose(func() {
-		if GetFlags().Verbose {
-			log.Printf("DataChannel closed for participant: %s\n", participant.ID)
-		}
+		slog.Debug("DataChannel closed for participant", "participant", participant.ID, "room", room.Name)
 	})
 
 	// Register text message handling
 	participant.DataChannel.RegisterMessageCallback("input", func(data []byte) {
-		// Send to room if it has a DataChannel
-		if room.DataChannel != nil {
-			// If debug mode, decode and add our timestamp, otherwise just send to room
-			if GetFlags().Debug {
-				var inputMsg gen.ProtoMessageInput
-				if err = proto.Unmarshal(data, &inputMsg); err != nil {
-					log.Printf("Failed to decode input message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
-					return
-				}
-
-				protoLat := inputMsg.GetMessageBase().GetLatency()
-				if protoLat != nil {
-					lat := LatencyTrackerFromProto(protoLat)
-					lat.AddTimestamp("relay_to_node")
-					protoLat = lat.ToProto()
-				}
-
-				// Marshal and send
-				if data, err = proto.Marshal(&inputMsg); err != nil {
-					log.Printf("Failed to marshal input message for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
-					return
-				}
-			}
-
-			if err = room.DataChannel.SendBinary(data); err != nil {
-				log.Printf("Failed to send input message to room: '%s' - reason: %s\n", room.Name, err)
-			}
-		}
+		ForwardParticipantDataChannelMessage(participant, room, data)
 	})
 
 	participant.PeerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
 		if candidate == nil {
 			return
 		}
-		if GetFlags().Verbose {
-			log.Printf("ICE candidate for participant: '%s' in room: '%s'\n", participant.ID, room.Name)
-		}
-		err = participant.WebSocket.SendICECandidateMessageWS(candidate.ToJSON())
-		if err != nil {
-			log.Printf("Failed to send ICE candidate for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+		if err := participant.WebSocket.SendICECandidateMessageWS(candidate.ToJSON()); err != nil {
+			slog.Error("Failed to send ICE candidate to participant", "participant", participant.ID, "room", room.Name, "err", err)
 		}
 	})
 
@@ -100,35 +65,32 @@ func participantHandler(participant *Participant, room *Room) {
 
 	// ICE callback
 	participant.WebSocket.RegisterMessageCallback("ice", func(data []byte) {
-		var iceMsg MessageICECandidate
+		var iceMsg connections.MessageICECandidate
 		if err = json.Unmarshal(data, &iceMsg); err != nil {
-			log.Printf("Failed to decode ICE message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+			slog.Error("Failed to decode ICE candidate message from participant", "participant", participant.ID, "room", room.Name, "err", err)
 			return
 		}
-		candidate := webrtc.ICECandidateInit{
-			Candidate: iceMsg.Candidate.Candidate,
-		}
 		if participant.PeerConnection.RemoteDescription() != nil {
-			if err = participant.PeerConnection.AddICECandidate(candidate); err != nil {
-				log.Printf("Failed to add ICE candidate from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+			if err = participant.PeerConnection.AddICECandidate(iceMsg.Candidate); err != nil {
+				slog.Error("Failed to add ICE candidate for participant", "participant", participant.ID, "room", room.Name, "err", err)
 			}
 			// Add held ICE candidates
 			for _, heldCandidate := range iceHolder {
 				if err = participant.PeerConnection.AddICECandidate(heldCandidate); err != nil {
-					log.Printf("Failed to add held ICE candidate from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+					slog.Error("Failed to add held ICE candidate for participant", "participant", participant.ID, "room", room.Name, "err", err)
 				}
 			}
 			iceHolder = nil
 		} else {
-			iceHolder = append(iceHolder, candidate)
+			iceHolder = append(iceHolder, iceMsg.Candidate)
 		}
 	})
 
 	// SDP answer callback
 	participant.WebSocket.RegisterMessageCallback("sdp", func(data []byte) {
-		var sdpMsg MessageSDP
+		var sdpMsg connections.MessageSDP
 		if err = json.Unmarshal(data, &sdpMsg); err != nil {
-			log.Printf("Failed to decode SDP message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+			slog.Error("Failed to decode SDP message from participant", "participant", participant.ID, "room", room.Name, "err", err)
 			return
 		}
 		handleParticipantSDP(participant, sdpMsg)
@@ -136,9 +98,9 @@ func participantHandler(participant *Participant, room *Room) {
 
 	// Log callback
 	participant.WebSocket.RegisterMessageCallback("log", func(data []byte) {
-		var logMsg MessageLog
+		var logMsg connections.MessageLog
 		if err = json.Unmarshal(data, &logMsg); err != nil {
-			log.Printf("Failed to decode log message from participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+			slog.Error("Failed to decode log message from participant", "participant", participant.ID, "room", room.Name, "err", err)
 			return
 		}
 		// TODO: Handle log message sending to metrics server
@@ -150,38 +112,36 @@ func participantHandler(participant *Participant, room *Room) {
 	})
 
 	participant.WebSocket.RegisterOnClose(func() {
-		if GetFlags().Verbose {
-			log.Printf("WebSocket closed for participant: '%s' in room: '%s'\n", participant.ID, room.Name)
-		}
+		slog.Debug("WebSocket closed for participant", "participant", participant.ID, "room", room.Name)
 		// Remove from Room
 		room.removeParticipantByID(participant.ID)
 	})
 
-	log.Printf("Participant: '%s' in room: '%s' is now ready, sending an OK\n", participant.ID, room.Name)
-	if err = participant.WebSocket.SendAnswerMessageWS(AnswerOK); err != nil {
-		log.Printf("Failed to send OK answer for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+	slog.Info("Participant ready, sending OK answer", "participant", participant.ID, "room", room.Name)
+	if err := participant.WebSocket.SendAnswerMessageWS(connections.AnswerOK); err != nil {
+		slog.Error("Failed to send OK answer", "participant", participant.ID, "room", room.Name, "err", err)
 	}
 
-	// If room is already online, send also offer
+	// If room is online, also send offer
 	if room.Online {
-		if room.AudioTrack != nil {
-			if err = participant.addTrack(&room.AudioTrack); err != nil {
-				log.Printf("Failed to add audio track for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
-			}
+		if err = room.signalParticipantWithTracks(participant); err != nil {
+			slog.Error("Failed to signal participant with tracks", "participant", participant.ID, "room", room.Name, "err", err)
 		}
-		if room.VideoTrack != nil {
-			if err = participant.addTrack(&room.VideoTrack); err != nil {
-				log.Printf("Failed to add video track for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
+	} else {
+		active, provider := relay.IsRoomActive(room.ID)
+		if active {
+			slog.Debug("Room active remotely, requesting stream", "room", room.Name, "provider", provider)
+			if _, err := relay.requestStream(context.Background(), room.Name, room.ID, provider); err != nil {
+				slog.Error("Failed to request stream", "room", room.Name, "err", err)
+			} else {
+				slog.Debug("Stream requested successfully", "room", room.Name, "provider", provider)
 			}
-		}
-		if err = participant.signalOffer(); err != nil {
-			log.Printf("Failed to signal offer for participant: '%s' in room: '%s' - reason: %s\n", participant.ID, room.Name, err)
 		}
 	}
 }
 
 // SDP answer handler for participants
-func handleParticipantSDP(participant *Participant, answerMsg MessageSDP) {
+func handleParticipantSDP(participant *Participant, answerMsg connections.MessageSDP) {
 	// Get SDP offer
 	sdpAnswer := answerMsg.SDP.SDP
 
@@ -191,6 +151,37 @@ func handleParticipantSDP(participant *Participant, answerMsg MessageSDP) {
 		SDP:  sdpAnswer,
 	})
 	if err != nil {
-		log.Printf("Failed to set remote description for participant: '%s' - reason: %s\n", participant.ID, err)
+		slog.Error("Failed to set remote SDP answer for participant", "participant", participant.ID, "err", err)
+	}
+}
+
+func ForwardParticipantDataChannelMessage(participant *Participant, room *Room, data []byte) {
+	// Debug mode: Add latency timestamp
+	if common.GetFlags().Debug {
+		var inputMsg gen.ProtoMessageInput
+		if err := proto.Unmarshal(data, &inputMsg); err != nil {
+			slog.Error("Failed to decode input message from participant", "participant", participant.ID, "room", room.Name, "err", err)
+			return
+		}
+		protoLat := inputMsg.GetMessageBase().GetLatency()
+		if protoLat != nil {
+			lat := common.LatencyTrackerFromProto(protoLat)
+			lat.AddTimestamp("relay_to_node")
+			protoLat = lat.ToProto()
+		}
+		if newData, err := proto.Marshal(&inputMsg); err != nil {
+			slog.Error("Failed to marshal input message from participant", "participant", participant.ID, "room", room.Name, "err", err)
+			return
+		} else {
+			// Update data with the modified message
+			data = newData
+		}
+	}
+
+	// Forward to local room DataChannel if it exists (e.g., local ingest)
+	if room.DataChannel != nil {
+		if err := room.DataChannel.SendBinary(data); err != nil {
+			slog.Error("Failed to send input message to room", "participant", participant.ID, "room", room.Name, "err", err)
+		}
 	}
 }

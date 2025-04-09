@@ -5,7 +5,7 @@ import { Common } from "../common";
 import { Examples } from "../examples";
 import { createEvent } from "../event";
 import { createID, fn } from "../utils";
-import { and, eq, sql } from "../drizzle";
+import { and, eq, sql, isNull } from "../drizzle";
 import { PlanType, teamTable } from "./team.sql";
 import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
@@ -111,6 +111,7 @@ export namespace Team {
             tx
                 .select()
                 .from(teamTable)
+                .where(isNull(teamTable.timeDeleted))
                 .execute()
                 .then((rows) => rows.map(serialize)),
         ),
@@ -121,7 +122,7 @@ export namespace Team {
             return tx
                 .select()
                 .from(teamTable)
-                .where(eq(teamTable.id, id))
+                .where(and(eq(teamTable.id, id), isNull(teamTable.timeDeleted)))
                 .execute()
                 .then((rows) => rows.map(serialize).at(0))
         }),
@@ -132,7 +133,7 @@ export namespace Team {
             return tx
                 .select()
                 .from(teamTable)
-                .where(eq(teamTable.slug, input))
+                .where(and(eq(teamTable.slug, input), isNull(teamTable.timeDeleted)))
                 .execute()
                 .then((rows) => rows.map(serialize).at(0))
         }),

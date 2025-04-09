@@ -41,4 +41,13 @@ export namespace Examples {
         country: "KE",
     }
 
+    export const Machine = {
+        id: Id("machine"),
+        country: "Kenya",
+        countryCode: "KE",
+        timezone: "Africa/Nairobi",
+        location: { latitude: 36.81550, longitude: -1.28410 },
+        fingerprint: "fc27f428f9ca47d4b41b707ae0c62090",
+    }
+
 }

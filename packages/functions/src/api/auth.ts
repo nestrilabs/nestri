@@ -10,6 +10,8 @@ const client = createClient({
   clientID: "api",
 });
 
+
+
 export const notPublic: MiddlewareHandler = async (c, next) => {
   const actor = useActor();
   if (actor.type === "public")
@@ -42,6 +44,11 @@ export const auth: MiddlewareHandler = async (c, next) => {
       "Invalid bearer token",
     );
   }
+    
+    if (result.subject.type === "machine") {
+      console.log("machine detected")
+      return withActor(result.subject, next);
+    }
 
   if (result.subject.type === "user") {
     const teamID = c.req.header("x-nestri-team");
