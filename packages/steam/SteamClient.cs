@@ -209,7 +209,7 @@ public class SteamClientHandler
         try
         {
             // Start QR authentication session
-            _authSession = await _steamClient.Authentication.BeginAuthSessionViaQRAsync(new AuthSessionDetails());
+            _authSession = await _steamClient.Authentication.BeginAuthSessionViaQRAsync(new AuthSessionDetails() { DeviceFriendlyName = "Nestri OS" });
 
             // Handle QR code URL changes
             _authSession.ChallengeURLChanged = () =>
@@ -338,7 +338,7 @@ public class SteamClientHandler
         // Send login success event
         NotifyEvent(new ServerSentEvent("login-success", new
         {
-            steamId = callback.ClientSteamID,
+            steamId = _steamUser.SteamID?.ConvertToUInt64(),
             username = accountName
         }));
 
