@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { Common } from "../common";
-import { useUser, useUserID } from "../actor";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
+import { useUser, useUserID } from "../actor";
+import { eq, and, isNull, sql } from "../drizzle";
 import { steamTable, AccountLimitation, LastGame } from "./steam.sql";
-import { eq, and, isNull } from "../drizzle";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
@@ -83,7 +83,7 @@ export namespace Steam {
                     lastGame: input.lastGame,
                     limitation: input.limitation,
                     steamEmail: input.steamEmail,
-                    lastSeen: new Date(),
+                    lastSeen: sql`now()`,
                     avatarUrl: input.avatarUrl,
                     personaName: input.personaName,
                 })
