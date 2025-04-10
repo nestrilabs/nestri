@@ -34,11 +34,23 @@ export namespace Examples {
     export const Steam = {
         id: Id("steam"),
         userID: Id("user"),
+        steamID: 74839300282033,
+        limitation: {
+            isLimited: false,
+            isBanned: false,
+            isLocked: false,
+            isAllowedToInviteFriends: false,
+        },
+        lastGame: {
+            gameID: 2531310,
+            gameName: "The Last of Us™ Part II Remastered",
+        },
         personaName: "John",
         username: "johnsteamaccount",
         email: "john@example.com",
+        steamEmail: "john@example.com",
         avatarUrl: "https://avatars.akamai.steamstatic.com/XXXXXXXXXXXX_full.jpg",
-        country: "KE",
+        countryCode: "KE",
     }
 
     export const Machine = {

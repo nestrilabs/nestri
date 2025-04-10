@@ -22,6 +22,13 @@
       "when": 1743794969007,
       "tag": "0002_simple_outlaw_kid",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1744287542918,
+      "tag": "0003_first_big_bertha",
+      "breakpoints": true
     }
   ]
 }

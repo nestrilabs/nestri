@@ -3,7 +3,7 @@ import { Common } from "../common";
 import { useUser, useUserID } from "../actor";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
-import { steamTable } from "./steam.sql";
+import { steamTable, AccountLimitation, LastGame } from "./steam.sql";
 import { eq, and, isNull } from "../drizzle";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
@@ -17,6 +17,22 @@ export namespace Steam {
             avatarUrl: z.string().openapi({
                 description: "The avatar url of this Steam account",
                 example: Examples.Steam.avatarUrl
+            }),
+            steamEmail: z.string().openapi({
+                description: "The email regisered with this Steam account",
+                example: Examples.Steam.steamEmail
+            }),
+            steamID: z.number().openapi({
+                description: "The Steam ID this Steam account",
+                example: Examples.Steam.steamID
+            }),
+            limitation: AccountLimitation.openapi({
+                description: " The limitations of this Steam account",
+                example: Examples.Steam.limitation
+            }),
+            lastGame: LastGame.openapi({
+                description: "The last game played on this Steam account",
+                example: Examples.Steam.lastGame
             }),
             userID: z.string().openapi({
                 description: "The unique id of the user who owns this steam account",
@@ -34,9 +50,9 @@ export namespace Steam {
                 description: "The last recorded persona name used by this account",
                 example: Examples.Steam.personaName
             }),
-            country: z.string().openapi({
+            countryCode: z.string().openapi({
                 description: "The country this account is connected from",
-                example: Examples.Steam.country
+                example: Examples.Steam.countryCode
             })
         })
         .openapi({
@@ -52,8 +68,6 @@ export namespace Steam {
             id: true,
             userID: true,
             email: true,
-        }).extend({
-            accessToken: z.string()
         }),
         (input) =>
             createTransaction(async (tx) => {
@@ -63,15 +77,32 @@ export namespace Steam {
                     id,
                     email: input.email ?? user.email,
                     userID: input.userID ?? user.userID,
-                    country: input.country,
+                    countryCode: input.countryCode,
                     username: input.username,
+                    steamID: input.steamID,
+                    lastGame: input.lastGame,
+                    limitation: input.limitation,
+                    steamEmail: input.steamEmail,
+                    lastSeen: new Date(),
                     avatarUrl: input.avatarUrl,
                     personaName: input.personaName,
-                    accessToken: input.accessToken,
                 })
                 return id;
             }),
     );
+
+    export const fromUserID = fn(
+        z.string(),
+        (userID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(steamTable)
+                    .where(and(eq(steamTable.userID, userID), isNull(steamTable.timeDeleted)))
+                    .execute()
+                    .then((rows) => rows.map(serialize).at(0)),
+            ),
+    )
 
     export const list = () =>
         useTransaction((tx) =>
@@ -99,10 +130,14 @@ export namespace Steam {
             id: input.id,
             email: input.email,
             userID: input.userID,
-            country: input.country,
+            countryCode: input.countryCode,
             username: input.username,
             avatarUrl: input.avatarUrl,
-            personaName: input.personaName
+            personaName: input.personaName,
+            steamEmail: input.steamEmail,
+            steamID: input.steamID,
+            limitation: input.limitation,
+            lastGame: input.lastGame,
         };
     }
 
