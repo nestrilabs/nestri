@@ -10,7 +10,7 @@ import { memberTable } from "./member.sql";
 import { and, eq, sql, asc, isNull } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
-export module Member {
+export namespace Member {
     export const Info = z
         .object({
             id: z.string().openapi({

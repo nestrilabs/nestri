@@ -12,7 +12,7 @@ import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
-export module Team {
+export namespace Team {
     export const Info = z
         .object({
             id: z.string().openapi({

@@ -17,7 +17,6 @@ namespace steam.Migrations
                 {
                     Id = table.Column<int>(type: "INTEGER", nullable: false)
                         .Annotation("Sqlite:Autoincrement", true),
-                    TeamId = table.Column<string>(type: "TEXT", nullable: false),
                     UserId = table.Column<string>(type: "TEXT", nullable: false),
                     AccountName = table.Column<string>(type: "TEXT", nullable: false),
                     RefreshToken = table.Column<string>(type: "TEXT", nullable: false),
@@ -30,9 +29,9 @@ namespace steam.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_SteamUserCredentials_TeamId_UserId",
+                name: "IX_SteamUserCredentials_UserId",
                 table: "SteamUserCredentials",
-                columns: new[] { "TeamId", "UserId" },
+                column: "UserId",
                 unique: true);
         }
 

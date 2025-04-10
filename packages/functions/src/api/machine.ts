@@ -1,12 +1,12 @@
-import {z} from "zod"
-import {Hono} from "hono";
-import {notPublic} from "./auth";
-import {Result} from "../common";
-import {describeRoute} from "hono-openapi";
-import {assertActor} from "@nestri/core/actor";
-import {Realtime} from "@nestri/core/realtime/index";
-import {validator} from "hono-openapi/zod";
-import {CreateMessageSchema, StartMessageSchema, StopMessageSchema} from "./messages.ts";
+import { z } from "zod"
+import { Hono } from "hono";
+import { notPublic } from "./auth";
+import { Result } from "./common";
+import { describeRoute } from "hono-openapi";
+import { assertActor } from "@nestri/core/actor";
+import { Realtime } from "@nestri/core/realtime/index";
+import { validator } from "hono-openapi/zod";
+import { CreateMessageSchema, StartMessageSchema, StopMessageSchema } from "./messages.ts";
 
 export module MachineApi {
   export const route = new Hono()
@@ -74,7 +74,7 @@ export module MachineApi {
             content: {
               "application/json": {
                 schema: Result(
-                  z.object({error: z.string()})
+                  z.object({ error: z.string() })
                 ),
               },
             },
@@ -97,7 +97,7 @@ export module MachineApi {
           console.log("Published create request to");
         } catch (error) {
           console.error("Failed to publish to MQTT:", error);
-          return c.json({error: "Failed to send create request"}, 400);
+          return c.json({ error: "Failed to send create request" }, 400);
         }
 
         return c.json({
@@ -129,7 +129,7 @@ export module MachineApi {
             content: {
               "application/json": {
                 schema: Result(
-                  z.object({error: z.string()})
+                  z.object({ error: z.string() })
                 ),
               },
             },
@@ -154,7 +154,7 @@ export module MachineApi {
           console.log("Published start request");
         } catch (error) {
           console.error("Failed to publish to MQTT:", error);
-          return c.json({error: "Failed to send start request"}, 400);
+          return c.json({ error: "Failed to send start request" }, 400);
         }
 
         return c.json({
@@ -186,7 +186,7 @@ export module MachineApi {
             content: {
               "application/json": {
                 schema: Result(
-                  z.object({error: z.string()})
+                  z.object({ error: z.string() })
                 ),
               },
             },
@@ -211,7 +211,7 @@ export module MachineApi {
           console.log("Published stop request");
         } catch (error) {
           console.error("Failed to publish to MQTT:", error);
-          return c.json({error: "Failed to send stop request"}, 400);
+          return c.json({ error: "Failed to send stop request" }, 400);
         }
 
         return c.json({

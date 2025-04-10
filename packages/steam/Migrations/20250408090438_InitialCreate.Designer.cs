@@ -4,13 +4,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Steam;
 
 #nullable disable
 
 namespace steam.Migrations
 {
     [DbContext(typeof(SteamDbContext))]
-    [Migration("20250322023207_InitialCreate")]
+    [Migration("20250408090438_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -36,10 +37,6 @@ namespace steam.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("TeamId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -49,7 +46,7 @@ namespace steam.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TeamId", "UserId")
+                    b.HasIndex("UserId")
                         .IsUnique();
 
                     b.ToTable("SteamUserCredentials");

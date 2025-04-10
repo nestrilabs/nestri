@@ -2,8 +2,8 @@ import { Resource } from "sst"
 import { Select } from "./ui/select";
 import { subjects } from "./subjects"
 import { logger } from "hono/logger";
-import { handle } from "hono/aws-lambda";
 import { PasswordUI } from "./ui/password"
+import { patchLogger } from "./log-polyfill";
 import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index";
@@ -11,8 +11,9 @@ import { handleDiscord, handleGithub } from "./utils";
 import { GithubAdapter } from "./ui/adapters/github";
 import { Machine } from "@nestri/core/machine/index"
 import { DiscordAdapter } from "./ui/adapters/discord";
-import { PasswordAdapter } from "./ui/adapters/password"
+import { PasswordAdapter } from "./ui/adapters/password";
 import { type Provider } from "@openauthjs/openauth/provider/provider"
+import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
 
 type OauthUser = {
     primary: {
@@ -24,13 +25,12 @@ type OauthUser = {
     username: any;
 }
 
+console.log("STORAGE", process.env.STORAGE)
+
 const app = issuer({
-    select: Select({
-        providers: {
-            machine: {
-                hide: true,
-            },
-        },
+    select: Select(),
+    storage: MemoryStorage({
+        persist: process.env.STORAGE //"/tmp/persist.json",
     }),
     theme: {
         title: "Nestri | Auth",
@@ -46,9 +46,7 @@ const app = issuer({
         font: {
             family: "Geist, sans-serif",
         },
-        css: `
-                    @import url('https://fonts.googleapis.com/css2?family=Geist:wght@100;200;300;400;500;600;700;800;900&display=swap');
-                  `,
+        css: `@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100;200;300;400;500;600;700;800;900&display=swap');`,
     },
     subjects,
     providers: {
@@ -134,7 +132,7 @@ const app = issuer({
             });
         }
 
-        //TODO: This works, so use this while registering the task
+        // TODO: This works, so use this while registering the task
         // console.log("country_code", req.headers.get('CloudFront-Viewer-Country'))
         // console.log("country_name", req.headers.get('CloudFront-Viewer-Country-Name'))
         // console.log("latitude", req.headers.get('CloudFront-Viewer-Latitude'))
@@ -225,4 +223,14 @@ const app = issuer({
     },
 }).use(logger())
 
-export const handler = handle(app)
+patchLogger();
+
+export default {
+    port: 3002,
+    idleTimeout: 255,
+    fetch: (req: Request) =>
+        app.fetch(req, undefined, {
+            waitUntil: (fn) => fn,
+            passThroughOnException: () => { },
+        }),
+};

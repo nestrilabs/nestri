@@ -43,7 +43,7 @@ export const postgres = new sst.aws.Aurora("Database", {
 new sst.x.DevCommand("Studio", {
   link: [postgres],
   dev: {
-    command: "bun db studio",
+    command: "bun db:dev studio",
     directory: "packages/core",
     autostart: true,
   },

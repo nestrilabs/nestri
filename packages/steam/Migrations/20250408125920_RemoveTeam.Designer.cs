@@ -2,16 +2,20 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Steam;
 
 #nullable disable
 
 namespace steam.Migrations
 {
     [DbContext(typeof(SteamDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20250408125920_RemoveTeam")]
+    partial class RemoveTeam
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.3");
@@ -33,10 +37,6 @@ namespace steam.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("TeamId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -46,7 +46,7 @@ namespace steam.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TeamId", "UserId")
+                    b.HasIndex("UserId")
                         .IsUnique();
 
                     b.ToTable("SteamUserCredentials");

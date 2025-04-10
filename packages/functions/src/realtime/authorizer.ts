@@ -5,7 +5,7 @@ import { createClient } from "@openauthjs/openauth/client";
 
 const client = createClient({
     clientID: "realtime",
-    issuer: Resource.Urls.auth
+    issuer: Resource.Auth.url
 });
 
 export const handler = realtime.authorizer(async (token) => {

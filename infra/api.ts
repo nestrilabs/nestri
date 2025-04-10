@@ -1,53 +1,50 @@
-import { vpc } from "./vpc";
 import { bus } from "./bus";
+import { auth } from "./auth";
 import { domain } from "./dns";
 import { secret } from "./secret";
+import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
-sst.Linkable.wrap(random.RandomString, (resource) => ({
-    properties: {
-        value: resource.result,
-    },
-}));
-
-export const urls = new sst.Linkable("Urls", {
-    properties: {
-        api: "https://api." + domain,
-        auth: "https://auth." + domain,
-        site: $dev ? "http://localhost:3000" : "https://" + domain,
-    },
-});
-
-export const apiFunction = new sst.aws.Function("ApiFn", {
-    vpc,
-    handler: "packages/functions/src/api/index.handler",
-    permissions: [
-        {
-            actions: ["iot:*"],
-            resources: ["*"],
-        },
-    ],
+export const api = new sst.aws.Service("Api", {
+    cpu: $app.stage === "production" ? "2 vCPU" : undefined,
+    memory: $app.stage === "production" ? "4 GB" : undefined,
+    cluster,
+    command: ["bun", "run", "./src/api/index.ts"],
     link: [
         bus,
-        urls,
+        auth,
         postgres,
         secret.PolarSecret,
     ],
-    timeout: "3 minutes",
-    streaming: !$dev,
-    url: true
-})
-
-export const api = new sst.aws.Router("Api", {
-    routes: {
-        "/*": apiFunction.url
+    image: {
+        dockerfile: "packages/functions/Containerfile",
     },
-    domain: {
-        name: "api." + domain,
-        dns: sst.cloudflare.dns(),
+    environment: {
+        NO_COLOR: "1",
     },
-})
-
-export const outputs = {
-    api: api.url,
-};
+    loadBalancer: {
+        domain: "api." + domain,
+        rules: [
+            {
+                listen: "80/http",
+                forward: "3001/http",
+            },
+            {
+                listen: "443/https",
+                forward: "3001/http",
+            },
+        ],
+    },
+    dev: {
+        command: "bun dev:api",
+        directory: "packages/functions",
+        url: "http://localhost:3001",
+    },
+    scaling:
+        $app.stage === "production"
+            ? {
+                min: 2,
+                max: 10,
+            }
+            : undefined,
+});

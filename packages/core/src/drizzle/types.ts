@@ -17,6 +17,15 @@ export const teamID = {
   },
 };
 
+export const userID = {
+  get id() {
+    return ulid("id").notNull();
+  },
+  get userID() {
+    return ulid("user_id").notNull();
+  },
+};
+
 export const utc = (name: string) =>
   rawTs(name, {
     withTimezone: true,

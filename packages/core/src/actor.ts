@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { eq } from "./drizzle";
-import { VisibleError } from "./error";
+import { ErrorCodes, VisibleError } from "./error";
 import { createContext } from "./context";
 import { UserFlags, userTable } from "./user/user.sql";
 import { useTransaction } from "./drizzle/transaction";
@@ -60,11 +60,42 @@ export const ActorContext = createContext<Actor>("actor");
 export const useActor = ActorContext.use;
 export const withActor = ActorContext.with;
 
+/**
+ * Retrieves the user ID of the current actor.
+ *
+ * This function accesses the actor context and returns the `userID` if the current
+ * actor is of type "user". If the actor is not a user, it throws a `VisibleError`
+ * with an authentication error code, indicating that the caller is not authorized
+ * to access user-specific resources.
+ *
+ * @throws {VisibleError} When the current actor is not of type "user".
+ */
 export function useUserID() {
   const actor = ActorContext.use();
   if (actor.type === "user") return actor.properties.userID;
   throw new VisibleError(
-    "unauthorized",
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `You don't have permission to access this resource`,
+  );
+}
+
+/**
+ * Retrieves the properties of the current user actor.
+ *
+ * This function obtains the current actor from the context and returns its properties if the actor is identified as a user.
+ * If the actor is not of type "user", it throws a {@link VisibleError} with an authentication error code,
+ * indicating that the user is not authorized to access user-specific resources.
+ *
+ * @returns The properties of the current user actor, typically including user-specific details such as userID and email.
+ * @throws {VisibleError} If the current actor is not a user.
+ */
+export function useUser() {
+  const actor = ActorContext.use();
+  if (actor.type === "user") return actor.properties;
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
     `You don't have permission to access this resource`,
   );
 }
@@ -90,6 +121,17 @@ export function useMachine() {
   throw new Error(`Expected actor to have fingerprint`);
 }
 
+/**
+ * Asserts that the current user possesses the specified flag.
+ *
+ * This function executes a database transaction that queries the user table for the current user's flags.
+ * If the flags are missing, it throws a {@link VisibleError} with the code {@link ErrorCodes.Validation.MISSING_REQUIRED_FIELD}
+ * and a message indicating that the required flag is absent.
+ *
+ * @param flag - The name of the user flag to verify.
+ *
+ * @throws {VisibleError} If the user's flag is missing.
+ */
 export async function assertUserFlag(flag: keyof UserFlags) {
   return useTransaction((tx) =>
     tx
@@ -100,7 +142,8 @@ export async function assertUserFlag(flag: keyof UserFlags) {
         const flags = rows[0]?.flags;
         if (!flags)
           throw new VisibleError(
-            "user.flags",
+            "not_found",
+            ErrorCodes.Validation.MISSING_REQUIRED_FIELD,
             "Actor does not have " + flag + " flag",
           );
       }),

@@ -1,156 +1,123 @@
-using SteamKit2;
-using SteamKit2.Authentication;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Concurrent;
 
-// Steam Service
-public class SteamService
+namespace Steam
 {
-    private readonly ConcurrentDictionary<string, SteamClientHandler> _clientHandlers = new();
-
-    private readonly IServiceProvider _serviceProvider;
-
-    public SteamService(IServiceProvider serviceProvider)
+    public class SteamService
     {
-        _serviceProvider = serviceProvider;
-    }
+        private readonly ConcurrentDictionary<string, SteamAuthComponent> _clientHandlers = new();
+        private readonly IServiceProvider _serviceProvider;
 
-    public Action SubscribeToEvents(string clientId, Action<ServerSentEvent> callback)
-    {
-        if (_clientHandlers.TryGetValue(clientId, out var handler))
+        public SteamService(IServiceProvider serviceProvider)
         {
-            return handler.Subscribe(callback);
+            _serviceProvider = serviceProvider;
         }
 
-        return () => { }; // Empty unsubscribe function
-    }
-    public async Task StartAuthentication(string teamId, string userId)
-    {
-        var clientId = $"{teamId}:{userId}";
-
-        // Check if we already have stored credentials
-        using var scope = _serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
-        var storedCredential = await dbContext.SteamUserCredentials
-            .FirstOrDefaultAsync(c => c.TeamId == teamId && c.UserId == userId);
-
-        var handler = _clientHandlers.GetOrAdd(clientId, id => new SteamClientHandler(id,
-                    async (accountName, refreshToken) => await SaveCredentials(teamId, userId, accountName, refreshToken)));
-
-        if (storedCredential != null)
+        public Action SubscribeToEvents(string userId, Action<ServerSentEvent> callback)
         {
-            // We have stored credentials, try to use them
-            var success = await handler.LoginWithStoredCredentialsAsync(storedCredential.AccountName, storedCredential.RefreshToken);
-            
-            // If login failed, start fresh authentication
-            if (!success)
+            if (_clientHandlers.TryGetValue(userId, out var handler))
             {
-                await handler.StartAuthenticationAsync();
+                return handler.Subscribe(callback);
             }
-            return;
+
+            Console.WriteLine($"Warning: No handler found for user {userId}");
+            return () => { }; // Empty unsubscribe function
         }
 
-        // No stored credentials, start fresh authentication
-        await handler.StartAuthenticationAsync();
-    }
-
-    private async Task SaveCredentials(string teamId, string userId, string accountName, string refreshToken)
-    {
-        try
+        public async Task StartAuthentication(string userId)
         {
+            // Check for stored credentials
             using var scope = _serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
+            var storedCredential = await dbContext.SteamUserCredentials
+                .FirstOrDefaultAsync(c => c.UserId == userId);
 
-            var existingCredential = await dbContext.SteamUserCredentials
-                .FirstOrDefaultAsync(c => c.TeamId == teamId && c.UserId == userId);
+            // Create or get auth component
+            var handler = _clientHandlers.GetOrAdd(userId, id =>
+                new SteamAuthComponent(userId,
+                    async (accountName, refreshToken) => await SaveCredentials(userId, accountName, refreshToken)));
 
-            if (existingCredential != null)
+            // Set credentials if available
+            if (storedCredential != null)
             {
-                // Update existing record
-                existingCredential.AccountName = accountName;
-                existingCredential.RefreshToken = refreshToken;
-                existingCredential.UpdatedAt = DateTime.UtcNow;
+                handler.SetCredentials(storedCredential.AccountName, storedCredential.RefreshToken);
             }
-            else
+
+            // Start authentication process
+            await handler.HandleLoginRequest();
+        }
+
+        public void DisconnectUser(string userId)
+        {
+            if (_clientHandlers.TryGetValue(userId, out var handler))
             {
-                // Create new record
-                dbContext.SteamUserCredentials.Add(new SteamUserCredential
+                handler.Disconnect();
+                _clientHandlers.TryRemove(userId, out _);
+            }
+        }
+
+        public void Unsubscribe(string userId, Action unsubscribeAction)
+        {
+            unsubscribeAction();
+        }
+
+        public async Task<SteamAccountInfo?> GetCachedUserInfoAsync(string userId)
+        {
+            if (string.IsNullOrEmpty(userId))
+                return null;
+
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
+                return await dbContext.SteamAccountInfo
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(info => info.UserId == userId);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error retrieving cached user info: {ex.Message}");
+                return null;
+            }
+        }
+
+        private async Task SaveCredentials(string userId, string accountName, string refreshToken)
+        {
+            try
+            {
+                using var scope = _serviceProvider.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
+
+                var existingCredential = await dbContext.SteamUserCredentials
+                    .FirstOrDefaultAsync(c => c.UserId == userId);
+
+                if (existingCredential != null)
                 {
-                    TeamId = teamId,
-                    UserId = userId,
-                    AccountName = accountName,
-                    RefreshToken = refreshToken
-                });
+                    // Update existing record
+                    existingCredential.AccountName = accountName;
+                    existingCredential.RefreshToken = refreshToken;
+                    existingCredential.UpdatedAt = DateTime.UtcNow;
+                }
+                else
+                {
+                    // Create new record
+                    dbContext.SteamUserCredentials.Add(new SteamUserCredentials
+                    {
+                        UserId = userId,
+                        AccountName = accountName,
+                        RefreshToken = refreshToken,
+                        CreatedAt = DateTime.UtcNow,
+                        UpdatedAt = DateTime.UtcNow
+                    });
+                }
+
+                await dbContext.SaveChangesAsync();
+                Console.WriteLine($"Saved Steam credentials for {userId}");
             }
-
-            await dbContext.SaveChangesAsync();
-            Console.WriteLine($"Saved Steam credentials for {teamId}:{userId}");
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error saving credentials: {ex.Message}");
+            }
         }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error saving credentials: {ex.Message}");
-        }
-    }
-
-    public async Task<SteamUserInfo?> GetUserInfoFromStoredCredentials(string teamId, string userId)
-    {
-        var clientId = $"{teamId}:{userId}";
-
-        // Check if we have an active session
-        if (_clientHandlers.TryGetValue(clientId, out var activeHandler) && activeHandler.UserInfo != null)
-        {
-            return activeHandler.UserInfo;
-        }
-
-        // Try to get stored credentials
-        using var scope = _serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
-        var storedCredential = await dbContext.SteamUserCredentials
-            .FirstOrDefaultAsync(c => c.TeamId == teamId && c.UserId == userId);
-
-        if (storedCredential == null)
-        {
-            return null; // No stored credentials
-        }
-
-        // Create a new handler and try to log in
-        var handler = new SteamClientHandler(clientId);
-        var success = await handler.LoginWithStoredCredentialsAsync(
-            storedCredential.AccountName,
-            storedCredential.RefreshToken);
-
-        if (success)
-        {
-            _clientHandlers.TryAdd(clientId, handler);
-            return handler.UserInfo;
-        }
-
-        // Login failed, credentials might be invalid
-        return null;
-    }
-
-    public Action Subscribe(string clientId, Action<string> callback)
-    {
-        if (_clientHandlers.TryGetValue(clientId, out var handler))
-        {
-            return handler.Subscribe(callback);
-        }
-
-        return () => { }; // Empty unsubscribe function
-    }
-
-    public void Unsubscribe(string clientId, Action unsubscribeAction)
-    {
-        unsubscribeAction();
-    }
-
-    public SteamUserInfo? GetUserInfo(string clientId)
-    {
-        if (_clientHandlers.TryGetValue(clientId, out var handler))
-        {
-            return handler.UserInfo;
-        }
-
-        return null;
     }
 }

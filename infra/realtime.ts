@@ -1,9 +1,9 @@
-import { urls } from "./api";
+import { auth } from "./auth";
 import { postgres } from "./postgres";
 
 export const device = new sst.aws.Realtime("Realtime", {
     authorizer: {
-        link: [urls, postgres],
-        handler: "./packages/functions/src/realtime/authorizer.handler"
+        link: [auth, postgres],
+        handler: "packages/functions/src/realtime/authorizer.handler"
     }
 })
