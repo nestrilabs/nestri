@@ -183,8 +183,8 @@ class Steam {
 // Example usage:
 (async () => {
     const steam = new Steam();
-    // steam.login();
-    await steam.getUser();
+    steam.login();
+    // await steam.getUser();
 
     process.on('SIGINT', () => {
         console.log('Closing connections...');

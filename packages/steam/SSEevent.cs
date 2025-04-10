@@ -13,7 +13,16 @@ public class ServerSentEvent
 
     public string Serialize()
     {
-        var dataJson = JsonSerializer.Serialize(Data);
-        return $"event: {Type}\ndata: {dataJson}\n\n";
+        string dataString;
+        if (Data is string stringData)
+        {
+            dataString = stringData;
+        }
+        else
+        {
+            dataString = JsonSerializer.Serialize(Data);
+        }
+
+        return $"event: {Type}\ndata: {dataString}\n\n";
     }
 }

@@ -25,7 +25,7 @@ namespace SteamAuth
         private readonly IServiceProvider _serviceProvider; // We'll use this to create context instances when needed
         private TaskCompletionSource<bool>? _authCompletionSource;
         // private ConcurrentDictionary<uint, ulong> PackageTokens { get; } = [];
-        private readonly List<Action<ServerSentEvent>> _subscribers = new();
+        private readonly List<Action<string>> _subscribers = new();
         // private ConcurrentDictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo> PackageInfo { get; } = [];
         // private ConcurrentDictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo> AppInfo { get; } = [];
         private ConcurrentDictionary<ulong, Dictionary<string, object>> FriendsInfo { get; } = [];
@@ -61,22 +61,12 @@ namespace SteamAuth
 
         private void NotifyEvent(ServerSentEvent evt)
         {
-            Console.WriteLine($"[{_userId}] Notifying {_subscribers.Count} subscribers of event: {evt.Type}");
-
-            // First, notify the OnEvent handler if it exists
             OnEvent?.Invoke(evt);
 
-            // Then notify all subscribers in the list
-            foreach (var subscriber in _subscribers.ToList()) // ToList to avoid modification during enumeration
+            // Also notify the legacy subscribers with just the URL if this is a URL event
+            if (evt.Type == "url" && evt.Data is string url)
             {
-                try
-                {
-                    subscriber(evt);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[{_userId}] Error notifying subscriber: {ex.Message}");
-                }
+                NotifySubscribers(url);
             }
         }
 
@@ -104,7 +94,9 @@ namespace SteamAuth
             }, _cts.Token);
 
             // Wait for authentication to complete
-            return await _authCompletionSource.Task;
+            await _authCompletionSource.Task;
+
+            return _isLoggedIn;
         }
 
         private async void OnConnected(SteamClient.ConnectedCallback callback)
@@ -448,26 +440,55 @@ namespace SteamAuth
         // }
         public Action Subscribe(Action<ServerSentEvent> callback)
         {
-            Console.WriteLine($"[{_userId}] Adding event subscriber");
-
             OnEvent += callback;
 
-            // Store the callback in the subscribers list
-            _subscribers.Add(callback);
-
             // If we already have a QR code URL, send it immediately
-            if (_authSession != null && _authSession.ChallengeURL != null)
+            if (_authSession != null)
             {
-                Console.WriteLine($"[{_userId}] Sending existing challenge URL to new subscriber");
-                callback(new ServerSentEvent("challenge_url", new { url = _authSession.ChallengeURL }));
+                callback(new ServerSentEvent("challenge_url", _authSession.ChallengeURL));
             }
 
-            // Return an unsubscribe function
+            return () => OnEvent -= callback;
+        }
+        // Keep the old Subscribe method for backward compatibility
+        public Action Subscribe(Action<string> callback)
+        {
+            lock (_subscribers)
+            {
+                _subscribers.Add(callback);
+
+                // If we already have a QR code URL, send it immediately
+                if (_authSession != null)
+                {
+                    callback(_authSession.ChallengeURL);
+                }
+            }
+
             return () =>
             {
-                Console.WriteLine($"[{_userId}] Removing event subscriber");
-                _subscribers.Remove(callback);
+                lock (_subscribers)
+                {
+                    _subscribers.Remove(callback);
+                }
             };
+        }
+
+        private void NotifySubscribers(string url)
+        {
+            lock (_subscribers)
+            {
+                foreach (var subscriber in _subscribers)
+                {
+                    try
+                    {
+                        subscriber(url);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[{_userId}] Error notifying subscriber: {ex.Message}");
+                    }
+                }
+            }
         }
         //TODO: Make this a lil bit cleaner
         private async void OnPersonaState(SteamFriends.PersonaStateCallback callback)

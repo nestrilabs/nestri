@@ -13,9 +13,22 @@ public class SteamService
         _serviceProvider = serviceProvider;
     }
 
+    // In SteamService.cs
     public Action SubscribeToEvents(string clientId, Action<ServerSentEvent> callback)
     {
         if (_clientHandlers.TryGetValue(clientId, out var handler))
+        {
+            var result = handler.Subscribe(callback);
+            return result;
+        }
+
+        Console.WriteLine($"Warning: No handler found for client {clientId}");
+        return () => { }; // Empty unsubscribe function
+    }
+
+    public Action Subscribe(string userId, Action<string> callback)
+    {
+        if (_clientHandlers.TryGetValue(userId, out var handler))
         {
             return handler.Subscribe(callback);
         }
@@ -41,7 +54,7 @@ public class SteamService
         }
 
         await handler.HandleLoginRequest();
-        handler.Disconnect();
+        // handler.Disconnect();
     }
 
     public void DisconnectUser(string userId)
