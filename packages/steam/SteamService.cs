@@ -34,7 +34,7 @@ namespace Steam
 
             // Create or get auth component
             var handler = _clientHandlers.GetOrAdd(userId, id =>
-                new SteamAuthComponent(_serviceProvider, userId,
+                new SteamAuthComponent(userId,
                     async (accountName, refreshToken) => await SaveCredentials(userId, accountName, refreshToken)));
 
             // Set credentials if available
