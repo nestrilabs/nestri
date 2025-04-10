@@ -94,6 +94,10 @@ class Steam {
                     console.log(`STATUS: ${data.message}\n`);
                     break;
 
+                case "connected":
+                    console.log('Connected to Steam login service\n');
+                    break;
+                    
                 case 'success':
                     console.log('Login successful!\n');
                     console.log(`User: ${data.username || 'Unknown'}\n`);
@@ -105,6 +109,10 @@ class Steam {
 
                 case 'login-unsuccessful':
                     console.error(`Login unsuccesful: ${data.message || 'Unknown error'}\n`);
+                    break;
+
+                case 'account_info':
+                    console.log(`Account info: ${data.info || 'No info available'}\n`);
                     break;
 
                 case 'login-attempt':

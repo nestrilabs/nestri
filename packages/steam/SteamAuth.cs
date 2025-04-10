@@ -215,7 +215,7 @@ namespace SteamAuth
         //     }
         // }
 
-        private async void OnLoggedOn(SteamUser.LoggedOnCallback callback)
+        private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
         {
             if (callback.Result != EResult.OK)
             {
@@ -242,20 +242,19 @@ namespace SteamAuth
 
             var isLimitedAccountMsg = new ClientMsgProtobuf<CMsgClientIsLimitedAccount>(EMsg.ClientIsLimitedAccount);
 
-            Console.WriteLine($"Getting account isLimited stuff...");
-
             var limited = isLimitedAccountMsg.Body.bis_limited_account;
             var communityBanned = isLimitedAccountMsg.Body.bis_community_banned;
             var locked = isLimitedAccountMsg.Body.bis_locked_account;
             var allowedToInviteFriends = isLimitedAccountMsg.Body.bis_limited_account_allowed_to_invite_friends;
 
             _accountInfoCache["isLocked"] = locked;
+            Console.WriteLine($"isLocked: {locked}");
             _accountInfoCache["isBanned"] = communityBanned;
+            Console.WriteLine($"isBanned: {communityBanned}");
             _accountInfoCache["isLimited"] = limited;
+            Console.WriteLine($"isLimited: {limited}");
             _accountInfoCache["isAllowedToInviteFriends"] = allowedToInviteFriends;
-
-            Console.WriteLine($"Gotten all account isLimited stuff");
-
+            Console.WriteLine($"isAllowedToInviteFriends: {allowedToInviteFriends}");
             // _steamFriends.SetPersonaState(EPersonaState.Online);
 
             // var friendCount = _steamFriends.GetFriendCount();
@@ -270,8 +269,6 @@ namespace SteamAuth
 
             if (callback.ClientSteamID != null)
                 _accountInfoCache["steamId"] = callback.ClientSteamID.ConvertToUInt64();
-
-            await SaveAccountInfoToDatabaseAsync();
 
             // Account info and persona state callbacks will be triggered automatically
         }
@@ -292,22 +289,20 @@ namespace SteamAuth
             }));
         }
 
-        private async void OnAccountInfo(SteamUser.AccountInfoCallback callback)
+        private void OnAccountInfo(SteamUser.AccountInfoCallback callback)
         {
             _accountInfoCache["country"] = callback.Country;
             _accountInfoCache["personaName"] = callback.PersonaName;
 
-            await SaveAccountInfoToDatabaseAsync();
             // Request additional user info
             if (_steamFriends != null && _steamUser.SteamID != null)
                 _steamFriends.RequestFriendInfo(_steamUser.SteamID);
         }
 
-        private async void OnMailAddrInfoCallback(SteamUser.EmailAddrInfoCallback callback)
+        private void OnMailAddrInfoCallback(SteamUser.EmailAddrInfoCallback callback)
         {
             // Handle mail info if needed
             _accountInfoCache["email"] = callback.EmailAddress;
-            await SaveAccountInfoToDatabaseAsync();
         }
 
         // private async void OnIsLimitedAccount(AccountLimitation.IsLimitedAccountCallback callback)
@@ -491,7 +486,7 @@ namespace SteamAuth
             }
         }
         //TODO: Make this a lil bit cleaner
-        private async void OnPersonaState(SteamFriends.PersonaStateCallback callback)
+        private void OnPersonaState(SteamFriends.PersonaStateCallback callback)
         {
             //Our personal info
             if (callback.FriendID == _steamUser?.SteamID && _username != null && callback.AvatarHash != null && _steamUser != null)
@@ -509,9 +504,8 @@ namespace SteamAuth
                 _accountInfoCache["lastLogOff"] = callback.LastLogOff;
                 _accountInfoCache["steamId"] = _steamUser.SteamID.ConvertToUInt64();
 
-                await SaveAccountInfoToDatabaseAsync();
-                // Signal that authentication is complete
-                // await SendToClient(new { type = "login_success", message = "Successfully logged in and ready for queries" });
+                NotifyEvent(new ServerSentEvent("account_info", new { info = _accountInfoCache }));
+                NotifyEvent(new ServerSentEvent("status", new { message = "Successfully logged in to Steam" }));
                 // Authentication process is complete
                 _authCompletionSource?.TrySetResult(true);
                 return;
@@ -573,71 +567,6 @@ namespace SteamAuth
             //         Console.WriteLine($"Error during socket shutdown: {ex.Message}");
             //     }
             // }
-        }
-        private async Task SaveAccountInfoToDatabaseAsync()
-        {
-            try
-            {
-                // Create a new scope and get a fresh DB context
-                using var scope = _serviceProvider.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<SteamDbContext>();
-
-                var existingInfo = await dbContext.SteamAccountInfo
-                    .FirstOrDefaultAsync(info => info.UserId == _userId);
-
-                if (existingInfo == null)
-                {
-                    // Create new record
-                    var newInfo = new SteamAccountInfo
-                    {
-                        UserId = _userId,
-                        Username = _accountInfoCache.ContainsKey("username") ? (string)_accountInfoCache["username"] : null,
-                        SteamId = _accountInfoCache.ContainsKey("steamId") ? (ulong)_accountInfoCache["steamId"] : null,
-                        Email = _accountInfoCache.ContainsKey("email") ? (string)_accountInfoCache["email"] : null,
-                        Country = _accountInfoCache.ContainsKey("country") ? (string)_accountInfoCache["country"] : null,
-                        PersonaName = _accountInfoCache.ContainsKey("personaName") ? (string)_accountInfoCache["personaName"] : null,
-                        IsLocked = _accountInfoCache.ContainsKey("isLocked") ? (bool)_accountInfoCache["isLocked"] : null,
-                        IsBanned = _accountInfoCache.ContainsKey("isBanned") ? (bool)_accountInfoCache["isBanned"] : null,
-                        IsLimited = _accountInfoCache.ContainsKey("isLimited") ? (bool)_accountInfoCache["isLimited"] : null,
-                        IsAllowedToInviteFriends = _accountInfoCache.ContainsKey("isAllowedToInviteFriends") ? (bool)_accountInfoCache["isAllowedToInviteFriends"] : null,
-                        AvatarUrl = _accountInfoCache.ContainsKey("avatarUrl") ? (string)_accountInfoCache["avatarUrl"] : null,
-                        GameId = _accountInfoCache.ContainsKey("gameId") ? (ulong)_accountInfoCache["gameId"] : null,
-                        SourceSteamId = _accountInfoCache.ContainsKey("sourceSteamID") ? (ulong)_accountInfoCache["sourceSteamID"] : null,
-                        GamePlayingName = _accountInfoCache.ContainsKey("gamePlayingName") ? (string)_accountInfoCache["gamePlayingName"] : null,
-                        LastLogOn = _accountInfoCache.ContainsKey("lastLogOn") ? (DateTime)_accountInfoCache["lastLogOn"] : null,
-                        LastLogOff = _accountInfoCache.ContainsKey("lastLogOff") ? (DateTime)_accountInfoCache["lastLogOff"] : null
-                    };
-
-                    dbContext.SteamAccountInfo.Add(newInfo);
-                }
-                else
-                {
-                    // Update existing record
-                    existingInfo.Username = _accountInfoCache.ContainsKey("username") ? (string)_accountInfoCache["username"] : existingInfo.Username;
-                    existingInfo.SteamId = _accountInfoCache.ContainsKey("steamId") ? (ulong)_accountInfoCache["steamId"] : existingInfo.SteamId;
-                    existingInfo.Email = _accountInfoCache.ContainsKey("email") ? (string)_accountInfoCache["email"] : existingInfo.Email;
-                    existingInfo.Country = _accountInfoCache.ContainsKey("country") ? (string)_accountInfoCache["country"] : existingInfo.Country;
-                    existingInfo.PersonaName = _accountInfoCache.ContainsKey("personaName") ? (string)_accountInfoCache["personaName"] : existingInfo.PersonaName;
-                    existingInfo.IsLocked = _accountInfoCache.ContainsKey("isLocked") ? (bool)_accountInfoCache["isLocked"] : existingInfo.IsLocked;
-                    existingInfo.IsBanned = _accountInfoCache.ContainsKey("isBanned") ? (bool)_accountInfoCache["isBanned"] : existingInfo.IsBanned;
-                    existingInfo.IsLimited = _accountInfoCache.ContainsKey("isLimited") ? (bool)_accountInfoCache["isLimited"] : existingInfo.IsLimited;
-                    existingInfo.IsAllowedToInviteFriends = _accountInfoCache.ContainsKey("isAllowedToInviteFriends") ? (bool)_accountInfoCache["isAllowedToInviteFriends"] : existingInfo.IsAllowedToInviteFriends;
-                    existingInfo.AvatarUrl = _accountInfoCache.ContainsKey("avatarUrl") ? (string)_accountInfoCache["avatarUrl"] : existingInfo.AvatarUrl;
-                    existingInfo.GameId = _accountInfoCache.ContainsKey("gameId") ? (ulong)_accountInfoCache["gameId"] : existingInfo.GameId;
-                    existingInfo.SourceSteamId = _accountInfoCache.ContainsKey("sourceSteamID") ? (ulong)_accountInfoCache["sourceSteamID"] : existingInfo.SourceSteamId;
-                    existingInfo.GamePlayingName = _accountInfoCache.ContainsKey("gamePlayingName") ? (string)_accountInfoCache["gamePlayingName"] : existingInfo.GamePlayingName;
-                    existingInfo.LastLogOn = _accountInfoCache.ContainsKey("lastLogOn") ? (DateTime)_accountInfoCache["lastLogOn"] : existingInfo.LastLogOn;
-                    existingInfo.LastLogOff = _accountInfoCache.ContainsKey("lastLogOff") ? (DateTime)_accountInfoCache["lastLogOff"] : existingInfo.LastLogOff;
-                    existingInfo.UpdatedAt = DateTime.UtcNow;
-                }
-
-                await dbContext.SaveChangesAsync();
-                Console.WriteLine($"[{_userId}] Saved account info to database for user {_userId}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[{_userId}] Error saving account info to database: {ex.Message}");
-            }
         }
     }
 }
