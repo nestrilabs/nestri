@@ -6,12 +6,16 @@ import { machineTable } from "./machine.sql";
 import { getTableColumns, eq, sql, and, isNull } from "../drizzle";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
-export module Machine {
+export namespace Machine {
     export const Info = z
         .object({
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.Machine.id,
+            }),
+            userID: z.string().nullable().openapi({
+                description: "The userID of the user who owns this machine, in the case of BYOG",
+                example: Examples.Machine.userID
             }),
             country: z.string().openapi({
                 description: "The fullname of the country this machine is running in",
@@ -42,7 +46,7 @@ export module Machine {
 
     export type Info = z.infer<typeof Info>;
 
-    export const create = fn(Info.partial({ id: true }), async (input) => 
+    export const create = fn(Info.partial({ id: true }), async (input) =>
         createTransaction(async (tx) => {
             const id = input.id ?? createID("machine");
             await tx.insert(machineTable).values({
@@ -51,6 +55,7 @@ export module Machine {
                 timezone: input.timezone,
                 fingerprint: input.fingerprint,
                 countryCode: input.countryCode,
+                userID: input.userID,
                 location: { x: input.location.longitude, y: input.location.latitude },
             })
 
@@ -63,12 +68,23 @@ export module Machine {
         })
     )
 
-    export const list = fn(z.void(), async () =>
-        useTransaction(async (tx) => 
+    export const fromUserID = fn(z.string(), async (userID) =>
+        useTransaction(async (tx) =>
             tx
                 .select()
                 .from(machineTable)
-                .where(isNull(machineTable.timeDeleted))
+                .where(and(eq(machineTable.userID, userID), isNull(machineTable.timeDeleted)))
+                .then((rows) => rows.map(serialize))
+        )
+    )
+
+    export const list = fn(z.void(), async () =>
+        useTransaction(async (tx) =>
+            tx
+                .select()
+                .from(machineTable)
+                // Show only hosted machines, not BYOG machines
+                .where(and(isNull(machineTable.userID), isNull(machineTable.timeDeleted)))
                 .then((rows) => rows.map(serialize))
         )
     )
@@ -116,7 +132,7 @@ export module Machine {
                     distance: sql`round((${sqlDistance})::numeric, 2)`
                 })
                 .from(machineTable)
-                .where(isNull(machineTable.timeDeleted)) //Should have a status update
+                .where(isNull(machineTable.timeDeleted))
                 .orderBy(sqlDistance)
                 .limit(3)
                 .then((rows) => rows.map(serialize))
@@ -128,6 +144,7 @@ export module Machine {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            userID: input.userID,
             country: input.country,
             timezone: input.timezone,
             fingerprint: input.fingerprint,

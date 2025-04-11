@@ -38,10 +38,6 @@ export namespace Steam {
                 description: "The unique id of the user who owns this steam account",
                 example: Examples.Steam.userID
             }),
-            email: z.string().openapi({
-                description: "The email of this steam user",
-                example: Examples.Steam.email
-            }),
             username: z.string().openapi({
                 description: "The unique username of this steam user",
                 example: Examples.Steam.username
@@ -67,7 +63,6 @@ export namespace Steam {
         Info.partial({
             id: true,
             userID: true,
-            email: true,
         }),
         (input) =>
             createTransaction(async (tx) => {
@@ -75,7 +70,7 @@ export namespace Steam {
                 const user = useUser()
                 await tx.insert(steamTable).values({
                     id,
-                    email: input.email ?? user.email,
+                    lastSeen: sql`now()`,
                     userID: input.userID ?? user.userID,
                     countryCode: input.countryCode,
                     username: input.username,
@@ -83,7 +78,6 @@ export namespace Steam {
                     lastGame: input.lastGame,
                     limitation: input.limitation,
                     steamEmail: input.steamEmail,
-                    lastSeen: sql`now()`,
                     avatarUrl: input.avatarUrl,
                     personaName: input.personaName,
                 })
@@ -128,7 +122,6 @@ export namespace Steam {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
-            email: input.email,
             userID: input.userID,
             countryCode: input.countryCode,
             username: input.username,

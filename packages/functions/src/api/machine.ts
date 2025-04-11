@@ -1,16 +1,92 @@
 import { z } from "zod"
 import { Hono } from "hono";
 import { notPublic } from "./auth";
-import { Result } from "./common";
 import { describeRoute } from "hono-openapi";
-import { assertActor } from "@nestri/core/actor";
-import { Realtime } from "@nestri/core/realtime/index";
 import { validator } from "hono-openapi/zod";
+import { Examples } from "@nestri/core/examples";
+import { assertActor } from "@nestri/core/actor";
+import { ErrorResponses, Result } from "./common";
+import { Machine } from "@nestri/core/machine/index";
+import { Realtime } from "@nestri/core/realtime/index";
+import { ErrorCodes, VisibleError } from "@nestri/core/error";
 import { CreateMessageSchema, StartMessageSchema, StopMessageSchema } from "./messages.ts";
 
-export module MachineApi {
+export namespace MachineApi {
   export const route = new Hono()
     .use(notPublic)
+    .get("/",
+      describeRoute({
+        tags: ["Machine"],
+        summary: "Get all machines owned by this user - BYOG",
+        description: "All the machines owned by this user - BYOG",
+        responses: {
+          200: {
+            content: {
+              "application/json": {
+                schema: Result(
+                  Machine.Info.array().openapi({
+                    description: "All the user's machines",
+                    example: [Examples.Machine],
+                  }),
+                ),
+              },
+            },
+            description: "Successfully retrieved all the user's machines",
+          },
+          404: ErrorResponses[404],
+          429: ErrorResponses[429]
+        }
+      }),
+      async (c) => {
+        const user = assertActor("user");
+        const machineInfo = await Machine.fromUserID(user.properties.userID);
+
+        if (!machineInfo)
+          throw new VisibleError(
+            "not_found",
+            ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+            "No machines not found",
+          );
+
+        return c.json({ data: machineInfo, }, 200);
+
+      })
+    .get("/hosted",
+      describeRoute({
+        tags: ["Machine"],
+        summary: "Get all cloud machines",
+        description: "All the machines that are connected to Nestri",
+        responses: {
+          200: {
+            content: {
+              "application/json": {
+                schema: Result(
+                  Machine.Info.array().openapi({
+                    description: "All the machines connected to Nestri",
+                    example: [{ ...Examples.Machine, userID: null }],
+                  }),
+                ),
+              },
+            },
+            description: "Successfully retrieved all the hosted machines",
+          },
+          404: ErrorResponses[404],
+          429: ErrorResponses[429]
+        }
+      }),
+      async (c) => {
+        const machineInfo = await Machine.list();
+
+        if (!machineInfo)
+          throw new VisibleError(
+            "not_found",
+            ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+            "No machines not found",
+          );
+
+        return c.json({ data: machineInfo, }, 200);
+
+      })
     .post("/",
       describeRoute({
         tags: ["Machine"],
@@ -27,14 +103,6 @@ export module MachineApi {
             },
             description: "Successfully sent the message to Maitred"
           },
-          // 404: {
-          //     content: {
-          //         "application/json": {
-          //             schema: resolver(z.object({ error: z.string() })),
-          //         },
-          //     },
-          //     description: "This account does not exist",
-          // },
         }
       }),
       validator(

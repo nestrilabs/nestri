@@ -42,7 +42,6 @@ export const steamTable = pgTable(
         lastSeen: utc("time_seen"),
         steamID: integer("steam_id").notNull(),
         avatarUrl: text("avatar_url").notNull(),
-        email: varchar("email", { length: 255 }).notNull(),
         lastGame: json("last_game").$type<LastGame>().notNull(),
         username: varchar("username", { length: 255 }).notNull(),
         countryCode: varchar('country_code', { length: 2 }).notNull(),
@@ -54,6 +53,6 @@ export const steamTable = pgTable(
         primaryKey({
             columns: [table.userID, table.id],
         }),
-        uniqueIndex("steam_email").on(table.userID, table.email),
+        uniqueIndex("steam_email").on(table.userID, table.steamEmail),
     ],
 );

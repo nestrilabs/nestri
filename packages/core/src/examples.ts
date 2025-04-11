@@ -34,6 +34,7 @@ export namespace Examples {
     export const Steam = {
         id: Id("steam"),
         userID: Id("user"),
+        countryCode: "KE",
         steamID: 74839300282033,
         limitation: {
             isLimited: false,
@@ -47,14 +48,13 @@ export namespace Examples {
         },
         personaName: "John",
         username: "johnsteamaccount",
-        email: "john@example.com",
         steamEmail: "john@example.com",
         avatarUrl: "https://avatars.akamai.steamstatic.com/XXXXXXXXXXXX_full.jpg",
-        countryCode: "KE",
     }
 
     export const Machine = {
         id: Id("machine"),
+        userID: Id("user"),
         country: "Kenya",
         countryCode: "KE",
         timezone: "Africa/Nairobi",

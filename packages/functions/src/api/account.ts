@@ -34,7 +34,8 @@ export namespace AccountApi {
                         },
                         description: "User account details"
                     },
-                    404: ErrorResponses[404]
+                    404: ErrorResponses[404],
+                    429: ErrorResponses[429]
                 }
             }),
             async (c) => {

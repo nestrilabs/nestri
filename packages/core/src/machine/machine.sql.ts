@@ -1,11 +1,12 @@
 import { } from "drizzle-orm/postgres-js";
-import { timestamps, id } from "../drizzle/types";
+import { timestamps, id, ulid } from "../drizzle/types";
 import {
     text,
     varchar,
     pgTable,
     uniqueIndex,
     point,
+    primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const machineTable = pgTable(
@@ -13,6 +14,7 @@ export const machineTable = pgTable(
     {
         ...id,
         ...timestamps,
+        userID: ulid("user_id"),
         country: text('country').notNull(),
         timezone: text('timezone').notNull(),
         location: point('location', { mode: 'xy' }).notNull(),
@@ -32,6 +34,7 @@ export const machineTable = pgTable(
     },
     (table) => [
         // uniqueIndex("external_id").on(table.externalID),
-        uniqueIndex("machine_fingerprint").on(table.fingerprint)
+        uniqueIndex("machine_fingerprint").on(table.fingerprint),
+        primaryKey({ columns: [table.userID, table.id], }),
     ],
 );
