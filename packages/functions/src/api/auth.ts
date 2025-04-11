@@ -10,8 +10,6 @@ const client = createClient({
   clientID: "api",
 });
 
-
-
 export const notPublic: MiddlewareHandler = async (c, next) => {
   const actor = useActor();
   if (actor.type === "public")
