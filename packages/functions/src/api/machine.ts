@@ -17,15 +17,15 @@ export namespace MachineApi {
     .get("/",
       describeRoute({
         tags: ["Machine"],
-        summary: "Get all machines owned by this user - BYOG",
-        description: "All the machines owned by this user - BYOG",
+        summary: "Get all BYOG machines",
+        description: "All the BYOG machines owned by this user",
         responses: {
           200: {
             content: {
               "application/json": {
                 schema: Result(
                   Machine.Info.array().openapi({
-                    description: "All the user's machines",
+                    description: "All the user's BYOG machines",
                     example: [Examples.Machine],
                   }),
                 ),
