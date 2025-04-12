@@ -99,7 +99,7 @@ namespace Steam
                     await tcs.Task;
 
                     // Send final success message
-                    await SendSseEvent(response, "login-success", new
+                    await SendSseEvent(response, "login-successful", new
                     {
                         steamId = _steamUser.SteamID?.ConvertToUInt64(),
                         username = pollResponse.AccountName
