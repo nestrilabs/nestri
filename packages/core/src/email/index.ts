@@ -10,7 +10,7 @@ export namespace Email {
     subject: string,
     body: string,
   ) {
-    from = from + "@" + Resource.Mail.sender;
+    from = from + "@" + Resource.Email.sender;
     console.log("sending email", subject, from, to);
     await Client.send(
       new SendEmailCommand({
