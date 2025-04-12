@@ -231,6 +231,8 @@ _pkginfo.txt
 *.appx
 *.appxbundle
 *.appxupload
+#Steam credentials file
+*steam*.json
 
 # Visual Studio cache files
 # files ending in .cache can be ignored

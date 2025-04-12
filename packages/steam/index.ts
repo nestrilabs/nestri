@@ -1,354 +1,347 @@
-import * as fs from 'fs';
-import * as http from 'http';
-import * as readline from 'readline';
-import * as qrcode from 'qrcode-terminal';
+// steam-auth-client.ts
+import { request as httpRequest } from 'node:http';
+import { connect as netConnect } from 'node:net';
+import { Socket } from 'node:net';
 
-// Types for messages
-interface BaseMessage {
-    type: string;
+/**
+ * Event types emitted by the SteamAuthClient
+ */
+export enum SteamAuthEvent {
+    CHALLENGE_URL = 'challenge_url',
+    STATUS_UPDATE = 'status_update',
+    CREDENTIALS = 'credentials',
+    LOGIN_SUCCESS = 'login_success',
+    LOGIN_ERROR = 'login_error',
+    ERROR = 'error'
 }
 
-interface LoginRequest extends BaseMessage {
-    type: 'login';
-    username?: string;
-    refreshToken?: string;
-}
-
-interface DisconnectRequest extends BaseMessage {
-    type: 'disconnect';
-}
-
-interface ChallengeUrlResponse extends BaseMessage {
-    type: 'challenge_url';
-    url: string;
-}
-
-interface CredentialsResponse extends BaseMessage {
-    type: 'credentials';
+/**
+ * Interface for Steam credentials
+ */
+export interface SteamCredentials {
     username: string;
     refreshToken: string;
 }
 
-interface StatusResponse extends BaseMessage {
-    type: 'status';
-    message: string;
+/**
+ * Options for SteamAuthClient constructor
+ */
+export interface SteamAuthClientOptions {
+    socketPath?: string;
 }
 
-interface ErrorResponse extends BaseMessage {
-    type: 'error';
-    message: string;
-}
+/**
+ * SteamAuthClient provides methods to authenticate with Steam
+ * through a C# service over Unix sockets.
+ */
+export class SteamAuthClient {
+    private socketPath: string;
+    private activeSocket: Socket | null = null;
+    private eventListeners: Map<string, Function[]> = new Map();
 
-interface AccountInfoResponse extends BaseMessage {
-    type: 'account_info';
-    personaName: string;
-    country: string;
-}
+    /**
+     * Creates a new Steam authentication client
+     * 
+     * @param options Configuration options
+     */
+    constructor(options: SteamAuthClientOptions = {}) {
+        this.socketPath = options.socketPath || '/tmp/steam.sock';
+    }
 
-interface LoginSuccesfulResponse extends BaseMessage {
-    type: 'login-successful';
-    steamID: number;
-    username: string;
-}
+    /**
+     * Checks if the Steam service is healthy
+     * 
+     * @returns Promise resolving to true if service is healthy
+     */
+    async checkHealth(): Promise<boolean> {
+        try {
+            await this.makeRequest({ method: 'GET', path: '/' });
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
 
-interface LoginUnSuccesfulResponse extends BaseMessage {
-    type: 'login-unsuccessful';
-    error: string;
-}
+    /**
+     * Starts the QR code login flow
+     * 
+     * @returns Promise that resolves when login completes (success or failure)
+     */
+    startQRLogin(): Promise<void> {
+        return new Promise<void>((resolve) => {
+            // Create Socket connection for SSE
+            this.activeSocket = netConnect({ path: this.socketPath });
 
-interface UserDataResponse extends BaseMessage {
-    type: 'user_data';
-    username: string;
-    personaName: string;
-    avatarUrl: string;
-    timestamp: string;
-}
+            // Build the HTTP request manually for SSE
+            const request =
+                'GET /api/steam/login HTTP/1.1\r\n' +
+                'Host: localhost\r\n' +
+                'Accept: text/event-stream\r\n' +
+                'Cache-Control: no-cache\r\n' +
+                'Connection: keep-alive\r\n\r\n';
 
-type ServerResponse =
-    | ChallengeUrlResponse
-    | CredentialsResponse
-    | StatusResponse
-    | ErrorResponse
-    | AccountInfoResponse
-    | UserDataResponse
-    | LoginSuccesfulResponse
-    | LoginUnSuccesfulResponse;
+            this.activeSocket.on('connect', () => {
+                this.activeSocket?.write(request);
+            });
 
-class SteamSocketClient {
-    private httpClient: http.ClientRequest | null = null;
-    private rl: readline.Interface;
-    private credentials: { username: string; refreshToken: string; } | null = null;
-    private credentialsFile = '/tmp/steam_credentials.json';
-    private socketPath: string = '/tmp/steam.sock';
-    private dataBuffer = '';  // Buffer to store incoming data
+            this.activeSocket.on('error', (error) => {
+                this.emit(SteamAuthEvent.ERROR, { error: error.message });
+                resolve();
+            });
 
-    constructor() {
-        this.rl = readline.createInterface({
-            input: process.stdin,
-            output: process.stdout
+            // Simple parser for SSE events over raw socket
+            let buffer = '';
+            let eventType = '';
+            let eventData = '';
+
+            this.activeSocket.on('data', (data) => {
+                const chunk = data.toString();
+                buffer += chunk;
+
+                // Skip HTTP headers if present
+                if (buffer.includes('\r\n\r\n')) {
+                    const headerEnd = buffer.indexOf('\r\n\r\n');
+                    buffer = buffer.substring(headerEnd + 4);
+                }
+
+                // Process each complete event
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.substring(7);
+                    } else if (line.startsWith('data: ')) {
+                        eventData = line.substring(6);
+
+                        // Complete event received
+                        if (eventType && eventData) {
+                            try {
+                                const parsedData = JSON.parse(eventData);
+
+                                // Handle specific events
+                                if (eventType === 'challenge_url') {
+                                    this.emit(SteamAuthEvent.CHALLENGE_URL, parsedData);
+                                } else if (eventType === 'credentials') {
+                                    this.emit(SteamAuthEvent.CREDENTIALS, {
+                                        username: parsedData.username,
+                                        refreshToken: parsedData.refreshToken
+                                    });
+                                } else if (eventType === 'login-success') {
+                                    this.emit(SteamAuthEvent.LOGIN_SUCCESS, { steamId: parsedData.steamId });
+                                    this.closeSocket();
+                                    resolve();
+                                } else if (eventType === 'status') {
+                                    this.emit(SteamAuthEvent.STATUS_UPDATE, parsedData);
+                                } else if (eventType === 'error' || eventType === 'login-unsuccessful') {
+                                    this.emit(SteamAuthEvent.LOGIN_ERROR, {
+                                        message: parsedData.message || parsedData.error
+                                    });
+                                    this.closeSocket();
+                                    resolve();
+                                } else {
+                                    // Emit any other events as is
+                                    this.emit(eventType, parsedData);
+                                }
+                            } catch (e) {
+                                this.emit(SteamAuthEvent.ERROR, {
+                                    error: `Error parsing event data: ${e}`
+                                });
+                            }
+
+                            // Reset for next event
+                            eventType = '';
+                            eventData = '';
+                        }
+                    }
+                }
+            });
         });
     }
 
-    async start() {
-        console.log('Steam Socket Client starting...');
-
+    /**
+     * Logs in with existing credentials
+     * 
+     * @param credentials Steam credentials
+     * @returns Promise resolving to login result
+     */
+    async loginWithCredentials(credentials: SteamCredentials): Promise<{
+        success: boolean,
+        steamId?: string,
+        errorMessage?: string
+    }> {
         try {
-            this.loadCredentials();
-            const options = {
-                socketPath: this.socketPath,
-                path: "/api/steam/login",
-                method: 'GET',
-                headers: {
-                    'Accept': 'text/event-stream',
-                }
+            const response = await this.makeRequest({
+                method: 'POST',
+                path: '/api/steam/login-with-credentials',
+                body: credentials
+            });
+
+            if (response.success) {
+                return {
+                    success: true,
+                    steamId: response.steamId
+                };
+            } else {
+                return {
+                    success: false,
+                    errorMessage: response.errorMessage || 'Unknown error'
+                };
+            }
+        } catch (error: any) {
+            return {
+                success: false,
+                errorMessage: error.message
             };
-
-            this.httpClient = http.request(options, (res) => {
-                console.log('Connected to server, status:', res.statusCode);
-
-                res.on('data', (data) => this.onDataReceived(data));
-                res.on('error', (err) => {
-                    console.error('Socket response error:', err.message);
-                    this.cleanup();
-                });
-                res.on('close', () => {
-                    console.log('Connection closed');
-                    this.cleanup();
-                });
-            });
-
-            this.httpClient.on('error', (err) => {
-                console.error('Request error:', err.message);
-                this.cleanup();
-            });
-
-            // After connection, move forward with authentication
-            if (this.credentials) {
-                this.askUseCredentials();
-            } else {
-                this.promptForLoginMethod();
-            }
-        } catch (err) {
-            console.error('Failed to start client:', err);
-            this.cleanup();
         }
     }
 
-    private promptForLoginMethod() {
-        this.rl.question('Do you want to use QR code login (q) or direct login with credentials (d)? ', (answer) => {
-            if (answer.toLowerCase() === 'd') {
-                this.promptForCredentials();
-            } else {
-                this.sendMessage({ type: 'login' });
-                console.log('Starting QR code login. Please wait for the QR code...');
-            }
-        });
-    }
-
-    private askUseCredentials() {
-        this.rl.question(`Saved credentials found for ${this.credentials!.username}. Use them? (y/n) `, (answer) => {
-            if (answer.toLowerCase() === 'y') {
-                this.sendMessage({
-                    type: 'login',
-                    username: this.credentials!.username,
-                    refreshToken: this.credentials!.refreshToken,
-                });
-                console.log(`Attempting login with saved credentials for ${this.credentials!.username}...`);
-            } else {
-                this.promptForLoginMethod();
-            }
-        });
-    }
-
-    private promptForCredentials() {
-        this.rl.question('Enter username: ', (username) => {
-            this.rl.question('Enter refresh token: ', (refreshToken) => {
-                this.sendMessage({
-                    type: 'login',
-                    username,
-                    refreshToken,
-                });
-                console.log(`Attempting login with provided credentials for ${username}...`);
-            });
-        });
-    }
-
-    private onDataReceived(data: Buffer) {
-        // Append new data to existing buffer
-        this.dataBuffer += data.toString();
-
-        // Process the buffer for complete JSON objects
-        this.processBuffer();
-    }
-
-    private processBuffer() {
+    /**
+     * Gets user information using the provided credentials
+     * 
+     * @param credentials Steam credentials
+     * @returns Promise resolving to user information
+     */
+    async getUserInfo(credentials: SteamCredentials): Promise<any> {
         try {
-            // Try to parse the entire buffer as a single JSON object
-            const message = JSON.parse(this.dataBuffer) as ServerResponse;
-            this.handleMessage(message);
-            this.dataBuffer = ''; // Clear buffer after successful parsing
-            return;
-        } catch (err) {
-            // If parsing fails, we may have multiple JSON objects or incomplete data
-        }
-
-        // Look for JSON objects by finding matching braces
-        let startIndex = this.dataBuffer.indexOf('{');
-        if (startIndex === -1) {
-            // No JSON object start found, clear buffer
-            this.dataBuffer = '';
-            return;
-        }
-
-        let depth = 0;
-        let endIndex = -1;
-
-        // Find the end of the first complete JSON object
-        for (let i = startIndex; i < this.dataBuffer.length; i++) {
-            if (this.dataBuffer[i] === '{') {
-                depth++;
-            } else if (this.dataBuffer[i] === '}') {
-                depth--;
-                if (depth === 0) {
-                    endIndex = i;
-                    break;
+            return await this.makeRequest({
+                method: 'GET',
+                path: '/api/steam/user',
+                headers: {
+                    'X-Steam-Username': credentials.username,
+                    'X-Steam-Token': credentials.refreshToken
                 }
-            }
+            });
+        } catch (error: any) {
+            throw new Error(`Failed to fetch user info: ${error.message}`);
+        }
+    }
+
+    /**
+     * Adds an event listener
+     * 
+     * @param event Event name to listen for
+     * @param callback Function to call when event occurs
+     */
+    on(event: string, callback: Function): void {
+        if (!this.eventListeners.has(event)) {
+            this.eventListeners.set(event, []);
+        }
+        this.eventListeners.get(event)?.push(callback);
+    }
+
+    /**
+     * Removes an event listener
+     * 
+     * @param event Event name
+     * @param callback Function to remove
+     */
+    off(event: string, callback: Function): void {
+        if (!this.eventListeners.has(event)) {
+            return;
         }
 
-        if (endIndex !== -1) {
-            // We found a complete JSON object
-            const jsonStr = this.dataBuffer.substring(startIndex, endIndex + 1);
-            try {
-                const message = JSON.parse(jsonStr) as ServerResponse;
-                this.handleMessage(message);
-            } catch (err) {
-                console.error('Error parsing JSON object:', err);
-            }
-
-            // Remove processed object from buffer and process remaining data
-            this.dataBuffer = this.dataBuffer.substring(endIndex + 1);
-
-            // Process any remaining data in the buffer
-            if (this.dataBuffer.trim().length > 0) {
-                this.processBuffer();
+        const listeners = this.eventListeners.get(event);
+        if (listeners) {
+            const index = listeners.indexOf(callback);
+            if (index !== -1) {
+                listeners.splice(index, 1);
             }
         }
     }
 
-    private handleMessage(message: ServerResponse) {
-        switch (message.type) {
-            case 'challenge_url':
-                this.handleChallengeUrl(message);
-                break;
-            case 'credentials':
-                this.handleCredentials(message);
-                break;
-            case 'account_info':
-            case 'user_data':
-                console.log(`\n${message.type.toUpperCase()}:`);
-                console.log(JSON.stringify(message, null, 2));
-                break;
-            case 'status':
-                console.log(`\nSTATUS: ${message.message}`);
-                break;
-            case 'login-successful':
-                console.log(`\nLOGGINED IN succesfully`);
-                break;
-            case 'login-unsuccessful':
-                console.log(`\nLOGGIN IN unsuccesful`);
-                break;
-            case 'error':
-                console.error(`\nERROR: ${message.message}`);
-                break;
-            default:
-                console.log('\nRECEIVED:', JSON.stringify(message, null, 2));
+    /**
+     * Removes all event listeners
+     */
+    removeAllListeners(): void {
+        this.eventListeners.clear();
+    }
+
+    /**
+     * Closes the active socket connection
+     */
+    closeSocket(): void {
+        if (this.activeSocket) {
+            this.activeSocket.end();
+            this.activeSocket = null;
         }
     }
 
-    private handleChallengeUrl(message: ChallengeUrlResponse) {
-        console.log('\n========== QR CODE LOGIN URL ==========');
-        console.log(message.url);
-        console.log('Scan this URL with the Steam mobile app');
-        console.log('=======================================\n');
+    /**
+     * Cleans up resources
+     */
+    destroy(): void {
+        this.closeSocket();
+        this.removeAllListeners();
+    }
 
-        // Generate QR code in terminal
-        qrcode.generate(message.url, { small: true }, (qrcode) => {
-            console.log(qrcode);
+    /**
+     * Internal method to emit events to listeners
+     * 
+     * @param event Event name
+     * @param data Event data
+     */
+    private emit(event: string, data: any): void {
+        const listeners = this.eventListeners.get(event);
+        if (listeners) {
+            for (const callback of listeners) {
+                callback(data);
+            }
+        }
+    }
+
+    /**
+     * Makes HTTP requests over Unix socket
+     * 
+     * @param options Request options
+     * @returns Promise resolving to response
+     */
+    private makeRequest(options: {
+        method: string;
+        path: string;
+        headers?: Record<string, string>;
+        body?: any;
+    }): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const req = httpRequest({
+                socketPath: this.socketPath,
+                method: options.method,
+                path: options.path,
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            }, (res) => {
+                let data = '';
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+                res.on('end', () => {
+                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        try {
+                            if (data && data.length > 0) {
+                                resolve(JSON.parse(data));
+                            } else {
+                                resolve(null);
+                            }
+                        } catch (e) {
+                            resolve(data); // Return raw data if not JSON
+                        }
+                    } else {
+                        reject(new Error(`Request failed with status ${res.statusCode}: ${data}`));
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                reject(error);
+            });
+
+            if (options.body) {
+                req.write(JSON.stringify(options.body));
+            }
+            req.end();
         });
-    }
-
-    private handleCredentials(message: CredentialsResponse) {
-        console.log('\n========== CREDENTIALS RECEIVED ==========');
-        console.log('Username:', message.username);
-        console.log('Refresh Token:', message.refreshToken);
-        console.log('==========================================\n');
-
-        // Save credentials
-        this.credentials = {
-            username: message.username,
-            refreshToken: message.refreshToken
-        };
-
-        this.saveCredentials();
-    }
-
-    private loadCredentials() {
-        try {
-            if (fs.existsSync(this.credentialsFile)) {
-                const data = fs.readFileSync(this.credentialsFile, 'utf8');
-                this.credentials = JSON.parse(data);
-                console.log(`Found saved credentials for ${this.credentials!.username}`);
-            }
-        } catch (err) {
-            console.log('No saved credentials found or error loading them');
-        }
-    }
-
-    private saveCredentials() {
-        if (this.credentials) {
-            fs.writeFileSync(this.credentialsFile, JSON.stringify(this.credentials, null, 2));
-            console.log('Credentials saved for future use');
-        }
-    }
-
-    private sendMessage(message: LoginRequest | DisconnectRequest) {
-        if (this.httpClient && !this.httpClient.destroyed) {
-            this.httpClient.write(JSON.stringify(message));
-        } else {
-            console.error('Cannot send message: not connected');
-        }
-    }
-
-    public disconnect() {
-        if (this.httpClient && !this.httpClient.destroyed) {
-            this.sendMessage({ type: 'disconnect' });
-        }
-    }
-
-    private cleanup() {
-        if (this.httpClient) {
-            try {
-                this.httpClient.destroy();
-            } catch (err) {
-                // Ignore errors on cleanup
-            }
-            this.httpClient = null;
-        }
-
-        if (this.rl) {
-            this.rl.close();
-        }
     }
 }
-
-// Create and start the client
-const client = new SteamSocketClient();
-client.start();
-
-// Handle process termination
-process.on('SIGINT', () => {
-    console.log('\nDisconnecting...');
-    client.disconnect();
-    setTimeout(() => process.exit(0), 500);
-});
