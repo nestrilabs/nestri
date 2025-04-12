@@ -45,7 +45,7 @@
     "eslint": "^8.57.0",
     "eslint-plugin-qwik": "latest",
     "focus-trap": "^7.5.4",
-    "framer-motion": "^11.3.24",
+    "framer-motion": "^12.6.5",
     "nprogress": "^0.2.0",
     "postcss": "^8.4.41",
     "prettier": "latest",
