@@ -18,7 +18,7 @@
   "dependencies": {
     "@openauthjs/openauth": "*",
     "hono": "^4.6.15",
-    "hono-openapi": "^0.3.1",
+    "hono-openapi": "^0.4.6",
     "partysocket": "1.0.3",
     "postgres": "^3.4.5"
   }
