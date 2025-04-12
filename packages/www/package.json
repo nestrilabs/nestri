@@ -29,7 +29,7 @@
     "@nestri/functions": "*",
     "@nestri/zero": "*",
     "@openauthjs/openauth": "*",
-    "@openauthjs/solid": "0.0.0-20250311201457",
+    "@openauthjs/solid": "0.4.2",
     "@rocicorp/zero": "*",
     "@solid-primitives/event-listener": "^2.4.0",
     "@solid-primitives/storage": "^4.3.1",
