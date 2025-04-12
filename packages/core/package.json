@@ -33,7 +33,7 @@
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",
-        "drizzle-orm": "^0.40.0",
+        "drizzle-orm": "^0.41.0",
         "postgres": "^3.4.5"
     }
 }
