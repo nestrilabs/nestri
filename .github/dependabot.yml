@@ -20,8 +20,38 @@ updates:
         update-types:
           - "version-update:semver-patch"
 
-  # Update individual package dependencies
+  # Update individual package dependencies - JavaScript/TypeScript
   - package-ecosystem: "npm"
+    directory: "/packages/*"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"
+
+  # Update individual package dependencies - C#
+  - package-ecosystem: "nuget"
+    directory: "/packages/*"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"
+
+  # Update individual package dependencies - Rust
+  - package-ecosystem: "cargo"
+    directory: "/packages/*"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-patch"
+
+  # Update individual package dependencies - Go
+  - package-ecosystem: "gomod"
     directory: "/packages/*"
     schedule:
       interval: "weekly"
