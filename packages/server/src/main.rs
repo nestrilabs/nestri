@@ -128,8 +128,11 @@ fn handle_encoder_video_settings(
     args: &args::Args,
     video_encoder: &enc_helper::VideoEncoderInfo,
 ) -> enc_helper::VideoEncoderInfo {
-    let mut optimized_encoder =
-        enc_helper::encoder_low_latency_params(&video_encoder, &args.encoding.video.rate_control);
+    let mut optimized_encoder = enc_helper::encoder_low_latency_params(
+        &video_encoder,
+        &args.encoding.video.rate_control,
+        args.app.framerate,
+    );
     // Handle rate-control method
     match &args.encoding.video.rate_control {
         encoding_args::RateControl::CQP(cqp) => {
@@ -235,7 +238,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         encoding_args::AudioCaptureMethod::PipeWire => {
             gst::ElementFactory::make("pipewiresrc").build()?
         }
-        _ => gst::ElementFactory::make("alsasrc").build()?,
+        encoding_args::AudioCaptureMethod::ALSA => gst::ElementFactory::make("alsasrc").build()?,
     };
 
     // Audio Converter Element
@@ -259,6 +262,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             _ => 128000i32,
         },
     );
+    // If has "frame-size" (opus), set to 10 for lower latency (below 10 seems to be too low?)
+    if audio_encoder.has_property("frame-size") {
+        audio_encoder.set_property_from_str("frame-size", "10");
+    }
 
     /* Video */
     // Video Source Element
@@ -299,6 +306,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let video_encoder = gst::ElementFactory::make(video_encoder_info.name.as_str()).build()?;
     video_encoder_info.apply_parameters(&video_encoder, args.app.verbose);
 
+    // Video parser Element, required for GStreamer 1.26 as it broke some things..
+    let video_parser;
+    if video_encoder_info.codec == enc_helper::VideoCodec::H264 {
+        video_parser = Some(
+            gst::ElementFactory::make("h264parse")
+                .property("config-interval", -1i32)
+                .build()?,
+        );
+    } else {
+        video_parser = None;
+    }
+
     /* Output */
     // WebRTC sink Element
     let signaller = NestriSignaller::new(nestri_ws.clone(), pipeline.clone());
@@ -307,19 +326,49 @@ async fn main() -> Result<(), Box<dyn Error>> {
     webrtcsink.set_property_from_str("congestion-control", "disabled");
     webrtcsink.set_property("do-retransmission", false);
 
+    /* Queues */
+    let video_queue = gst::ElementFactory::make("queue2")
+        .property("max-size-buffers", 3u32)
+        .property("max-size-time", 0u64)
+        .property("max-size-bytes", 0u32)
+        .build()?;
+
+    let audio_queue = gst::ElementFactory::make("queue2")
+        .property("max-size-buffers", 3u32)
+        .property("max-size-time", 0u64)
+        .property("max-size-bytes", 0u32)
+        .build()?;
+
+    /* Clock Sync */
+    let video_clocksync = gst::ElementFactory::make("clocksync")
+        .property("sync-to-first", true)
+        .build()?;
+
+    let audio_clocksync = gst::ElementFactory::make("clocksync")
+        .property("sync-to-first", true)
+        .build()?;
+
     // Add elements to the pipeline
     pipeline.add_many(&[
         webrtcsink.upcast_ref(),
         &video_encoder,
         &video_converter,
         &caps_filter,
+        &video_queue,
+        &video_clocksync,
         &video_source,
         &audio_encoder,
         &audio_capsfilter,
+        &audio_queue,
+        &audio_clocksync,
         &audio_rate,
         &audio_converter,
         &audio_source,
     ])?;
+
+    if let Some(parser) = &video_parser {
+        pipeline.add(parser)?;
+    }
 
     // If DMA-BUF is enabled, add glupload, color conversion and caps filter
     if args.app.dma_buf {
@@ -332,6 +381,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_converter,
         &audio_rate,
         &audio_capsfilter,
+        &audio_queue,
+        &audio_clocksync,
         &audio_encoder,
         webrtcsink.upcast_ref(),
     ])?;
@@ -342,22 +393,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
         gst::Element::link_many(&[
             &video_source,
             &caps_filter,
+            &video_queue,
+            &video_clocksync,
             &glupload,
             &glcolorconvert,
             &gl_caps_filter,
             &video_encoder,
-            webrtcsink.upcast_ref(),
         ])?;
     } else {
         // Link video source to caps_filter, video_converter, video_encoder, webrtcsink
         gst::Element::link_many(&[
             &video_source,
             &caps_filter,
+            &video_queue,
+            &video_clocksync,
             &video_converter,
             &video_encoder,
-            webrtcsink.upcast_ref(),
         ])?;
     }
+
+    // Link video parser if present with webrtcsink, otherwise just link webrtc sink
+    if let Some(parser) = &video_parser {
+        gst::Element::link_many(&[&video_encoder, parser, webrtcsink.upcast_ref()])?;
+    } else {
+        gst::Element::link_many(&[&video_encoder, webrtcsink.upcast_ref()])?;
+    }
+
+    // Set QOS
+    video_encoder.set_property("qos", true);
 
     // Optimize latency of pipeline
     video_source
@@ -365,7 +428,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("failed to sync with parent");
     video_source.set_property("do-timestamp", &true);
     audio_source.set_property("do-timestamp", &true);
+
     pipeline.set_property("latency", &0u64);
+    pipeline.set_property("async-handling", true);
+    pipeline.set_property("message-forward", true);
 
     // Run both pipeline and websocket tasks concurrently
     let result = run_pipeline(pipeline.clone()).await;

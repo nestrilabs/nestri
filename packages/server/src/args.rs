@@ -22,19 +22,11 @@ impl Args {
                     .default_value("false"),
             )
             .arg(
-                Arg::new("debug-feed")
+                Arg::new("debug")
                     .short('d')
-                    .long("debug-feed")
-                    .env("DEBUG_FEED")
-                    .help("Debug by showing a window on host")
-                    .default_value("false"),
-            )
-            .arg(
-                Arg::new("debug-latency")
-                    .short('l')
-                    .long("debug-latency")
-                    .env("DEBUG_LATENCY")
-                    .help("Debug latency by showing time on feed")
+                    .long("debug")
+                    .env("DEBUG")
+                    .help("Enable additional debugging information and features")
                     .default_value("false"),
             )
             .arg(
