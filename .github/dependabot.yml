@@ -49,6 +49,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+        security: "allow"
 
 # Update Zero package dependencies - JS/TS
   - package-ecosystem: "npm"
@@ -59,6 +60,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+        security: "allow"
 
   # Update Steam Nuget package dependencies - C#
   - package-ecosystem: "nuget"
@@ -69,6 +71,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+        security: "allow"
 
   # Update Nestri-server package dependencies - Rust
   - package-ecosystem: "cargo"
@@ -79,7 +82,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
-
+        security: "allow"
   # Update Relay package dependencies - Go
   - package-ecosystem: "gomod"
     directory: "/packages/relay"
@@ -89,7 +92,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
-
+        security: "allow"
 # Update Maitred package dependencies - Go
   - package-ecosystem: "gomod"
     directory: "/packages/maitred"
@@ -99,7 +102,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
-
+        security: "allow"
   # Update WWW app dependencies - JS/TS
   - package-ecosystem: "npm"
     directory: "/apps/www"
@@ -109,7 +112,7 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
-
+        security: "allow"
 # Update Docs app dependencies - JS/TS
   - package-ecosystem: "npm"
     directory: "/apps/docs"
@@ -119,3 +122,4 @@ updates:
       - dependency-name: "*"
         update-types:
           - "version-update:semver-patch"
+        security: "allow"
