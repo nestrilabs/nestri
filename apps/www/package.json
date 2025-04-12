@@ -60,7 +60,7 @@
     "eslint-plugin-qwik": "^1.8.0",
     "howler": "^2.2.4",
     "posthog-js": "^1.207.0",
-    "prettier": "3.3.3",
+    "prettier": "3.5.3",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "semver": "^7.7.1",
