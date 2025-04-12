@@ -12,7 +12,7 @@ gst = { package = "gstreamer", git = "https://gitlab.freedesktop.org/gstreamer/g
 gst-webrtc = { package = "gstreamer-webrtc", git = "https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", branch = "main", features = ["v1_24"] }
 gstrswebrtc = { package = "gst-plugin-webrtc", git = "https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs", branch = "main", features = ["v1_22"] }
 serde = {version = "1.0.214", features = ["derive"] }
-tokio = { version = "1.41.0", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
 clap = { version = "4.5.20", features = ["env"] }
 serde_json = "1.0.132"
 webrtc = "0.12.0"
