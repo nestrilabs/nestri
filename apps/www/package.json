@@ -53,7 +53,7 @@
     "@types/node": "^22.5.1",
     "@types/react": "^18.2.28",
     "@types/react-dom": "^18.2.13",
-    "@typescript-eslint/eslint-plugin": "7.16.1",
+    "@typescript-eslint/eslint-plugin": "8.29.1",
     "@typescript-eslint/parser": "7.16.1",
     "ajv": "^8.17.1",
     "eslint": "8.57.0",
