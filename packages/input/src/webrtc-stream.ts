@@ -226,7 +226,7 @@ export class WebRTCStream {
           // Continuously set low-latency target
           this._pc.getReceivers().forEach((receiver: RTCRtpReceiver) => {
             let intervalLoop = setInterval(async () => {
-              if (receiver.track.readyState !== "live" || receiver.transport.state !== "connected") {
+              if (receiver.track.readyState !== "live" || (receiver.transport && receiver.transport.state !== "connected")) {
                 clearInterval(intervalLoop);
                 return;
               } else {
