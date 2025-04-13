@@ -27,6 +27,7 @@ env:
     REGISTRY: ghcr.io
     IMAGE_NAME: nestrilabs/nestri
     BASE_TAG_PREFIX: runner
+    BASE_IMAGE: docker.io/cachyos/cachyos:latest
 
 # This makes our release ci quit prematurely
 # concurrency:
@@ -55,7 +56,7 @@ jobs:
                 swap-size-gb: 20
             - 
               name: Build Docker image
-              uses: docker/build-push-action@v5
+              uses: docker/build-push-action@v6
               with:
                 file: containers/runner.Containerfile
                 context: ./
@@ -107,7 +108,7 @@ jobs:
                 swap-size-gb: 20
             - 
               name: Build Docker image
-              uses: docker/build-push-action@v5
+              uses: docker/build-push-action@v6
               with:
                 file:  containers/runner.Containerfile
                 context: ./
@@ -116,3 +117,4 @@ jobs:
                 labels: ${{ steps.meta.outputs.labels }}
                 cache-from: type=gha,mode=max
                 cache-to: type=gha,mode=max
+                pull: ${{ github.event_name == 'schedule' }} # Pull base image for scheduled builds

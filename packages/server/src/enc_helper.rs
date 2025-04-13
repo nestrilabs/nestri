@@ -249,8 +249,10 @@ pub fn encoder_gop_params(encoder: &VideoEncoderInfo, gop_size: u32) -> VideoEnc
 pub fn encoder_low_latency_params(
     encoder: &VideoEncoderInfo,
     rate_control: &RateControl,
+    framerate: u32,
 ) -> VideoEncoderInfo {
-    let mut encoder_optz = encoder_gop_params(encoder, 30);
+    // 2 second GOP size, maybe lower to 1 second for fast recovery, if needed?
+    let mut encoder_optz = encoder_gop_params(encoder, framerate * 2);
 
     match encoder_optz.encoder_api {
         EncoderAPI::QSV => {
