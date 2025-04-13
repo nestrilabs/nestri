@@ -29,6 +29,7 @@ console.log("STORAGE", process.env.STORAGE)
 
 const app = issuer({
     select: Select(),
+    //TODO: Create our own Storage
     storage: MemoryStorage({
         persist: process.env.STORAGE //"/tmp/persist.json",
     }),
@@ -76,9 +77,10 @@ const app = issuer({
         machine: {
             type: "machine",
             async client(input) {
-                if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
-                    throw new Error("Invalid authorization token");
-                }
+                // FIXME: Do we really need this?
+                // if (input.clientSecret !== Resource.AuthFingerprintKey.value) {
+                //     throw new Error("Invalid authorization token");
+                // }
 
                 const fingerprint = input.params.fingerprint;
                 if (!fingerprint) {
@@ -118,7 +120,9 @@ const app = issuer({
                     location: {
                         latitude,
                         longitude
-                    }
+                    },
+                    //FIXME: Make this better
+                    userID: null
                 })
                 return ctx.subject("machine", {
                     machineID,
