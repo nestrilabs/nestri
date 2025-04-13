@@ -8,7 +8,7 @@ import { useNavigate } from "@solidjs/router";
 import { useOpenAuth } from "@openauthjs/solid";
 import { utility } from "@nestri/www/ui/utility";
 import { useAccount } from "../providers/account";
-import { Container, FullScreen } from "@nestri/www/ui/layout";
+import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
 import { createForm, getValue, setError, valiForm } from "@modular-forms/solid";
 
@@ -191,7 +191,6 @@ export function CreateTeamComponent() {
                                         </UrlTitle>
                                         <Input
                                             {...props}
-                                            autofocus
                                             placeholder={
                                                 getValue(form, "name")?.toString()
                                                     .split(" ").join("-")

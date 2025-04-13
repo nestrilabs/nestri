@@ -1,5 +1,5 @@
-import {type Hook } from "./hook";
 import { z, ZodSchema } from "zod";
+import {type Hook } from "./types/hook";
 import { ErrorCodes, ErrorResponse } from "@nestri/core/error";
 import type { MiddlewareHandler, ValidationTargets } from "hono";
 import { resolver, validator as zodValidator } from "hono-openapi/zod";

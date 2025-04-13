@@ -1,5 +1,5 @@
 import { prefixes } from "./utils";
-export module Examples {
+export namespace Examples {
     export const Id = (prefix: keyof typeof prefixes) =>
         `${prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
 
@@ -31,8 +31,30 @@ export module Examples {
         timeSeen: new Date("2025-02-23T13:39:52.249Z"),
     }
 
+    export const Steam = {
+        id: Id("steam"),
+        userID: Id("user"),
+        countryCode: "KE",
+        steamID: 74839300282033,
+        limitation: {
+            isLimited: false,
+            isBanned: false,
+            isLocked: false,
+            isAllowedToInviteFriends: false,
+        },
+        lastGame: {
+            gameID: 2531310,
+            gameName: "The Last of Us™ Part II Remastered",
+        },
+        personaName: "John",
+        username: "johnsteamaccount",
+        steamEmail: "john@example.com",
+        avatarUrl: "https://avatars.akamai.steamstatic.com/XXXXXXXXXXXX_full.jpg",
+    }
+
     export const Machine = {
         id: Id("machine"),
+        userID: Id("user"),
         country: "Kenya",
         countryCode: "KE",
         timezone: "Africa/Nairobi",

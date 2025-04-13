@@ -10,7 +10,7 @@ import { useTransaction } from "../drizzle/transaction";
 
 const polar = new PolarSdk({ accessToken: Resource.PolarSecret.value, server: Resource.App.stage !== "production" ? "sandbox" : "production" });
 
-export module Polar {
+export namespace Polar {
     export const client = polar;
 
     export const Info = z.object({

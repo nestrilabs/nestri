@@ -1,94 +1,9 @@
 {
-  "id": "aa60489b-b4e2-4a69-aee7-16e050d02ef9",
+  "id": "227c54d2-b643-48d5-964b-af6fe004369a",
   "prevId": "6f428226-b5d8-4182-a676-d04f842f9ded",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.machine": {
-      "name": "machine",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "char(30)",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "time_created": {
-          "name": "time_created",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "time_updated": {
-          "name": "time_updated",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "time_deleted": {
-          "name": "time_deleted",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "country": {
-          "name": "country",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "timezone": {
-          "name": "timezone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "location": {
-          "name": "location",
-          "type": "point",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "fingerprint": {
-          "name": "fingerprint",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "country_code": {
-          "name": "country_code",
-          "type": "varchar(2)",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "machine_fingerprint": {
-          "name": "machine_fingerprint",
-          "columns": [
-            {
-              "expression": "fingerprint",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.member": {
       "name": "member",
       "schema": "",
@@ -182,6 +97,132 @@
           "name": "member_team_id_id_pk",
           "columns": [
             "team_id",
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.steam": {
+      "name": "steam",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "char(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "char(30)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "time_created": {
+          "name": "time_created",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "time_updated": {
+          "name": "time_updated",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "time_deleted": {
+          "name": "time_deleted",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_url": {
+          "name": "avatar_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "country": {
+          "name": "country",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "username": {
+          "name": "username",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "persona_name": {
+          "name": "persona_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "global_steam_email": {
+          "name": "global_steam_email",
+          "columns": [
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "steam_email": {
+          "name": "steam_email",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "email",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "steam_user_id_id_pk": {
+          "name": "steam_user_id_id_pk",
+          "columns": [
+            "user_id",
             "id"
           ]
         }

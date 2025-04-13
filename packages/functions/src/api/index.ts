@@ -1,19 +1,23 @@
 import "zod-openapi/extend";
 import { Hono } from "hono";
 import { auth } from "./auth";
+import { cors } from "hono/cors";
 import { TeamApi } from "./team";
+import { SteamApi } from "./steam";
 import { logger } from "hono/logger";
+import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
 import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
+import { patchLogger } from "../log-polyfill";
 import { HTTPException } from "hono/http-exception";
-import { handle, streamHandle } from "hono/aws-lambda";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-
 
 export const app = new Hono();
 app
-    .use(logger(), async (c, next) => {
+    .use(logger())
+    .use(cors())
+    .use(async (c, next) => {
         c.header("Cache-Control", "no-store");
         return next();
     })
@@ -21,11 +25,12 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
+    .route("/realtime", Realtime.route)
     .route("/team", TeamApi.route)
+    .route("/steam", SteamApi.route)
     .route("/account", AccountApi.route)
     .route("/machine", MachineApi.route)
     .onError((error, c) => {
-        console.warn(error);
         if (error instanceof VisibleError) {
             console.error("api error:", error);
             // @ts-expect-error
@@ -54,7 +59,6 @@ const routes = app
         );
     });
 
-
 app.get(
     "/doc",
     openAPISpecs(routes, {
@@ -82,10 +86,21 @@ app.get(
             security: [{ Bearer: [], TeamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
+                { description: "Sandbox", url: "https://api.dev.nestri.io" },
             ],
         },
     }),
 );
 
-export type Routes = typeof routes;
-export const handler = process.env.SST_DEV ? handle(app) : streamHandle(app);
+patchLogger();
+
+export default {
+    port: 3001,
+    idleTimeout: 255,
+    webSocketHandler: Realtime.webSocketHandler,
+    fetch: (req: Request) =>
+        app.fetch(req, undefined, {
+            waitUntil: (fn) => fn,
+            passThroughOnException: () => { },
+        }),
+};

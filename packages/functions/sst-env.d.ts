@@ -7,21 +7,14 @@ import "sst"
 declare module "sst" {
   export interface Resource {
     "Api": {
-      "type": "sst.aws.Router"
-      "url": string
-    }
-    "ApiFn": {
-      "name": string
-      "type": "sst.aws.Function"
+      "service": string
+      "type": "sst.aws.Service"
       "url": string
     }
     "Auth": {
-      "type": "sst.aws.Auth"
+      "service": string
+      "type": "sst.aws.Service"
       "url": string
-    }
-    "AuthFingerprintKey": {
-      "type": "random.index/randomString.RandomString"
-      "value": string
     }
     "Bus": {
       "arn": string
@@ -73,20 +66,9 @@ declare module "sst" {
       "endpoint": string
       "type": "sst.aws.Realtime"
     }
-    "Steam": {
-      "service": string
-      "type": "sst.aws.Service"
-      "url": string
-    }
     "Storage": {
       "name": string
       "type": "sst.aws.Bucket"
-    }
-    "Urls": {
-      "api": string
-      "auth": string
-      "site": string
-      "type": "sst.sst.Linkable"
     }
     "VPC": {
       "bastion": string

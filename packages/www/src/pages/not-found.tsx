@@ -4,7 +4,7 @@ import { Text } from "@nestri/www/ui/text";
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
 import { Header } from "@nestri/www/pages/team/header";
-import { FullScreen, Container } from "@nestri/www/ui/layout";
+import { Screen as FullScreen, Container } from "@nestri/www/ui/layout";
 
 const NotAllowedDesc = styled("div", {
     base: {

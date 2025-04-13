@@ -4,6 +4,7 @@
     "sideEffects": false,
     "type": "module",
     "scripts": {
+        "db:dev": "drizzle-kit",
         "typecheck": "tsc --noEmit",
         "db": "sst shell drizzle-kit",
         "db:exec": "sst shell ../scripts/src/psql.sh",

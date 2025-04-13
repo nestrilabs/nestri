@@ -9,7 +9,7 @@ import { Examples } from "@nestri/core/examples";
 import { ErrorResponses, Result } from "./common";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
-export module AccountApi {
+export namespace AccountApi {
     export const route = new Hono()
         .use(notPublic)
         .get("/",
@@ -34,7 +34,8 @@ export module AccountApi {
                         },
                         description: "User account details"
                     },
-                    404: ErrorResponses[404]
+                    404: ErrorResponses[404],
+                    429: ErrorResponses[429]
                 }
             }),
             async (c) => {

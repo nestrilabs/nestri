@@ -9,7 +9,7 @@ import { Member } from "@nestri/core/member/index";
 import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, Result, validator } from "./common";
 
-export module TeamApi {
+export namespace TeamApi {
     export const route = new Hono()
         .use(notPublic)
         .get("/",
