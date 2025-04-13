@@ -19,8 +19,6 @@ import { vpc } from "./vpc";
 //     },
 // );
 
-const fileSystem = new sst.aws.Efs("AuthFS", { vpc })
-
 export const auth = new sst.aws.Service("Auth", {
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
     memory: $app.stage === "production" ? "2 GB" : undefined,
@@ -42,6 +40,7 @@ export const auth = new sst.aws.Service("Auth", {
         NO_COLOR: "1",
         STORAGE: $dev ? "/tmp/persist.json" : "/mnt/efs/persist.json"
     },
+    //TODO: Use API gateway instead, because of the API headers
     loadBalancer: {
         domain: "auth." + domain,
         rules: [
@@ -60,12 +59,6 @@ export const auth = new sst.aws.Service("Auth", {
             actions: ["ses:SendEmail"],
             resources: ["*"],
         },
-    ],
-    volumes: [
-        {
-            efs: fileSystem,
-            path: "/mnt/efs"
-        }
     ],
     dev: {
         command: "bun dev:auth",
