@@ -1,6 +1,7 @@
 import { z } from "zod";
-import { timestamps, userID, utc } from "../drizzle/types";
+import { id, timestamps, ulid, userID, utc } from "../drizzle/types";
 import { index, pgTable, integer, uniqueIndex, varchar, text, primaryKey, json } from "drizzle-orm/pg-core";
+import { userTable } from "../user/user.sql";
 
 
 // public string Username { get; set; } = string.Empty;
@@ -37,9 +38,14 @@ export type AccountLimitation = z.infer<typeof AccountLimitation>;
 export const steamTable = pgTable(
     "steam",
     {
-        ...userID,
+        ...id,
         ...timestamps,
-        lastSeen: utc("time_seen"),
+        userID: ulid("user_id")
+            .notNull()
+            .references(() => userTable.id, {
+                onDelete: "cascade",
+            }),
+        lastSeen: utc("last_seen").notNull(),
         steamID: integer("steam_id").notNull(),
         avatarUrl: text("avatar_url").notNull(),
         lastGame: json("last_game").$type<LastGame>().notNull(),
@@ -48,11 +54,5 @@ export const steamTable = pgTable(
         steamEmail: varchar("steam_email", { length: 255 }).notNull(),
         personaName: varchar("persona_name", { length: 255 }).notNull(),
         limitation: json("limitation").$type<AccountLimitation>().notNull(),
-    },
-    (table) => [
-        primaryKey({
-            columns: [table.userID, table.id],
-        }),
-        uniqueIndex("steam_email").on(table.userID, table.steamEmail),
-    ],
+    }
 );

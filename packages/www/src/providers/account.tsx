@@ -33,19 +33,21 @@ export function useStorage() {
 }
 
 import { createEffect } from "solid-js";
-import { useOpenAuth } from "@openauthjs/solid"
 import { Team } from "@nestri/core/team/index";
+import { useOpenAuth } from "@openauthjs/solid";
+import { Steam } from "@nestri/core/steam/index";
 import { createInitializedContext } from "../common/context";
 
 type Storage = {
   accounts: Record<string, {
     id: string
+    name: string;
     email: string
     avatarUrl?: string
-    discriminator: number
-    name: string;
-    polarCustomerID: string;
     teams: Team.Info[];
+    discriminator: number
+    polarCustomerID: string;
+    steamAccounts: Steam.Info[];
   }>
 }
 

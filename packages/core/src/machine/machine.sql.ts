@@ -14,7 +14,7 @@ export const machineTable = pgTable(
     {
         ...id,
         ...timestamps,
-        userID: ulid("user_id"),
+        // userID: ulid("user_id"),
         country: text('country').notNull(),
         timezone: text('timezone').notNull(),
         location: point('location', { mode: 'xy' }).notNull(),
@@ -35,6 +35,6 @@ export const machineTable = pgTable(
     (table) => [
         // uniqueIndex("external_id").on(table.externalID),
         uniqueIndex("machine_fingerprint").on(table.fingerprint),
-        primaryKey({ columns: [table.userID, table.id], }),
+        // primaryKey({ columns: [table.userID, table.id], }),
     ],
 );

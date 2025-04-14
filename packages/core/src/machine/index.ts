@@ -13,10 +13,10 @@ export namespace Machine {
                 description: Common.IdDescription,
                 example: Examples.Machine.id,
             }),
-            userID: z.string().nullable().openapi({
-                description: "The userID of the user who owns this machine, in the case of BYOG",
-                example: Examples.Machine.userID
-            }),
+            // userID: z.string().nullable().openapi({
+            //     description: "The userID of the user who owns this machine, in the case of BYOG",
+            //     example: Examples.Machine.userID
+            // }),
             country: z.string().openapi({
                 description: "The fullname of the country this machine is running in",
                 example: Examples.Machine.country
@@ -55,7 +55,7 @@ export namespace Machine {
                 timezone: input.timezone,
                 fingerprint: input.fingerprint,
                 countryCode: input.countryCode,
-                userID: input.userID,
+                // userID: input.userID,
                 location: { x: input.location.longitude, y: input.location.latitude },
             })
 
@@ -68,26 +68,26 @@ export namespace Machine {
         })
     )
 
-    export const fromUserID = fn(z.string(), async (userID) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(machineTable)
-                .where(and(eq(machineTable.userID, userID), isNull(machineTable.timeDeleted)))
-                .then((rows) => rows.map(serialize))
-        )
-    )
+    // export const fromUserID = fn(z.string(), async (userID) =>
+    //     useTransaction(async (tx) =>
+    //         tx
+    //             .select()
+    //             .from(machineTable)
+    //             .where(and(eq(machineTable.userID, userID), isNull(machineTable.timeDeleted)))
+    //             .then((rows) => rows.map(serialize))
+    //     )
+    // )
 
-    export const list = fn(z.void(), async () =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(machineTable)
-                // Show only hosted machines, not BYOG machines
-                .where(and(isNull(machineTable.userID), isNull(machineTable.timeDeleted)))
-                .then((rows) => rows.map(serialize))
-        )
-    )
+    // export const list = fn(z.void(), async () =>
+    //     useTransaction(async (tx) =>
+    //         tx
+    //             .select()
+    //             .from(machineTable)
+    //             // Show only hosted machines, not BYOG machines
+    //             .where(and(isNull(machineTable.userID), isNull(machineTable.timeDeleted)))
+    //             .then((rows) => rows.map(serialize))
+    //     )
+    // )
 
     export const fromID = fn(Info.shape.id, async (id) =>
         useTransaction(async (tx) =>
@@ -144,7 +144,7 @@ export namespace Machine {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
-            userID: input.userID,
+            // userID: input.userID,
             country: input.country,
             timezone: input.timezone,
             fingerprint: input.fingerprint,

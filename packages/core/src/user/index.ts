@@ -6,13 +6,16 @@ import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
 import { createEvent } from "../event";
+import { pipe, groupBy, values, map } from "remeda";
 import { Examples } from "../examples";
 import { Resource } from "sst/resource";
 import { teamTable } from "../team/team.sql";
+import { steamTable } from "../steam/steam.sql";
 import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { and, eq, isNull, asc, getTableColumns, sql } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { Steam } from "../steam";
 
 
 export namespace User {
@@ -43,6 +46,10 @@ export namespace User {
             discriminator: z.string().or(z.number()).openapi({
                 description: "The (number) discriminator for this user",
                 example: Examples.User.discriminator,
+            }),
+            steamAccounts: Steam.Info.array().openapi({
+                description: "The steam accounts for this user",
+                example: Examples.User.steamAccounts,
             }),
         })
         .openapi({
@@ -102,7 +109,7 @@ export namespace User {
         return null;
     })
 
-    export const create = fn(Info.omit({ polarCustomerID: true, discriminator: true }).partial({ avatarUrl: true, id: true }), async (input) => {
+    export const create = fn(Info.omit({ polarCustomerID: true, discriminator: true, steamAccounts: true }).partial({ avatarUrl: true, id: true }), async (input) => {
         const userID = createID("user")
 
         //FIXME: Do this much later, as Polar.sh has so many inconsistencies for fuck's sake
@@ -147,41 +154,92 @@ export namespace User {
     })
 
     export const fromEmail = fn(z.string(), async (email) =>
-        useTransaction(async (tx) =>
-            tx
+        useTransaction(async (tx) => {
+            const rows = await tx
                 .select()
                 .from(userTable)
+                .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
                 .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
                 .orderBy(asc(userTable.timeCreated))
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0))
-        ),
+
+            const result = pipe(
+                rows,
+                groupBy((row) => row.user.id),
+                values(),
+                map(
+                    (group): Info => ({
+                        id: group[0].user.id,
+                        name: group[0].user.name,
+                        email: group[0].user.email,
+                        avatarUrl: group[0].user.avatarUrl,
+                        discriminator: group[0].user.discriminator,
+                        polarCustomerID: group[0].user.polarCustomerID,
+                        steamAccounts: !group[0].steam ?
+                            [] :
+                            group.map((row) => ({
+                                id: row.steam!.id,
+                                userID: row.steam!.userID,
+                                steamID: row.steam!.steamID,
+                                lastSeen: row.steam!.lastSeen,
+                                avatarUrl: row.steam!.avatarUrl,
+                                lastGame: row.steam!.lastGame,
+                                username: row.steam!.username,
+                                countryCode: row.steam!.countryCode,
+                                steamEmail: row.steam!.steamEmail,
+                                personaName: row.steam!.personaName,
+                                limitation: row.steam!.limitation,
+                            })),
+                    })
+                )
+            )
+
+            return result[0]
+        }),
     )
 
     export const fromID = fn(z.string(), async (id) =>
-        useTransaction(async (tx) =>
-            tx
+        useTransaction(async (tx) => {
+            const rows = await tx
                 .select()
                 .from(userTable)
+                .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
                 .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted)))
                 .orderBy(asc(userTable.timeCreated))
-                .then((rows) => rows.map(serialize))
-                .then((rows) => rows.at(0))
-        ),
-    )
 
-    export function serialize(
-        input: typeof userTable.$inferSelect,
-    ): z.infer<typeof Info> {
-        return {
-            id: input.id,
-            name: input.name,
-            email: input.email,
-            avatarUrl: input.avatarUrl,
-            discriminator: input.discriminator,
-            polarCustomerID: input.polarCustomerID,
-        };
-    }
+            const result = pipe(
+                rows,
+                groupBy((row) => row.user.id),
+                values(),
+                map(
+                    (group): Info => ({
+                        id: group[0].user.id,
+                        name: group[0].user.name,
+                        email: group[0].user.email,
+                        avatarUrl: group[0].user.avatarUrl,
+                        discriminator: group[0].user.discriminator,
+                        polarCustomerID: group[0].user.polarCustomerID,
+                        steamAccounts: !group[0].steam ?
+                            [] :
+                            group.map((row) => ({
+                                id: row.steam!.id,
+                                userID: row.steam!.userID,
+                                steamID: row.steam!.steamID,
+                                lastSeen: row.steam!.lastSeen,
+                                avatarUrl: row.steam!.avatarUrl,
+                                lastGame: row.steam!.lastGame,
+                                username: row.steam!.username,
+                                countryCode: row.steam!.countryCode,
+                                steamEmail: row.steam!.steamEmail,
+                                personaName: row.steam!.personaName,
+                                limitation: row.steam!.limitation,
+                            })),
+                    })
+                )
+            )
+
+            return result[0]
+        }),
+    )
 
     export const remove = fn(Info.shape.id, (id) =>
         useTransaction(async (tx) => {

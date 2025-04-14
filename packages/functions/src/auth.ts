@@ -122,7 +122,7 @@ const app = issuer({
                         longitude
                     },
                     //FIXME: Make this better
-                    userID: null
+                    // userID: null
                 })
                 return ctx.subject("machine", {
                     machineID,

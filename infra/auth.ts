@@ -4,8 +4,6 @@ import { domain } from "./dns";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 import { cluster } from "./cluster";
-import { vpc } from "./vpc";
-
 // sst.Linkable.wrap(random.RandomString, (resource) => ({
 //     properties: {
 //         value: resource.result,
