@@ -49,7 +49,7 @@ export namespace AccountApi {
                         "User not found",
                     );
 
-                const { id, email, name, polarCustomerID, avatarUrl, discriminator } = currentUser
+                const { id, email, name, polarCustomerID, avatarUrl, discriminator, steamAccounts } = currentUser
 
                 return c.json({
                     data: {
@@ -58,6 +58,7 @@ export namespace AccountApi {
                         email,
                         teams,
                         avatarUrl,
+                        steamAccounts,
                         discriminator,
                         polarCustomerID,
                     }

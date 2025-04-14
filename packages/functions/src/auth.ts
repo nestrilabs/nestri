@@ -28,7 +28,13 @@ type OauthUser = {
 console.log("STORAGE", process.env.STORAGE)
 
 const app = issuer({
-    select: Select(),
+    select: Select({
+        providers: {
+            machine: {
+                hide: true
+            }
+        }
+    }),
     //TODO: Create our own Storage
     storage: MemoryStorage({
         persist: process.env.STORAGE //"/tmp/persist.json",
@@ -122,7 +128,7 @@ const app = issuer({
                         longitude
                     },
                     //FIXME: Make this better
-                    userID: null
+                    // userID: null
                 })
                 return ctx.subject("machine", {
                     machineID,
