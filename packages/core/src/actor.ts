@@ -112,40 +112,19 @@ export function assertActor<T extends Actor["type"]>(type: T) {
 export function useTeam() {
   const actor = useActor();
   if ("teamID" in actor.properties) return actor.properties.teamID;
-  throw new Error(`Expected actor to have teamID`);
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `Expected actor to have teamID`
+  );
 }
 
 export function useMachine() {
   const actor = useActor();
   if ("machineID" in actor.properties) return actor.properties.fingerprint;
-  throw new Error(`Expected actor to have fingerprint`);
-}
-
-/**
- * Asserts that the current user possesses the specified flag.
- *
- * This function executes a database transaction that queries the user table for the current user's flags.
- * If the flags are missing, it throws a {@link VisibleError} with the code {@link ErrorCodes.Validation.MISSING_REQUIRED_FIELD}
- * and a message indicating that the required flag is absent.
- *
- * @param flag - The name of the user flag to verify.
- *
- * @throws {VisibleError} If the user's flag is missing.
- */
-export async function assertUserFlag(flag: keyof UserFlags) {
-  return useTransaction((tx) =>
-    tx
-      .select({ flags: userTable.flags })
-      .from(userTable)
-      .where(eq(userTable.id, useUserID()))
-      .then((rows) => {
-        const flags = rows[0]?.flags;
-        if (!flags)
-          throw new VisibleError(
-            "not_found",
-            ErrorCodes.Validation.MISSING_REQUIRED_FIELD,
-            "Actor does not have " + flag + " flag",
-          );
-      }),
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `Expected actor to have fingerprint`
   );
 }

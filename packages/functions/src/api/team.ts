@@ -8,6 +8,8 @@ import { Examples } from "@nestri/core/examples";
 import { Member } from "@nestri/core/member/index";
 import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, Result, validator } from "./common";
+import { Subscription } from "@nestri/core/subscription/index";
+import { PlanType } from "@nestri/core/subscription/subscription.sql";
 
 export namespace TeamApi {
     export const route = new Hono()
@@ -63,17 +65,16 @@ export namespace TeamApi {
             }),
             validator(
                 "json",
-                Team.create.schema.omit({ id: true }).openapi({
+                Team.create.schema.pick({ slug: true, name: true }).extend({ planType: z.enum(PlanType) }).openapi({
                     description: "Details of the team to create",
-                    //@ts-expect-error
-                    example: { ...Examples.Team, id: undefined }
+                    example: { slug: Examples.Team.slug, name: Examples.Team.name, planType: Examples.Subscription.planType },
                 })
             ),
             async (c) => {
                 const body = c.req.valid("json")
                 const actor = assertActor("user");
 
-                const teamID = await Team.create(body);
+                const teamID = await Team.create({ name: body.name, slug: body.slug });
 
                 await withActor(
                     {
@@ -82,14 +83,23 @@ export namespace TeamApi {
                             teamID,
                         },
                     },
-                    () =>
-                        Member.create({
+                    async () => {
+                        await Member.create({
                             first: true,
                             email: actor.properties.email,
-                        }),
+                        });
+
+                        await Subscription.create({
+                            planType: body.planType,
+                            userID: actor.properties.userID,
+                            // FIXME: Make this make sense
+                            tokens: body.planType === "free" ? 100 : body.planType === "pro" ? 1000 : body.planType === "family" ? 10000 : 0,
+                        });
+                    }
                 );
 
                 return c.json({ data: "ok" })
+
             }
         )
 }

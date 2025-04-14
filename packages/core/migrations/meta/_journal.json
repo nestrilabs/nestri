@@ -57,6 +57,20 @@
       "when": 1744634322996,
       "tag": "0007_warm_secret_warriors",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1744651530530,
+      "tag": "0008_third_mindworm",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1744651817581,
+      "tag": "0009_luxuriant_wraith",
+      "breakpoints": true
     }
   ]
 }

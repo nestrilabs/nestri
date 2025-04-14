@@ -218,7 +218,7 @@ export function Header(props: ParentProps) {
         id: "tea_01JPACSPYWTTJ66F32X3AWWFWE",
         slug: "wanjohiryan",
         name: "Wanjohi",
-        planType: "BYOG"
+        planType: "Pro"
     })
 
     createEffect(() => {
@@ -231,7 +231,7 @@ export function Header(props: ParentProps) {
         });
 
     })
-    
+
     // const account = useAccount()
     return (
         <PageWrapper>
@@ -294,14 +294,14 @@ export function Header(props: ParentProps) {
                                 />
                                 <TeamLabel style={{ color: theme.color.d1000.gray }}>{team!().name}</TeamLabel>
                                 <Switch>
-                                    <Match when={team!().planType === "BYOG"}>
+                                    <Match when={team!().planType === "Family"}>
                                         <Badge style={{ "background-color": theme.color.purple.d700 }}>
-                                            <span style={{ "line-height": 0 }} >BYOG</span>
+                                            <span style={{ "line-height": 0 }} >Family</span>
                                         </Badge>
                                     </Match>
-                                    <Match when={team!().planType === "Hosted"}>
+                                    <Match when={team!().planType === "Pro"}>
                                         <Badge style={{ "background-color": theme.color.blue.d700 }}>
-                                            <span style={{ "line-height": 0 }}>Hosted</span>
+                                            <span style={{ "line-height": 0 }}>Pro</span>
                                         </Badge>
                                     </Match>
                                 </Switch>

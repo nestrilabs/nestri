@@ -5,6 +5,7 @@ import { Examples } from "../examples";
 import { createID, fn } from "../utils";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { PlanType, Standing, subscriptionTable } from "./subscription.sql";
+import { useTeam, useUserID } from "../actor";
 
 export namespace Subscription {
     export const Info = z.object({
@@ -49,27 +50,29 @@ export namespace Subscription {
     export type Info = z.infer<typeof Info>;
 
     export const create = fn(
-        Info.partial({
-            id: true,
-            standing: true,
-            planType: true,
-            polarProductID: true,
-            polarSubscriptionID: true,
-        }),
+        Info
+            .partial({
+                teamID: true,
+                userID: true,
+                id: true,
+                standing: true,
+                planType: true,
+                polarProductID: true,
+                polarSubscriptionID: true,
+            }),
         (input) =>
             createTransaction(async (tx) => {
                 const id = input.id ?? createID("subscription");
 
                 await tx.insert(subscriptionTable).values({
                     id,
-                    ...input,
+                    tokens: input.tokens,
                     polarProductID: input.polarProductID ?? null,
                     polarSubscriptionID: input.polarSubscriptionID ?? null,
-                    tokens: input.tokens ?? 0,
                     standing: input.standing ?? "new",
                     planType: input.planType ?? "free",
-                    userID: input.userID,
-                    teamID: input.teamID,
+                    userID: input.userID ?? useUserID(),
+                    teamID: input.teamID ?? useTeam(),
                 });
 
                 return id;

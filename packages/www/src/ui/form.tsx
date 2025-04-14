@@ -157,6 +157,7 @@ export const InputRadio = styled("input", {
 const Label = styled("p", {
     base: {
         fontWeight: 500,
+        textAlign: "left",
         letterSpacing: -0.1,
         fontSize: theme.font.size.mono_sm,
         textTransform: "capitalize",
@@ -213,6 +214,7 @@ const Hint = styled("p", {
         fontSize: theme.font.size.xs,
         lineHeight: theme.font.lineHeight,
         color: theme.color.gray.d800,
+        textAlign: "left"
     },
     variants: {
         color: {

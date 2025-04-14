@@ -32,8 +32,9 @@ const Hr = styled("hr", {
 })
 
 const Plan = {
-    Pro: 'BYOG',
-    Basic: 'Hosted',
+    Individual: 'individual',
+    Pro: 'pro',
+    Family: 'family',
 } as const;
 
 const schema = v.object({
@@ -215,12 +216,14 @@ export function CreateTeamComponent() {
                                         required
                                         value={field.value}
                                         badges={[
-                                            { label: "BYOG", color: "purple" },
-                                            { label: "Hosted", color: "blue" },
+                                            { label: "Individual", color: "gray" },
+                                            { label: "Pro", color: "blue" },
+                                            { label: "Family", color: "purple" },
                                         ]}
                                         options={[
-                                            { label: "I'll be playing on my machine", value: 'BYOG' },
-                                            { label: "I'll be playing on the cloud", value: 'Hosted' },
+                                            { label: "I'll be playing by myself", value: 'individual' },
+                                            { label: "I'll be playing with 3 friends", value: 'pro' },
+                                            { label: "I'll be playing with 5 family members", value: 'family' },
                                         ]}
                                     />
                                 </FormField>
