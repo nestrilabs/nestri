@@ -11,7 +11,7 @@ import { and, eq, sql, isNull } from "../drizzle";
 import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
 import { groupBy, map, pipe, values } from "remeda";
-import { subscriptionTable } from "../subscription/subscription";
+import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Team {
@@ -173,6 +173,7 @@ export namespace Team {
     export function serialize(
         input: { team: typeof teamTable.$inferSelect, subscription: typeof subscriptionTable.$inferInsert | null, member: typeof memberTable.$inferInsert | null }[],
     ): z.infer<typeof Info>[] {
+        console.log("serialize", input)
         return pipe(
             input,
             groupBy((row) => row.team.id),

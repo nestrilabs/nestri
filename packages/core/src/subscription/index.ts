@@ -4,7 +4,7 @@ import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { PlanType, Standing, subscriptionTable } from "./subscription";
+import { PlanType, Standing, subscriptionTable } from "./subscription.sql";
 
 export namespace Subscription {
     export const Info = z.object({

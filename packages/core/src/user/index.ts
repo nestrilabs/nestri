@@ -15,7 +15,7 @@ import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { pipe, groupBy, values, map } from "remeda";
 import { and, eq, isNull, asc, sql } from "../drizzle";
-import { subscriptionTable } from "../subscription/subscription";
+import { subscriptionTable } from "../subscription/subscription.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 

@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import { auth } from "./auth";
 import { cors } from "hono/cors";
 import { TeamApi } from "./team";
-import { SteamApi } from "./steam";
+// import { SteamApi } from "./steam";
 import { logger } from "hono/logger";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
@@ -27,7 +27,7 @@ const routes = app
     .get("/", (c) => c.text("Hello World!"))
     .route("/realtime", Realtime.route)
     .route("/team", TeamApi.route)
-    .route("/steam", SteamApi.route)
+    // .route("/steam", SteamApi.route)
     .route("/account", AccountApi.route)
     .route("/machine", MachineApi.route)
     .onError((error, c) => {
