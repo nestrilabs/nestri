@@ -34,23 +34,38 @@ export namespace Examples {
         steamAccounts: [Steam]
     };
 
-    export const Team = {
-        id: Id("team"),
-        name: "John Does' Team",
-        slug: "john_doe",
-        planType: "BYOG" as const
+    export const Product = {
+        id: Id("product"),
+        name: "RTX 4090",
+        description: "Ideal for dedicated gamers who crave more flexibility and social gaming experiences.",
+        tokensPerHour: 20,
+    }
+
+    export const Subscription = {
+        tokens: 100,
+        id: Id("subscription"),
+        userID: Id("user"),
+        teamID: Id("team"),
+        planType: "pro" as const, // free, pro, family, enterprise
+        standing: "new" as const, // new, good, overdue, cancelled
+        polarProductID: "0bfcb712-df13-4454-81a8-fbee66eddca4",
+        polarSubscriptionID: "0bfcb712-df13-4454-81a8-fbee66eddca4",
     }
 
     export const Member = {
         id: Id("member"),
         email: "john@example.com",
         teamID: Id("team"),
+        role: "admin" as const,
         timeSeen: new Date("2025-02-23T13:39:52.249Z"),
     }
 
-    export const Polar = {
-        teamID: Id("team"),
-        timeSeen: new Date("2025-02-23T13:39:52.249Z"),
+    export const Team = {
+        id: Id("team"),
+        name: "John Does' Team",
+        slug: "john_doe",
+        subscriptions: [Subscription],
+        members: [Member]
     }
 
     export const Machine = {

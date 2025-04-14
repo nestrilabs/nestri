@@ -6,7 +6,7 @@ import { Common } from "../common";
 import { createID, fn } from "../utils";
 import { createEvent } from "../event";
 import { Examples } from "../examples";
-import { memberTable } from "./member.sql";
+import { memberTable, role } from "./member.sql";
 import { and, eq, sql, asc, isNull } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
@@ -17,13 +17,17 @@ export namespace Member {
                 description: Common.IdDescription,
                 example: Examples.Member.id,
             }),
-            timeSeen: z.date().or(z.null()).openapi({
+            timeSeen: z.date().nullable().or(z.undefined()).openapi({
                 description: "The last time this team member was active",
                 example: Examples.Member.timeSeen
             }),
             teamID: z.string().openapi({
                 description: "The unique id of the team this member is on",
                 example: Examples.Member.teamID
+            }),
+            role: z.enum(role).openapi({
+                description: "The role of this team member",
+                example: Examples.Member.role
             }),
             email: z.string().openapi({
                 description: "The email of this team member",
@@ -68,6 +72,7 @@ export namespace Member {
                     id,
                     teamID: useTeam(),
                     email: input.email,
+                    role: input.first ? "owner" : "member",
                     timeSeen: input.first ? sql`now()` : null,
                 })
 
@@ -118,6 +123,7 @@ export namespace Member {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            role: input.role,
             email: input.email,
             teamID: input.teamID,
             timeSeen: input.timeSeen
