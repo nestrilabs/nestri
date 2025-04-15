@@ -2,6 +2,7 @@ export const secret = {
     PolarSecret: new sst.Secret("PolarSecret", process.env.POLAR_API_KEY),
     GithubClientID: new sst.Secret("GithubClientID"),
     DiscordClientID: new sst.Secret("DiscordClientID"),
+    PolarWebhookSecret: new sst.Secret("PolarWebhookSecret"),
     GithubClientSecret: new sst.Secret("GithubClientSecret"),
     DiscordClientSecret: new sst.Secret("DiscordClientSecret"),
     

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Hono } from "hono";
+import { Resource } from "sst";
 import { notPublic } from "./auth";
 import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
@@ -9,6 +10,7 @@ import { Examples } from "@nestri/core/examples";
 import { ErrorResponses, Result, validator } from "./common";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 import { PlanType } from "@nestri/core/subscription/subscription.sql";
+import { WebhookVerificationError, validateEvent } from "@polar-sh/sdk/webhooks";
 
 export namespace PolarApi {
     export const route = new Hono()
@@ -135,6 +137,38 @@ export namespace PolarApi {
                         checkoutUrl,
                     }
                 })
+            }
+        )
+        .post("/webhook",
+            async (c) => {
+                const requestBody = await c.req.text();
+
+                const webhookSecret = Resource.PolarWebhookSecret.value
+
+                const webhookHeaders = {
+                    "webhook-id": c.req.header("webhook-id") ?? "",
+                    "webhook-timestamp": c.req.header("webhook-timestamp") ?? "",
+                    "webhook-signature": c.req.header("webhook-signature") ?? "",
+                };
+
+                let webhookPayload: ReturnType<typeof validateEvent>;
+                try {
+                    webhookPayload = validateEvent(
+                        requestBody,
+                        webhookHeaders,
+                        webhookSecret,
+                    );
+                } catch (error) {
+                    if (error instanceof WebhookVerificationError) {
+                        return c.json({ received: false }, { status: 403 });
+                    }
+
+                    throw error;
+                }
+
+                await Polar.handleWebhook(webhookPayload)
+
+                return c.json({ received: true });
             }
         )
 }

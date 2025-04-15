@@ -5,6 +5,19 @@ import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
+// sst.Linkable.wrap(random.RandomString, (resource) => ({
+//     properties: {
+//         value: resource.result,
+//     },
+// }));
+
+// export const polarWebHookSecret = new random.RandomString(
+//     "PolarWebHookSecret",
+//     {
+//         length: 32,
+//     },
+// );
+
 export const api = new sst.aws.Service("Api", {
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
     memory: $app.stage === "production" ? "4 GB" : undefined,
@@ -15,6 +28,7 @@ export const api = new sst.aws.Service("Api", {
         auth,
         postgres,
         secret.PolarSecret,
+        secret.PolarWebhookSecret,
         secret.NestriFamilyMonthly,
         secret.NestriFamilyYearly,
         secret.NestriProMonthly,

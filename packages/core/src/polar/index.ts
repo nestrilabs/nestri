@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Resource } from "sst";
-import { assertActor, useTeam, useUserID } from "../actor";
 import { Polar as PolarSdk } from "@polar-sh/sdk";
+import { validateEvent } from "@polar-sh/sdk/webhooks";
 import { PlanType } from "../subscription/subscription.sql";
+import { assertActor, useTeam, useUserID } from "../actor";
 
 const polar = new PolarSdk({ accessToken: Resource.PolarSecret.value, server: Resource.App.stage !== "production" ? "sandbox" : "production" });
 const planType = z.enum(PlanType)
@@ -50,6 +51,14 @@ export namespace Polar {
             return session.customerPortalUrl
         }
     )
+
+    //TODO: Implement this
+    export const handleWebhook = async(payload: ReturnType<typeof validateEvent>) => {
+        switch (payload.type) {
+            case "subscription.created":
+                const teamID = payload.data.metadata.teamID
+        }
+    }
 
     export const createCheckout = fn(
         z
