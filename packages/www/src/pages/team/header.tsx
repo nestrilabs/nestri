@@ -233,6 +233,7 @@ export function Header(props: ParentProps) {
     })
 
     // const account = useAccount()
+    
     return (
         <PageWrapper>
             <NavWrapper scrolled={hasScrolled()}>

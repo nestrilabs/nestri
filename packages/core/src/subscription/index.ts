@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { eq } from "../drizzle";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
+import { eq, and, isNull } from "../drizzle";
+import { useTeam, useUserID } from "../actor";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { PlanType, Standing, subscriptionTable } from "./subscription.sql";
-import { useTeam, useUserID } from "../actor";
 
 export namespace Subscription {
     export const Info = z.object({
@@ -115,10 +115,13 @@ export namespace Subscription {
                 .select()
                 .from(subscriptionTable)
                 .where(
-                    eq(subscriptionTable.id, id)
+                    and(
+                        eq(subscriptionTable.id, id),
+                        isNull(subscriptionTable.timeDeleted)
+                    )
                 )
                 .orderBy(subscriptionTable.timeCreated)
-                .then((rows) => rows.map(serialize).at(0))
+                .then((rows) => rows.map(serialize))
         )
     )
     export const fromTeamID = fn(z.string(), async (teamID) =>
@@ -127,10 +130,13 @@ export namespace Subscription {
                 .select()
                 .from(subscriptionTable)
                 .where(
-                    eq(subscriptionTable.teamID, teamID)
+                    and(
+                        eq(subscriptionTable.teamID, teamID),
+                        isNull(subscriptionTable.timeDeleted)
+                    )
                 )
                 .orderBy(subscriptionTable.timeCreated)
-                .then((rows) => rows.map(serialize).at(0))
+                .then((rows) => rows.map(serialize))
         )
     )
 
@@ -140,10 +146,13 @@ export namespace Subscription {
                 .select()
                 .from(subscriptionTable)
                 .where(
-                    eq(subscriptionTable.userID, userID)
+                    and(
+                        eq(subscriptionTable.userID, userID),
+                        isNull(subscriptionTable.timeDeleted)
+                    )
                 )
                 .orderBy(subscriptionTable.timeCreated)
-                .then((rows) => rows.map(serialize).at(0))
+                .then((rows) => rows.map(serialize))
         )
     )
     export const remove = fn(Info.shape.id, (id) =>

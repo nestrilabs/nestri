@@ -57,6 +57,26 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "NestriFamilyMonthly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriFamilyYearly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriFreeMonthly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriProMonthly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriProYearly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "PolarSecret": {
       "type": "sst.sst.Secret"
       "value": string

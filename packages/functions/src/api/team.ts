@@ -5,6 +5,7 @@ import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
+import { Polar } from "@nestri/core/polar/index";
 import { Member } from "@nestri/core/member/index";
 import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, Result, validator } from "./common";
@@ -51,7 +52,12 @@ export namespace TeamApi {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    z.literal("ok")
+                                    z.object({
+                                        checkoutUrl: z.string().openapi({
+                                            description: "The checkout url to confirm subscription for this team",
+                                            example: "https://polar.sh/checkout/2903038439320298377"
+                                        })
+                                    })
                                 )
                             }
                         },
@@ -65,10 +71,18 @@ export namespace TeamApi {
             }),
             validator(
                 "json",
-                Team.create.schema.pick({ slug: true, name: true }).extend({ planType: z.enum(PlanType) }).openapi({
-                    description: "Details of the team to create",
-                    example: { slug: Examples.Team.slug, name: Examples.Team.name, planType: Examples.Subscription.planType },
-                })
+                Team.create.schema
+                    .pick({ slug: true, name: true })
+                    .extend({ planType: z.enum(PlanType), successUrl: z.string() })
+                    .openapi({
+                        description: "Details of the team to create",
+                        example: {
+                            slug: Examples.Team.slug,
+                            name: Examples.Team.name,
+                            planType: Examples.Subscription.planType,
+                            successUrl: "https://your-url.io/thanks"
+                        },
+                    })
             ),
             async (c) => {
                 const body = c.req.valid("json")
@@ -98,8 +112,13 @@ export namespace TeamApi {
                     }
                 );
 
-                return c.json({ data: "ok" })
+                const checkoutUrl = await Polar.createCheckout({ planType: body.planType, successUrl: body.successUrl, teamID })
 
+                return c.json({
+                    data: {
+                        checkoutUrl,
+                    }
+                })
             }
         )
 }
