@@ -18,9 +18,9 @@ export const api = new sst.aws.Service("Api", {
         secret.PolarWebhookSecret,
         secret.NestriFamilyMonthly,
         secret.NestriFamilyYearly,
+        secret.NestriFreeMonthly,
         secret.NestriProMonthly,
         secret.NestriProYearly,
-        secret.NestriFreeMonthly,
     ],
     image: {
         dockerfile: "packages/functions/Containerfile",
