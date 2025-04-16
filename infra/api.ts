@@ -42,16 +42,17 @@ export const api = new sst.aws.Service("Api", {
         NO_COLOR: "1",
     },
     loadBalancer: {
-        domain: "api." + domain,
+        // Fun fact, this would not have worked
+        // domain: "api." + domain,
         rules: [
             {
                 listen: "80/http",
                 forward: "3001/http",
             },
-            {
-                listen: "443/https",
-                forward: "3001/http",
-            },
+            // {
+            //     listen: "443/https",
+            //     forward: "3001/http",
+            // },
         ],
     },
     dev: {
@@ -67,3 +68,14 @@ export const api = new sst.aws.Service("Api", {
             }
             : undefined,
 });
+
+
+export const apiRoute = new sst.aws.Router("ApiRoute", {
+    routes: {
+        "/*": api.nodes.loadBalancer.dnsName,
+    },
+    domain: {
+        name: "api." + domain,
+        dns: sst.cloudflare.dns(),
+    },
+})

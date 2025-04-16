@@ -4,6 +4,7 @@ import { domain } from "./dns";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 import { cluster } from "./cluster";
+import { vpc } from "./vpc";
 // sst.Linkable.wrap(random.RandomString, (resource) => ({
 //     properties: {
 //         value: resource.result,
@@ -38,20 +39,23 @@ export const auth = new sst.aws.Service("Auth", {
         NO_COLOR: "1",
         STORAGE: $dev ? "/tmp/persist.json" : "/mnt/efs/persist.json"
     },
-    //TODO: Use API gateway instead, because of the API headers
-    loadBalancer: {
-        domain: "auth." + domain,
-        rules: [
-            {
-                listen: "80/http",
-                forward: "3002/http",
-            },
-            {
-                listen: "443/https",
-                forward: "3002/http",
-            },
-        ],
+    serviceRegistry: {
+        port: 3002
     },
+    //TODO: Use API gateway instead, because of the API headers
+    // loadBalancer: {
+    //     domain: "auth." + domain,
+    //     rules: [
+    //         {
+    //             listen: "80/http",
+    //             forward: "3002/http",
+    //         },
+    //         {
+    //             listen: "443/https",
+    //             forward: "3002/http",
+    //         },
+    //     ],
+    // },
     permissions: [
         {
             actions: ["ses:SendEmail"],
@@ -71,3 +75,13 @@ export const auth = new sst.aws.Service("Auth", {
             }
             : undefined,
 });
+
+const authUrl = new sst.aws.ApiGatewayV2("AuthUrl", {
+    vpc,
+    domain: {
+        dns: sst.cloudflare.dns(),
+        name: "auth." + domain
+    }
+});
+
+authUrl.routePrivate("$default", auth.nodes.cloudmapService.arn);
