@@ -191,6 +191,12 @@ export namespace User {
         }),
     );
 
+    /**
+     * Converts an array of user and Steam account records into structured user objects with associated Steam accounts.
+     *
+     * @param input - An array of objects containing user data and optional Steam account data.
+     * @returns An array of user objects, each including a list of their associated Steam accounts.
+     */
     export function serialize(
         input: { user: typeof userTable.$inferSelect; steam: typeof steamTable.$inferSelect | null }[],
     ): z.infer<typeof Info>[] {
@@ -219,6 +225,13 @@ export namespace User {
         )
     }
 
+    /**
+     * Retrieves the list of teams that the current user belongs to.
+     *
+     * @returns An array of team information objects representing the user's active team memberships.
+     *
+     * @remark Only teams and memberships that have not been deleted are included in the result.
+     */
     export function teams() {
         const actor = assertActor("user");
         return useTransaction(async (tx) =>

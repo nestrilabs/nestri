@@ -118,6 +118,12 @@ export namespace Member {
         ),
     )
 
+    /**
+     * Converts a raw member database row into a standardized {@link Member.Info} object.
+     *
+     * @param input - The database row representing a member.
+     * @returns The member information formatted as a {@link Member.Info} object.
+     */
     export function serialize(
         input: typeof memberTable.$inferSelect,
     ): z.infer<typeof Info> {
