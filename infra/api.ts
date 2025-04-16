@@ -53,6 +53,7 @@ export const api = new sst.aws.Service("Api", {
 
 export const apiRoute = new sst.aws.Router("ApiRoute", {
     routes: {
+        // I think api.url should work all the same
         "/*": api.nodes.loadBalancer.dnsName,
     },
     domain: {

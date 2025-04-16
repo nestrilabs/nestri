@@ -4,6 +4,7 @@ import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
+//FIXME: Use a shared /tmp folder 
 export const auth = new sst.aws.Service("Auth", {
     cluster,
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
@@ -55,6 +56,7 @@ export const auth = new sst.aws.Service("Auth", {
 
 export const authRoute = new sst.aws.Router("AuthRoute", {
     routes: {
+        // I think auth.url should work all the same
         "/*": auth.nodes.loadBalancer.dnsName,
     },
     domain: {
