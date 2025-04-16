@@ -73,7 +73,7 @@ export namespace TeamApi {
                 "json",
                 Team.create.schema
                     .pick({ slug: true, name: true })
-                    .extend({ planType: z.enum(PlanType), successUrl: z.string() })
+                    .extend({ planType: z.enum(PlanType), successUrl: z.string().url("Success url must be a valid url") })
                     .openapi({
                         description: "Details of the team to create",
                         example: {

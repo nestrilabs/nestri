@@ -100,7 +100,7 @@ export namespace PolarApi {
                 z
                     .object({
                         planType: z.enum(PlanType),
-                        successUrl: z.string()
+                        successUrl: z.string().url("Success url must be a valid url")
                     })
                     .openapi({
                         description: "Details of the team to create",
