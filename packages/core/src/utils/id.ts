@@ -7,6 +7,7 @@ export const prefixes = {
   machine: "mch",
   member: "mbr",
   steam: "stm",
+  credential: "crd"
 } as const;
 
 /**

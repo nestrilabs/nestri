@@ -1,24 +1,7 @@
 import { z } from "zod";
-import { id, timestamps, ulid, userID, utc } from "../drizzle/types";
-import { index, pgTable, integer, uniqueIndex, varchar, text, primaryKey, json } from "drizzle-orm/pg-core";
 import { userTable } from "../user/user.sql";
-
-
-// public string Username { get; set; } = string.Empty;
-// public ulong SteamId { get; set; }
-// public string Email { get; set; } = string.Empty;
-// public string Country { get; set; } = string.Empty;
-// public string PersonaName { get; set; } = string.Empty;
-// public string AvatarUrl { get; set; } = string.Empty;
-// public bool IsLimited { get; set; }
-// public bool IsLocked { get; set; }
-// public bool IsBanned { get; set; }
-// public bool IsAllowedToInviteFriends { get; set; }
-// public ulong GameId { get; set; }
-// public string GamePlayingName { get; set; } = string.Empty;
-// public DateTime LastLogOn { get; set; }
-// public DateTime LastLogOff { get; set; }
-// public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+import { id, timestamps, ulid, userID, utc } from "../drizzle/types";
+import { index, pgTable, integer, uniqueIndex, varchar, text, json, primaryKey } from "drizzle-orm/pg-core";
 
 export const LastGame = z.object({
     gameID: z.number(),
@@ -56,3 +39,24 @@ export const steamTable = pgTable(
         limitation: json("limitation").$type<AccountLimitation>().notNull(),
     }
 );
+
+export const steamCredentialsTable = pgTable(
+    "steam_credentials",
+    {
+        ...id,
+        ...timestamps,
+        steamID: ulid("steam_id")
+            .notNull()
+            .references(() => steamTable.id, {
+                onDelete: "cascade",
+            }),
+        accessToken: text("access_token").notNull(),
+        username: varchar("username", { length: 255 }).notNull()
+    },
+    (table) => [
+        uniqueIndex("steam_credentials_username").on(table.username),
+        primaryKey({
+            columns: [table.id]
+        }),
+    ],
+)
