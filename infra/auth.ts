@@ -1,27 +1,13 @@
 import { bus } from "./bus";
 import { domain } from "./dns";
-// import { email } from "./email";
 import { secret } from "./secret";
-import { postgres } from "./postgres";
 import { cluster } from "./cluster";
-import { vpc } from "./vpc";
-// sst.Linkable.wrap(random.RandomString, (resource) => ({
-//     properties: {
-//         value: resource.result,
-//     },
-// }));
-
-// export const authFingerprintKey = new random.RandomString(
-//     "AuthFingerprintKey",
-//     {
-//         length: 32,
-//     },
-// );
+import { postgres } from "./postgres";
 
 export const auth = new sst.aws.Service("Auth", {
+    cluster,
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
     memory: $app.stage === "production" ? "2 GB" : undefined,
-    cluster,
     command: ["bun", "run", "./src/auth.ts"],
     link: [
         bus,
@@ -39,23 +25,14 @@ export const auth = new sst.aws.Service("Auth", {
         NO_COLOR: "1",
         STORAGE: $dev ? "/tmp/persist.json" : "/mnt/efs/persist.json"
     },
-    serviceRegistry: {
-        port: 3002
+    loadBalancer: {
+        rules: [
+            {
+                listen: "80/http",
+                forward: "3002/http",
+            },
+        ],
     },
-    //TODO: Use API gateway instead, because of the API headers
-    // loadBalancer: {
-    //     domain: "auth." + domain,
-    //     rules: [
-    //         {
-    //             listen: "80/http",
-    //             forward: "3002/http",
-    //         },
-    //         {
-    //             listen: "443/https",
-    //             forward: "3002/http",
-    //         },
-    //     ],
-    // },
     permissions: [
         {
             actions: ["ses:SendEmail"],
@@ -76,12 +53,12 @@ export const auth = new sst.aws.Service("Auth", {
             : undefined,
 });
 
-const authUrl = new sst.aws.ApiGatewayV2("AuthUrl", {
-    vpc,
+export const authRoute = new sst.aws.Router("AuthRoute", {
+    routes: {
+        "/*": auth.nodes.loadBalancer.dnsName,
+    },
     domain: {
+        name: "auth." + domain,
         dns: sst.cloudflare.dns(),
-        name: "auth." + domain
-    }
-});
-
-authUrl.routePrivate("$default", auth.nodes.cloudmapService.arn);
+    },
+})
