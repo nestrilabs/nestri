@@ -87,23 +87,23 @@ namespace Steam
                     // Log in with obtained credentials
                     await SendSseEvent(response, "status", new { message = $"Logging in as '{pollResponse.AccountName}'..." });
 
-                    _steamUser.LogOn(new SteamUser.LogOnDetails
-                    {
-                        Username = pollResponse.AccountName,
-                        MachineName = "Nestri Cloud Gaming",
-                        ClientOSType = EOSType.Linux5x,
-                        AccessToken = pollResponse.RefreshToken
-                    });
+                    //_steamUser.LogOn(new SteamUser.LogOnDetails
+                    //{
+                    //    Username = pollResponse.AccountName,
+                    //    MachineName = "Nestri Cloud Gaming",
+                    //    ClientOSType = EOSType.Linux5x,
+                    //    AccessToken = pollResponse.RefreshToken
+                    //});
 
                     // Wait for login to complete (handled by OnLoggedOn callback)
-                    await tcs.Task;
+                    //await tcs.Task;
 
                     // Send final success message
-                    await SendSseEvent(response, "login-successful", new
-                    {
-                        steamId = _steamUser.SteamID?.ConvertToUInt64(),
-                        username = pollResponse.AccountName
-                    });
+                    //await SendSseEvent(response, "login-successful", new
+                    //{
+                    //    steamId = _steamUser.SteamID?.ConvertToUInt64(),
+                    //    username = pollResponse.AccountName
+                    //});
                 }
                 catch (Exception ex)
                 {
@@ -119,6 +119,7 @@ namespace Steam
                 // Clean up
                 _authCompletionSources.Remove(sessionId);
                 await response.Body.FlushAsync();
+		_steamClient.Disconnect();
             }
         }
 
