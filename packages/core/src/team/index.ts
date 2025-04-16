@@ -170,6 +170,14 @@ export namespace Team {
         ),
     );
 
+    /**
+     * Transforms an array of team, subscription, and member records into structured team objects.
+     *
+     * Groups input rows by team ID and constructs an array of team objects, each including its associated members and subscriptions.
+     *
+     * @param input - Array of objects containing team, subscription, and member data.
+     * @returns An array of team objects with their members and subscriptions.
+     */
     export function serialize(
         input: { team: typeof teamTable.$inferSelect, subscription: typeof subscriptionTable.$inferInsert | null, member: typeof memberTable.$inferInsert | null }[],
     ): z.infer<typeof Info>[] {

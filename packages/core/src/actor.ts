@@ -109,6 +109,12 @@ export function assertActor<T extends Actor["type"]>(type: T) {
   return actor as Extract<Actor, { type: T }>;
 }
 
+/**
+ * Returns the current actor's team ID.
+ *
+ * @returns The team ID associated with the current actor.
+ * @throws {VisibleError} If the current actor does not have a {@link teamID} property.
+ */
 export function useTeam() {
   const actor = useActor();
   if ("teamID" in actor.properties) return actor.properties.teamID;
@@ -119,6 +125,12 @@ export function useTeam() {
   );
 }
 
+/**
+ * Returns the fingerprint of the current actor if the actor has a machine identity.
+ *
+ * @returns The fingerprint of the current machine actor.
+ * @throws {VisibleError} If the current actor does not have a machine identity.
+ */
 export function useMachine() {
   const actor = useActor();
   if ("machineID" in actor.properties) return actor.properties.fingerprint;

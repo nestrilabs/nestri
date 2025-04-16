@@ -167,6 +167,12 @@ export namespace Subscription {
         )
     )
 
+    /**
+     * Converts a raw subscription database record into a structured {@link Info} object.
+     *
+     * @param input - The subscription record retrieved from the database.
+     * @returns The subscription data formatted according to the {@link Info} schema.
+     */
     export function serialize(
         input: typeof subscriptionTable.$inferSelect
     ): z.infer<typeof Info> {

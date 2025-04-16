@@ -111,6 +111,13 @@ const UrlTitle = styled("span", {
     }
 })
 
+/**
+ * Renders a form for creating a new team with validated fields for team name, slug, and plan type.
+ *
+ * Submits the form data to the API to create the team, displays validation errors, and navigates to the new team's page upon success.
+ *
+ * @remark If the chosen team slug is already taken, an error message is shown for the slug field.
+ */
 export function CreateTeamComponent() {
     const [form, { Form, Field }] = createForm({
         validate: valiForm(schema),
