@@ -119,7 +119,7 @@ namespace Steam
                 // Clean up
                 _authCompletionSources.Remove(sessionId);
                 await response.Body.FlushAsync();
-		_steamClient.Disconnect();
+                _steamClient.Disconnect();
             }
         }
 
