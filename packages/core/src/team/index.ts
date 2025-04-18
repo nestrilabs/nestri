@@ -1,16 +1,18 @@
 import { z } from "zod";
-import { Resource } from "sst";
-import { bus } from "sst/aws/bus";
 import { Common } from "../common";
+import { Member } from "../member";
+import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
+import { assertActor } from "../actor";
 import { createEvent } from "../event";
 import { createID, fn } from "../utils";
+import { Subscription } from "../subscription";
 import { and, eq, sql, isNull } from "../drizzle";
-import { PlanType, teamTable } from "./team.sql";
-import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { groupBy, map, pipe, values } from "remeda";
+import { subscriptionTable } from "../subscription/subscription.sql";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Team {
     export const Info = z
@@ -19,6 +21,7 @@ export namespace Team {
                 description: Common.IdDescription,
                 example: Examples.Team.id,
             }),
+            // Remove spaces and make sure it is lowercase (this is just to make sure the frontend did this)
             slug: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
                 description: "The unique and url-friendly slug of this team",
                 example: Examples.Team.slug
@@ -27,10 +30,14 @@ export namespace Team {
                 description: "The name of this team",
                 example: Examples.Team.name
             }),
-            planType: z.enum(PlanType).openapi({
-                description: "The type of Plan this team is subscribed to",
-                example: Examples.Team.planType
-            })
+            members: Member.Info.array().openapi({
+                description: "The members of this team",
+                example: Examples.Team.members
+            }),
+            subscriptions: Subscription.Info.array().openapi({
+                description: "The subscriptions of this team",
+                example: Examples.Team.subscriptions
+            }),
         })
         .openapi({
             ref: "Team",
@@ -60,16 +67,14 @@ export namespace Team {
     }
 
     export const create = fn(
-        Info.pick({ slug: true, id: true, name: true, planType: true }).partial({
+        Info.pick({ slug: true, id: true, name: true, }).partial({
             id: true,
         }), (input) =>
         createTransaction(async (tx) => {
             const id = input.id ?? createID("team");
             const result = await tx.insert(teamTable).values({
                 id,
-                //Remove spaces and make sure it is lowercase (this is just to make sure the frontend did this)
-                slug: input.slug, //.toLowerCase().replace(/[\s]/g, ''),
-                planType: input.planType,
+                slug: input.slug,
                 name: input.name
             })
                 .onConflictDoNothing({ target: teamTable.slug })
@@ -80,6 +85,7 @@ export namespace Team {
         })
     )
 
+    //TODO: "Delete" subscription and member(s) as well
     export const remove = fn(Info.shape.id, (input) =>
         useTransaction(async (tx) => {
             const account = assertActor("user");
@@ -106,48 +112,107 @@ export namespace Team {
         }),
     );
 
-    export const list = fn(z.void(), () =>
-        useTransaction((tx) =>
+    export const list = fn(z.void(), () => {
+        const actor = assertActor("user");
+        return useTransaction(async (tx) =>
             tx
                 .select()
                 .from(teamTable)
-                .where(isNull(teamTable.timeDeleted))
+                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
+                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                .where(
+                    and(
+                        eq(memberTable.email, actor.properties.email),
+                        isNull(memberTable.timeDeleted),
+                        isNull(teamTable.timeDeleted),
+                    ),
+                )
                 .execute()
-                .then((rows) => rows.map(serialize)),
+                .then((rows) => serialize(rows))
+        )
+    });
+
+    export const fromID = fn(z.string().min(1), async (id) =>
+        useTransaction(async (tx) =>
+            tx
+                .select()
+                .from(teamTable)
+                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
+                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                .where(
+                    and(
+                        eq(teamTable.id, id),
+                        isNull(memberTable.timeDeleted),
+                        isNull(teamTable.timeDeleted),
+                    ),
+                )
+                .execute()
+                .then((rows) => serialize(rows).at(0))
         ),
     );
 
-    export const fromID = fn(z.string().min(1), async (id) =>
-        useTransaction(async (tx) => {
-            return tx
+    export const fromSlug = fn(z.string().min(1), async (slug) =>
+        useTransaction(async (tx) =>
+            tx
                 .select()
                 .from(teamTable)
-                .where(and(eq(teamTable.id, id), isNull(teamTable.timeDeleted)))
+                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
+                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                .where(
+                    and(
+                        eq(teamTable.slug, slug),
+                        isNull(memberTable.timeDeleted),
+                        isNull(teamTable.timeDeleted),
+                    ),
+                )
                 .execute()
-                .then((rows) => rows.map(serialize).at(0))
-        }),
+                .then((rows) => serialize(rows).at(0))
+        ),
     );
 
-    export const fromSlug = fn(z.string().min(1), async (input) =>
-        useTransaction(async (tx) => {
-            return tx
-                .select()
-                .from(teamTable)
-                .where(and(eq(teamTable.slug, input), isNull(teamTable.timeDeleted)))
-                .execute()
-                .then((rows) => rows.map(serialize).at(0))
-        }),
-    );
-
+    /**
+     * Transforms an array of team, subscription, and member records into structured team objects.
+     *
+     * Groups input rows by team ID and constructs an array of team objects, each including its associated members and subscriptions.
+     *
+     * @param input - Array of objects containing team, subscription, and member data.
+     * @returns An array of team objects with their members and subscriptions.
+     */
     export function serialize(
-        input: typeof teamTable.$inferSelect,
-    ): z.infer<typeof Info> {
-        return {
-            id: input.id,
-            name: input.name,
-            slug: input.slug,
-            planType: input.planType,
-        };
+        input: { team: typeof teamTable.$inferSelect, subscription: typeof subscriptionTable.$inferInsert | null, member: typeof memberTable.$inferInsert | null }[],
+    ): z.infer<typeof Info>[] {
+        console.log("serialize", input)
+        return pipe(
+            input,
+            groupBy((row) => row.team.id),
+            values(),
+            map((group) => ({
+                name: group[0].team.name,
+                id: group[0].team.id,
+                slug: group[0].team.slug,
+                subscriptions: !group[0].subscription ?
+                    [] :
+                    group.map((row) => ({
+                        planType: row.subscription!.planType,
+                        polarProductID: row.subscription!.polarProductID,
+                        polarSubscriptionID: row.subscription!.polarSubscriptionID,
+                        standing: row.subscription!.standing,
+                        tokens: row.subscription!.tokens,
+                        teamID: row.subscription!.teamID,
+                        userID: row.subscription!.userID,
+                        id: row.subscription!.id,
+                    })),
+                members:
+                    !group[0].member ?
+                        [] :
+                        group.map((row) => ({
+                            id: row.member!.id,
+                            email: row.member!.email,
+                            role: row.member!.role,
+                            teamID: row.member!.teamID,
+                            timeSeen: row.member!.timeSeen,
+                        }))
+            })),
+        );
     }
-
 }

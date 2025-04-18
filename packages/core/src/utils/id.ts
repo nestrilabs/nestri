@@ -2,11 +2,14 @@ import { ulid } from "ulid";
 
 export const prefixes = {
   user: "usr",
-  team: "tea",
+  team: "tem",
   task: "tsk",
   machine: "mch",
   member: "mbr",
   steam: "stm",
+  subscription: "sub",
+  invite: "inv",
+  product: "prd",
 } as const;
 
 /**

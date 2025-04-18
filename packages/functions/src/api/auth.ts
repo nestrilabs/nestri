@@ -42,11 +42,6 @@ export const auth: MiddlewareHandler = async (c, next) => {
       "Invalid bearer token",
     );
   }
-    
-    if (result.subject.type === "machine") {
-      console.log("machine detected")
-      return withActor(result.subject, next);
-    }
 
   if (result.subject.type === "user") {
     const teamID = c.req.header("x-nestri-team");
@@ -58,12 +53,11 @@ export const auth: MiddlewareHandler = async (c, next) => {
           teamID,
         },
       },
-      async () => {
-        return withActor(
+      async () =>
+        withActor(
           result.subject,
           next,
-        );
-      },
+        )
     );
   }
 };

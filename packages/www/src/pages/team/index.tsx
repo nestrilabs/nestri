@@ -44,7 +44,7 @@ export const TeamRoute = (
             return (
                 <Switch>
                     <Match when={!team()}>
-                        TODO: Add a public page for (other) teams
+                        {/* TODO: Add a public page for (other) teams */}
                         <NotAllowed header />
                     </Match>
                     <Match when={team()}>

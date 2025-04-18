@@ -5,9 +5,12 @@ import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
+import { Polar } from "@nestri/core/polar/index";
 import { Member } from "@nestri/core/member/index";
 import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, Result, validator } from "./common";
+import { Subscription } from "@nestri/core/subscription/index";
+import { PlanType } from "@nestri/core/subscription/subscription.sql";
 
 export namespace TeamApi {
     export const route = new Hono()
@@ -49,7 +52,12 @@ export namespace TeamApi {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    z.literal("ok")
+                                    z.object({
+                                        checkoutUrl: z.string().openapi({
+                                            description: "The checkout url to confirm subscription for this team",
+                                            example: "https://polar.sh/checkout/2903038439320298377"
+                                        })
+                                    })
                                 )
                             }
                         },
@@ -63,17 +71,24 @@ export namespace TeamApi {
             }),
             validator(
                 "json",
-                Team.create.schema.omit({ id: true }).openapi({
-                    description: "Details of the team to create",
-                    //@ts-expect-error
-                    example: { ...Examples.Team, id: undefined }
-                })
+                Team.create.schema
+                    .pick({ slug: true, name: true })
+                    .extend({ planType: z.enum(PlanType), successUrl: z.string().url("Success url must be a valid url") })
+                    .openapi({
+                        description: "Details of the team to create",
+                        example: {
+                            slug: Examples.Team.slug,
+                            name: Examples.Team.name,
+                            planType: Examples.Subscription.planType,
+                            successUrl: "https://your-url.io/thanks"
+                        },
+                    })
             ),
             async (c) => {
                 const body = c.req.valid("json")
                 const actor = assertActor("user");
 
-                const teamID = await Team.create(body);
+                const teamID = await Team.create({ name: body.name, slug: body.slug });
 
                 await withActor(
                     {
@@ -82,14 +97,28 @@ export namespace TeamApi {
                             teamID,
                         },
                     },
-                    () =>
-                        Member.create({
+                    async () => {
+                        await Member.create({
                             first: true,
                             email: actor.properties.email,
-                        }),
+                        });
+
+                        await Subscription.create({
+                            planType: body.planType,
+                            userID: actor.properties.userID,
+                            // FIXME: Make this make sense
+                            tokens: body.planType === "free" ? 100 : body.planType === "pro" ? 1000 : body.planType === "family" ? 10000 : 0,
+                        });
+                    }
                 );
 
-                return c.json({ data: "ok" })
+                const checkoutUrl = await Polar.createCheckout({ planType: body.planType, successUrl: body.successUrl, teamID })
+
+                return c.json({
+                    data: {
+                        checkoutUrl,
+                    }
+                })
             }
         )
 }

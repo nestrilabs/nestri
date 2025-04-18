@@ -201,15 +201,12 @@ const Nav = styled("nav", {
 })
 
 /**
- * Renders the application's header, featuring navigation, branding, and team details.
+ * Displays the application's fixed top navigation bar with branding, team information, and navigation links.
  *
- * This component displays a navigation bar that includes the logo, team avatar, team name, a badge 
- * reflecting the team's plan type, and navigation links. It adjusts its styling based on the scroll
- * position by toggling visual effects on the navigation wrapper. A scroll event listener is added
- * on mount to update the header's appearance when the user scrolls and is removed on unmount.
+ * The header includes the app logo, team avatar and name, a badge indicating the team's plan type, and navigation links related to the team. The header's appearance updates dynamically based on the user's scroll position.
  *
- * @param props.children - Optional child elements rendered below the header component.
- * @returns The header component element.
+ * @param props.children - Optional elements rendered below the header.
+ * @returns The rendered header component.
  */
 export function Header(props: ParentProps) {
     // const team = useContext(TeamContext)
@@ -218,7 +215,7 @@ export function Header(props: ParentProps) {
         id: "tea_01JPACSPYWTTJ66F32X3AWWFWE",
         slug: "wanjohiryan",
         name: "Wanjohi",
-        planType: "BYOG"
+        planType: "Pro"
     })
 
     createEffect(() => {
@@ -231,8 +228,9 @@ export function Header(props: ParentProps) {
         });
 
     })
-    
+
     // const account = useAccount()
+    
     return (
         <PageWrapper>
             <NavWrapper scrolled={hasScrolled()}>
@@ -294,14 +292,14 @@ export function Header(props: ParentProps) {
                                 />
                                 <TeamLabel style={{ color: theme.color.d1000.gray }}>{team!().name}</TeamLabel>
                                 <Switch>
-                                    <Match when={team!().planType === "BYOG"}>
+                                    <Match when={team!().planType === "Family"}>
                                         <Badge style={{ "background-color": theme.color.purple.d700 }}>
-                                            <span style={{ "line-height": 0 }} >BYOG</span>
+                                            <span style={{ "line-height": 0 }} >Family</span>
                                         </Badge>
                                     </Match>
-                                    <Match when={team!().planType === "Hosted"}>
+                                    <Match when={team!().planType === "Pro"}>
                                         <Badge style={{ "background-color": theme.color.blue.d700 }}>
-                                            <span style={{ "line-height": 0 }}>Hosted</span>
+                                            <span style={{ "line-height": 0 }}>Pro</span>
                                         </Badge>
                                     </Match>
                                 </Switch>
