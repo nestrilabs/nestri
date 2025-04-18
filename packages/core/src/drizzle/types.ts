@@ -1,4 +1,5 @@
 import { char, timestamp as rawTs } from "drizzle-orm/pg-core";
+import { teamTable } from "../team/team.sql";
 
 export const ulid = (name: string) => char(name, { length: 26 + 4 });
 

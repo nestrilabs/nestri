@@ -1,21 +1,22 @@
 import { z } from "zod";
 import { Team } from "../team";
 import { bus } from "sst/aws/bus";
+import { Steam } from "../steam";
 import { Common } from "../common";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
 import { createEvent } from "../event";
-import { pipe, groupBy, values, map } from "remeda";
 import { Examples } from "../examples";
 import { Resource } from "sst/resource";
 import { teamTable } from "../team/team.sql";
 import { steamTable } from "../steam/steam.sql";
 import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
-import { and, eq, isNull, asc, getTableColumns, sql } from "../drizzle";
+import { pipe, groupBy, values, map } from "remeda";
+import { and, eq, isNull, asc, sql } from "../drizzle";
+import { subscriptionTable } from "../subscription/subscription.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { Steam } from "../steam";
 
 
 export namespace User {
@@ -154,91 +155,27 @@ export namespace User {
     })
 
     export const fromEmail = fn(z.string(), async (email) =>
-        useTransaction(async (tx) => {
-            const rows = await tx
+        useTransaction(async (tx) =>
+            tx
                 .select()
                 .from(userTable)
                 .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
                 .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
                 .orderBy(asc(userTable.timeCreated))
-
-            const result = pipe(
-                rows,
-                groupBy((row) => row.user.id),
-                values(),
-                map(
-                    (group): Info => ({
-                        id: group[0].user.id,
-                        name: group[0].user.name,
-                        email: group[0].user.email,
-                        avatarUrl: group[0].user.avatarUrl,
-                        discriminator: group[0].user.discriminator,
-                        polarCustomerID: group[0].user.polarCustomerID,
-                        steamAccounts: !group[0].steam ?
-                            [] :
-                            group.map((row) => ({
-                                id: row.steam!.id,
-                                userID: row.steam!.userID,
-                                steamID: row.steam!.steamID,
-                                lastSeen: row.steam!.lastSeen,
-                                avatarUrl: row.steam!.avatarUrl,
-                                lastGame: row.steam!.lastGame,
-                                username: row.steam!.username,
-                                countryCode: row.steam!.countryCode,
-                                steamEmail: row.steam!.steamEmail,
-                                personaName: row.steam!.personaName,
-                                limitation: row.steam!.limitation,
-                            })),
-                    })
-                )
-            )
-
-            return result[0]
-        }),
+                .then((rows => serialize(rows).at(0)))
+        )
     )
 
-    export const fromID = fn(z.string(), async (id) =>
-        useTransaction(async (tx) => {
-            const rows = await tx
+    export const fromID = fn(z.string(), (id) =>
+        useTransaction(async (tx) =>
+            tx
                 .select()
                 .from(userTable)
                 .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
-                .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted)))
+                .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted), isNull(steamTable.timeDeleted)))
                 .orderBy(asc(userTable.timeCreated))
-
-            const result = pipe(
-                rows,
-                groupBy((row) => row.user.id),
-                values(),
-                map(
-                    (group): Info => ({
-                        id: group[0].user.id,
-                        name: group[0].user.name,
-                        email: group[0].user.email,
-                        avatarUrl: group[0].user.avatarUrl,
-                        discriminator: group[0].user.discriminator,
-                        polarCustomerID: group[0].user.polarCustomerID,
-                        steamAccounts: !group[0].steam ?
-                            [] :
-                            group.map((row) => ({
-                                id: row.steam!.id,
-                                userID: row.steam!.userID,
-                                steamID: row.steam!.steamID,
-                                lastSeen: row.steam!.lastSeen,
-                                avatarUrl: row.steam!.avatarUrl,
-                                lastGame: row.steam!.lastGame,
-                                username: row.steam!.username,
-                                countryCode: row.steam!.countryCode,
-                                steamEmail: row.steam!.steamEmail,
-                                personaName: row.steam!.personaName,
-                                limitation: row.steam!.limitation,
-                            })),
-                    })
-                )
-            )
-
-            return result[0]
-        }),
+                .then((rows) => serialize(rows).at(0))
+        ),
     )
 
     export const remove = fn(Info.shape.id, (id) =>
@@ -254,12 +191,54 @@ export namespace User {
         }),
     );
 
+    /**
+     * Converts an array of user and Steam account records into structured user objects with associated Steam accounts.
+     *
+     * @param input - An array of objects containing user data and optional Steam account data.
+     * @returns An array of user objects, each including a list of their associated Steam accounts.
+     */
+    export function serialize(
+        input: { user: typeof userTable.$inferSelect; steam: typeof steamTable.$inferSelect | null }[],
+    ): z.infer<typeof Info>[] {
+        return pipe(
+            input,
+            groupBy((row) => row.user.id),
+            values(),
+            map((group) => ({
+                ...group[0].user,
+                steamAccounts: !group[0].steam ?
+                    [] :
+                    group.map((row) => ({
+                        id: row.steam!.id,
+                        lastSeen: row.steam!.lastSeen,
+                        countryCode: row.steam!.countryCode,
+                        username: row.steam!.username,
+                        steamID: row.steam!.steamID,
+                        lastGame: row.steam!.lastGame,
+                        limitation: row.steam!.limitation,
+                        steamEmail: row.steam!.steamEmail,
+                        userID: row.steam!.userID,
+                        personaName: row.steam!.personaName,
+                        avatarUrl: row.steam!.avatarUrl,
+                    })),
+            })),
+        )
+    }
+
+    /**
+     * Retrieves the list of teams that the current user belongs to.
+     *
+     * @returns An array of team information objects representing the user's active team memberships.
+     *
+     * @remark Only teams and memberships that have not been deleted are included in the result.
+     */
     export function teams() {
         const actor = assertActor("user");
-        return useTransaction((tx) =>
+        return useTransaction(async (tx) =>
             tx
-                .select(getTableColumns(teamTable))
+                .select()
                 .from(teamTable)
+                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
                 .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
                 .where(
                     and(
@@ -269,7 +248,7 @@ export namespace User {
                     ),
                 )
                 .execute()
-                .then((rows) => rows.map(Team.serialize))
-        );
+                .then((rows) => Team.serialize(rows))
+        )
     }
 }

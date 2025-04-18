@@ -8,8 +8,8 @@ import { useNavigate } from "@solidjs/router";
 import { useOpenAuth } from "@openauthjs/solid";
 import { utility } from "@nestri/www/ui/utility";
 import { useAccount } from "../providers/account";
-import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
 import { FormField, Input, Select } from "@nestri/www/ui/form";
+import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
 import { createForm, getValue, setError, valiForm } from "@modular-forms/solid";
 
 const nameRegex = /^[a-z0-9\-]+$/
@@ -32,8 +32,9 @@ const Hr = styled("hr", {
 })
 
 const Plan = {
-    Pro: 'BYOG',
-    Basic: 'Hosted',
+    Free: 'free',
+    Pro: 'pro',
+    Family: 'family',
 } as const;
 
 const schema = v.object({
@@ -110,6 +111,13 @@ const UrlTitle = styled("span", {
     }
 })
 
+/**
+ * Renders a form for creating a new team with validated fields for team name, slug, and plan type.
+ *
+ * Submits the form data to the API to create the team, displays validation errors, and navigates to the new team's page upon success.
+ *
+ * @remark If the chosen team slug is already taken, an error message is shown for the slug field.
+ */
 export function CreateTeamComponent() {
     const [form, { Form, Field }] = createForm({
         validate: valiForm(schema),
@@ -215,12 +223,14 @@ export function CreateTeamComponent() {
                                         required
                                         value={field.value}
                                         badges={[
-                                            { label: "BYOG", color: "purple" },
-                                            { label: "Hosted", color: "blue" },
+                                            { label: "Free", color: "gray" },
+                                            { label: "Pro", color: "blue" },
+                                            { label: "Family", color: "purple" },
                                         ]}
                                         options={[
-                                            { label: "I'll be playing on my machine", value: 'BYOG' },
-                                            { label: "I'll be playing on the cloud", value: 'Hosted' },
+                                            { label: "I'll be playing by myself", value: 'free' },
+                                            { label: "I'll be playing with 3 friends", value: 'pro' },
+                                            { label: "I'll be playing with 5 family members", value: 'family' },
                                         ]}
                                     />
                                 </FormField>

@@ -6,15 +6,21 @@ import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
 export const api = new sst.aws.Service("Api", {
+    cluster,
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
     memory: $app.stage === "production" ? "4 GB" : undefined,
-    cluster,
     command: ["bun", "run", "./src/api/index.ts"],
     link: [
         bus,
         auth,
         postgres,
         secret.PolarSecret,
+        secret.PolarWebhookSecret,
+        secret.NestriFamilyMonthly,
+        secret.NestriFamilyYearly,
+        secret.NestriFreeMonthly,
+        secret.NestriProMonthly,
+        secret.NestriProYearly,
     ],
     image: {
         dockerfile: "packages/functions/Containerfile",
@@ -23,14 +29,9 @@ export const api = new sst.aws.Service("Api", {
         NO_COLOR: "1",
     },
     loadBalancer: {
-        domain: "api." + domain,
         rules: [
             {
                 listen: "80/http",
-                forward: "3001/http",
-            },
-            {
-                listen: "443/https",
                 forward: "3001/http",
             },
         ],
@@ -48,3 +49,15 @@ export const api = new sst.aws.Service("Api", {
             }
             : undefined,
 });
+
+
+export const apiRoute = new sst.aws.Router("ApiRoute", {
+    routes: {
+        // I think api.url should work all the same
+        "/*": api.nodes.loadBalancer.dnsName,
+    },
+    domain: {
+        name: "api." + domain,
+        dns: sst.cloudflare.dns(),
+    },
+})

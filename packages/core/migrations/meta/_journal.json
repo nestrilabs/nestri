@@ -43,6 +43,34 @@
       "when": 1744614896792,
       "tag": "0005_aspiring_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1744634229644,
+      "tag": "0006_worthless_dreadnoughts",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1744634322996,
+      "tag": "0007_warm_secret_warriors",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1744651530530,
+      "tag": "0008_third_mindworm",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1744651817581,
+      "tag": "0009_luxuriant_wraith",
+      "breakpoints": true
     }
   ]
 }

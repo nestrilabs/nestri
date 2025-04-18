@@ -109,43 +109,34 @@ export function assertActor<T extends Actor["type"]>(type: T) {
   return actor as Extract<Actor, { type: T }>;
 }
 
+/**
+ * Returns the current actor's team ID.
+ *
+ * @returns The team ID associated with the current actor.
+ * @throws {VisibleError} If the current actor does not have a {@link teamID} property.
+ */
 export function useTeam() {
   const actor = useActor();
   if ("teamID" in actor.properties) return actor.properties.teamID;
-  throw new Error(`Expected actor to have teamID`);
-}
-
-export function useMachine() {
-  const actor = useActor();
-  if ("machineID" in actor.properties) return actor.properties.fingerprint;
-  throw new Error(`Expected actor to have fingerprint`);
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `Expected actor to have teamID`
+  );
 }
 
 /**
- * Asserts that the current user possesses the specified flag.
+ * Returns the fingerprint of the current actor if the actor has a machine identity.
  *
- * This function executes a database transaction that queries the user table for the current user's flags.
- * If the flags are missing, it throws a {@link VisibleError} with the code {@link ErrorCodes.Validation.MISSING_REQUIRED_FIELD}
- * and a message indicating that the required flag is absent.
- *
- * @param flag - The name of the user flag to verify.
- *
- * @throws {VisibleError} If the user's flag is missing.
+ * @returns The fingerprint of the current machine actor.
+ * @throws {VisibleError} If the current actor does not have a machine identity.
  */
-export async function assertUserFlag(flag: keyof UserFlags) {
-  return useTransaction((tx) =>
-    tx
-      .select({ flags: userTable.flags })
-      .from(userTable)
-      .where(eq(userTable.id, useUserID()))
-      .then((rows) => {
-        const flags = rows[0]?.flags;
-        if (!flags)
-          throw new VisibleError(
-            "not_found",
-            ErrorCodes.Validation.MISSING_REQUIRED_FIELD,
-            "Actor does not have " + flag + " flag",
-          );
-      }),
+export function useMachine() {
+  const actor = useActor();
+  if ("machineID" in actor.properties) return actor.properties.fingerprint;
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `Expected actor to have fingerprint`
   );
 }

@@ -37,7 +37,11 @@ export const steamTable = pgTable(
         steamEmail: varchar("steam_email", { length: 255 }).notNull(),
         personaName: varchar("persona_name", { length: 255 }).notNull(),
         limitation: json("limitation").$type<AccountLimitation>().notNull(),
-    }
+    },
+    (table) => [
+        uniqueIndex("steam_id").on(table.steamID),
+        index("steam_user_id").on(table.userID),
+    ],
 );
 
 export const steamCredentialsTable = pgTable(
