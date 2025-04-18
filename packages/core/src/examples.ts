@@ -34,6 +34,22 @@ export namespace Examples {
         steamAccounts: [Steam]
     };
 
+    export const game = {
+        id: Id("game")
+    }
+
+    export const session = {
+        id: Id("session")
+    }
+
+    export const Usage = {
+        id: Id("usage"),
+        creditsUsed: 20,
+        type: "gpu" as const, //or bandwidth, storage
+        game: [game],
+        session: [session]
+    }
+
     export const Product = {
         id: Id("product"),
         name: "RTX 4090",
