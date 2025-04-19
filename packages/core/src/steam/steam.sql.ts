@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { userTable } from "../user/user.sql";
-import { id, timestamps, ulid, userID, utc } from "../drizzle/types";
+import { id, timestamps, ulid, utc } from "../drizzle/types";
 import { index, pgTable, integer, uniqueIndex, varchar, text, json, primaryKey } from "drizzle-orm/pg-core";
 
 export const LastGame = z.object({
