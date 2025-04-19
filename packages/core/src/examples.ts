@@ -3,6 +3,14 @@ export namespace Examples {
     export const Id = (prefix: keyof typeof prefixes) =>
         `${prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
 
+    export const Credential = {
+        id: Id("credential"),
+        steamID: Id("steam"),
+        // Useless JWT as an example
+        accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30",
+        username: "janedoe"
+    }
+
     export const Steam = {
         id: Id("steam"),
         userID: Id("user"),
@@ -22,6 +30,7 @@ export namespace Examples {
         username: "johnsteamaccount",
         steamEmail: "john@example.com",
         avatarUrl: "https://avatars.akamai.steamstatic.com/XXXXXXXXXXXX_full.jpg",
+        // credentials: [Credential]
     }
 
     export const User = {

@@ -8,6 +8,30 @@ import { steamTable, AccountLimitation, LastGame } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
+    export const Credential = z.object({
+        id: z.string().openapi({
+            description: Common.IdDescription,
+            example: Examples.Credential.id,
+        }),
+        accessToken: z.string().openapi({
+            description: "The accessToken to login to a user's Steam account",
+            example: Examples.Credential.accessToken
+        }),
+        username: z.string().openapi({
+            description: "The username used to login to a user's Steam account",
+            example: Examples.Credential.username
+        }),
+        steamID: z.string().openapi({
+            description: "The steam user's id this credentials are for",
+            example: Examples.Credential.steamID
+        })
+    })
+        .openapi({
+            ref: "Steam Credential",
+            description: "Represents a steam user's credentials stored on Nestri",
+            example: Examples.Credential,
+        });
+
     export const Info = z
         .object({
             id: z.string().openapi({
@@ -107,6 +131,8 @@ export namespace Steam {
                 .execute()
                 .then((rows) => rows.map(serialize)),
         )
+
+    export const getSteamCredentials = () => {}
 
     /**
      * Serializes a raw Steam table record into a standardized Info object.

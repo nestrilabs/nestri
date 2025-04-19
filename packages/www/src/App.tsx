@@ -19,6 +19,7 @@ import { CreateTeamComponent } from '@nestri/www/pages/new';
 import { darkClass, lightClass, theme } from '@nestri/www/ui/theme';
 import { AccountProvider, useAccount } from '@nestri/www/providers/account';
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
+import { RealtimeProvider } from './providers/realtime';
 
 const Root = styled("div", {
     base: {
@@ -107,7 +108,9 @@ export const App: Component = () => {
                                         <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
                                     </FullScreen>
                                 }>
-                                {props.children}
+                                <RealtimeProvider>
+                                    {props.children}
+                                </RealtimeProvider>
                             </AccountProvider>
                         )}
                     >
