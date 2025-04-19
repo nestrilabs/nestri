@@ -1,12 +1,15 @@
 import { setup } from "actor-core";
-import chatRoom from "./actor-core";
+import { counter } from "./counter";
 import { createRouter } from "@actor-core/bun";
 
 export namespace Realtime {
-    const app = setup({
-        actors: { chatRoom },
-        basePath: "/realtime"
+    export const app = setup({
+        actors: { counter },
+        basePath: "/realtime",
+        cors: { origin: "*" }
     });
+
+    export type App = typeof app
 
     const realtimeRouter = createRouter(app);
 
