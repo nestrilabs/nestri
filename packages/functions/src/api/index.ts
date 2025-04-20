@@ -1,10 +1,10 @@
 import "zod-openapi/extend";
-import { Hono } from "hono";
 import { auth } from "./auth";
 import { cors } from "hono/cors";
 import { TeamApi } from "./team";
 import { PolarApi } from "./polar";
 import { logger } from "hono/logger";
+import { Hono, type Env } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
 import { MachineApi } from "./machine";
@@ -99,9 +99,9 @@ patchLogger();
 export default {
     port: 3001,
     idleTimeout: 255,
-    webSocketHandler: Realtime.webSocketHandler,
-    fetch: (req: Request) =>
-        app.fetch(req, undefined, {
+    webSocket: Realtime.webSocketHandler,
+    fetch: (req: Request, env: Env) =>
+        app.fetch(req, env, {
             waitUntil: (fn) => fn,
             passThroughOnException: () => { },
         }),

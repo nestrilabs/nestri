@@ -108,6 +108,7 @@
       "name": "@nestri/functions",
       "dependencies": {
         "@actor-core/bun": "*",
+        "@actor-core/file-system": "^0.8.0",
         "@openauthjs/openauth": "*",
         "actor-core": "*",
         "hono": "^4.6.15",

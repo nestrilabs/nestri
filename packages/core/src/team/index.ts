@@ -181,7 +181,6 @@ export namespace Team {
     export function serialize(
         input: { team: typeof teamTable.$inferSelect, subscription: typeof subscriptionTable.$inferInsert | null, member: typeof memberTable.$inferInsert | null }[],
     ): z.infer<typeof Info>[] {
-        console.log("serialize", input)
         return pipe(
             input,
             groupBy((row) => row.team.id),

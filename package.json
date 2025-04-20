@@ -18,6 +18,7 @@
   },
   "overrides": {
     "@actor-core/bun": "0.8.0",
+    "@actor-core/file-system": "0.8.0",
     "@openauthjs/openauth": "0.4.3",
     "actor-core": "0.8.0",
     "@rocicorp/zero": "0.16.2025022000"

@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@actor-core/bun": "*",
+    "@actor-core/file-system": "*",
     "@openauthjs/openauth": "*",
     "actor-core": "*",
     "hono": "^4.6.15",
