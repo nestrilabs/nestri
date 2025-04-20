@@ -3,10 +3,11 @@ import { theme } from "@nestri/www/ui";
 import { styled } from "@macaron-css/solid";
 import { keyframes } from "@macaron-css/core";
 import { useTeam } from "../providers/context"
+import { ActorHandle } from "actor-core/client";
 import { useOpenAuth } from "@openauthjs/solid"
 import { QRCode } from "@nestri/www/ui/custom-qr";
 import { useRealtime } from "../providers/realtime"
-import { createEffect, createSignal, Show } from "solid-js"
+import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 
 const EmptyState = styled("div", {
     base: {
@@ -224,6 +225,7 @@ export function AuthSteamComponent() {
     const [url, setUrl] = createSignal<null | string>(null)
     const [error, setError] = createSignal<null | string>(null)
     const [success, setSuccess] = createSignal<null | string>(null)
+    const [steamClient, setSteamClient] = createSignal<null | ActorHandle<any>>(null)
 
     createEffect(async () => {
         const steam = await realtime.client.steam.get({
@@ -232,6 +234,8 @@ export function AuthSteamComponent() {
                 teamID: team().id
             }
         })
+
+        setSteamClient(steam)
 
         steam.on("challenge_url", (data: { url: string }) => {
             setUrl(data.url)
@@ -246,6 +250,15 @@ export function AuthSteamComponent() {
         })
 
         await steam.login()
+    })
+
+    onCleanup(() => {
+        const steam = steamClient()
+        if (steam) {
+            steam.off("challenge_url")
+            steam.off("login_success")
+            steam.off("login_error")
+        }
     })
 
     return (
@@ -280,13 +293,18 @@ export function AuthSteamComponent() {
                         />
                     </Show>
                 </QRWrapper>
-                {/* <Show when={error()}>
-                    <QRReloadBtn onClick={() => reconnect()} disabled={isConnecting()}>
+                <Show when={error()}>
+                    <QRReloadBtn
+                        onClick={async () => {
+                            const steam = steamClient()
+                            await steam?.login()
+                        }}
+                        disabled={!error()}>
                         <QRRealoadContainer>
                             <QRReloadSvg aria-hidden="true" width="32" height="32" viewBox="0 0 32 32" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M32 16C32 24.8366 24.8366 32 16 32C7.16344 32 0 24.8366 0 16C0 7.16344 7.16344 0 16 0C24.8366 0 32 7.16344 32 16ZM24.5001 8.74263C25.0834 8.74263 25.5563 9.21551 25.5563 9.79883V14.5997C25.5563 15.183 25.0834 15.6559 24.5001 15.6559H19.6992C19.1159 15.6559 18.643 15.183 18.643 14.5997C18.643 14.0164 19.1159 13.5435 19.6992 13.5435H21.8378L20.071 11.8798C20.0632 11.8724 20.0555 11.865 20.048 11.8574C19.1061 10.915 17.8835 10.3042 16.5643 10.1171C15.2452 9.92999 13.9009 10.1767 12.7341 10.82C11.5674 11.4634 10.6413 12.4685 10.0955 13.684C9.54968 14.8994 9.41368 16.2593 9.70801 17.5588C10.0023 18.8583 10.711 20.0269 11.7273 20.8885C12.7436 21.7502 14.0124 22.2582 15.3425 22.336C16.6726 22.4138 17.9919 22.0572 19.1017 21.3199C19.5088 21.0495 19.8795 20.7333 20.2078 20.3793C20.6043 19.9515 21.2726 19.9262 21.7004 20.3228C22.1282 20.7194 22.1534 21.3876 21.7569 21.8154C21.3158 22.2912 20.8176 22.7161 20.2706 23.0795C18.7793 24.0702 17.0064 24.5493 15.2191 24.4448C13.4318 24.3402 11.7268 23.6576 10.3612 22.4998C8.9956 21.3419 8.0433 19.7716 7.6478 18.0254C7.2523 16.2793 7.43504 14.4519 8.16848 12.8186C8.90192 11.1854 10.1463 9.83471 11.7142 8.97021C13.282 8.10572 15.0884 7.77421 16.861 8.02565C18.6282 8.27631 20.2664 9.09278 21.5304 10.3525L23.4439 12.1544V9.79883C23.4439 9.21551 23.9168 8.74263 24.5001 8.74263Z" fill="currentColor"></path></QRReloadSvg>
                         </QRRealoadContainer>
                     </QRReloadBtn>
-                </Show> */}
+                </Show>
             </QRContainer>
             <Show
                 fallback={

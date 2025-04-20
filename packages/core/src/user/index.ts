@@ -18,7 +18,6 @@ import { and, eq, isNull, asc, sql } from "../drizzle";
 import { subscriptionTable } from "../subscription/subscription.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
-
 export namespace User {
     const MAX_ATTEMPTS = 50;
 
@@ -136,11 +135,11 @@ export namespace User {
                 return null
             }
 
-            createTransaction(async (tx) => {
+            await createTransaction(async (tx) => {
                 const id = input.id ?? userID;
                 await tx.insert(userTable).values({
                     id,
-                    name: input.name,
+                    name,
                     avatarUrl: input.avatarUrl,
                     email: input.email,
                     discriminator: Number(discriminator),

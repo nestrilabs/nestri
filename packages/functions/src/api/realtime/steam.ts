@@ -17,6 +17,10 @@ export const steam = actor({
     async createConnState(_c, { params }: { params: { authToken: string, teamID: string; } }) {
         const teamID = params.teamID;
         const authToken = params.authToken;
+        
+        if (!authToken) {
+            throw new Error("No auth token provided");
+        }
 
         if (!teamID) {
             throw new Error("No teamID was provided")
@@ -24,7 +28,7 @@ export const steam = actor({
 
         const result = await client.verify(subjects, authToken);
 
-        if (!authToken || result.err) {
+        if (result.err) {
             throw new Error("Invalid auth token");
         }
 
@@ -88,7 +92,7 @@ export const steam = actor({
 
                 // After getting the credentials, close everything for now???
                 steam.destroy()
-                
+
                 c.conn.send("login_success", { message: "Steam authentication was succesful" })
             })
 

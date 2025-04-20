@@ -30,6 +30,8 @@ export interface SteamAuthClientOptions {
     socketPath?: string;
 }
 
+type Listener<T = any> = (payload: T) => void;
+
 /**
  * SteamAuthClient provides methods to authenticate with Steam
  * through a C# service over Unix sockets.
@@ -37,7 +39,7 @@ export interface SteamAuthClientOptions {
 export class SteamAuthClient {
     private socketPath: string;
     private activeSocket: Socket | null = null;
-    private eventListeners: Map<SteamAuthEvent, Function[]> = new Map();
+    private eventListeners: Map<SteamAuthEvent, Listener[]> = new Map();
 
     /**
      * Creates a new Steam authentication client
@@ -223,7 +225,7 @@ export class SteamAuthClient {
      * @param event Event name to listen for
      * @param callback Function to call when event occurs
      */
-    on<T extends SteamAuthEvent>(event: T, callback: Function): void {
+    on<T extends SteamAuthEvent>(event: T, callback: Listener): void {
         if (!this.eventListeners.has(event)) {
             this.eventListeners.set(event, []);
         }
@@ -236,7 +238,7 @@ export class SteamAuthClient {
      * @param event Event name
      * @param callback Function to remove
      */
-    off<T extends SteamAuthEvent>(event: T, callback: Function): void {
+    off<T extends SteamAuthEvent>(event: T, callback: Listener): void {
         if (!this.eventListeners.has(event)) {
             return;
         }
