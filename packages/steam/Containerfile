@@ -1,0 +1,7 @@
+FROM ubuntu/dotnet-runtime:8.0-24.04_stable
+
+COPY ./packages/steam .
+
+WORKDIR ./packages/steam
+
+CMD ["dotnet", "run"]

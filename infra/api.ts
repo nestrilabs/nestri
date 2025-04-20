@@ -25,6 +25,28 @@ export const api = new sst.aws.Service("Api", {
     image: {
         dockerfile: "packages/functions/Containerfile",
     },
+    containers: [
+        {
+            name: "api-container",
+            image: {
+                dockerfile: "packages/functions/Containerfile",
+            },
+            dev: {
+                command: "bun dev:api",
+                directory: "packages/functions",
+            }
+        },
+        {
+            name: "steam-container",
+            image: {
+                dockerfile: "packages/steam/Containerfile"
+            },
+            dev: {
+                command: "bun dev",
+                directory: "packages/steam",
+            }
+        }
+    ],
     environment: {
         NO_COLOR: "1",
     },
@@ -37,8 +59,6 @@ export const api = new sst.aws.Service("Api", {
         ],
     },
     dev: {
-        command: "bun dev:api",
-        directory: "packages/functions",
         url: "http://localhost:3001",
     },
     scaling:
@@ -48,6 +68,42 @@ export const api = new sst.aws.Service("Api", {
                 max: 10,
             }
             : undefined,
+    transform: {
+        taskDefinition: (args) => {
+            const volumes = $output(args.volumes).apply(v => {
+                v.push({
+                    name: "shared-steam-unix",
+                    dockerVolumeConfiguration: {
+                        scope: "shared",
+                        driver: "local"
+                    }
+                });
+                return v;
+            })
+
+            // "containerDefinitions" is a JSON string, parse first
+            let value = $jsonParse(args.containerDefinitions);
+
+            value = value.apply((containerDefinitions) => {
+                containerDefinitions[0].mountPoints = [
+                    {
+                        sourceVolume: "shared-steam-unix",
+                        containerPath: "/tmp"
+                    }
+                ]
+                containerDefinitions[1].volumesFrom = [
+                    {
+                        sourceContainer: "api-container",
+                        readOnly: false
+                    }
+                ]
+                return containerDefinitions;
+            });
+
+            args.containerDefinitions = $jsonStringify(value);
+            args.volumes = volumes
+        }
+    }
 });
 
 
