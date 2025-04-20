@@ -3,7 +3,7 @@ import { Common } from "../common";
 import { Member } from "../member";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { assertActor } from "../actor";
+import { assertActor, useUser } from "../actor";
 import { createEvent } from "../event";
 import { createID, fn } from "../utils";
 import { Subscription } from "../subscription";
@@ -67,28 +67,33 @@ export namespace Team {
     }
 
     export const create = fn(
-        Info.pick({ slug: true, id: true, name: true, }).partial({
+        Info.pick({
+            slug: true,
             id: true,
-        }), (input) =>
-        createTransaction(async (tx) => {
-            const id = input.id ?? createID("team");
-            const result = await tx.insert(teamTable).values({
-                id,
-                slug: input.slug,
-                name: input.name
+            name: true,
+        }).partial({
+            id: true,
+        }),
+        (input) =>
+            createTransaction(async (tx) => {
+                const id = input.id ?? createID("team");
+                const result = await tx.insert(teamTable).values({
+                    id,
+                    slug: input.slug,
+                    name: input.name
+                })
+                    .onConflictDoNothing({ target: teamTable.slug })
+
+                if (result.count === 0) throw new TeamExistsError(input.slug);
+
+                return id;
             })
-                .onConflictDoNothing({ target: teamTable.slug })
-
-            if (result.count === 0) throw new TeamExistsError(input.slug);
-
-            return id;
-        })
     )
 
     //TODO: "Delete" subscription and member(s) as well
     export const remove = fn(Info.shape.id, (input) =>
         useTransaction(async (tx) => {
-            const account = assertActor("user");
+            const user = useUser();
             const row = await tx
                 .select({
                     teamID: memberTable.teamID,
@@ -97,7 +102,7 @@ export namespace Team {
                 .where(
                     and(
                         eq(memberTable.teamID, input),
-                        eq(memberTable.email, account.properties.email),
+                        eq(memberTable.email, user.email),
                     ),
                 )
                 .execute()
@@ -113,7 +118,7 @@ export namespace Team {
     );
 
     export const list = fn(z.void(), () => {
-        const actor = assertActor("user");
+        const user = useUser();
         return useTransaction(async (tx) =>
             tx
                 .select()
@@ -122,7 +127,7 @@ export namespace Team {
                 .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
                 .where(
                     and(
-                        eq(memberTable.email, actor.properties.email),
+                        eq(memberTable.email, user.email),
                         isNull(memberTable.timeDeleted),
                         isNull(teamTable.timeDeleted),
                     ),
@@ -132,7 +137,7 @@ export namespace Team {
         )
     });
 
-    export const fromID = fn(z.string().min(1), async (id) =>
+    export const fromID = fn(Info.shape.id.min(1), async (id) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -151,7 +156,7 @@ export namespace Team {
         ),
     );
 
-    export const fromSlug = fn(z.string().min(1), async (slug) =>
+    export const fromSlug = fn(Info.shape.slug.min(1), async (slug) =>
         useTransaction(async (tx) =>
             tx
                 .select()

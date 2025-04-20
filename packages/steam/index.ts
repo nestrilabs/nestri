@@ -37,7 +37,7 @@ export interface SteamAuthClientOptions {
 export class SteamAuthClient {
     private socketPath: string;
     private activeSocket: Socket | null = null;
-    private eventListeners: Map<string, Function[]> = new Map();
+    private eventListeners: Map<SteamAuthEvent, Function[]> = new Map();
 
     /**
      * Creates a new Steam authentication client
@@ -121,7 +121,7 @@ export class SteamAuthClient {
 
                                 // Handle specific events
                                 if (eventType === 'challenge_url') {
-                                    this.emit(SteamAuthEvent.CHALLENGE_URL, parsedData);
+                                    this.emit(SteamAuthEvent.CHALLENGE_URL, parsedData.url);
                                 } else if (eventType === 'credentials') {
                                     this.emit(SteamAuthEvent.CREDENTIALS, {
                                         username: parsedData.username,
@@ -141,7 +141,7 @@ export class SteamAuthClient {
                                     resolve();
                                 } else {
                                     // Emit any other events as is
-                                    this.emit(eventType, parsedData);
+                                    this.emit(eventType as any, parsedData);
                                 }
                             } catch (e) {
                                 this.emit(SteamAuthEvent.ERROR, {
@@ -223,7 +223,7 @@ export class SteamAuthClient {
      * @param event Event name to listen for
      * @param callback Function to call when event occurs
      */
-    on(event: string, callback: Function): void {
+    on<T extends SteamAuthEvent>(event: T, callback: Function): void {
         if (!this.eventListeners.has(event)) {
             this.eventListeners.set(event, []);
         }
@@ -236,7 +236,7 @@ export class SteamAuthClient {
      * @param event Event name
      * @param callback Function to remove
      */
-    off(event: string, callback: Function): void {
+    off<T extends SteamAuthEvent>(event: T, callback: Function): void {
         if (!this.eventListeners.has(event)) {
             return;
         }
@@ -281,7 +281,7 @@ export class SteamAuthClient {
      * @param event Event name
      * @param data Event data
      */
-    private emit(event: string, data: any): void {
+    private emit<T extends SteamAuthEvent>(event: T, data: any): void {
         const listeners = this.eventListeners.get(event);
         if (listeners) {
             for (const callback of listeners) {

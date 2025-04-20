@@ -109,7 +109,7 @@ export namespace Subscription {
             )
     )
 
-    export const fromID = fn(z.string(), async (id) =>
+    export const fromID = fn(Info.shape.id.min(1), async (id) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -124,7 +124,7 @@ export namespace Subscription {
                 .then((rows) => rows.map(serialize))
         )
     )
-    export const fromTeamID = fn(z.string(), async (teamID) =>
+    export const fromTeamID = fn(Info.shape.teamID.min(1), async (teamID) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -140,7 +140,7 @@ export namespace Subscription {
         )
     )
 
-    export const fromUserID = fn(z.string(), async (userID) =>
+    export const fromUserID = fn(Info.shape.userID.min(1), async (userID) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -155,7 +155,8 @@ export namespace Subscription {
                 .then((rows) => rows.map(serialize))
         )
     )
-    export const remove = fn(Info.shape.id, (id) =>
+
+    export const remove = fn(Info.shape.id.min(1), (id) =>
         useTransaction(async (tx) =>
             tx
                 .update(subscriptionTable)

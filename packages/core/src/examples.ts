@@ -5,10 +5,9 @@ export namespace Examples {
 
     export const Credential = {
         id: Id("credential"),
-        steamID: Id("steam"),
+        username: "janedoe",
         // Useless JWT as an example
         accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30",
-        username: "janedoe"
     }
 
     export const Steam = {

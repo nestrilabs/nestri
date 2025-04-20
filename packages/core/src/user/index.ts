@@ -110,51 +110,59 @@ export namespace User {
         return null;
     })
 
-    export const create = fn(Info.omit({ polarCustomerID: true, discriminator: true, steamAccounts: true }).partial({ avatarUrl: true, id: true }), async (input) => {
-        const userID = createID("user")
+    export const create = fn(
+        Info.omit({
+            polarCustomerID: true,
+            discriminator: true,
+            steamAccounts: true
+        }).partial({
+            avatarUrl: true,
+            id: true
+        }),
+        async (input) => {
+            const userID = createID("user")
 
-        //FIXME: Do this much later, as Polar.sh has so many inconsistencies for fuck's sake
+            //FIXME: Do this much later, as Polar.sh has so many inconsistencies for fuck's sake
 
-        const customer = await Polar.fromUserEmail(input.email)
-        console.log("customer", customer)
+            const customer = await Polar.fromUserEmail(input.email)
 
-        const name = sanitizeUsername(input.name);
+            const name = sanitizeUsername(input.name);
 
-        // Generate a random available discriminator
-        const discriminator = await findAvailableDiscriminator(name);
+            // Generate a random available discriminator
+            const discriminator = await findAvailableDiscriminator(name);
 
-        if (!discriminator) {
-            console.error("No available discriminators for this username ")
-            return null
-        }
+            if (!discriminator) {
+                console.error("No available discriminators for this username ")
+                return null
+            }
 
-        createTransaction(async (tx) => {
-            const id = input.id ?? userID;
-            await tx.insert(userTable).values({
-                id,
-                name: input.name,
-                avatarUrl: input.avatarUrl,
-                email: input.email,
-                discriminator: Number(discriminator),
-                polarCustomerID: customer?.id
-            })
-            await afterTx(() =>
-                withActor({
-                    type: "user",
-                    properties: {
-                        userID: id,
-                        email: input.email
+            createTransaction(async (tx) => {
+                const id = input.id ?? userID;
+                await tx.insert(userTable).values({
+                    id,
+                    name: input.name,
+                    avatarUrl: input.avatarUrl,
+                    email: input.email,
+                    discriminator: Number(discriminator),
+                    polarCustomerID: customer?.id
+                })
+                await afterTx(() =>
+                    withActor({
+                        type: "user",
+                        properties: {
+                            userID: id,
+                            email: input.email
+                        },
                     },
-                },
-                    async () => bus.publish(Resource.Bus, Events.Created, { userID: id }),
-                )
-            );
+                        async () => bus.publish(Resource.Bus, Events.Created, { userID: id }),
+                    )
+                );
+            })
+
+            return userID;
         })
 
-        return userID;
-    })
-
-    export const fromEmail = fn(z.string(), async (email) =>
+    export const fromEmail = fn(Info.shape.email, async (email) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -166,7 +174,7 @@ export namespace User {
         )
     )
 
-    export const fromID = fn(z.string(), (id) =>
+    export const fromID = fn(Info.shape.id, (id) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -210,7 +218,6 @@ export namespace User {
                     [] :
                     group.map((row) => ({
                         id: row.steam!.id,
-                        lastSeen: row.steam!.lastSeen,
                         countryCode: row.steam!.countryCode,
                         username: row.steam!.username,
                         steamID: row.steam!.steamID,

@@ -1,11 +1,11 @@
+import { steam } from "./steam";
 import { setup } from "actor-core";
-import { counter } from "./counter";
 import { createRouter } from "@actor-core/bun";
 import { FileSystemManagerDriver, FileSystemActorDriver, FileSystemGlobalState } from "@actor-core/file-system";
 
 export namespace Realtime {
     export const app = setup({
-        actors: { counter },
+        actors: { steam },
         basePath: "/realtime",
         cors: { origin: "*" }
     });

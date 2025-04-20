@@ -4,7 +4,7 @@ import { Examples } from "../examples";
 import { createID, fn } from "../utils";
 import { useUser, useUserID } from "../actor";
 import { eq, and, isNull, sql } from "../drizzle";
-import { steamTable, AccountLimitation, LastGame } from "./steam.sql";
+import { steamTable, AccountLimitation, LastGame, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
@@ -21,10 +21,6 @@ export namespace Steam {
             description: "The username used to login to a user's Steam account",
             example: Examples.Credential.username
         }),
-        steamID: z.string().openapi({
-            description: "The steam user's id this credentials are for",
-            example: Examples.Credential.steamID
-        })
     })
         .openapi({
             ref: "Steam Credential",
@@ -82,6 +78,7 @@ export namespace Steam {
         });
 
     export type Info = z.infer<typeof Info>;
+    export type Credential = z.infer<typeof Credential>;
 
     export const create = fn(
         Info.partial({
@@ -94,7 +91,6 @@ export namespace Steam {
                 const user = useUser()
                 await tx.insert(steamTable).values({
                     id,
-                    lastSeen: sql`now()`,
                     userID: input.userID ?? user.userID,
                     countryCode: input.countryCode,
                     username: input.username,
@@ -132,7 +128,21 @@ export namespace Steam {
                 .then((rows) => rows.map(serialize)),
         )
 
-    export const getSteamCredentials = () => {}
+    export const createCredential = fn(
+        Credential.partial({
+            id: true,
+        }),
+        (input) =>
+            createTransaction(async (tx) => {
+                const id = input.id ?? createID("credential");
+                await tx.insert(steamCredentialsTable).values({
+                    id,
+                    username: input.username,
+                    accessToken: input.accessToken,
+                })
+                return id;
+            }),
+    );
 
     /**
      * Serializes a raw Steam table record into a standardized Info object.

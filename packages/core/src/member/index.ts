@@ -101,7 +101,7 @@ export namespace Member {
             tx
                 .select()
                 .from(memberTable)
-                .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
+                .where(and(eq(memberTable.email, email), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
                 .orderBy(asc(memberTable.timeCreated))
                 .then((rows) => rows.map(serialize).at(0))
         )
@@ -112,9 +112,21 @@ export namespace Member {
             tx
                 .select()
                 .from(memberTable)
-                .where(and(eq(memberTable.id, id), isNull(memberTable.timeDeleted)))
+                .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
                 .orderBy(asc(memberTable.timeCreated))
                 .then((rows) => rows.map(serialize).at(0))
+        ),
+    )
+
+    export const nowSeen = fn(z.string(), async (email) =>
+        useTransaction(async (tx) =>
+            tx
+                .update(memberTable)
+                .set({
+                    timeSeen: sql`now()`
+                })
+                .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
+                .execute()
         ),
     )
 

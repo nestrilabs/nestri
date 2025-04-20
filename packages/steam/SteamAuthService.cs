@@ -85,7 +85,7 @@ namespace Steam
                     });
 
                     // Log in with obtained credentials
-                    await SendSseEvent(response, "status", new { message = $"Logging in as '{pollResponse.AccountName}'..." });
+                    // await SendSseEvent(response, "status", new { message = $"Logging in as '{pollResponse.AccountName}'..." });
 
                     //_steamUser.LogOn(new SteamUser.LogOnDetails
                     //{
@@ -261,6 +261,7 @@ namespace Steam
                 // _manager.Unsubscribe(accountSub);
                 // _manager.Unsubscribe(personaSub);
                 // _manager.Unsubscribe(emailSub);
+                Disconnect();
             }
         }
 
