@@ -38,6 +38,7 @@ export const api = new sst.aws.Service("Api", {
             image: {
                 dockerfile: "packages/steam/Containerfile"
             },
+            command: ["dotnet", "run"],
             dev: {
                 command: "bun dev",
                 directory: "packages/steam",
