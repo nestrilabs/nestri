@@ -5,7 +5,7 @@ import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
-export const api = new sst.aws.Service("Api", {
+export const apiService = new sst.aws.Service("Api", {
     cluster,
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
     memory: $app.stage === "production" ? "4 GB" : undefined,
@@ -23,9 +23,12 @@ export const api = new sst.aws.Service("Api", {
     ],
     containers: [
         {
-            name: "api-container",
+            name: "Bun",
             image: {
                 dockerfile: "packages/functions/Containerfile",
+            },
+            environment: {
+                NO_COLOR: "1",
             },
             command: ["bun", "run", "./src/api/index.ts"],
             dev: {
@@ -34,7 +37,7 @@ export const api = new sst.aws.Service("Api", {
             }
         },
         {
-            name: "steam-container",
+            name: "Dotnet",
             image: {
                 dockerfile: "packages/steam/Containerfile"
             },
@@ -45,12 +48,10 @@ export const api = new sst.aws.Service("Api", {
             }
         }
     ],
-    environment: {
-        NO_COLOR: "1",
-    },
     loadBalancer: {
         rules: [
             {
+                container: "Bun",
                 listen: "80/http",
                 forward: "3001/http",
             },
@@ -85,7 +86,7 @@ export const api = new sst.aws.Service("Api", {
             value = value.apply((containerDefinitions) => {
                 const api = containerDefinitions.find(c => c.name === "api-container");
                 const steam = containerDefinitions.find(c => c.name === "steam-container");
-                
+
                 if (!api || !steam) throw new Error("Expected containers not found");
 
                 api.mountPoints = [
@@ -95,7 +96,7 @@ export const api = new sst.aws.Service("Api", {
                 steam.volumesFrom = [
                     { sourceContainer: "api-container", readOnly: false }
                 ];
-                
+
                 // containerDefinitions[0].mountPoints = [
                 //     {
                 //         sourceVolume: "shared-steam-unix",
@@ -118,13 +119,13 @@ export const api = new sst.aws.Service("Api", {
 });
 
 
-export const apiRoute = new sst.aws.Router("ApiRoute", {
+export const api = !$dev ? new sst.aws.Router("ApiRoute", {
     routes: {
         // I think api.url should work all the same
-        "/*": api.nodes.loadBalancer.dnsName,
+        "/*": apiService.nodes.loadBalancer.dnsName,
     },
     domain: {
         name: "api." + domain,
         dns: sst.cloudflare.dns(),
     },
-})
+}) : apiService

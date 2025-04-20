@@ -59,7 +59,7 @@ export const { use: useAccount, provider: AccountProvider } = createInitializedC
       auth.authorize()
       return
     }
-    return await fetch(import.meta.env.VITE_API_URL + "/account", {
+    return await fetch(`${import.meta.env.VITE_API_URL}/account`, {
       headers: {
         authorization: `Bearer ${access}`,
       },

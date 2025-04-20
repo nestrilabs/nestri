@@ -92,6 +92,8 @@ app.get(
     }),
 );
 
+export type App = typeof app;
+
 patchLogger();
 
 export default {

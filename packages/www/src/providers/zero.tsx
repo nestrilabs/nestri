@@ -14,9 +14,9 @@ export const { use: useZero, provider: ZeroProvider } =
         const team = useTeam()
         const zero = new Zero({
             schema: schema,
+            storageKey: team().id,
             auth: () => auth.access(),
             userID: account.current.email,
-            storageKey: team().id,
             server: import.meta.env.VITE_ZERO_URL,
         })
 

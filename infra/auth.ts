@@ -5,7 +5,7 @@ import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
 //FIXME: Use a shared /tmp folder 
-export const auth = new sst.aws.Service("Auth", {
+export const authService = new sst.aws.Service("Auth", {
     cluster,
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
     memory: $app.stage === "production" ? "2 GB" : undefined,
@@ -55,13 +55,13 @@ export const auth = new sst.aws.Service("Auth", {
     //TODO: Add a shared volume here as well
 });
 
-export const authRoute = new sst.aws.Router("AuthRoute", {
+export const auth = !$dev ? new sst.aws.Router("AuthRoute", {
     routes: {
         // I think auth.url should work all the same
-        "/*": auth.nodes.loadBalancer.dnsName,
+        "/*": authService.nodes.loadBalancer.dnsName,
     },
     domain: {
         name: "auth." + domain,
         dns: sst.cloudflare.dns(),
     },
-})
+}) : authService
