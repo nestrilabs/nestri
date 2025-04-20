@@ -9,7 +9,6 @@ export const api = new sst.aws.Service("Api", {
     cluster,
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
     memory: $app.stage === "production" ? "4 GB" : undefined,
-    command: ["bun", "run", "./src/api/index.ts"],
     link: [
         bus,
         auth,
@@ -22,15 +21,13 @@ export const api = new sst.aws.Service("Api", {
         secret.NestriProMonthly,
         secret.NestriProYearly,
     ],
-    image: {
-        dockerfile: "packages/functions/Containerfile",
-    },
     containers: [
         {
             name: "api-container",
             image: {
                 dockerfile: "packages/functions/Containerfile",
             },
+            command: ["bun", "run", "./src/api/index.ts"],
             dev: {
                 command: "bun dev:api",
                 directory: "packages/functions",
@@ -85,18 +82,31 @@ export const api = new sst.aws.Service("Api", {
             let value = $jsonParse(args.containerDefinitions);
 
             value = value.apply((containerDefinitions) => {
-                containerDefinitions[0].mountPoints = [
-                    {
-                        sourceVolume: "shared-steam-unix",
-                        containerPath: "/tmp"
-                    }
-                ]
-                containerDefinitions[1].volumesFrom = [
-                    {
-                        sourceContainer: "api-container",
-                        readOnly: false
-                    }
-                ]
+                const api = containerDefinitions.find(c => c.name === "api-container");
+                const steam = containerDefinitions.find(c => c.name === "steam-container");
+                
+                if (!api || !steam) throw new Error("Expected containers not found");
+
+                api.mountPoints = [
+                    { sourceVolume: "shared-steam-unix", containerPath: "/tmp" }
+                ];
+
+                steam.volumesFrom = [
+                    { sourceContainer: "api-container", readOnly: false }
+                ];
+                
+                // containerDefinitions[0].mountPoints = [
+                //     {
+                //         sourceVolume: "shared-steam-unix",
+                //         containerPath: "/tmp"
+                //     }
+                // ]
+                // containerDefinitions[1].volumesFrom = [
+                //     {
+                //         sourceContainer: "api-container",
+                //         readOnly: false
+                //     }
+                // ]
                 return containerDefinitions;
             });
 

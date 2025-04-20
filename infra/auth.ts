@@ -52,6 +52,7 @@ export const auth = new sst.aws.Service("Auth", {
                 max: 10,
             }
             : undefined,
+    //TODO: Add a shared volume here as well
 });
 
 export const authRoute = new sst.aws.Router("AuthRoute", {
