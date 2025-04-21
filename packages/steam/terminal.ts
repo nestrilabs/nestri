@@ -2,6 +2,7 @@ import { Agent, request as httpRequest } from 'node:http';
 import { connect as netConnect } from 'node:net';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+//@ts-ignore
 import qrcode from 'qrcode-terminal';
 import { createInterface } from 'node:readline';
 
@@ -177,7 +178,7 @@ async function loginWithQrCode(): Promise<{ username: string, refreshToken: stri
                                     username: parsedData.username,
                                     refreshToken: parsedData.refreshToken
                                 };
-                            }else if (eventType === 'status') {
+                            } else if (eventType === 'status') {
                                 console.log(`\n🔄 Status: ${parsedData.message}\n`);
                             } else if (eventType === 'login-success' || eventType === 'login-successful') {
                                 console.log(`\n✅ Login successful, Steam ID: ${parsedData.steamId}\n`);

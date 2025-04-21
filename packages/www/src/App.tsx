@@ -31,7 +31,7 @@ const Root = styled("div", {
         fontFamily: theme.font.family.body,
         textRendering: "optimizeLegibility",
         WebkitFontSmoothing: "antialised",
-        backgroundColor: theme.color.background.d100,
+        backgroundColor: theme.color.background.d200,
     },
 });
 

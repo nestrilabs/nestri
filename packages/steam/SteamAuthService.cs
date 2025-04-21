@@ -18,6 +18,7 @@ namespace Steam
             var configuration = SteamConfiguration.Create(config =>
             {
                 config.WithHttpClientFactory(HttpClientFactory.CreateHttpClient);
+                // config.WithProtocolTypes(ProtocolTypes.Tcp | ProtocolTypes.WebSocket);
                 config.WithMachineInfoProvider(new IMachineInfoProvider());
                 config.WithConnectionTimeout(TimeSpan.FromSeconds(10));
             });
@@ -85,7 +86,7 @@ namespace Steam
                     });
 
                     // Log in with obtained credentials
-                    // await SendSseEvent(response, "status", new { message = $"Logging in as '{pollResponse.AccountName}'..." });
+                    await SendSseEvent(response, "status", new { message = $"Logging in as '{pollResponse.AccountName}'..." });
 
                     //_steamUser.LogOn(new SteamUser.LogOnDetails
                     //{
@@ -341,10 +342,10 @@ namespace Steam
             Console.WriteLine("Disconnected from Steam");
 
             // Only try to reconnect if not deliberately disconnected
-            if (_callbackTask != null && !_cts!.IsCancellationRequested)
-            {
-                Task.Delay(TimeSpan.FromSeconds(5)).ContinueWith(_ => _steamClient.Connect());
-            }
+            // if (_callbackTask != null && !_cts!.IsCancellationRequested)
+            // {
+            //     Task.Delay(TimeSpan.FromSeconds(5)).ContinueWith(_ => _steamClient.Connect());
+            // }
         }
 
         private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
