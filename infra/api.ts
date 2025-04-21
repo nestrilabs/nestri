@@ -21,37 +21,16 @@ export const apiService = new sst.aws.Service("Api", {
         secret.NestriProMonthly,
         secret.NestriProYearly,
     ],
-    containers: [
-        {
-            name: "Bun",
-            image: {
-                dockerfile: "packages/functions/Containerfile",
-            },
-            environment: {
-                NO_COLOR: "1",
-            },
-            command: ["bun", "run", "./src/api/index.ts"],
-            dev: {
-                command: "bun dev:api",
-                directory: "packages/functions",
-            }
-        },
-        {
-            name: "Dotnet",
-            image: {
-                dockerfile: "packages/steam/Containerfile"
-            },
-            command: ["dotnet", "run"],
-            dev: {
-                command: "bun dev",
-                directory: "packages/steam",
-            }
-        }
-    ],
+    command: ["bun", "run", "./src/api/index.ts"],
+    image: {
+        dockerfile: "packages/functions/Containerfile",
+    },
+    environment: {
+        NO_COLOR: "1",
+    },
     loadBalancer: {
         rules: [
             {
-                container: "Bun",
                 listen: "80/http",
                 forward: "3001/http",
             },
@@ -59,6 +38,8 @@ export const apiService = new sst.aws.Service("Api", {
     },
     dev: {
         url: "http://localhost:3001",
+        command: "bun dev:api",
+        directory: "packages/functions",
     },
     scaling:
         $app.stage === "production"
@@ -67,55 +48,6 @@ export const apiService = new sst.aws.Service("Api", {
                 max: 10,
             }
             : undefined,
-    transform: {
-        taskDefinition: (args) => {
-            const volumes = $output(args.volumes).apply(v => {
-                v.push({
-                    name: "shared-steam-unix",
-                    dockerVolumeConfiguration: {
-                        scope: "shared",
-                        driver: "local"
-                    }
-                });
-                return v;
-            })
-
-            // "containerDefinitions" is a JSON string, parse first
-            let value = $jsonParse(args.containerDefinitions);
-
-            value = value.apply((containerDefinitions) => {
-                const api = containerDefinitions.find(c => c.name === "api-container");
-                const steam = containerDefinitions.find(c => c.name === "steam-container");
-
-                if (!api || !steam) throw new Error("Expected containers not found");
-
-                api.mountPoints = [
-                    { sourceVolume: "shared-steam-unix", containerPath: "/tmp" }
-                ];
-
-                steam.volumesFrom = [
-                    { sourceContainer: "api-container", readOnly: false }
-                ];
-
-                // containerDefinitions[0].mountPoints = [
-                //     {
-                //         sourceVolume: "shared-steam-unix",
-                //         containerPath: "/tmp"
-                //     }
-                // ]
-                // containerDefinitions[1].volumesFrom = [
-                //     {
-                //         sourceContainer: "api-container",
-                //         readOnly: false
-                //     }
-                // ]
-                return containerDefinitions;
-            });
-
-            args.containerDefinitions = $jsonStringify(value);
-            args.volumes = volumes
-        }
-    }
 });
 
 

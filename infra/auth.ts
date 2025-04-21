@@ -24,7 +24,7 @@ export const authService = new sst.aws.Service("Auth", {
     },
     environment: {
         NO_COLOR: "1",
-        STORAGE: $dev ? "/tmp/persist.json" : "/mnt/efs/persist.json"
+        STORAGE: "/tmp/persist.json"
     },
     loadBalancer: {
         rules: [
@@ -52,7 +52,36 @@ export const authService = new sst.aws.Service("Auth", {
                 max: 10,
             }
             : undefined,
-    //TODO: Add a shared volume here as well
+    transform: {
+        taskDefinition: (args) => {
+            const volumes = $output(args.volumes).apply(v => {
+                v.push({
+                    name: "shared-tmp",
+                    dockerVolumeConfiguration: {
+                        scope: "shared",
+                        driver: "local"
+                    }
+                });
+                return v;
+            })
+
+            // "containerDefinitions" is a JSON string, parse first
+            let containers = $jsonParse(args.containerDefinitions);
+
+            containers = containers.apply((containerDefinitions) => {
+                containerDefinitions[0].mountPoints = [
+                    {
+                        sourceVolume: "shared-tmp",
+                        containerPath: "/tmp"
+                    }
+                ]
+                return containerDefinitions;
+            });
+
+            args.volumes = volumes
+            args.containerDefinitions = $jsonStringify(containers);
+        }
+    }
 });
 
 export const auth = !$dev ? new sst.aws.Router("AuthRoute", {

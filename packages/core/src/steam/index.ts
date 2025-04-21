@@ -2,8 +2,8 @@ import { z } from "zod";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
+import { eq, and, isNull } from "../drizzle";
 import { useUser, useUserID } from "../actor";
-import { eq, and, isNull, sql } from "../drizzle";
 import { steamTable, AccountLimitation, LastGame, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
@@ -16,6 +16,14 @@ export namespace Steam {
         accessToken: z.string().openapi({
             description: "The accessToken to login to a user's Steam account",
             example: Examples.Credential.accessToken
+        }),
+        refreshToken: z.string().openapi({
+            description: "The refreshToken to login to a user's Steam account",
+            example: Examples.Credential.refreshToken
+        }),
+        steamID: z.number().openapi({
+            description: "The steamID to a user's Steam account",
+            example: Examples.Credential.steamID
         }),
         username: z.string().openapi({
             description: "The username used to login to a user's Steam account",
@@ -137,8 +145,10 @@ export namespace Steam {
                 const id = input.id ?? createID("credential");
                 await tx.insert(steamCredentialsTable).values({
                     id,
+                    steamID: input.steamID,
                     username: input.username,
                     accessToken: input.accessToken,
+                    refreshToken: input.refreshToken,
                 })
                 return id;
             }),

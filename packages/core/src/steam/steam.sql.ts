@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { userTable } from "../user/user.sql";
 import { id, timestamps, ulid, utc } from "../drizzle/types";
-import { pgTable, integer, uniqueIndex, varchar, text, json, primaryKey, unique } from "drizzle-orm/pg-core";
+import { pgTable, integer, uniqueIndex, varchar, text, json, primaryKey, unique, bigint } from "drizzle-orm/pg-core";
 
 export const LastGame = z.object({
     gameID: z.number(),
@@ -28,10 +28,10 @@ export const steamTable = pgTable(
             .references(() => userTable.id, {
                 onDelete: "cascade",
             }),
-        steamID: integer("steam_id").notNull(),
         avatarUrl: text("avatar_url").notNull(),
         lastGame: json("last_game").$type<LastGame>().notNull(),
         username: varchar("username", { length: 255 }).notNull(),
+        steamID: bigint("steam_id", { mode: "number" }).notNull(),
         countryCode: varchar('country_code', { length: 2 }).notNull(),
         steamEmail: varchar("steam_email", { length: 255 }).notNull(),
         personaName: varchar("persona_name", { length: 255 }).notNull(),
@@ -51,6 +51,8 @@ export const steamCredentialsTable = pgTable(
         ...id,
         ...timestamps,
         accessToken: text("access_token").notNull(),
+        refreshToken: text("refresh_token").notNull(),
+        steamID: bigint("steam_id", { mode: "number" }).notNull(),
         username: varchar("username", { length: 255 })
             .notNull()
             .references(() => steamTable.username, {
