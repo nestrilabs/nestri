@@ -84,21 +84,16 @@ export namespace Steam {
         Info
             .partial({
                 id: true,
-                userID: true,
             })
             .extend({
                 useUser: z.boolean()
-            })
-            .partial({
-                useUser: true
-            })
-        ,
+            }),
         (input) =>
             createTransaction(async (tx) => {
                 const id = input.id ?? createID("steam");
                 await tx.insert(steamTable).values({
                     id,
-                    userID: input.userID ? input.userID : input.useUser ? useUser().userID : null,
+                    userID: typeof input.userID === "string" ? input.userID : input.useUser ? useUser().userID : input.userID,
                     profileUrl: input.profileUrl,
                     avatarHash: input.avatarHash,
                     steamID: input.steamID,
