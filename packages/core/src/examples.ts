@@ -6,32 +6,21 @@ export namespace Examples {
     export const Credential = {
         id: Id("credential"),
         username: "janedoe",
-        steamID: 74839300282033,
+        steamID: 74839300282033n,
+        cookies: ["steamLoginSecure=76561199513230864%7C%7CeyAidHlwIjogIkpXVCIsICJhbGciOiAiRWR", "sessionid=707ddf8a847defeb930f"],
         // Useless JWT as an example
-        refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30",
-        accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30",
+        accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NT...",
+        refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NT...",
     }
 
     export const Steam = {
         id: Id("steam"),
         userID: Id("user"),
-        countryCode: "KE",
-        steamID: 74839300282033,
-        limitation: {
-            isLimited: false,
-            isBanned: false,
-            isLocked: false,
-            isAllowedToInviteFriends: false,
-        },
-        lastGame: {
-            gameID: 2531310,
-            gameName: "The Last of Us™ Part II Remastered",
-        },
-        personaName: "John",
-        username: "johnsteamaccount",
-        steamEmail: "john@example.com",
-        avatarUrl: "https://avatars.akamai.steamstatic.com/XXXXXXXXXXXX_full.jpg",
-        // credentials: [Credential]
+        steamID: 74839300282033n,
+        avatarHash:"3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
+        personaName: "JD The 65th",
+        realName: "John Doe",
+        profileUrl: "https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",
     }
 
     export const User = {
@@ -39,7 +28,7 @@ export namespace Examples {
         name: "John Doe",
         email: "john@example.com",
         discriminator: 47,
-        avatarUrl: "https://cdn.discordapp.com/avatars/xxxxxxx/xxxxxxx.png",
+        avatarUrl: "https://cdn.discordapp.com/avatars/XXXXXXXXXX/XXXXXXXXXX.png",
         polarCustomerID: "0bfcb712-df13-4454-81a8-fbee66eddca4",
         steamAccounts: [Steam]
     };

@@ -1,22 +1,6 @@
-import { z } from "zod";
 import { userTable } from "../user/user.sql";
-import { id, timestamps, ulid, utc } from "../drizzle/types";
-import { pgTable, integer, uniqueIndex, varchar, text, json, primaryKey, unique, bigint } from "drizzle-orm/pg-core";
-
-export const LastGame = z.object({
-    gameID: z.number(),
-    gameName: z.string()
-});
-
-export const AccountLimitation = z.object({
-    isLimited: z.boolean().nullable(),
-    isBanned: z.boolean().nullable(),
-    isLocked: z.boolean().nullable(),
-    isAllowedToInviteFriends: z.boolean().nullable(),
-});
-
-export type LastGame = z.infer<typeof LastGame>;
-export type AccountLimitation = z.infer<typeof AccountLimitation>;
+import { id, timestamps, ulid, } from "../drizzle/types";
+import { pgTable, uniqueIndex, varchar, text, primaryKey, unique, bigint } from "drizzle-orm/pg-core";
 
 export const steamTable = pgTable(
     "steam",
@@ -24,21 +8,19 @@ export const steamTable = pgTable(
         ...id,
         ...timestamps,
         userID: ulid("user_id")
-            .notNull()
+            // Sometimes we will create user's that are not yet on Nestri, because we already know a friend
+            // .notNull()
             .references(() => userTable.id, {
                 onDelete: "cascade",
             }),
-        avatarUrl: text("avatar_url").notNull(),
-        lastGame: json("last_game").$type<LastGame>().notNull(),
-        username: varchar("username", { length: 255 }).notNull(),
-        steamID: bigint("steam_id", { mode: "number" }).notNull(),
-        countryCode: varchar('country_code', { length: 2 }).notNull(),
-        steamEmail: varchar("steam_email", { length: 255 }).notNull(),
+        steamID: bigint("steam_id", { mode: "bigint" }).notNull(),
+        avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         personaName: varchar("persona_name", { length: 255 }).notNull(),
-        limitation: json("limitation").$type<AccountLimitation>().notNull(),
+        realName: varchar("real_name", { length: 255 }).notNull(),
+        profileUrl: text("profile_url").notNull(),
     },
     (table) => [
-        unique("steam_username").on(table.username),
+        unique("steam_steam_id").on(table.steamID),
         primaryKey({
             columns: [table.id]
         })
@@ -50,17 +32,16 @@ export const steamCredentialsTable = pgTable(
     {
         ...id,
         ...timestamps,
-        accessToken: text("access_token").notNull(),
         refreshToken: text("refresh_token").notNull(),
-        steamID: bigint("steam_id", { mode: "number" }).notNull(),
-        username: varchar("username", { length: 255 })
+        steamID: bigint("steam_id", { mode: "bigint" })
             .notNull()
-            .references(() => steamTable.username, {
+            .references(() => steamTable.steamID, {
                 onDelete: "cascade"
-            })
+            }),
+        username: varchar("username", { length: 255 }).notNull(),
     },
     (table) => [
-        uniqueIndex("steam_credentials_username").on(table.username),
+        uniqueIndex("steam_credentials_id").on(table.steamID),
         primaryKey({
             columns: [table.id]
         }),

@@ -4,7 +4,7 @@ import { Examples } from "../examples";
 import { createID, fn } from "../utils";
 import { eq, and, isNull } from "../drizzle";
 import { useUser, useUserID } from "../actor";
-import { steamTable, AccountLimitation, LastGame, steamCredentialsTable } from "./steam.sql";
+import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
@@ -21,9 +21,13 @@ export namespace Steam {
             description: "The refreshToken to login to a user's Steam account",
             example: Examples.Credential.refreshToken
         }),
-        steamID: z.number().openapi({
+        steamID: z.bigint().openapi({
             description: "The steamID to a user's Steam account",
             example: Examples.Credential.steamID
+        }),
+        cookies: z.string().array().openapi({
+            description: "An array of cookies we can use to authenticate with Steam, and query the API",
+            example: Examples.Credential.cookies
         }),
         username: z.string().openapi({
             description: "The username used to login to a user's Steam account",
@@ -42,42 +46,30 @@ export namespace Steam {
                 description: Common.IdDescription,
                 example: Examples.Steam.id,
             }),
-            avatarUrl: z.string().openapi({
-                description: "The avatar url of this Steam account",
-                example: Examples.Steam.avatarUrl
+            avatarHash: z.string().openapi({
+                description: "The steam avatar hash that this account owns",
+                example: Examples.Steam.avatarHash
             }),
-            steamEmail: z.string().openapi({
-                description: "The email regisered with this Steam account",
-                example: Examples.Steam.steamEmail
-            }),
-            steamID: z.number().openapi({
+            steamID: z.bigint().openapi({
                 description: "The Steam ID this Steam account",
                 example: Examples.Steam.steamID
             }),
-            limitation: AccountLimitation.openapi({
-                description: " The limitations of this Steam account",
-                example: Examples.Steam.limitation
+            profileUrl: z.string().url().openapi({
+                description: "The steam community url of this account",
+                example: Examples.Steam.profileUrl
             }),
-            lastGame: LastGame.openapi({
-                description: "The last game played on this Steam account",
-                example: Examples.Steam.lastGame
+            realName: z.string().openapi({
+                description: "The real name behind of this Steam account",
+                example: Examples.Steam.realName
             }),
-            userID: z.string().openapi({
+            userID: z.string().nullable().openapi({
                 description: "The unique id of the user who owns this steam account",
                 example: Examples.Steam.userID
             }),
-            username: z.string().openapi({
-                description: "The unique username of this steam user",
-                example: Examples.Steam.username
-            }),
             personaName: z.string().openapi({
-                description: "The last recorded persona name used by this account",
+                description: "The persona name used by this account",
                 example: Examples.Steam.personaName
             }),
-            countryCode: z.string().openapi({
-                description: "The country this account is connected from",
-                example: Examples.Steam.countryCode
-            })
         })
         .openapi({
             ref: "Steam",
@@ -89,25 +81,29 @@ export namespace Steam {
     export type Credential = z.infer<typeof Credential>;
 
     export const create = fn(
-        Info.partial({
-            id: true,
-            userID: true,
-        }),
+        Info
+            .partial({
+                id: true,
+                userID: true,
+            })
+            .extend({
+                useUser: z.boolean()
+            })
+            .partial({
+                useUser: true
+            })
+        ,
         (input) =>
             createTransaction(async (tx) => {
                 const id = input.id ?? createID("steam");
-                const user = useUser()
                 await tx.insert(steamTable).values({
                     id,
-                    userID: input.userID ?? user.userID,
-                    countryCode: input.countryCode,
-                    username: input.username,
+                    userID: input.userID ? input.userID : input.useUser ? useUser().userID : null,
+                    profileUrl: input.profileUrl,
+                    avatarHash: input.avatarHash,
                     steamID: input.steamID,
-                    lastGame: input.lastGame,
-                    limitation: input.limitation,
-                    steamEmail: input.steamEmail,
-                    avatarUrl: input.avatarUrl,
-                    personaName: input.personaName,
+                    realName: input.realName,
+                    personaName: input.personaName
                 })
                 return id;
             }),
@@ -137,9 +133,11 @@ export namespace Steam {
         )
 
     export const createCredential = fn(
-        Credential.partial({
-            id: true,
-        }),
+        Credential
+            .partial({
+                id: true,
+            })
+            .omit({ cookies: true, accessToken: true }),
         (input) =>
             createTransaction(async (tx) => {
                 const id = input.id ?? createID("credential");
@@ -147,7 +145,6 @@ export namespace Steam {
                     id,
                     steamID: input.steamID,
                     username: input.username,
-                    accessToken: input.accessToken,
                     refreshToken: input.refreshToken,
                 })
                 return id;
@@ -168,15 +165,13 @@ export namespace Steam {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            // TODO: Do some leftJoin shenanigans
             userID: input.userID,
-            countryCode: input.countryCode,
-            username: input.username,
-            avatarUrl: input.avatarUrl,
-            personaName: input.personaName,
-            steamEmail: input.steamEmail,
+            profileUrl: input.profileUrl,
+            avatarHash: input.avatarHash,
             steamID: input.steamID,
-            limitation: input.limitation,
-            lastGame: input.lastGame,
+            realName: input.realName,
+            personaName: input.personaName
         };
     }
 
