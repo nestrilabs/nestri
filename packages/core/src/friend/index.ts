@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Examples } from "../examples";
 import { fn } from "../utils";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { friendsTable } from "./friends.sql";
+import { friendTable } from "./friend.sql";
 import { and, eq, isNull, sql } from "drizzle-orm";
 
 export namespace Friend {
@@ -46,13 +46,13 @@ export namespace Friend {
         async (input) =>
             createTransaction(async (tx) => {
                 await tx
-                    .insert(friendsTable)
+                    .insert(friendTable)
                     .values({
                         steamID: input.steamID,
                         friendSteamID: input.friendSteamID
                     })
                     .onConflictDoUpdate({
-                        target: [friendsTable.steamID, friendsTable.friendSteamID],
+                        target: [friendTable.steamID, friendTable.friendSteamID],
                         set: { timeDeleted: null }
                     })
                 return input.steamID
@@ -67,12 +67,12 @@ export namespace Friend {
         (input) =>
             useTransaction(async (tx) =>
                 tx
-                    .update(friendsTable)
+                    .update(friendTable)
                     .set({ timeDeleted: sql`now()` })
                     .where(
                         and(
-                            eq(friendsTable.steamID, input.steamID),
-                            eq(friendsTable.friendSteamID, input.friendSteamID),
+                            eq(friendTable.steamID, input.steamID),
+                            eq(friendTable.friendSteamID, input.friendSteamID),
                         )
                     )
             ),
@@ -86,9 +86,9 @@ export namespace Friend {
             useTransaction(async (tx) =>
                 tx
                     .select()
-                    .from(friendsTable)
-                    .where(and(eq(friendsTable.steamID, input.steamID), isNull(friendsTable.timeDeleted)))
-                    .orderBy(friendsTable.timeCreated)
+                    .from(friendTable)
+                    .where(and(eq(friendTable.steamID, input.steamID), isNull(friendTable.timeDeleted)))
+                    .orderBy(friendTable.timeCreated)
                     .limit(100)
                     .execute()
                     .then((rows) => rows.map(serialize)),
@@ -104,12 +104,12 @@ export namespace Friend {
             useTransaction(async (tx) => {
                 const result = await tx
                     .select()
-                    .from(friendsTable)
+                    .from(friendTable)
                     .where(
                         and(
-                            eq(friendsTable.steamID, input.steamID),
-                            eq(friendsTable.friendSteamID, input.friendSteamID),
-                            isNull(friendsTable.timeDeleted)
+                            eq(friendTable.steamID, input.steamID),
+                            eq(friendTable.friendSteamID, input.friendSteamID),
+                            isNull(friendTable.timeDeleted)
                         )
                     )
                     .limit(1)
@@ -120,7 +120,7 @@ export namespace Friend {
     )
 
     export function serialize(
-        input: typeof friendsTable.$inferSelect,
+        input: typeof friendTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {
             // TODO: Do some leftJoin shenanigans

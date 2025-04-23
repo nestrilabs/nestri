@@ -67,11 +67,11 @@ export type LibraryAppDetailsResponse = {
     strSnippet: string;
     rgDevelopers: {
         name: string;
-        url: string;
+        url: string | null;
     }[];
     rgPublishers: {
         name: string;
-        url: string;
+        url: string | null;
     }[];
     rgFranchises: {
         name: string;
@@ -151,6 +151,7 @@ export type AppDetailsResponse = {
                 };
                 highlight: boolean;
             }[];
+            reviews: string;
             achievements: {
                 total: number;
                 highlighted: {

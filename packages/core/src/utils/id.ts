@@ -8,7 +8,8 @@ export const prefixes = {
   member: "mbr",
   subscription: "sub",
   invite: "inv",
-  product: "prd"
+  product: "prd",
+  game: "gme"
 } as const;
 
 /**

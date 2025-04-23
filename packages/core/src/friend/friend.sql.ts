@@ -2,8 +2,8 @@ import { timestamps, } from "../drizzle/types";
 import { steamTable } from "../steam/steam.sql";
 import { pgTable, uniqueIndex, bigint, primaryKey } from "drizzle-orm/pg-core";
 
-export const friendsTable = pgTable(
-    "friends",
+export const friendTable = pgTable(
+    "friend",
     {
         ...timestamps,
         steamID: bigint("steam_id", { mode: "bigint" })

@@ -2,11 +2,11 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Steam } from "./index"
 import {
-    SteamGameInfo,
     UserDataResponse,
     AppDetailsResponse,
     GetFriendsResponse,
     GameUserInfoResponse,
+    SteamGameInfoResponse,
     GamesCompatListResponse,
     LibraryAppDetailsResponse,
 } from "./types";
@@ -111,13 +111,14 @@ export namespace SteamClient {
                 const gameInfo = response[input.gameID.toString()].data
                 if (response[input.gameID.toString()] && response[input.gameID.toString()].success && gameInfo) {
                     return {
+                        appID: gameInfo.steam_appid,
                         name: gameInfo.name,
                         genres: gameInfo.genres,
+                        reviews: gameInfo.reviews,
                         isFree: gameInfo.is_free,
                         website: gameInfo.website,
-                        steamAppID: gameInfo.steam_appid,
                         legalNotice: gameInfo.legal_notice,
-                        releaseDate: gameInfo.release_date,
+                        releaseDate: gameInfo.release_date.date,
                         description: gameInfo.short_description,
                         nativeLinux: gameInfo.platforms.linux,
                         achievements: gameInfo.achievements,
@@ -128,7 +129,7 @@ export namespace SteamClient {
                             description: gameInfo.ratings.pegi.descriptors,
                             requiredAge: gameInfo.ratings.pegi.required_age ? Number(gameInfo.ratings.pegi.required_age) : Number(gameInfo.required_age)
                         },
-                        protonCompatibility: steamGameInfo.status === "fulfilled" ? steamGameInfo.value.common.steam_deck_compatibility : null,
+                        protonCompatibility: steamGameInfo.status === "fulfilled" && steamGameInfo.value.data ? steamGameInfo.value.data[input.gameID.toString()].common.steam_deck_compatibility?.category ? Number(steamGameInfo.value.data[input.gameID.toString()].common.steam_deck_compatibility?.category) : null : null,
                         controllerSupport: gameInfo.controller_support,
                         systemRequirements: gameInfo.platforms.linux ? gameInfo.linux_requirements : gameInfo.pc_requirements,
                         publishers: libraryDetailsResult.status === "fulfilled" ? libraryDetailsResult.value.rgPublishers : null,
@@ -201,6 +202,6 @@ export namespace SteamClient {
             throw new Error(`Steam API error: ${response.status} ${response.statusText}`);
         }
 
-        return await response.json() as SteamGameInfo;
+        return await response.json() as SteamGameInfoResponse;
     };
 }

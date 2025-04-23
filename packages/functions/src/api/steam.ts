@@ -5,7 +5,7 @@ import { streamSSE } from "hono/streaming";
 import { describeRoute } from "hono-openapi";
 import { assertActor } from "@nestri/core/actor";
 import { Steam } from "@nestri/core/steam/index";
-import { Friend } from "@nestri/core/friends/index";
+import { Friend } from "@nestri/core/friend/index";
 import { ErrorResponses, validator } from "./common";
 import { SteamClient } from "@nestri/core/steam/client";
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
@@ -86,10 +86,10 @@ export namespace SteamApi {
                             const steamID = session.steamID.getBigIntID();
                             const username = session.accountName;
                             // We can also get web cookies now that we've negotiated a session
-                            let webCookies = await session.getWebCookies();
+                            let cookies = await session.getWebCookies();
                             console.log("\n===============================\n")
                             console.log("WebCookies:")
-                            console.log(webCookies);
+                            console.log(cookies);
                             console.log("\n===============================\n")
 
                             console.log("\n===============================\n")
@@ -112,9 +112,10 @@ export namespace SteamApi {
 
                                     const friendsSteamIDs = friends.friends.map(i => BigInt(i.steamid));
 
-                                    const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID, ...friendsSteamIDs] })
+                                    //Get all friends data, max is 100 friends :D Woah!!!
+                                    const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID, ...friendsSteamIDs].slice(0, 100) })
 
-                                    userData.players.map(async (steamUser) => {
+                                    const userDB = userData.players.map(async (steamUser) => {
                                         // If we are the current user, do not add a friendship relation
                                         if (steamUser.steamid.toLowerCase().includes(steamID.toString().toLowerCase())) {
                                             await Steam.create({
@@ -135,6 +136,7 @@ export namespace SteamApi {
                                                 personaName: steamUser.personaname,
                                             })
 
+                                            // Add this person as the owner's friend
                                             await Friend.add({
                                                 steamID,
                                                 friendSteamID: BigInt(steamUser.steamid)
@@ -142,9 +144,18 @@ export namespace SteamApi {
                                         }
                                     })
 
+                                    await Promise.allSettled(userDB)
+
                                     // Stage 2: Add their games
+                                    const ownedGameIDs = await SteamClient.getOwnedGamesCompatList({ cookies });
 
+                                    const gameDB = ownedGameIDs.map(async (gameID) => {
+                                        const gameInfo = await SteamClient.getGameInfo({ gameID, cookies })
+                                    })
 
+                                    await Promise.allSettled(gameDB)
+
+                                    resolve("We are done! Hooray!")
                                 })
                             )
 
