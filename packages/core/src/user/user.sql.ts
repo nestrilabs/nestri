@@ -19,7 +19,6 @@ export const userTable = pgTable(
         discriminator: integer("discriminator").notNull(),
         email: varchar("email", { length: 255 }).notNull(),
         polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique(),
-        // flags: json("flags").$type<UserFlags>().default({}),
     },
     (user) => [
         uniqueIndex("user_email").on(user.email),

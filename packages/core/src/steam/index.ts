@@ -1,41 +1,14 @@
 import { z } from "zod";
-import { Common } from "../common";
+import { fn } from "../utils";
 import { Examples } from "../examples";
-import { createID, fn } from "../utils";
 import { eq, and, isNull } from "../drizzle";
 import { useUser, useUserID } from "../actor";
+import { createSelectSchema } from "drizzle-zod";
 import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
-export namespace Steam {
-    export const Credential = z.object({
-        accessToken: z.string().openapi({
-            description: "The accessToken to login to a user's Steam account",
-            example: Examples.Credential.accessToken
-        }),
-        refreshToken: z.string().openapi({
-            description: "The refreshToken to login to a user's Steam account",
-            example: Examples.Credential.refreshToken
-        }),
-        steamID: z.bigint().openapi({
-            description: "The steamID to a user's Steam account",
-            example: Examples.Credential.steamID
-        }),
-        cookies: z.string().array().openapi({
-            description: "An array of cookies we can use to authenticate with Steam, and query the API",
-            example: Examples.Credential.cookies
-        }),
-        username: z.string().openapi({
-            description: "The username used to login to a user's Steam account",
-            example: Examples.Credential.username
-        }),
-    })
-        .openapi({
-            ref: "Steam Credential",
-            description: "Represents a steam user's credentials stored on Nestri",
-            example: Examples.Credential,
-        });
 
+export namespace Steam {
     export const Info = z
         .object({
             avatarHash: z.string().openapi({
@@ -69,8 +42,20 @@ export namespace Steam {
             example: Examples.Steam,
         });
 
+    export const CredentialInfo = createSelectSchema(steamCredentialsTable)
+        .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
+        .extend({
+            accessToken: z.string(),
+            cookies: z.string().array()
+        })
+        .openapi({
+            ref: "Steam Credential",
+            description: "Represents a steam user's credentials stored on Nestri",
+            example: Examples.Credential,
+        });
+
     export type Info = z.infer<typeof Info>;
-    export type Credential = z.infer<typeof Credential>;
+    export type CredentialInfo = z.infer<typeof CredentialInfo>;
 
     export const create = fn(
         Info
@@ -121,7 +106,7 @@ export namespace Steam {
         )
 
     export const createCredential = fn(
-        Credential
+        CredentialInfo
             //Cookies and AccessToken cannot be persisted, they expire within 24 hours
             .omit({ cookies: true, accessToken: true }),
         (input) =>

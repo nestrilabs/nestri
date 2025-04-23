@@ -1,48 +1,24 @@
 import { z } from "zod";
-import { Examples } from "../examples";
 import { fn } from "../utils";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { Examples } from "../examples";
 import { friendTable } from "./friend.sql";
+import { createSelectSchema } from "drizzle-zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Friend {
-    export const Info = z
-        .object({
-            steamID: z.bigint().openapi({
-                description: "The Steam ID of this Steam account",
-                example: Examples.Friend.steamID
-            }),
-            friendSteamID: z.bigint().openapi({
-                description: "The friend's Steam ID we want to add as a friend",
-                example: Examples.Friend.friendSteamID
-            }),
-            createdAt: z.date().openapi({
-                description: "When this friendship was created",
-                example: Examples.Friend.createdAt
-            }),
-            deletedAt: z.date().nullable().openapi({
-                description: "When this friendship was ended",
-                example: Examples.Friend.deletedAt
-            }),
-            updatedAt: z.date().openapi({
-                description: "When this friendship was updated",
-                example: Examples.Friend.updatedAt
-            })
-        })
+    export const Info = createSelectSchema(friendTable)
+        .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
         .openapi({
             ref: "Friend",
-            description: "Represents a user's friendship connection",
+            description: "Represents a bidirectional friendship relationship between two Steam users",
             example: Examples.Friend,
         });
 
     export type Info = z.infer<typeof Info>;
 
     export const add = fn(
-        Info.omit({
-            createdAt: true,
-            deletedAt: true,
-            updatedAt: true
-        }),
+        Info,
         async (input) =>
             createTransaction(async (tx) => {
                 await tx
@@ -60,10 +36,7 @@ export namespace Friend {
     )
 
     export const end = fn(
-        Info.pick({
-            steamID: true,
-            friendSteamID: true
-        }),
+        Info,
         (input) =>
             useTransaction(async (tx) =>
                 tx
@@ -96,10 +69,7 @@ export namespace Friend {
     )
 
     export const areFriends = fn(
-        Info.pick({
-            steamID: true,
-            friendSteamID: true
-        }),
+        Info,
         (input) =>
             useTransaction(async (tx) => {
                 const result = await tx
@@ -125,9 +95,6 @@ export namespace Friend {
         return {
             // TODO: Do some leftJoin shenanigans
             friendSteamID: input.friendSteamID,
-            createdAt: input.timeCreated,
-            deletedAt: input.timeDeleted,
-            updatedAt: input.timeUpdated,
             steamID: input.steamID
         };
     }

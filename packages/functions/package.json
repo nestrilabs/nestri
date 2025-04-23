@@ -22,7 +22,6 @@
   "dependencies": {
     "@actor-core/bun": "*",
     "@actor-core/file-system": "*",
-    "@nestri/steam": "*",
     "@openauthjs/openauth": "*",
     "actor-core": "*",
     "hono": "^4.6.15",

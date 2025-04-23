@@ -67,7 +67,7 @@ export namespace Examples {
 
     const GameGenre = {
         id: "1",
-        description: "Action",
+        name: "Action",
     }
 
     export const Game = {

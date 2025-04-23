@@ -47,7 +47,7 @@ export namespace User {
                 description: "The (number) discriminator for this user",
                 example: Examples.User.discriminator,
             }),
-            steamAccounts: Steam.Info.array().openapi({
+            steamAccounts: Steam.Info.omit({ userID: true }).array().openapi({
                 description: "The steam accounts for this user",
                 example: Examples.User.steamAccounts,
             }),
@@ -212,20 +212,21 @@ export namespace User {
             groupBy((row) => row.user.id),
             values(),
             map((group) => ({
-                ...group[0].user,
+                id: group[0].user.id,
+                name: group[0].user.name,
+                email: group[0].user.email,
+                avatarUrl: group[0].user.avatarUrl,
+                discriminator: group[0].user.discriminator,
+                polarCustomerID: group[0].user.polarCustomerID,
                 steamAccounts: !group[0].steam ?
                     [] :
                     group.map((row) => ({
-                        id: row.steam!.id,
-                        countryCode: row.steam!.countryCode,
-                        username: row.steam!.username,
+                        avatarHash: row.steam!.avatarHash,
                         steamID: row.steam!.steamID,
-                        lastGame: row.steam!.lastGame,
-                        limitation: row.steam!.limitation,
-                        steamEmail: row.steam!.steamEmail,
+                        profileUrl: row.steam!.profileUrl,
+                        realName: row.steam!.realName,
                         userID: row.steam!.userID,
-                        personaName: row.steam!.personaName,
-                        avatarUrl: row.steam!.avatarUrl,
+                        personaName: row.steam!.personaName
                     })),
             })),
         )

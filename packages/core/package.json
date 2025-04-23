@@ -35,6 +35,7 @@
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
+        "drizzle-zod": "^0.7.1",
         "postgres": "^3.4.5",
         "steam-session": "*"
     }

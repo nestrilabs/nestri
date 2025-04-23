@@ -1,32 +1,32 @@
 import { z } from "zod";
-import { timestamps, } from "../drizzle/types";
-import { steamTable } from "../steam/steam.sql";
+import { timestamps, utc, } from "../drizzle/types";
 import { pgTable, varchar, text, unique, bigint, primaryKey, boolean, date, json } from "drizzle-orm/pg-core";
 
-const Achievements = z.object({
-    total: z.number(),
-    highlighted: z
-        .object({
-            name: z.string(),
-            path: z.string().url()
-        })
-        .array()
-})
+export const Achievements = z
+    .object({
+        total: z.number(),
+        highlighted: z
+            .object({
+                name: z.string(),
+                path: z.string().url()
+            })
+            .array()
+    })
 
-const Pegi = z
+export const Pegi = z
     .object({
         rating: z.string(),
         description: z.string(),
         requiredAge: z.number()
     })
 
-const SystemRequirements = z
+export const SystemRequirements = z
     .object({
         minimum: z.string(),
         recommended: z.string()
     })
 
-const Company = z
+export const Company = z
     .object({
         name: z.string(),
         url: z.string().url().nullable()
@@ -47,7 +47,7 @@ export const gameTable = pgTable(
         website: text("website_url").notNull(),
         legalNotice: text("legal_notice").notNull(),
         description: text("description").notNull(),
-        releaseDate: date("release_date").notNull(),
+        releaseDate: utc("release_date").notNull(),
         nativeLinux: boolean("native_linux").notNull(),
         appID: bigint("app_id", { mode: "number" }).notNull(),
         achievements: json("achievements").$type<Achievements>().notNull(),
@@ -101,34 +101,8 @@ export const gameGenreRelationTable = pgTable(
             }),
     },
     (table) => [
-        unique("idx_game_genre_id").on(table.genreID),
-        unique("idx_game_game_id").on(table.gameID),
         primaryKey({
             columns: [table.gameID, table.genreID]
-        })
-    ],
-);
-
-export const steamLibrary = pgTable(
-    "steam_library",
-    {
-        ...timestamps,
-        gameID: bigint("game_id", { mode: "number" })
-            .notNull()
-            .references(() => gameTable.appID, {
-                onDelete: "cascade"
-            }),
-        steamID: bigint("game_id", { mode: "bigint" })
-            .notNull()
-            .references(() => steamTable.steamID, {
-                onDelete: "cascade"
-            }),
-    },
-    (table) => [
-        unique("idx_library_steam_id").on(table.steamID),
-        unique("idx_library_game_id").on(table.gameID),
-        primaryKey({
-            columns: [table.gameID, table.steamID]
         })
     ],
 );
