@@ -13,7 +13,7 @@ import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
 export namespace SteamApi {
     export const route = new Hono()
         .use(notPublic)
-        .get("/",
+        .get("/login",
             describeRoute({
                 tags: ["Steam"],
                 summary: "Login to Steam using QR code",
@@ -104,6 +104,7 @@ export namespace SteamApi {
 
                             await Steam.createCredential({ refreshToken, steamID, username })
 
+                            //FIXME: Add this to their respective routes instead of shoving them here -  for easier and scalable way to do this
                             c.executionCtx.waitUntil(
                                 new Promise(async (resolve, reject) => {
 
