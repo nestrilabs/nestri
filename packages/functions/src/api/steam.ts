@@ -151,6 +151,8 @@ export namespace SteamApi {
 
                                     const gameDB = ownedGameIDs.map(async (gameID) => {
                                         const gameInfo = await SteamClient.getGameInfo({ gameID, cookies })
+
+                                        // const gameImages = 
                                     })
 
                                     await Promise.allSettled(gameDB)

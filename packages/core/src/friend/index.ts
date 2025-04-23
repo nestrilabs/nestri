@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { fn } from "../utils";
-import { Examples } from "../examples";
+import { Steam } from "../steam";
 import { friendTable } from "./friend.sql";
+import { steamTable } from "../steam/steam.sql";
 import { createSelectSchema } from "drizzle-zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
@@ -9,11 +10,6 @@ import { createTransaction, useTransaction } from "../drizzle/transaction";
 export namespace Friend {
     export const Info = createSelectSchema(friendTable)
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
-        .openapi({
-            ref: "Friend",
-            description: "Represents a bidirectional friendship relationship between two Steam users",
-            example: Examples.Friend,
-        });
 
     export type Info = z.infer<typeof Info>;
 
@@ -48,7 +44,7 @@ export namespace Friend {
                             eq(friendTable.friendSteamID, input.friendSteamID),
                         )
                     )
-            ),
+            )
     )
 
     export const fromSteamID = fn(
@@ -58,14 +54,25 @@ export namespace Friend {
         (input) =>
             useTransaction(async (tx) =>
                 tx
-                    .select()
+                    .select({
+                        friend: steamTable
+                    })
                     .from(friendTable)
-                    .where(and(eq(friendTable.steamID, input.steamID), isNull(friendTable.timeDeleted)))
+                    .innerJoin(
+                        steamTable,
+                        eq(friendTable.friendSteamID, steamTable.steamID)
+                    )
+                    .where(
+                        and(
+                            eq(friendTable.steamID, input.steamID),
+                            isNull(friendTable.timeDeleted)
+                        )
+                    )
                     .orderBy(friendTable.timeCreated)
                     .limit(100)
                     .execute()
-                    .then((rows) => rows.map(serialize)),
-            ),
+                    .then((row) => row.map(i => Steam.serialize(i.friend)))
+            )
     )
 
     export const areFriends = fn(
@@ -88,14 +95,4 @@ export namespace Friend {
                 return result.length > 0
             }),
     )
-
-    export function serialize(
-        input: typeof friendTable.$inferSelect,
-    ): z.infer<typeof Info> {
-        return {
-            // TODO: Do some leftJoin shenanigans
-            friendSteamID: input.friendSteamID,
-            steamID: input.steamID
-        };
-    }
 }

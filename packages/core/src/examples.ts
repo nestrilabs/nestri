@@ -12,14 +12,6 @@ export namespace Examples {
         refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NT...",
     }
 
-    export const Friend = {
-        steamID: 74839300282033n,
-        friendSteamID: 74839300382033n,
-        createdAt: new Date("2025-04-23T10:55:47.146Z"),
-        updatedAt: new Date("2025-04-23T10:55:47.146Z"),
-        deletedAt: new Date("2025-04-23T10:55:47.146Z"),
-    }
-
     export const Steam = {
         userID: Id("user"),
         steamID: 74839300282033n,

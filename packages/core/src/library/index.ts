@@ -4,7 +4,6 @@ import { Game } from "../game";
 import { createSelectSchema } from "drizzle-zod";
 import { steamLibraryTable } from "./library.sql";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { groupBy, pipe, values, map } from "remeda";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { gameGenreRelationTable, gameGenreTable, gameTable } from "../game/game.sql";
 
@@ -73,7 +72,7 @@ export namespace SteamLibrary {
                     .where(
                         and(
                             eq(steamLibraryTable.steamID, input.steamID),
-                            isNull(steamLibraryTable.timeDeleted)
+                            isNull(steamLibraryTable.timeDeleted),
                         )
                     )
                     .then((rows => Game.serialize(rows)))
