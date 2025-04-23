@@ -4,7 +4,6 @@ export namespace Examples {
         `${prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
 
     export const Credential = {
-        id: Id("credential"),
         username: "janedoe",
         steamID: 74839300282033n,
         cookies: ["steamLoginSecure=76561199513230864%7C%7CeyAidHlwIjogIkpXVCIsICJhbGciOiAiRWR", "sessionid=707ddf8a847defeb930f"],
@@ -13,11 +12,18 @@ export namespace Examples {
         refreshToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NT...",
     }
 
+    export const Friend = {
+        steamID: 74839300282033n,
+        friendSteamID: 74839300382033n,
+        createdAt: new Date("2025-04-23T10:55:47.146Z"),
+        updatedAt: new Date("2025-04-23T10:55:47.146Z"),
+        deletedAt: new Date("2025-04-23T10:55:47.146Z"),
+    }
+
     export const Steam = {
-        id: Id("steam"),
         userID: Id("user"),
         steamID: 74839300282033n,
-        avatarHash:"3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
+        avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
         personaName: "JD The 65th",
         realName: "John Doe",
         profileUrl: "https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",

@@ -9,10 +9,6 @@ import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
     export const Credential = z.object({
-        id: z.string().openapi({
-            description: Common.IdDescription,
-            example: Examples.Credential.id,
-        }),
         accessToken: z.string().openapi({
             description: "The accessToken to login to a user's Steam account",
             example: Examples.Credential.accessToken
@@ -42,10 +38,6 @@ export namespace Steam {
 
     export const Info = z
         .object({
-            id: z.string().openapi({
-                description: Common.IdDescription,
-                example: Examples.Steam.id,
-            }),
             avatarHash: z.string().openapi({
                 description: "The steam avatar hash that this account owns",
                 example: Examples.Steam.avatarHash
@@ -82,25 +74,26 @@ export namespace Steam {
 
     export const create = fn(
         Info
-            .partial({
-                id: true,
-            })
             .extend({
                 useUser: z.boolean()
+            })
+            .partial({
+                useUser: true
             }),
         (input) =>
             createTransaction(async (tx) => {
-                const id = input.id ?? createID("steam");
-                await tx.insert(steamTable).values({
-                    id,
-                    userID: typeof input.userID === "string" ? input.userID : input.useUser ? useUser().userID : input.userID,
-                    profileUrl: input.profileUrl,
-                    avatarHash: input.avatarHash,
-                    steamID: input.steamID,
-                    realName: input.realName,
-                    personaName: input.personaName
-                })
-                return id;
+                await tx
+                    .insert(steamTable)
+                    .values({
+                        userID: typeof input.userID === "string" ? input.userID : input.useUser ? useUser().userID : input.userID,
+                        profileUrl: input.profileUrl,
+                        avatarHash: input.avatarHash,
+                        steamID: input.steamID,
+                        realName: input.realName,
+                        personaName: input.personaName
+                    })
+                    .onConflictDoNothing({ target: [steamTable.steamID, steamTable.userID] })
+                return input.steamID
             }),
     );
 
@@ -129,21 +122,18 @@ export namespace Steam {
 
     export const createCredential = fn(
         Credential
-            .partial({
-                id: true,
-            })
             //Cookies and AccessToken cannot be persisted, they expire within 24 hours
             .omit({ cookies: true, accessToken: true }),
         (input) =>
             createTransaction(async (tx) => {
-                const id = input.id ?? createID("credential");
-                await tx.insert(steamCredentialsTable).values({
-                    id,
-                    steamID: input.steamID,
-                    username: input.username,
-                    refreshToken: input.refreshToken,
-                })
-                return id;
+                await tx
+                    .insert(steamCredentialsTable)
+                    .values({
+                        steamID: input.steamID,
+                        username: input.username,
+                        refreshToken: input.refreshToken,
+                    })
+                return input.steamID
             }),
     );
 
@@ -160,7 +150,6 @@ export namespace Steam {
         input: typeof steamTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {
-            id: input.id,
             // TODO: Do some leftJoin shenanigans
             userID: input.userID,
             profileUrl: input.profileUrl,

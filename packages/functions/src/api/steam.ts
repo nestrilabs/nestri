@@ -1,14 +1,18 @@
 import { z } from "zod";
 import { Hono } from "hono";
+import { notPublic } from "./auth";
 import { streamSSE } from "hono/streaming";
 import { describeRoute } from "hono-openapi";
 import { assertActor } from "@nestri/core/actor";
-import { Result, ErrorResponses, validator } from "./common";
+import { Steam } from "@nestri/core/steam/index";
+import { Friend } from "@nestri/core/friends/index";
+import { ErrorResponses, validator } from "./common";
+import { SteamClient } from "@nestri/core/steam/client";
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
-import { resolve } from "bun";
 
 export namespace SteamApi {
     export const route = new Hono()
+        .use(notPublic)
         .get("/",
             describeRoute({
                 tags: ["Steam"],
@@ -38,7 +42,7 @@ export namespace SteamApi {
                             machineFriendlyName: "Nestri Cloud Gaming",
                         }
                     );
-                    session.loginTimeout = 120000;
+                    session.loginTimeout = 60000; //1 Minute is typically when the url expires
 
                     await stream.writeSSE({
                         event: 'status',
@@ -77,10 +81,72 @@ export namespace SteamApi {
                                 data: JSON.stringify({ success: true }),
                             })
 
+                            const accessToken = session.accessToken;
+                            const refreshToken = session.refreshToken;
+                            const steamID = session.steamID.getBigIntID();
+                            const username = session.accountName;
                             // We can also get web cookies now that we've negotiated a session
                             let webCookies = await session.getWebCookies();
-                            console.log('Web session cookies:');
+                            console.log("\n===============================\n")
+                            console.log("WebCookies:")
                             console.log(webCookies);
+                            console.log("\n===============================\n")
+
+                            console.log("\n===============================\n")
+                            console.log("Access Token:")
+                            console.log(accessToken);
+                            console.log("\n===============================\n")
+
+                            console.log("\n===============================\n")
+                            console.log("Refresh Token:")
+                            console.log(refreshToken);
+                            console.log("\n===============================\n")
+
+                            await Steam.createCredential({ refreshToken, steamID, username })
+
+                            c.executionCtx.waitUntil(
+                                new Promise(async (resolve, reject) => {
+
+                                    //Stage 1: Add the user and the friends
+                                    const friends = await SteamClient.getFriends({ accessToken, steamIDs: [steamID] });
+
+                                    const friendsSteamIDs = friends.friends.map(i => BigInt(i.steamid));
+
+                                    const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID, ...friendsSteamIDs] })
+
+                                    userData.players.map(async (steamUser) => {
+                                        // If we are the current user, do not add a friendship relation
+                                        if (steamUser.steamid.toLowerCase().includes(steamID.toString().toLowerCase())) {
+                                            await Steam.create({
+                                                steamID,
+                                                realName: steamUser.realname,
+                                                userID: user.properties.userID,
+                                                avatarHash: steamUser.avatarhash,
+                                                profileUrl: steamUser.profileurl,
+                                                personaName: steamUser.personaname,
+                                            })
+                                        } else {
+                                            await Steam.create({
+                                                steamID: BigInt(steamUser.steamid),
+                                                realName: steamUser.realname,
+                                                userID: user.properties.userID,
+                                                avatarHash: steamUser.avatarhash,
+                                                profileUrl: steamUser.profileurl,
+                                                personaName: steamUser.personaname,
+                                            })
+
+                                            await Friend.add({
+                                                steamID,
+                                                friendSteamID: BigInt(steamUser.steamid)
+                                            })
+                                        }
+                                    })
+
+                                    // Stage 2: Add their games
+
+
+                                })
+                            )
 
                             resolve("Success")
                         });

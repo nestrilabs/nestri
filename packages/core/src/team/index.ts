@@ -77,11 +77,13 @@ export namespace Team {
         (input) =>
             createTransaction(async (tx) => {
                 const id = input.id ?? createID("team");
-                const result = await tx.insert(teamTable).values({
-                    id,
-                    slug: input.slug,
-                    name: input.name
-                })
+                const result = await tx
+                    .insert(teamTable)
+                    .values({
+                        id,
+                        slug: input.slug,
+                        name: input.name
+                    })
                     .onConflictDoNothing({ target: teamTable.slug })
 
                 if (result.count === 0) throw new TeamExistsError(input.slug);

@@ -6,8 +6,6 @@ export const prefixes = {
   task: "tsk",
   machine: "mch",
   member: "mbr",
-  steam: "stm",
-  credential: "crd",
   subscription: "sub",
   invite: "inv",
   product: "prd"

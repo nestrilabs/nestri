@@ -1,11 +1,10 @@
 import { userTable } from "../user/user.sql";
-import { id, timestamps, ulid, } from "../drizzle/types";
-import { pgTable, uniqueIndex, varchar, text, unique, bigint } from "drizzle-orm/pg-core";
+import { timestamps, ulid } from "../drizzle/types";
+import { pgTable, uniqueIndex, varchar, text, unique, bigint, primaryKey } from "drizzle-orm/pg-core";
 
 export const steamTable = pgTable(
     "steam",
     {
-        ...id,
         ...timestamps,
         userID: ulid("user_id")
             // Sometimes we will create user's that are not yet on Nestri, because we already know a friend
@@ -20,14 +19,16 @@ export const steamTable = pgTable(
         profileUrl: text("profile_url").notNull(),
     },
     (table) => [
-        unique("steam_steam_id").on(table.steamID),
+        unique("idx_steam_steam_id").on(table.steamID),
+        primaryKey({
+            columns: [table.steamID, table.userID]
+        })
     ],
 );
 
 export const steamCredentialsTable = pgTable(
     "steam_credentials",
     {
-        ...id,
         ...timestamps,
         refreshToken: text("refresh_token").notNull(),
         steamID: bigint("steam_id", { mode: "bigint" })
@@ -38,6 +39,9 @@ export const steamCredentialsTable = pgTable(
         username: varchar("username", { length: 255 }).notNull(),
     },
     (table) => [
-        uniqueIndex("steam_credentials_id").on(table.steamID),
+        uniqueIndex("idx_steam_credentials_id").on(table.steamID),
+        primaryKey({
+            columns: [table.steamID]
+        })
     ],
 )
