@@ -121,18 +121,18 @@ export namespace SteamClient {
                         description: gameInfo.short_description,
                         nativeLinux: gameInfo.platforms.linux,
                         achievements: gameInfo.achievements,
-                        isSinglePlayer: gameInfo.categories.find(i => i.description.includes("Single-player")) ? true : false,
-                        supportsFamilySharing: gameInfo.categories.find(i => i.description.includes("Family Sharing")) ? true : false,
+                        isSinglePlayer: !!gameInfo.categories.find(i => i.description.includes("Single-player")),
+                        supportsFamilySharing: !!gameInfo.categories.find(i => i.description.includes("Family Sharing")),
                         pegi: {
                             rating: gameInfo.ratings.pegi.rating,
                             description: gameInfo.ratings.pegi.descriptors,
                             requiredAge: gameInfo.ratings.pegi.required_age ? Number(gameInfo.ratings.pegi.required_age) : Number(gameInfo.required_age)
                         },
-                        protonCompatibility: steamGameInfo.status === "fulfilled" && steamGameInfo.value.common.steam_deck_compatibility,
+                        protonCompatibility: steamGameInfo.status === "fulfilled" ? steamGameInfo.value.common.steam_deck_compatibility : null,
                         controllerSupport: gameInfo.controller_support,
                         systemRequirements: gameInfo.platforms.linux ? gameInfo.linux_requirements : gameInfo.pc_requirements,
-                        publishers: libraryDetailsResult.status === "fulfilled" && libraryDetailsResult.value.rgPublishers,
-                        developers: libraryDetailsResult.status === "fulfilled" && libraryDetailsResult.value.rgDevelopers,
+                        publishers: libraryDetailsResult.status === "fulfilled" ? libraryDetailsResult.value.rgPublishers : null,
+                        developers: libraryDetailsResult.status === "fulfilled" ? libraryDetailsResult.value.rgDevelopers : null,
                     }
                 }
             }

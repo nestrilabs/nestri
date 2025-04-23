@@ -48,7 +48,7 @@ export namespace SteamApi {
                     const challenge_url = await session.startWithQR();
 
                     await stream.writeSSE({
-                        event: 'challeng_url',
+                        event: 'challenge_url',
                         data: JSON.stringify({ url: challenge_url }),
                     })
 
@@ -67,11 +67,15 @@ export namespace SteamApi {
                         });
 
                         session.on('authenticated', async () => {
-                            console.log('\nAuthenticated successfully! Printing your tokens now...');
-                            console.log(`SteamID: ${session.steamID}`);
-                            console.log(`Account name: ${session.accountName}`);
-                            console.log(`Access token: ${session.accessToken}`);
-                            console.log(`Refresh token: ${session.refreshToken}`);
+                            await stream.writeSSE({
+                                event: 'status',
+                                data: JSON.stringify({ message: "Login succesful" }),
+                            })
+
+                            await stream.writeSSE({
+                                event: 'login_success',
+                                data: JSON.stringify({ success: true }),
+                            })
 
                             // We can also get web cookies now that we've negotiated a session
                             let webCookies = await session.getWebCookies();

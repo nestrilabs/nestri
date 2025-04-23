@@ -132,6 +132,7 @@ export namespace Steam {
             .partial({
                 id: true,
             })
+            //Cookies and AccessToken cannot be persisted, they expire within 24 hours
             .omit({ cookies: true, accessToken: true }),
         (input) =>
             createTransaction(async (tx) => {
