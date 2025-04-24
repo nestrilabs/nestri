@@ -1,13 +1,6 @@
 import { z } from "zod";
 import { id, timestamps } from "../drizzle/types";
-import { integer, pgTable, text, uniqueIndex, varchar, json } from "drizzle-orm/pg-core";
-
-// Whether this user is part of the Nestri Team, comes with privileges
-export const UserFlags = z.object({
-    team: z.boolean().optional(),
-});
-
-export type UserFlags = z.infer<typeof UserFlags>;
+import { integer, pgTable, text, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const userTable = pgTable(
     "user",

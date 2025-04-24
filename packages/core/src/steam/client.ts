@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Steam } from "./index"
-import {
+import type {
     UserDataResponse,
     AppDetailsResponse,
     GetFriendsResponse,
@@ -21,7 +21,7 @@ export const API_HEADERS = {
 
 export namespace SteamClient {
     export const getUserData = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ accessToken: true })
             .extend({
                 steamIDs: z.bigint().array()
@@ -46,7 +46,7 @@ export namespace SteamClient {
     )
 
     export const getFriends = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ accessToken: true })
             .extend({
                 steamIDs: z.bigint().array()
@@ -71,7 +71,7 @@ export namespace SteamClient {
     )
 
     export const getOwnedGamesCompatList = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ cookies: true }),
         async (input) => {
             const games = await fetchApi<GamesCompatListResponse>(`/saleaction/ajaxgetuserdeckcompatlist?appListType=library`, input.cookies.join('; '))
@@ -83,7 +83,7 @@ export namespace SteamClient {
     )
 
     export const getGameUserInfo = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ cookies: true })
             .extend({ gameID: z.number() }),
         async (input) => {
@@ -94,7 +94,7 @@ export namespace SteamClient {
     )
 
     export const getGameInfo = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ cookies: true })
             .extend({ gameID: z.number() }),
         async (input) => {
@@ -147,7 +147,7 @@ export namespace SteamClient {
     // )
 
     export const generateCookies = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ refreshToken: true }),
         async (input) => {
             let webSession = new LoginSession(EAuthTokenPlatformType.WebBrowser);
@@ -158,7 +158,7 @@ export namespace SteamClient {
     )
 
     export const generateAccessToken = fn(
-        Steam.Credential
+        Steam.CredentialInfo
             .pick({ refreshToken: true }),
         async (input) => {
             let clientSession = new LoginSession(EAuthTokenPlatformType.SteamClient);

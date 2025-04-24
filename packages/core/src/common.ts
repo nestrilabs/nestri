@@ -1,6 +1,5 @@
-import { sql } from "drizzle-orm";
-import { z } from "zod";
 import "zod-openapi/extend";
+import { sql } from "drizzle-orm";
 
 export namespace Common {
   export const IdDescription = `Unique object identifier.

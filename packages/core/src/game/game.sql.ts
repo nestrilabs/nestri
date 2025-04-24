@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { timestamps, utc, } from "../drizzle/types";
-import { pgTable, varchar, text, unique, bigint, primaryKey, boolean, date, json } from "drizzle-orm/pg-core";
+import { pgTable, varchar, text, unique, bigint, primaryKey, boolean, json } from "drizzle-orm/pg-core";
 
 export const Achievements = z
     .object({

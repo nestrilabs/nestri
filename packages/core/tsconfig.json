@@ -1,8 +1,11 @@
 {
-    "extends": "@tsconfig/node20/tsconfig.json",
-    "compilerOptions": {
-      "strict": true,
-      "module": "esnext",
-      "moduleResolution": "bundler",
-    }
+  "extends": "@tsconfig/node20/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true
   }
+}

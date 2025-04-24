@@ -6,7 +6,11 @@ import { Polar as PolarSdk } from "@polar-sh/sdk";
 import { validateEvent } from "@polar-sh/sdk/webhooks";
 import { PlanType } from "../subscription/subscription.sql";
 
-const polar = new PolarSdk({ accessToken: Resource.PolarSecret.value, server: Resource.App.stage !== "production" ? "sandbox" : "production" });
+const polar = new PolarSdk({
+    accessToken: Resource.PolarSecret.value,
+    server: Resource.App.stage !== "production" ? "sandbox" : "production"
+});
+
 const planType = z.enum(PlanType)
 export namespace Polar {
     export const client = polar;
@@ -53,7 +57,7 @@ export namespace Polar {
     )
 
     //TODO: Implement this
-    export const handleWebhook = async(payload: ReturnType<typeof validateEvent>) => {
+    export const handleWebhook = async (payload: ReturnType<typeof validateEvent>) => {
         switch (payload.type) {
             case "subscription.created":
                 const teamID = payload.data.metadata.teamID

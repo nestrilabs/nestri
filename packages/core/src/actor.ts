@@ -1,9 +1,6 @@
 import { z } from "zod";
-import { eq } from "./drizzle";
-import { ErrorCodes, VisibleError } from "./error";
 import { createContext } from "./context";
-import { UserFlags, userTable } from "./user/user.sql";
-import { useTransaction } from "./drizzle/transaction";
+import { ErrorCodes, VisibleError } from "./error";
 
 export const PublicActor = z.object({
   type: z.literal("public"),

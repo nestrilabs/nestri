@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { useUser } from "../actor";
 import { Common } from "../common";
 import { Member } from "../member";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { assertActor, useUser } from "../actor";
 import { createEvent } from "../event";
 import { createID, fn } from "../utils";
 import { Subscription } from "../subscription";
