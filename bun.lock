@@ -89,6 +89,7 @@
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
+        "drizzle-zero": "^0.9.1",
         "drizzle-zod": "^0.7.1",
         "postgres": "^3.4.5",
         "steam-session": "*",
@@ -2050,6 +2051,8 @@
     "drizzle-kit": ["drizzle-kit@0.30.5", "", { "dependencies": { "@drizzle-team/brocli": "^0.10.2", "@esbuild-kit/esm-loader": "^2.5.5", "esbuild": "^0.19.7", "esbuild-register": "^3.5.0", "gel": "^2.0.0" }, "bin": { "drizzle-kit": "bin.cjs" } }, "sha512-l6dMSE100u7sDaTbLczibrQZjA35jLsHNqIV+jmhNVO3O8jzM6kywMOmV9uOz9ZVSCMPQhAZEFjL/qDPVrqpUA=="],
 
     "drizzle-orm": ["drizzle-orm@0.40.0", "", { "peerDependencies": { "@aws-sdk/client-rds-data": ">=3", "@cloudflare/workers-types": ">=4", "@electric-sql/pglite": ">=0.2.0", "@libsql/client": ">=0.10.0", "@libsql/client-wasm": ">=0.10.0", "@neondatabase/serverless": ">=0.10.0", "@op-engineering/op-sqlite": ">=2", "@opentelemetry/api": "^1.4.1", "@planetscale/database": ">=1", "@prisma/client": "*", "@tidbcloud/serverless": "*", "@types/better-sqlite3": "*", "@types/pg": "*", "@types/sql.js": "*", "@vercel/postgres": ">=0.8.0", "@xata.io/client": "*", "better-sqlite3": ">=7", "bun-types": "*", "expo-sqlite": ">=14.0.0", "gel": ">=2", "knex": "*", "kysely": "*", "mysql2": ">=2", "pg": ">=8", "postgres": ">=3", "sql.js": ">=1", "sqlite3": ">=5" }, "optionalPeers": ["@aws-sdk/client-rds-data", "@cloudflare/workers-types", "@electric-sql/pglite", "@libsql/client", "@libsql/client-wasm", "@neondatabase/serverless", "@op-engineering/op-sqlite", "@opentelemetry/api", "@planetscale/database", "@prisma/client", "@tidbcloud/serverless", "@types/better-sqlite3", "@types/pg", "@types/sql.js", "@vercel/postgres", "@xata.io/client", "better-sqlite3", "bun-types", "expo-sqlite", "gel", "knex", "kysely", "mysql2", "pg", "postgres", "sql.js", "sqlite3"] }, "sha512-7ptk/HQiMSrEZHnAsSlBESXWj52VwgMmyTEfoNmpNN2ZXpcz13LwHfXTIghsAEud7Z5UJhDOp8U07ujcqme7wg=="],
+
+    "drizzle-zero": ["drizzle-zero@0.9.1", "", { "peerDependencies": { "@rocicorp/zero": ">=0.13.2025013101", "drizzle-orm": ">=0.36.0", "prettier": ">=3.0.0" }, "optionalPeers": ["prettier"], "bin": { "drizzle-zero": "dist/bin.cjs" } }, "sha512-elXm8c+lhnEHsRpboE+bwvvcibaHwqr2HvlLZPbWdsZfXFH42JwK6PWRPhhyE4atyQeHB8Qg8NboefBy43XgIw=="],
 
     "drizzle-zod": ["drizzle-zod@0.7.1", "", { "peerDependencies": { "drizzle-orm": ">=0.36.0", "zod": ">=3.0.0" } }, "sha512-nZzALOdz44/AL2U005UlmMqaQ1qe5JfanvLujiTHiiT8+vZJTBFhj3pY4Vk+L6UWyKFfNmLhk602Hn4kCTynKQ=="],
 

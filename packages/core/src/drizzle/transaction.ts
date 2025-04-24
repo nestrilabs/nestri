@@ -1,13 +1,13 @@
 import { db } from ".";
 import {
   PgTransaction,
-  PgTransactionConfig
+  type PgTransactionConfig
 } from "drizzle-orm/pg-core";
-import {
+import type {
   PostgresJsQueryResultHKT
 } from "drizzle-orm/postgres-js";
 import { createContext } from "../context";
-import { ExtractTablesWithRelations } from "drizzle-orm";
+import type { ExtractTablesWithRelations } from "drizzle-orm";
 
 export type Transaction = PgTransaction<
   PostgresJsQueryResultHKT,
