@@ -39,7 +39,7 @@ import { useOpenAuth } from "@openauthjs/solid";
 import { createInitializedContext } from "../common/context";
 
 type Storage = {
-  accounts: Record<string, User.Info & { teams: Team.Info[] }>
+  accounts: Record<string, User.FullInfo & { teams: Team.FullInfo[] }>
 }
 
 export const { use: useAccount, provider: AccountProvider } = createInitializedContext("AccountContext", () => {
@@ -59,7 +59,7 @@ export const { use: useAccount, provider: AccountProvider } = createInitializedC
       auth.authorize()
       return
     }
-    return await fetch(`${import.meta.env.VITE_API_URL}/account`, {
+    return await fetch(`${import.meta.env.VITE_API_URL}/accounts`, {
       headers: {
         authorization: `Bearer ${access}`,
       },

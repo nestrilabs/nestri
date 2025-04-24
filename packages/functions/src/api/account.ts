@@ -40,9 +40,9 @@ export namespace AccountApi {
             }),
             async (c) => {
                 const actor = assertActor("user");
-                const [currentUser, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
+                const [user, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
 
-                if (!currentUser)
+                if (!user)
                     throw new VisibleError(
                         "not_found",
                         ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
@@ -51,7 +51,7 @@ export namespace AccountApi {
 
                 return c.json({
                     data: {
-                        ...currentUser,
+                        ...user,
                         teams,
                     }
                 }, 200);

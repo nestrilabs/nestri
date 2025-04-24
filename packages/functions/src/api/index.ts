@@ -10,7 +10,7 @@ import { FriendApi } from "./friend";
 import { Hono, type Env } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
-import { MachineApi } from "./machine";
+// import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
 import { patchLogger } from "../log-polyfill";
 import { HTTPException } from "hono/http-exception";
@@ -28,14 +28,14 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
-    .route("/realtime", Realtime.route)
-    .route("/team", TeamApi.route)
+    .route("/teams", TeamApi.route)
+    .route("/games", GameApi.route)
     .route("/polar", PolarApi.route)
-    .route("/friend", FriendApi.route)
-    .route("/game", GameApi.route)
     .route("/steam", SteamApi.route)
-    .route("/account", AccountApi.route)
-    .route("/machine", MachineApi.route)
+    .route("/realtime", Realtime.route)
+    .route("/friends", FriendApi.route)
+    .route("/accounts", AccountApi.route)
+    // .route("/machine", MachineApi.route)
     .onError((error, c) => {
         if (error instanceof VisibleError) {
             console.error("api error:", error);

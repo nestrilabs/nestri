@@ -39,12 +39,9 @@ export namespace SteamApi {
                 }
             }),
             async (c) => {
-                const user = assertActor("user")
-
+                assertActor("user")
                 const accounts = await Steam.list()
-
                 return c.json({ data: accounts })
-
             }
         )
         .get("/login",
