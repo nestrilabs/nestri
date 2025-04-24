@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fn } from "../utils";
+import { decrypt, encrypt, fn } from "../utils";
 import { User } from "../user";
 import { Examples } from "../examples";
 import { eq, and, isNull } from "../drizzle";
@@ -43,7 +43,7 @@ export namespace Steam {
     export const FullInfo = BasicInfo.extend({
         user: User.BasicInfo.nullable().openapi({
             description: "The user who owns this Steam account",
-            example: { ...Examples.User,  }
+            example: { ...Examples.User, }
         })
     })
 
@@ -118,15 +118,36 @@ export namespace Steam {
             .omit({ cookies: true, accessToken: true }),
         (input) =>
             createTransaction(async (tx) => {
+                const encryptedToken = encrypt(input.refreshToken)
                 await tx
                     .insert(steamCredentialsTable)
                     .values({
                         steamID: input.steamID,
                         username: input.username,
-                        refreshToken: input.refreshToken,
+                        refreshToken: encryptedToken,
                     })
                 return input.steamID
             }),
+    );
+
+    export const getCredential = fn(
+        CredentialInfo.shape.steamID,
+        (steamID) =>
+            useTransaction(async (tx) => {
+                const credential = await tx
+                    .select()
+                    .from(steamCredentialsTable)
+                    .where(and(
+                        eq(steamCredentialsTable.steamID, steamID),
+                        isNull(steamCredentialsTable.timeDeleted)
+                    ))
+                    .execute()
+                    .then(rows => rows[0]);
+
+                if (!credential) return null;
+
+                return { ...credential, refreshToken: decrypt(credential.refreshToken) };
+            })
     );
 
     /**

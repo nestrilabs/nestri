@@ -9,7 +9,6 @@ import { createEvent } from "../event";
 import { Examples } from "../examples";
 import { Resource } from "sst/resource";
 import { teamTable } from "../team/team.sql";
-import { steamTable } from "../steam/steam.sql";
 import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
@@ -155,7 +154,7 @@ export namespace User {
 
                     if (!discriminator) {
                         console.error("No available discriminators for this username ")
-                        return null
+                        throw new UserExistsError()
                     }
 
                     const result2 = await tx
@@ -171,7 +170,7 @@ export namespace User {
                             target: [userTable.discriminator, userTable.name]
                         })
 
-                    if (result2.length === 0) throw new UserExistsError()
+                    if (result2.count === 0) throw new UserExistsError()
                 }
 
                 await afterTx(() =>
@@ -211,7 +210,7 @@ export namespace User {
                 tx
                     .select()
                     .from(userTable)
-                    .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted), isNull(steamTable.timeDeleted)))
+                    .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted)))
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
                     .then(rows => rows.map(serializeBasic).at(0))
