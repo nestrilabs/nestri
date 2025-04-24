@@ -5,9 +5,11 @@ import { Game } from "@nestri/core/game/index";
 import { ErrorResponses, Result } from "./common";
 import { Examples } from "@nestri/core/examples";
 import { assertActor } from "@nestri/core/actor";
+import { notPublic } from "./auth";
 
 export namespace GameApi {
     export const route = new Hono()
+        .use(notPublic)
         .get("/",
             describeRoute({
                 tags: ["Steam"],

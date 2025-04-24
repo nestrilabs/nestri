@@ -194,6 +194,8 @@ export namespace SteamApi {
                                 })
                             )
 
+                            await stream.close()
+
                             resolve("Success")
                         });
 

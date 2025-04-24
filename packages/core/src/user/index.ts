@@ -13,6 +13,7 @@ import { teamTable } from "../team/team.sql";
 import { steamTable } from "../steam/steam.sql";
 import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
+import { ErrorCodes, VisibleError } from "../error";
 import { pipe, groupBy, values, map } from "remeda";
 import { and, eq, isNull, asc, sql } from "../drizzle";
 import { subscriptionTable } from "../subscription/subscription.sql";
@@ -130,24 +131,53 @@ export namespace User {
             const name = sanitizeUsername(input.name);
 
             // Generate a random available discriminator
-            const discriminator = await findAvailableDiscriminator(name);
-
-            if (!discriminator) {
-                console.error("No available discriminators for this username ")
-                return null
-            }
+            const discriminator = generateDiscriminator()
 
             const id = input.id ?? userID;
 
             await createTransaction(async (tx) => {
-                await tx.insert(userTable).values({
-                    id,
-                    name,
-                    avatarUrl: input.avatarUrl,
-                    email: input.email,
-                    discriminator: Number(discriminator),
-                    polarCustomerID: customer?.id
-                })
+                const result = await tx
+                    .insert(userTable).values({
+                        id,
+                        name,
+                        avatarUrl: input.avatarUrl,
+                        email: input.email,
+                        discriminator: Number(discriminator),
+                        polarCustomerID: customer?.id
+                    })
+                    .onConflictDoNothing({
+                        target: [userTable.discriminator, userTable.name]
+                    })
+
+                if (result.count === 0) {
+                    const discriminator = await findAvailableDiscriminator(name);
+
+                    if (!discriminator) {
+                        console.error("No available discriminators for this username ")
+                        return null
+                    }
+
+                    const result2 = await tx
+                        .insert(userTable).values({
+                            id,
+                            name,
+                            email: input.email,
+                            avatarUrl: input.avatarUrl,
+                            discriminator: Number(discriminator),
+                            polarCustomerID: customer?.id
+                        })
+                        .onConflictDoNothing({
+                            target: [userTable.discriminator, userTable.name]
+                        })
+
+                    if (result2.length === 0)
+                        throw new VisibleError(
+                            "already_exists",
+                            ErrorCodes.Validation.ALREADY_EXISTS,
+                            "User discriminator and name could already exists"
+                        )
+                }
+
                 await afterTx(() =>
                     withActor({
                         type: "user",

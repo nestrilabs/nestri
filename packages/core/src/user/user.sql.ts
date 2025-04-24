@@ -14,5 +14,6 @@ export const userTable = pgTable(
     },
     (user) => [
         uniqueIndex("user_email").on(user.email),
+        uniqueIndex("user_name_discriminator").on(user.name, user.discriminator),
     ]
 );
