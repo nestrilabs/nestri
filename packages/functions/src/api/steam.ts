@@ -136,70 +136,67 @@ export namespace SteamApi {
                             await Steam.createCredential({ refreshToken, steamID, username })
 
                             //FIXME: Add this to their respective routes instead of shoving them here -  for easier and scalable way to do this
-                            c.executionCtx.waitUntil(
-                                new Promise(async (resolve, reject) => {
+                            c.executionCtx.waitUntil((async () => {
 
-                                    //Stage 1: Add the user and the friends
-                                    const friends = await SteamClient.getFriends({ accessToken, steamIDs: [steamID] });
+                                //Stage 1: Add the user and the friends
+                                const friends = await SteamClient.getFriends({ accessToken, steamIDs: [steamID] });
 
-                                    const friendsSteamIDs = friends.friends.map(i => BigInt(i.steamid));
+                                const friendsSteamIDs = friends.friends.map(i => BigInt(i.steamid));
 
-                                    //Get all friends data, max is 100 friends :D Woah!!!
-                                    const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID, ...friendsSteamIDs].slice(0, 100) })
+                                //Get all friends data, max is 100 friends :D Woah!!!
+                                const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID, ...friendsSteamIDs].slice(0, 100) })
 
-                                    const userDB = userData.players.map(async (steamUser) => {
-                                        // If we are the current user, do not add a friendship relation
-                                        if (steamUser.steamid.toLowerCase().includes(steamID.toString().toLowerCase())) {
-                                            await Steam.create({
-                                                steamID,
-                                                realName: steamUser.realname,
-                                                userID: user.properties.userID,
-                                                avatarHash: steamUser.avatarhash,
-                                                profileUrl: steamUser.profileurl,
-                                                personaName: steamUser.personaname,
-                                            })
-                                        } else {
-                                            await Steam.create({
-                                                steamID: BigInt(steamUser.steamid),
-                                                realName: steamUser.realname,
-                                                userID: null,
-                                                avatarHash: steamUser.avatarhash,
-                                                profileUrl: steamUser.profileurl,
-                                                personaName: steamUser.personaname,
-                                            })
+                                const userDB = userData.players.map(async (steamUser) => {
+                                    // If we are the current user, do not add a friendship relation
+                                    if (steamUser.steamid.toLowerCase().includes(steamID.toString().toLowerCase())) {
+                                        //FIXME: Handle cases where the Steam account has already been created
+                                        await Steam.create({
+                                            steamID,
+                                            realName: steamUser.realname,
+                                            userID: user.properties.userID,
+                                            avatarHash: steamUser.avatarhash,
+                                            profileUrl: steamUser.profileurl,
+                                            personaName: steamUser.personaname,
+                                        })
+                                    } else {
+                                        await Steam.create({
+                                            steamID: BigInt(steamUser.steamid),
+                                            realName: steamUser.realname,
+                                            userID: null,
+                                            avatarHash: steamUser.avatarhash,
+                                            profileUrl: steamUser.profileurl,
+                                            personaName: steamUser.personaname,
+                                        })
 
-                                            // Add this person as a friend
-                                            await withActor({
-                                                type: "steam",
-                                                properties: {
-                                                    steamID
-                                                },
+                                        // Add this person as a friend
+                                        await withActor({
+                                            type: "steam",
+                                            properties: {
+                                                steamID
                                             },
-                                                async () =>
-                                                    await Friend.add({
-                                                        friendSteamID: BigInt(steamUser.steamid)
-                                                    })
-                                            )
+                                        },
+                                            async () =>
+                                                await Friend.add({
+                                                    friendSteamID: BigInt(steamUser.steamid)
+                                                })
+                                        )
 
-                                        }
-                                    })
-
-                                    await Promise.allSettled(userDB)
-
-                                    // // Stage 2: Add their games
-                                    // const ownedGameIDs = await SteamClient.getOwnedGamesCompatList({ cookies });
-
-                                    // const gameDB = ownedGameIDs.map(async (gameID) => {
-                                    //     const gameInfo = await SteamClient.getGameInfo({ gameID, cookies })
-
-                                    //     // const gameImages = 
-                                    // })
-
-                                    // await Promise.allSettled(gameDB)
-
-                                    resolve("We are done! Hooray!")
+                                    }
                                 })
-                            )
+
+                                await Promise.allSettled(userDB)
+
+                                // // Stage 2: Add their games
+                                // const ownedGameIDs = await SteamClient.getOwnedGamesCompatList({ cookies });
+
+                                // const gameDB = ownedGameIDs.map(async (gameID) => {
+                                //     const gameInfo = await SteamClient.getGameInfo({ gameID, cookies })
+
+                                //     // const gameImages = 
+                                // })
+
+                                // await Promise.allSettled(gameDB)
+                            })())
 
                             await stream.close()
 

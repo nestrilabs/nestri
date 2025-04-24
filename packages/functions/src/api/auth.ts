@@ -44,21 +44,8 @@ export const auth: MiddlewareHandler = async (c, next) => {
   }
 
   if (result.subject.type === "user") {
-    
-    const steamID = c.req.header("x-steam-id");
-    if (!steamID) return withActor(result.subject, next);
-
     const teamID = c.req.header("x-nestri-team");
-    if (!teamID)
-      return withActor(
-        result.subject,
-        async () =>
-          await withActor(
-            { type: "steam", properties: { steamID: BigInt(steamID) } },
-            next
-          )
-      );
-
+    if (!teamID) return withActor(result.subject, next);
     return withActor(
       {
         type: "system",
@@ -67,13 +54,9 @@ export const auth: MiddlewareHandler = async (c, next) => {
         },
       },
       async () =>
-        await withActor(
+        withActor(
           result.subject,
-          async () =>
-            await withActor(
-              { type: "steam", properties: { steamID: BigInt(steamID) } },
-              next
-            )
+          next,
         )
     );
   }
