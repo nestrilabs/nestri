@@ -1,15 +1,18 @@
 import { z } from "zod";
 import { fn } from "../utils";
+import { User } from "../user";
 import { Examples } from "../examples";
 import { eq, and, isNull } from "../drizzle";
 import { useUser, useUserID } from "../actor";
 import { createSelectSchema } from "drizzle-zod";
+import type { userTable } from "../user/user.sql";
+import { pipe, groupBy, values, map } from "remeda";
 import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 
 export namespace Steam {
-    export const Info = z
+    export const BasicInfo = z
         .object({
             avatarHash: z.string().openapi({
                 description: "The steam avatar hash that this account owns",
@@ -27,10 +30,6 @@ export namespace Steam {
                 description: "The real name behind of this Steam account",
                 example: Examples.Steam.realName
             }),
-            userID: z.string().nullable().openapi({
-                description: "The unique id of the user who owns this steam account",
-                example: Examples.Steam.userID
-            }),
             personaName: z.string().openapi({
                 description: "The persona name used by this account",
                 example: Examples.Steam.personaName
@@ -41,6 +40,14 @@ export namespace Steam {
             description: "Represents a steam user's information stored on Nestri",
             example: Examples.Steam,
         });
+
+    export const FullInfo = BasicInfo.extend({
+        user: User.BasicInfo.nullable().openapi({
+            description: "The user who owns this Steam account",
+            //@ts-expect-error
+            example: { ...Examples.User, steamAccounts: undefined }
+        })
+    })
 
     export const CredentialInfo = createSelectSchema(steamCredentialsTable)
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
@@ -54,13 +61,15 @@ export namespace Steam {
             example: Examples.Credential,
         });
 
-    export type Info = z.infer<typeof Info>;
+    export type BasicInfo = z.infer<typeof BasicInfo>;
+    export type FullInfo = z.infer<typeof FullInfo>;
     export type CredentialInfo = z.infer<typeof CredentialInfo>;
 
     export const create = fn(
-        Info
+        BasicInfo
             .extend({
-                useUser: z.boolean()
+                useUser: z.boolean(),
+                userID: z.string().nullable()
             })
             .partial({
                 useUser: true
@@ -91,7 +100,7 @@ export namespace Steam {
                     .from(steamTable)
                     .where(and(eq(steamTable.userID, userID), isNull(steamTable.timeDeleted)))
                     .execute()
-                    .then((rows) => rows.map(serialize).at(0)),
+                    .then((rows) => rows.map(serializeBasic).at(0)),
             ),
     )
 
@@ -102,7 +111,7 @@ export namespace Steam {
                 .from(steamTable)
                 .where(and(eq(steamTable.userID, useUserID()), isNull(steamTable.timeDeleted)))
                 .execute()
-                .then((rows) => rows.map(serialize)),
+                .then((rows) => rows.map(serializeBasic)),
         )
 
     export const createCredential = fn(
@@ -131,11 +140,26 @@ export namespace Steam {
      * @param input - A raw record from the Steam table containing user information.
      * @returns An object conforming to the Info schema.
      */
-    export function serialize(
+    export function serializeFull(
+        input: { steam: typeof steamTable.$inferSelect, user: typeof userTable.$inferSelect | null }[],
+    ): z.infer<typeof FullInfo>[] {
+        return pipe(
+            input,
+            groupBy((row) => row.steam.steamID.toString()),
+            values(),
+            map((group) => ({
+                ...serializeBasic(group[0].steam),
+                //Only one user per Steam account
+                user: group[0].user ? User.serializeBasic(group[0].user) : null
+            })),
+        );
+    }
+
+    export function serializeBasic(
         input: typeof steamTable.$inferSelect,
-    ): z.infer<typeof Info> {
+    ): z.infer<typeof BasicInfo> {
         return {
-            userID: input.userID,
+            // userID: input.userID,
             profileUrl: input.profileUrl,
             avatarHash: input.avatarHash,
             steamID: input.steamID,

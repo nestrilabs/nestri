@@ -1,9 +1,12 @@
 import "zod-openapi/extend";
 import { auth } from "./auth";
 import { cors } from "hono/cors";
+import { GameApi } from "./game";
 import { TeamApi } from "./team";
 import { PolarApi } from "./polar";
+import { SteamApi } from "./steam";
 import { logger } from "hono/logger";
+import { FriendApi } from "./friend";
 import { Hono, type Env } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
@@ -28,6 +31,9 @@ const routes = app
     .route("/realtime", Realtime.route)
     .route("/team", TeamApi.route)
     .route("/polar", PolarApi.route)
+    .route("/friend", FriendApi.route)
+    .route("/game", GameApi.route)
+    .route("/steam", SteamApi.route)
     .route("/account", AccountApi.route)
     .route("/machine", MachineApi.route)
     .onError((error, c) => {

@@ -19,7 +19,7 @@ export namespace SubscriptionApi {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Subscription.Info.array().openapi({
+                                    Subscription.BasicInfo.array().openapi({
                                         description: "All the subscriptions this user has",
                                         example: [Examples.Subscription]
                                     })

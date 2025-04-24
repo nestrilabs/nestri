@@ -5,14 +5,48 @@ import { streamSSE } from "hono/streaming";
 import { describeRoute } from "hono-openapi";
 import { assertActor } from "@nestri/core/actor";
 import { Steam } from "@nestri/core/steam/index";
+import { Examples } from "@nestri/core/examples";
 import { Friend } from "@nestri/core/friend/index";
-import { ErrorResponses, validator } from "./common";
 import { SteamClient } from "@nestri/core/steam/client";
+import { ErrorResponses, validator, Result } from "./common";
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
 
 export namespace SteamApi {
     export const route = new Hono()
         .use(notPublic)
+        .get("/",
+            describeRoute({
+                tags: ["Steam"],
+                summary: "Get the steam accounts",
+                description: "Gets the Steam accounts for this user",
+                responses: {
+                    200: {
+                        content: {
+                            "application/json": {
+                                schema: Result(
+                                    Steam.BasicInfo.array().openapi({
+                                        description: "All the steam accounts this user has",
+                                        example: [Examples.Steam]
+                                    })
+                                ),
+                            },
+                        },
+                        description: "Steam accounts of this user"
+                    },
+                    400: ErrorResponses[400],
+                    404: ErrorResponses[404],
+                    429: ErrorResponses[429],
+                }
+            }),
+            async (c) => {
+                const user = assertActor("user")
+
+                const accounts = await Steam.list()
+
+                return c.json({ data: accounts })
+
+            }
+        )
         .get("/login",
             describeRoute({
                 tags: ["Steam"],

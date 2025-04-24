@@ -25,7 +25,7 @@ export namespace TeamApi {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Team.Info.array().openapi({
+                                    Team.FullInfo.array().openapi({
                                         description: "List of teams",
                                         example: [Examples.Team]
                                     })

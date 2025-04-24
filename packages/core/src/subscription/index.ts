@@ -8,7 +8,7 @@ import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { PlanType, Standing, subscriptionTable } from "./subscription.sql";
 
 export namespace Subscription {
-    export const Info = z.object({
+    export const BasicInfo = z.object({
         id: z.string().openapi({
             description: Common.IdDescription,
             example: Examples.Subscription.id,
@@ -47,10 +47,10 @@ export namespace Subscription {
         example: Examples.Subscription
     });
 
-    export type Info = z.infer<typeof Info>;
+    export type BasicInfo = z.infer<typeof BasicInfo>;
 
     export const create = fn(
-        Info
+        BasicInfo
             .partial({
                 teamID: true,
                 userID: true,
@@ -80,7 +80,7 @@ export namespace Subscription {
     )
 
     export const setPolarProductID = fn(
-        Info.pick({
+        BasicInfo.pick({
             id: true,
             polarProductID: true,
         }),
@@ -95,7 +95,7 @@ export namespace Subscription {
     )
 
     export const setPolarSubscriptionID = fn(
-        Info.pick({
+        BasicInfo.pick({
             id: true,
             polarSubscriptionID: true,
         }),
@@ -109,7 +109,7 @@ export namespace Subscription {
             )
     )
 
-    export const fromID = fn(Info.shape.id.min(1), async (id) =>
+    export const fromID = fn(BasicInfo.shape.id.min(1), async (id) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -121,10 +121,10 @@ export namespace Subscription {
                     )
                 )
                 .orderBy(subscriptionTable.timeCreated)
-                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.map(serializeBasic))
         )
     )
-    export const fromTeamID = fn(Info.shape.teamID.min(1), async (teamID) =>
+    export const fromTeamID = fn(BasicInfo.shape.teamID.min(1), async (teamID) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -136,11 +136,11 @@ export namespace Subscription {
                     )
                 )
                 .orderBy(subscriptionTable.timeCreated)
-                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.map(serializeBasic))
         )
     )
 
-    export const fromUserID = fn(Info.shape.userID.min(1), async (userID) =>
+    export const fromUserID = fn(BasicInfo.shape.userID.min(1), async (userID) =>
         useTransaction(async (tx) =>
             tx
                 .select()
@@ -152,11 +152,11 @@ export namespace Subscription {
                     )
                 )
                 .orderBy(subscriptionTable.timeCreated)
-                .then((rows) => rows.map(serialize))
+                .then((rows) => rows.map(serializeBasic))
         )
     )
 
-    export const remove = fn(Info.shape.id.min(1), (id) =>
+    export const remove = fn(BasicInfo.shape.id.min(1), (id) =>
         useTransaction(async (tx) =>
             tx
                 .update(subscriptionTable)
@@ -169,14 +169,14 @@ export namespace Subscription {
     )
 
     /**
-     * Converts a raw subscription database record into a structured {@link Info} object.
+     * Converts a raw subscription database record into a structured {@link BasicInfo} object.
      *
      * @param input - The subscription record retrieved from the database.
-     * @returns The subscription data formatted according to the {@link Info} schema.
+     * @returns The subscription data formatted according to the {@link BasicInfo} schema.
      */
-    export function serialize(
+    export function serializeBasic(
         input: typeof subscriptionTable.$inferSelect
-    ): z.infer<typeof Info> {
+    ): z.infer<typeof BasicInfo> {
         return {
             id: input.id,
             userID: input.userID,

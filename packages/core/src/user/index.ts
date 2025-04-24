@@ -21,7 +21,7 @@ import { afterTx, createTransaction, useTransaction } from "../drizzle/transacti
 export namespace User {
     const MAX_ATTEMPTS = 50;
 
-    export const Info = z
+    export const BasicInfo = z
         .object({
             id: z.string().openapi({
                 description: Common.IdDescription,
@@ -47,10 +47,7 @@ export namespace User {
                 description: "The (number) discriminator for this user",
                 example: Examples.User.discriminator,
             }),
-            steamAccounts: Steam.Info.omit({ userID: true }).array().openapi({
-                description: "The steam accounts for this user",
-                example: Examples.User.steamAccounts,
-            }),
+
         })
         .openapi({
             ref: "User",
@@ -58,19 +55,27 @@ export namespace User {
             example: Examples.User,
         });
 
-    export type Info = z.infer<typeof Info>;
+    export const FullInfo = BasicInfo.extend({
+        steamAccounts: Steam.BasicInfo.array().openapi({
+            description: "The steam accounts for this user",
+            example: Examples.User.steamAccounts,
+        }),
+    })
+
+    export type BasicInfo = z.infer<typeof BasicInfo>;
+    export type FullInfo = z.infer<typeof FullInfo>;
 
     export const Events = {
         Created: createEvent(
             "user.created",
             z.object({
-                userID: Info.shape.id,
+                userID: BasicInfo.shape.id,
             }),
         ),
         Updated: createEvent(
             "user.updated",
             z.object({
-                userID: Info.shape.id,
+                userID: BasicInfo.shape.id,
             }),
         ),
     };
@@ -110,10 +115,9 @@ export namespace User {
     })
 
     export const create = fn(
-        Info.omit({
+        BasicInfo.omit({
             polarCustomerID: true,
             discriminator: true,
-            steamAccounts: true
         }).partial({
             avatarUrl: true,
             id: true
@@ -161,73 +165,82 @@ export namespace User {
             return userID;
         })
 
-    export const fromEmail = fn(Info.shape.email, async (email) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(userTable)
-                .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
-                .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
-                .orderBy(asc(userTable.timeCreated))
-                .then((rows => serialize(rows).at(0)))
-        )
+    export const fromEmail = fn(
+        BasicInfo.shape.email,
+        async (email) =>
+            useTransaction(async (tx) =>
+                tx
+                    .select()
+                    .from(userTable)
+                    .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
+                    .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
+                    .orderBy(asc(userTable.timeCreated))
+                    .execute()
+                    .then(rows => serializeFull(rows).at(0))
+            )
     )
 
-    export const fromID = fn(Info.shape.id, (id) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(userTable)
-                .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
-                .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted), isNull(steamTable.timeDeleted)))
-                .orderBy(asc(userTable.timeCreated))
-                .then((rows) => serialize(rows).at(0))
-        ),
+    export const fromID = fn(
+        BasicInfo.shape.id,
+        (id) =>
+            useTransaction(async (tx) =>
+                tx
+                    .select()
+                    .from(userTable)
+                    .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
+                    .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted), isNull(steamTable.timeDeleted)))
+                    .orderBy(asc(userTable.timeCreated))
+                    .execute()
+                    .then(rows => serializeFull(rows).at(0))
+            ),
     )
 
-    export const remove = fn(Info.shape.id, (id) =>
-        useTransaction(async (tx) => {
-            await tx
-                .update(userTable)
-                .set({
-                    timeDeleted: sql`now()`,
-                })
-                .where(and(eq(userTable.id, id)))
-                .execute();
-            return id;
-        }),
+    export const remove = fn(
+        BasicInfo.shape.id,
+        (id) =>
+            useTransaction(async (tx) => {
+                await tx
+                    .update(userTable)
+                    .set({
+                        timeDeleted: sql`now()`,
+                    })
+                    .where(and(eq(userTable.id, id)))
+                    .execute();
+                return id;
+            }),
     );
 
+    export function serializeBasic(
+        input: typeof userTable.$inferSelect
+    ): z.infer<typeof BasicInfo> {
+        return {
+            id: input.id,
+            name: input.name,
+            email: input.email,
+            avatarUrl: input.avatarUrl,
+            discriminator: input.discriminator,
+            polarCustomerID: input.polarCustomerID,
+        }
+    }
+    
     /**
      * Converts an array of user and Steam account records into structured user objects with associated Steam accounts.
      *
      * @param input - An array of objects containing user data and optional Steam account data.
      * @returns An array of user objects, each including a list of their associated Steam accounts.
      */
-    export function serialize(
+    export function serializeFull(
         input: { user: typeof userTable.$inferSelect; steam: typeof steamTable.$inferSelect | null }[],
-    ): z.infer<typeof Info>[] {
+    ): z.infer<typeof FullInfo>[] {
         return pipe(
             input,
             groupBy((row) => row.user.id),
             values(),
             map((group) => ({
-                id: group[0].user.id,
-                name: group[0].user.name,
-                email: group[0].user.email,
-                avatarUrl: group[0].user.avatarUrl,
-                discriminator: group[0].user.discriminator,
-                polarCustomerID: group[0].user.polarCustomerID,
+                ...serializeBasic(group[0].user),
                 steamAccounts: !group[0].steam ?
                     [] :
-                    group.map((row) => ({
-                        avatarHash: row.steam!.avatarHash,
-                        steamID: row.steam!.steamID,
-                        profileUrl: row.steam!.profileUrl,
-                        realName: row.steam!.realName,
-                        userID: row.steam!.userID,
-                        personaName: row.steam!.personaName
-                    })),
+                    group.map((row) => Steam.serializeBasic(row.steam!)),
             })),
         )
     }
@@ -255,7 +268,7 @@ export namespace User {
                     ),
                 )
                 .execute()
-                .then((rows) => Team.serialize(rows))
+                .then((rows) => Team.serializeFull(rows))
         )
     }
 }

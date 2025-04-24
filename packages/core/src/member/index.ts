@@ -11,7 +11,7 @@ import { and, eq, sql, asc, isNull } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Member {
-    export const Info = z
+    export const BasicInfo = z
         .object({
             id: z.string().openapi({
                 description: Common.IdDescription,
@@ -40,25 +40,26 @@ export namespace Member {
             example: Examples.Member,
         });
 
-    export type Info = z.infer<typeof Info>;
+    export type BasicInfo = z.infer<typeof BasicInfo>;
 
     export const Events = {
         Created: createEvent(
             "member.created",
             z.object({
-                memberID: Info.shape.id,
+                memberID: BasicInfo.shape.id,
             }),
         ),
         Updated: createEvent(
             "member.updated",
             z.object({
-                memberID: Info.shape.id,
+                memberID: BasicInfo.shape.id,
             }),
         ),
     };
 
     export const create = fn(
-        Info.pick({ email: true, id: true })
+        BasicInfo
+            .pick({ email: true, id: true })
             .partial({
                 id: true,
             })
@@ -83,51 +84,59 @@ export namespace Member {
             }),
     );
 
-    export const remove = fn(Info.shape.id, (id) =>
-        useTransaction(async (tx) => {
-            await tx
-                .update(memberTable)
-                .set({
-                    timeDeleted: sql`now()`,
-                })
-                .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam())))
-                .execute();
-            return id;
-        }),
+    export const remove = fn(
+        BasicInfo.shape.id,
+        (id) =>
+            useTransaction(async (tx) => {
+                await tx
+                    .update(memberTable)
+                    .set({
+                        timeDeleted: sql`now()`,
+                    })
+                    .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam())))
+                    .execute();
+                return id;
+            }),
     );
 
-    export const fromEmail = fn(z.string(), async (email) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(memberTable)
-                .where(and(eq(memberTable.email, email), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
-                .orderBy(asc(memberTable.timeCreated))
-                .then((rows) => rows.map(serialize).at(0))
-        )
+    export const fromEmail = fn(
+        BasicInfo.shape.email,
+        async (email) =>
+            useTransaction(async (tx) =>
+                tx
+                    .select()
+                    .from(memberTable)
+                    .where(and(eq(memberTable.email, email), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
+                    .orderBy(asc(memberTable.timeCreated))
+                    .then((rows) => rows.map(serializeBasic).at(0))
+            )
     )
 
-    export const fromID = fn(z.string(), async (id) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(memberTable)
-                .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
-                .orderBy(asc(memberTable.timeCreated))
-                .then((rows) => rows.map(serialize).at(0))
-        ),
+    export const fromID = fn(
+        BasicInfo.shape.id,
+        async (id) =>
+            useTransaction(async (tx) =>
+                tx
+                    .select()
+                    .from(memberTable)
+                    .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
+                    .orderBy(asc(memberTable.timeCreated))
+                    .then((rows) => rows.map(serializeBasic).at(0))
+            ),
     )
 
-    export const nowSeen = fn(z.string(), async (email) =>
-        useTransaction(async (tx) =>
-            tx
-                .update(memberTable)
-                .set({
-                    timeSeen: sql`now()`
-                })
-                .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
-                .execute()
-        ),
+    export const nowSeen = fn(
+        BasicInfo.shape.email,
+        async (email) =>
+            useTransaction(async (tx) =>
+                tx
+                    .update(memberTable)
+                    .set({
+                        timeSeen: sql`now()`
+                    })
+                    .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
+                    .execute()
+            ),
     )
 
     /**
@@ -136,9 +145,9 @@ export namespace Member {
      * @param input - The database row representing a member.
      * @returns The member information formatted as a {@link Member.Info} object.
      */
-    export function serialize(
+    export function serializeBasic(
         input: typeof memberTable.$inferSelect,
-    ): z.infer<typeof Info> {
+    ): z.infer<typeof BasicInfo> {
         return {
             id: input.id,
             role: input.role,

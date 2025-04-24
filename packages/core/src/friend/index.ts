@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Steam } from "../steam";
+import { useUserID } from "../actor";
 import { friendTable } from "./friend.sql";
+import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { createSelectSchema } from "drizzle-zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -47,31 +49,57 @@ export namespace Friend {
             )
     )
 
+    export const list = fn(
+        z.void(),
+        async () =>
+            useTransaction(async (tx) => {
+                const userSteamAccounts = await tx
+                    .select()
+                    .from(steamTable)
+                    .where(eq(steamTable.userID, useUserID()))
+                    .execute();
+
+                if (userSteamAccounts.length === 0) {
+                    return []; // User has no steam accounts
+                }
+
+                const friendPromises =
+                    userSteamAccounts.map(async (steamAccount) => {
+                        return fromSteamID(steamAccount.steamID)
+                    })
+
+                return (await Promise.all(friendPromises)).flat()
+            })
+    )
+
     export const fromSteamID = fn(
-        Info.pick({
-            steamID: true
-        }),
-        (input) =>
+        Info.shape.steamID,
+        (steamID) =>
             useTransaction(async (tx) =>
                 tx
                     .select({
-                        friend: steamTable
+                        steam: steamTable,
+                        user: userTable
                     })
                     .from(friendTable)
                     .innerJoin(
                         steamTable,
                         eq(friendTable.friendSteamID, steamTable.steamID)
                     )
+                    .leftJoin(
+                        userTable,
+                        eq(steamTable.userID, userTable.id)
+                    )
                     .where(
                         and(
-                            eq(friendTable.steamID, input.steamID),
+                            eq(friendTable.steamID, steamID),
                             isNull(friendTable.timeDeleted)
                         )
                     )
                     .orderBy(friendTable.timeCreated)
                     .limit(100)
                     .execute()
-                    .then((row) => row.map(i => Steam.serialize(i.friend)))
+                    .then((rows) => Steam.serializeFull(rows))
             )
     )
 
@@ -95,4 +123,5 @@ export namespace Friend {
                 return result.length > 0
             }),
     )
+
 }

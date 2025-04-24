@@ -48,8 +48,8 @@ export namespace SteamLibrary {
     )
 
     export const fromSteamID = fn(
-        Info.pick({ steamID: true }),
-        (input) =>
+        Info.shape.steamID,
+        (steamID) =>
             useTransaction(async (tx) =>
                 tx
                     .select({
@@ -71,11 +71,11 @@ export namespace SteamLibrary {
                     )
                     .where(
                         and(
-                            eq(steamLibraryTable.steamID, input.steamID),
+                            eq(steamLibraryTable.steamID, steamID),
                             isNull(steamLibraryTable.timeDeleted),
                         )
                     )
-                    .then((rows => Game.serialize(rows)))
+                    .then((rows => Game.serializeFull(rows)))
             )
     )
 }

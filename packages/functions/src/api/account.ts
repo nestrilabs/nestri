@@ -23,8 +23,8 @@ export namespace AccountApi {
                             "application/json": {
                                 schema: Result(
                                     z.object({
-                                        ...User.Info.shape,
-                                        teams: Team.Info.array(),
+                                        ...User.FullInfo.shape,
+                                        teams: Team.FullInfo.array(),
                                     }).openapi({
                                         description: "User account information",
                                         example: { ...Examples.User, teams: [Examples.Team] }

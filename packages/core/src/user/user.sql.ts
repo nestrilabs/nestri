@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { id, timestamps } from "../drizzle/types";
 import { integer, pgTable, text, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 

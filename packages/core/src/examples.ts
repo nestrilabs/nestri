@@ -13,7 +13,7 @@ export namespace Examples {
     }
 
     export const Steam = {
-        userID: Id("user"),
+        // userID: Id("user"),
         steamID: 74839300282033n,
         avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
         personaName: "JD The 65th",

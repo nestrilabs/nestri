@@ -9,8 +9,8 @@ export const memberTable = pgTable(
     {
         ...teamID,
         ...timestamps,
-        role: text("role", { enum: role }).notNull(),
         timeSeen: utc("time_seen"),
+        role: text("role", { enum: role }).notNull(),
         email: varchar("email", { length: 255 }).notNull(),
     },
     (table) => [
