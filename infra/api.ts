@@ -1,22 +1,9 @@
 import { bus } from "./bus";
 import { auth } from "./auth";
 import { domain } from "./dns";
-import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
-
-sst.Linkable.wrap(random.RandomString, (resource) => ({
-    properties: {
-        value: resource.result,
-    },
-}));
-
-export const steamEncryptionKey = new random.RandomString(
-    "SteamEncryptionKey",
-    {
-        length: 32,
-    },
-);
+import { secret, steamEncryptionKey } from "./secret";
 
 export const apiService = new sst.aws.Service("Api", {
     cluster,
@@ -38,9 +25,6 @@ export const apiService = new sst.aws.Service("Api", {
     command: ["bun", "run", "./src/api/index.ts"],
     image: {
         dockerfile: "packages/functions/Containerfile",
-    },
-    environment: {
-        NO_COLOR: "1",
     },
     loadBalancer: {
         rules: [

@@ -29,12 +29,12 @@ export namespace PolarApi {
                                         portalUrl: z.string()
                                     }).openapi({
                                         description: "The customer portal url",
-                                        example: { portalUrl: "https://polar.sh/portal/39393jdie09292" }
+                                        example: { portalUrl: "https://polar.sh/portal/39393jdie09292" },
                                     })
                                 ),
                             },
                         },
-                        description: "customer portal url"
+                        description: "Customer portal url"
                     },
                     400: ErrorResponses[400],
                     404: ErrorResponses[404],
