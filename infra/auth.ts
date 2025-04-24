@@ -4,7 +4,6 @@ import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
-//FIXME: Use a shared /tmp folder 
 export const authService = new sst.aws.Service("Auth", {
     cluster,
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
@@ -52,6 +51,7 @@ export const authService = new sst.aws.Service("Auth", {
                 max: 10,
             }
             : undefined,
+    //For temporarily persisting the persist.json
     transform: {
         taskDefinition: (args) => {
             const volumes = $output(args.volumes).apply(v => {

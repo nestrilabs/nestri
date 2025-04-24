@@ -23,12 +23,12 @@ export namespace SteamApi {
                     200: {
                         content: {
                             "application/json": {
-                                schema: Result(
-                                    Steam.BasicInfo.array().openapi({
-                                        description: "All the steam accounts this user has",
-                                        example: [Examples.Steam]
-                                    })
-                                ),
+                                // schema: Result(
+                                //     Steam.BasicInfo.array().openapi({
+                                //         description: "All the steam accounts this user has",
+                                //         example: [Examples.Steam]
+                                //     })
+                                // ),
                             },
                         },
                         description: "Steam accounts of this user"

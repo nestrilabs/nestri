@@ -39,7 +39,7 @@ import { useOpenAuth } from "@openauthjs/solid";
 import { createInitializedContext } from "../common/context";
 
 type Storage = {
-  accounts: Record<string, User.FullInfo & { teams: Team.FullInfo[] }>
+  accounts: Record<string, User.BasicInfo & { teams: Team.FullInfo[] }>
 }
 
 export const { use: useAccount, provider: AccountProvider } = createInitializedContext("AccountContext", () => {

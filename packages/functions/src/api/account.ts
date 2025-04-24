@@ -23,7 +23,7 @@ export namespace AccountApi {
                             "application/json": {
                                 schema: Result(
                                     z.object({
-                                        ...User.FullInfo.shape,
+                                        ...User.BasicInfo.shape,
                                         teams: Team.FullInfo.array(),
                                     }).openapi({
                                         description: "User account information",
@@ -35,7 +35,7 @@ export namespace AccountApi {
                         description: "User account details"
                     },
                     404: ErrorResponses[404],
-                    429: ErrorResponses[429]
+                    429: ErrorResponses[429],
                 }
             }),
             async (c) => {

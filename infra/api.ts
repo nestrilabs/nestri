@@ -5,6 +5,19 @@ import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
 
+sst.Linkable.wrap(random.RandomString, (resource) => ({
+    properties: {
+        value: resource.result,
+    },
+}));
+
+export const steamEncryptionKey = new random.RandomString(
+    "SteamEncryptionKey",
+    {
+        length: 32,
+    },
+);
+
 export const apiService = new sst.aws.Service("Api", {
     cluster,
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
@@ -13,6 +26,7 @@ export const apiService = new sst.aws.Service("Api", {
         bus,
         auth,
         postgres,
+        steamEncryptionKey,
         secret.PolarSecret,
         secret.PolarWebhookSecret,
         secret.NestriFamilyMonthly,
@@ -48,6 +62,37 @@ export const apiService = new sst.aws.Service("Api", {
                 max: 10,
             }
             : undefined,
+    // For persisting actor state
+    transform: {
+        taskDefinition: (args) => {
+            const volumes = $output(args.volumes).apply(v => {
+                v.push({
+                    name: "shared-tmp",
+                    dockerVolumeConfiguration: {
+                        scope: "shared",
+                        driver: "local"
+                    }
+                });
+                return v;
+            })
+
+            // "containerDefinitions" is a JSON string, parse first
+            let containers = $jsonParse(args.containerDefinitions);
+
+            containers = containers.apply((containerDefinitions) => {
+                containerDefinitions[0].mountPoints = [
+                    {
+                        sourceVolume: "shared-tmp",
+                        containerPath: "/tmp"
+                    }
+                ]
+                return containerDefinitions;
+            });
+
+            args.volumes = volumes
+            args.containerDefinitions = $jsonStringify(containers);
+        }
+    }
 });
 
 

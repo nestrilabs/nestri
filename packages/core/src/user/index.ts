@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Team } from "../team";
 import { bus } from "sst/aws/bus";
-import { Steam } from "../steam";
+// import { Steam } from "../steam";
 import { Common } from "../common";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
@@ -14,7 +14,7 @@ import { steamTable } from "../steam/steam.sql";
 import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
-import { pipe, groupBy, values, map } from "remeda";
+// import { pipe, groupBy, values, map } from "remeda";
 import { and, eq, isNull, asc, sql } from "../drizzle";
 import { subscriptionTable } from "../subscription/subscription.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
@@ -56,15 +56,8 @@ export namespace User {
             example: Examples.User,
         });
 
-    export const FullInfo = BasicInfo.extend({
-        steamAccounts: Steam.BasicInfo.array().openapi({
-            description: "The steam accounts for this user",
-            example: Examples.User.steamAccounts,
-        }),
-    })
-
     export type BasicInfo = z.infer<typeof BasicInfo>;
-    export type FullInfo = z.infer<typeof FullInfo>;
+    // export type FullInfo = z.infer<typeof FullInfo>;
 
     export const Events = {
         Created: createEvent(
@@ -114,6 +107,16 @@ export namespace User {
 
         return null;
     })
+
+    export class UserExistsError extends VisibleError {
+        constructor() {
+            super(
+                "already_exists",
+                ErrorCodes.Validation.ALREADY_EXISTS,
+                "User discriminator and name could already exists"
+            );
+        }
+    }
 
     export const create = fn(
         BasicInfo.omit({
@@ -170,12 +173,7 @@ export namespace User {
                             target: [userTable.discriminator, userTable.name]
                         })
 
-                    if (result2.length === 0)
-                        throw new VisibleError(
-                            "already_exists",
-                            ErrorCodes.Validation.ALREADY_EXISTS,
-                            "User discriminator and name could already exists"
-                        )
+                    if (result2.length === 0) throw new UserExistsError()
                 }
 
                 await afterTx(() =>
@@ -201,11 +199,12 @@ export namespace User {
                 tx
                     .select()
                     .from(userTable)
-                    .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
+                    // .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
                     .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
-                    .then(rows => serializeFull(rows).at(0))
+                    // .then(rows => serializeFull(rows).at(0))
+                    .then(rows => rows.map(serializeBasic).at(0))
             )
     )
 
@@ -216,11 +215,12 @@ export namespace User {
                 tx
                     .select()
                     .from(userTable)
-                    .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
+                    // .leftJoin(steamTable, eq(userTable.id, steamTable.userID))
                     .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted), isNull(steamTable.timeDeleted)))
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
-                    .then(rows => serializeFull(rows).at(0))
+                    // .then(rows => serializeFull(rows).at(0))
+                    .then(rows => rows.map(serializeBasic).at(0))
             ),
     )
 
@@ -252,27 +252,27 @@ export namespace User {
         }
     }
 
-    /**
-     * Converts an array of user and Steam account records into structured user objects with associated Steam accounts.
-     *
-     * @param input - An array of objects containing user data and optional Steam account data.
-     * @returns An array of user objects, each including a list of their associated Steam accounts.
-     */
-    export function serializeFull(
-        input: { user: typeof userTable.$inferSelect; steam: typeof steamTable.$inferSelect | null }[],
-    ): z.infer<typeof FullInfo>[] {
-        return pipe(
-            input,
-            groupBy((row) => row.user.id),
-            values(),
-            map((group) => ({
-                ...serializeBasic(group[0].user),
-                steamAccounts: !group[0].steam ?
-                    [] :
-                    group.map((row) => Steam.serializeBasic(row.steam!)),
-            })),
-        )
-    }
+    // /**
+    //  * Converts an array of user and Steam account records into structured user objects with associated Steam accounts.
+    //  *
+    //  * @param input - An array of objects containing user data and optional Steam account data.
+    //  * @returns An array of user objects, each including a list of their associated Steam accounts.
+    //  */
+    // export function serializeFull(
+    //     input: { user: typeof userTable.$inferSelect; steam: typeof steamTable.$inferSelect | null }[],
+    // ): z.infer<typeof FullInfo>[] {
+    //     return pipe(
+    //         input,
+    //         groupBy((row) => row.user.id),
+    //         values(),
+    //         map((group) => ({
+    //             ...serializeBasic(group[0].user),
+    //             steamAccounts: !group[0].steam ?
+    //                 [] :
+    //                 group.map((row) => Steam.serializeBasic(row.steam!)),
+    //         })),
+    //     )
+    // }
 
     /**
      * Retrieves the list of teams that the current user belongs to.

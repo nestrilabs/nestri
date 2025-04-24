@@ -28,6 +28,7 @@
     "hono-openapi": "^0.3.1",
     "partysocket": "1.0.3",
     "postgres": "^3.4.5",
-    "steam-session": "*"
+    "steam-session": "*",
+    "zod": "^3.24.3"
   }
 }

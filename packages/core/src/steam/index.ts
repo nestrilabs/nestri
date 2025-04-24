@@ -10,7 +10,6 @@ import { pipe, groupBy, values, map } from "remeda";
 import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
-
 export namespace Steam {
     export const BasicInfo = z
         .object({
@@ -44,8 +43,7 @@ export namespace Steam {
     export const FullInfo = BasicInfo.extend({
         user: User.BasicInfo.nullable().openapi({
             description: "The user who owns this Steam account",
-            //@ts-expect-error
-            example: { ...Examples.User, steamAccounts: undefined }
+            example: { ...Examples.User,  }
         })
     })
 

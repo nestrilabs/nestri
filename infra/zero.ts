@@ -16,7 +16,6 @@ const tag = $dev
     ).version.replace("+", "-");
 
 const zeroEnv = {
-    FORCE: "1",
     NO_COLOR: "1",
     ZERO_LOG_LEVEL: "info",
     ZERO_LITESTREAM_LOG_LEVEL: "info",

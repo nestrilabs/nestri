@@ -1,3 +1,4 @@
+import "zod-openapi/extend";
 import { Resource } from "sst"
 import { Select } from "./ui/select";
 import { subjects } from "./subjects"
