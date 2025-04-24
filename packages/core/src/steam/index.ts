@@ -135,7 +135,6 @@ export namespace Steam {
         input: typeof steamTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {
-            // TODO: Do some leftJoin shenanigans
             userID: input.userID,
             profileUrl: input.profileUrl,
             avatarHash: input.avatarHash,

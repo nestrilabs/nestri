@@ -131,7 +131,8 @@ export namespace SteamApi {
                                             await Steam.create({
                                                 steamID: BigInt(steamUser.steamid),
                                                 realName: steamUser.realname,
-                                                userID: user.properties.userID,
+                                                // userID: user.properties.userID,
+                                                userID: null,
                                                 avatarHash: steamUser.avatarhash,
                                                 profileUrl: steamUser.profileurl,
                                                 personaName: steamUser.personaname,

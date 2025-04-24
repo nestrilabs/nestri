@@ -128,6 +128,7 @@ export namespace Game {
                             isNull(gameTable.timeDeleted)
                         )
                     )
+                    .execute()
                     .then((rows => serialize(rows).at(0)))
             )
     )

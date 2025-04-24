@@ -6,8 +6,8 @@ import {
 import {
   PostgresJsQueryResultHKT
 } from "drizzle-orm/postgres-js";
-import { ExtractTablesWithRelations } from "drizzle-orm";
 import { createContext } from "../context";
+import { ExtractTablesWithRelations } from "drizzle-orm";
 
 export type Transaction = PgTransaction<
   PostgresJsQueryResultHKT,
