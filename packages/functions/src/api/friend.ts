@@ -23,8 +23,7 @@ export namespace FriendApi {
                                 schema: Result(
                                     Steam.FullInfo.array().openapi({
                                         description: "All friends associated with the authenticated user",
-                                        //@ts-expect-error
-                                        example: [{ ...Examples.Steam, user: { ...Examples.User, steamAccounts: undefined } }]
+                                        example: [{ ...Examples.Steam, user: Examples.User }]
                                     })
                                 ),
                             },

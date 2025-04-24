@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Steam } from "../steam";
-import { useUserID } from "../actor";
+import { useSteamID, useUserID } from "../actor";
 import { friendTable } from "./friend.sql";
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
@@ -16,13 +16,15 @@ export namespace Friend {
     export type Info = z.infer<typeof Info>;
 
     export const add = fn(
-        Info,
+        Info.partial({ steamID: true }),
         async (input) =>
             createTransaction(async (tx) => {
+                const steamID = input.steamID ?? useSteamID()
+                
                 await tx
                     .insert(friendTable)
                     .values({
-                        steamID: input.steamID,
+                        steamID,
                         friendSteamID: input.friendSteamID
                     })
                     .onConflictDoUpdate({

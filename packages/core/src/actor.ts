@@ -17,22 +17,23 @@ export const UserActor = z.object({
 });
 export type UserActor = z.infer<typeof UserActor>;
 
-export const MemberActor = z.object({
-  type: z.literal("member"),
-  properties: z.object({
-    memberID: z.string(),
-    teamID: z.string(),
-  }),
-});
-export type MemberActor = z.infer<typeof MemberActor>;
-
 export const SystemActor = z.object({
   type: z.literal("system"),
   properties: z.object({
     teamID: z.string(),
   }),
 });
+
 export type SystemActor = z.infer<typeof SystemActor>;
+
+export const SteamActor = z.object({
+  type: z.literal("steam"),
+  properties: z.object({
+    steamID: z.bigint(),
+  }),
+});
+
+export type SteamActor = z.infer<typeof SteamActor>;
 
 export const MachineActor = z.object({
   type: z.literal("machine"),
@@ -41,14 +42,15 @@ export const MachineActor = z.object({
     machineID: z.string(),
   }),
 });
+
 export type MachineActor = z.infer<typeof MachineActor>;
 
 export const Actor = z.discriminatedUnion("type", [
-  MemberActor,
   UserActor,
   PublicActor,
   SystemActor,
-  MachineActor
+  MachineActor,
+  SteamActor
 ]);
 export type Actor = z.infer<typeof Actor>;
 
@@ -70,6 +72,16 @@ export const withActor = ActorContext.with;
 export function useUserID() {
   const actor = ActorContext.use();
   if (actor.type === "user") return actor.properties.userID;
+  throw new VisibleError(
+    "authentication",
+    ErrorCodes.Authentication.UNAUTHORIZED,
+    `You don't have permission to access this resource`,
+  );
+}
+
+export function useSteamID(){
+  const actor = ActorContext.use();
+  if (actor.type === "steam") return actor.properties.steamID;
   throw new VisibleError(
     "authentication",
     ErrorCodes.Authentication.UNAUTHORIZED,

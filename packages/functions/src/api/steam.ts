@@ -3,11 +3,11 @@ import { Hono } from "hono";
 import { notPublic } from "./auth";
 import { streamSSE } from "hono/streaming";
 import { describeRoute } from "hono-openapi";
-import { assertActor } from "@nestri/core/actor";
 import { Steam } from "@nestri/core/steam/index";
 import { Examples } from "@nestri/core/examples";
 import { Friend } from "@nestri/core/friend/index";
 import { SteamClient } from "@nestri/core/steam/client";
+import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, validator, Result } from "./common";
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
 
@@ -118,20 +118,20 @@ export namespace SteamApi {
                             const username = session.accountName;
                             // We can also get web cookies now that we've negotiated a session
                             let cookies = await session.getWebCookies();
-                            console.log("\n===============================\n")
-                            console.log("WebCookies:")
-                            console.log(cookies);
-                            console.log("\n===============================\n")
+                            // console.log("\n===============================\n")
+                            // console.log("WebCookies:")
+                            // console.log(cookies);
+                            // console.log("\n===============================\n")
 
-                            console.log("\n===============================\n")
-                            console.log("Access Token:")
-                            console.log(accessToken);
-                            console.log("\n===============================\n")
+                            // console.log("\n===============================\n")
+                            // console.log("Access Token:")
+                            // console.log(accessToken);
+                            // console.log("\n===============================\n")
 
-                            console.log("\n===============================\n")
-                            console.log("Refresh Token:")
-                            console.log(refreshToken);
-                            console.log("\n===============================\n")
+                            // console.log("\n===============================\n")
+                            // console.log("Refresh Token:")
+                            // console.log(refreshToken);
+                            // console.log("\n===============================\n")
 
                             await Steam.createCredential({ refreshToken, steamID, username })
 
@@ -162,33 +162,40 @@ export namespace SteamApi {
                                             await Steam.create({
                                                 steamID: BigInt(steamUser.steamid),
                                                 realName: steamUser.realname,
-                                                // userID: user.properties.userID,
                                                 userID: null,
                                                 avatarHash: steamUser.avatarhash,
                                                 profileUrl: steamUser.profileurl,
                                                 personaName: steamUser.personaname,
                                             })
 
-                                            // Add this person as the owner's friend
-                                            await Friend.add({
-                                                steamID,
-                                                friendSteamID: BigInt(steamUser.steamid)
-                                            })
+                                            // Add this person as a friend
+                                            await withActor({
+                                                type: "steam",
+                                                properties: {
+                                                    steamID
+                                                },
+                                            },
+                                                async () =>
+                                                    await Friend.add({
+                                                        friendSteamID: BigInt(steamUser.steamid)
+                                                    })
+                                            )
+
                                         }
                                     })
 
                                     await Promise.allSettled(userDB)
 
-                                    // Stage 2: Add their games
-                                    const ownedGameIDs = await SteamClient.getOwnedGamesCompatList({ cookies });
+                                    // // Stage 2: Add their games
+                                    // const ownedGameIDs = await SteamClient.getOwnedGamesCompatList({ cookies });
 
-                                    const gameDB = ownedGameIDs.map(async (gameID) => {
-                                        const gameInfo = await SteamClient.getGameInfo({ gameID, cookies })
+                                    // const gameDB = ownedGameIDs.map(async (gameID) => {
+                                    //     const gameInfo = await SteamClient.getGameInfo({ gameID, cookies })
 
-                                        // const gameImages = 
-                                    })
+                                    //     // const gameImages = 
+                                    // })
 
-                                    await Promise.allSettled(gameDB)
+                                    // await Promise.allSettled(gameDB)
 
                                     resolve("We are done! Hooray!")
                                 })

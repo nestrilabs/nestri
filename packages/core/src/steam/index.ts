@@ -43,7 +43,7 @@ export namespace Steam {
     export const FullInfo = BasicInfo.extend({
         user: User.BasicInfo.nullable().openapi({
             description: "The user who owns this Steam account",
-            example: { ...Examples.User, }
+            example: Examples.User
         })
     })
 
@@ -74,6 +74,20 @@ export namespace Steam {
             }),
         (input) =>
             createTransaction(async (tx) => {
+                const accounts =
+                    await tx
+                        .select()
+                        .from(steamTable)
+                        .where(
+                            and(
+                                eq(steamTable.steamID, input.steamID),
+                                isNull(steamTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+
+                if (accounts.length > 0) return //Steam account already exists
+
                 await tx
                     .insert(steamTable)
                     .values({
@@ -84,7 +98,8 @@ export namespace Steam {
                         realName: input.realName,
                         personaName: input.personaName
                     })
-                    .onConflictDoNothing({ target: [steamTable.steamID, steamTable.userID] })
+                // .onConflictDoNothing({ target: [steamTable.steamID, steamTable.userID] })
+
                 return input.steamID
             }),
     );

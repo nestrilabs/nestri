@@ -28,7 +28,7 @@ export namespace Examples {
         discriminator: 47,
         avatarUrl: "https://cdn.discordapp.com/avatars/XXXXXXXXXX/XXXXXXXXXX.png",
         polarCustomerID: "0bfcb712-df13-4454-81a8-fbee66eddca4",
-        steamAccounts: [Steam]
+        // steamAccounts: [Steam]
     };
 
     export const Product = {
