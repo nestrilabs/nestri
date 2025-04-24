@@ -53,11 +53,12 @@ export namespace Friend {
         z.void(),
         async () =>
             useTransaction(async (tx) => {
-                const userSteamAccounts = await tx
-                    .select()
-                    .from(steamTable)
-                    .where(eq(steamTable.userID, useUserID()))
-                    .execute();
+                const userSteamAccounts =
+                    await tx
+                        .select()
+                        .from(steamTable)
+                        .where(eq(steamTable.userID, useUserID()))
+                        .execute();
 
                 if (userSteamAccounts.length === 0) {
                     return []; // User has no steam accounts
@@ -65,7 +66,7 @@ export namespace Friend {
 
                 const friendPromises =
                     userSteamAccounts.map(async (steamAccount) => {
-                        return fromSteamID(steamAccount.steamID)
+                        return await fromSteamID(steamAccount.steamID)
                     })
 
                 return (await Promise.all(friendPromises)).flat()
@@ -121,7 +122,7 @@ export namespace Friend {
                     .execute()
 
                 return result.length > 0
-            }),
+            })
     )
 
 }

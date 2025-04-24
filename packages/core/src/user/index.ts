@@ -125,8 +125,6 @@ export namespace User {
         async (input) => {
             const userID = createID("user")
 
-            //FIXME: Do this much later, as Polar.sh has so many inconsistencies for fuck's sake
-
             const customer = await Polar.fromUserEmail(input.email)
 
             const name = sanitizeUsername(input.name);
@@ -139,8 +137,9 @@ export namespace User {
                 return null
             }
 
+            const id = input.id ?? userID;
+
             await createTransaction(async (tx) => {
-                const id = input.id ?? userID;
                 await tx.insert(userTable).values({
                     id,
                     name,
@@ -162,7 +161,7 @@ export namespace User {
                 );
             })
 
-            return userID;
+            return id;
         })
 
     export const fromEmail = fn(
@@ -222,7 +221,7 @@ export namespace User {
             polarCustomerID: input.polarCustomerID,
         }
     }
-    
+
     /**
      * Converts an array of user and Steam account records into structured user objects with associated Steam accounts.
      *
