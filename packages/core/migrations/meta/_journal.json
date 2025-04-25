@@ -71,6 +71,20 @@
       "when": 1744651817581,
       "tag": "0009_luxuriant_wraith",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1745536060214,
+      "tag": "0010_regular_harrier",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1745537820750,
+      "tag": "0011_greedy_rage",
+      "breakpoints": true
     }
   ]
 }

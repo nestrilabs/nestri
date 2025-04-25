@@ -1,6 +1,6 @@
 import { userTable } from "../user/user.sql";
 import { timestamps, ulid } from "../drizzle/types";
-import { pgTable, uniqueIndex, varchar, text, unique, bigint, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, varchar, text, unique, bigint, primaryKey } from "drizzle-orm/pg-core";
 
 export const steamTable = pgTable(
     "steam",
@@ -21,7 +21,7 @@ export const steamTable = pgTable(
     (table) => [
         unique("idx_steam_steam_id").on(table.steamID),
         primaryKey({
-            columns: [table.steamID, table.userID]
+            columns: [table.steamID]
         })
     ],
 );
@@ -39,7 +39,7 @@ export const steamCredentialsTable = pgTable(
         username: varchar("username", { length: 255 }).notNull(),
     },
     (table) => [
-        uniqueIndex("idx_steam_credentials_id").on(table.steamID),
+        unique("idx_steam_credentials_id").on(table.steamID),
         primaryKey({
             columns: [table.steamID]
         })
