@@ -1,19 +1,19 @@
 import { id, timestamps } from "../drizzle/types";
-import { integer, pgTable, text, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { pgTable, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const userTable = pgTable(
-    "user",
+    "users",
     {
         ...id,
         ...timestamps,
-        avatarUrl: text("avatar_url"),
-        name: varchar("name", { length: 255 }).notNull(),
-        discriminator: integer("discriminator").notNull(),
         email: varchar("email", { length: 255 }).notNull(),
-        polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique(),
+        username: varchar("username", { length: 255 }).notNull(),
+        polarCustomerID: varchar("polar_customer_id", { length: 255 }),
+        displayName: varchar("display_name", { length: 255 }).notNull(),
     },
     (user) => [
-        uniqueIndex("user_email").on(user.email),
-        uniqueIndex("user_name_discriminator").on(user.name, user.discriminator),
+        uniqueIndex("idx_user_polar_id").on(user.polarCustomerID),
+        uniqueIndex("idx_user_email").on(user.email),
+        uniqueIndex("idx_username").on(user.username),
     ]
 );

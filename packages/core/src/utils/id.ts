@@ -9,7 +9,11 @@ export const prefixes = {
   subscription: "sub",
   invite: "inv",
   product: "prd",
-  game: "gme"
+  session:"ses",
+  variant: "var",
+  gpu: "gpu",
+  game: "gme",
+  usage: "usg"
 } as const;
 
 /**

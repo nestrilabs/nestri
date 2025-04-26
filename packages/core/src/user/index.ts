@@ -1,35 +1,30 @@
 import { z } from "zod";
 import { Team } from "../team";
-import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
-import { createEvent } from "../event";
+import { assertActor } from "../actor";
 import { Examples } from "../examples";
-import { Resource } from "sst/resource";
 import { teamTable } from "../team/team.sql";
-import { assertActor, withActor } from "../actor";
 import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
 import { and, eq, isNull, asc, sql } from "../drizzle";
 import { subscriptionTable } from "../subscription/subscription.sql";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace User {
-    const MAX_ATTEMPTS = 50;
-
-    export const BasicInfo = z
+    export const Info = z
         .object({
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.User.id,
             }),
-            name: z.string().openapi({
+            username: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
                 description: "The user's unique username",
-                example: Examples.User.name,
+                example: Examples.User.username,
             }),
-            polarCustomerID: z.string().or(z.null()).openapi({
+            polarCustomerID: z.string().nullable().openapi({
                 description: "The polar customer id for this user",
                 example: Examples.User.polarCustomerID,
             }),
@@ -37,15 +32,10 @@ export namespace User {
                 description: "The email address of this user",
                 example: Examples.User.email,
             }),
-            avatarUrl: z.string().or(z.null()).openapi({
-                description: "The url to the profile picture.",
-                example: Examples.User.name,
-            }),
-            discriminator: z.string().or(z.number()).openapi({
-                description: "The (number) discriminator for this user",
-                example: Examples.User.discriminator,
-            }),
-
+            displayName: z.string().openapi({
+                description: "The user's display name",
+                example: Examples.User.displayName,
+            })
         })
         .openapi({
             ref: "User",
@@ -53,144 +43,68 @@ export namespace User {
             example: Examples.User,
         });
 
-    export type BasicInfo = z.infer<typeof BasicInfo>;
-    // export type FullInfo = z.infer<typeof FullInfo>;
-
-    export const Events = {
-        Created: createEvent(
-            "user.created",
-            z.object({
-                userID: BasicInfo.shape.id,
-            }),
-        ),
-        Updated: createEvent(
-            "user.updated",
-            z.object({
-                userID: BasicInfo.shape.id,
-            }),
-        ),
-    };
-
-    export const sanitizeUsername = (username: string): string => {
-        // Remove spaces and numbers
-        return username.replace(/[\s0-9]/g, '');
-    };
-
-    export const generateDiscriminator = (): string => {
-        return Math.floor(Math.random() * 100).toString().padStart(2, '0');
-    };
-
-    export const isValidDiscriminator = (discriminator: string): boolean => {
-        return /^\d{2}$/.test(discriminator);
-    };
-
-    export const findAvailableDiscriminator = fn(z.string(), async (input) => {
-        const username = sanitizeUsername(input);
-
-        for (let i = 0; i < MAX_ATTEMPTS; i++) {
-            const discriminator = generateDiscriminator();
-
-            const users = await useTransaction(async (tx) =>
-                tx
-                    .select()
-                    .from(userTable)
-                    .where(and(eq(userTable.name, username), eq(userTable.discriminator, Number(discriminator))))
-            )
-
-            if (users.length === 0) {
-                return discriminator;
-            }
-        }
-
-        return null;
-    })
+    export type Info = z.infer<typeof Info>;
 
     export class UserExistsError extends VisibleError {
-        constructor() {
+        constructor(username: string) {
             super(
                 "already_exists",
                 ErrorCodes.Validation.ALREADY_EXISTS,
-                "User discriminator and name could already exists"
+                `A user with username ${username} already exists`
             );
         }
     }
 
     export const create = fn(
-        BasicInfo.omit({
-            polarCustomerID: true,
-            discriminator: true,
-        }).partial({
-            avatarUrl: true,
-            id: true
-        }),
+        Info
+            .omit({
+                polarCustomerID: true,
+            }).partial({
+                id: true
+            }),
         async (input) => {
             const userID = createID("user")
 
             const customer = await Polar.fromUserEmail(input.email)
 
-            const name = sanitizeUsername(input.name);
-
-            // Generate a random available discriminator
-            const discriminator = generateDiscriminator()
-
             const id = input.id ?? userID;
 
             await createTransaction(async (tx) => {
                 const result = await tx
-                    .insert(userTable).values({
+                    .insert(userTable)
+                    .values({
                         id,
-                        name,
-                        avatarUrl: input.avatarUrl,
                         email: input.email,
-                        discriminator: Number(discriminator),
+                        username: input.username,
+                        displayName: input.displayName,
                         polarCustomerID: customer?.id
                     })
                     .onConflictDoNothing({
-                        target: [userTable.discriminator, userTable.name]
+                        target: [userTable.username]
                     })
-
                 if (result.count === 0) {
-                    const discriminator = await findAvailableDiscriminator(name);
-
-                    if (!discriminator) {
-                        console.error("No available discriminators for this username ")
-                        throw new UserExistsError()
-                    }
-
-                    const result2 = await tx
-                        .insert(userTable).values({
-                            id,
-                            name,
-                            email: input.email,
-                            avatarUrl: input.avatarUrl,
-                            discriminator: Number(discriminator),
-                            polarCustomerID: customer?.id
-                        })
-                        .onConflictDoNothing({
-                            target: [userTable.discriminator, userTable.name]
-                        })
-
-                    if (result2.count === 0) throw new UserExistsError()
+                    throw new UserExistsError(input.username)
                 }
 
-                await afterTx(() =>
-                    withActor({
-                        type: "user",
-                        properties: {
-                            userID: id,
-                            email: input.email
-                        },
-                    },
-                        async () => bus.publish(Resource.Bus, Events.Created, { userID: id }),
-                    )
-                );
+                //FIXME: Implement a bus 
+                // await afterTx(() =>
+                //     withActor({
+                //         type: "user",
+                //         properties: {
+                //             userID: id,
+                //             email: input.email
+                //         },
+                //     },
+                //         async () => bus.publish(Resource.Bus, Events.Created, { userID: id }),
+                //     )
+                // );
             })
 
             return id;
         })
 
     export const fromEmail = fn(
-        BasicInfo.shape.email,
+        Info.shape.email,
         async (email) =>
             useTransaction(async (tx) =>
                 tx
@@ -204,7 +118,7 @@ export namespace User {
     )
 
     export const fromID = fn(
-        BasicInfo.shape.id,
+        Info.shape.id,
         (id) =>
             useTransaction(async (tx) =>
                 tx
@@ -218,7 +132,7 @@ export namespace User {
     )
 
     export const remove = fn(
-        BasicInfo.shape.id,
+        Info.shape.id,
         (id) =>
             useTransaction(async (tx) => {
                 await tx
@@ -234,13 +148,12 @@ export namespace User {
 
     export function serializeBasic(
         input: typeof userTable.$inferSelect
-    ): z.infer<typeof BasicInfo> {
+    ): z.infer<typeof Info> {
         return {
             id: input.id,
-            name: input.name,
+            displayName: input.displayName,
             email: input.email,
-            avatarUrl: input.avatarUrl,
-            discriminator: input.discriminator,
+            username: input.username,
             polarCustomerID: input.polarCustomerID,
         }
     }
