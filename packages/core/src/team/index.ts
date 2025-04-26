@@ -1,9 +1,9 @@
 import { z } from "zod";
 // import { useUser } from "../actor";
 import { Common } from "../common";
+import { and, eq } from "../drizzle";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { and, eq, isNull, sql } from "../drizzle";
 import { createID, fn, generateTeamInviteCode } from "../utils";
 // import { memberTable } from "../member/member.sql";
 // import { groupBy, map, pipe, values } from "remeda";
@@ -18,29 +18,29 @@ export namespace Team {
                 example: Examples.Team.id,
             }),
             name: z.string().openapi({
-                description: "The name of the team",
+                description:  "Display name of the team",
                 example: Examples.Team.name
             }),
             ownerID: z.string().openapi({
-                description: "The userID of the owner of this team",
+                description: "Unique identifier of the team owner",
                 example: Examples.Team.ownerID
             }),
             machineID: z.string().openapi({
-                description: "The machineID of the machine this team uses",
+                description: "Associated machine identifier for this team",
                 example: Examples.Team.machineID
             }),
             maxMembers: z.number().openapi({
-                description: "Maximum members this team can hold, depending on subscription plan",
+                description: "Maximum allowed team members based on subscription tier",
                 example: Examples.Team.maxMembers
             }),
             inviteCode: z.string().openapi({
-                description: "The default and unique invite code for this team",
+                description: "Unique invitation code used for adding new team members",
                 example: Examples.Team.inviteCode
             })
         })
         .openapi({
             ref: "Team",
-            description: "Represents a team on Nestri",
+            description: "Team entity containing core team information and settings",
             example: Examples.Team,
         });
 

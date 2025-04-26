@@ -14,25 +14,25 @@ export namespace Member {
                 example: Examples.Member.id,
             }),
             teamID: z.string().openapi({
-                description: "The unique id of the team this member is on",
+                description: "Associated team identifier for this membership",
                 example: Examples.Member.teamID
             }),
             role: z.enum(role).openapi({
-                description: "The role of this team member",
+                description: "Assigned permission role within the team",
                 example: Examples.Member.role
             }),
             steamID: z.bigint().nullable().openapi({
-                description: "The steamID of this team member",
+                description: "Optional Steam platform identifier for Steam account integration",
                 example: Examples.Member.steamID
             }),
             userID: z.string().nullable().openapi({
-                description: "The userID of this team member",
+                description: "Optional associated user account identifier",
                 example: Examples.Member.userID
             }),
         })
         .openapi({
             ref: "Member",
-            description: "Represents a team member on Nestri",
+            description: "Team membership entity defining user roles and platform connections",
             example: Examples.Member,
         });
 

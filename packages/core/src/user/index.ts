@@ -22,25 +22,25 @@ export namespace User {
                 example: Examples.User.id,
             }),
             username: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
-                description: "The user's unique username",
+                description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
                 example: Examples.User.username,
             }),
             polarCustomerID: z.string().nullable().openapi({
-                description: "The polar customer id for this user",
+                description: "Associated Polar.sh customer identifier",
                 example: Examples.User.polarCustomerID,
             }),
             email: z.string().openapi({
-                description: "The email address of this user",
+                description: "Primary email address for user notifications and authentication",
                 example: Examples.User.email,
             }),
             lastLogin: z.date().openapi({
-                description: "The last time this account was logged into",
+                description: "Timestamp of user's most recent authentication",
                 example: Examples.User.lastLogin
             })
         })
         .openapi({
             ref: "User",
-            description: "Represents a user on Nestri",
+            description: "User account entity with core identification and authentication details",
             example: Examples.User,
         });
 
