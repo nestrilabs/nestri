@@ -1,16 +1,16 @@
 import { z } from "zod";
-import { Team } from "../team";
+// import { Team } from "../team";
 import { Common } from "../common";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
-import { assertActor } from "../actor";
+// import { assertActor } from "../actor";
 import { Examples } from "../examples";
-import { teamTable } from "../team/team.sql";
-import { memberTable } from "../member/member.sql";
+// import { teamTable } from "../team/team.sql";
+// import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
 import { and, eq, isNull, asc, sql } from "../drizzle";
-import { subscriptionTable } from "../subscription/subscription.sql";
+// import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace User {
@@ -99,7 +99,7 @@ export namespace User {
         })
 
     export const fromEmail = fn(
-        Info.shape.email,
+        Info.shape.email.min(1),
         async (email) =>
             useTransaction(async (tx) =>
                 tx
@@ -108,12 +108,12 @@ export namespace User {
                     .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
-                    .then(rows => rows.map(serializeBasic).at(0))
+                    .then(rows => rows.map(serialize).at(0))
             )
     )
 
     export const fromID = fn(
-        Info.shape.id,
+        Info.shape.id.min(1),
         (id) =>
             useTransaction(async (tx) =>
                 tx
@@ -122,12 +122,12 @@ export namespace User {
                     .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted)))
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
-                    .then(rows => rows.map(serializeBasic).at(0))
+                    .then(rows => rows.map(serialize).at(0))
             ),
     )
 
     export const remove = fn(
-        Info.shape.id,
+        Info.shape.id.min(1),
         (id) =>
             useTransaction(async (tx) => {
                 await tx
@@ -141,7 +141,7 @@ export namespace User {
             }),
     );
 
-    export function serializeBasic(
+    export function serialize(
         input: typeof userTable.$inferSelect
     ): z.infer<typeof Info> {
         return {
@@ -159,23 +159,23 @@ export namespace User {
      *
      * @remark Only teams and memberships that have not been deleted are included in the result.
      */
-    export function teams() {
-        const actor = assertActor("user");
-        return useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(teamTable)
-                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
-                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-                .where(
-                    and(
-                        eq(memberTable.email, actor.properties.email),
-                        isNull(memberTable.timeDeleted),
-                        isNull(teamTable.timeDeleted),
-                    ),
-                )
-                .execute()
-                .then((rows) => Team.serializeFull(rows))
-        )
-    }
+    // export function teams() {
+    //     const actor = assertActor("user");
+    //     return useTransaction(async (tx) =>
+    //         tx
+    //             .select()
+    //             .from(teamTable)
+    //             .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
+    //             .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+    //             .where(
+    //                 and(
+    //                     eq(memberTable.email, actor.properties.email),
+    //                     isNull(memberTable.timeDeleted),
+    //                     isNull(teamTable.timeDeleted),
+    //                 ),
+    //             )
+    //             .execute()
+    //             .then((rows) => Team.serializeFull(rows))
+    //     )
+    // }
 }

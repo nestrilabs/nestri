@@ -1,22 +1,29 @@
-import { timestamps, id } from "../drizzle/types";
+import { timestamps, id, ulid } from "../drizzle/types";
 import {
   varchar,
   pgTable,
   primaryKey,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { userTable } from "../user/user.sql";
+import { machineTable } from "../machine/machine.sql";
 
 export const teamTable = pgTable(
-  "team",
+  "teams",
   {
     ...id,
     ...timestamps,
     name: varchar("name", { length: 255 }).notNull(),
-    slug: varchar("slug", { length: 255 }).notNull(),
-  },
-  (table) => [
-    uniqueIndex("slug").on(table.slug)
-  ],
+    ownerID: ulid("owner_id")
+      .notNull()
+      .references(() => userTable.id, {
+        onDelete: "cascade"
+      }),
+    machineID: ulid("machine_id")
+      .notNull()
+      .references(() => machineTable.id, {
+        onDelete: "cascade"
+      }),
+  }
 );
 
 export function teamIndexes(table: any) {

@@ -6,7 +6,6 @@ import {
     pgTable,
     uniqueIndex,
     point,
-    primaryKey,
 } from "drizzle-orm/pg-core";
 
 export const machineTable = pgTable(
