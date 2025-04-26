@@ -3,6 +3,7 @@ import {
   varchar,
   pgTable,
   primaryKey,
+  bigint,
 } from "drizzle-orm/pg-core";
 import { userTable } from "../user/user.sql";
 import { machineTable } from "../machine/machine.sql";
@@ -18,6 +19,8 @@ export const teamTable = pgTable(
       .references(() => userTable.id, {
         onDelete: "cascade"
       }),
+    inviteCode: varchar("invite_code", { length: 10 }).notNull(),
+    maxMembers: bigint("max_members", { mode: "number" }).notNull(),
     machineID: ulid("machine_id")
       .notNull()
       .references(() => machineTable.id, {

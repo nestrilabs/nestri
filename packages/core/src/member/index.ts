@@ -1,9 +1,9 @@
 import { z } from "zod";
+import { useTeam } from "../actor";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
 import { memberTable, role } from "./member.sql";
-import { useSteamID, useTeam, useUserID } from "../actor";
 import { createTransaction } from "../drizzle/transaction";
 
 export namespace Member {
@@ -55,7 +55,7 @@ export namespace Member {
                     id,
                     role: input.role,
                     teamID: input.teamID ?? useTeam(),
-                    steamID: input.steamID ,
+                    steamID: input.steamID,
                     userID: input.userID,
                 })
 

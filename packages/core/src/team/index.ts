@@ -3,12 +3,12 @@ import { z } from "zod";
 import { Common } from "../common";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { createID, fn } from "../utils";
-// import { and, eq, sql } from "../drizzle";
+import { and, eq, isNull, sql } from "../drizzle";
+import { createID, fn, generateTeamInviteCode } from "../utils";
 // import { memberTable } from "../member/member.sql";
 // import { groupBy, map, pipe, values } from "remeda";
 // import { subscriptionTable } from "../subscription/subscription.sql";
-import { createTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Team {
     export const Info = z
@@ -28,6 +28,14 @@ export namespace Team {
             machineID: z.string().openapi({
                 description: "The machineID of the machine this team uses",
                 example: Examples.Team.machineID
+            }),
+            maxMembers: z.number().openapi({
+                description: "Maximum members this team can hold, depending on subscription plan",
+                example: Examples.Team.maxMembers
+            }),
+            inviteCode: z.string().openapi({
+                description: "The default and unique invite code for this team",
+                example: Examples.Team.inviteCode
             })
         })
         .openapi({
@@ -38,26 +46,74 @@ export namespace Team {
 
     export type Info = z.infer<typeof Info>;
 
+    // Function to check if a code already exists in the database
+    async function isCodeUnique(code: string): Promise<boolean> {
+
+        const teams = await useTransaction(async (tx) =>
+            tx
+                .select()
+                .from(teamTable)
+                .where(and(eq(teamTable.inviteCode, code)))
+        )
+
+        if (teams.length === 0) {
+            return true;
+        }
+
+        return false
+    }
+
+    /**
+     * Generates a unique team invite code
+     * @param length The length of the invite code
+     * @param maxAttempts Maximum number of attempts to generate a unique code
+     * @returns A promise resolving to a unique invite code
+     */
+    async function createUniqueTeamInviteCode(
+        length: number = 8,
+        maxAttempts: number = 5
+    ): Promise<string> {
+        let attempts = 0;
+
+        while (attempts < maxAttempts) {
+            const code = generateTeamInviteCode(length);
+            if (await isCodeUnique(code)) {
+                return code;
+            }
+            attempts++;
+        }
+
+        // If we've exceeded max attempts, add timestamp to ensure uniqueness
+        const timestampSuffix = Date.now().toString(36).slice(-4);
+        const baseCode = generateTeamInviteCode(length - 4);
+        return baseCode + timestampSuffix;
+    }
+
     export const create = fn(
         Info.
             partial({
                 id: true,
+                inviteCode: true,
+                maxMembers: true
             }),
-        (input) =>
-            createTransaction(async (tx) => {
+        async(input) => {
+            const inviteCode = await createUniqueTeamInviteCode()
+            await createTransaction(async (tx) => {
                 const id = input.id ?? createID("team");
                 await tx
                     .insert(teamTable)
                     .values({
                         id,
+                        inviteCode,
                         name: input.name,
                         ownerID: input.ownerID,
                         machineID: input.machineID,
+                        maxMembers: input.maxMembers ?? 1,
                     })
 
                 return id;
             })
-    )
+        })
 
     //TODO: "Delete" subscription and member(s) as well
     // export const remove = fn(
@@ -164,7 +220,9 @@ export namespace Team {
             name: input.name,
             id: input.id,
             ownerID: input.ownerID,
-            machineID: input.machineID
+            machineID: input.machineID,
+            maxMembers: input.maxMembers,
+            inviteCode: input.inviteCode
         }
     }
 }
