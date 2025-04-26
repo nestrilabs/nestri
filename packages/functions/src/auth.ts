@@ -15,6 +15,7 @@ import { DiscordAdapter } from "./ui/adapters/discord";
 import { PasswordAdapter } from "./ui/adapters/password";
 import { type Provider } from "@openauthjs/openauth/provider/provider"
 import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
+import { withActor } from "@nestri/core/actor";
 
 type OauthUser = {
     primary: {
@@ -172,12 +173,24 @@ const app = issuer({
                 });
 
             } else if (matching) {
+
+                await withActor({
+                    type: "user",
+                    properties: {
+                        userID: matching.id,
+                        email: matching.email
+                    }
+                },
+                    async () =>
+                        await User.acknowledgeLogin()
+                )
+
                 //Sign In
                 return ctx.subject("user", {
                     userID: matching.id,
                     email
                 }, {
-                    subject: email
+                    subject: matching.id
                 });
             }
         }
@@ -214,12 +227,22 @@ const app = issuer({
                         subject: user.primary.email
                     });
                 } else {
+                    await withActor({
+                        type: "user",
+                        properties: {
+                            userID: matching.id,
+                            email: matching.email
+                        }
+                    },
+                        async () =>
+                            await User.acknowledgeLogin()
+                    )
                     //Sign In
                     return await ctx.subject("user", {
                         userID: matching.id,
                         email: user.primary.email
                     }, {
-                        subject: user.primary.email
+                        subject: matching.id
                     });
                 }
 

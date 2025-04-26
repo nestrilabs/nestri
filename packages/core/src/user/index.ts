@@ -12,6 +12,7 @@ import { ErrorCodes, VisibleError } from "../error";
 import { and, eq, isNull, asc, sql } from "../drizzle";
 // import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { useUserID } from "../actor";
 
 export namespace User {
     export const Info = z
@@ -32,6 +33,10 @@ export namespace User {
                 description: "The email address of this user",
                 example: Examples.User.email,
             }),
+            lastLogin: z.date().openapi({
+                description: "The last time this account was logged into",
+                example: Examples.User.lastLogin
+            })
         })
         .openapi({
             ref: "User",
@@ -54,6 +59,7 @@ export namespace User {
     export const create = fn(
         Info
             .omit({
+                lastLogin:true,
                 polarCustomerID: true,
             }).partial({
                 id: true
@@ -72,11 +78,13 @@ export namespace User {
                         id,
                         email: input.email,
                         username: input.username,
-                        polarCustomerID: customer?.id
+                        polarCustomerID: customer?.id,
+                        lastLogin: sql`now()`
                     })
                     .onConflictDoNothing({
                         target: [userTable.username]
                     })
+
                 if (result.count === 0) {
                     throw new UserExistsError(input.username)
                 }
@@ -141,6 +149,21 @@ export namespace User {
             }),
     );
 
+    export const acknowledgeLogin = fn(
+        z.void(),
+        () =>
+            useTransaction(async (tx) =>
+                tx
+                    .update(userTable)
+                    .set({
+                        lastLogin: sql`now()`,
+                    })
+                    .where(and(eq(userTable.id, useUserID())))
+                    .execute()
+
+            ),
+    )
+
     export function serialize(
         input: typeof userTable.$inferSelect
     ): z.infer<typeof Info> {
@@ -149,6 +172,7 @@ export namespace User {
             email: input.email,
             username: input.username,
             polarCustomerID: input.polarCustomerID,
+            lastLogin: input.lastLogin
         }
     }
 

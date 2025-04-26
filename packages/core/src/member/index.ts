@@ -1,25 +1,17 @@
 import { z } from "zod";
-import { Resource } from "sst";
-import { bus } from "sst/aws/bus";
-import { useTeam } from "../actor";
 import { Common } from "../common";
-import { createID, fn } from "../utils";
-import { createEvent } from "../event";
 import { Examples } from "../examples";
+import { createID, fn } from "../utils";
 import { memberTable, role } from "./member.sql";
-import { and, eq, sql, asc, isNull } from "../drizzle";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { useSteamID, useTeam, useUserID } from "../actor";
+import { createTransaction } from "../drizzle/transaction";
 
 export namespace Member {
-    export const BasicInfo = z
+    export const Info = z
         .object({
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.Member.id,
-            }),
-            timeSeen: z.date().nullable().or(z.undefined()).openapi({
-                description: "The last time this team member was active",
-                example: Examples.Member.timeSeen
             }),
             teamID: z.string().openapi({
                 description: "The unique id of the team this member is on",
@@ -29,10 +21,14 @@ export namespace Member {
                 description: "The role of this team member",
                 example: Examples.Member.role
             }),
-            email: z.string().openapi({
-                description: "The email of this team member",
-                example: Examples.Member.email
-            })
+            steamID: z.bigint().nullable().openapi({
+                description: "The steamID of this team member",
+                example: Examples.Member.steamID
+            }),
+            userID: z.string().nullable().openapi({
+                description: "The userID of this team member",
+                example: Examples.Member.userID
+            }),
         })
         .openapi({
             ref: "Member",
@@ -40,28 +36,14 @@ export namespace Member {
             example: Examples.Member,
         });
 
-    export type BasicInfo = z.infer<typeof BasicInfo>;
-
-    export const Events = {
-        Created: createEvent(
-            "member.created",
-            z.object({
-                memberID: BasicInfo.shape.id,
-            }),
-        ),
-        Updated: createEvent(
-            "member.updated",
-            z.object({
-                memberID: BasicInfo.shape.id,
-            }),
-        ),
-    };
+    export type Info = z.infer<typeof Info>;
 
     export const create = fn(
-        BasicInfo
-            .pick({ email: true, id: true })
+        Info
             .partial({
                 id: true,
+                steamID: true,
+                userID: true
             })
             .extend({
                 first: z.boolean().optional(),
@@ -71,73 +53,73 @@ export namespace Member {
                 const id = input.id ?? createID("member");
                 await tx.insert(memberTable).values({
                     id,
-                    teamID: useTeam(),
-                    email: input.email,
-                    role: input.first ? "owner" : "member",
-                    timeSeen: input.first ? sql`now()` : null,
+                    role: input.role,
+                    teamID: input.teamID ?? useTeam(),
+                    steamID: input.steamID ,
+                    userID: input.userID,
                 })
 
-                await afterTx(() =>
-                    async () => bus.publish(Resource.Bus, Events.Created, { memberID: id }),
-                );
+                // await afterTx(() =>
+                //     async () => bus.publish(Resource.Bus, Events.Created, { memberID: id }),
+                // );
                 return id;
             }),
     );
 
-    export const remove = fn(
-        BasicInfo.shape.id,
-        (id) =>
-            useTransaction(async (tx) => {
-                await tx
-                    .update(memberTable)
-                    .set({
-                        timeDeleted: sql`now()`,
-                    })
-                    .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam())))
-                    .execute();
-                return id;
-            }),
-    );
+    // export const remove = fn(
+    //     BasicInfo.shape.id,
+    //     (id) =>
+    //         useTransaction(async (tx) => {
+    //             await tx
+    //                 .update(memberTable)
+    //                 .set({
+    //                     timeDeleted: sql`now()`,
+    //                 })
+    //                 .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam())))
+    //                 .execute();
+    //             return id;
+    //         }),
+    // );
 
-    export const fromEmail = fn(
-        BasicInfo.shape.email,
-        async (email) =>
-            useTransaction(async (tx) =>
-                tx
-                    .select()
-                    .from(memberTable)
-                    .where(and(eq(memberTable.email, email), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
-                    .orderBy(asc(memberTable.timeCreated))
-                    .then((rows) => rows.map(serializeBasic).at(0))
-            )
-    )
+    // export const fromEmail = fn(
+    //     BasicInfo.shape.email,
+    //     async (email) =>
+    //         useTransaction(async (tx) =>
+    //             tx
+    //                 .select()
+    //                 .from(memberTable)
+    //                 .where(and(eq(memberTable.email, email), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
+    //                 .orderBy(asc(memberTable.timeCreated))
+    //                 .then((rows) => rows.map(serializeBasic).at(0))
+    //         )
+    // )
 
-    export const fromID = fn(
-        BasicInfo.shape.id,
-        async (id) =>
-            useTransaction(async (tx) =>
-                tx
-                    .select()
-                    .from(memberTable)
-                    .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
-                    .orderBy(asc(memberTable.timeCreated))
-                    .then((rows) => rows.map(serializeBasic).at(0))
-            ),
-    )
+    // export const fromID = fn(
+    //     BasicInfo.shape.id,
+    //     async (id) =>
+    //         useTransaction(async (tx) =>
+    //             tx
+    //                 .select()
+    //                 .from(memberTable)
+    //                 .where(and(eq(memberTable.id, id), eq(memberTable.teamID, useTeam()), isNull(memberTable.timeDeleted)))
+    //                 .orderBy(asc(memberTable.timeCreated))
+    //                 .then((rows) => rows.map(serializeBasic).at(0))
+    //         ),
+    // )
 
-    export const nowSeen = fn(
-        BasicInfo.shape.email,
-        async (email) =>
-            useTransaction(async (tx) =>
-                tx
-                    .update(memberTable)
-                    .set({
-                        timeSeen: sql`now()`
-                    })
-                    .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
-                    .execute()
-            ),
-    )
+    // export const nowSeen = fn(
+    //     BasicInfo.shape.email,
+    //     async (email) =>
+    //         useTransaction(async (tx) =>
+    //             tx
+    //                 .update(memberTable)
+    //                 .set({
+    //                     timeSeen: sql`now()`
+    //                 })
+    //                 .where(and(eq(memberTable.email, email), isNull(memberTable.timeDeleted)))
+    //                 .execute()
+    //         ),
+    // )
 
     /**
      * Converts a raw member database row into a standardized {@link Member.Info} object.
@@ -147,13 +129,13 @@ export namespace Member {
      */
     export function serializeBasic(
         input: typeof memberTable.$inferSelect,
-    ): z.infer<typeof BasicInfo> {
+    ): z.infer<typeof Info> {
         return {
             id: input.id,
             role: input.role,
-            email: input.email,
+            userID: input.userID,
             teamID: input.teamID,
-            timeSeen: input.timeSeen
+            steamID: input.steamID
         };
     }
 

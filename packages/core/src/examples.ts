@@ -8,6 +8,7 @@ export namespace Examples {
         email: "johndoe@example.com",// Unique email or login (not null)
         displayName: "John Doe", // Display name (not null)
         username: "john_doe", // user name (not null)
+        lastLogin: new Date("2025-04-26T20:11:08.155Z"),
         polarCustomerID: "0bfcb712-df13-4454-81a8-fbee66eddca4"
     }
 
@@ -15,6 +16,8 @@ export namespace Examples {
         id: Id("gpu"),
         type: "hosted" as const, //or BYOG - Bring Your Own GPU
         name: "RTX 4090" as const, // or RTX 3090, Intel Arc
+        performanceTier: 3,
+        maxResolution: "4k"
     }
 
     export const Machine = {
@@ -32,16 +35,19 @@ export namespace Examples {
         id: Id("team"),// Primary key
         name: "John's Console", // Team name (not null, unique)
         ownerID: User.id, // FK to User who owns/created the team
-        machineID: Machine.id
+        machineID: Machine.id,
+        maxMembers: 3,
+        inviteCode: "xwydjf"
     };
 
     export const SteamAccount = {
-        id: 74839300282033n,                // Primary key
+        id: 74839300282033n,// Primary key
         userID: User.id,// | null  FK to User (null if not linked)
         avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
         realName: "John Doe",
         personaName: "JD The 65th",
         profileUrl: "https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",
+        lastSyncedAt: new Date("2025-04-26T20:11:08.155Z")
     };
 
     export const Member = {
@@ -64,9 +70,10 @@ export namespace Examples {
     export const Product = {
         id: Id("product"),
         name: "Pro",
-        description: "For gamers",
-        totalMembers: 3,//Total number of people who can share this sub
-        maxResolution: "1080p", //Maximum resolution this product gives
+        description: "For gamers who want to play on a better GPU and with 2 more friends",
+        maxMembers: Team.maxMembers,// Total number of people who can share this sub
+        isActive: true,
+        order: 2,
         variants: [ProductVariant]
     }
 

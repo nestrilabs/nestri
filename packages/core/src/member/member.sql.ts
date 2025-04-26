@@ -1,21 +1,29 @@
+import { userTable } from "../user/user.sql";
 import { teamIndexes } from "../team/team.sql";
-import { timestamps, utc, teamID } from "../drizzle/types";
-import { index, pgTable, text, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { steamTable } from "../steam/steam.sql";
+import { timestamps, teamID, ulid } from "../drizzle/types";
+import { bigint, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const role = ["admin", "member", "owner"] as const;
+export const role = ["child", "adult"] as const;
 
 export const memberTable = pgTable(
-    "member",
+    "members",
     {
         ...teamID,
         ...timestamps,
-        timeSeen: utc("time_seen"),
+        userID: ulid("user_id")
+            .references(() => userTable.id, {
+                onDelete: "cascade"
+            }),
+        steamID: bigint("steam_id", { mode: "bigint" })
+            .references(() => steamTable.steamID, {
+                onDelete: "cascade",
+                onUpdate: "cascade"
+            }),
         role: text("role", { enum: role }).notNull(),
-        email: varchar("email", { length: 255 }).notNull(),
     },
     (table) => [
         ...teamIndexes(table),
-        index("email_global").on(table.email),
-        uniqueIndex("member_email").on(table.teamID, table.email),
+        uniqueIndex("idx_member_steam_id").on(table.teamID, table.steamID),
     ],
 );
