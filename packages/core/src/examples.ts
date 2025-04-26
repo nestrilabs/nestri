@@ -44,7 +44,7 @@ export namespace Examples {
         profileUrl: "https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",
     };
 
-    export const TeamMember = {
+    export const Member = {
         id: Id("member"),
         userID: User.id,//FK to Users (member)
         steamID: SteamAccount.id, // FK to the Steam Account this member is used
@@ -83,7 +83,7 @@ export namespace Examples {
     export const SubscriptionUsage = {
         id: Id("usage"),
         machineID: Machine.id, // machine this session was used on
-        memberID: TeamMember.id, // the team member who used it
+        memberID: Member.id, // the team member who used it
         subscriptionID: Subscription.id,
         sessionID: Id("session"),
         minutesUsed: 20, // Minutes used on the session
@@ -91,7 +91,7 @@ export namespace Examples {
 
     export const Session = {
         id: Id("session"),
-        memberID: TeamMember.id,
+        memberID: Member.id,
         machineID: Machine.id,
         startTime: new Date("2025-02-23T33:39:52.249Z"),
         endTime: null, // null if session is ongoing

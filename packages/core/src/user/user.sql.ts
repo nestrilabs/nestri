@@ -9,7 +9,6 @@ export const userTable = pgTable(
         email: varchar("email", { length: 255 }).notNull(),
         username: varchar("username", { length: 255 }).notNull(),
         polarCustomerID: varchar("polar_customer_id", { length: 255 }),
-        displayName: varchar("display_name", { length: 255 }).notNull(),
     },
     (user) => [
         uniqueIndex("idx_user_polar_id").on(user.polarCustomerID),

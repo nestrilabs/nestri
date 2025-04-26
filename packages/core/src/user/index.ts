@@ -32,10 +32,6 @@ export namespace User {
                 description: "The email address of this user",
                 example: Examples.User.email,
             }),
-            displayName: z.string().openapi({
-                description: "The user's display name",
-                example: Examples.User.displayName,
-            })
         })
         .openapi({
             ref: "User",
@@ -76,7 +72,6 @@ export namespace User {
                         id,
                         email: input.email,
                         username: input.username,
-                        displayName: input.displayName,
                         polarCustomerID: customer?.id
                     })
                     .onConflictDoNothing({
@@ -151,7 +146,6 @@ export namespace User {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
-            displayName: input.displayName,
             email: input.email,
             username: input.username,
             polarCustomerID: input.polarCustomerID,
