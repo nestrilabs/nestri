@@ -127,7 +127,7 @@ export namespace Member {
      * @param input - The database row representing a member.
      * @returns The member information formatted as a {@link Member.Info} object.
      */
-    export function serializeBasic(
+    export function serialize(
         input: typeof memberTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {

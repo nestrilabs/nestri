@@ -159,7 +159,7 @@ const app = issuer({
             //Sign Up
             if (username && !matching) {
                 const userID = await User.create({
-                    username: username,
+                    username: username.toLowerCase(),
                     email,
                 });
 
@@ -215,7 +215,7 @@ const app = issuer({
                 if (!matching) {
                     const userID = await User.create({
                         email: user.primary.email,
-                        username: user.username,
+                        username: user.username.toLowerCase(),
                     });
 
                     if (!userID) throw new Error("Error creating user");
