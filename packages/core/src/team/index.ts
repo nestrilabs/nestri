@@ -100,11 +100,12 @@ export namespace Team {
             partial({
                 id: true,
                 inviteCode: true,
-                maxMembers: true
+                maxMembers: true,
+                ownerID: true
             }),
         async (input) => {
             const inviteCode = await createUniqueTeamInviteCode()
-            await createTransaction(async (tx) => {
+            return createTransaction(async (tx) => {
                 const id = input.id ?? createID("team");
                 await tx
                     .insert(teamTable)
@@ -112,7 +113,7 @@ export namespace Team {
                         id,
                         inviteCode,
                         name: input.name,
-                        ownerID: input.ownerID,
+                        ownerID: input.ownerID ?? useUserID(),
                         machineID: input.machineID,
                         maxMembers: input.maxMembers ?? 1,
                     })

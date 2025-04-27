@@ -43,7 +43,8 @@ export namespace Member {
             .partial({
                 id: true,
                 steamID: true,
-                userID: true
+                userID: true,
+                teamID: true
             })
             .extend({
                 first: z.boolean().optional(),

@@ -2,15 +2,16 @@ import { z } from "zod";
 import { Hono } from "hono";
 import { notPublic } from "./auth";
 import { describeRoute } from "hono-openapi";
-import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
+import { Steam } from "@nestri/core/steam/index";
 import { Polar } from "@nestri/core/polar/index";
 import { Member } from "@nestri/core/member/index";
 import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, Result, validator } from "./common";
 import { Subscription } from "@nestri/core/subscription/index";
 import { PlanType } from "@nestri/core/subscription/subscription.sql";
+import { User } from "@nestri/core/user/index";
 
 export namespace TeamApi {
     export const route = new Hono()
@@ -25,9 +26,11 @@ export namespace TeamApi {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Team.FullInfo.array().openapi({
-                                        description: "List of teams",
-                                        example: [Examples.Team]
+                                    Team.Info.extend({
+                                        members: Steam.Info.array()
+                                    }).array().openapi({
+                                        description: "List of teams this user is part of",
+                                        example: [{ ...Examples.Team, members: [Examples.SteamAccount] }]
                                     })
                                 ),
                             },
@@ -38,7 +41,7 @@ export namespace TeamApi {
             }),
             async (c) => {
                 return c.json({
-                    data: await User.teams()
+                    data: await Team.list()
                 }, 200);
             },
         )
@@ -72,15 +75,14 @@ export namespace TeamApi {
             validator(
                 "json",
                 Team.create.schema
-                    .pick({ slug: true, name: true })
-                    .extend({ planType: z.enum(PlanType), successUrl: z.string().url("Success url must be a valid url") })
+                    .pick({ machineID: true, name: true })
+                    .extend({ steamID: Steam.Info.shape.id })
                     .openapi({
-                        description: "Details of the team to create",
+                        description: "Details of the team you want to create",
                         example: {
-                            slug: Examples.Team.slug,
                             name: Examples.Team.name,
-                            planType: Examples.Subscription.planType,
-                            successUrl: "https://your-url.io/thanks"
+                            steamID: Examples.Member.steamID,
+                            machineID: Examples.Team.machineID,
                         },
                     })
             ),
@@ -88,7 +90,7 @@ export namespace TeamApi {
                 const body = c.req.valid("json")
                 const actor = assertActor("user");
 
-                const teamID = await Team.create({ name: body.name, slug: body.slug });
+                const teamID = await Team.create({ name: body.name, machineID: body.machineID });
 
                 await withActor(
                     {
@@ -99,26 +101,27 @@ export namespace TeamApi {
                     },
                     async () => {
                         await Member.create({
-                            first: true,
-                            email: actor.properties.email,
+                            role: "adult", // We assume it is an adult for now
+                            userID: actor.properties.userID,
+                            steamID: body.steamID,
                         });
 
-                        await Subscription.create({
-                            planType: body.planType,
-                            userID: actor.properties.userID,
-                            // FIXME: Make this make sense
-                            tokens: body.planType === "free" ? 100 : body.planType === "pro" ? 1000 : body.planType === "family" ? 10000 : 0,
-                        });
+                        // await Subscription.create({
+                        //     planType: body.planType,
+                        //     userID: actor.properties.userID,
+                        //     // FIXME: Make this make sense
+                        //     tokens: body.planType === "free" ? 100 : body.planType === "pro" ? 1000 : body.planType === "family" ? 10000 : 0,
+                        // });
                     }
                 );
 
-                const checkoutUrl = await Polar.createCheckout({ planType: body.planType, successUrl: body.successUrl, teamID })
+                // const checkoutUrl = await Polar.createCheckout({ planType: body.planType, successUrl: body.successUrl, teamID })
 
-                return c.json({
-                    data: {
-                        checkoutUrl,
-                    }
-                })
+                // return c.json({
+                //     data: {
+                //         checkoutUrl,
+                //     }
+                // })
             }
         )
 }
