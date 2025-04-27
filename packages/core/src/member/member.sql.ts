@@ -16,7 +16,7 @@ export const memberTable = pgTable(
                 onDelete: "cascade"
             }),
         steamID: bigint("steam_id", { mode: "bigint" })
-            .references(() => steamTable.steamID, {
+            .references(() => steamTable.id, {
                 onDelete: "cascade",
                 onUpdate: "cascade"
             }),

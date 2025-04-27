@@ -23,7 +23,7 @@ export namespace User {
             }),
             username: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
                 description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
-                example: Examples.User.username,
+                example: Examples.User.username
             }),
             polarCustomerID: z.string().nullable().openapi({
                 description: "Associated Polar.sh customer identifier",
@@ -175,31 +175,4 @@ export namespace User {
             lastLogin: input.lastLogin
         }
     }
-
-    /**
-     * Retrieves the list of teams that the current user belongs to.
-     *
-     * @returns An array of team information objects representing the user's active team memberships.
-     *
-     * @remark Only teams and memberships that have not been deleted are included in the result.
-     */
-    // export function teams() {
-    //     const actor = assertActor("user");
-    //     return useTransaction(async (tx) =>
-    //         tx
-    //             .select()
-    //             .from(teamTable)
-    //             .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
-    //             .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-    //             .where(
-    //                 and(
-    //                     eq(memberTable.email, actor.properties.email),
-    //                     isNull(memberTable.timeDeleted),
-    //                     isNull(teamTable.timeDeleted),
-    //                 ),
-    //             )
-    //             .execute()
-    //             .then((rows) => Team.serializeFull(rows))
-    //     )
-    // }
 }

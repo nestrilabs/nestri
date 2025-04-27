@@ -1,7 +1,7 @@
 import { z } from "zod";
 // import { useUser } from "../actor";
 import { Common } from "../common";
-import { and, eq } from "../drizzle";
+import { and, eq, isNull } from "../drizzle";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
 import { createID, fn, generateTeamInviteCode } from "../utils";
@@ -9,6 +9,12 @@ import { createID, fn, generateTeamInviteCode } from "../utils";
 // import { groupBy, map, pipe, values } from "remeda";
 // import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { memberTable } from "../member/member.sql";
+import { useUserID } from "../actor";
+import { groupBy, pipe, values, map } from "remeda";
+import { Member } from "../member";
+import { steamTable } from "../steam/steam.sql";
+import { Steam } from "../steam";
 
 export namespace Team {
     export const Info = z
@@ -18,7 +24,7 @@ export namespace Team {
                 example: Examples.Team.id,
             }),
             name: z.string().openapi({
-                description:  "Display name of the team",
+                description: "Display name of the team",
                 example: Examples.Team.name
             }),
             ownerID: z.string().openapi({
@@ -96,7 +102,7 @@ export namespace Team {
                 inviteCode: true,
                 maxMembers: true
             }),
-        async(input) => {
+        async (input) => {
             const inviteCode = await createUniqueTeamInviteCode()
             await createTransaction(async (tx) => {
                 const id = input.id ?? createID("team");
@@ -144,25 +150,42 @@ export namespace Team {
     //         })
     // );
 
-    // export const list = fn(z.void(), () => {
-    //     const user = useUser();
-    //     return useTransaction(async (tx) =>
-    //         tx
-    //             .select()
-    //             .from(teamTable)
-    //             .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
-    //             .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-    //             .where(
-    //                 and(
-    //                     eq(memberTable.email, user.email),
-    //                     isNull(memberTable.timeDeleted),
-    //                     isNull(teamTable.timeDeleted),
-    //                 ),
-    //             )
-    //             .execute()
-    //             .then((rows) => serializeFull(rows))
-    //     )
-    // });
+    export const list = fn(
+        z.void(),
+        () => {
+            return useTransaction(async (tx) =>
+                tx
+                    .select({
+                        steam_accounts: steamTable,
+                        teams: teamTable
+                    })
+                    .from(teamTable)
+                    .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                    .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
+                    .where(
+                        and(
+                            eq(memberTable.userID, useUserID()),
+                            isNull(memberTable.timeDeleted),
+                            isNull(teamTable.timeDeleted),
+                        ),
+                    )
+                    .execute()
+                    .then((rows) =>
+                        pipe(
+                            rows,
+                            groupBy((row) => row.teams.id),
+                            values(),
+                            map((group) => ({
+                                ...serialize(group[0].teams),
+                                members:
+                                    !group[0].steam_accounts ?
+                                        [] :
+                                        group.map((item) => Steam.serialize(item.steam_accounts!))
+                            })),
+                        )
+                    )
+            )
+        });
 
     // export const fromID = fn(
     //     Info.shape.id.min(1),

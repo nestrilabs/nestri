@@ -1,51 +1,49 @@
 import { z } from "zod";
-import { decrypt, encrypt, fn } from "../utils";
-import { User } from "../user";
 import { Examples } from "../examples";
-import { eq, and, isNull } from "../drizzle";
 import { useUser, useUserID } from "../actor";
+import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
-import type { userTable } from "../user/user.sql";
-import { pipe, groupBy, values, map } from "remeda";
+import { eq, and, isNull, sql } from "../drizzle";
 import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
-    export const BasicInfo = z
+    export const Info = z
         .object({
             avatarHash: z.string().openapi({
                 description: "The steam avatar hash that this account owns",
-                example: Examples.Steam.avatarHash
+                example: Examples.SteamAccount.avatarHash
             }),
-            steamID: z.bigint().openapi({
+            id: z.bigint().openapi({
                 description: "The Steam ID this Steam account",
-                example: Examples.Steam.steamID
+                example: Examples.SteamAccount.id
+            }),
+            userID: z.string().nullable().openapi({
+                description: "The user id of which account owns this steam account",
+                example: Examples.SteamAccount.userID
             }),
             profileUrl: z.string().url().openapi({
                 description: "The steam community url of this account",
-                example: Examples.Steam.profileUrl
+                example: Examples.SteamAccount.profileUrl
             }),
             realName: z.string().openapi({
                 description: "The real name behind of this Steam account",
-                example: Examples.Steam.realName
+                example: Examples.SteamAccount.realName
             }),
             personaName: z.string().openapi({
                 description: "The persona name used by this account",
-                example: Examples.Steam.personaName
+                example: Examples.SteamAccount.personaName
+            }),
+            lastSyncedAt: z.date().openapi({
+                description: "The last time this account was synced to Steam",
+                example: Examples.SteamAccount.lastSyncedAt
             }),
         })
         .openapi({
             ref: "Steam",
             description: "Represents a steam user's information stored on Nestri",
-            example: Examples.Steam,
+            example: Examples.SteamAccount,
         });
-
-    export const FullInfo = BasicInfo.extend({
-        user: User.BasicInfo.nullable().openapi({
-            description: "The user who owns this Steam account",
-            example: Examples.User
-        })
-    })
 
     export const CredentialInfo = createSelectSchema(steamCredentialsTable)
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
@@ -53,18 +51,12 @@ export namespace Steam {
             accessToken: z.string(),
             cookies: z.string().array()
         })
-        .openapi({
-            ref: "Steam Credential",
-            description: "Represents a steam user's credentials stored on Nestri",
-            example: Examples.Credential,
-        });
 
-    export type BasicInfo = z.infer<typeof BasicInfo>;
-    export type FullInfo = z.infer<typeof FullInfo>;
+    export type Info = z.infer<typeof Info>;
     export type CredentialInfo = z.infer<typeof CredentialInfo>;
 
     export const create = fn(
-        BasicInfo
+        Info
             .extend({
                 useUser: z.boolean(),
                 userID: z.string().nullable()
@@ -80,7 +72,7 @@ export namespace Steam {
                         .from(steamTable)
                         .where(
                             and(
-                                eq(steamTable.steamID, input.steamID),
+                                eq(steamTable.id, input.id),
                                 isNull(steamTable.timeDeleted)
                             )
                         )
@@ -91,21 +83,32 @@ export namespace Steam {
                 await tx
                     .insert(steamTable)
                     .values({
+                        id: input.id,
                         userID: typeof input.userID === "string" ? input.userID : input.useUser ? useUser().userID : input.userID,
                         profileUrl: input.profileUrl,
+                        lastSyncedAt: sql`now()`,
                         avatarHash: input.avatarHash,
-                        steamID: input.steamID,
                         realName: input.realName,
                         personaName: input.personaName
                     })
-                // .onConflictDoNothing({ target: [steamTable.steamID, steamTable.userID] })
+                    .onConflictDoUpdate({
+                        target: steamTable.id,
+                        set: {
+                            realName: sql`excluded.real_name`,
+                            lastSyncedAt: sql`excluded.last_synced_at`,
+                            personaName: sql`excluded.persona_name`,
+                            avatarHash: sql`excluded.avatar_hash`,
+                            userID: sql`excluded.user_id`,
+                            profileUrl: sql`excluded.profile_url`
+                        }
+                    })
 
-                return input.steamID
+                return input.id
             }),
     );
 
     export const fromUserID = fn(
-        z.string(),
+        z.string().min(1),
         (userID) =>
             useTransaction((tx) =>
                 tx
@@ -113,7 +116,7 @@ export namespace Steam {
                     .from(steamTable)
                     .where(and(eq(steamTable.userID, userID), isNull(steamTable.timeDeleted)))
                     .execute()
-                    .then((rows) => rows.map(serializeBasic).at(0)),
+                    .then((rows) => rows.map(serialize).at(0)),
             ),
     )
 
@@ -124,40 +127,39 @@ export namespace Steam {
                 .from(steamTable)
                 .where(and(eq(steamTable.userID, useUserID()), isNull(steamTable.timeDeleted)))
                 .execute()
-                .then((rows) => rows.map(serializeBasic)),
+                .then((rows) => rows.map(serialize)),
         )
 
     export const createCredential = fn(
         CredentialInfo
-            //Cookies and AccessToken cannot be persisted, they expire within 24 hours
-            .omit({ cookies: true, accessToken: true }),
+            .omit({ accessToken: true, cookies: true }),
         (input) =>
             createTransaction(async (tx) => {
                 const encryptedToken = encrypt(input.refreshToken)
                 await tx
                     .insert(steamCredentialsTable)
                     .values({
-                        steamID: input.steamID,
+                        id: input.id,
                         username: input.username,
                         refreshToken: encryptedToken,
                     })
-                return input.steamID
+                return input.id
             }),
     );
 
-    export const getCredential = fn(
-        CredentialInfo.shape.steamID,
+    export const getCredentialByID = fn(
+        CredentialInfo.shape.id,
         (steamID) =>
             useTransaction(async (tx) => {
                 const credential = await tx
                     .select()
                     .from(steamCredentialsTable)
                     .where(and(
-                        eq(steamCredentialsTable.steamID, steamID),
+                        eq(steamCredentialsTable.id, steamID),
                         isNull(steamCredentialsTable.timeDeleted)
                     ))
                     .execute()
-                    .then(rows => rows[0]);
+                    .then(rows => rows.at(0));
 
                 if (!credential) return null;
 
@@ -165,40 +167,17 @@ export namespace Steam {
             })
     );
 
-    /**
-     * Serializes a raw Steam table record into a standardized Info object.
-     *
-     * This function maps the fields from a database record (retrieved from the Steam table) to the
-     * corresponding properties defined in the Info schema.
-     *
-     * @param input - A raw record from the Steam table containing user information.
-     * @returns An object conforming to the Info schema.
-     */
-    export function serializeFull(
-        input: { steam: typeof steamTable.$inferSelect, user: typeof userTable.$inferSelect | null }[],
-    ): z.infer<typeof FullInfo>[] {
-        return pipe(
-            input,
-            groupBy((row) => row.steam.steamID.toString()),
-            values(),
-            map((group) => ({
-                ...serializeBasic(group[0].steam),
-                //Only one user per Steam account
-                user: group[0].user ? User.serializeBasic(group[0].user) : null
-            })),
-        );
-    }
-
-    export function serializeBasic(
+    export function serialize(
         input: typeof steamTable.$inferSelect,
-    ): z.infer<typeof BasicInfo> {
+    ): z.infer<typeof Info> {
         return {
-            // userID: input.userID,
+            id: input.id,
+            userID: input.userID,
+            realName: input.realName,
             profileUrl: input.profileUrl,
             avatarHash: input.avatarHash,
-            steamID: input.steamID,
-            realName: input.realName,
-            personaName: input.personaName
+            personaName: input.personaName,
+            lastSyncedAt: input.lastSyncedAt,
         };
     }
 

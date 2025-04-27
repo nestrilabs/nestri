@@ -7,6 +7,7 @@ import { Team } from "@nestri/core/team/index";
 import { assertActor } from "@nestri/core/actor";
 import { Examples } from "@nestri/core/examples";
 import { ErrorResponses, Result } from "./common";
+import { Steam } from "@nestri/core/steam/index";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 export namespace AccountApi {
@@ -23,11 +24,15 @@ export namespace AccountApi {
                             "application/json": {
                                 schema: Result(
                                     z.object({
-                                        ...User.BasicInfo.shape,
-                                        teams: Team.FullInfo.array(),
+                                        ...User.Info.shape,
+                                        teams: Team.Info
+                                            .extend({
+                                                members: Steam.Info.array()
+                                            })
+                                            .array(),
                                     }).openapi({
                                         description: "User account information",
-                                        example: { ...Examples.User, teams: [Examples.Team] }
+                                        example: { ...Examples.User, teams: [{ ...Examples.Team, members: [Examples.SteamAccount] }] }
                                     })
                                 ),
                             },
@@ -40,9 +45,9 @@ export namespace AccountApi {
             }),
             async (c) => {
                 const actor = assertActor("user");
-                const [user, teams] = await Promise.all([User.fromID(actor.properties.userID), User.teams()])
+                const [user, teams] = await Promise.allSettled([User.fromID(actor.properties.userID), Team.list()])
 
-                if (!user)
+                if (user.status === "rejected" || !user.value)
                     throw new VisibleError(
                         "not_found",
                         ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
@@ -51,8 +56,8 @@ export namespace AccountApi {
 
                 return c.json({
                     data: {
-                        ...user,
-                        teams,
+                        ...user.value,
+                        teams: teams.status === "rejected" ? [] : teams.value,
                     }
                 }, 200);
             },
