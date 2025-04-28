@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "composite": false,
-    "jsx": "react",
+    "jsx": "react-jsx",
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
