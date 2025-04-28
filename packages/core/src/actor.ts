@@ -3,6 +3,7 @@ import { createContext } from "./context";
 import { ErrorCodes, VisibleError } from "./error";
 
 export namespace Actor {
+  
   export interface User {
     type: "user";
     properties: {

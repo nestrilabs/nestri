@@ -1,11 +1,11 @@
 import { z } from "zod";
+import { Actor } from "../actor";
 import { Examples } from "../examples";
 import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
 import { eq, and, isNull, sql } from "../drizzle";
 import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { Actor } from "../actor";
 
 export namespace Steam {
     export const Info = z

@@ -7,7 +7,6 @@ import { Steam } from "@nestri/core/steam/index";
 import { Examples } from "@nestri/core/examples";
 import { Friend } from "@nestri/core/friend/index";
 import { SteamClient } from "@nestri/core/steam/client";
-// import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, validator, Result } from "./common";
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
 

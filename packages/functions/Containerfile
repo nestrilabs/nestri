@@ -4,11 +4,13 @@ ADD ./package.json .
 ADD ./bun.lock .
 ADD ./packages/core/package.json ./packages/core/package.json
 ADD ./packages/functions/package.json ./packages/functions/package.json
+ADD ./packages/mail/package.json ./packages/mail/package.json
 ADD ./patches ./patches
 RUN bun install --ignore-scripts
 
 ADD ./packages/functions ./packages/functions
 ADD ./packages/core ./packages/core
+ADD ./packages/mail ./packages/mail
 
 WORKDIR ./packages/functions
 
