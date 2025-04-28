@@ -1,20 +1,20 @@
 import { z } from "zod";
 // import { useUser } from "../actor";
+import { Steam } from "../steam";
+import { Actor } from "../actor";
 import { Common } from "../common";
-import { and, eq, isNull } from "../drizzle";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
+import { and, eq, isNull } from "../drizzle";
+import { steamTable } from "../steam/steam.sql";
+import { memberTable } from "../member/member.sql";
+import { groupBy, pipe, values, map } from "remeda";
 import { createID, fn, generateTeamInviteCode } from "../utils";
 // import { memberTable } from "../member/member.sql";
 // import { groupBy, map, pipe, values } from "remeda";
 // import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { memberTable } from "../member/member.sql";
-import { groupBy, pipe, values, map } from "remeda";
 // import { Member } from "../member";
-import { steamTable } from "../steam/steam.sql";
-import { Steam } from "../steam";
-import { Actor } from "../actor";
 
 export namespace Team {
     export const Info = z

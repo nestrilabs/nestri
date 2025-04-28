@@ -1,6 +1,5 @@
 import "zod-openapi/extend";
 import { auth } from "./auth";
-import { Resource } from "sst";
 import { cors } from "hono/cors";
 // import { GameApi } from "./game";
 import { TeamApi } from "./team";
@@ -16,7 +15,6 @@ import { openAPISpecs } from "hono-openapi";
 import { patchLogger } from "../log-polyfill";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-import { User } from "@nestri/core/user/index";
 
 patchLogger();
 
@@ -35,7 +33,7 @@ const routes = app
     .route("/teams", TeamApi.route)
     // .route("/games", GameApi.route)
     // .route("/polar", PolarApi.route)
-    .route("/steam", SteamApi.route)
+    // .route("/steam", SteamApi.route)
     .route("/realtime", Realtime.route)
     // .route("/friends", FriendApi.route)
     .route("/accounts", AccountApi.route)

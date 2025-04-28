@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { Examples } from "../examples";
-import { useUser, useUserID } from "../actor";
 import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
 import { eq, and, isNull, sql } from "../drizzle";
 import { steamTable, steamCredentialsTable } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { Actor } from "../actor";
 
 export namespace Steam {
     export const Info = z
@@ -84,7 +84,7 @@ export namespace Steam {
                     .insert(steamTable)
                     .values({
                         id: input.id,
-                        userID: typeof input.userID === "string" ? input.userID : input.useUser ? useUser().userID : input.userID,
+                        userID: typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : input.userID,
                         profileUrl: input.profileUrl,
                         lastSyncedAt: sql`now()`,
                         avatarHash: input.avatarHash,
@@ -125,7 +125,7 @@ export namespace Steam {
             tx
                 .select()
                 .from(steamTable)
-                .where(and(eq(steamTable.userID, useUserID()), isNull(steamTable.timeDeleted)))
+                .where(and(eq(steamTable.userID, Actor.userID()), isNull(steamTable.timeDeleted)))
                 .execute()
                 .then((rows) => rows.map(serialize)),
         )

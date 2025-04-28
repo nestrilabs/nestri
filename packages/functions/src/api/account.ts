@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { Hono } from "hono";
 import { notPublic } from "./auth";
+import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
-import { assertActor } from "@nestri/core/actor";
+import { Steam } from "@nestri/core/steam/index";
 import { Examples } from "@nestri/core/examples";
 import { ErrorResponses, Result } from "./common";
-import { Steam } from "@nestri/core/steam/index";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 export namespace AccountApi {
@@ -44,8 +44,7 @@ export namespace AccountApi {
                 }
             }),
             async (c) => {
-                const actor = assertActor("user");
-                const [user, teams] = await Promise.allSettled([User.fromID(actor.properties.userID), Team.list()])
+                const [user, teams] = await Promise.allSettled([User.fromID(Actor.userID()), Team.list()])
 
                 if (user.status === "rejected" || !user.value)
                     throw new VisibleError(

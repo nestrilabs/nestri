@@ -36,10 +36,11 @@ import { createEffect } from "solid-js";
 import { Team } from "@nestri/core/team/index";
 import { User } from "@nestri/core/user/index";
 import { useOpenAuth } from "@openauthjs/solid";
+import { Steam } from "@nestri/core/steam/index";
 import { createInitializedContext } from "../common/context";
 
 type Storage = {
-  accounts: Record<string, User.BasicInfo & { teams: Team.FullInfo[] }>
+  accounts: Record<string, User.Info & { teams: Team.Info[] & { members: Steam.Info[] } }>
 }
 
 export const { use: useAccount, provider: AccountProvider } = createInitializedContext("AccountContext", () => {
