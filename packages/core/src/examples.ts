@@ -80,7 +80,7 @@ export namespace Examples {
     export const Subscription = {
         id: Id("subscription"),
         teamID: Team.id,
-        status: "active" as const, //incomplete, incomplete_expired, trialing, active, past_due, canceled, unpaid
+        standing: "active" as const, //incomplete, incomplete_expired, trialing, active, past_due, canceled, unpaid
         ownerID: User.id,
         price: ProductVariant.price,
         productVariantID: ProductVariant.id,

@@ -15,9 +15,12 @@ export function patchLogger() {
   const log =
     (level: "INFO" | "WARN" | "TRACE" | "DEBUG" | "ERROR") =>
     (msg: string, ...rest: any[]) => {
-      let line = `${level}\t${format(msg, ...rest)}`;
-      line = line.replace(/\n/g, "\r");
-      process.stdout.write(line + "\n");
+      let formattedMessage = format(msg, ...rest);
+      // Split by newlines, prefix each line with the level, and join back
+      const lines = formattedMessage.split('\n');
+      const prefixedLines = lines.map(line => `${level}\t${line}`);
+      const output = prefixedLines.join('\n');
+      process.stdout.write(output + '\n');
     };
   console.log = log("INFO");
   console.warn = log("WARN");

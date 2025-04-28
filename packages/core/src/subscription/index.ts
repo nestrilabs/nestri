@@ -23,12 +23,12 @@ export namespace Subscription {
         }),
         userID: z.string().openapi({
             description: "The unique id of the user who is paying this subscription",
-            example: Examples.Subscription.userID,
+            example: Examples.Subscription.ownerID,
         }),
-        polarProductID: z.string().nullable().or(z.undefined()).openapi({
-            description: "The unique id of the product this subscription is for",
-            example: Examples.Subscription.polarProductID,
-        }),
+        // productVariantID: z.string().openapi({
+        //     description: "The unique id of the product this subscription is for",
+        //     example: Examples.Subscription.polarProductID,
+        // }),
         tokens: z.number().openapi({
             description: "The number of tokens this subscription has left",
             example: Examples.Subscription.tokens,
@@ -37,7 +37,7 @@ export namespace Subscription {
             description: "The type of plan this subscription is for",
             example: Examples.Subscription.planType,
         }),
-        standing: z.enum(Standing).openapi({
+        status: z.enum(Standing).openapi({
             description: "The standing of this subscription",
             example: Examples.Subscription.standing,
         }),

@@ -10,11 +10,11 @@ import { createID, fn, generateTeamInviteCode } from "../utils";
 // import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { memberTable } from "../member/member.sql";
-import { useUserID } from "../actor";
 import { groupBy, pipe, values, map } from "remeda";
-import { Member } from "../member";
+// import { Member } from "../member";
 import { steamTable } from "../steam/steam.sql";
 import { Steam } from "../steam";
+import { Actor } from "../actor";
 
 export namespace Team {
     export const Info = z
@@ -113,7 +113,7 @@ export namespace Team {
                         id,
                         inviteCode,
                         name: input.name,
-                        ownerID: input.ownerID ?? useUserID(),
+                        ownerID: input.ownerID ?? Actor.userID(),
                         machineID: input.machineID,
                         maxMembers: input.maxMembers ?? 1,
                     })
@@ -165,7 +165,7 @@ export namespace Team {
                     .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
                     .where(
                         and(
-                            eq(memberTable.userID, useUserID()),
+                            eq(memberTable.userID, Actor.userID()),
                             isNull(memberTable.timeDeleted),
                             isNull(teamTable.timeDeleted),
                         ),

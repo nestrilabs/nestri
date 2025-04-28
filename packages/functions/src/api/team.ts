@@ -7,11 +7,11 @@ import { Examples } from "@nestri/core/examples";
 import { Steam } from "@nestri/core/steam/index";
 import { Polar } from "@nestri/core/polar/index";
 import { Member } from "@nestri/core/member/index";
-import { assertActor, withActor } from "@nestri/core/actor";
 import { ErrorResponses, Result, validator } from "./common";
 import { Subscription } from "@nestri/core/subscription/index";
-import { PlanType } from "@nestri/core/subscription/subscription.sql";
-import { User } from "@nestri/core/user/index";
+// import { PlanType } from "@nestri/core/subscription/subscription.sql";
+// import { User } from "@nestri/core/user/index";
+import { Actor } from "@nestri/core/actor";
 
 export namespace TeamApi {
     export const route = new Hono()
@@ -88,21 +88,18 @@ export namespace TeamApi {
             ),
             async (c) => {
                 const body = c.req.valid("json")
-                const actor = assertActor("user");
 
                 const teamID = await Team.create({ name: body.name, machineID: body.machineID });
 
-                await withActor(
+                await Actor.provide(
+                    "system",
                     {
-                        type: "system",
-                        properties: {
-                            teamID,
-                        },
+                        teamID
                     },
                     async () => {
                         await Member.create({
                             role: "adult", // We assume it is an adult for now
-                            userID: actor.properties.userID,
+                            userID: Actor.userID(),
                             steamID: body.steamID,
                         });
 

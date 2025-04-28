@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { useTeam } from "../actor";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
 import { memberTable, role } from "./member.sql";
 import { createTransaction } from "../drizzle/transaction";
+import { Actor } from "../actor";
 
 export namespace Member {
     export const Info = z
@@ -55,7 +55,7 @@ export namespace Member {
                 await tx.insert(memberTable).values({
                     id,
                     role: input.role,
-                    teamID: input.teamID ?? useTeam(),
+                    teamID: input.teamID ?? Actor.teamID(),
                     steamID: input.steamID,
                     userID: input.userID,
                 })

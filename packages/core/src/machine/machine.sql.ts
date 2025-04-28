@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 export const machineTable = pgTable(
-    "machine",
+    "machines",
     {
         ...id,
         ...timestamps,

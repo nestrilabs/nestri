@@ -1,6 +1,9 @@
 import { z } from "zod";
+import { Resource } from "sst";
+import { bus } from "sst/aws/bus";
 // import { Team } from "../team";
 import { Common } from "../common";
+import { createEvent } from "../event";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
@@ -11,8 +14,7 @@ import { Examples } from "../examples";
 import { ErrorCodes, VisibleError } from "../error";
 import { and, eq, isNull, asc, sql } from "../drizzle";
 // import { subscriptionTable } from "../subscription/subscription.sql";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { useUserID } from "../actor";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace User {
     export const Info = z
@@ -56,10 +58,19 @@ export namespace User {
         }
     }
 
+    export const Events = {
+        Created: createEvent(
+            "user.created",
+            z.object({
+                userID: Info.shape.id,
+            }),
+        ),
+    };
+
     export const create = fn(
         Info
             .omit({
-                lastLogin:true,
+                lastLogin: true,
                 polarCustomerID: true,
             }).partial({
                 id: true
@@ -89,18 +100,19 @@ export namespace User {
                     throw new UserExistsError(input.username)
                 }
 
-                //FIXME: Implement a bus 
-                // await afterTx(() =>
-                //     withActor({
-                //         type: "user",
-                //         properties: {
-                //             userID: id,
-                //             email: input.email
-                //         },
-                //     },
-                //         async () => bus.publish(Resource.Bus, Events.Created, { userID: id }),
-                //     )
-                // );
+                await afterTx(() =>
+                    // await withActor({
+                    //     type: "user",
+                    //     properties: {
+                    //         userID: id,
+                    //         email: input.email
+                    //     },
+                    // },
+                    // async () => 
+                    bus.publish(Resource.Bus, Events.Created, { userID: id })
+
+                    // )
+                );
             })
 
             return id;
@@ -150,15 +162,15 @@ export namespace User {
     );
 
     export const acknowledgeLogin = fn(
-        z.void(),
-        () =>
+        Info.shape.id,
+        (id) =>
             useTransaction(async (tx) =>
                 tx
                     .update(userTable)
                     .set({
                         lastLogin: sql`now()`,
                     })
-                    .where(and(eq(userTable.id, useUserID())))
+                    .where(and(eq(userTable.id, id)))
                     .execute()
 
             ),
