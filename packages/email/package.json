@@ -1,0 +1,20 @@
+{
+  "name": "@nestri/email",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "email build",
+    "dev": "email dev -p 3003",
+    "export": "email export"
+  },
+  "dependencies": {
+    "@react-email/components": "^0.0.36",
+    "react-dom": "18.2.0",
+    "react": "18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.2.0",
+    "@types/react-dom": "18.2.0",
+    "react-email": "^4.0.7"
+  }
+}
