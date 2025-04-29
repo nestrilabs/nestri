@@ -20,7 +20,7 @@ export namespace Polar {
             const customers = await client.customers.list({ email })
 
             if (customers.result.items.length === 0) {
-                return await client.customers.create({ email })
+                return await client.customers.create({ email})
             } else {
                 return customers.result.items[0]
             }
