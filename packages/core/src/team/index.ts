@@ -13,7 +13,7 @@ import { createID, fn, generateTeamInviteCode } from "../utils";
 // import { memberTable } from "../member/member.sql";
 // import { groupBy, map, pipe, values } from "remeda";
 // import { subscriptionTable } from "../subscription/subscription.sql";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction, type Transaction } from "../drizzle/transaction";
 // import { Member } from "../member";
 
 export namespace Team {
@@ -22,6 +22,10 @@ export namespace Team {
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.Team.id,
+            }),
+            slug: z.string().openapi({
+                description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
+                example: Examples.Team.slug
             }),
             name: z.string().openapi({
                 description: "Display name of the team",
@@ -52,23 +56,6 @@ export namespace Team {
 
     export type Info = z.infer<typeof Info>;
 
-    // Function to check if a code already exists in the database
-    async function isCodeUnique(code: string): Promise<boolean> {
-
-        const teams = await useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(teamTable)
-                .where(and(eq(teamTable.inviteCode, code)))
-        )
-
-        if (teams.length === 0) {
-            return true;
-        }
-
-        return false
-    }
-
     /**
      * Generates a unique team invite code
      * @param length The length of the invite code
@@ -76,6 +63,7 @@ export namespace Team {
      * @returns A promise resolving to a unique invite code
      */
     async function createUniqueTeamInviteCode(
+        tx: Transaction,
         length: number = 8,
         maxAttempts: number = 5
     ): Promise<string> {
@@ -83,9 +71,17 @@ export namespace Team {
 
         while (attempts < maxAttempts) {
             const code = generateTeamInviteCode(length);
-            if (await isCodeUnique(code)) {
+
+            const teams =
+                await tx
+                    .select()
+                    .from(teamTable)
+                    .where(and(eq(teamTable.inviteCode, code)))
+
+            if (teams.length === 0) {
                 return code;
             }
+
             attempts++;
         }
 
@@ -104,14 +100,15 @@ export namespace Team {
                 ownerID: true
             }),
         async (input) => {
-            const inviteCode = await createUniqueTeamInviteCode()
             return createTransaction(async (tx) => {
+                const inviteCode = await createUniqueTeamInviteCode(tx)
                 const id = input.id ?? createID("team");
                 await tx
                     .insert(teamTable)
                     .values({
                         id,
                         inviteCode,
+                        slug: input.slug,
                         name: input.name,
                         ownerID: input.ownerID ?? Actor.userID(),
                         machineID: input.machineID,
@@ -243,6 +240,7 @@ export namespace Team {
         return {
             name: input.name,
             id: input.id,
+            slug: input.slug,
             ownerID: input.ownerID,
             machineID: input.machineID,
             maxMembers: input.maxMembers,

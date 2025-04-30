@@ -93,7 +93,7 @@ export namespace User {
                         lastLogin: sql`now()`
                     })
                     .onConflictDoNothing({
-                        target: [userTable.username]
+                        target: [userTable.username, userTable.email]
                     })
 
                 if (result.count === 0) {
@@ -183,8 +183,8 @@ export namespace User {
             id: input.id,
             email: input.email,
             username: input.username,
+            lastLogin: input.lastLogin,
             polarCustomerID: input.polarCustomerID,
-            lastLogin: input.lastLogin
         }
     }
 }

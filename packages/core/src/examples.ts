@@ -36,6 +36,7 @@ export namespace Examples {
         name: "John's Console", // Team name (not null, unique)
         ownerID: User.id, // FK to User who owns/created the team
         machineID: Machine.id,
+        slug: User.username,
         maxMembers: 3,
         inviteCode: "xwydjf"
     };

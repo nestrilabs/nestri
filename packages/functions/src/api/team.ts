@@ -90,7 +90,8 @@ export namespace TeamApi {
                 const body = c.req.valid("json")
 
                 const teamID = await Team.create({ name: body.name, machineID: body.machineID });
-
+                
+                const userID = Actor.userID()
                 await Actor.provide(
                     "system",
                     {
@@ -99,7 +100,7 @@ export namespace TeamApi {
                     async () => {
                         await Member.create({
                             role: "adult", // We assume it is an adult for now
-                            userID: Actor.userID(),
+                            userID,
                             steamID: body.steamID,
                         });
 

@@ -30,7 +30,8 @@ export const teamTable = pgTable(
       }),
   },
   (team)=>[
-    unique("idx_team_slug").on(team.slug)
+    unique("idx_team_slug").on(team.slug),
+    unique("idx_team_invite_code").on(team.inviteCode)
   ]
 );
 
