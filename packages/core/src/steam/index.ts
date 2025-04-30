@@ -1,22 +1,27 @@
 import { z } from "zod";
 import { Actor } from "../actor";
+import { Common } from "../common";
 import { Examples } from "../examples";
 import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
 import { eq, and, isNull, sql } from "../drizzle";
-import { steamTable, steamCredentialsTable } from "./steam.sql";
+import { steamTable, steamCredentialsTable, Status } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
     export const Info = z
         .object({
+            id: z.bigint().openapi({
+                description: Common.IdDescription,
+                example: Examples.SteamAccount.id
+            }),
             avatarHash: z.string().openapi({
-                description: "The steam avatar hash that this account owns",
+                description: "The Steam avatar hash that this account owns",
                 example: Examples.SteamAccount.avatarHash
             }),
-            id: z.bigint().openapi({
-                description: "The Steam ID this Steam account",
-                example: Examples.SteamAccount.id
+            status: z.enum(Status).openapi({
+                description: "The status of this Steam account",
+                example: Examples.SteamAccount.status
             }),
             userID: z.string().nullable().openapi({
                 description: "The user id of which account owns this steam account",
@@ -62,28 +67,30 @@ export namespace Steam {
                 userID: z.string().nullable()
             })
             .partial({
-                useUser: true
+                useUser: true,
+                status: true
             }),
         (input) =>
             createTransaction(async (tx) => {
-                const accounts =
-                    await tx
-                        .select()
-                        .from(steamTable)
-                        .where(
-                            and(
-                                eq(steamTable.id, input.id),
-                                isNull(steamTable.timeDeleted)
-                            )
-                        )
-                        .execute()
+                // const accounts =
+                //     await tx
+                //         .select()
+                //         .from(steamTable)
+                //         .where(
+                //             and(
+                //                 eq(steamTable.id, input.id),
+                //                 isNull(steamTable.timeDeleted)
+                //             )
+                //         )
+                //         .execute()
 
-                if (accounts.length > 0) return //Steam account already exists
+                // if (accounts.length > 0) return //Steam account already exists
 
                 await tx
                     .insert(steamTable)
                     .values({
                         id: input.id,
+                        status: input.status ?? "pending",
                         userID: typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : input.userID,
                         profileUrl: input.profileUrl,
                         lastSyncedAt: sql`now()`,
@@ -98,6 +105,7 @@ export namespace Steam {
                             lastSyncedAt: sql`excluded.last_synced_at`,
                             personaName: sql`excluded.persona_name`,
                             avatarHash: sql`excluded.avatar_hash`,
+                            status: sql`excluded.status`,
                             userID: sql`excluded.user_id`,
                             profileUrl: sql`excluded.profile_url`
                         }
@@ -175,6 +183,7 @@ export namespace Steam {
             userID: input.userID,
             realName: input.realName,
             profileUrl: input.profileUrl,
+            status: input.status,
             avatarHash: input.avatarHash,
             personaName: input.personaName,
             lastSyncedAt: input.lastSyncedAt,

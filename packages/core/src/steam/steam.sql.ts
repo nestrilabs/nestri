@@ -2,6 +2,8 @@ import { userTable } from "../user/user.sql";
 import { timestamps, ulid, utc } from "../drizzle/types";
 import { pgTable, varchar, text, unique, bigint, primaryKey } from "drizzle-orm/pg-core";
 
+export const Status = ["active", "pending", "getting_friends", "getting_games"] as const;
+
 export const steamTable = pgTable(
     "steam_accounts",
     {
@@ -13,11 +15,12 @@ export const steamTable = pgTable(
             .references(() => userTable.id, {
                 onDelete: "cascade",
             }),
-        avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         personaName: varchar("persona_name", { length: 255 }).notNull(),
+        avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         realName: varchar("real_name", { length: 255 }).notNull(),
+        status: text("status", { enum: Status }).notNull(),
         profileUrl: text("profile_url").notNull(),
-        lastSyncedAt: utc("last_synced_at").notNull()
+        lastSyncedAt: utc("last_synced_at").notNull(),
     },
     (table) => [
         unique("idx_steam_steam_id").on(table.id),

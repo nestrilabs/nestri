@@ -1,9 +1,9 @@
 import { Resource } from "sst";
 import { subjects } from "../subjects";
+import { Actor } from "@nestri/core/actor";
 import { type MiddlewareHandler } from "hono";
 import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-import { Actor } from "@nestri/core/actor";
 
 const client = createClient({
   issuer: Resource.Auth.url,

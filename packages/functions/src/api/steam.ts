@@ -115,21 +115,7 @@ export namespace SteamApi {
         //                     const steamID = session.steamID.getBigIntID();
         //                     const username = session.accountName;
         //                     // We can also get web cookies now that we've negotiated a session
-        //                     let cookies = await session.getWebCookies();
-        //                     // console.log("\n===============================\n")
-        //                     // console.log("WebCookies:")
-        //                     // console.log(cookies);
-        //                     // console.log("\n===============================\n")
-
-        //                     // console.log("\n===============================\n")
-        //                     // console.log("Access Token:")
-        //                     // console.log(accessToken);
-        //                     // console.log("\n===============================\n")
-
-        //                     // console.log("\n===============================\n")
-        //                     // console.log("Refresh Token:")
-        //                     // console.log(refreshToken);
-        //                     // console.log("\n===============================\n")
+        //                     const cookies = await session.getWebCookies();
 
         //                     await Steam.createCredential({ refreshToken, steamID, username })
 
@@ -184,6 +170,8 @@ export namespace SteamApi {
 
         //                         await Promise.allSettled(userDB)
 
+
+                                
         //                         // // Stage 2: Add their games
         //                         // const ownedGameIDs = await SteamClient.getOwnedGamesCompatList({ cookies });
 

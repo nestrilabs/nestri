@@ -42,6 +42,7 @@ export namespace Examples {
     };
 
     export const SteamAccount = {
+        status: "getting_friends" as const,
         id: 74839300282033n,// Primary key
         userID: User.id,// | null  FK to User (null if not linked)
         avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
