@@ -33,6 +33,7 @@ export namespace SteamApi {
                         description: "Steam accounts of this user"
                     },
                     400: ErrorResponses[400],
+                    401: ErrorResponses[401],
                     404: ErrorResponses[404],
                     429: ErrorResponses[429],
                 }

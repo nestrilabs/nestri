@@ -42,7 +42,7 @@ export namespace Examples {
     };
 
     export const SteamAccount = {
-        status: "getting_friends" as const,
+        status: "new" as const,
         id: 74839300282033n,// Primary key
         userID: User.id,// | null  FK to User (null if not linked)
         avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
@@ -102,7 +102,7 @@ export namespace Examples {
         id: Id("session"),
         memberID: Member.id,
         machineID: Machine.id,
-        startTime: new Date("2025-02-23T33:39:52.249Z"),
+        startTime: new Date("2025-02-23T23:39:52.249Z"),
         endTime: null, // null if session is ongoing
         gameID: Id("game"),
         status: "active" as const, // active, completed, crashed

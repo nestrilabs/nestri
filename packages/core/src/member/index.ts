@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
-import { memberTable, role } from "./member.sql";
+import { memberTable, roleEnum } from "./member.sql";
 import { createTransaction } from "../drizzle/transaction";
 import { Actor } from "../actor";
 
@@ -17,11 +17,11 @@ export namespace Member {
                 description: "Associated team identifier for this membership",
                 example: Examples.Member.teamID
             }),
-            role: z.enum(role).openapi({
+            role: z.enum(roleEnum.enumValues).openapi({
                 description: "Assigned permission role within the team",
                 example: Examples.Member.role
             }),
-            steamID: z.bigint().nullable().openapi({
+            steamID: z.bigint().openapi({
                 description: "Optional Steam platform identifier for Steam account integration",
                 example: Examples.Member.steamID
             }),
@@ -42,7 +42,6 @@ export namespace Member {
         Info
             .partial({
                 id: true,
-                steamID: true,
                 userID: true,
                 teamID: true
             })

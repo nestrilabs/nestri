@@ -21,7 +21,7 @@ export const teamTable = pgTable(
         onDelete: "cascade"
       }),
     inviteCode: varchar("invite_code", { length: 10 }).notNull(),
-    slug: varchar("name", { length: 255 }).notNull(),
+    slug: varchar("slug", { length: 255 }).notNull(),
     maxMembers: bigint("max_members", { mode: "number" }).notNull(),
     machineID: ulid("machine_id")
       .notNull()

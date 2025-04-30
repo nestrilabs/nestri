@@ -5,7 +5,7 @@ import { Actor } from "../actor";
 import { Common } from "../common";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { and, eq, isNull } from "../drizzle";
+import { and, eq, isNull, or } from "../drizzle";
 import { steamTable } from "../steam/steam.sql";
 import { memberTable } from "../member/member.sql";
 import { groupBy, pipe, values, map } from "remeda";

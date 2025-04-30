@@ -17,13 +17,13 @@ export const notPublic: MiddlewareHandler = async (c, next) => {
       ErrorCodes.Authentication.UNAUTHORIZED,
       "Missing authorization header",
     );
+
   Actor.userID();
   return next();
 };
 
 export const auth: MiddlewareHandler = async (c, next) => {
-  const authHeader =
-    c.req.query("authorization") ?? c.req.header("authorization");
+  const authHeader = c.req.header("authorization");
   if (!authHeader) return Actor.provide("public", {}, next);
   const match = authHeader.match(/^Bearer (.+)$/);
   if (!match) {
@@ -47,7 +47,7 @@ export const auth: MiddlewareHandler = async (c, next) => {
     return Actor.provide("machine", { ...result.subject.properties }, next)
 
   if (result.subject.type === "user") {
-    const user = {...result.subject.properties}
+    const user = { ...result.subject.properties }
     const teamID = c.req.header("x-nestri-team");
     if (!teamID) {
       return Actor.provide("user", {
@@ -61,7 +61,7 @@ export const auth: MiddlewareHandler = async (c, next) => {
       },
       async () =>
         Actor.provide("user", {
-         ...user
+          ...user
         }, next)
     );
   }

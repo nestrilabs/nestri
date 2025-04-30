@@ -5,8 +5,8 @@ import { Examples } from "../examples";
 import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
 import { eq, and, isNull, sql } from "../drizzle";
-import { steamTable, steamCredentialsTable, Status } from "./steam.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { steamTable, steamCredentialsTable, statusEnum } from "./steam.sql";
 
 export namespace Steam {
     export const Info = z
@@ -19,7 +19,7 @@ export namespace Steam {
                 description: "The Steam avatar hash that this account owns",
                 example: Examples.SteamAccount.avatarHash
             }),
-            status: z.enum(Status).openapi({
+            status: z.enum(statusEnum.enumValues).openapi({
                 description: "The status of this Steam account",
                 example: Examples.SteamAccount.status
             }),
@@ -72,25 +72,11 @@ export namespace Steam {
             }),
         (input) =>
             createTransaction(async (tx) => {
-                // const accounts =
-                //     await tx
-                //         .select()
-                //         .from(steamTable)
-                //         .where(
-                //             and(
-                //                 eq(steamTable.id, input.id),
-                //                 isNull(steamTable.timeDeleted)
-                //             )
-                //         )
-                //         .execute()
-
-                // if (accounts.length > 0) return //Steam account already exists
-
                 await tx
                     .insert(steamTable)
                     .values({
                         id: input.id,
-                        status: input.status ?? "pending",
+                        status: input.status ?? "new",
                         userID: typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : input.userID,
                         profileUrl: input.profileUrl,
                         lastSyncedAt: sql`now()`,
@@ -171,7 +157,9 @@ export namespace Steam {
 
                 if (!credential) return null;
 
-                return { ...credential, refreshToken: decrypt(credential.refreshToken) };
+                const { timeCreated, timeUpdated, timeDeleted, ...rest } = credential
+
+                return { ...rest, refreshToken: decrypt(credential.refreshToken) };
             })
     );
 
@@ -181,9 +169,9 @@ export namespace Steam {
         return {
             id: input.id,
             userID: input.userID,
+            status: input.status,
             realName: input.realName,
             profileUrl: input.profileUrl,
-            status: input.status,
             avatarHash: input.avatarHash,
             personaName: input.personaName,
             lastSyncedAt: input.lastSyncedAt,

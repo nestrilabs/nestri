@@ -1,9 +1,9 @@
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { timestamps, teamID, ulid } from "../drizzle/types";
-import { bigint, pgTable, primaryKey, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, pgEnum, pgTable, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const role = ["child", "adult"] as const;
+export const roleEnum = pgEnum("member_role", ["child", "adult"])
 
 export const memberTable = pgTable(
     "members",
@@ -15,11 +15,12 @@ export const memberTable = pgTable(
                 onDelete: "cascade"
             }),
         steamID: bigint("steam_id", { mode: "bigint" })
+            .notNull()
             .references(() => steamTable.id, {
                 onDelete: "cascade",
-                onUpdate: "cascade"
+                onUpdate: "restrict"
             }),
-        role: text("role", { enum: role }).notNull(),
+        role: roleEnum("role").notNull(),
     },
     (table) => [
         primaryKey({ columns: [table.id] }),
