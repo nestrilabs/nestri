@@ -15,6 +15,7 @@
     },
     "devDependencies": {
         "@tsconfig/node20": "^20.1.4",
+        "@types/bun": "^1.2.11",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
         "loops": "^3.4.1",

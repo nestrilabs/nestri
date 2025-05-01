@@ -1,5 +1,6 @@
 import "zod-openapi/extend";
 import { Resource } from "sst"
+import type { Env } from "hono";
 import { Select } from "./ui/select";
 import { subjects } from "./subjects"
 import { logger } from "hono/logger";
@@ -8,23 +9,24 @@ import { patchLogger } from "./log-polyfill";
 import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index";
-import { handleDiscord, handleGithub } from "./utils";
+import { Machine } from "@nestri/core/machine/index";
 import { GithubAdapter } from "./ui/adapters/github";
-import { Machine } from "@nestri/core/machine/index"
+import { handleDiscord, handleGithub } from "./utils";
 import { DiscordAdapter } from "./ui/adapters/discord";
 import { PasswordAdapter } from "./ui/adapters/password";
-import { type Provider } from "@openauthjs/openauth/provider/provider"
 import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
+import { type Provider } from "@openauthjs/openauth/provider/provider";
 
-type OauthUser = {
-    primary: {
-        email: any;
-        primary: any;
-        verified: any;
-    };
-    avatar: any;
-    username: any;
+function formatUsername(username: string) {
+    const words = username.split("_");
+
+    const capitalizedWords = words.map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1)
+    );
+
+    return capitalizedWords.join(" ");
 }
+
 
 const app = issuer({
     select: Select({
@@ -70,12 +72,12 @@ const app = issuer({
             PasswordUI({
                 sendCode: async (email, code) => {
                     console.log("email & code:", email, code)
-                    // await Email.send(
-                    //     "auth",
-                    //     email,
-                    //     `Nestri code: ${code}`,
-                    //     `Your Nestri login code is ${code}`,
-                    // )
+                    await Email.send(
+                        "auth",
+                        email,
+                        `Nestri code: ${code}`,
+                        `Your Nestri login code is ${code}`,
+                    )
                 },
             }),
         ),
@@ -156,7 +158,8 @@ const app = issuer({
             //Sign Up
             if (username && !matching) {
                 const userID = await User.create({
-                    username: username.toLowerCase(),
+                    name: formatUsername(username),
+                    username,
                     email,
                 });
 
@@ -166,12 +169,10 @@ const app = issuer({
                     userID,
                     email
                 }, {
-                    subject: email
+                    subject: userID
                 });
 
             } else if (matching) {
-
-
                 await User.acknowledgeLogin(matching.id)
 
                 //Sign In
@@ -184,7 +185,7 @@ const app = issuer({
             }
         }
 
-        let user = undefined as OauthUser | undefined;
+        let user;
 
         if (value.provider === "github") {
             const access = value.tokenset.access;
@@ -205,6 +206,8 @@ const app = issuer({
                     const userID = await User.create({
                         email: user.primary.email,
                         username: user.username.toLowerCase(),
+                        avatarUrl: user.avatar,
+                        name: user.name ?? formatUsername(user.username.toLowerCase())
                     });
 
                     if (!userID) throw new Error("Error creating user");
@@ -213,7 +216,7 @@ const app = issuer({
                         userID,
                         email: user.primary.email
                     }, {
-                        subject: user.primary.email
+                        subject: userID
                     });
                 } else {
                     await User.acknowledgeLogin(matching.id)
@@ -242,8 +245,8 @@ patchLogger();
 export default {
     port: 3002,
     idleTimeout: 255,
-    fetch: (req: Request) =>
-        app.fetch(req, undefined, {
+    fetch: (req: Request, env: Env) =>
+        app.fetch(req, env, {
             waitUntil: (fn) => fn,
             passThroughOnException: () => { },
         }),

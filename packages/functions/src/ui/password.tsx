@@ -5,10 +5,8 @@ import {
   type PasswordLoginError,
   type PasswordRegisterError,
 } from "./adapters/password"
-// import { Layout } from "@openauthjs/openauth/ui/base"
 import { Layout } from "./base"
 import "@openauthjs/openauth/ui/form"
-// import { FormAlert } from "@openauthjs/openauth/ui/form"
 
 const DEFAULT_COPY = {
   error_email_taken: "There is already an account with this email.",

@@ -23,13 +23,21 @@ export namespace User {
                 description: Common.IdDescription,
                 example: Examples.User.id,
             }),
-            username: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
+            username: z.string().regex(/^[a-z0-9_]{1,32}$/, "Use a URL friendly name.").openapi({
                 description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
                 example: Examples.User.username
             }),
             polarCustomerID: z.string().nullable().openapi({
                 description: "Associated Polar.sh customer identifier",
                 example: Examples.User.polarCustomerID,
+            }),
+            name: z.string().openapi({
+                description: "Name of the user",
+                example: Examples.User.name,
+            }),
+            avatarUrl: z.string().url().nullable().openapi({
+                description: "The url to the profile picture",
+                example: Examples.User.avatarUrl
             }),
             email: z.string().openapi({
                 description: "Primary email address for user notifications and authentication",
@@ -73,6 +81,7 @@ export namespace User {
                 lastLogin: true,
                 polarCustomerID: true,
             }).partial({
+                avatarUrl: true,
                 id: true
             }),
         async (input) => {
@@ -87,6 +96,8 @@ export namespace User {
                     .insert(userTable)
                     .values({
                         id,
+                        name: input.name,
+                        avatarUrl: input.avatarUrl,
                         email: input.email,
                         username: input.username,
                         polarCustomerID: customer?.id,
@@ -100,23 +111,27 @@ export namespace User {
                     throw new UserExistsError(input.username)
                 }
 
-                await afterTx(() =>
-                    // await withActor({
-                    //     type: "user",
-                    //     properties: {
-                    //         userID: id,
-                    //         email: input.email
-                    //     },
-                    // },
-                    // async () => 
+                await afterTx(async () =>
                     bus.publish(Resource.Bus, Events.Created, { userID: id })
-
-                    // )
                 );
             })
 
             return id;
         })
+
+    export const fromUsername = fn(
+        Info.shape.username.min(1),
+        async (username) =>
+            useTransaction(async (tx) =>
+                tx
+                    .select()
+                    .from(userTable)
+                    .where(and(eq(userTable.username, username)))
+                    .orderBy(asc(userTable.timeCreated))
+                    .execute()
+                    .then(rows => rows.map(serialize).at(0))
+            )
+    )
 
     export const fromEmail = fn(
         Info.shape.email.min(1),
@@ -125,7 +140,12 @@ export namespace User {
                 tx
                     .select()
                     .from(userTable)
-                    .where(and(eq(userTable.email, email), isNull(userTable.timeDeleted)))
+                    .where(
+                        and(
+                            eq(userTable.email, email),
+                            isNull(userTable.timeDeleted)
+                        )
+                    )
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
                     .then(rows => rows.map(serialize).at(0))
@@ -139,7 +159,12 @@ export namespace User {
                 tx
                     .select()
                     .from(userTable)
-                    .where(and(eq(userTable.id, id), isNull(userTable.timeDeleted)))
+                    .where(
+                        and(
+                            eq(userTable.id, id),
+                            isNull(userTable.timeDeleted)
+                        )
+                    )
                     .orderBy(asc(userTable.timeCreated))
                     .execute()
                     .then(rows => rows.map(serialize).at(0))
@@ -181,8 +206,10 @@ export namespace User {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            name: input.name,
             email: input.email,
             username: input.username,
+            avatarUrl: input.avatarUrl,
             lastLogin: input.lastLogin,
             polarCustomerID: input.polarCustomerID,
         }

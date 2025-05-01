@@ -30,7 +30,7 @@ export namespace Actor {
   export interface Token {
     type: "steam";
     properties: {
-      steamID: string;
+      steamID: bigint;
     };
   }
 
@@ -46,6 +46,16 @@ export namespace Actor {
   export function userID() {
     const actor = Context.use();
     if ("userID" in actor.properties) return actor.properties.userID;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+  
+  export function user() {
+    const actor = Context.use();
+    if (actor.type == "user") return actor.properties;
     throw new VisibleError(
       "authentication",
       ErrorCodes.Authentication.UNAUTHORIZED,

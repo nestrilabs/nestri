@@ -5,16 +5,12 @@ import { Actor } from "../actor";
 import { Common } from "../common";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { and, eq, isNull, or } from "../drizzle";
+import { and, eq, isNull } from "../drizzle";
 import { steamTable } from "../steam/steam.sql";
 import { memberTable } from "../member/member.sql";
 import { groupBy, pipe, values, map } from "remeda";
 import { createID, fn, generateTeamInviteCode } from "../utils";
-// import { memberTable } from "../member/member.sql";
-// import { groupBy, map, pipe, values } from "remeda";
-// import { subscriptionTable } from "../subscription/subscription.sql";
 import { createTransaction, useTransaction, type Transaction } from "../drizzle/transaction";
-// import { Member } from "../member";
 
 export namespace Team {
     export const Info = z
@@ -99,8 +95,8 @@ export namespace Team {
                 maxMembers: true,
                 ownerID: true
             }),
-        async (input) => {
-            return createTransaction(async (tx) => {
+        async (input) =>
+            createTransaction(async (tx) => {
                 const inviteCode = await createUniqueTeamInviteCode(tx)
                 const id = input.id ?? createID("team");
                 await tx
@@ -117,7 +113,7 @@ export namespace Team {
 
                 return id;
             })
-        })
+        )
 
     //TODO: "Delete" subscription and member(s) as well
     // export const remove = fn(
@@ -238,13 +234,13 @@ export namespace Team {
         input: typeof teamTable.$inferSelect
     ): z.infer<typeof Info> {
         return {
-            name: input.name,
             id: input.id,
             slug: input.slug,
+            name: input.name,
             ownerID: input.ownerID,
             machineID: input.machineID,
             maxMembers: input.maxMembers,
-            inviteCode: input.inviteCode
+            inviteCode: input.inviteCode,
         }
     }
 }

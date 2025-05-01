@@ -7,7 +7,9 @@ export namespace Examples {
     export const User = {
         id: Id("user"),// Primary key
         email: "johndoe@example.com",// Unique email or login (not null)
+        name: "John Doe",
         username: "john_doe", // user name (not null)
+        avatarUrl: "https://cdn.discordapp.com/avatars/xxxxxxx/xxxxxxx.png",
         lastLogin: new Date("2025-04-26T20:11:08.155Z"),
         polarCustomerID: "0bfcb712-df13-4454-81a8-fbee66eddca4"
     }

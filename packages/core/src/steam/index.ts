@@ -4,9 +4,12 @@ import { Common } from "../common";
 import { Examples } from "../examples";
 import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
-import { eq, and, isNull, sql } from "../drizzle";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { eq, and, isNull, sql, desc } from "../drizzle";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 import { steamTable, steamCredentialsTable, statusEnum } from "./steam.sql";
+import { Resource } from "sst";
+import { createEvent } from "../event";
+import { bus } from "sst/aws/bus";
 
 export namespace Steam {
     export const Info = z
@@ -60,46 +63,117 @@ export namespace Steam {
     export type Info = z.infer<typeof Info>;
     export type CredentialInfo = z.infer<typeof CredentialInfo>;
 
+    export const Events = {
+        AccountCreated: createEvent(
+            "steam_account.created",
+            z.object({
+                steamID: Info.shape.id,
+                userID: Info.shape.userID
+            }),
+        ),
+        AccountUpdated: createEvent(
+            "steam_account.updated",
+            z.object({
+                steamID: Info.shape.id,
+                userID: Info.shape.userID
+            }),
+        ),
+        NewCredentials: createEvent(
+            "new_credentials.added",
+            z.object({
+                steamID: Info.shape.id,
+            }),
+        ),
+    };
+
     export const create = fn(
         Info
             .extend({
                 useUser: z.boolean(),
-                userID: z.string().nullable()
             })
             .partial({
                 useUser: true,
-                status: true
+                userID: true,
+                status: true,
+                lastSyncedAt: true
             }),
         (input) =>
             createTransaction(async (tx) => {
+                const accounts =
+                    await tx
+                        .select()
+                        .from(steamTable)
+                        .where(
+                            and(
+                                eq(steamTable.id, input.id),
+                                isNull(steamTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+                        .then((rows) => rows.map(serialize))
+
+                // Update instead of create
+                if (accounts.length > 0) return null
+
+                const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : null;
                 await tx
                     .insert(steamTable)
                     .values({
                         id: input.id,
                         status: input.status ?? "new",
-                        userID: typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : input.userID,
+                        userID,
                         profileUrl: input.profileUrl,
-                        lastSyncedAt: sql`now()`,
+                        lastSyncedAt: input.lastSyncedAt ?? sql`now()`,
                         avatarHash: input.avatarHash,
                         realName: input.realName,
                         personaName: input.personaName
                     })
-                    .onConflictDoUpdate({
-                        target: steamTable.id,
-                        set: {
-                            realName: sql`excluded.real_name`,
-                            lastSyncedAt: sql`excluded.last_synced_at`,
-                            personaName: sql`excluded.persona_name`,
-                            avatarHash: sql`excluded.avatar_hash`,
-                            status: sql`excluded.status`,
-                            userID: sql`excluded.user_id`,
-                            profileUrl: sql`excluded.profile_url`
-                        }
-                    })
+
+                await afterTx(async () =>
+                    bus.publish(Resource.Bus, Events.AccountUpdated, { userID, steamID: input.id })
+                );
 
                 return input.id
             }),
     );
+
+    export const update = fn(
+        Info
+            .extend({
+                useUser: z.boolean(),
+            })
+            .partial({
+                useUser: true,
+                userID: true,
+                status: true,
+                lastSyncedAt: true,
+                avatarHash: true,
+                realName: true,
+                personaName: true,
+                profileUrl: true,
+            }),
+        async (input) => {
+            useTransaction(async (tx) => {
+                const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : undefined;
+                await tx
+                    .update(steamTable)
+                    .set({
+                        userID,
+                        status: input.status,
+                        profileUrl: input.profileUrl,
+                        lastSyncedAt: input.lastSyncedAt ?? sql`now()`,
+                        avatarHash: input.avatarHash,
+                        personaName: input.personaName,
+                        realName: input.realName,
+                    })
+                    .where(eq(steamTable.id, input.id));
+
+                await afterTx(async () =>
+                    bus.publish(Resource.Bus, Events.AccountCreated, { userID: userID ?? null, steamID: input.id })
+                );
+            })
+        }
+    )
 
     export const fromUserID = fn(
         z.string().min(1),
@@ -109,9 +183,24 @@ export namespace Steam {
                     .select()
                     .from(steamTable)
                     .where(and(eq(steamTable.userID, userID), isNull(steamTable.timeDeleted)))
+                    .orderBy(desc(steamTable.timeCreated))
                     .execute()
-                    .then((rows) => rows.map(serialize).at(0)),
-            ),
+                    .then((rows) => rows.map(serialize))
+            )
+    )
+
+    export const fromSteamID = fn(
+        z.bigint(),
+        (steamID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(steamTable)
+                    .where(and(eq(steamTable.id, steamID), isNull(steamTable.timeDeleted)))
+                    .orderBy(desc(steamTable.timeCreated))
+                    .execute()
+                    .then((rows) => rows.map(serialize))
+            )
     )
 
     export const list = () =>
@@ -120,8 +209,9 @@ export namespace Steam {
                 .select()
                 .from(steamTable)
                 .where(and(eq(steamTable.userID, Actor.userID()), isNull(steamTable.timeDeleted)))
+                .orderBy(desc(steamTable.timeCreated))
                 .execute()
-                .then((rows) => rows.map(serialize)),
+                .then((rows) => rows.map(serialize))
         )
 
     export const createCredential = fn(
@@ -137,6 +227,9 @@ export namespace Steam {
                         username: input.username,
                         refreshToken: encryptedToken,
                     })
+                await afterTx(async () =>
+                    await bus.publish(Resource.Bus, Events.NewCredentials, { steamID: input.id })
+                );
                 return input.id
             }),
     );

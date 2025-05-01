@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Steam } from "./index"
+import fetch from 'node-fetch';
 import type {
     UserDataResponse,
     AppDetailsResponse,
@@ -146,27 +147,18 @@ export namespace SteamClient {
     //
     // )
 
-    export const generateCookies = fn(
-        Steam.CredentialInfo
-            .pick({ refreshToken: true }),
-        async (input) => {
-            let webSession = new LoginSession(EAuthTokenPlatformType.WebBrowser);
-            webSession.refreshToken = input.refreshToken
+    export const generateTokens = fn(
+        z.string().min(1),
+        async (refreshToken) => {
+            let session = new LoginSession(EAuthTokenPlatformType.SteamClient);
+            session.refreshToken = refreshToken
 
-            return await webSession.getWebCookies()
-        }
-    )
+            await session.refreshAccessToken();
 
-    export const generateAccessToken = fn(
-        Steam.CredentialInfo
-            .pick({ refreshToken: true }),
-        async (input) => {
-            let clientSession = new LoginSession(EAuthTokenPlatformType.SteamClient);
-            clientSession.refreshToken = input.refreshToken
-
-            await clientSession.refreshAccessToken();
-
-            return clientSession.accessToken
+            return { 
+                cookies: await session.getWebCookies(),
+                accessToken: session.accessToken
+            }
         }
     )
 
