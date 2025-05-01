@@ -31,10 +31,6 @@ export namespace User {
                 description: "Associated Polar.sh customer identifier",
                 example: Examples.User.polarCustomerID,
             }),
-            name: z.string().openapi({
-                description: "Name of the user",
-                example: Examples.User.name,
-            }),
             avatarUrl: z.string().url().nullable().openapi({
                 description: "The url to the profile picture",
                 example: Examples.User.avatarUrl
@@ -96,7 +92,6 @@ export namespace User {
                     .insert(userTable)
                     .values({
                         id,
-                        name: input.name,
                         avatarUrl: input.avatarUrl,
                         email: input.email,
                         username: input.username,
@@ -206,7 +201,6 @@ export namespace User {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
-            name: input.name,
             email: input.email,
             username: input.username,
             avatarUrl: input.avatarUrl,

@@ -7,7 +7,6 @@ export const userTable = pgTable(
         ...id,
         ...timestamps,
         email: varchar("email", { length: 255 }).notNull(),
-        name: varchar("name", { length: 255 }).notNull(),
         avatarUrl: text("avatar_url"),
         lastLogin: utc("last_login").notNull(),
         username: varchar("username", { length: 255 }).notNull(),

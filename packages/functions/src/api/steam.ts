@@ -183,6 +183,11 @@ export namespace SteamApi {
                                                 personaName: steamUser.personaname,
                                             })
                                         }
+
+                                        await stream.writeSSE({
+                                            event: 'user_steam_id',
+                                            data: JSON.stringify({ steamID: steamID.toString() })
+                                        })
                                     }
                                 )
                             })
