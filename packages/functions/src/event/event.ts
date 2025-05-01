@@ -1,11 +1,10 @@
 import { bus } from "sst/aws/bus";
+import { Actor } from "@nestri/core/actor";
 import { User } from "@nestri/core/user/index";
 import { Email } from "@nestri/core/email/index"
 import { Steam } from "@nestri/core/steam/index";
-import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
-import { SteamClient } from "@nestri/core/steam/client";
-import { Actor } from "@nestri/core/actor";
 import { Friend } from "@nestri/core/friend/index";
+import { SteamClient } from "@nestri/core/steam/client";
 
 export const handler = bus.subscriber(
   [User.Events.Created, Steam.Events.AccountCreated, Steam.Events.NewCredentials, Steam.Events.AccountUpdated],
@@ -27,8 +26,17 @@ export const handler = bus.subscriber(
       }
       case "new_credentials.added": {
         // Here we extract their games, and then send the supported games to a queue
+        const { steamID } = event.properties
+        const credentials = await Steam.getCredentialByID(steamID)
+        if (credentials) {
+          const { cookies } = await SteamClient.generateTokens(credentials.refreshToken);
+
+          const games = await SteamClient.getOwnedGamesCompatList({ cookies });
+
+          
 
 
+        }
         break;
       }
       case "steam_account.updated":
@@ -72,7 +80,8 @@ export const handler = bus.subscriber(
               }
 
               // Add this person as a friend
-              Actor.provide("steam",
+              Actor.provide(
+                "steam",
                 {
                   steamID
                 },

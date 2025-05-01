@@ -140,11 +140,6 @@ export namespace SteamApi {
                                 data: JSON.stringify({ message: "Login successful" })
                             })
 
-                            await stream.writeSSE({
-                                event: 'login_success',
-                                data: JSON.stringify({ success: true })
-                            })
-
                             const username = session.accountName;
                             const accessToken = session.accessToken;
                             const refreshToken = session.refreshToken;
@@ -183,16 +178,16 @@ export namespace SteamApi {
                                                 personaName: steamUser.personaname,
                                             })
                                         }
-
-                                        await stream.writeSSE({
-                                            event: 'user_steam_id',
-                                            data: JSON.stringify({ steamID: steamID.toString() })
-                                        })
                                     }
                                 )
                             })
 
                             await Promise.allSettled(userDB)
+
+                            await stream.writeSSE({
+                                event: 'login_success',
+                                data: JSON.stringify({ success: true, steamID: steamID.toString() })
+                            })
 
                             await stream.close()
 

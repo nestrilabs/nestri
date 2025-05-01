@@ -1,13 +1,15 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Steam } from "../steam";
-import { useSteamID, useUserID } from "../actor";
 import { friendTable } from "./friend.sql";
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { createSelectSchema } from "drizzle-zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { Actor } from "../actor";
+import { groupBy, map, pipe, values } from "remeda";
+import { User } from "../user";
 
 export namespace Friend {
     export const Info = createSelectSchema(friendTable)
@@ -19,8 +21,8 @@ export namespace Friend {
         Info.partial({ steamID: true }),
         async (input) =>
             createTransaction(async (tx) => {
-                const steamID = input.steamID ?? useSteamID()
-                
+                const steamID = input.steamID ?? Actor.steamID()
+
                 await tx
                     .insert(friendTable)
                     .values({
@@ -31,7 +33,8 @@ export namespace Friend {
                         target: [friendTable.steamID, friendTable.friendSteamID],
                         set: { timeDeleted: null }
                     })
-                return input.steamID
+
+                return steamID
             }),
     )
 
@@ -59,7 +62,7 @@ export namespace Friend {
                     await tx
                         .select()
                         .from(steamTable)
-                        .where(eq(steamTable.userID, useUserID()))
+                        .where(eq(steamTable.userID, Actor.userID()))
                         .execute();
 
                 if (userSteamAccounts.length === 0) {
@@ -68,7 +71,7 @@ export namespace Friend {
 
                 const friendPromises =
                     userSteamAccounts.map(async (steamAccount) => {
-                        return await fromSteamID(steamAccount.steamID)
+                        return await fromSteamID(steamAccount.id)
                     })
 
                 return (await Promise.all(friendPromises)).flat()
@@ -87,7 +90,7 @@ export namespace Friend {
                     .from(friendTable)
                     .innerJoin(
                         steamTable,
-                        eq(friendTable.friendSteamID, steamTable.steamID)
+                        eq(friendTable.friendSteamID, steamTable.id)
                     )
                     .leftJoin(
                         userTable,
@@ -102,7 +105,7 @@ export namespace Friend {
                     .orderBy(friendTable.timeCreated)
                     .limit(100)
                     .execute()
-                    .then((rows) => Steam.serializeFull(rows))
+                    .then((rows) => serialize(rows))
             )
     )
 
@@ -126,5 +129,19 @@ export namespace Friend {
                 return result.length > 0
             })
     )
+
+    export function serialize(
+        input: { user: typeof userTable.$inferSelect | null; steam: typeof steamTable.$inferSelect }[],
+    ) {
+        return pipe(
+            input,
+            groupBy((row) => row.steam.id.toString()),
+            values(),
+            map((group) => ({
+                ...Steam.serialize(group[0].steam),
+                user: group[0].user ? User.serialize(group[0].user!) : null
+            }))
+        )
+    }
 
 }

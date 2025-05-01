@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { timestamps, utc, } from "../drizzle/types";
+import { id, timestamps, utc, } from "../drizzle/types";
 import { pgTable, varchar, text, unique, bigint, primaryKey, boolean, json } from "drizzle-orm/pg-core";
 
 export const Achievements = z
@@ -41,6 +41,7 @@ export type SystemRequirements = z.infer<typeof SystemRequirements>;
 export const gameTable = pgTable(
     "steam_game",
     {
+        ...id,
         ...timestamps,
         name: text("name").notNull(),
         isFree: boolean("is_free").notNull(),
@@ -64,9 +65,6 @@ export const gameTable = pgTable(
     },
     (table) => [
         unique("idx_game_appid").on(table.appID),
-        primaryKey({
-            columns: [table.appID]
-        })
     ],
 );
 

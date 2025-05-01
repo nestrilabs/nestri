@@ -53,6 +53,16 @@ export namespace Actor {
     );
   }
   
+  export function steamID() {
+    const actor = Context.use();
+    if ("steamID" in actor.properties) return actor.properties.steamID;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+  
   export function user() {
     const actor = Context.use();
     if (actor.type == "user") return actor.properties;

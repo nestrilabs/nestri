@@ -1,5 +1,4 @@
 import { z } from "zod";
-// import { useUser } from "../actor";
 import { Steam } from "../steam";
 import { Actor } from "../actor";
 import { Common } from "../common";
@@ -30,10 +29,6 @@ export namespace Team {
             ownerID: z.string().openapi({
                 description: "Unique identifier of the team owner",
                 example: Examples.Team.ownerID
-            }),
-            machineID: z.string().openapi({
-                description: "Associated machine identifier for this team",
-                example: Examples.Team.machineID
             }),
             maxMembers: z.number().openapi({
                 description: "Maximum allowed team members based on subscription tier",
@@ -107,7 +102,6 @@ export namespace Team {
                         slug: input.slug,
                         name: input.name,
                         ownerID: input.ownerID ?? Actor.userID(),
-                        machineID: input.machineID,
                         maxMembers: input.maxMembers ?? 1,
                     })
 
@@ -238,7 +232,6 @@ export namespace Team {
             slug: input.slug,
             name: input.name,
             ownerID: input.ownerID,
-            machineID: input.machineID,
             maxMembers: input.maxMembers,
             inviteCode: input.inviteCode,
         }

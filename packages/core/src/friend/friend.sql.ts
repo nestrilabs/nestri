@@ -3,17 +3,17 @@ import { steamTable } from "../steam/steam.sql";
 import { pgTable, bigint, primaryKey } from "drizzle-orm/pg-core";
 
 export const friendTable = pgTable(
-    "friend",
+    "friends",
     {
         ...timestamps,
         steamID: bigint("steam_id", { mode: "bigint" })
             .notNull()
-            .references(() => steamTable.steamID, {
+            .references(() => steamTable.id, {
                 onDelete: "cascade"
             }),
         friendSteamID: bigint("friend_steam_id", { mode: "bigint" })
             .notNull()
-            .references(() => steamTable.steamID, {
+            .references(() => steamTable.id, {
                 onDelete: "cascade"
             }),
     },
