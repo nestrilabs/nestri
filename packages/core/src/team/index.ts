@@ -18,7 +18,7 @@ export namespace Team {
                 description: Common.IdDescription,
                 example: Examples.Team.id,
             }),
-            slug: z.string().openapi({
+            slug: z.string().regex(/^[a-z0-9]{1,32}$/, "Use a URL friendly name.").openapi({
                 description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
                 example: Examples.Team.slug
             }),
@@ -71,7 +71,7 @@ export namespace Team {
                 await tx
                     .select()
                     .from(teamTable)
-                    .where(and(eq(teamTable.inviteCode, code)))
+                    .where(eq(teamTable.inviteCode, code))
 
             if (teams.length === 0) {
                 return code;

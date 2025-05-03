@@ -1,13 +1,9 @@
-import { z } from "zod";
 import { Hono } from "hono";
+import { Result } from "./common";
 import { notPublic } from "./auth";
-import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
 import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
-import { Steam } from "@nestri/core/steam/index";
-import { Member } from "@nestri/core/member/index";
-import { ErrorResponses, Result, validator } from "./common";
 
 export namespace TeamApi {
     export const route = new Hono()

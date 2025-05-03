@@ -36,10 +36,11 @@ export namespace Examples {
         status: "online" as const, //offline,dnd(do not disturb) or playing 
         id: 74839300282033n,// Primary key
         userID: User.id,// | null  FK to User (null if not linked)
-        avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
-        realName: "John Doe",
         name: "JD The 65th",
+        username: "jdoe",
+        realName: "John Doe",
         memberSince: new Date("2010-01-26T21:00:00.000Z"),
+        avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
         accountStatus: "new" as const, //active or pending
         limitations: {
             isLimited: false,
@@ -56,7 +57,7 @@ export namespace Examples {
         id: Id("team"),// Primary key
         name: "John's Console", // Team name (not null, unique)
         ownerID: User.id, // FK to User who owns/created the team
-        slug: SteamAccount.profileUrl,
+        slug: SteamAccount.profileUrl.toLowerCase(),
         maxMembers: 3,
         inviteCode: "xwydjf",
         members: [SteamAccount]
