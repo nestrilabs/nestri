@@ -1,14 +1,9 @@
-import { z } from "zod";
 import { Hono } from "hono";
 import { notPublic } from "./auth";
-import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
-import { User } from "@nestri/core/user/index";
-import { Team } from "@nestri/core/team/index";
-import { Steam } from "@nestri/core/steam/index";
 import { Examples } from "@nestri/core/examples";
 import { ErrorResponses, Result } from "./common";
-import { ErrorCodes, VisibleError } from "@nestri/core/error";
+import { Account } from "@nestri/core/account/index";
 
 export namespace AccountApi {
     export const route = new Hono()
@@ -23,14 +18,7 @@ export namespace AccountApi {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    z.object({
-                                        ...User.Info.shape,
-                                        teams: Team.Info
-                                            .extend({
-                                                members: Steam.Info.array()
-                                            })
-                                            .array(),
-                                    }).openapi({
+                                    Account.Info.openapi({
                                         description: "User account information",
                                         example: { ...Examples.User, teams: [{ ...Examples.Team, members: [Examples.SteamAccount] }] }
                                     })
@@ -39,26 +27,14 @@ export namespace AccountApi {
                         },
                         description: "User account details"
                     },
+                    400: ErrorResponses[400],
                     404: ErrorResponses[404],
                     429: ErrorResponses[429],
                 }
             }),
-            async (c) => {
-                const [user, teams] = await Promise.allSettled([User.fromID(Actor.userID()), Team.list()])
-
-                if (user.status === "rejected" || !user.value)
-                    throw new VisibleError(
-                        "not_found",
-                        ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
-                        "User not found",
-                    );
-
-                return c.json({
-                    data: {
-                        ...user.value,
-                        teams: teams.status === "rejected" ? [] : teams.value,
-                    }
-                }, 200);
-            },
+            async (c) =>
+                c.json({
+                    data: await Account.list()
+                }, 200)
         )
 }

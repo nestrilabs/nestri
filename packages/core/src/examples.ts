@@ -42,13 +42,22 @@ export namespace Examples {
     };
 
     export const SteamAccount = {
-        status: "new" as const,
+        status: "online" as const, //offline,dnd(do not disturb) or playing 
         id: 74839300282033n,// Primary key
         userID: User.id,// | null  FK to User (null if not linked)
         avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
         realName: "John Doe",
-        personaName: "JD The 65th",
-        profileUrl: "https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",
+        name: "JD The 65th",
+        memberSince: new Date("2010-01-26T21:00:00.000Z"),
+        accountStatus: "new" as const, //active or pending
+        limitations: {
+            isLimited: false,
+            isTradeBanned: false,
+            isVacBanned: false,
+            visibilityState: 3,
+            privacyState: "public" as const,
+        },
+        profileUrl: "The65thJD", //"https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",
         lastSyncedAt: new Date("2025-04-26T20:11:08.155Z")
     };
 
@@ -109,11 +118,13 @@ export namespace Examples {
     }
 
     export const GameGenre = {
+        type: "genre" as const,
         slug: "action",
         name: "Action"
     }
 
     export const GameTag = {
+        type: "tag" as const,
         slug: "single-player",
         name: "Single Player"
     }
@@ -125,6 +136,7 @@ export namespace Examples {
     }
 
     export const DevelopmentTeam = {
+        type: "developer" as const,
         name: "Remedy Entertainment",
         slug: "remedy_entertainment",
     }
@@ -141,7 +153,7 @@ export namespace Examples {
         releaseDate: new Date("27 Aug, 2020"),
         description: "Winner of over 80 awards, Control is a visually stunning third-person action-adventure that will keep you on the edge of your seat.",
         ratings: [GameRating],
-        publishers: [DevelopmentTeam],
+        publishers: [{ ...DevelopmentTeam, type: "publisher" as const }],
         developers: [DevelopmentTeam],
     }
 

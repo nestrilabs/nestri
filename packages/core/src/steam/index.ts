@@ -1,15 +1,14 @@
 import { z } from "zod";
+import { fn } from "../utils";
+import { Resource } from "sst";
 import { Actor } from "../actor";
+import { bus } from "sst/aws/bus";
 import { Common } from "../common";
+import { createEvent } from "../event";
 import { Examples } from "../examples";
-import { decrypt, encrypt, fn } from "../utils";
-import { createSelectSchema } from "drizzle-zod";
 import { eq, and, isNull, sql, desc } from "../drizzle";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { steamTable, steamCredentialsTable, statusEnum } from "./steam.sql";
-import { Resource } from "sst";
-import { createEvent } from "../event";
-import { bus } from "sst/aws/bus";
+import { steamTable, StatusEnum, AccountStatusEnum, Limitations } from "./steam.sql";
 
 export namespace Steam {
     export const Info = z
@@ -22,15 +21,19 @@ export namespace Steam {
                 description: "The Steam avatar hash that this account owns",
                 example: Examples.SteamAccount.avatarHash
             }),
-            status: z.enum(statusEnum.enumValues).openapi({
-                description: "The status of this Steam account",
+            status: z.enum(StatusEnum.enumValues).openapi({
+                description: "The current connection status of this Steam account",
                 example: Examples.SteamAccount.status
+            }),
+            accountStatus: z.enum(AccountStatusEnum.enumValues).openapi({
+                description: "The current status of this Steam account",
+                example: Examples.SteamAccount.accountStatus
             }),
             userID: z.string().nullable().openapi({
                 description: "The user id of which account owns this steam account",
                 example: Examples.SteamAccount.userID
             }),
-            profileUrl: z.string().url().openapi({
+            profileUrl: z.string().openapi({
                 description: "The steam community url of this account",
                 example: Examples.SteamAccount.profileUrl
             }),
@@ -38,14 +41,22 @@ export namespace Steam {
                 description: "The real name behind of this Steam account",
                 example: Examples.SteamAccount.realName
             }),
-            personaName: z.string().openapi({
-                description: "The persona name used by this account",
-                example: Examples.SteamAccount.personaName
+            name: z.string().openapi({
+                description: "The name used by this account",
+                example: Examples.SteamAccount.name
             }),
             lastSyncedAt: z.date().openapi({
                 description: "The last time this account was synced to Steam",
                 example: Examples.SteamAccount.lastSyncedAt
             }),
+            limitations: Limitations.openapi({
+                description: "The limitations bestowed on this Steam account by Steam",
+                example: Examples.SteamAccount.limitations
+            }),
+            memberSince: z.date().openapi({
+                description: "When this Steam community account was created",
+                example: Examples.SteamAccount.memberSince
+            })
         })
         .openapi({
             ref: "Steam",
@@ -53,15 +64,7 @@ export namespace Steam {
             example: Examples.SteamAccount,
         });
 
-    export const CredentialInfo = createSelectSchema(steamCredentialsTable)
-        .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
-        .extend({
-            accessToken: z.string(),
-            cookies: z.string().array()
-        })
-
     export type Info = z.infer<typeof Info>;
-    export type CredentialInfo = z.infer<typeof CredentialInfo>;
 
     export const Events = {
         AccountCreated: createEvent(
@@ -77,13 +80,7 @@ export namespace Steam {
                 steamID: Info.shape.id,
                 userID: Info.shape.userID
             }),
-        ),
-        NewCredentials: createEvent(
-            "new_credentials.added",
-            z.object({
-                steamID: Info.shape.id,
-            }),
-        ),
+        )
     };
 
     export const create = fn(
@@ -95,6 +92,7 @@ export namespace Steam {
                 useUser: true,
                 userID: true,
                 status: true,
+                accountStatus: true,
                 lastSyncedAt: true
             }),
         (input) =>
@@ -119,14 +117,11 @@ export namespace Steam {
                 await tx
                     .insert(steamTable)
                     .values({
-                        id: input.id,
-                        status: input.status ?? "new",
+                        ...input,
                         userID,
-                        profileUrl: input.profileUrl,
+                        status: input.status ?? "offline",
+                        accountStatus: input.accountStatus ?? "new",
                         lastSyncedAt: input.lastSyncedAt ?? sql`now()`,
-                        avatarHash: input.avatarHash,
-                        realName: input.realName,
-                        personaName: input.personaName
                     })
 
                 await afterTx(async () =>
@@ -149,7 +144,10 @@ export namespace Steam {
                 lastSyncedAt: true,
                 avatarHash: true,
                 realName: true,
-                personaName: true,
+                limitations: true,
+                accountStatus: true,
+                name: true,
+                memberSince: true,
                 profileUrl: true,
             }),
         async (input) => {
@@ -158,13 +156,9 @@ export namespace Steam {
                 await tx
                     .update(steamTable)
                     .set({
+                        ...input,
                         userID,
-                        status: input.status,
-                        profileUrl: input.profileUrl,
                         lastSyncedAt: input.lastSyncedAt ?? sql`now()`,
-                        avatarHash: input.avatarHash,
-                        personaName: input.personaName,
-                        realName: input.realName,
                     })
                     .where(eq(steamTable.id, input.id));
 
@@ -214,60 +208,21 @@ export namespace Steam {
                 .then((rows) => rows.map(serialize))
         )
 
-    export const createCredential = fn(
-        CredentialInfo
-            .omit({ accessToken: true, cookies: true }),
-        (input) =>
-            createTransaction(async (tx) => {
-                const encryptedToken = encrypt(input.refreshToken)
-                await tx
-                    .insert(steamCredentialsTable)
-                    .values({
-                        id: input.id,
-                        username: input.username,
-                        refreshToken: encryptedToken,
-                    })
-                await afterTx(async () =>
-                    await bus.publish(Resource.Bus, Events.NewCredentials, { steamID: input.id })
-                );
-                return input.id
-            }),
-    );
-
-    export const getCredentialByID = fn(
-        CredentialInfo.shape.id,
-        (steamID) =>
-            useTransaction(async (tx) => {
-                const credential = await tx
-                    .select()
-                    .from(steamCredentialsTable)
-                    .where(and(
-                        eq(steamCredentialsTable.id, steamID),
-                        isNull(steamCredentialsTable.timeDeleted)
-                    ))
-                    .execute()
-                    .then(rows => rows.at(0));
-
-                if (!credential) return null;
-
-                const { timeCreated, timeUpdated, timeDeleted, ...rest } = credential
-
-                return { ...rest, refreshToken: decrypt(credential.refreshToken) };
-            })
-    );
-
     export function serialize(
         input: typeof steamTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            name: input.name,
             userID: input.userID,
             status: input.status,
             realName: input.realName,
-            profileUrl: input.profileUrl,
             avatarHash: input.avatarHash,
-            personaName: input.personaName,
+            limitations: input.limitations,
+            memberSince: input.memberSince,
+            accountStatus: input.accountStatus,
             lastSyncedAt: input.lastSyncedAt,
+            profileUrl: `https://steamcommunity.com/id/${input.profileUrl}`,
         };
     }
 

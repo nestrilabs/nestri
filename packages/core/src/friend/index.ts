@@ -1,24 +1,38 @@
 import { z } from "zod";
 import { fn } from "../utils";
+import { User } from "../user";
 import { Steam } from "../steam";
+import { Actor } from "../actor";
+import { Examples } from "../examples";
 import { friendTable } from "./friend.sql";
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { createSelectSchema } from "drizzle-zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { Actor } from "../actor";
 import { groupBy, map, pipe, values } from "remeda";
-import { User } from "../user";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Friend {
-    export const Info = createSelectSchema(friendTable)
+    export const Info = Steam.Info
+        .extend({
+            user: User.Info.nullable().openapi({
+                description: "The user account that owns this Steam account",
+                example: Examples.User
+            })
+        })
+        .openapi({
+            ref: "Friend",
+            description: "Represents a friend's information stored on Nestri",
+            example: { ...Examples.SteamAccount, user: Examples.User },
+        });
+
+    export const InputInfo = createSelectSchema(friendTable)
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
 
-    export type Info = z.infer<typeof Info>;
+    export type InputInfo = z.infer<typeof InputInfo>;
 
     export const add = fn(
-        Info.partial({ steamID: true }),
+        InputInfo.partial({ steamID: true }),
         async (input) =>
             createTransaction(async (tx) => {
                 const steamID = input.steamID ?? Actor.steamID()
@@ -39,7 +53,7 @@ export namespace Friend {
     )
 
     export const end = fn(
-        Info,
+        InputInfo,
         (input) =>
             useTransaction(async (tx) =>
                 tx
@@ -54,32 +68,29 @@ export namespace Friend {
             )
     )
 
-    export const list = fn(
-        z.void(),
-        async () =>
-            useTransaction(async (tx) => {
-                const userSteamAccounts =
-                    await tx
-                        .select()
-                        .from(steamTable)
-                        .where(eq(steamTable.userID, Actor.userID()))
-                        .execute();
+    export const list = async () =>
+        useTransaction(async (tx) => {
+            const userSteamAccounts =
+                await tx
+                    .select()
+                    .from(steamTable)
+                    .where(eq(steamTable.userID, Actor.userID()))
+                    .execute();
 
-                if (userSteamAccounts.length === 0) {
-                    return []; // User has no steam accounts
-                }
+            if (userSteamAccounts.length === 0) {
+                return []; // User has no steam accounts
+            }
 
-                const friendPromises =
-                    userSteamAccounts.map(async (steamAccount) => {
-                        return await fromSteamID(steamAccount.id)
-                    })
+            const friendPromises =
+                userSteamAccounts.map(async (steamAccount) => {
+                    return await fromSteamID(steamAccount.id)
+                })
 
-                return (await Promise.all(friendPromises)).flat()
-            })
-    )
+            return (await Promise.all(friendPromises)).flat()
+        })
 
     export const fromSteamID = fn(
-        Info.shape.steamID,
+        InputInfo.shape.steamID,
         (steamID) =>
             useTransaction(async (tx) =>
                 tx
@@ -110,7 +121,7 @@ export namespace Friend {
     )
 
     export const areFriends = fn(
-        Info,
+        InputInfo,
         (input) =>
             useTransaction(async (tx) => {
                 const result = await tx
@@ -132,7 +143,7 @@ export namespace Friend {
 
     export function serialize(
         input: { user: typeof userTable.$inferSelect | null; steam: typeof steamTable.$inferSelect }[],
-    ) {
+    ): z.infer<typeof Info>[] {
         return pipe(
             input,
             groupBy((row) => row.steam.id.toString()),

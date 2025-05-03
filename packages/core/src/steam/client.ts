@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { fn } from "../utils";
-import { Steam } from "./index"
 import fetch from 'node-fetch';
 import type {
     UserDataResponse,
@@ -11,6 +10,7 @@ import type {
     GamesCompatListResponse,
     LibraryAppDetailsResponse,
 } from "./types";
+import { Credentials } from "./credentials";
 import { EAuthTokenPlatformType, LoginSession } from "steam-session";
 
 export const API_HEADERS = {
@@ -20,9 +20,9 @@ export const API_HEADERS = {
     'sec-fetch-dest': 'empty'
 };
 
-export namespace SteamClient {
+export namespace Client {
     export const getUserData = fn(
-        Steam.CredentialInfo
+        Credentials.Info
             .pick({ accessToken: true })
             .extend({
                 steamIDs: z.bigint().array()
@@ -47,7 +47,7 @@ export namespace SteamClient {
     )
 
     export const getFriends = fn(
-        Steam.CredentialInfo
+        Credentials.Info
             .pick({ accessToken: true })
             .extend({
                 steamIDs: z.bigint().array()
@@ -72,7 +72,7 @@ export namespace SteamClient {
     )
 
     export const getOwnedGamesCompatList = fn(
-        Steam.CredentialInfo
+        Credentials.Info
             .pick({ cookies: true }),
         async (input) => {
             const games = await fetchApi<GamesCompatListResponse>(`/saleaction/ajaxgetuserdeckcompatlist?appListType=library`, input.cookies.join('; '))
@@ -84,7 +84,7 @@ export namespace SteamClient {
     )
 
     export const getGameUserInfo = fn(
-        Steam.CredentialInfo
+        Credentials.Info
             .pick({ cookies: true })
             .extend({ gameID: z.number() }),
         async (input) => {
@@ -95,7 +95,7 @@ export namespace SteamClient {
     )
 
     export const getGameInfo = fn(
-        Steam.CredentialInfo
+        Credentials.Info
             .pick({ cookies: true })
             .extend({ gameID: z.number() }),
         async (input) => {

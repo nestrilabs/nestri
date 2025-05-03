@@ -4,9 +4,9 @@ import { cors } from "hono/cors";
 // import { GameApi } from "./game";
 import { TeamApi } from "./team";
 // import { PolarApi } from "./polar";
-import { SteamApi } from "./steam";
+// import { SteamApi } from "./steam";
 import { logger } from "hono/logger";
-// import { FriendApi } from "./friend";
+import { FriendApi } from "./friend";
 import { Hono, type Env } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
@@ -35,7 +35,7 @@ const routes = app
     // .route("/polar", PolarApi.route)
     // .route("/steam", SteamApi.route)
     .route("/realtime", Realtime.route)
-    // .route("/friends", FriendApi.route)
+    .route("/friends", FriendApi.route)
     .route("/accounts", AccountApi.route)
     // .route("/machine", MachineApi.route)
     .onError((error, c) => {
