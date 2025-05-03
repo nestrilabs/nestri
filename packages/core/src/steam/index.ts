@@ -37,10 +37,12 @@ export namespace Steam {
                 description: "The steam community url of this account",
                 example: Examples.SteamAccount.profileUrl
             }),
-            username: z.string().regex(/^[a-z0-9]{1,32}$/, "The Steam username is not slug friendly").nullable().openapi({
-                description: "The unique username of this account",
-                example: Examples.SteamAccount.username
-            }),
+            username: z.string()
+                .regex(/^[a-z0-9]{1,32}$/, "The Steam username is not slug friendly")
+                .openapi({
+                    description: "The unique username of this account",
+                    example: Examples.SteamAccount.username
+                }),
             realName: z.string().openapi({
                 description: "The real name behind of this Steam account",
                 example: Examples.SteamAccount.realName
