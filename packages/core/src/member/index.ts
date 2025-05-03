@@ -1,10 +1,10 @@
 import { z } from "zod";
+import { Actor } from "../actor";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
-import { memberTable, roleEnum } from "./member.sql";
+import { memberTable, RoleEnum } from "./member.sql";
 import { createTransaction } from "../drizzle/transaction";
-import { Actor } from "../actor";
 
 export namespace Member {
     export const Info = z
@@ -17,7 +17,7 @@ export namespace Member {
                 description: "Associated team identifier for this membership",
                 example: Examples.Member.teamID
             }),
-            role: z.enum(roleEnum.enumValues).openapi({
+            role: z.enum(RoleEnum.enumValues).openapi({
                 description: "Assigned permission role within the team",
                 example: Examples.Member.role
             }),

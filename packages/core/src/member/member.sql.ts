@@ -3,7 +3,7 @@ import { steamTable } from "../steam/steam.sql";
 import { timestamps, teamID, ulid } from "../drizzle/types";
 import { bigint, pgEnum, pgTable, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const roleEnum = pgEnum("member_role", ["child", "adult"])
+export const RoleEnum = pgEnum("member_role", ["child", "adult"])
 
 export const memberTable = pgTable(
     "members",
@@ -20,7 +20,7 @@ export const memberTable = pgTable(
                 onDelete: "cascade",
                 onUpdate: "restrict"
             }),
-        role: roleEnum("role").notNull(),
+        role: RoleEnum("role").notNull(),
     },
     (table) => [
         primaryKey({ columns: [table.id] }),
