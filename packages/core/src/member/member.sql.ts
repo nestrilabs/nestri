@@ -23,7 +23,8 @@ export const memberTable = pgTable(
         role: RoleEnum("role").notNull(),
     },
     (table) => [
-        primaryKey({ columns: [table.id] }),
+        primaryKey({ columns: [table.id, table.teamID] }),
         uniqueIndex("idx_member_steam_id").on(table.teamID, table.steamID),
+        uniqueIndex("idx_member_user_id").on(table.teamID, table.userID),
     ],
 );

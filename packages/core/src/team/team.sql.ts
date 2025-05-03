@@ -2,7 +2,6 @@ import { timestamps, id, ulid } from "../drizzle/types";
 import {
   varchar,
   pgTable,
-  primaryKey,
   bigint,
   unique,
   uniqueIndex,
@@ -34,11 +33,3 @@ export const teamTable = pgTable(
     unique("idx_team_invite_code").on(team.inviteCode)
   ]
 );
-
-export function teamIndexes(table: any) {
-  return [
-    primaryKey({
-      columns: [table.teamID, table.id],
-    }),
-  ];
-}
