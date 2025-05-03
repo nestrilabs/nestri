@@ -37,6 +37,10 @@ export namespace Team {
             inviteCode: z.string().openapi({
                 description: "Unique invitation code used for adding new team members",
                 example: Examples.Team.inviteCode
+            }),
+            members: Steam.Info.array().openapi({
+                description: "All the team members in this team",
+                example: Examples.Team.members
             })
         })
         .openapi({
@@ -83,8 +87,9 @@ export namespace Team {
     }
 
     export const create = fn(
-        Info.
-            partial({
+        Info
+            .omit({ members: true })
+            .partial({
                 id: true,
                 inviteCode: true,
                 maxMembers: true,
@@ -107,7 +112,7 @@ export namespace Team {
 
                 return id;
             })
-        )
+    )
 
     //TODO: "Delete" subscription and member(s) as well
     // export const remove = fn(
@@ -138,42 +143,27 @@ export namespace Team {
     //         })
     // );
 
-    export const list = fn(
-        z.void(),
-        () => {
-            return useTransaction(async (tx) =>
-                tx
-                    .select({
-                        steam_accounts: steamTable,
-                        teams: teamTable
-                    })
-                    .from(teamTable)
-                    .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-                    .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
-                    .where(
-                        and(
-                            eq(memberTable.userID, Actor.userID()),
-                            isNull(memberTable.timeDeleted),
-                            isNull(teamTable.timeDeleted),
-                        ),
-                    )
-                    .execute()
-                    .then((rows) =>
-                        pipe(
-                            rows,
-                            groupBy((row) => row.teams.id),
-                            values(),
-                            map((group) => ({
-                                ...serialize(group[0].teams),
-                                members:
-                                    !group[0].steam_accounts ?
-                                        [] :
-                                        group.map((item) => Steam.serialize(item.steam_accounts!))
-                            })),
-                        )
-                    )
-            )
-        });
+    export const list = () =>
+        useTransaction(async (tx) =>
+            tx
+                .select({
+                    steam_accounts: steamTable,
+                    teams: teamTable
+                })
+                .from(teamTable)
+                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
+                .where(
+                    and(
+                        eq(memberTable.userID, Actor.userID()),
+                        isNull(memberTable.timeDeleted),
+                        isNull(steamTable.timeDeleted),
+                        isNull(teamTable.timeDeleted),
+                    ),
+                )
+                .execute()
+                .then((rows) => serialize(rows))
+        )
 
     // export const fromID = fn(
     //     Info.shape.id.min(1),
@@ -197,13 +187,13 @@ export namespace Team {
     // );
 
     /**
-   * Transforms an array of team, subscription, and member records into structured team objects.
-   *
-   * Groups input rows by team ID and constructs an array of team objects, each including its associated members and subscriptions.
-   *
-   * @param input - Array of objects containing team, subscription, and member data.
-   * @returns An array of team objects with their members and subscriptions.
-   */
+    * Transforms an array of team, subscription, and member records into structured team objects.
+    *
+    * Groups input rows by team ID and constructs an array of team objects, each including its associated members and subscriptions.
+    *
+    * @param input - Array of objects containing team, subscription, and member data.
+    * @returns An array of team objects with their members and subscriptions.
+    */
     // export function serializeFull(
     //     input: typeof teamTable.$inferSelect,
     // ): z.infer<typeof Info>[] {
@@ -225,15 +215,33 @@ export namespace Team {
     // }
 
     export function serialize(
-        input: typeof teamTable.$inferSelect
-    ): z.infer<typeof Info> {
-        return {
-            id: input.id,
-            slug: input.slug,
-            name: input.name,
-            ownerID: input.ownerID,
-            maxMembers: input.maxMembers,
-            inviteCode: input.inviteCode,
-        }
+        input: { teams: typeof teamTable.$inferSelect; steam_accounts: typeof steamTable.$inferSelect | null }[]
+    ): z.infer<typeof Info>[] {
+        return pipe(
+            input,
+            groupBy((row) => row.teams.id),
+            values(),
+            map((group) => ({
+                // ...serialize(group[0].teams),
+                id: group[0].teams.id,
+                slug: group[0].teams.slug,
+                name: group[0].teams.name,
+                ownerID: group[0].teams.ownerID,
+                maxMembers: group[0].teams.maxMembers,
+                inviteCode: group[0].teams.inviteCode,
+                members:
+                    !group[0].steam_accounts ?
+                        [] :
+                        group.map((item) => Steam.serialize(item.steam_accounts!))
+            })),
+        )
+        // return {
+        //     id: input.id,
+        //     slug: input.slug,
+        //     name: input.name,
+        //     ownerID: input.ownerID,
+        //     maxMembers: input.maxMembers,
+        //     inviteCode: input.inviteCode,
+        // }
     }
 }

@@ -17,35 +17,6 @@ import { PasswordAdapter } from "./ui/adapters/password";
 import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
 import { type Provider } from "@openauthjs/openauth/provider/provider";
 
-/**
- * Converts a display name to a valid username format
- * - Converts to lowercase
- * - Replaces spaces and dashes with underscores
- * - Removes any characters that aren't lowercase letters, numbers, or underscores
- * - Trims to maximum 32 characters
- * 
- * @param {string} displayName - The display name to convert
- * @returns {string} - A valid username
- */
-function convertToUsername(displayName:string) {
-    if (!displayName) return "";
-    
-    // Convert to lowercase
-    let username = displayName.toLowerCase();
-    
-    // Replace spaces and dashes with underscores
-    username = username.replace(/[ -]/g, "_");
-    
-    // Remove any characters that aren't lowercase letters, numbers, or underscores
-    username = username.replace(/[^a-z0-9_]/g, "");
-    
-    // Limit to 32 characters
-    username = username.substring(0, 32);
-    
-    return username;
-  }
-
-
 const app = issuer({
     select: Select({
         providers: {
@@ -176,7 +147,7 @@ const app = issuer({
             //Sign Up
             if (username && !matching) {
                 const userID = await User.create({
-                    username,
+                    name: username,
                     email,
                 });
 
@@ -222,7 +193,7 @@ const app = issuer({
                 if (!matching) {
                     const userID = await User.create({
                         email: user.primary.email,
-                        username: convertToUsername(user.username),
+                        name: user.username,
                         avatarUrl: user.avatar,
                     });
 

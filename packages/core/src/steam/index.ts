@@ -193,7 +193,7 @@ export namespace Steam {
                     .where(and(eq(steamTable.id, steamID), isNull(steamTable.timeDeleted)))
                     .orderBy(desc(steamTable.timeCreated))
                     .execute()
-                    .then((rows) => rows.map(serialize))
+                    .then((rows) => rows.map(serialize).at(0))
             )
     )
 

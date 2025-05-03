@@ -14,7 +14,7 @@ const DEFAULT_COPY = {
   error_invalid_code: "Code is incorrect.",
   error_invalid_email: "Email is not valid.",
   error_invalid_password: "Password is incorrect.",
-  error_invalid_username: "Username can only contain letters.",
+  error_invalid_username: "Name can only contain letters and spaces.",
   error_password_mismatch: "Passwords do not match.",
   register_title: "Welcome to the app",
   register_description: "Sign in with your email",
@@ -32,7 +32,7 @@ const DEFAULT_COPY = {
   input_email: "john@doe.com",
   input_password: "●●●●●●●●●●●",
   input_code: "●●●●●●",
-  input_username: "john",
+  input_username: "John Kamau",
   input_repeat: "●●●●●●●●●●●",
   button_continue: "Continue",
 } satisfies {
@@ -212,7 +212,7 @@ export function PasswordUI(input: PasswordUIOptions) {
                 <div
                   data-component="input-container"
                 >
-                  <span>Username</span>
+                  <span>Name</span>
                   <div data-error={usernameError} data-component="input-wrapper">
                     <span id="username-icon" data-component="input-icon">
                       <svg width="24px" height="24px" stroke-width="1.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" color="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path><path d="M4.271 18.346S6.5 15.5 12 15.5s7.73 2.846 7.73 2.846M12 12a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>

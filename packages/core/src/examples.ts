@@ -6,8 +6,8 @@ export namespace Examples {
 
     export const User = {
         id: Id("user"),// Primary key
+        name: "John Doe", // Name (not null)
         email: "johndoe@example.com",// Unique email or login (not null)
-        username: "john_doe", // user name (not null)
         avatarUrl: "https://cdn.discordapp.com/avatars/xxxxxxx/xxxxxxx.png",
         lastLogin: new Date("2025-04-26T20:11:08.155Z"),
         polarCustomerID: "0bfcb712-df13-4454-81a8-fbee66eddca4"
@@ -32,15 +32,6 @@ export namespace Examples {
         fingerprint: "fc27f428f9ca47d4b41b707ae0c62090",
     }
 
-    export const Team = {
-        id: Id("team"),// Primary key
-        name: "John's Console", // Team name (not null, unique)
-        ownerID: User.id, // FK to User who owns/created the team
-        slug: User.username,
-        maxMembers: 3,
-        inviteCode: "xwydjf"
-    };
-
     export const SteamAccount = {
         status: "online" as const, //offline,dnd(do not disturb) or playing 
         id: 74839300282033n,// Primary key
@@ -59,6 +50,16 @@ export namespace Examples {
         },
         profileUrl: "The65thJD", //"https://steamcommunity.com/id/XXXXXXXXXXXXXXXX/",
         lastSyncedAt: new Date("2025-04-26T20:11:08.155Z")
+    };
+
+    export const Team = {
+        id: Id("team"),// Primary key
+        name: "John's Console", // Team name (not null, unique)
+        ownerID: User.id, // FK to User who owns/created the team
+        slug: SteamAccount.profileUrl,
+        maxMembers: 3,
+        inviteCode: "xwydjf",
+        members: [SteamAccount]
     };
 
     export const Member = {

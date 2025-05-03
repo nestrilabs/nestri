@@ -29,7 +29,7 @@ export const handleGithub = async (accessKey: string) => {
         return {
             primary: { email, primary, verified },
             avatar: user.avatar_url,
-            username: user.login ?? user.name,
+            username: user.name ?? user.login,
         };
     } catch (error) {
         console.error('GitHub OAuth error:', error);
@@ -65,7 +65,7 @@ export const handleDiscord = async (accessKey: string) => {
             avatar: user.avatar
                 ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
                 : null,
-            username: user.username ?? user.global_name,
+            username: user.global_name ?? user.username,
         };
     } catch (error) {
         console.error('Discord OAuth error:', error);

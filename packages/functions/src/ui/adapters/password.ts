@@ -170,7 +170,7 @@ export function PasswordAdapter(config: PasswordConfig) {
         if (action === "register" && adapter.type === "start") {
           const password = fd.get("password")?.toString()
           const username = fd.get("username")?.toString()
-          const usernameRegex = /^[a-z0-9_]{1,32}$/;
+          const usernameRegex = /^[a-zA-Z ]{1,32}$/;
           if (!email) return transition(adapter, { type: "invalid_email" })
           if (!username) return transition(adapter, { type: "invalid_username" })
           if (!password)
@@ -183,8 +183,8 @@ export function PasswordAdapter(config: PasswordConfig) {
             "password",
           ])
           if (existing) return transition(adapter, { type: "email_taken" })
-          const existingUsername = await User.fromUsername(username)
-          if (existingUsername) return transition(adapter, { type: "username_taken" })
+          // const existingUsername = await User.fromUsername(username)
+          // if (existingUsername) return transition(adapter, { type: "username_taken" })
           const code = generate()
           await config.sendCode(email, code)
           return transition({

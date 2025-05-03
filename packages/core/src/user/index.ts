@@ -1,19 +1,14 @@
 import { z } from "zod";
 import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
-// import { Team } from "../team";
 import { Common } from "../common";
 import { createEvent } from "../event";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
-// import { assertActor } from "../actor";
 import { Examples } from "../examples";
-// import { teamTable } from "../team/team.sql";
-// import { memberTable } from "../member/member.sql";
 import { ErrorCodes, VisibleError } from "../error";
 import { and, eq, isNull, asc, sql } from "../drizzle";
-// import { subscriptionTable } from "../subscription/subscription.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace User {
@@ -23,9 +18,9 @@ export namespace User {
                 description: Common.IdDescription,
                 example: Examples.User.id,
             }),
-            username: z.string().regex(/^[a-z0-9_]{1,32}$/, "Use a URL friendly name.").openapi({
-                description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
-                example: Examples.User.username
+            name: z.string().regex(/^[a-zA-Z ]{1,32}$/, "Use a friendly name.").openapi({
+                description: "The name of this account",
+                example: Examples.User.name
             }),
             polarCustomerID: z.string().nullable().openapi({
                 description: "Associated Polar.sh customer identifier",
@@ -57,7 +52,7 @@ export namespace User {
             super(
                 "already_exists",
                 ErrorCodes.Validation.ALREADY_EXISTS,
-                `A user with username ${username} already exists`
+                `A user with this email ${username} already exists`
             );
         }
     }
@@ -94,16 +89,16 @@ export namespace User {
                         id,
                         avatarUrl: input.avatarUrl,
                         email: input.email,
-                        username: input.username,
+                        name: input.name,
                         polarCustomerID: customer?.id,
                         lastLogin: sql`now()`
                     })
                     .onConflictDoNothing({
-                        target: [userTable.username, userTable.email]
+                        target: [userTable.email]
                     })
 
                 if (result.count === 0) {
-                    throw new UserExistsError(input.username)
+                    throw new UserExistsError(input.email)
                 }
 
                 await afterTx(async () =>
@@ -113,20 +108,6 @@ export namespace User {
 
             return id;
         })
-
-    export const fromUsername = fn(
-        Info.shape.username.min(1),
-        async (username) =>
-            useTransaction(async (tx) =>
-                tx
-                    .select()
-                    .from(userTable)
-                    .where(and(eq(userTable.username, username)))
-                    .orderBy(asc(userTable.timeCreated))
-                    .execute()
-                    .then(rows => rows.map(serialize).at(0))
-            )
-    )
 
     export const fromEmail = fn(
         Info.shape.email.min(1),
@@ -201,8 +182,8 @@ export namespace User {
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            name: input.name,
             email: input.email,
-            username: input.username,
             avatarUrl: input.avatarUrl,
             lastLogin: input.lastLogin,
             polarCustomerID: input.polarCustomerID,
