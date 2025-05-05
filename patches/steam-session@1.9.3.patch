@@ -1,0 +1,70 @@
+diff --git a/dist/LoginSession.js b/dist/LoginSession.js
+index 605b2017458f271c52f754a1c98e6805b5aa1156..cdaaee59402f5c75654c9f91c56feb4648e170c8 100644
+--- a/dist/LoginSession.js
++++ b/dist/LoginSession.js
+@@ -14,7 +14,7 @@ const tiny_typed_emitter_1 = require("tiny-typed-emitter");
+ const AuthenticationClient_1 = __importDefault(require("./AuthenticationClient"));
+ const helpers_1 = require("./helpers");
+ const WebApiTransport_1 = __importDefault(require("./transports/WebApiTransport"));
+-const WebSocketCMTransport_1 = __importDefault(require("./transports/WebSocketCMTransport"));
++// const WebSocketCMTransport_1 = __importDefault(require("./transports/WebSocketCMTransport"));
+ const EAuthSessionGuardType_1 = __importDefault(require("./enums-steam/EAuthSessionGuardType"));
+ const EAuthTokenPlatformType_1 = __importDefault(require("./enums-steam/EAuthTokenPlatformType"));
+ const EResult_1 = __importDefault(require("./enums-steam/EResult"));
+@@ -72,13 +72,13 @@ class LoginSession extends tiny_typed_emitter_1.TypedEmitter {
+         this._platformType = platformType;
+         let transport = options.transport;
+         if (!transport) {
+-            switch (platformType) {
+-                case EAuthTokenPlatformType_1.default.SteamClient:
+-                    transport = new WebSocketCMTransport_1.default(this._webClient, agent, options.localAddress);
+-                    break;
+-                default:
+-                    transport = new WebApiTransport_1.default(this._webClient);
+-            }
++            // switch (platformType) {
++            //     case EAuthTokenPlatformType_1.default.SteamClient:
++            //         transport = new WebSocketCMTransport_1.default(this._webClient, agent, options.localAddress);
++            //         break;
++            //     default:
++            transport = new WebApiTransport_1.default(this._webClient);
++            // }
+         }
+         this._handler = new AuthenticationClient_1.default({
+             platformType: this._platformType,
+diff --git a/src/LoginSession.ts b/src/LoginSession.ts
+index eafeceb071524fec2e723da28c62152bb4619cf0..55c2b0f5717809a6a552795c5c29debebf6b985b 100644
+--- a/src/LoginSession.ts
++++ b/src/LoginSession.ts
+@@ -11,7 +11,7 @@ import AuthenticationClient from './AuthenticationClient';
+ import { API_HEADERS, decodeJwt, eresultError, defaultUserAgent } from './helpers';
+ 
+ import WebApiTransport from './transports/WebApiTransport';
+-import WebSocketCMTransport from './transports/WebSocketCMTransport';
++// import WebSocketCMTransport from './transports/WebSocketCMTransport';
+ 
+ import {
+ 	ConstructorOptions,
+@@ -128,14 +128,14 @@ export default class LoginSession extends TypedEmitter<LoginSessionEvents> {
+ 
+ 		let transport = options.transport;
+ 		if (!transport) {
+-			switch (platformType) {
+-				case EAuthTokenPlatformType.SteamClient:
+-					transport = new WebSocketCMTransport(this._webClient, agent, options.localAddress);
+-					break;
+-
+-				default:
+-					transport = new WebApiTransport(this._webClient);
+-			}
++			// switch (platformType) {
++			// 	case EAuthTokenPlatformType.SteamClient:
++			// 		transport = new WebSocketCMTransport(this._webClient, agent, options.localAddress);
++			// 		break;
++
++			// default:
++			transport = new WebApiTransport(this._webClient);
++			// }
+ 		}
+ 
+ 		this._handler = new AuthenticationClient({
