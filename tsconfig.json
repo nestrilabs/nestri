@@ -1,1 +1,10 @@
-{}
+{
+    "exclude": [
+        "node_modules",
+        "dist",
+        ".bun",
+        "build",
+        "tmp",
+        "**/__generated__"
+    ]
+}

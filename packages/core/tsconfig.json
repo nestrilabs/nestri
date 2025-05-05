@@ -6,6 +6,14 @@
     "moduleResolution": "bundler",
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "verbatimModuleSyntax": true
-  }
+    "verbatimModuleSyntax": true,
+  },
+  "exclude": [
+      "node_modules",
+      "dist",
+      ".bun",
+      "build",
+      "tmp",
+      "**/__generated__"
+    ]
 }

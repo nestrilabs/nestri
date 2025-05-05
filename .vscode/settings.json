@@ -5,5 +5,16 @@
         "plaintext": false,
         "markdown": false,
         "scminput": false
-    }
+    },
+    "files.watcherExclude": {
+        "**/node_modules": true,
+        "**/.bun": true,
+        "**/dist": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/.bun": true
+    },
+    "typescript.tsserver.useSyntaxServer": "never",
+    "typescript.tsserver.log": "verbose"
 }
