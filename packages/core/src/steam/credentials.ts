@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
 import { createEvent } from "../event";
-import { eq, and, isNull } from "../drizzle";
+import { eq, and, isNull } from "drizzle-orm";
 import { decrypt, encrypt, fn } from "../utils";
 import { createSelectSchema } from "drizzle-zod";
 import { steamCredentialsTable } from "./steam.sql";
@@ -30,22 +30,28 @@ export namespace Credentials {
     export const create = fn(
         Info
             .omit({ accessToken: true, cookies: true }),
-        (input) =>
-            createTransaction(async (tx) => {
-                const encryptedToken = encrypt(input.refreshToken)
+        (input) => {
+            const part = input.refreshToken.split('.')[1] as string
+
+            const payload = JSON.parse(Buffer.from(part, 'base64').toString());
+            
+            const encryptedToken = encrypt(input.refreshToken)
+
+            return createTransaction(async (tx) => {
                 await tx
                     .insert(steamCredentialsTable)
                     .values({
                         id: input.id,
                         username: input.username,
                         refreshToken: encryptedToken,
+                        expiry: new Date(payload.exp * 1000),
                     })
                 await afterTx(async () =>
                     await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
                 );
                 return input.id
-            }),
-    );
+            })
+        });
 
     export const getByID = fn(
         Info.shape.id,
@@ -68,12 +74,13 @@ export namespace Credentials {
                 return serialize({ ...credential, refreshToken: decrypt(credential.refreshToken) });
             })
     );
-    
+
     export function serialize(
         input: typeof steamCredentialsTable.$inferSelect,
     ) {
         return {
             id: input.id,
+            expiry: input.expiry,
             username: input.refreshToken,
             refreshToken: input.refreshToken,
         };

@@ -38,7 +38,7 @@ export const steamTable = pgTable(
         avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         limitations: json("limitations").$type<Limitations>().notNull(),
     },
-    (table)=>[
+    (table) => [
         unique("idx_steam_username").on(table.username)
     ]
 );
@@ -49,6 +49,7 @@ export const steamCredentialsTable = pgTable(
         ...timestamps,
         refreshToken: text("refresh_token")
             .notNull(),
+        expiry: utc("expiry").notNull(),
         id: bigint("steam_id", { mode: "bigint" })
             .notNull()
             .primaryKey()
