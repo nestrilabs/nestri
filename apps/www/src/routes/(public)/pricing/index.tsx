@@ -116,8 +116,30 @@ export default component$(() => {
 
     return (
         <div class="w-screen relative">
-            <TitleSection client:load title="Pricing" description={"We're growing at the speed of trust. Choose a price that feels right for you and help support Nestri"} />
-            <MotionComponent
+            <TitleSection client:load title="Pricing" description={"The biggest bang, binge, and blast for your buck"} />
+
+            <Footer client:load>
+                <div class="w-full flex justify-center flex-col items-center gap-3">
+                    <Link href="https://discord.gg/6um5K6jrYj" prefetch={false} class="flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+                        Join our Discord
+                    </Link>
+                    <div class="mt-6 flex w-full items-center justify-center gap-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-400">
+                        <span class="hover:text-primary-500 transition-colors duration-200">
+                            <Link rel="noreferrer" href="/terms" >Terms of Service</Link></span>
+                        <span class="text-gray-400 dark:text-gray-600">•</span>
+                        <span class="hover:text-primary-500 transition-colors duration-200" >
+                            <Link href="/privacy">Privacy Policy</Link>
+                        </span>
+                    </div>
+                </div>
+            </Footer>
+        </div>
+    )
+})
+
+
+/**
+ * <MotionComponent
                 initial={{ opacity: 0, y: 100 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
@@ -144,7 +166,6 @@ export default component$(() => {
                                     </div>
                                     <div class="flex flex-col w-full">
                                         <p class="text-[4rem] leading-[1] font-medium font-title"> Free </p>
-                                        {/**FIXME: Add the link to the docs here */}
                                         <a href={CONSTANTS.githubLink} ref={v => bookRef.value = v} class="h-[154px] w-full flex items-start pt-4 justify-center overflow-hidden">
                                             <Book textColor="#FFF"
                                                 bgColor="#FF4F01"
@@ -519,21 +540,4 @@ export default component$(() => {
                     </section>
                 </div>
             </MotionComponent>
-            <Footer client:load>
-                <div class="w-full flex justify-center flex-col items-center gap-3">
-                    <Link href="https://discord.gg/6um5K6jrYj" prefetch={false} class="flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
-                        Join our Discord
-                    </Link>
-                    <div class="mt-6 flex w-full items-center justify-center gap-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-400">
-                        <span class="hover:text-primary-500 transition-colors duration-200">
-                            <Link rel="noreferrer" href="/terms" >Terms of Service</Link></span>
-                        <span class="text-gray-400 dark:text-gray-600">•</span>
-                        <span class="hover:text-primary-500 transition-colors duration-200" >
-                            <Link href="/privacy">Privacy Policy</Link>
-                        </span>
-                    </div>
-                </div>
-            </Footer>
-        </div>
-    )
-})
+ */
