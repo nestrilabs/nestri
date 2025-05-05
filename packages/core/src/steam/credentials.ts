@@ -19,7 +19,7 @@ export namespace Credentials {
     export type Info = z.infer<typeof Info>;
 
     export const Events = {
-        NewCredentials: createEvent(
+        New: createEvent(
             "new_credentials.added",
             z.object({
                 steamID: Info.shape.id,
@@ -41,7 +41,7 @@ export namespace Credentials {
                         refreshToken: encryptedToken,
                     })
                 await afterTx(async () =>
-                    await bus.publish(Resource.Bus, Events.NewCredentials, { steamID: input.id })
+                    await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
                 );
                 return input.id
             }),

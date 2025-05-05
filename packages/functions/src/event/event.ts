@@ -7,7 +7,7 @@ import { Friend } from "@nestri/core/friend/index";
 import { SteamClient } from "@nestri/core/steam/client";
 
 export const handler = bus.subscriber(
-  [User.Events.Created, Steam.Events.AccountCreated, Steam.Events.NewCredentials, Steam.Events.AccountUpdated],
+  [User.Events.Created, Steam.Events.Created, Steam.Events.New, Steam.Events.Updated],
   async (event) => {
     console.log(event.type, event.properties, event.metadata);
     switch (event.type) {

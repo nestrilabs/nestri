@@ -73,14 +73,14 @@ export namespace Steam {
     export type Info = z.infer<typeof Info>;
 
     export const Events = {
-        AccountCreated: createEvent(
+        Created: createEvent(
             "steam_account.created",
             z.object({
                 steamID: Info.shape.id,
                 userID: Info.shape.userID
             }),
         ),
-        AccountUpdated: createEvent(
+        Updated: createEvent(
             "steam_account.updated",
             z.object({
                 steamID: Info.shape.id,
@@ -131,7 +131,7 @@ export namespace Steam {
                     })
 
                 await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.AccountUpdated, { userID, steamID: input.id })
+                    bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
                 );
 
                 return input.id
@@ -170,7 +170,7 @@ export namespace Steam {
                     .where(eq(steamTable.id, input.id));
 
                 await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.AccountCreated, { userID: userID ?? null, steamID: input.id })
+                    bus.publish(Resource.Bus, Events.Updated, { userID: userID ?? null, steamID: input.id })
                 );
             })
         }
