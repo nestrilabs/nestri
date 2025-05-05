@@ -27,7 +27,7 @@ export namespace Credentials {
         ),
     };
 
-    export const createCredential = fn(
+    export const create = fn(
         Info
             .omit({ accessToken: true, cookies: true }),
         (input) =>
@@ -47,7 +47,7 @@ export namespace Credentials {
             }),
     );
 
-    export const getCredentialByID = fn(
+    export const getByID = fn(
         Info.shape.id,
         (steamID) =>
             useTransaction(async (tx) => {

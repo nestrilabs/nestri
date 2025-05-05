@@ -4,9 +4,9 @@ import { notPublic } from "./auth";
 import { streamSSE } from "hono/streaming";
 import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
-import { Steam } from "@nestri/core/steam/index";
 import { Examples } from "@nestri/core/examples";
-import { SteamClient } from "@nestri/core/steam/client";
+import { Credentials } from "@nestri/core/steam/credentials";
+// import { SteamClient } from "@nestri/core/steam/client";
 import { ErrorResponses, validator, Result } from "./common";
 import { EAuthTokenPlatformType, LoginSession } from 'steam-session';
 
@@ -66,13 +66,9 @@ export namespace SteamApi {
                 const user = Actor.user()
 
                 return streamSSE(c, async (stream) => {
-                    const session = new LoginSession(
-                        EAuthTokenPlatformType.SteamClient,
-                        {
-                            machineFriendlyName: "Nestri Cloud Gaming",
-                        }
-                    );
-                    session.loginTimeout = 40000; //30 seconds is typically when the url expires
+                    const session = new LoginSession(EAuthTokenPlatformType.MobileApp);
+                    
+                    session.loginTimeout = 30000; //30 seconds is typically when the url expires
 
                     await stream.writeSSE({
                         event: 'status',
@@ -145,48 +141,48 @@ export namespace SteamApi {
                             const refreshToken = session.refreshToken;
                             const steamID = session.steamID.getBigIntID();
 
-                            await Steam.createCredential({ refreshToken, id: steamID, username })
+                            await Credentials.create({ refreshToken, id: steamID, username })
 
-                            const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID] })
+                            // const userData = await SteamClient.getUserData({ accessToken, steamIDs: [steamID] })
 
-                            const userDB = userData.players.map(async (steamUser) => {
-                                Actor.provide(
-                                    "user",
-                                    {
-                                        userID: user.userID,
-                                        email: user.email
-                                    },
-                                    async () => {
-                                        //Attempt to create a new Steam user, if this fails (returns null) update the current user instead
-                                        const id =
-                                            await Steam.create({
-                                                id: steamID,
-                                                useUser: true,
-                                                realName: steamUser.realname,
-                                                avatarHash: steamUser.avatarhash,
-                                                profileUrl: steamUser.profileurl,
-                                                personaName: steamUser.personaname,
-                                            })
+                            // const userDB = userData.players.map(async (steamUser) => {
+                            //     Actor.provide(
+                            //         "user",
+                            //         {
+                            //             userID: user.userID,
+                            //             email: user.email
+                            //         },
+                            //         async () => {
+                            //             //Attempt to create a new Steam user, if this fails (returns null) update the current user instead
+                            //             const id =
+                            //                 await Steam.create({
+                            //                     id: steamID,
+                            //                     useUser: true,
+                            //                     realName: steamUser.realname,
+                            //                     avatarHash: steamUser.avatarhash,
+                            //                     profileUrl: steamUser.profileurl,
+                            //                     personaName: steamUser.personaname,
+                            //                 })
 
-                                        if (!id) {
-                                            await Steam.update({
-                                                id: steamID,
-                                                useUser: true,
-                                                realName: steamUser.realname,
-                                                avatarHash: steamUser.avatarhash,
-                                                profileUrl: steamUser.profileurl,
-                                                personaName: steamUser.personaname,
-                                            })
-                                        }
-                                    }
-                                )
-                            })
+                            //             if (!id) {
+                            //                 await Steam.update({
+                            //                     id: steamID,
+                            //                     useUser: true,
+                            //                     realName: steamUser.realname,
+                            //                     avatarHash: steamUser.avatarhash,
+                            //                     profileUrl: steamUser.profileurl,
+                            //                     personaName: steamUser.personaname,
+                            //                 })
+                            //             }
+                            //         }
+                            //     )
+                            // })
 
-                            await Promise.allSettled(userDB)
+                            // await Promise.allSettled(userDB)
 
                             await stream.writeSSE({
                                 event: 'login_success',
-                                data: JSON.stringify({ success: true, steamID: steamID.toString() })
+                                data: JSON.stringify({ success: true })
                             })
 
                             await stream.close()
