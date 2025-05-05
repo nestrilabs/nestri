@@ -33,73 +33,73 @@ export interface PasswordConfig {
 
 export type PasswordRegisterState =
   | {
-      type: "start"
-    }
+    type: "start"
+  }
   | {
-      type: "code"
-      code: string
-      email: string
-      password: string
-      username: string
-    }
+    type: "code"
+    code: string
+    email: string
+    password: string
+    username: string
+  }
 
 export type PasswordRegisterError =
   | {
-      type: "invalid_code"
-    }
+    type: "invalid_code"
+  }
   | {
-      type: "email_taken"
-    }
+    type: "email_taken"
+  }
   | {
-      type: "invalid_email"
-    }
+    type: "invalid_email"
+  }
   | {
-      type: "invalid_password"
-    }
+    type: "invalid_password"
+  }
   | {
-      type: "invalid_username"
-    }| {
-      type: "username_taken"
-    }
+    type: "invalid_username"
+  } | {
+    type: "username_taken"
+  }
 
 export type PasswordChangeState =
   | {
-      type: "start"
-      redirect: string
-    }
+    type: "start"
+    redirect: string
+  }
   | {
-      type: "code"
-      code: string
-      email: string
-      redirect: string
-    }
+    type: "code"
+    code: string
+    email: string
+    redirect: string
+  }
   | {
-      type: "update"
-      redirect: string
-      email: string
-    }
+    type: "update"
+    redirect: string
+    email: string
+  }
 
 export type PasswordChangeError =
   | {
-      type: "invalid_email"
-    }
+    type: "invalid_email"
+  }
   | {
-      type: "invalid_code"
-    }
+    type: "invalid_code"
+  }
   | {
-      type: "invalid_password"
-    }
+    type: "invalid_password"
+  }
   | {
-      type: "password_mismatch"
-    }
+    type: "password_mismatch"
+  }
 
 export type PasswordLoginError =
   | {
-      type: "invalid_password"
-    }
+    type: "invalid_password"
+  }
   | {
-      type: "invalid_email"
-    }
+    type: "invalid_email"
+  }
 
 export function PasswordAdapter(config: PasswordConfig) {
   const hasher = config.hasher ?? ScryptHasher()
@@ -170,12 +170,12 @@ export function PasswordAdapter(config: PasswordConfig) {
         if (action === "register" && adapter.type === "start") {
           const password = fd.get("password")?.toString()
           const username = fd.get("username")?.toString()
-          const usernameRegex = /^[a-zA-Z]{1,32}$/;
+          const usernameRegex = /^[a-zA-Z ]{1,32}$/;
           if (!email) return transition(adapter, { type: "invalid_email" })
           if (!username) return transition(adapter, { type: "invalid_username" })
           if (!password)
             return transition(adapter, { type: "invalid_password" })
-          if (!usernameRegex.test(username))
+          if (!usernameRegex.test(username.trim()))
             return transition(adapter, { type: "invalid_username" })
           const existing = await Storage.get(ctx.storage, [
             "email",
@@ -183,7 +183,7 @@ export function PasswordAdapter(config: PasswordConfig) {
             "password",
           ])
           if (existing) return transition(adapter, { type: "email_taken" })
-          // const existingUsername = await Profiles.fromUsername(username)
+          // const existingUsername = await User.fromUsername(username)
           // if (existingUsername) return transition(adapter, { type: "username_taken" })
           const code = generate()
           await config.sendCode(email, code)
@@ -192,7 +192,7 @@ export function PasswordAdapter(config: PasswordConfig) {
             code,
             password: await hasher.hash(password),
             email,
-            username
+            username: username.trim()
           })
         }
 
@@ -214,7 +214,7 @@ export function PasswordAdapter(config: PasswordConfig) {
           )
           return ctx.success(c, {
             email: adapter.email,
-            username: adapter.username
+            username: adapter.username.trim()
           })
         }
 
@@ -308,13 +308,13 @@ export function PasswordAdapter(config: PasswordConfig) {
         return transition({ type: "start", redirect: adapter.redirect })
       })
     },
-  } satisfies Provider<{ email: string; username?:string }>
+  } satisfies Provider<{ email: string; username?: string }>
 }
 
 import * as jose from "jose"
 import { TextEncoder } from "node:util"
 
-interface HashedPassword {}
+interface HashedPassword { }
 
 export function PBKDF2Hasher(opts?: { interations?: number }): PasswordHasher<{
   hash: string
@@ -378,6 +378,7 @@ export function PBKDF2Hasher(opts?: { interations?: number }): PasswordHasher<{
 import { timingSafeEqual, randomBytes, scrypt } from "node:crypto"
 import { getRelativeUrl } from "@openauthjs/openauth/util"
 import { UnknownStateError } from "@openauthjs/openauth/error"
+import { User } from "@nestri/core/user/index"
 
 export function ScryptHasher(opts?: {
   N?: number

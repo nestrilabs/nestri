@@ -1,27 +1,18 @@
-import { z } from "zod";
-import { id, timestamps } from "../drizzle/types";
-import { integer, pgTable, text, uniqueIndex, varchar, json } from "drizzle-orm/pg-core";
-
-// Whether this user is part of the Nestri Team, comes with privileges
-export const UserFlags = z.object({
-    team: z.boolean().optional(),
-});
-
-export type UserFlags = z.infer<typeof UserFlags>;
+import { id, timestamps, utc } from "../drizzle/types";
+import { pgTable, text, unique, varchar } from "drizzle-orm/pg-core";
 
 export const userTable = pgTable(
-    "user",
+    "users",
     {
         ...id,
         ...timestamps,
-        avatarUrl: text("avatar_url"),
-        name: varchar("name", { length: 255 }).notNull(),
-        discriminator: integer("discriminator").notNull(),
         email: varchar("email", { length: 255 }).notNull(),
-        polarCustomerID: varchar("polar_customer_id", { length: 255 }).unique(),
-        // flags: json("flags").$type<UserFlags>().default({}),
+        avatarUrl: text("avatar_url"),
+        lastLogin: utc("last_login").notNull(),
+        name: varchar("name", { length: 255 }).notNull(),
+        polarCustomerID: varchar("polar_customer_id", { length: 255 }),
     },
     (user) => [
-        uniqueIndex("user_email").on(user.email),
+        unique("idx_user_email").on(user.email),
     ]
 );

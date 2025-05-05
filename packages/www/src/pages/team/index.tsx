@@ -2,10 +2,8 @@ import { HomeRoute } from "./home";
 import { useOpenAuth } from "@openauthjs/solid";
 import { Route, useParams } from "@solidjs/router";
 import { ApiProvider } from "@nestri/www/providers/api";
-import { SteamRoute } from "@nestri/www/pages/team/steam";
 import { ZeroProvider } from "@nestri/www/providers/zero";
 import { TeamContext } from "@nestri/www/providers/context";
-import { SteamProvider } from "@nestri/www/providers/steam";
 import { createEffect, createMemo, Match, Switch } from "solid-js";
 import { NotAllowed, NotFound } from "@nestri/www/pages/not-found";
 import { useAccount, useStorage } from "@nestri/www/providers/account";
@@ -51,9 +49,7 @@ export const TeamRoute = (
                         <TeamContext.Provider value={() => team()!}>
                             <ZeroProvider>
                                 <ApiProvider>
-                                    <SteamProvider>
-                                        {props.children}
-                                    </SteamProvider>
+                                    {props.children}
                                 </ApiProvider>
                             </ZeroProvider>
                         </TeamContext.Provider>
@@ -61,9 +57,8 @@ export const TeamRoute = (
                 </Switch>
             )
         }}
-        >
+    >
         <Route path="" component={HomeRoute} />
-        <Route path="steam" component={SteamRoute} />
         <Route path="*" component={() => <NotFound header />} />
     </Route>
 )

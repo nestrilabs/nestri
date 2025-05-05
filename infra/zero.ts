@@ -16,7 +16,6 @@ const tag = $dev
     ).version.replace("+", "-");
 
 const zeroEnv = {
-    FORCE: "1",
     NO_COLOR: "1",
     ZERO_LOG_LEVEL: "info",
     ZERO_LITESTREAM_LOG_LEVEL: "info",
@@ -92,8 +91,8 @@ const permissions = new sst.aws.Function(
         handler: "packages/functions/src/zero.handler",
         // environment: { ["ZERO_UPSTREAM_DB"]: connectionString },
         copyFiles: [{
-            from: "packages/zero/.permissions.sql",
-            to: "./.permissions.sql"
+            from: "packages/zero/permissions.sql",
+            to: "./permissions.sql"
         }],
     }
 );

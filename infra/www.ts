@@ -1,7 +1,7 @@
 // This is the website part where people play and connect
 import { api } from "./api";
-import { auth } from "./auth";
 import { zero } from "./zero";
+import { auth } from "./auth";
 import { domain } from "./dns";
 
 new sst.aws.StaticSite("Web", {

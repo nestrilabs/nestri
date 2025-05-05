@@ -1,19 +1,19 @@
 import { bus } from "./bus";
 import { auth } from "./auth";
 import { domain } from "./dns";
-import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
+import { secret, steamEncryptionKey } from "./secret";
 
-export const api = new sst.aws.Service("Api", {
+export const apiService = new sst.aws.Service("Api", {
     cluster,
     cpu: $app.stage === "production" ? "2 vCPU" : undefined,
     memory: $app.stage === "production" ? "4 GB" : undefined,
-    command: ["bun", "run", "./src/api/index.ts"],
     link: [
         bus,
         auth,
         postgres,
+        steamEncryptionKey,
         secret.PolarSecret,
         secret.PolarWebhookSecret,
         secret.NestriFamilyMonthly,
@@ -22,11 +22,9 @@ export const api = new sst.aws.Service("Api", {
         secret.NestriProMonthly,
         secret.NestriProYearly,
     ],
+    command: ["bun", "run", "./src/api/index.ts"],
     image: {
         dockerfile: "packages/functions/Containerfile",
-    },
-    environment: {
-        NO_COLOR: "1",
     },
     loadBalancer: {
         rules: [
@@ -37,9 +35,9 @@ export const api = new sst.aws.Service("Api", {
         ],
     },
     dev: {
+        url: "http://localhost:3001",
         command: "bun dev:api",
         directory: "packages/functions",
-        url: "http://localhost:3001",
     },
     scaling:
         $app.stage === "production"
@@ -48,16 +46,47 @@ export const api = new sst.aws.Service("Api", {
                 max: 10,
             }
             : undefined,
+    // For persisting actor state
+    transform: {
+        taskDefinition: (args) => {
+            const volumes = $output(args.volumes).apply(v => {
+                v.push({
+                    name: "shared-tmp",
+                    dockerVolumeConfiguration: {
+                        scope: "shared",
+                        driver: "local"
+                    }
+                });
+                return v;
+            })
+
+            // "containerDefinitions" is a JSON string, parse first
+            let containers = $jsonParse(args.containerDefinitions);
+
+            containers = containers.apply((containerDefinitions) => {
+                containerDefinitions[0].mountPoints = [
+                    {
+                        sourceVolume: "shared-tmp",
+                        containerPath: "/tmp"
+                    }
+                ]
+                return containerDefinitions;
+            });
+
+            args.volumes = volumes
+            args.containerDefinitions = $jsonStringify(containers);
+        }
+    }
 });
 
 
-export const apiRoute = new sst.aws.Router("ApiRoute", {
+export const api = !$dev ? new sst.aws.Router("ApiRoute", {
     routes: {
         // I think api.url should work all the same
-        "/*": api.nodes.loadBalancer.dnsName,
+        "/*": apiService.nodes.loadBalancer.dnsName,
     },
     domain: {
         name: "api." + domain,
         dns: sst.cloudflare.dns(),
     },
-})
+}) : apiService

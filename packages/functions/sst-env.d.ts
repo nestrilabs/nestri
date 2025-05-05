@@ -90,6 +90,10 @@ declare module "sst" {
       "endpoint": string
       "type": "sst.aws.Realtime"
     }
+    "SteamEncryptionKey": {
+      "type": "random.index/randomString.RandomString"
+      "value": string
+    }
     "Storage": {
       "name": string
       "type": "sst.aws.Bucket"

@@ -8,14 +8,16 @@ import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
 import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
-import { Screen as FullScreen } from '@nestri/www/ui/layout';
+import { AuthSteamComponent } from './pages/steam';
 import { TeamRoute } from '@nestri/www/pages/team';
 import { OpenAuthProvider } from "@openauthjs/solid";
+import { RealtimeProvider } from './providers/realtime';
 import { NotFound } from '@nestri/www/pages/not-found';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { useStorage } from '@nestri/www/providers/account';
 import { CreateTeamComponent } from '@nestri/www/pages/new';
+import { Screen as FullScreen } from '@nestri/www/ui/layout';
 import { darkClass, lightClass, theme } from '@nestri/www/ui/theme';
 import { AccountProvider, useAccount } from '@nestri/www/providers/account';
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
@@ -29,7 +31,7 @@ const Root = styled("div", {
         fontFamily: theme.font.family.body,
         textRendering: "optimizeLegibility",
         WebkitFontSmoothing: "antialised",
-        backgroundColor: theme.color.background.d100,
+        backgroundColor: theme.color.background.d200,
     },
 });
 
@@ -107,12 +109,15 @@ export const App: Component = () => {
                                         <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
                                     </FullScreen>
                                 }>
-                                {props.children}
+                                <RealtimeProvider>
+                                    {props.children}
+                                </RealtimeProvider>
                             </AccountProvider>
                         )}
                     >
                         <Route path=":teamSlug">{TeamRoute}</Route>
                         <Route path="new" component={CreateTeamComponent} />
+                        <Route path="steam" component={AuthSteamComponent} />
                         <Route
                             path="/"
                             component={() => {

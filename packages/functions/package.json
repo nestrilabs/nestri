@@ -20,12 +20,14 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@actor-core/bun": "^0.7.9",
+    "@actor-core/bun": "*",
+    "@actor-core/file-system": "*",
     "@openauthjs/openauth": "*",
-    "actor-core": "^0.7.9",
+    "actor-core": "*",
     "hono": "^4.6.15",
     "hono-openapi": "^0.3.1",
     "partysocket": "1.0.3",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.5",
+    "steam-session": "*"
   }
 }

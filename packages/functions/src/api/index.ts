@@ -1,17 +1,22 @@
 import "zod-openapi/extend";
-import { Hono } from "hono";
 import { auth } from "./auth";
 import { cors } from "hono/cors";
+// import { GameApi } from "./game";
 import { TeamApi } from "./team";
-import { PolarApi } from "./polar";
+// import { PolarApi } from "./polar";
+// import { SteamApi } from "./steam";
 import { logger } from "hono/logger";
+import { FriendApi } from "./friend";
+import { Hono, type Env } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
-import { MachineApi } from "./machine";
+// import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
 import { patchLogger } from "../log-polyfill";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
+
+patchLogger();
 
 export const app = new Hono();
 app
@@ -25,11 +30,14 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
+    .route("/teams", TeamApi.route)
+    // .route("/games", GameApi.route)
+    // .route("/polar", PolarApi.route)
+    // .route("/steam", SteamApi.route)
     .route("/realtime", Realtime.route)
-    .route("/team", TeamApi.route)
-    .route("/polar", PolarApi.route)
-    .route("/account", AccountApi.route)
-    .route("/machine", MachineApi.route)
+    .route("/friends", FriendApi.route)
+    .route("/accounts", AccountApi.route)
+    // .route("/machine", MachineApi.route)
     .onError((error, c) => {
         if (error instanceof VisibleError) {
             console.error("api error:", error);
@@ -92,14 +100,14 @@ app.get(
     }),
 );
 
-patchLogger();
+export type App = typeof app;
 
 export default {
     port: 3001,
     idleTimeout: 255,
-    webSocketHandler: Realtime.webSocketHandler,
-    fetch: (req: Request) =>
-        app.fetch(req, undefined, {
+    webSocket: Realtime.webSocketHandler,
+    fetch: (req: Request, env: Env) =>
+        app.fetch(req, env, {
             waitUntil: (fn) => fn,
             passThroughOnException: () => { },
         }),

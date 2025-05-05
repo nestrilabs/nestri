@@ -1,7 +1,7 @@
 import { hc } from "hono/client";
 import { useTeam } from "./context";
 import { useOpenAuth } from "@openauthjs/solid";
-import { type app } from "@nestri/functions/api/index";
+import { type App } from "@nestri/functions/api/index";
 import { createInitializedContext } from "@nestri/www/common/context";
 
 
@@ -11,7 +11,7 @@ export const { use: useApi, provider: ApiProvider } = createInitializedContext(
         const team = useTeam();
         const auth = useOpenAuth();
 
-        const client = hc<typeof app>(import.meta.env.VITE_API_URL, {
+        const client = hc<App>(import.meta.env.VITE_API_URL, {
             async fetch(...args: Parameters<typeof fetch>): Promise<Response> {
                 const [input, init] = args;
                 const request =

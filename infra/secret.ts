@@ -15,3 +15,16 @@ export const secret = {
 };
 
 export const allSecrets = Object.values(secret);
+
+sst.Linkable.wrap(random.RandomString, (resource) => ({
+    properties: {
+        value: resource.result,
+    },
+}));
+
+export const steamEncryptionKey = new random.RandomString(
+    "SteamEncryptionKey",
+    {
+        length: 32,
+    },
+);

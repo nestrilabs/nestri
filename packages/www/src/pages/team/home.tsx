@@ -1,7 +1,6 @@
 import { FullScreen, theme } from "@nestri/www/ui";
 import { styled } from "@macaron-css/solid";
 import { Header } from "@nestri/www/pages/team/header";
-import { useSteam } from "@nestri/www/providers/steam";
 import { Modal } from "@nestri/www/ui/modal";
 import { createEffect, createSignal, Match, onCleanup, Switch } from "solid-js";
 import { Text } from "@nestri/www/ui/text"
@@ -9,7 +8,7 @@ import { globalStyle, keyframes } from "@macaron-css/core";
 import { A } from "@solidjs/router";
 import Avatar from "@nestri/www/ui/avatar";
 import { Portal } from "@nestri/www/common/portal";
-import { QrCodeComponent } from "@nestri/www/components"
+// import { QrCodeComponent } from "@nestri/www/components"
 
 
 const LastPlayedWrapper = styled("div", {
@@ -401,7 +400,7 @@ export function HomeRoute() {
         <>
             <Header>
                 <FullScreen >
-                    <QrCodeComponent />
+                    {/* <QrCodeComponent /> */}
                     {/* <LastPlayedWrapper>
                         <LastPlayedFader />
                         <LogoBackgroundImage />

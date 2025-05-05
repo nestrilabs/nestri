@@ -6,10 +6,14 @@ export const prefixes = {
   task: "tsk",
   machine: "mch",
   member: "mbr",
-  steam: "stm",
   subscription: "sub",
   invite: "inv",
   product: "prd",
+  session:"ses",
+  variant: "var",
+  gpu: "gpu",
+  game: "gme",
+  usage: "usg"
 } as const;
 
 /**

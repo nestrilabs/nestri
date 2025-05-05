@@ -1,6 +1,4 @@
 export const handleGithub = async (accessKey: string) => {
-    console.log("acceskey", accessKey)
-
     const headers = {
         Authorization: `token ${accessKey}`,
         Accept: "application/vnd.github.v3+json",
@@ -31,7 +29,7 @@ export const handleGithub = async (accessKey: string) => {
         return {
             primary: { email, primary, verified },
             avatar: user.avatar_url,
-            username: user.name ?? user.login
+            username: user.name ?? user.login,
         };
     } catch (error) {
         console.error('GitHub OAuth error:', error);
@@ -53,7 +51,7 @@ export const handleDiscord = async (accessKey: string) => {
         }
 
         const user = await response.json();
-        // console.log("raw user", user)
+
         if (!user.verified) {
             throw new Error("Email not verified");
         }
@@ -67,7 +65,7 @@ export const handleDiscord = async (accessKey: string) => {
             avatar: user.avatar
                 ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
                 : null,
-            username: user.global_name ?? user.username
+            username: user.global_name ?? user.username,
         };
     } catch (error) {
         console.error('Discord OAuth error:', error);

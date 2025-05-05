@@ -1,4 +1,6 @@
+import "zod-openapi/extend";
 import { Resource } from "sst"
+import type { Env } from "hono";
 import { Select } from "./ui/select";
 import { subjects } from "./subjects"
 import { logger } from "hono/logger";
@@ -7,25 +9,13 @@ import { patchLogger } from "./log-polyfill";
 import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index"
 import { Email } from "@nestri/core/email/index";
-import { handleDiscord, handleGithub } from "./utils";
+import { Machine } from "@nestri/core/machine/index";
 import { GithubAdapter } from "./ui/adapters/github";
-import { Machine } from "@nestri/core/machine/index"
+import { handleDiscord, handleGithub } from "./utils";
 import { DiscordAdapter } from "./ui/adapters/discord";
 import { PasswordAdapter } from "./ui/adapters/password";
-import { type Provider } from "@openauthjs/openauth/provider/provider"
 import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
-
-type OauthUser = {
-    primary: {
-        email: any;
-        primary: any;
-        verified: any;
-    };
-    avatar: any;
-    username: any;
-}
-
-console.log("STORAGE", process.env.STORAGE)
+import { type Provider } from "@openauthjs/openauth/provider/provider";
 
 const app = issuer({
     select: Select({
@@ -71,12 +61,12 @@ const app = issuer({
             PasswordUI({
                 sendCode: async (email, code) => {
                     console.log("email & code:", email, code)
-                    // await Email.send(
-                    //     "auth",
-                    //     email,
-                    //     `Nestri code: ${code}`,
-                    //     `Your Nestri login code is ${code}`,
-                    // )
+                    await Email.send(
+                        "auth",
+                        email,
+                        `Nestri code: ${code}`,
+                        `Your Nestri login code is ${code}`,
+                    )
                 },
             }),
         ),
@@ -167,21 +157,23 @@ const app = issuer({
                     userID,
                     email
                 }, {
-                    subject: email
+                    subject: userID
                 });
 
             } else if (matching) {
+                await User.acknowledgeLogin(matching.id)
+
                 //Sign In
                 return ctx.subject("user", {
                     userID: matching.id,
                     email
                 }, {
-                    subject: email
+                    subject: matching.id
                 });
             }
         }
 
-        let user = undefined as OauthUser | undefined;
+        let user;
 
         if (value.provider === "github") {
             const access = value.tokenset.access;
@@ -202,7 +194,7 @@ const app = issuer({
                     const userID = await User.create({
                         email: user.primary.email,
                         name: user.username,
-                        avatarUrl: user.avatar
+                        avatarUrl: user.avatar,
                     });
 
                     if (!userID) throw new Error("Error creating user");
@@ -211,15 +203,17 @@ const app = issuer({
                         userID,
                         email: user.primary.email
                     }, {
-                        subject: user.primary.email
+                        subject: userID
                     });
                 } else {
+                    await User.acknowledgeLogin(matching.id)
+
                     //Sign In
                     return await ctx.subject("user", {
                         userID: matching.id,
                         email: user.primary.email
                     }, {
-                        subject: user.primary.email
+                        subject: matching.id
                     });
                 }
 
@@ -238,8 +232,8 @@ patchLogger();
 export default {
     port: 3002,
     idleTimeout: 255,
-    fetch: (req: Request) =>
-        app.fetch(req, undefined, {
+    fetch: (req: Request, env: Env) =>
+        app.fetch(req, env, {
             waitUntil: (fn) => fn,
             passThroughOnException: () => { },
         }),

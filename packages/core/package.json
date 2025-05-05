@@ -1,8 +1,8 @@
 {
     "name": "@nestri/core",
     "version": "0.0.0",
-    "sideEffects": false,
     "type": "module",
+    "sideEffects": false,
     "scripts": {
         "db:dev": "drizzle-kit",
         "typecheck": "tsc --noEmit",
@@ -15,6 +15,7 @@
     },
     "devDependencies": {
         "@tsconfig/node20": "^20.1.4",
+        "@types/bun": "^1.2.11",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
         "loops": "^3.4.1",
@@ -35,6 +36,9 @@
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
-        "postgres": "^3.4.5"
+        "drizzle-zero": "^0.9.1",
+        "drizzle-zod": "^0.7.1",
+        "postgres": "^3.4.5",
+        "steam-session": "*"
     }
 }
