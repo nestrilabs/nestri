@@ -247,7 +247,7 @@ export namespace Steam {
             lastSyncedAt: input.lastSyncedAt,
             accountStatus: input.accountStatus,
             steamMemberSince: input.steamMemberSince,
-            profileUrl: `https://steamcommunity.com/id/${input.profileUrl}`,
+            profileUrl: input.profileUrl ? `https://steamcommunity.com/id/${input.profileUrl}` : null,
         };
     }
 
