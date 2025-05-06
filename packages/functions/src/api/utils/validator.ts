@@ -19,7 +19,7 @@ export const validator = <
     target: Target,
     schema: T
 ): MiddlewareHandler<
-    any,
+    Record<string, unknown>,
     string,
     {
         in: {
