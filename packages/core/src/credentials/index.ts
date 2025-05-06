@@ -29,7 +29,7 @@ export namespace Credentials {
 
     export const create = fn(
         Info
-            .omit({ accessToken: true, cookies: true }),
+            .omit({ accessToken: true, cookies: true, expiry:true }),
         (input) => {
             const part = input.refreshToken.split('.')[1] as string
 

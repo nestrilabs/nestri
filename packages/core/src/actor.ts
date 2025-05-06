@@ -30,7 +30,7 @@ export namespace Actor {
   export interface Token {
     type: "steam";
     properties: {
-      steamID: bigint;
+      steamID: string;
     };
   }
 

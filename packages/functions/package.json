@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/steamcommunity": "^3.43.8"
   },
   "scripts": {
     "dev:auth": "bun run --watch ./src/auth/index.ts",
@@ -20,6 +21,7 @@
     "hono": "^4.7.8",
     "hono-openapi": "^0.4.8",
     "steam-session": "*",
-    "steamcommunity": "^3.48.6"
+    "steamcommunity": "^3.48.6",
+    "steamid": "^2.1.0"
   }
 }

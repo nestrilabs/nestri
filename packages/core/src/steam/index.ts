@@ -45,7 +45,7 @@ export namespace Steam {
                     example: Examples.SteamAccount.username
                 })
                 .default("unknown"),
-            realName: z.string().openapi({
+            realName: z.string().nullable().openapi({
                 description: "The real name behind of this Steam account",
                 example: Examples.SteamAccount.realName
             }),
@@ -131,10 +131,10 @@ export namespace Steam {
                         realName: input.realName,
                         profileUrl: input.profileUrl,
                         avatarHash: input.avatarHash,
-                        steamMemberSince: input.steamMemberSince,
                         limitations: input.limitations,
                         status: input.status ?? "offline",
                         username: input.username ?? "unknown",
+                        steamMemberSince: input.steamMemberSince,
                         accountStatus: input.accountStatus ?? "new",
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
