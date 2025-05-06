@@ -1,5 +1,5 @@
-import { char, customType, timestamp as rawTs } from "drizzle-orm/pg-core";
 import { Token } from "../utils";
+import { char, customType, timestamp as rawTs } from "drizzle-orm/pg-core";
 
 export const ulid = (name: string) => char(name, { length: 26 + 4 });
 
