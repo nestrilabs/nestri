@@ -1,7 +1,7 @@
 import { Resource } from "sst";
 import { subjects } from "../../subjects";
+import { Actor } from "@nestri/core/actor";
 import { type MiddlewareHandler } from "hono";
-import { useActor, withActor } from "@nestri/core/actor";
 import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
@@ -11,7 +11,7 @@ const client = createClient({
 });
 
 export const notPublic: MiddlewareHandler = async (c, next) => {
-  const actor = useActor();
+  const actor = Actor.use();
   if (actor.type === "public")
     throw new VisibleError(
       "authentication",
@@ -22,9 +22,8 @@ export const notPublic: MiddlewareHandler = async (c, next) => {
 };
 
 export const auth: MiddlewareHandler = async (c, next) => {
-  const authHeader =
-    c.req.query("authorization") ?? c.req.header("authorization");
-  if (!authHeader) return withActor({ type: "public", properties: {} }, next);
+  const authHeader = c.req.header("authorization");
+  if (!authHeader) return Actor.provide("public", {}, next);
   const match = authHeader.match(/^Bearer (.+)$/);
   if (!match) {
     throw new VisibleError(
@@ -44,20 +43,24 @@ export const auth: MiddlewareHandler = async (c, next) => {
   }
 
   if (result.subject.type === "user") {
+    const user = { ...result.subject.properties }
     const teamID = c.req.header("x-nestri-team");
-    if (!teamID) return withActor(result.subject, next);
-    return withActor(
+    if (!teamID) {
+      return Actor.provide("user", {
+        ...user
+      }, next);
+    }
+    return Actor.provide(
+      "system",
       {
-        type: "system",
-        properties: {
-          teamID,
-        },
+        teamID
       },
       async () =>
-        withActor(
-          result.subject,
-          next,
-        )
+        Actor.provide("user", {
+          ...user
+        }, next)
     );
   }
+
+  return Actor.provide("public", {}, next);
 };

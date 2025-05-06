@@ -9,6 +9,8 @@ import { patchLogger } from "../utils/patch-logger";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
+patchLogger();
+
 export const app = new Hono();
 app
     .use(logger())
@@ -84,8 +86,6 @@ app.get(
         },
     }),
 );
-
-patchLogger();
 
 export default {
     port: 3001,

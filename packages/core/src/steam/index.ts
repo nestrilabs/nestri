@@ -1,101 +1,225 @@
 import { z } from "zod";
+import { fn } from "../utils";
+import { Resource } from "sst";
+import { Actor } from "../actor";
+import { bus } from "sst/aws/bus";
 import { Common } from "../common";
+import { createEvent } from "../event";
 import { Examples } from "../examples";
-import { createID, fn } from "../utils";
-import { useUser, useUserID } from "../actor";
-import { eq, and, isNull, sql } from "../drizzle";
-import { steamTable, AccountLimitation, LastGame } from "./steam.sql";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { eq, and, isNull, desc } from "drizzle-orm";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { steamTable, StatusEnum, AccountStatusEnum, Limitations } from "./steam.sql";
 
 export namespace Steam {
     export const Info = z
         .object({
-            id: z.string().openapi({
+            id: z.bigint().openapi({
                 description: Common.IdDescription,
-                example: Examples.Steam.id,
+                example: Examples.SteamAccount.id
             }),
-            avatarUrl: z.string().openapi({
-                description: "The avatar url of this Steam account",
-                example: Examples.Steam.avatarUrl
+            avatarHash: z.string().openapi({
+                description: "The Steam avatar hash that this account owns",
+                example: Examples.SteamAccount.avatarHash
             }),
-            steamEmail: z.string().openapi({
-                description: "The email regisered with this Steam account",
-                example: Examples.Steam.steamEmail
+            status: z.enum(StatusEnum.enumValues).openapi({
+                description: "The current connection status of this Steam account",
+                example: Examples.SteamAccount.status
             }),
-            steamID: z.number().openapi({
-                description: "The Steam ID this Steam account",
-                example: Examples.Steam.steamID
+            accountStatus: z.enum(AccountStatusEnum.enumValues).openapi({
+                description: "The current status of this Steam account",
+                example: Examples.SteamAccount.accountStatus
             }),
-            limitation: AccountLimitation.openapi({
-                description: " The limitations of this Steam account",
-                example: Examples.Steam.limitation
+            userID: z.string().nullable().openapi({
+                description: "The user id of which account owns this steam account",
+                example: Examples.SteamAccount.userID
             }),
-            lastGame: LastGame.openapi({
-                description: "The last game played on this Steam account",
-                example: Examples.Steam.lastGame
+            profileUrl: z.string().nullable().openapi({
+                description: "The steam community url of this account",
+                example: Examples.SteamAccount.profileUrl
             }),
-            userID: z.string().openapi({
-                description: "The unique id of the user who owns this steam account",
-                example: Examples.Steam.userID
+            username: z.string()
+                .regex(/^[a-z0-9]{1,32}$/, "The Steam username is not slug friendly")
+                .nullable()
+                .openapi({
+                    description: "The unique username of this account",
+                    example: Examples.SteamAccount.username
+                })
+                .default("unknown"),
+            realName: z.string().openapi({
+                description: "The real name behind of this Steam account",
+                example: Examples.SteamAccount.realName
             }),
-            username: z.string().openapi({
-                description: "The unique username of this steam user",
-                example: Examples.Steam.username
+            name: z.string().openapi({
+                description: "The name used by this account",
+                example: Examples.SteamAccount.name
             }),
-            personaName: z.string().openapi({
-                description: "The last recorded persona name used by this account",
-                example: Examples.Steam.personaName
+            lastSyncedAt: z.date().openapi({
+                description: "The last time this account was synced to Steam",
+                example: Examples.SteamAccount.lastSyncedAt
             }),
-            countryCode: z.string().openapi({
-                description: "The country this account is connected from",
-                example: Examples.Steam.countryCode
+            limitations: Limitations.openapi({
+                description: "The limitations bestowed on this Steam account by Steam",
+                example: Examples.SteamAccount.limitations
+            }),
+            memberSince: z.date().openapi({
+                description: "When this Steam community account was created",
+                example: Examples.SteamAccount.memberSince
             })
         })
         .openapi({
             ref: "Steam",
             description: "Represents a steam user's information stored on Nestri",
-            example: Examples.Steam,
+            example: Examples.SteamAccount,
         });
 
     export type Info = z.infer<typeof Info>;
 
+    export const Events = {
+        Created: createEvent(
+            "steam_account.created",
+            z.object({
+                steamID: Info.shape.id,
+                userID: Info.shape.userID
+            }),
+        ),
+        Updated: createEvent(
+            "steam_account.updated",
+            z.object({
+                steamID: Info.shape.id,
+                userID: Info.shape.userID
+            }),
+        )
+    };
+
     export const create = fn(
-        Info.partial({
-            id: true,
-            userID: true,
-        }),
+        Info
+            .extend({
+                useUser: z.boolean(),
+            })
+            .partial({
+                useUser: true,
+                userID: true,
+                status: true,
+                accountStatus: true,
+                lastSyncedAt: true
+            }),
         (input) =>
             createTransaction(async (tx) => {
-                const id = input.id ?? createID("steam");
-                const user = useUser()
-                await tx.insert(steamTable).values({
-                    id,
-                    lastSeen: sql`now()`,
-                    userID: input.userID ?? user.userID,
-                    countryCode: input.countryCode,
-                    username: input.username,
-                    steamID: input.steamID,
-                    lastGame: input.lastGame,
-                    limitation: input.limitation,
-                    steamEmail: input.steamEmail,
-                    avatarUrl: input.avatarUrl,
-                    personaName: input.personaName,
-                })
-                return id;
+                const accounts =
+                    await tx
+                        .select()
+                        .from(steamTable)
+                        .where(
+                            and(
+                                eq(steamTable.id, input.id),
+                                isNull(steamTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+                        .then((rows) => rows.map(serialize))
+
+                // Update instead of create
+                if (accounts.length > 0) return null
+
+                const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : null;
+                await tx
+                    .insert(steamTable)
+                    .values({
+                        userID,
+                        id: input.id,
+                        name: input.name,
+                        realName: input.realName,
+                        profileUrl: input.profileUrl,
+                        avatarHash: input.avatarHash,
+                        memberSince: input.memberSince,
+                        limitations: input.limitations,
+                        status: input.status ?? "offline",
+                        username: input.username ?? "unknown",
+                        accountStatus: input.accountStatus ?? "new",
+                        lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
+                    })
+
+                await afterTx(async () =>
+                    bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
+                );
+
+                return input.id
             }),
     );
 
+    export const update = fn(
+        Info
+            .extend({
+                useUser: z.boolean(),
+            })
+            .partial({
+                useUser: true,
+                userID: true,
+                status: true,
+                lastSyncedAt: true,
+                avatarHash: true,
+                username: true,
+                realName: true,
+                limitations: true,
+                accountStatus: true,
+                name: true,
+                memberSince: true,
+                profileUrl: true,
+            }),
+        async (input) => {
+            useTransaction(async (tx) => {
+                const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : undefined;
+                await tx
+                    .update(steamTable)
+                    .set({
+                        userID,
+                        id: input.id,
+                        name: input.name,
+                        realName: input.realName,
+                        profileUrl: input.profileUrl,
+                        avatarHash: input.avatarHash,
+                        memberSince: input.memberSince,
+                        limitations: input.limitations,
+                        status: input.status ?? "offline",
+                        username: input.username ?? "unknown",
+                        accountStatus: input.accountStatus ?? "new",
+                        lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
+                    })
+                    .where(eq(steamTable.id, input.id));
+
+                await afterTx(async () =>
+                    bus.publish(Resource.Bus, Events.Updated, { userID: userID ?? null, steamID: input.id })
+                );
+            })
+        }
+    )
+
     export const fromUserID = fn(
-        z.string(),
+        z.string().min(1),
         (userID) =>
             useTransaction((tx) =>
                 tx
                     .select()
                     .from(steamTable)
                     .where(and(eq(steamTable.userID, userID), isNull(steamTable.timeDeleted)))
+                    .orderBy(desc(steamTable.timeCreated))
                     .execute()
-                    .then((rows) => rows.map(serialize).at(0)),
-            ),
+                    .then((rows) => rows.map(serialize))
+            )
+    )
+
+    export const fromSteamID = fn(
+        z.bigint(),
+        (steamID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(steamTable)
+                    .where(and(eq(steamTable.id, steamID), isNull(steamTable.timeDeleted)))
+                    .orderBy(desc(steamTable.timeCreated))
+                    .execute()
+                    .then((rows) => rows.map(serialize).at(0))
+            )
     )
 
     export const list = () =>
@@ -103,34 +227,28 @@ export namespace Steam {
             tx
                 .select()
                 .from(steamTable)
-                .where(and(eq(steamTable.userID, useUserID()), isNull(steamTable.timeDeleted)))
+                .where(and(eq(steamTable.userID, Actor.userID()), isNull(steamTable.timeDeleted)))
+                .orderBy(desc(steamTable.timeCreated))
                 .execute()
-                .then((rows) => rows.map(serialize)),
+                .then((rows) => rows.map(serialize))
         )
 
-    /**
-     * Serializes a raw Steam table record into a standardized Info object.
-     *
-     * This function maps the fields from a database record (retrieved from the Steam table) to the
-     * corresponding properties defined in the Info schema.
-     *
-     * @param input - A raw record from the Steam table containing user information.
-     * @returns An object conforming to the Info schema.
-     */
     export function serialize(
         input: typeof steamTable.$inferSelect,
     ): z.infer<typeof Info> {
         return {
             id: input.id,
+            name: input.name,
             userID: input.userID,
-            countryCode: input.countryCode,
+            status: input.status,
             username: input.username,
-            avatarUrl: input.avatarUrl,
-            personaName: input.personaName,
-            steamEmail: input.steamEmail,
-            steamID: input.steamID,
-            limitation: input.limitation,
-            lastGame: input.lastGame,
+            realName: input.realName,
+            avatarHash: input.avatarHash,
+            limitations: input.limitations,
+            memberSince: input.memberSince,
+            accountStatus: input.accountStatus,
+            lastSyncedAt: input.lastSyncedAt,
+            profileUrl: `https://steamcommunity.com/id/${input.profileUrl}`,
         };
     }
 

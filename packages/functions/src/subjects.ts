@@ -5,9 +5,5 @@ export const subjects = createSubjects({
     user: z.object({
         email: z.string(),
         userID: z.string(),
-    }),
-    machine: z.object({
-        fingerprint: z.string(),
-        machineID: z.string(),
     })
 })

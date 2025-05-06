@@ -14,7 +14,7 @@ export const handleDiscord = async (accessKey: string) => {
         }
 
         const user = await response.json();
-        // console.log("raw user", user)
+
         if (!user.verified) {
             throw new Error("Email not verified");
         }
@@ -28,7 +28,7 @@ export const handleDiscord = async (accessKey: string) => {
             avatar: user.avatar
                 ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png`
                 : null,
-            username: user.global_name ?? user.username
+            username: user.global_name ?? user.username,
         };
     } catch (error) {
         console.error('Discord OAuth error:', error);
