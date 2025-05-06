@@ -42,20 +42,3 @@ export const steamTable = pgTable(
         unique("idx_steam_username").on(table.username)
     ]
 );
-
-// export const steamCredentialsTable = pgTable(
-//     "steam_account_credentials",
-//     {
-//         ...timestamps,
-//         refreshToken: text("refresh_token")
-//             .notNull(),
-//         expiry: utc("expiry").notNull(),
-//         id: bigint("steam_id", { mode: "bigint" })
-//             .notNull()
-//             .primaryKey()
-//             .references(() => steamTable.id, {
-//                 onDelete: "cascade"
-//             }),
-//         username: varchar("username", { length: 255 }).notNull(),
-//     }
-// )
