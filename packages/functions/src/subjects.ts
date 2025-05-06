@@ -1,13 +1,13 @@
-import * as v from "valibot"
+import { z } from "zod"
 import { createSubjects } from "@openauthjs/openauth/subject"
 
 export const subjects = createSubjects({
-  user: v.object({
-    email: v.string(),
-    userID: v.string(),
-  }),
-  machine: v.object({
-    fingerprint: v.string(),
-    machineID: v.string(),
-  })
+    user: z.object({
+        email: z.string(),
+        userID: z.string(),
+    }),
+    machine: z.object({
+        fingerprint: z.string(),
+        machineID: z.string(),
+    })
 })

@@ -4,7 +4,7 @@ import {
   type PasswordConfig,
   type PasswordLoginError,
   type PasswordRegisterError,
-} from "./adapters/password"
+} from "../adapters"
 // import { Layout } from "@openauthjs/openauth/ui/base"
 import { Layout } from "./base"
 import "@openauthjs/openauth/ui/form"

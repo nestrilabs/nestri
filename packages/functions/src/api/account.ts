@@ -1,12 +1,12 @@
 import { z } from "zod";
 import { Hono } from "hono";
-import { notPublic } from "./auth";
+import { notPublic } from "./utils/auth";
 import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
 import { Team } from "@nestri/core/team/index";
 import { assertActor } from "@nestri/core/actor";
 import { Examples } from "@nestri/core/examples";
-import { ErrorResponses, Result } from "./common";
+import { ErrorResponses, Result } from "./utils";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 export namespace AccountApi {
