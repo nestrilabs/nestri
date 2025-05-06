@@ -6,7 +6,8 @@ import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index"
 // import { Email } from "@nestri/core/email/index";
 // import { Machine } from "@nestri/core/machine/index"
-import { handleDiscord, handleGithub, patchLogger } from "./utils";
+import { patchLogger } from "../utils/patch-logger";
+import { handleDiscord, handleGithub } from "./utils";
 import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
 // import { type Provider } from "@openauthjs/openauth/provider/provider"
 import { DiscordAdapter, PasswordAdapter, GithubAdapter } from "./adapters";

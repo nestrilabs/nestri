@@ -5,7 +5,7 @@ import { Realtime } from "./realtime";
 import { auth } from "./utils/auth";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
-import { patchLogger } from "./utils/patch-logger";
+import { patchLogger } from "../utils/patch-logger";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
