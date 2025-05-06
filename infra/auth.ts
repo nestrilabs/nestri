@@ -1,11 +1,10 @@
 import { bus } from "./bus";
 import { domain } from "./dns";
-import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
+import { secret, steamEncryptionKey } from "./secret";
 
-//FIXME: Use a shared /tmp folder 
-export const auth = new sst.aws.Service("Auth", {
+export const authService = new sst.aws.Service("Auth", {
     cluster,
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
     memory: $app.stage === "production" ? "2 GB" : undefined,
@@ -14,6 +13,7 @@ export const auth = new sst.aws.Service("Auth", {
         bus,
         postgres,
         secret.PolarSecret,
+        steamEncryptionKey,
         secret.GithubClientID,
         secret.DiscordClientID,
         secret.GithubClientSecret,
@@ -24,7 +24,7 @@ export const auth = new sst.aws.Service("Auth", {
     },
     environment: {
         NO_COLOR: "1",
-        STORAGE: $dev ? "/tmp/persist.json" : "/mnt/efs/persist.json"
+        STORAGE: "/tmp/persist.json"
     },
     loadBalancer: {
         rules: [
@@ -52,15 +52,48 @@ export const auth = new sst.aws.Service("Auth", {
                 max: 10,
             }
             : undefined,
+    //For temporarily persisting the persist.json
+    transform: {
+        taskDefinition: (args) => {
+            const volumes = $output(args.volumes).apply(v => {
+                const next = [...v, {
+                    name: "shared-tmp",
+                    dockerVolumeConfiguration: {
+                        scope: "shared",
+                        driver: "local"
+                    }
+                }];
+
+                return next;
+            })
+
+            // "containerDefinitions" is a JSON string, parse first
+            let containers = $jsonParse(args.containerDefinitions);
+
+            containers = containers.apply((containerDefinitions) => {
+                containerDefinitions[0].mountPoints = [
+                    ...(containerDefinitions[0].mountPoints ?? []),
+                    {
+                        sourceVolume: "shared-tmp",
+                        containerPath: "/tmp"
+                    }
+                ]
+                return containerDefinitions;
+            });
+
+            args.volumes = volumes
+            args.containerDefinitions = $jsonStringify(containers);
+        }
+    }
 });
 
-export const authRoute = new sst.aws.Router("AuthRoute", {
+export const auth = !$dev ? new sst.aws.Router("AuthRoute", {
     routes: {
         // I think auth.url should work all the same
-        "/*": auth.nodes.loadBalancer.dnsName,
+        "/*": authService.nodes.loadBalancer.dnsName,
     },
     domain: {
         name: "auth." + domain,
         dns: sst.cloudflare.dns(),
     },
-})
+}) : authService

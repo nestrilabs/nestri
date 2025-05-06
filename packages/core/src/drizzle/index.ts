@@ -1,4 +1,3 @@
-export * from "drizzle-orm";
 import { Resource } from "sst";
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";

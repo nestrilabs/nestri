@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Resource } from "sst";
-import { useTeam, useUserID } from "../actor";
 import { Polar as PolarSdk } from "@polar-sh/sdk";
 import { validateEvent } from "@polar-sh/sdk/webhooks";
-import { PlanType } from "../subscription/subscription.sql";
 
-const polar = new PolarSdk({ accessToken: Resource.PolarSecret.value, server: Resource.App.stage !== "production" ? "sandbox" : "production" });
-const planType = z.enum(PlanType)
+const polar = new PolarSdk({
+    accessToken: Resource.PolarSecret.value,
+    server: Resource.App.stage !== "production" ? "sandbox" : "production"
+});
+
 export namespace Polar {
     export const client = polar;
 
@@ -16,7 +17,7 @@ export namespace Polar {
             const customers = await client.customers.list({ email })
 
             if (customers.result.items.length === 0) {
-                return await client.customers.create({ email })
+                return await client.customers.create({ email})
             } else {
                 return customers.result.items[0]
             }
@@ -28,18 +29,18 @@ export namespace Polar {
         }
     })
 
-    const getProductIDs = (plan: z.infer<typeof planType>) => {
-        switch (plan) {
-            case "free":
-                return [Resource.NestriFreeMonthly.value]
-            case "pro":
-                return [Resource.NestriProYearly.value, Resource.NestriProMonthly.value]
-            case "family":
-                return [Resource.NestriFamilyYearly.value, Resource.NestriFamilyMonthly.value]
-            default:
-                return [Resource.NestriFreeMonthly.value]
-        }
-    }
+    // const getProductIDs = (plan: z.infer<typeof planType>) => {
+    //     switch (plan) {
+    //         case "free":
+    //             return [Resource.NestriFreeMonthly.value]
+    //         case "pro":
+    //             return [Resource.NestriProYearly.value, Resource.NestriProMonthly.value]
+    //         case "family":
+    //             return [Resource.NestriFamilyYearly.value, Resource.NestriFamilyMonthly.value]
+    //         default:
+    //             return [Resource.NestriFreeMonthly.value]
+    //     }
+    // }
 
     export const createPortal = fn(
         z.string(),
@@ -53,44 +54,10 @@ export namespace Polar {
     )
 
     //TODO: Implement this
-    export const handleWebhook = async(payload: ReturnType<typeof validateEvent>) => {
+    export const handleWebhook = async (payload: ReturnType<typeof validateEvent>) => {
         switch (payload.type) {
             case "subscription.created":
                 const teamID = payload.data.metadata.teamID
         }
     }
-
-    export const createCheckout = fn(
-        z
-            .object({
-                planType: z.enum(PlanType),
-                customerEmail: z.string(),
-                successUrl: z.string(),
-                customerID: z.string(),
-                allowDiscountCodes: z.boolean(),
-                teamID: z.string()
-            })
-            .partial({
-                customerEmail: true,
-                allowDiscountCodes: true,
-                customerID: true,
-                teamID: true
-            }),
-        async (input) => {
-            const productIDs = getProductIDs(input.planType)
-
-            const checkoutUrl =
-                await client.checkouts.create({
-                    products: productIDs,
-                    customerEmail: input.customerEmail ?? useUserID(),
-                    successUrl: `${input.successUrl}?checkout={CHECKOUT_ID}`,
-                    allowDiscountCodes: input.allowDiscountCodes ?? false,
-                    customerId: input.customerID,
-                    customerMetadata: {
-                        teamID: input.teamID ?? useTeam()
-                    }
-                })
-
-            return checkoutUrl.url
-        })
 }

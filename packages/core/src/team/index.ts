@@ -1,18 +1,15 @@
 import { z } from "zod";
+import { Steam } from "../steam";
+import { Actor } from "../actor";
 import { Common } from "../common";
-import { Member } from "../member";
 import { teamTable } from "./team.sql";
 import { Examples } from "../examples";
-import { assertActor } from "../actor";
-import { createEvent } from "../event";
-import { createID, fn } from "../utils";
-import { Subscription } from "../subscription";
-import { and, eq, sql, isNull } from "../drizzle";
+import { and, eq, isNull } from "drizzle-orm";
+import { steamTable } from "../steam/steam.sql";
+import { createID, fn, Invite } from "../utils";
 import { memberTable } from "../member/member.sql";
-import { ErrorCodes, VisibleError } from "../error";
-import { groupBy, map, pipe, values } from "remeda";
-import { subscriptionTable } from "../subscription/subscription.sql";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { groupBy, pipe, values, map } from "remeda";
+import { createTransaction, useTransaction, type Transaction } from "../drizzle/transaction";
 
 export namespace Team {
     export const Info = z
@@ -21,198 +18,144 @@ export namespace Team {
                 description: Common.IdDescription,
                 example: Examples.Team.id,
             }),
-            // Remove spaces and make sure it is lowercase (this is just to make sure the frontend did this)
-            slug: z.string().regex(/^[a-z0-9\-]+$/, "Use a URL friendly name.").openapi({
-                description: "The unique and url-friendly slug of this team",
+            slug: z.string().regex(/^[a-z0-9-]{1,32}$/, "Use a URL friendly name.").openapi({
+                description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
                 example: Examples.Team.slug
             }),
             name: z.string().openapi({
-                description: "The name of this team",
+                description: "Display name of the team",
                 example: Examples.Team.name
             }),
-            members: Member.Info.array().openapi({
-                description: "The members of this team",
+            ownerID: z.string().openapi({
+                description: "Unique identifier of the team owner",
+                example: Examples.Team.ownerID
+            }),
+            maxMembers: z.number().openapi({
+                description: "Maximum allowed team members based on subscription tier",
+                example: Examples.Team.maxMembers
+            }),
+            inviteCode: z.string().openapi({
+                description: "Unique invitation code used for adding new team members",
+                example: Examples.Team.inviteCode
+            }),
+            members: Steam.Info.array().openapi({
+                description: "All the team members in this team",
                 example: Examples.Team.members
-            }),
-            subscriptions: Subscription.Info.array().openapi({
-                description: "The subscriptions of this team",
-                example: Examples.Team.subscriptions
-            }),
+            })
         })
         .openapi({
             ref: "Team",
-            description: "Represents a team on Nestri",
+            description: "Team entity containing core team information and settings",
             example: Examples.Team,
         });
 
     export type Info = z.infer<typeof Info>;
 
-    export const Events = {
-        Created: createEvent(
-            "team.created",
-            z.object({
-                teamID: z.string().nonempty(),
-            }),
-        ),
-    };
+    /**
+     * Generates a unique team invite code
+     * @param length The length of the invite code
+     * @param maxAttempts Maximum number of attempts to generate a unique code
+     * @returns A promise resolving to a unique invite code
+     */
+    async function createUniqueTeamInviteCode(
+        tx: Transaction,
+        length: number = 8,
+        maxAttempts: number = 5
+    ): Promise<string> {
+        let attempts = 0;
 
-    export class TeamExistsError extends VisibleError {
-        constructor(slug: string) {
-            super(
-                "already_exists",
-                ErrorCodes.Validation.TEAM_ALREADY_EXISTS,
-                `There is already a team named "${slug}"`
-            );
+        while (attempts < maxAttempts) {
+            const code = Invite.generateCode(length);
+
+            const teams =
+                await tx
+                    .select()
+                    .from(teamTable)
+                    .where(eq(teamTable.inviteCode, code))
+                    .execute()
+
+            if (teams.length === 0) {
+                return code;
+            }
+
+            attempts++;
         }
+
+        // If we've exceeded max attempts, add timestamp to ensure uniqueness
+        const timestampSuffix = Date.now().toString(36).slice(-4);
+        const baseCode = Invite.generateCode(length - 4);
+        return baseCode + timestampSuffix;
     }
 
     export const create = fn(
-        Info.pick({ slug: true, id: true, name: true, }).partial({
-            id: true,
-        }), (input) =>
-        createTransaction(async (tx) => {
-            const id = input.id ?? createID("team");
-            const result = await tx.insert(teamTable).values({
-                id,
-                slug: input.slug,
-                name: input.name
+        Info
+            .omit({ members: true })
+            .partial({
+                id: true,
+                inviteCode: true,
+                maxMembers: true,
+                ownerID: true
+            }),
+        async (input) =>
+            createTransaction(async (tx) => {
+                const inviteCode = await createUniqueTeamInviteCode(tx)
+                const id = input.id ?? createID("team");
+                await tx
+                    .insert(teamTable)
+                    .values({
+                        id,
+                        inviteCode,
+                        slug: input.slug,
+                        name: input.name,
+                        ownerID: input.ownerID ?? Actor.userID(),
+                        maxMembers: input.maxMembers ?? 1,
+                    })
+
+                return id;
             })
-                .onConflictDoNothing({ target: teamTable.slug })
-
-            if (result.count === 0) throw new TeamExistsError(input.slug);
-
-            return id;
-        })
     )
 
-    //TODO: "Delete" subscription and member(s) as well
-    export const remove = fn(Info.shape.id, (input) =>
-        useTransaction(async (tx) => {
-            const account = assertActor("user");
-            const row = await tx
-                .select({
-                    teamID: memberTable.teamID,
-                })
-                .from(memberTable)
-                .where(
-                    and(
-                        eq(memberTable.teamID, input),
-                        eq(memberTable.email, account.properties.email),
-                    ),
-                )
-                .execute()
-                .then((rows) => rows.at(0));
-            if (!row) return;
-            await tx
-                .update(teamTable)
-                .set({
-                    timeDeleted: sql`now()`,
-                })
-                .where(eq(teamTable.id, row.teamID));
-        }),
-    );
-
-    export const list = fn(z.void(), () => {
-        const actor = assertActor("user");
-        return useTransaction(async (tx) =>
+    export const list = () =>
+        useTransaction(async (tx) =>
             tx
-                .select()
+                .select({
+                    steam_accounts: steamTable,
+                    teams: teamTable
+                })
                 .from(teamTable)
-                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
                 .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
                 .where(
                     and(
-                        eq(memberTable.email, actor.properties.email),
+                        eq(memberTable.userID, Actor.userID()),
                         isNull(memberTable.timeDeleted),
+                        isNull(steamTable.timeDeleted),
                         isNull(teamTable.timeDeleted),
                     ),
                 )
                 .execute()
                 .then((rows) => serialize(rows))
         )
-    });
 
-    export const fromID = fn(z.string().min(1), async (id) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(teamTable)
-                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
-                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-                .where(
-                    and(
-                        eq(teamTable.id, id),
-                        isNull(memberTable.timeDeleted),
-                        isNull(teamTable.timeDeleted),
-                    ),
-                )
-                .execute()
-                .then((rows) => serialize(rows).at(0))
-        ),
-    );
-
-    export const fromSlug = fn(z.string().min(1), async (slug) =>
-        useTransaction(async (tx) =>
-            tx
-                .select()
-                .from(teamTable)
-                .leftJoin(subscriptionTable, eq(subscriptionTable.teamID, teamTable.id))
-                .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-                .where(
-                    and(
-                        eq(teamTable.slug, slug),
-                        isNull(memberTable.timeDeleted),
-                        isNull(teamTable.timeDeleted),
-                    ),
-                )
-                .execute()
-                .then((rows) => serialize(rows).at(0))
-        ),
-    );
-
-    /**
-     * Transforms an array of team, subscription, and member records into structured team objects.
-     *
-     * Groups input rows by team ID and constructs an array of team objects, each including its associated members and subscriptions.
-     *
-     * @param input - Array of objects containing team, subscription, and member data.
-     * @returns An array of team objects with their members and subscriptions.
-     */
     export function serialize(
-        input: { team: typeof teamTable.$inferSelect, subscription: typeof subscriptionTable.$inferInsert | null, member: typeof memberTable.$inferInsert | null }[],
+        input: { teams: typeof teamTable.$inferSelect; steam_accounts: typeof steamTable.$inferSelect | null }[]
     ): z.infer<typeof Info>[] {
-        console.log("serialize", input)
         return pipe(
             input,
-            groupBy((row) => row.team.id),
+            groupBy((row) => row.teams.id),
             values(),
             map((group) => ({
-                name: group[0].team.name,
-                id: group[0].team.id,
-                slug: group[0].team.slug,
-                subscriptions: !group[0].subscription ?
-                    [] :
-                    group.map((row) => ({
-                        planType: row.subscription!.planType,
-                        polarProductID: row.subscription!.polarProductID,
-                        polarSubscriptionID: row.subscription!.polarSubscriptionID,
-                        standing: row.subscription!.standing,
-                        tokens: row.subscription!.tokens,
-                        teamID: row.subscription!.teamID,
-                        userID: row.subscription!.userID,
-                        id: row.subscription!.id,
-                    })),
+                id: group[0].teams.id,
+                slug: group[0].teams.slug,
+                name: group[0].teams.name,
+                ownerID: group[0].teams.ownerID,
+                maxMembers: group[0].teams.maxMembers,
+                inviteCode: group[0].teams.inviteCode,
                 members:
-                    !group[0].member ?
+                    !group[0].steam_accounts ?
                         [] :
-                        group.map((row) => ({
-                            id: row.member!.id,
-                            email: row.member!.email,
-                            role: row.member!.role,
-                            teamID: row.member!.teamID,
-                            timeSeen: row.member!.timeSeen,
-                        }))
+                        group.map((item) => Steam.serialize(item.steam_accounts!))
             })),
-        );
+        )
     }
 }
