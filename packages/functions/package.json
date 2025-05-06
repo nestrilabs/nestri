@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@actor-core/bun": "^0.8.0",
-    "@nestri-core":"workspace:",
+    "@nestri/core":"workspace:",
     "actor-core": "^0.8.0",
     "hono": "^4.7.8",
     "hono-openapi": "^0.4.8"
