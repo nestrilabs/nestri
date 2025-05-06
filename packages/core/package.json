@@ -17,25 +17,22 @@
         "@tsconfig/node20": "^20.1.4",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
-        "loops": "^3.4.1",
         "mqtt": "^5.10.3",
         "remeda": "^2.21.2",
         "ulid": "^2.3.0",
-        "uuid": "^11.0.3",
         "zod": "^3.24.1",
         "zod-openapi": "^4.2.2"
     },
     "dependencies": {
         "@aws-sdk/client-iot-data-plane": "^3.758.0",
-        "@aws-sdk/client-rds-data": "^3.758.0",
         "@aws-sdk/client-sesv2": "^3.753.0",
-        "@instantdb/admin": "^0.17.7",
         "@openauthjs/openauth": "*",
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
         "drizzle-zod": "^0.7.1",
-        "postgres": "^3.4.5"
+        "postgres": "^3.4.5",
+        "steam-session": "*"
     }
 }
