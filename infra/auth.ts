@@ -9,7 +9,7 @@ export const auth = new sst.aws.Service("Auth", {
     cluster,
     cpu: $app.stage === "production" ? "1 vCPU" : undefined,
     memory: $app.stage === "production" ? "2 GB" : undefined,
-    command: ["bun", "run", "./src/auth.ts"],
+    command: ["bun", "run", "./src/auth/index.ts"],
     link: [
         bus,
         postgres,

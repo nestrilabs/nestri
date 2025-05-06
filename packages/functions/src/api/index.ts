@@ -1,15 +1,11 @@
-import "zod-openapi/extend";
 import { Hono } from "hono";
-import { auth } from "./auth";
 import { cors } from "hono/cors";
-import { TeamApi } from "./team";
-import { PolarApi } from "./polar";
 import { logger } from "hono/logger";
 import { Realtime } from "./realtime";
+import { auth } from "./utils/auth";
 import { AccountApi } from "./account";
-import { MachineApi } from "./machine";
 import { openAPISpecs } from "hono-openapi";
-import { patchLogger } from "../log-polyfill";
+import { patchLogger } from "../utils/patch-logger";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
@@ -26,10 +22,7 @@ app
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
     .route("/realtime", Realtime.route)
-    .route("/team", TeamApi.route)
-    .route("/polar", PolarApi.route)
     .route("/account", AccountApi.route)
-    .route("/machine", MachineApi.route)
     .onError((error, c) => {
         if (error instanceof VisibleError) {
             console.error("api error:", error);

@@ -49,20 +49,20 @@ new sst.x.DevCommand("Studio", {
   },
 });
 
-const migrator = new sst.aws.Function("DatabaseMigrator", {
-  handler: "packages/functions/src/migrator.handler",
-  link: [postgres],
-  copyFiles: [
-    {
-      from: "packages/core/migrations",
-      to: "./migrations",
-    },
-  ],
-});
+// const migrator = new sst.aws.Function("DatabaseMigrator", {
+//   handler: "packages/functions/src/migrator.handler",
+//   link: [postgres],
+//   copyFiles: [
+//     {
+//       from: "packages/core/migrations",
+//       to: "./migrations",
+//     },
+//   ],
+// });
 
-if (!$dev) {
-  new aws.lambda.Invocation("DatabaseMigratorInvocation", {
-    input: Date.now().toString(),
-    functionName: migrator.name,
-  });
-}
+// if (!$dev) {
+//   new aws.lambda.Invocation("DatabaseMigratorInvocation", {
+//     input: Date.now().toString(),
+//     functionName: migrator.name,
+//   });
+// }

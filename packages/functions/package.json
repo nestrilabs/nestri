@@ -1,31 +1,23 @@
 {
   "name": "@nestri/functions",
+  "module": "index.ts",
   "type": "module",
-  "exports": {
-    "./*": "./src/*.ts"
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
   },
   "scripts": {
-    "dev:auth": "bun run --watch ./src/auth.ts",
+    "dev:auth": "bun run --watch ./src/auth/index.ts",
     "dev:api": "bun run --watch ./src/api/index.ts"
   },
-  "devDependencies": {
-    "@aws-sdk/client-ecs": "^3.738.0",
-    "@aws-sdk/client-sqs": "^3.734.0",
-    "@cloudflare/workers-types": "^4.20241224.0",
-    "@nestri/core": "*",
-    "@types/bun": "latest",
-    "valibot": "^1.0.0-beta.9"
-  },
   "peerDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5"
   },
   "dependencies": {
-    "@actor-core/bun": "^0.7.9",
-    "@openauthjs/openauth": "*",
-    "actor-core": "^0.7.9",
-    "hono": "^4.6.15",
-    "hono-openapi": "^0.3.1",
-    "partysocket": "1.0.3",
-    "postgres": "^3.4.5"
+    "@actor-core/bun": "^0.8.0",
+    "@nestri/core":"workspace:",
+    "actor-core": "^0.8.0",
+    "hono": "^4.7.8",
+    "hono-openapi": "^0.4.8"
   }
 }

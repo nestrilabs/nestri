@@ -40,9 +40,9 @@ export const handler = async (event: any) => {
 
         // Extract task details
         const task = runResponse.tasks[0];
-        const taskArn = task.taskArn!;
+        const taskArn = task?.taskArn!;
         const taskId = taskArn.split('/').pop()!; // Extract task ID from ARN
-        const taskStatus = task.lastStatus!;
+        const taskStatus = task?.lastStatus!;
 
         return {
             statusCode: 200,

@@ -1,13 +1,13 @@
 import { Resource } from "sst";
-import { subjects } from "../subjects";
+import { subjects } from "../../subjects";
 import { type MiddlewareHandler } from "hono";
 import { useActor, withActor } from "@nestri/core/actor";
 import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 const client = createClient({
-  issuer: Resource.Auth.url,
   clientID: "api",
+  issuer: Resource.Auth.url,
 });
 
 export const notPublic: MiddlewareHandler = async (c, next) => {

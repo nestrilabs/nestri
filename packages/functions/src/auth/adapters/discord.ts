@@ -1,4 +1,4 @@
-import { Oauth2Adapter, type Oauth2WrappedConfig } from "./oauth2"
+import { Oauth2Adapter, type Oauth2WrappedConfig } from "../ui/oauth2"
 
 export function DiscordAdapter(config: Oauth2WrappedConfig) {
   return Oauth2Adapter({
