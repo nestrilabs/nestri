@@ -1,60 +1,58 @@
+import { z } from 'zod';
+import { fn } from './fn';
 import crypto from 'crypto';
 import { Resource } from 'sst';
-import { fn } from './fn';
-import { z } from 'zod';
 
-const ENCRYPTION_KEY = Resource.SteamEncryptionKey.value; // Must be 32 bytes (256 bits)
-const ENCRYPTION_IV_LENGTH = 16;
+// This is a 32-character random ASCII string
+const rawKey = Resource.SteamEncryptionKey.value;
 
+// Turn it into exactly 32 bytes via UTF-8
+const key = Buffer.from(rawKey, 'utf8');
+if (key.length !== 32) {
+    throw new Error(
+        `SteamEncryptionKey must be exactly 32 bytes; got ${key.length}`
+    );
+}
+
+const ENCRYPTION_IV_LENGTH = 12; // 96 bits for GCM
 
 export namespace Token {
     export const encrypt = fn(
         z.string().min(4),
         (token) => {
-            try {
-                const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
-                const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
+            const iv = crypto.randomBytes(ENCRYPTION_IV_LENGTH);
+            const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
 
-                let encrypted = cipher.update(token, 'utf8', 'hex');
-                encrypted += cipher.final('hex');
+            const ciphertext = Buffer.concat([
+                cipher.update(token, 'utf8'),
+                cipher.final(),
+            ]);
+            const tag = cipher.getAuthTag();
 
-                const authTag = cipher.getAuthTag();
-
-                // Store IV and auth tag with the encrypted data
-                return iv.toString('hex') + ':' + authTag.toString('hex') + ':' + encrypted;
-
-            } catch (error) {
-                console.error('Encryption failed:', error);
-                throw new Error('Failed to encrypt data');
-            }
-        }
-    )
+            return ['v1', iv.toString('hex'), tag.toString('hex'), ciphertext.toString('hex')].join(':');
+        });
 
     export const decrypt = fn(
         z.string().min(4),
-        (encryptedToken) => {
-            try {
-                const [ivHex, authTagHex, encryptedData] = encryptedToken.split(':');
-
-                if (!ivHex || !authTagHex || !encryptedData) {
-                    throw new Error('Invalid encrypted format');
-                }
-
-                const iv = Buffer.from(ivHex, 'hex');
-                const authTag = Buffer.from(authTagHex, 'hex');
-
-                const decipher = crypto.createDecipheriv('aes-256-gcm', Buffer.from(ENCRYPTION_KEY, 'hex'), iv);
-                decipher.setAuthTag(authTag);
-
-                let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
-                decrypted += decipher.final('utf8');
-
-                return decrypted;
-
-            } catch (error) {
-                console.error('Decryption failed:', error);
-                throw new Error('Failed to decrypt data');
+        (data) => {
+            const [version, ivHex, tagHex, ciphertextHex] = data.split(':');
+            if (version !== 'v1' || !ivHex || !tagHex || !ciphertextHex) {
+                throw new Error('Invalid token format');
             }
-        }
-    )
+
+            const iv = Buffer.from(ivHex, 'hex');
+            const tag = Buffer.from(tagHex, 'hex');
+            const ciphertext = Buffer.from(ciphertextHex, 'hex');
+
+            const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+            decipher.setAuthTag(tag);
+
+            const plaintext = Buffer.concat([
+                decipher.update(ciphertext),
+                decipher.final(),
+            ]);
+
+            return plaintext.toString('utf8');
+        });
+        
 }
