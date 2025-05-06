@@ -50,14 +50,15 @@ export const apiService = new sst.aws.Service("Api", {
     transform: {
         taskDefinition: (args) => {
             const volumes = $output(args.volumes).apply(v => {
-                v.push({
+                const next = [...v, {
                     name: "shared-tmp",
                     dockerVolumeConfiguration: {
                         scope: "shared",
                         driver: "local"
                     }
-                });
-                return v;
+                }];
+
+                return next;
             })
 
             // "containerDefinitions" is a JSON string, parse first
@@ -65,10 +66,11 @@ export const apiService = new sst.aws.Service("Api", {
 
             containers = containers.apply((containerDefinitions) => {
                 containerDefinitions[0].mountPoints = [
+                    ...(containerDefinitions[0].mountPoints ?? []),
                     {
                         sourceVolume: "shared-tmp",
                         containerPath: "/tmp"
-                    }
+                    },
                 ]
                 return containerDefinitions;
             });

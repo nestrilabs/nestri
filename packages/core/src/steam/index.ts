@@ -13,7 +13,7 @@ import { steamTable, StatusEnum, AccountStatusEnum, Limitations } from "./steam.
 export namespace Steam {
     export const Info = z
         .object({
-            id: z.bigint().openapi({
+            id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.SteamAccount.id
             }),
@@ -61,9 +61,9 @@ export namespace Steam {
                 description: "The limitations bestowed on this Steam account by Steam",
                 example: Examples.SteamAccount.limitations
             }),
-            memberSince: z.date().openapi({
+            steamMemberSince: z.date().openapi({
                 description: "When this Steam community account was created",
-                example: Examples.SteamAccount.memberSince
+                example: Examples.SteamAccount.steamMemberSince
             })
         })
         .openapi({
@@ -131,7 +131,7 @@ export namespace Steam {
                         realName: input.realName,
                         profileUrl: input.profileUrl,
                         avatarHash: input.avatarHash,
-                        memberSince: input.memberSince,
+                        steamMemberSince: input.steamMemberSince,
                         limitations: input.limitations,
                         status: input.status ?? "offline",
                         username: input.username ?? "unknown",
@@ -163,10 +163,10 @@ export namespace Steam {
                 limitations: true,
                 accountStatus: true,
                 name: true,
-                memberSince: true,
                 profileUrl: true,
+                steamMemberSince: true,
             }),
-        async (input) => {
+        async (input) =>
             useTransaction(async (tx) => {
                 const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : undefined;
                 await tx
@@ -178,10 +178,10 @@ export namespace Steam {
                         realName: input.realName,
                         profileUrl: input.profileUrl,
                         avatarHash: input.avatarHash,
-                        memberSince: input.memberSince,
                         limitations: input.limitations,
                         status: input.status ?? "offline",
                         username: input.username ?? "unknown",
+                        steamMemberSince: input.steamMemberSince,
                         accountStatus: input.accountStatus ?? "new",
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
@@ -191,7 +191,6 @@ export namespace Steam {
                     bus.publish(Resource.Bus, Events.Updated, { userID: userID ?? null, steamID: input.id })
                 );
             })
-        }
     )
 
     export const fromUserID = fn(
@@ -209,7 +208,7 @@ export namespace Steam {
     )
 
     export const fromSteamID = fn(
-        z.bigint(),
+        z.string(),
         (steamID) =>
             useTransaction((tx) =>
                 tx
@@ -245,9 +244,9 @@ export namespace Steam {
             realName: input.realName,
             avatarHash: input.avatarHash,
             limitations: input.limitations,
-            memberSince: input.memberSince,
-            accountStatus: input.accountStatus,
             lastSyncedAt: input.lastSyncedAt,
+            accountStatus: input.accountStatus,
+            steamMemberSince: input.steamMemberSince,
             profileUrl: `https://steamcommunity.com/id/${input.profileUrl}`,
         };
     }

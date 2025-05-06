@@ -42,8 +42,8 @@ export namespace Log {
         return result;
       },
       tag(key: string, value: string) {
-        tags[key] = value;
-        return result;
+         // Immutable update: return a fresh logger with updated tags
+        return Log.create({ ...tags, [key]: value });
       },
       clone() {
         return Log.create({ ...tags });

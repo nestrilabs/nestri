@@ -56,14 +56,15 @@ export const authService = new sst.aws.Service("Auth", {
     transform: {
         taskDefinition: (args) => {
             const volumes = $output(args.volumes).apply(v => {
-                v.push({
+                const next = [...v, {
                     name: "shared-tmp",
                     dockerVolumeConfiguration: {
                         scope: "shared",
                         driver: "local"
                     }
-                });
-                return v;
+                }];
+
+                return next;
             })
 
             // "containerDefinitions" is a JSON string, parse first
@@ -71,6 +72,7 @@ export const authService = new sst.aws.Service("Auth", {
 
             containers = containers.apply((containerDefinitions) => {
                 containerDefinitions[0].mountPoints = [
+                    ...(containerDefinitions[0].mountPoints ?? []),
                     {
                         sourceVolume: "shared-tmp",
                         containerPath: "/tmp"

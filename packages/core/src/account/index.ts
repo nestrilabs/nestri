@@ -1,3 +1,4 @@
+import { z } from "zod"
 import { User } from "../user";
 import { Team } from "../team";
 import { Actor } from "../actor";
@@ -21,10 +22,16 @@ export namespace Account {
                 example: { ...Examples.User, teams: [Examples.Team] },
             });
 
-    export const list = async () => {
-        const [user, teams] = await Promise.allSettled([User.fromID(Actor.userID()), Team.list()])
+    export type Info = z.infer<typeof Info>;
 
-        if (user.status === "rejected" || !user.value)
+    export const list = async (): Promise<Info> => {
+        const [userResult, teamsResult] =
+            await Promise.allSettled([
+                User.fromID(Actor.userID()),
+                Team.list()
+            ])
+
+        if (userResult.status === "rejected" || !userResult.value)
             throw new VisibleError(
                 "not_found",
                 ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
@@ -32,8 +39,8 @@ export namespace Account {
             );
 
         return {
-            ...user.value,
-            teams: teams.status === "rejected" ? [] : teams.value
+            ...userResult.value,
+            teams: teamsResult.status === "rejected" ? [] : teamsResult.value
         }
     }
 

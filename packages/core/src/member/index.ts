@@ -21,8 +21,8 @@ export namespace Member {
                 description: "Assigned permission role within the team",
                 example: Examples.Member.role
             }),
-            steamID: z.bigint().openapi({
-                description: "Optional Steam platform identifier for Steam account integration",
+            steamID: z.string().openapi({
+                description: "Steam platform identifier for Steam account integration",
                 example: Examples.Member.steamID
             }),
             userID: z.string().nullable().openapi({
@@ -44,9 +44,6 @@ export namespace Member {
                 id: true,
                 userID: true,
                 teamID: true
-            })
-            .extend({
-                first: z.boolean().optional(),
             }),
         (input) =>
             createTransaction(async (tx) => {
@@ -54,14 +51,11 @@ export namespace Member {
                 await tx.insert(memberTable).values({
                     id,
                     role: input.role,
-                    teamID: input.teamID ?? Actor.teamID(),
-                    steamID: input.steamID,
                     userID: input.userID,
+                    steamID: input.steamID,
+                    teamID: input.teamID ?? Actor.teamID(),
                 })
 
-                // await afterTx(() =>
-                //     async () => bus.publish(Resource.Bus, Events.Created, { memberID: id }),
-                // );
                 return id;
             }),
     );

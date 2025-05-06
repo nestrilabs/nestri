@@ -20,7 +20,7 @@ export const steamTable = pgTable(
     "steam_accounts",
     {
         ...timestamps,
-        id: bigint("steam_id", { mode: "bigint" })
+        id: varchar("steam_id", { length: 255 })
             .primaryKey()
             .notNull(),
         userID: ulid("user_id")
@@ -28,8 +28,8 @@ export const steamTable = pgTable(
                 onDelete: "cascade",
             }),
         status: StatusEnum("status").notNull(),
-        memberSince: utc("member_since").notNull(),
         lastSyncedAt: utc("last_synced_at").notNull(),
+        steamMemberSince: utc("member_since").notNull(),
         name: varchar("name", { length: 255 }).notNull(),
         profileUrl: varchar("profileUrl", { length: 255 }),
         username: varchar("username", { length: 255 }).notNull(),

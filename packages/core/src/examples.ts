@@ -34,12 +34,12 @@ export namespace Examples {
 
     export const SteamAccount = {
         status: "online" as const, //offline,dnd(do not disturb) or playing 
-        id: 74839300282033n,// Primary key
+        id: "74839300282033",// Primary key
         userID: User.id,// | null  FK to User (null if not linked)
         name: "JD The 65th",
         username: "jdoe",
         realName: "John Doe",
-        memberSince: new Date("2010-01-26T21:00:00.000Z"),
+        steamMemberSince: new Date("2010-01-26T21:00:00.000Z"),
         avatarHash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
         accountStatus: "new" as const, //active or pending
         limitations: {

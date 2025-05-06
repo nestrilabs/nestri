@@ -49,7 +49,10 @@ const app = issuer({
         password: PasswordAdapter(
             PasswordUI({
                 sendCode: async (email, code) => {
-                    console.log("email & code:", email, code)
+                    // Do not debug show code in production
+                    if (Resource.App.stage != "production") {
+                        console.log("email & code:", email, code)
+                    }
                     await Email.send(
                         "auth",
                         email,
