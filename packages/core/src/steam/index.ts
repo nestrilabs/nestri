@@ -9,6 +9,7 @@ import { Examples } from "../examples";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { steamTable, StatusEnum, Limitations } from "./steam.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { teamTable } from "../team/team.sql";
 
 export namespace Steam {
     export const Info = z

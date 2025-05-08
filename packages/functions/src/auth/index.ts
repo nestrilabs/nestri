@@ -1,6 +1,6 @@
 import { Resource } from "sst"
 import { type Env } from "hono";
-import { PasswordUI } from "./ui";
+import { PasswordUI, Select } from "./ui";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects"
 import { issuer } from "@openauthjs/openauth";
@@ -15,6 +15,7 @@ patchLogger();
 
 const app = issuer({
     //TODO: Create our own Storage (?)
+    select: Select(),
     storage: MemoryStorage({
         persist: process.env.STORAGE
     }),

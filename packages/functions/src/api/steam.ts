@@ -8,6 +8,9 @@ import { Steam } from "@nestri/core/steam/index";
 import { ErrorResponses, validator } from "./utils";
 import { Credentials } from "@nestri/core/credentials/index";
 import { LoginSession, EAuthTokenPlatformType } from "steam-session";
+import { Team } from "@nestri/core/team/index";
+import { Member } from "@nestri/core/member/index";
+import type CSteamUser from "steamcommunity/classes/CSteamUser";
 
 export namespace SteamApi {
     export const route = new Hono()
@@ -80,13 +83,13 @@ export namespace SteamApi {
                                 data: JSON.stringify({ success: false }),
                             })
 
+                            await stream.close()
                             reject("Authentication timed out")
                         });
 
                         session.on('error', async (err) => {
                             // This should ordinarily not happen. This only happens in case there's some kind of unexpected error while
                             // polling, e.g. the network connection goes down or Steam chokes on something.
-                            console.log(`ERROR: This login attempt has failed! ${err.message}`);
                             await stream.writeSSE({
                                 event: 'status',
                                 data: JSON.stringify({ message: "Recieved an error while authenticating" }),
@@ -97,6 +100,7 @@ export namespace SteamApi {
                                 data: JSON.stringify({ message: err.message }),
                             })
 
+                            await stream.close()
                             reject(err.message)
                         });
 
@@ -107,56 +111,79 @@ export namespace SteamApi {
                                 data: JSON.stringify({ message: "Login successful" })
                             })
 
+                            await stream.writeSSE({
+                                event: 'login_success',
+                                data: JSON.stringify({ success: true, })
+                            })
+
                             const username = session.accountName;
                             const accessToken = session.accessToken;
                             const refreshToken = session.refreshToken;
                             const steamID = session.steamID.toString();
                             const cookies = await session.getWebCookies();
 
-                            await Credentials.create({ refreshToken, id: steamID, username })
-
                             // Get user information
-                            const community = new SteamCommunity()
+                            const community = new SteamCommunity();
                             community.setCookies(cookies);
 
-                            community.getSteamUser(session.steamID, async (error, user) => {
-                                if (!error) {
-                                    const wasAdded =
-                                        await Steam.create({
-                                            username,
-                                            id: steamID,
-                                            name: user.name,
-                                            realName: user.realName,
-                                            userID: currentUser.userID,
-                                            avatarHash: user.avatarHash,
-                                            steamMemberSince: user.memberSince,
-                                            profileUrl: user.customURL !== "" ? user.customURL : null,
-                                            limitations: {
-                                                isLimited: user.isLimitedAccount,
-                                                isVacBanned: user.vacBanned,
-                                                privacyState: user.privacyState as any,
-                                                visibilityState: Number(user.visibilityState),
-                                                tradeBanState: user.tradeBanState.toLowerCase() as any,
-                                            }
-                                        })
-                                    if (!wasAdded) {
-                                        console.log(`steam user ${steamID.toString()} already exists`)
+                            const user = await new Promise((res, rej) => {
+                                community.getSteamUser(session.steamID, async (error, user) => {
+                                    if (!error) {
+                                        res(user)
+                                    } else {
+                                        rej(error)
                                     }
+                                })
+                            }) as CSteamUser
 
-                                    await stream.writeSSE({
-                                        event: 'team_slug',
-                                        data: JSON.stringify({ username })
+                            const wasAdded =
+                                await Steam.create({
+                                    username,
+                                    id: steamID,
+                                    name: user.name,
+                                    realName: user.realName,
+                                    userID: currentUser.userID,
+                                    avatarHash: user.avatarHash,
+                                    steamMemberSince: user.memberSince,
+                                    profileUrl: user.customURL.trim() || null,
+                                    limitations: {
+                                        isLimited: user.isLimitedAccount,
+                                        isVacBanned: user.vacBanned,
+                                        privacyState: user.privacyState as any,
+                                        visibilityState: Number(user.visibilityState),
+                                        tradeBanState: user.tradeBanState.toLowerCase() as any,
+                                    }
+                                })
+
+                            // Does not matter if the user is already there or has just been created, just store the credentials
+                            await Credentials.create({ refreshToken, id: steamID, username })
+
+                            if (!!wasAdded) {
+                                // create a team
+                                const teamID = await Team.create({
+                                    slug: username,
+                                    name: `${user.name.split(" ")[0]}'s Team`,
+                                    ownerID: currentUser.userID,
+                                })
+
+                                await Actor.provide(
+                                    "system",
+                                    { teamID },
+                                    async () => {
+                                        await Member.create({
+                                            role: "adult",
+                                            userID: currentUser.userID,
+                                            steamID
+                                        })
                                     })
-                                }
-                            });
-
-                            //TODO: Get game library
-
+                            }
 
                             await stream.writeSSE({
-                                event: 'login_success',
-                                data: JSON.stringify({ success: true, })
+                                event: 'team_slug',
+                                data: JSON.stringify({ username })
                             })
+
+                            //TODO: Get game library
 
                             await stream.close()
 
