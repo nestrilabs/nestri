@@ -1,5 +1,5 @@
 import QRCodeUtil from 'qrcode';
-import { createMemo, JSXElement } from "solid-js"
+import { createMemo, type JSXElement } from "solid-js"
 
 const generateMatrix = (
     value: string,
