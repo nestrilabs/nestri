@@ -401,7 +401,6 @@ export function HomeRoute() {
         <>
             <Header>
                 <FullScreen >
-                    <QrCodeComponent />
                     {/* <LastPlayedWrapper>
                         <LastPlayedFader />
                         <LogoBackgroundImage />
