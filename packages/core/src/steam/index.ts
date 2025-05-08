@@ -8,7 +8,7 @@ import { createEvent } from "../event";
 import { Examples } from "../examples";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { steamTable, StatusEnum, AccountStatusEnum, Limitations } from "./steam.sql";
+import { steamTable, StatusEnum, Limitations } from "./steam.sql";
 
 export namespace Steam {
     export const Info = z
@@ -24,10 +24,6 @@ export namespace Steam {
             status: z.enum(StatusEnum.enumValues).openapi({
                 description: "The current connection status of this Steam account",
                 example: Examples.SteamAccount.status
-            }),
-            accountStatus: z.enum(AccountStatusEnum.enumValues).openapi({
-                description: "The current status of this Steam account",
-                example: Examples.SteamAccount.accountStatus
             }),
             userID: z.string().nullable().openapi({
                 description: "The user id of which account owns this steam account",
@@ -100,7 +96,6 @@ export namespace Steam {
                 useUser: true,
                 userID: true,
                 status: true,
-                accountStatus: true,
                 lastSyncedAt: true
             }),
         (input) =>
@@ -135,13 +130,12 @@ export namespace Steam {
                         status: input.status ?? "offline",
                         username: input.username ?? "unknown",
                         steamMemberSince: input.steamMemberSince,
-                        accountStatus: input.accountStatus ?? "new",
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
 
-                await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
-                );
+                // await afterTx(async () =>
+                //     bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
+                // );
 
                 return input.id
             }),
@@ -156,13 +150,12 @@ export namespace Steam {
                 useUser: true,
                 userID: true,
                 status: true,
+                name: true,
                 lastSyncedAt: true,
                 avatarHash: true,
                 username: true,
                 realName: true,
                 limitations: true,
-                accountStatus: true,
-                name: true,
                 profileUrl: true,
                 steamMemberSince: true,
             }),
@@ -182,7 +175,6 @@ export namespace Steam {
                         status: input.status ?? "offline",
                         username: input.username ?? "unknown",
                         steamMemberSince: input.steamMemberSince,
-                        accountStatus: input.accountStatus ?? "new",
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
                     .where(eq(steamTable.id, input.id));
@@ -245,7 +237,6 @@ export namespace Steam {
             avatarHash: input.avatarHash,
             limitations: input.limitations,
             lastSyncedAt: input.lastSyncedAt,
-            accountStatus: input.accountStatus,
             steamMemberSince: input.steamMemberSince,
             profileUrl: input.profileUrl ? `https://steamcommunity.com/id/${input.profileUrl}` : null,
         };

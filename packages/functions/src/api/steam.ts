@@ -4,10 +4,10 @@ import { streamSSE } from "hono/streaming";
 import { Actor } from "@nestri/core/actor";
 import SteamCommunity from "steamcommunity";
 import { describeRoute } from "hono-openapi";
-import { ErrorResponses, validator } from "./utils";
-import { LoginSession, EAuthTokenPlatformType } from "steam-session";
-import { Credentials } from "@nestri/core/credentials/index";
 import { Steam } from "@nestri/core/steam/index";
+import { ErrorResponses, validator } from "./utils";
+import { Credentials } from "@nestri/core/credentials/index";
+import { LoginSession, EAuthTokenPlatformType } from "steam-session";
 
 export namespace SteamApi {
     export const route = new Hono()
@@ -110,11 +110,12 @@ export namespace SteamApi {
                             const username = session.accountName;
                             const accessToken = session.accessToken;
                             const refreshToken = session.refreshToken;
-                            const cookies = await session.getWebCookies();
                             const steamID = session.steamID.toString();
+                            const cookies = await session.getWebCookies();
 
                             await Credentials.create({ refreshToken, id: steamID, username })
 
+                            // Get user information
                             const community = new SteamCommunity()
                             community.setCookies(cookies);
 
@@ -122,6 +123,7 @@ export namespace SteamApi {
                                 if (!error) {
                                     const wasAdded =
                                         await Steam.create({
+                                            username,
                                             id: steamID,
                                             name: user.name,
                                             realName: user.realName,
@@ -140,14 +142,20 @@ export namespace SteamApi {
                                     if (!wasAdded) {
                                         console.log(`steam user ${steamID.toString()} already exists`)
                                     }
+
+                                    await stream.writeSSE({
+                                        event: 'team_slug',
+                                        data: JSON.stringify({ username })
+                                    })
                                 }
                             });
 
-                            
+                            //TODO: Get game library
+
 
                             await stream.writeSSE({
                                 event: 'login_success',
-                                data: JSON.stringify({ success: true })
+                                data: JSON.stringify({ success: true, })
                             })
 
                             await stream.close()

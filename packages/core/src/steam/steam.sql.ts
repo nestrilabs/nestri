@@ -3,7 +3,6 @@ import { userTable } from "../user/user.sql";
 import { timestamps, ulid, utc } from "../drizzle/types";
 import { pgTable, varchar, pgEnum, json, unique } from "drizzle-orm/pg-core";
 
-export const AccountStatusEnum = pgEnum("steam_account_status", ["new", "pending", "active"])
 export const StatusEnum = pgEnum("steam_status", ["online", "offline", "dnd", "playing"])
 
 export const Limitations = z.object({
@@ -29,12 +28,11 @@ export const steamTable = pgTable(
             }),
         status: StatusEnum("status").notNull(),
         lastSyncedAt: utc("last_synced_at").notNull(),
+        realName: varchar("real_name", { length: 255 }),
         steamMemberSince: utc("member_since").notNull(),
         name: varchar("name", { length: 255 }).notNull(),
         profileUrl: varchar("profileUrl", { length: 255 }),
         username: varchar("username", { length: 255 }).notNull(),
-        realName: varchar("real_name", { length: 255 }),
-        accountStatus: AccountStatusEnum("account_status").notNull(),
         avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         limitations: json("limitations").$type<Limitations>().notNull(),
     },

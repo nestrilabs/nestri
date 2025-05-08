@@ -44,9 +44,9 @@ export namespace Credentials {
                         refreshToken: input.refreshToken,
                         expiry: new Date(payload.exp * 1000),
                     })
-                await afterTx(async () =>
-                    await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
-                );
+                // await afterTx(async () =>
+                //     await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
+                // );
                 return input.id
             })
         });

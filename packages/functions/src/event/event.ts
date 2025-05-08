@@ -56,12 +56,9 @@ export const handler = bus.subscriber(
                     await Friend.add({ friendSteamID: friendID.toString(), steamID: input.steamID })
                   }
                 })
-
               }
             }
-
           });
-
         }
         break;
       }
