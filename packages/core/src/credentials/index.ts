@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fn } from "../utils";
+import { createID, fn } from "../utils";
 import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
 import { createEvent } from "../event";
@@ -29,17 +29,18 @@ export namespace Credentials {
 
     export const create = fn(
         Info
-            .omit({ accessToken: true, cookies: true, expiry:true }),
+            .omit({ accessToken: true, cookies: true, expiry: true }),
         (input) => {
             const part = input.refreshToken.split('.')[1] as string
 
             const payload = JSON.parse(Buffer.from(part, 'base64').toString());
 
             return createTransaction(async (tx) => {
+                const id = input.id
                 await tx
                     .insert(steamCredentialsTable)
                     .values({
-                        id: input.id,
+                        id,
                         username: input.username,
                         refreshToken: input.refreshToken,
                         expiry: new Date(payload.exp * 1000),
@@ -47,13 +48,13 @@ export namespace Credentials {
                 // await afterTx(async () =>
                 //     await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
                 // );
-                return input.id
+                return id
             })
         });
 
     export const getByID = fn(
         Info.shape.id,
-        (steamID) =>
+        (id) =>
             useTransaction(async (tx) => {
                 const now = new Date()
 
@@ -62,7 +63,7 @@ export namespace Credentials {
                     .from(steamCredentialsTable)
                     .where(
                         and(
-                            eq(steamCredentialsTable.id, steamID),
+                            eq(steamCredentialsTable.id, id),
                             isNull(steamCredentialsTable.timeDeleted),
                             gt(steamCredentialsTable.expiry, now)
                         )
@@ -75,6 +76,31 @@ export namespace Credentials {
                 return serialize(credential);
             })
     );
+    
+    // export const getBySteamID = fn(
+    //     Info.shape.steamID,
+    //     (steamID) =>
+    //         useTransaction(async (tx) => {
+    //             const now = new Date()
+
+    //             const credential = await tx
+    //                 .select()
+    //                 .from(steamCredentialsTable)
+    //                 .where(
+    //                     and(
+    //                         eq(steamCredentialsTable.steamID, steamID),
+    //                         isNull(steamCredentialsTable.timeDeleted),
+    //                         gt(steamCredentialsTable.expiry, now)
+    //                     )
+    //                 )
+    //                 .execute()
+    //                 .then(rows => rows.at(0));
+
+    //             if (!credential) return null;
+
+    //             return serialize(credential);
+    //         })
+    // );
 
     export function serialize(
         input: typeof steamCredentialsTable.$inferSelect,
