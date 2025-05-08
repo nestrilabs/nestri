@@ -576,7 +576,7 @@ export function CreateTeamComponent() {
                                     "Just a minute while we create your team" :
                                     (timedOut() || !!errorMsg()) ?
                                         "Failed to connect Steam. Please try again." :
-                                        "On your mobile phone, open the Stream App to scan this code"}</Subtitle>
+                                        "On your mobile phone, open the Steam App to scan this code"}</Subtitle>
                         </ButtonContainer>
                     </Card>
                 </CardWrapper>
