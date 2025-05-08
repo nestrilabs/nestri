@@ -28,8 +28,10 @@ export namespace SteamApi {
                 "header",
                 z.object({
                     "accept": z.string()
-                        .toLowerCase()
-                        .includes("text/event-stream")
+                        .refine((v) =>
+                            v.toLowerCase()
+                                .includes("text/event-stream")
+                        )
                         .openapi({
                             description: "Client must accept Server Sent Events",
                             example: "text/event-stream"
@@ -145,7 +147,7 @@ export namespace SteamApi {
                                     userID: currentUser.userID,
                                     avatarHash: user.avatarHash,
                                     steamMemberSince: user.memberSince,
-                                    profileUrl: user.customURL.trim() || null,
+                                    profileUrl: user.customURL?.trim() || null,
                                     limitations: {
                                         isLimited: user.isLimitedAccount,
                                         isVacBanned: user.vacBanned,

@@ -11,6 +11,7 @@ import { createSelectSchema } from "drizzle-zod";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { groupBy, map, pipe, values } from "remeda";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { ErrorCodes, VisibleError } from "../error";
 
 export namespace Friend {
     export const Info = Steam.Info
@@ -36,6 +37,13 @@ export namespace Friend {
         async (input) =>
             createTransaction(async (tx) => {
                 const steamID = input.steamID ?? Actor.steamID()
+                if (steamID === input.friendSteamID) {
+                    throw new VisibleError(
+                        "forbidden",
+                        ErrorCodes.Validation.INVALID_PARAMETER,
+                        "Cannot add yourself as a friend"
+                    );
+                }
 
                 await tx
                     .insert(friendTable)

@@ -569,13 +569,13 @@ export function CreateTeamComponent() {
                                 "Login successful" :
                                 (timedOut() || !!errorMsg()) ?
                                     "Login timed out" :
-                                    "Scan to connect Stream"
+                                    "Scan to connect Steam"
                             }</Title>
                             <Subtitle>{
                                 loginSuccess() ?
                                     "Just a minute while we create your team" :
                                     (timedOut() || !!errorMsg()) ?
-                                        "Failed to connect to connect Steam. Please try again." :
+                                        "Failed to connect Steam. Please try again." :
                                         "On your mobile phone, open the Stream App to scan this code"}</Subtitle>
                         </ButtonContainer>
                     </Card>

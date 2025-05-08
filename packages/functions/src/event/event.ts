@@ -25,6 +25,7 @@ export const handler = bus.subscriber(
           const community = new SteamCommunity()
           community.setCookies(cookies);
 
+          //FIXME: use a promise as promises inside callbacks are not awaited
           community.getFriendsList((error, allFriends) => {
             if (!error) {
               const friends = Object.entries(allFriends);
@@ -39,7 +40,7 @@ export const handler = bus.subscriber(
                         realName: user.realName,
                         avatarHash: user.avatarHash,
                         steamMemberSince: user.memberSince,
-                        profileUrl: user.customURL !== "" ? user.customURL : null,
+                        profileUrl: user.customURL?.trim() || null,
                         limitations: {
                           isLimited: user.isLimitedAccount,
                           isVacBanned: user.vacBanned,
