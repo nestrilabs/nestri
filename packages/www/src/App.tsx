@@ -119,6 +119,7 @@ export const App: Component = () => {
                                 const account = useAccount();
                                 return (
                                     <Switch>
+                                        {/**FIXME: Somehow this does not work when the user is in the "/new" page */}
                                         <Match when={account.current.teams.length > 0}>
                                             <Navigate
                                                 href={`/${(

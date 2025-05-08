@@ -44,7 +44,7 @@ export namespace Examples {
         accountStatus: "new" as const, //active or pending
         limitations: {
             isLimited: false,
-            isTradeBanned: false,
+            tradeBanState: "none" as const,
             isVacBanned: false,
             visibilityState: 3,
             privacyState: "public" as const,

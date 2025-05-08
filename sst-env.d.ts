@@ -32,10 +32,6 @@ declare module "sst" {
       "type": "sst.aws.Aurora"
       "username": string
     }
-    "DatabaseMigrator": {
-      "name": string
-      "type": "sst.aws.Function"
-    }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -90,6 +86,10 @@ declare module "sst" {
       "endpoint": string
       "type": "sst.aws.Realtime"
     }
+    "SteamEncryptionKey": {
+      "type": "random.index/randomString.RandomString"
+      "value": string
+    }
     "Storage": {
       "name": string
       "type": "sst.aws.Bucket"
@@ -106,10 +106,6 @@ declare module "sst" {
       "service": string
       "type": "sst.aws.Service"
       "url": string
-    }
-    "ZeroPermissions": {
-      "name": string
-      "type": "sst.aws.Function"
     }
   }
 }

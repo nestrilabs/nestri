@@ -100,10 +100,6 @@ export namespace User {
                 if (result.count === 0) {
                     throw new UserExistsError(input.email)
                 }
-
-                await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.Created, { userID: id })
-                );
             })
 
             return id;

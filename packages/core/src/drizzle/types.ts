@@ -1,5 +1,5 @@
-import { char, timestamp as rawTs } from "drizzle-orm/pg-core";
-import { teamTable } from "../team/team.sql";
+import { Token } from "../utils";
+import { char, customType, timestamp as rawTs } from "drizzle-orm/pg-core";
 
 export const ulid = (name: string) => char(name, { length: 26 + 4 });
 
@@ -31,6 +31,19 @@ export const utc = (name: string) =>
   rawTs(name, {
     withTimezone: true,
     // mode: "date"
+  });
+
+export const encryptedText =
+  customType<{ data: string; driverData: string; }>({
+    dataType() {
+      return 'text';
+    },
+    fromDriver(val) {
+      return Token.decrypt(val);
+    },
+    toDriver(val) {
+      return Token.encrypt(val);
+    },
   });
 
 export const timestamps = {

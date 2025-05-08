@@ -7,8 +7,9 @@ import { Common } from "../common";
 import { createEvent } from "../event";
 import { Examples } from "../examples";
 import { eq, and, isNull, desc } from "drizzle-orm";
+import { steamTable, StatusEnum, Limitations } from "./steam.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { steamTable, StatusEnum, AccountStatusEnum, Limitations } from "./steam.sql";
+import { teamTable } from "../team/team.sql";
 
 export namespace Steam {
     export const Info = z
@@ -24,10 +25,6 @@ export namespace Steam {
             status: z.enum(StatusEnum.enumValues).openapi({
                 description: "The current connection status of this Steam account",
                 example: Examples.SteamAccount.status
-            }),
-            accountStatus: z.enum(AccountStatusEnum.enumValues).openapi({
-                description: "The current status of this Steam account",
-                example: Examples.SteamAccount.accountStatus
             }),
             userID: z.string().nullable().openapi({
                 description: "The user id of which account owns this steam account",
@@ -45,7 +42,7 @@ export namespace Steam {
                     example: Examples.SteamAccount.username
                 })
                 .default("unknown"),
-            realName: z.string().openapi({
+            realName: z.string().nullable().openapi({
                 description: "The real name behind of this Steam account",
                 example: Examples.SteamAccount.realName
             }),
@@ -100,7 +97,6 @@ export namespace Steam {
                 useUser: true,
                 userID: true,
                 status: true,
-                accountStatus: true,
                 lastSyncedAt: true
             }),
         (input) =>
@@ -131,67 +127,65 @@ export namespace Steam {
                         realName: input.realName,
                         profileUrl: input.profileUrl,
                         avatarHash: input.avatarHash,
-                        steamMemberSince: input.steamMemberSince,
                         limitations: input.limitations,
                         status: input.status ?? "offline",
                         username: input.username ?? "unknown",
-                        accountStatus: input.accountStatus ?? "new",
+                        steamMemberSince: input.steamMemberSince,
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
 
-                await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
-                );
+                // await afterTx(async () =>
+                //     bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
+                // );
 
                 return input.id
             }),
     );
 
-    export const update = fn(
-        Info
-            .extend({
-                useUser: z.boolean(),
-            })
-            .partial({
-                useUser: true,
-                userID: true,
-                status: true,
-                lastSyncedAt: true,
-                avatarHash: true,
-                username: true,
-                realName: true,
-                limitations: true,
-                accountStatus: true,
-                name: true,
-                profileUrl: true,
-                steamMemberSince: true,
-            }),
-        async (input) =>
-            useTransaction(async (tx) => {
-                const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : undefined;
-                await tx
-                    .update(steamTable)
-                    .set({
-                        userID,
-                        id: input.id,
-                        name: input.name,
-                        realName: input.realName,
-                        profileUrl: input.profileUrl,
-                        avatarHash: input.avatarHash,
-                        limitations: input.limitations,
-                        status: input.status ?? "offline",
-                        username: input.username ?? "unknown",
-                        steamMemberSince: input.steamMemberSince,
-                        accountStatus: input.accountStatus ?? "new",
-                        lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
-                    })
-                    .where(eq(steamTable.id, input.id));
+    // TODO: This needs to be handled better, as it has the potential to turn unnecessary fields into `null`
+    // export const update = fn(
+    //     Info
+    //         .extend({
+    //             useUser: z.boolean(),
+    //         })
+    //         .partial({
+    //             useUser: true,
+    //             userID: true,
+    //             status: true,
+    //             name: true,
+    //             lastSyncedAt: true,
+    //             avatarHash: true,
+    //             username: true,
+    //             realName: true,
+    //             limitations: true,
+    //             profileUrl: true,
+    //             steamMemberSince: true,
+    //         }),
+    //     async (input) =>
+    //         useTransaction(async (tx) => {
+    //             const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : undefined;
+    //             await tx
+    //                 .update(steamTable)
+    //                 .set({
+    //                     userID,
+    //                     id: input.id,
+    //                     name: input.name,
+    //                     realName: input.realName,
+    //                     profileUrl: input.profileUrl,
+    //                     avatarHash: input.avatarHash,
+    //                     limitations: input.limitations,
+    //                     status: input.status ?? "offline",
+    //                     username: input.username ?? "unknown",
+    //                     steamMemberSince: input.steamMemberSince,
+    //                     lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
+    //                 })
+    //                 .where(eq(steamTable.id, input.id));
 
-                await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.Updated, { userID: userID ?? null, steamID: input.id })
-                );
-            })
-    )
+    //             await afterTx(async () =>
+    //                 bus.publish(Resource.Bus, Events.Updated, { userID: userID ?? null, steamID: input.id })
+    //             );
+    //         })
+    // )
 
     export const fromUserID = fn(
         z.string().min(1),
@@ -245,7 +239,6 @@ export namespace Steam {
             avatarHash: input.avatarHash,
             limitations: input.limitations,
             lastSyncedAt: input.lastSyncedAt,
-            accountStatus: input.accountStatus,
             steamMemberSince: input.steamMemberSince,
             profileUrl: input.profileUrl ? `https://steamcommunity.com/id/${input.profileUrl}` : null,
         };

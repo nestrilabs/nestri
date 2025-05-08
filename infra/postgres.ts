@@ -1,5 +1,6 @@
 import { vpc } from "./vpc";
 import { isPermanentStage } from "./stage";
+import { steamEncryptionKey } from "./secret";
 
 // TODO: Add a dev db to use, this will help with running zero locally... and testing it
 export const postgres = new sst.aws.Aurora("Database", {
@@ -41,7 +42,7 @@ export const postgres = new sst.aws.Aurora("Database", {
 
 
 new sst.x.DevCommand("Studio", {
-  link: [postgres],
+  link: [postgres, steamEncryptionKey],
   dev: {
     command: "bun db:dev studio",
     directory: "packages/core",
