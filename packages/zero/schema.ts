@@ -19,13 +19,12 @@ const timestamps = {
 const users = table("users")
     .columns({
         id: string(),
-        time_created: number(),
-        time_deleted: number().optional(),
         email: string(),
         avatar_url: string().optional(),
         last_login: number(),
         name: string(),
         polar_customer_id: string().optional(),
+        ...timestamps
     })
     .primaryKey("id");
 
