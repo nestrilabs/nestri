@@ -1,15 +1,16 @@
 import "zod-openapi/extend";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { SteamApi } from "./steam";
+import { auth } from "./utils/auth";
+import { FriendApi } from "./friend";
 import { logger } from "hono/logger";
 import { Realtime } from "./realtime";
-import { auth } from "./utils/auth";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
 import { patchLogger } from "../utils/patch-logger";
 import { HTTPException } from "hono/http-exception";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-import { SteamApi } from "./steam";
 
 patchLogger();
 
@@ -27,6 +28,7 @@ const routes = app
     .get("/", (c) => c.text("Hello World!"))
     .route("/realtime", Realtime.route)
     .route("/steam", SteamApi.route)
+    .route("/friend", FriendApi.route)
     .route("/account", AccountApi.route)
     .onError((error, c) => {
         if (error instanceof VisibleError) {

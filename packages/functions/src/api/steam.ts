@@ -5,15 +5,44 @@ import { Actor } from "@nestri/core/actor";
 import SteamCommunity from "steamcommunity";
 import { describeRoute } from "hono-openapi";
 import { Steam } from "@nestri/core/steam/index";
-import { ErrorResponses, validator } from "./utils";
+import { Team } from "@nestri/core/team/index";
+import { Examples } from "@nestri/core/examples";
+import { Member } from "@nestri/core/member/index";
+import { ErrorResponses, validator, Result } from "./utils";
 import { Credentials } from "@nestri/core/credentials/index";
 import { LoginSession, EAuthTokenPlatformType } from "steam-session";
-import { Team } from "@nestri/core/team/index";
-import { Member } from "@nestri/core/member/index";
 import type CSteamUser from "steamcommunity/classes/CSteamUser";
 
 export namespace SteamApi {
     export const route = new Hono()
+        .get("/",
+            describeRoute({
+                tags: ["Steam"],
+                summary: "List Steam accounts",
+                description: "List all Steam accounts belonging to this user",
+                responses: {
+                    200: {
+                        content: {
+                            "application/json": {
+                                schema: Result(
+                                    Steam.Info.array().openapi({
+                                        description: "All linked Steam accounts",
+                                        example: [Examples.SteamAccount]
+                                    })
+                                ),
+                            },
+                        },
+                        description: "Linked Steam accounts details"
+                    },
+                    400: ErrorResponses[400],
+                    429: ErrorResponses[429],
+                }
+            }),
+            async (c) =>
+                c.json({
+                    data: await Steam.list()
+                })
+        )
         .get("/login",
             describeRoute({
                 tags: ["Steam"],
