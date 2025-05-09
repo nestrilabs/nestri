@@ -7,6 +7,7 @@
     "@nestri/core": "*"
   },
   "scripts": {
-    "dev": "zero-deploy-permissions --output-format=sql --output-file=permissions.sql && zero-deploy-permissions && zero-cache"
+    "dev": "zero-deploy-permissions && zero-cache",
+    "generate": "zero-deploy-permissions --output-format=sql --output-file=permissions.sql"
   }
 }

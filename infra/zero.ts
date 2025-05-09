@@ -93,7 +93,7 @@ const replicationManager = !$dev
 //         handler: "packages/functions/src/zero.handler",
 //         // environment: { ["ZERO_UPSTREAM_DB"]: connectionString },
 //         copyFiles: [{
-//             from: "packages/zero/.permissions.sql",
+//             from: "packages/zero/permissions.sql",
 //             to: "./.permissions.sql"
 //         }],
 //     }
