@@ -112,17 +112,17 @@ export const schema = createSchema({
                 destSchema: members,
                 destField: ["user_id"],
             }),
+            steamAccounts: r.many({
+                sourceField: ["id"],
+                destSchema: steam_accounts,
+                destField: ["user_id"]
+            })
         })),
         relationships(teams, (r) => ({
             owner: r.one({
                 sourceField: ["owner_id"],
                 destSchema: users,
                 destField: ["id"],
-            }),
-            steamAccount: r.one({
-                sourceField: ["owner_id"],
-                destSchema: steam_accounts,
-                destField: ["user_id"],
             }),
             members: r.many({
                 sourceField: ["id"],
