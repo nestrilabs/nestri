@@ -26,13 +26,14 @@ const zeroEnv = {
     ZERO_CHANGE_DB: connectionString,
     ZERO_REPLICA_FILE: "/tmp/nestri.db",
     ZERO_LITESTREAM_RESTORE_PARALLELISM: "64",
-    ZERO_SHARD_ID: $app.stage,
+    ZERO_APP_ID: $app.stage,
     ZERO_AUTH_JWKS_URL: $interpolate`${auth.url}/.well-known/jwks.json`,
+    NODE_OPTIONS: "--max-old-space-size=8192",
     ...($dev
         ? {
         }
         : {
-            ZERO_LITESTREAM_BACKUP_URL: $interpolate`s3://${storage.name}/zero`,
+            ZERO_LITESTREAM_BACKUP_URL: $interpolate`s3://${storage.name}/zero/0`,
         }),
 };
 
@@ -151,7 +152,6 @@ export const zero = new sst.aws.Service("Zero", {
                 ZERO_CVR_MAX_CONNS: "160",
             }),
     },
-    wait: true,
     health: {
         retries: 3,
         command: ["CMD-SHELL", "curl -f http://localhost:4848/ || exit 1"],
