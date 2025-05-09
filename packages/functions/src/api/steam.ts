@@ -207,6 +207,8 @@ export namespace SteamApi {
                                             steamID
                                         })
                                     })
+                            } else {
+                                await Steam.updateOwner({ userID: currentUser.userID, steamID })
                             }
 
                             await stream.writeSSE({

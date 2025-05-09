@@ -143,20 +143,76 @@ export namespace Examples {
         slug: "remedy_entertainment",
     }
 
+    // export const Game = {
+    //     id: Id("game"),
+    //     appID: 870780,
+    //     name: "Control Ultimate Edition",
+    //     slug: "control-ultimate-edition",
+    //     tags: [GameTag], // Examples; Multiplayer, Family Sharing, Free To Play, Full Controller Support, In Game Purchases, Native Linux, Proton Compatibility Max (3), Proton Compatibility Mid (2), Proton Compatibility Low (1)
+    //     genres: [GameGenre], // Examples; Action, Adventure,
+    //     website: "https://controlgame.com",
+    //     legalNotice: "Control © Remedy Entertainment Plc 2019. The Remedy, Northlight and Control logos are trademarks of Remedy Entertainment Plc. 505 Games and the 505 Games logo are trademarks of 505 Games SpA, and may be registered in the United States and other countries. All rights reserved.",
+    //     releaseDate: new Date("27 Aug, 2020"),
+    //     description: "Winner of over 80 awards, Control is a visually stunning third-person action-adventure that will keep you on the edge of your seat.",
+    //     ratings: [GameRating],
+    //     publishers: [{ ...DevelopmentTeam, type: "publisher" as const }],
+    //     developers: [DevelopmentTeam],
+    // }
+
     export const Game = {
-        id: Id("game"),
-        appID: 870780,
-        name: "Control Ultimate Edition",
-        slug: "control-ultimate-edition",
-        tags: [GameTag], // Examples; Multiplayer, Family Sharing, Free To Play, Full Controller Support, In Game Purchases, Native Linux, Proton Compatibility Max (3), Proton Compatibility Mid (2), Proton Compatibility Low (1)
-        genres: [GameGenre], // Examples; Action, Adventure,
-        website: "https://controlgame.com",
-        legalNotice: "Control © Remedy Entertainment Plc 2019. The Remedy, Northlight and Control logos are trademarks of Remedy Entertainment Plc. 505 Games and the 505 Games logo are trademarks of 505 Games SpA, and may be registered in the United States and other countries. All rights reserved.",
-        releaseDate: new Date("27 Aug, 2020"),
-        description: "Winner of over 80 awards, Control is a visually stunning third-person action-adventure that will keep you on the edge of your seat.",
-        ratings: [GameRating],
-        publishers: [{ ...DevelopmentTeam, type: "publisher" as const }],
-        developers: [DevelopmentTeam],
+        id: "1809540",
+        slug: "nine-sols",
+        // developers: [
+        //     {
+        //         name: "RedCandleGames",
+        //         slug: "redcandlegames"
+        //     }
+        // ],
+        // publishers: [
+        //     {
+        //         name: "RedCandleGames",
+        //         slug: "redcandlegames"
+        //     }
+        // ],
+        name: "Nine Sols",
+        controllerSupport: "full",
+        // tags: [
+        //     {
+        //         name: "Metroidvania",
+        //         slug: "metroidvania",
+        //     },
+        //     {
+        //         name: "Souls-like",
+        //         slug: "souls-like",
+        //     },
+        //     {
+        //         name: "Difficult",
+        //         slug: "difficult",
+        //     },
+        // ],
+        releaseDate: new Date("2024-05-29T06:53:24.000Z"),
+        compatibility: "high" as const,
+        size: {
+            downloadSize: 7907568608,//"7.91 GB",
+            sizeOnDisk: 13176088178,//"13.18 GB"
+        },
+        // genres: [
+        //     {
+        //         name: "Action",
+        //         slug: "action"
+        //     },
+        //     {
+        //         name: "Adventure",
+        //         slug: "adventure"
+        //     },
+        //     {
+        //         name: "Indie",
+        //         slug: "indie"
+        //     }
+        // ],
+        primaryGenre: "Action",
+        score: 4.7,
+        description: "Nine Sols is a lore rich, hand-drawn 2D action-platformer featuring Sekiro-inspired deflection focused combat. Embark on a journey of eastern fantasy, explore the land once home to an ancient alien race, and follow a vengeful hero’s quest to slay the 9 Sols, formidable rulers of this forsaken realm.",
     }
 
     export const image = {
@@ -166,13 +222,5 @@ export namespace Examples {
         extractedColors: [{}]
     }
 
-    // export const Machine = {
-    //     id: Id("machine"),
-    //     userID: Id("user"),
-    //     country: "Kenya",
-    //     countryCode: "KE",
-    //     timezone: "Africa/Nairobi",
-    //     location: { latitude: 36.81550, longitude: -1.28410 },
-    //     fingerprint: "fc27f428f9ca47d4b41b707ae0c62090",
-    // }
+
 }

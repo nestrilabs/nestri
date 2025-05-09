@@ -451,7 +451,7 @@ export function CreateTeamComponent() {
 
         // team slug
         stream.addEventListener("team_slug", async (e) => {
-            await account.refresh(account.current.email)
+            await account.refresh(account.current.id)
             {/**FIXME: Somehow this does not work when the user is in the "/new" page */ }
             nav(`/${JSON.parse(e.data).username}`)
         });

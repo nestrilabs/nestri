@@ -142,6 +142,27 @@ export namespace Steam {
             }),
     );
 
+    export const updateOwner = fn(
+        z
+            .object({
+                userID: z.string(),
+                steamID: z.string()
+            })
+            .partial({
+                userID: true
+            }),
+        (input) =>
+            useTransaction(async (tx) => {
+                const userID = input.userID ?? Actor.userID()
+                await tx
+                    .update(steamTable)
+                    .set({
+                        userID
+                    })
+                    .where(eq(steamTable.id, input.steamID));
+            })
+    )
+
     // TODO: This needs to be handled better, as it has the potential to turn unnecessary fields into `null`
     // export const update = fn(
     //     Info
