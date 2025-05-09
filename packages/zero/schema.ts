@@ -19,10 +19,10 @@ const timestamps = {
 const users = table("users")
     .columns({
         id: string(),
-        email: string(),
-        avatar_url: string().optional(),
-        last_login: number(),
         name: string(),
+        email: string(),
+        last_login: number(),
+        avatar_url: string().optional(),
         polar_customer_id: string().optional(),
         ...timestamps
     })
@@ -30,16 +30,16 @@ const users = table("users")
 
 const steam_accounts = table("steam_accounts")
     .columns({
-        steam_id: string(),
-        user_id: string(),
+        name: string(),
         status: string(),
+        user_id: string(),
+        username: string(),
+        steam_id: string(),
+        avatar_hash: string(),
+        member_since: number(),
         last_synced_at: number(),
         real_name: string().optional(),
-        member_since: number(),
-        name: string(),
         profile_url: string().optional(),
-        username: string(),
-        avatar_hash: string(),
         limitations: json<Limitations>(),
         ...timestamps,
     })
@@ -49,9 +49,9 @@ const teams = table("teams")
     .columns({
         id: string(),
         name: string(),
+        slug: string(),
         owner_id: string(),
         invite_code: string(),
-        slug: string(),
         max_members: number(),
         ...timestamps,
     })
@@ -59,10 +59,10 @@ const teams = table("teams")
 
 const members = table("members")
     .columns({
-        team_id: string(),
-        user_id: string().optional(),
-        steam_id: string(),
         role: string(),
+        team_id: string(),
+        steam_id: string(),
+        user_id: string().optional(),
         ...timestamps,
     })
     .primaryKey("team_id", "steam_id");
@@ -178,7 +178,8 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
             row: {
                 select: [
                     (auth: Auth, q: ExpressionBuilder<Schema, 'members'>) => q.exists("user", (u) => u.where("id", auth.sub)),
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'members'>) => q.exists("steamAccount", (u) => u.where("user_id", auth.sub)),
+                    //allow other team members to view other members
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'members'>) => q.exists("team", (u) => u.related("members", (m) => m.where("user_id", auth.sub))),
                 ]
             },
         },
@@ -193,6 +194,10 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
             row: {
                 select: [
                     (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("user", (u) => u.where("id", auth.sub)),
+                    //Allow friends to view friends steam accounts
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("friends", (u) => u.related("friend", (f) => f.where("user_id", auth.sub))),
+                    //allow other team members to see a user's steam account
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("memberEntries", (u) => u.related("team",(t) => t.related("members", (m) => m.where("user_id", auth.sub)))),
                 ]
             },
         },
