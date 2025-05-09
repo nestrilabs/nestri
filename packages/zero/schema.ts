@@ -206,8 +206,8 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
         friends_list: {
             row: {
                 select: [
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'friends_list'>) =>q.exists("steam", (u) => u.where("user_id", auth.sub)),
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'friends_list'>) =>q.exists("friend", (u) => u.where("user_id", auth.sub)),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'friends_list'>) => q.exists("steam", (u) => u.where("user_id", auth.sub)),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'friends_list'>) => q.exists("friend", (u) => u.where("user_id", auth.sub)),
                 ]
             },
         },
