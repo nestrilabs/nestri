@@ -31,7 +31,7 @@ const users = table("users")
 
 const steam_accounts = table("steam_accounts")
     .columns({
-        id: string(),
+        steam_id: string(),
         user_id: string(),
         status: string(),
         last_synced_at: number(),
@@ -44,7 +44,7 @@ const steam_accounts = table("steam_accounts")
         limitations: json<Limitations>(),
         ...timestamps,
     })
-    .primaryKey("id");
+    .primaryKey("steam_id");
 
 const teams = table("teams")
     .columns({
@@ -87,17 +87,17 @@ export const schema = createSchema({
                 destField: ["id"],
             }),
             memberEntries: r.many({
-                sourceField: ["id"],
+                sourceField: ["steam_id"],
                 destSchema: members,
                 destField: ["steam_id"],
             }),
             friends: r.many({
-                sourceField: ["id"],
+                sourceField: ["steam_id"],
                 destSchema: friends_list,
                 destField: ["steam_id"],
             }),
             friendOf: r.many({
-                sourceField: ["id"],
+                sourceField: ["steam_id"],
                 destSchema: friends_list,
                 destField: ["friend_steam_id"],
             }),
@@ -121,9 +121,9 @@ export const schema = createSchema({
                 destField: ["id"],
             }),
             steamAccount: r.one({
-                sourceField: ["slug"],
+                sourceField: ["owner_id"],
                 destSchema: steam_accounts,
-                destField: ["username"],
+                destField: ["user_id"],
             }),
             members: r.many({
                 sourceField: ["id"],
@@ -145,19 +145,19 @@ export const schema = createSchema({
             steamAccount: r.one({
                 sourceField: ["steam_id"],
                 destSchema: steam_accounts,
-                destField: ["id"],
+                destField: ["steam_id"],
             }),
         })),
         relationships(friends_list, (r) => ({
             steam: r.one({
                 sourceField: ["steam_id"],
                 destSchema: steam_accounts,
-                destField: ["id"],
+                destField: ["steam_id"],
             }),
             friend: r.one({
                 sourceField: ["friend_steam_id"],
                 destSchema: steam_accounts,
-                destField: ["id"],
+                destField: ["steam_id"],
             }),
         })),
     ],
@@ -179,13 +179,14 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
             row: {
                 select: [
                     (auth: Auth, q: ExpressionBuilder<Schema, 'members'>) => q.exists("user", (u) => u.where("id", auth.sub)),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'members'>) => q.exists("steamAccount", (u) => u.where("user_id", auth.sub)),
                 ]
             },
         },
         teams: {
             row: {
                 select: [
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'teams'>) => q.exists("steamAccount", (u) => u.where("user_id", auth.sub)),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'teams'>) => q.exists("members", (u) => u.where("user_id", auth.sub)),
                 ]
             },
         },
@@ -199,7 +200,7 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
         users: {
             row: {
                 select: [
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'users'>) => q.cmp("id", "IS", auth.sub),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'users'>) => q.cmp("id", "=", auth.sub),
                 ]
             },
         },
@@ -207,6 +208,7 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
             row: {
                 select: [
                     (auth: Auth, q: ExpressionBuilder<Schema, 'friends_list'>) =>q.exists("steam", (u) => u.where("user_id", auth.sub)),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'friends_list'>) =>q.exists("friend", (u) => u.where("user_id", auth.sub)),
                 ]
             },
         },
