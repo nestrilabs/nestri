@@ -154,7 +154,7 @@ export namespace Friend {
     ): z.infer<typeof Info>[] {
         return pipe(
             input,
-            groupBy((row) => row.steam.id.toString()),
+            groupBy((row) => row.steam.id),
             values(),
             map((group) => ({
                 ...Steam.serialize(group[0].steam),
