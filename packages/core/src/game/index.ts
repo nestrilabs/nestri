@@ -49,7 +49,7 @@ export namespace Game {
                     .insert(gamesTable)
                     .values(input)
                     .onConflictDoUpdate({
-                        target: [gamesTable.categorySlug, gamesTable.baseGameID],
+                        target: [gamesTable.categorySlug, gamesTable.categoryType, gamesTable.baseGameID],
                         set: { timeDeleted: null }
                     })
 
@@ -65,8 +65,6 @@ export namespace Game {
                     .select({
                         games: baseGamesTable,
                         categories: categoriesTable,
-                        categoriesType: categoriesTable.type,
-                        categoriesSlug: categoriesTable.slug,
                     })
                     .from(gamesTable)
                     .innerJoin(baseGamesTable,
@@ -84,13 +82,8 @@ export namespace Game {
                             isNull(gamesTable.timeDeleted)
                         )
                     )
-                    .groupBy(
-                        gamesTable.baseGameID,
-                        categoriesTable.type,
-                        categoriesTable.slug,
-                    )
                     .execute()
-                    .then((rows) => serialize(rows))
+                    .then((rows) => serialize(rows).at(0))
             )
     )
 

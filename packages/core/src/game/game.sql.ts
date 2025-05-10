@@ -27,7 +27,6 @@ export const gamesTable = pgTable(
         primaryKey({
             columns: [table.baseGameID, table.categorySlug, table.categoryType]
         }),
-        index("idx_games_base_id").on(table.baseGameID),
         index("idx_games_category_slug").on(table.categorySlug),
         index("idx_games_category_type").on(table.categoryType),
     ]

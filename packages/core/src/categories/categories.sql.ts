@@ -17,6 +17,5 @@ export const categoriesTable = pgTable(
             columns: [table.slug, table.type]
         }),
         index("idx_categories_type").on(table.type),
-        index("idx_categories_slug").on(table.slug),
     ]
 )

@@ -5,6 +5,7 @@ import { Game } from "@nestri/core/game/index";
 import { Examples } from "@nestri/core/examples";
 import { Library } from "@nestri/core/library/index";
 import { ErrorResponses, notPublic, Result, validator } from "./utils";
+import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 export namespace GameApi {
     export const route = new Hono()
@@ -65,7 +66,7 @@ export namespace GameApi {
                 "param",
                 z.object({
                     id: z.string().openapi({
-                        description: "ID of the game to get.",
+                        description: "ID of the game to get",
                         example: Examples.Game.id,
                     }),
                 }),
@@ -74,6 +75,14 @@ export namespace GameApi {
                 const gameID = c.req.valid("param").id
 
                 const game = await Game.fromID(gameID)
+
+                if (!game) {
+                    throw new VisibleError(
+                        "not_found",
+                        ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+                        `Game ${gameID} does not exist`
+                    )
+                }
 
                 return c.json({
                     data: game

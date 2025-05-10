@@ -21,7 +21,6 @@ export const friendTable = pgTable(
         primaryKey({
             columns: [table.steamID, table.friendSteamID]
         }),
-        index("idx_friends_list_steam_id").on(table.steamID),
         index("idx_friends_list_friend_steam_id").on(table.friendSteamID),
     ]
 );

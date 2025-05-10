@@ -71,8 +71,6 @@ export namespace Library {
                 .select({
                     games: baseGamesTable,
                     categories: categoriesTable,
-                    categoriesType: categoriesTable.type,
-                    categoriesSlug: categoriesTable.slug,
                 })
                 .from(steamLibraryTable)
                 .where(
@@ -95,11 +93,6 @@ export namespace Library {
                         eq(categoriesTable.slug, gamesTable.categorySlug),
                         eq(categoriesTable.type, gamesTable.categoryType),
                     )
-                )
-                .groupBy(
-                    gamesTable.baseGameID,
-                    categoriesTable.type,
-                    categoriesTable.slug,
                 )
                 .execute()
                 .then(rows => Game.serialize(rows))

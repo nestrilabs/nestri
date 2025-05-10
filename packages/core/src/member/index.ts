@@ -80,6 +80,26 @@ export namespace Member {
             )
 
     )
+    
+    export const fromUserID = fn(
+        z.string(),
+        (userID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(memberTable)
+                    .where(
+                        and(
+                            eq(memberTable.userID, userID),
+                            eq(memberTable.teamID, Actor.teamID()),
+                            isNull(memberTable.timeDeleted)
+                        )
+                    )
+                    .execute()
+                    .then(rows => rows.map(serialize).at(0))
+            )
+
+    )
 
     /**
      * Converts a raw member database row into a standardized {@link Member.Info} object.

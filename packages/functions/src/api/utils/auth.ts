@@ -57,7 +57,7 @@ export const auth: MiddlewareHandler = async (c, next) => {
       async () => {
         const member = await Member.fromUserID(userID)
         if (!member || !member.userID) {
-          return new VisibleError(
+          throw new VisibleError(
             "authentication",
             ErrorCodes.Authentication.UNAUTHORIZED,
             `You don't have permission to access this resource.`

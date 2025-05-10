@@ -23,7 +23,6 @@ export const steamLibraryTable = pgTable(
         primaryKey({
             columns: [table.gameID, table.ownerID]
         }),
-        index("idx_game_libraries_game_id").on(table.gameID),
         index("idx_game_libraries_owner_id").on(table.ownerID),
     ],
 );
