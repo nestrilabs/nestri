@@ -1,6 +1,6 @@
 import { Size } from "@nestri/core/src/base-game/base-game.sql";
-import { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
 import { type Limitations } from "@nestri/core/src/steam/steam.sql";
+import { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
 import {
     json,
     table,
@@ -83,9 +83,10 @@ const games = table("games")
     .columns({
         base_game_id: string(),
         category_slug: string(),
+        type: enumeration<"tag" | "genre" | "publisher" | "developer">(),
         ...timestamps
     })
-    .primaryKey("category_slug", "base_game_id")
+    .primaryKey("category_slug", "base_game_id","type")
 
 const base_games = table("base_games")
     .columns({
@@ -110,22 +111,23 @@ const categories = table("categories")
         name: string(),
         ...timestamps
     })
-    .primaryKey("slug")
+    .primaryKey("slug","type")
 
 const game_libraries = table("game_libraries")
     .columns({
         base_game_id: string(),
         owner_id: string()
-    })
+    }).primaryKey("base_game_id", "owner_id")
 
 const images = table("images")
     .columns({
         image_hash: string(),
         base_game_id: string(),
+        type: enumeration<"heroArt" | "icon" | "logo" | "superHeroArt" | "poster" | "boxArt" | "screenshot" | "background">(),
         position: number(),
         dimensions: json<ImageDimensions>(),
         extracted_color: json<ImageColor>()
-    })
+    }).primaryKey("base_game_id", "image_hash", "type", "position")
 
 // Schema and Relationships
 export const schema = createSchema({
@@ -234,17 +236,27 @@ export const schema = createSchema({
             })
         })),
         relationships(categories, (r) => ({
-            games: r.many({
+            games_slug: r.many({
                 sourceField: ["slug"],
                 destSchema: games,
                 destField: ["category_slug"]
+            }),
+            games_type: r.many({
+                sourceField: ["type"],
+                destSchema: games,
+                destField: ["type"]
             })
         })),
         relationships(games, (r) => ({
-            category: r.one({
+            category_slug: r.one({
                 sourceField: ["category_slug"],
                 destSchema: categories,
                 destField: ["slug"],
+            }),
+            category_type: r.one({
+                sourceField: ["type"],
+                destSchema: categories,
+                destField: ["type"],
             }),
             base_game: r.one({
                 sourceField: ["base_game_id"],
