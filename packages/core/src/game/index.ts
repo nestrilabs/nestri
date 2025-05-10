@@ -1,17 +1,17 @@
 import { z } from "zod";
 import { fn } from "../utils";
+import { Images } from "../images";
 import { Examples } from "../examples";
 import { BaseGame } from "../base-game";
 import { gamesTable } from "./game.sql";
 import { Categories } from "../categories";
 import { eq, and, isNull } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-zod";
+import { imagesTable } from "../images/images.sql";
 import { groupBy, map, pipe, uniqueBy, values } from "remeda";
 import { baseGamesTable } from "../base-game/base-game.sql";
 import { categoriesTable } from "../categories/categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { Images } from "../images";
-import { imagesTable } from "../images/images.sql";
 
 export namespace Game {
     export const Info = z

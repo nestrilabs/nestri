@@ -25,7 +25,7 @@ export const imagesTable = pgTable(
         type: ImageTypeEnum("type").notNull(),
         imageHash: varchar("image_hash", { length: 255 })
             .notNull(),
-        baseGameID: varchar("hash", { length: 255 })
+        baseGameID: varchar("base_game_id", { length: 255 })
             .notNull()
             .references(() => baseGamesTable.id, {
                 onDelete: "cascade"
