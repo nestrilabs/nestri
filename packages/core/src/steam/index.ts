@@ -142,50 +142,26 @@ export namespace Steam {
             }),
     );
 
-    // TODO: This needs to be handled better, as it has the potential to turn unnecessary fields into `null`
-    // export const update = fn(
-    //     Info
-    //         .extend({
-    //             useUser: z.boolean(),
-    //         })
-    //         .partial({
-    //             useUser: true,
-    //             userID: true,
-    //             status: true,
-    //             name: true,
-    //             lastSyncedAt: true,
-    //             avatarHash: true,
-    //             username: true,
-    //             realName: true,
-    //             limitations: true,
-    //             profileUrl: true,
-    //             steamMemberSince: true,
-    //         }),
-    //     async (input) =>
-    //         useTransaction(async (tx) => {
-    //             const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : undefined;
-    //             await tx
-    //                 .update(steamTable)
-    //                 .set({
-    //                     userID,
-    //                     id: input.id,
-    //                     name: input.name,
-    //                     realName: input.realName,
-    //                     profileUrl: input.profileUrl,
-    //                     avatarHash: input.avatarHash,
-    //                     limitations: input.limitations,
-    //                     status: input.status ?? "offline",
-    //                     username: input.username ?? "unknown",
-    //                     steamMemberSince: input.steamMemberSince,
-    //                     lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
-    //                 })
-    //                 .where(eq(steamTable.id, input.id));
-
-    //             await afterTx(async () =>
-    //                 bus.publish(Resource.Bus, Events.Updated, { userID: userID ?? null, steamID: input.id })
-    //             );
-    //         })
-    // )
+    export const updateOwner = fn(
+        z
+            .object({
+                userID: z.string(),
+                steamID: z.string()
+            })
+            .partial({
+                userID: true
+            }),
+        (input) =>
+            useTransaction(async (tx) => {
+                const userID = input.userID ?? Actor.userID()
+                await tx
+                    .update(steamTable)
+                    .set({
+                        userID
+                    })
+                    .where(eq(steamTable.id, input.steamID));
+            })
+    )
 
     export const fromUserID = fn(
         z.string().min(1),

@@ -1,6 +1,6 @@
 import { timestamps, } from "../drizzle/types";
 import { steamTable } from "../steam/steam.sql";
-import { pgTable,primaryKey, varchar } from "drizzle-orm/pg-core";
+import { index, pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
 
 export const friendTable = pgTable(
     "friends_list",
@@ -21,5 +21,6 @@ export const friendTable = pgTable(
         primaryKey({
             columns: [table.steamID, table.friendSteamID]
         }),
+        index("idx_friends_list_friend_steam_id").on(table.friendSteamID),
     ]
 );

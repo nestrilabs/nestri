@@ -19,7 +19,7 @@ export const steamTable = pgTable(
     "steam_accounts",
     {
         ...timestamps,
-        id: varchar("steam_id", { length: 255 })
+        id: varchar("id", { length: 255 })
             .primaryKey()
             .notNull(),
         userID: ulid("user_id")

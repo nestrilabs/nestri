@@ -1,0 +1,39 @@
+import { z } from "zod";
+import { timestamps, utc } from "../drizzle/types";
+import { json, numeric, pgEnum, pgTable, text, unique, varchar } from "drizzle-orm/pg-core";
+
+export const CompatibilityEnum = pgEnum("compatibility", ["high", "mid", "low", "unknown"])
+
+export const Size =
+    z.object({
+        downloadSize: z.number().positive().int(),
+        sizeOnDisk: z.number().positive().int()
+    })
+
+export type Size = z.infer<typeof Size>
+
+export const baseGamesTable = pgTable(
+    "base_games",
+    {
+        ...timestamps,
+        id: varchar("id", { length: 255 })
+            .primaryKey()
+            .notNull(),
+        slug: varchar("slug", { length: 255 })
+            .notNull(),
+        name: text("name").notNull(),
+        releaseDate: utc("release_date").notNull(),
+        size: json("size").$type<Size>().notNull(),
+        description: text("description").notNull(),
+        primaryGenre: text("primary_genre").notNull(),
+        controllerSupport: text("controller_support"),
+        compatibility: CompatibilityEnum("compatibility").notNull().default("unknown"),
+        // Score ranges from 0.0 to 5.0
+        score: numeric("score", { precision: 2, scale: 1 })
+            .$type<number>()
+            .notNull()
+    },
+    (table) => [
+        unique("idx_base_games_slug").on(table.slug),
+    ]
+)

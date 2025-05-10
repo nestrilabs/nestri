@@ -1,9 +1,12 @@
+import { Size } from "@nestri/core/src/base-game/base-game.sql";
 import { type Limitations } from "@nestri/core/src/steam/steam.sql";
 import {
     json,
     table,
     number,
     string,
+    ANYONE_CAN,
+    enumeration,
     createSchema,
     relationships,
     definePermissions,
@@ -30,11 +33,11 @@ const users = table("users")
 
 const steam_accounts = table("steam_accounts")
     .columns({
+        id: string(),
         name: string(),
         status: string(),
         user_id: string(),
         username: string(),
-        steam_id: string(),
         avatar_hash: string(),
         member_since: number(),
         last_synced_at: number(),
@@ -43,7 +46,7 @@ const steam_accounts = table("steam_accounts")
         limitations: json<Limitations>(),
         ...timestamps,
     })
-    .primaryKey("steam_id");
+    .primaryKey("id");
 
 const teams = table("teams")
     .columns({
@@ -75,9 +78,48 @@ const friends_list = table("friends_list")
     })
     .primaryKey("steam_id", "friend_steam_id");
 
+const games = table("games")
+    .columns({
+        base_game_id: string(),
+        category_slug: string(),
+        ...timestamps
+    })
+    .primaryKey("category_slug", "base_game_id")
+
+const base_games = table("base_games")
+    .columns({
+        id: string(),
+        slug: string(),
+        name: string(),
+        release_date: number(),
+        size: json<Size>(),
+        description: string(),
+        primary_genre: string(),
+        controller_support: string().optional(),
+        compatibility: enumeration<"high" | "mid" | "low">(),
+        score: number(),
+        ...timestamps
+    })
+    .primaryKey("id")
+
+const categories = table("categories")
+    .columns({
+        slug: string(),
+        type: enumeration<"tag" | "genre" | "publisher" | "developer">(),
+        name: string(),
+        ...timestamps
+    })
+    .primaryKey("slug")
+
+const game_libraries = table("game_libraries")
+    .columns({
+        game_id: string(),
+        owner_id: string()
+    })
+
 // Schema and Relationships
 export const schema = createSchema({
-    tables: [users, steam_accounts, teams, members, friends_list],
+    tables: [users, steam_accounts, teams, members, friends_list, categories, base_games, games, game_libraries],
     relationships: [
         relationships(steam_accounts, (r) => ({
             user: r.one({
@@ -86,20 +128,25 @@ export const schema = createSchema({
                 destField: ["id"],
             }),
             memberEntries: r.many({
-                sourceField: ["steam_id"],
+                sourceField: ["id"],
                 destSchema: members,
                 destField: ["steam_id"],
             }),
             friends: r.many({
-                sourceField: ["steam_id"],
+                sourceField: ["id"],
                 destSchema: friends_list,
                 destField: ["steam_id"],
             }),
             friendOf: r.many({
-                sourceField: ["steam_id"],
+                sourceField: ["id"],
                 destSchema: friends_list,
                 destField: ["friend_steam_id"],
             }),
+            libraries: r.many({
+                sourceField: ["id"],
+                destSchema: game_libraries,
+                destField: ["owner_id"]
+            })
         })),
         relationships(users, (r) => ({
             teams: r.many({
@@ -142,23 +189,67 @@ export const schema = createSchema({
                 destField: ["id"],
             }),
             steamAccount: r.one({
-                sourceField: ["steam_id"],
+                sourceField: ["id"],
                 destSchema: steam_accounts,
-                destField: ["steam_id"],
+                destField: ["id"],
             }),
         })),
         relationships(friends_list, (r) => ({
             steam: r.one({
                 sourceField: ["steam_id"],
                 destSchema: steam_accounts,
-                destField: ["steam_id"],
+                destField: ["id"],
             }),
             friend: r.one({
                 sourceField: ["friend_steam_id"],
                 destSchema: steam_accounts,
-                destField: ["steam_id"],
+                destField: ["id"],
             }),
         })),
+        relationships(base_games, (r) => ({
+            games: r.many({
+                sourceField: ["id"],
+                destSchema: games,
+                destField: ["base_game_id"]
+            }),
+            libraries: r.many({
+                sourceField: ["id"],
+                destSchema: game_libraries,
+                destField: ["game_id"]
+            })
+        })),
+        relationships(categories, (r) => ({
+            games: r.many({
+                sourceField: ["slug"],
+                destSchema: games,
+                destField: ["category_slug"]
+            })
+        })),
+        relationships(games, (r) => ({
+            category: r.one({
+                sourceField: ["category_slug"],
+                destSchema: categories,
+                destField: ["slug"],
+            }),
+            base_game: r.one({
+                sourceField: ["base_game_id"],
+                destSchema: base_games,
+                destField: ["id"],
+            }),
+        })),
+        relationships(game_libraries, (r) => ({
+            base_game: r.one({
+                sourceField: ["game_id"],
+                destSchema: base_games,
+                destField: ["id"],
+            }),
+            owner: r.one({
+                sourceField: ["owner_id"],
+                destSchema: steam_accounts,
+                destField: ["id"],
+            }),
+        })),
+
     ],
 });
 
@@ -197,7 +288,7 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                     //Allow friends to view friends steam accounts
                     (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("friends", (u) => u.related("friend", (f) => f.where("user_id", auth.sub))),
                     //allow other team members to see a user's steam account
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("memberEntries", (u) => u.related("team",(t) => t.related("members", (m) => m.where("user_id", auth.sub)))),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("memberEntries", (u) => u.related("team", (t) => t.related("members", (m) => m.where("user_id", auth.sub)))),
                 ]
             },
         },
@@ -216,5 +307,30 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                 ]
             },
         },
+        //Games are publicly viewable
+        games: {
+            row: {
+                select: ANYONE_CAN
+            }
+        },
+        base_games: {
+            row: {
+                select: ANYONE_CAN
+            }
+        },
+        categories: {
+            row: {
+                select: ANYONE_CAN
+            }
+        },
+        game_libraries: {
+            row: {
+                select: [
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.where("user_id", auth.sub)),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.related("memberEntries", (f) => f.where("user_id", auth.sub))),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.related("friends", (f) => f.related("friend", (s) => s.where("user_id", auth.sub)))),
+                ]
+            }
+        }
     };
 });
