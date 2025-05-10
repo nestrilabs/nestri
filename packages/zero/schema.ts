@@ -353,7 +353,7 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                 ]
             }
         },
-        //Games are publicly viewable for logged in users
+        // Games are publicly viewable - but only to logged in users
         games: {
             row: {
                 select: [(auth: Auth, q: ExpressionBuilder<Schema, 'games'>) => q.cmpLit(auth.sub, "IS NOT", null),]
