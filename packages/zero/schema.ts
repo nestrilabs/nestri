@@ -6,7 +6,6 @@ import {
     table,
     number,
     string,
-    ANYONE_CAN,
     enumeration,
     createSchema,
     relationships,
