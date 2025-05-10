@@ -354,25 +354,25 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                 ]
             }
         },
-        //Games are publicly viewable
+        //Games are publicly viewable for logged in users
         games: {
             row: {
-                select: ANYONE_CAN
+                select: [(auth: Auth, q: ExpressionBuilder<Schema, 'games'>) => q.cmpLit(auth.sub, "IS NOT", null),]
             }
         },
         base_games: {
             row: {
-                select: ANYONE_CAN
+                select: [(auth: Auth, q: ExpressionBuilder<Schema, 'base_games'>) => q.cmpLit(auth.sub, "IS NOT", null),]
             }
         },
         categories: {
             row: {
-                select: ANYONE_CAN
+                select: [(auth: Auth, q: ExpressionBuilder<Schema, 'categories'>) => q.cmpLit(auth.sub, "IS NOT", null),]
             }
         },
         images: {
             row: {
-                select: ANYONE_CAN
+                select: [(auth: Auth, q: ExpressionBuilder<Schema, 'images'>) => q.cmpLit(auth.sub, "IS NOT", null),]
             }
         },
     };
