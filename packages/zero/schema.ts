@@ -86,7 +86,7 @@ const games = table("games")
         type: enumeration<"tag" | "genre" | "publisher" | "developer">(),
         ...timestamps
     })
-    .primaryKey("category_slug", "base_game_id","type")
+    .primaryKey("category_slug", "base_game_id", "type")
 
 const base_games = table("base_games")
     .columns({
@@ -111,12 +111,13 @@ const categories = table("categories")
         name: string(),
         ...timestamps
     })
-    .primaryKey("slug","type")
+    .primaryKey("slug", "type")
 
 const game_libraries = table("game_libraries")
     .columns({
         base_game_id: string(),
-        owner_id: string()
+        owner_id: string(),
+        ...timestamps
     }).primaryKey("base_game_id", "owner_id")
 
 const images = table("images")
@@ -126,8 +127,9 @@ const images = table("images")
         type: enumeration<"heroArt" | "icon" | "logo" | "superHeroArt" | "poster" | "boxArt" | "screenshot" | "background">(),
         position: number(),
         dimensions: json<ImageDimensions>(),
-        extracted_color: json<ImageColor>()
-    }).primaryKey("base_game_id", "image_hash", "type", "position")
+        extracted_color: json<ImageColor>(),
+        ...timestamps
+    }).primaryKey("image_hash", "type", "base_game_id", "position")
 
 // Schema and Relationships
 export const schema = createSchema({

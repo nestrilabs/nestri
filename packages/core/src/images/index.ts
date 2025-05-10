@@ -95,7 +95,14 @@ export namespace Images {
             })
             .reduce<Record<`${typeof imagesTable.$inferSelect["type"]}s`, { hash: string; averageColor: ImageColor; dimensions: ImageDimensions; fileSize: number }[]>>((acc, img) => {
                 const key = `${img.type}s` as `${typeof img.type}s`
-                acc[key]!.push({ hash: img.imageHash, averageColor: img.extractedColor, dimensions: img.dimensions, fileSize: img.fileSize })
+                if (Array.isArray(acc[key])) {
+                    acc[key]!.push({
+                        hash: img.imageHash,
+                        averageColor: img.extractedColor,
+                        dimensions: img.dimensions,
+                        fileSize: img.fileSize
+                    })
+                }
                 return acc
             }, {
                 screenshots: [],

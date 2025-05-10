@@ -24,8 +24,12 @@ export const gamesTable = pgTable(
             name: "games_categories_fkey",
             columns: [table.categorySlug, table.categoryType],
             foreignColumns: [categoriesTable.slug, categoriesTable.type],
-        }),
+        }).onDelete("cascade"),
         index("idx_games_category_slug").on(table.categorySlug),
         index("idx_games_category_type").on(table.categoryType),
+        index("idx_games_category_slug_type").on(
+            table.categorySlug,
+            table.categoryType
+        )
     ]
 );
