@@ -6,7 +6,7 @@ import { gamesTable } from "./game.sql";
 import { Categories } from "../categories";
 import { eq, and, isNull } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-zod";
-import { groupBy, map, pipe, values } from "remeda";
+import { groupBy, map, pipe, uniqueBy, values } from "remeda";
 import { baseGamesTable } from "../base-game/base-game.sql";
 import { categoriesTable } from "../categories/categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
@@ -28,11 +28,33 @@ export namespace Game {
     export const create = fn(
         InputInfo,
         (input) =>
-            createTransaction(async (tx) =>
-                tx
+            createTransaction(async (tx) => {
+                const results =
+                    await tx
+                        .select()
+                        .from(gamesTable)
+                        .where(
+                            and(
+                                eq(gamesTable.categorySlug, input.categorySlug),
+                                eq(gamesTable.categoryType, input.categoryType),
+                                eq(gamesTable.baseGameID, input.baseGameID),
+                                isNull(gamesTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+
+                if (results.length > 0) return null
+
+                await tx
                     .insert(gamesTable)
                     .values(input)
-            )
+                    .onConflictDoUpdate({
+                        target: [gamesTable.categorySlug, gamesTable.baseGameID],
+                        set: { timeDeleted: null }
+                    })
+
+                return input.baseGameID
+            })
     )
 
     export const fromID = fn(
@@ -42,20 +64,30 @@ export namespace Game {
                 tx
                     .select({
                         games: baseGamesTable,
-                        categories: categoriesTable
+                        categories: categoriesTable,
+                        categoriesType: categoriesTable.type,
+                        categoriesSlug: categoriesTable.slug,
                     })
                     .from(gamesTable)
                     .innerJoin(baseGamesTable,
                         eq(baseGamesTable.id, gamesTable.baseGameID)
                     )
                     .leftJoin(categoriesTable,
-                        eq(categoriesTable.slug, gamesTable.categorySlug)
+                        and(
+                            eq(categoriesTable.slug, gamesTable.categorySlug),
+                            eq(categoriesTable.type, gamesTable.categoryType),
+                        )
                     )
                     .where(
                         and(
                             eq(gamesTable.baseGameID, gameID),
                             isNull(gamesTable.timeDeleted)
                         )
+                    )
+                    .groupBy(
+                        gamesTable.baseGameID,
+                        categoriesTable.type,
+                        categoriesTable.slug,
                     )
                     .execute()
                     .then((rows) => serialize(rows))
@@ -71,11 +103,14 @@ export namespace Game {
             values(),
             map((group) => {
                 const game = BaseGame.serialize(group[0].games)
-                const cats = group.map(r => r.categories).filter((c): c is typeof categoriesTable.$inferSelect => Boolean(c))
+                const cats = uniqueBy(
+                    group.map(r => r.categories).filter((c): c is typeof categoriesTable.$inferSelect => Boolean(c)),
+                    (c) => `${c.slug}:${c.type}`
+                )
                 const byType = Categories.serialize(cats)
                 return {
                     ...game,
-                    ...byType
+                    ...byType,
                 }
             })
         )

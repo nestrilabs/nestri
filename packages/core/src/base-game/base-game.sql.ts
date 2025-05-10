@@ -2,12 +2,12 @@ import { z } from "zod";
 import { timestamps, utc } from "../drizzle/types";
 import { json, numeric, pgEnum, pgTable, text, unique, varchar } from "drizzle-orm/pg-core";
 
-export const CompatibilityEnum = pgEnum("compatibility", ["high", "mid", "low"])
+export const CompatibilityEnum = pgEnum("compatibility", ["high", "mid", "low", "unknown"])
 
 export const Size =
     z.object({
-        downloadSize: z.number(),
-        sizeOnDisk: z.number()
+        downloadSize: z.number().positive().int(),
+        sizeOnDisk: z.number().positive().int()
     })
 
 export type Size = z.infer<typeof Size>
@@ -27,10 +27,13 @@ export const baseGamesTable = pgTable(
         description: text("description").notNull(),
         primaryGenre: text("primary_genre").notNull(),
         controllerSupport: text("controller_support"),
-        compatibility: CompatibilityEnum("compatibility").notNull(),
-        score: numeric("score", { precision: 2, scale: 1 }).$type<number>().notNull()
+        compatibility: CompatibilityEnum("compatibility").notNull().default("unknown"),
+        // Score ranges from 0.0 to 5.0
+        score: numeric("score", { precision: 2, scale: 1 })
+            .$type<number>()
+            .notNull()
     },
     (table) => [
-        unique("idx_game_slug").on(table.slug),
+        unique("idx_base_games_slug").on(table.slug),
     ]
 )

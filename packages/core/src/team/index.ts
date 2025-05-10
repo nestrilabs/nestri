@@ -10,6 +10,7 @@ import { createID, fn, Invite } from "../utils";
 import { memberTable } from "../member/member.sql";
 import { groupBy, pipe, values, map } from "remeda";
 import { createTransaction, useTransaction, type Transaction } from "../drizzle/transaction";
+import { VisibleError } from "../error";
 
 export namespace Team {
     export const Info = z
@@ -109,6 +110,12 @@ export namespace Team {
                         name: input.name,
                         ownerID: input.ownerID ?? Actor.userID(),
                         maxMembers: input.maxMembers ?? 1,
+                    })
+                    .onConflictDoUpdate({
+                        target: [teamTable.slug],
+                        set: {
+                            timeDeleted: null
+                        }
                     })
 
                 return id;

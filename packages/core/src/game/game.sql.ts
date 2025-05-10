@@ -1,7 +1,7 @@
-import { timestamps} from "../drizzle/types";
+import { timestamps } from "../drizzle/types";
 import { baseGamesTable } from "../base-game/base-game.sql";
 import { categoriesTable } from "../categories/categories.sql";
-import { pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
+import { index, pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
 
 export const gamesTable = pgTable(
     'games',
@@ -17,10 +17,18 @@ export const gamesTable = pgTable(
             .references(() => categoriesTable.slug,
                 { onDelete: "cascade" }
             ),
+        categoryType: varchar('category_type', { length: 255 })
+            .notNull()
+            .references(() => categoriesTable.type,
+                { onDelete: "cascade" }
+            ),
     },
     (table) => [
         primaryKey({
-            columns: [table.baseGameID, table.categorySlug]
+            columns: [table.baseGameID, table.categorySlug, table.categoryType]
         }),
+        index("idx_games_base_id").on(table.baseGameID),
+        index("idx_games_category_slug").on(table.categorySlug),
+        index("idx_games_category_type").on(table.categoryType),
     ]
 );

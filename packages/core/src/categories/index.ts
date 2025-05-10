@@ -4,9 +4,10 @@ import { Examples } from "../examples";
 import { createSelectSchema } from "drizzle-zod";
 import { categoriesTable } from "./categories.sql";
 import { createTransaction } from "../drizzle/transaction";
+import { eq, isNull, and } from "drizzle-orm";
 
 export namespace Categories {
-    
+
     const Category = z.object({
         slug: z.string().openapi({
             description: "A URL-friendly unique identifier for the category",
@@ -50,11 +51,32 @@ export namespace Categories {
     export const create = fn(
         InputInfo,
         (input) =>
-            createTransaction(async (tx) =>
-                tx
+            createTransaction(async (tx) => {
+                const results =
+                    await tx
+                        .select()
+                        .from(categoriesTable)
+                        .where(
+                            and(
+                                eq(categoriesTable.slug, input.slug),
+                                eq(categoriesTable.type, input.type),
+                                isNull(categoriesTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+
+                if (results.length > 0) return null
+
+                await tx
                     .insert(categoriesTable)
                     .values(input)
-            )
+                    .onConflictDoUpdate({
+                        target: [categoriesTable.slug, categoriesTable.type],
+                        set: { timeDeleted: null }
+                    })
+
+                return input.slug
+            })
     )
 
     export function serialize(

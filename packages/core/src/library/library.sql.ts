@@ -1,8 +1,9 @@
 import { timestamps, } from "../drizzle/types";
 import { steamTable } from "../steam/steam.sql";
 import { baseGamesTable } from "../base-game/base-game.sql";
-import { pgTable, primaryKey, varchar, } from "drizzle-orm/pg-core";
+import { index, pgTable, primaryKey, varchar, } from "drizzle-orm/pg-core";
 
+//TODO: Add playtime here
 export const steamLibraryTable = pgTable(
     "game_libraries",
     {
@@ -21,6 +22,8 @@ export const steamLibraryTable = pgTable(
     (table) => [
         primaryKey({
             columns: [table.gameID, table.ownerID]
-        })
+        }),
+        index("idx_game_libraries_game_id").on(table.gameID),
+        index("idx_game_libraries_owner_id").on(table.ownerID),
     ],
 );

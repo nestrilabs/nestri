@@ -97,7 +97,7 @@ const base_games = table("base_games")
         primary_genre: string(),
         controller_support: string().optional(),
         compatibility: enumeration<"high" | "mid" | "low">(),
-        score: string(),
+        score: number(),
         ...timestamps
     })
     .primaryKey("id")

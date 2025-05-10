@@ -19,8 +19,23 @@ export namespace Library {
     export const add = fn(
         Info,
         async (input) =>
-            createTransaction(async (tx) =>
-                tx
+            createTransaction(async (tx) => {
+                const results =
+                    await tx
+                        .select()
+                        .from(steamLibraryTable)
+                        .where(
+                            and(
+                                eq(steamLibraryTable.gameID, input.gameID),
+                                eq(steamLibraryTable.ownerID, input.ownerID),
+                                isNull(steamLibraryTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+
+                if (results.length > 0) return null
+
+                await tx
                     .insert(steamLibraryTable)
                     .values({
                         ownerID: input.ownerID,
@@ -31,7 +46,7 @@ export namespace Library {
                         set: { timeDeleted: null }
                     })
 
-            )
+            })
     )
 
     export const remove = fn(
@@ -55,7 +70,9 @@ export namespace Library {
             tx
                 .select({
                     games: baseGamesTable,
-                    categories: categoriesTable
+                    categories: categoriesTable,
+                    categoriesType: categoriesTable.type,
+                    categoriesSlug: categoriesTable.slug,
                 })
                 .from(steamLibraryTable)
                 .where(
@@ -74,76 +91,18 @@ export namespace Library {
                 )
                 .leftJoin(
                     categoriesTable,
-                    eq(categoriesTable.slug, gamesTable.categorySlug),
+                    and(
+                        eq(categoriesTable.slug, gamesTable.categorySlug),
+                        eq(categoriesTable.type, gamesTable.categoryType),
+                    )
+                )
+                .groupBy(
+                    gamesTable.baseGameID,
+                    categoriesTable.type,
+                    categoriesTable.slug,
                 )
                 .execute()
                 .then(rows => Game.serialize(rows))
         )
-
-    export const fromSteamID = fn(
-        Info.shape.ownerID,
-        (steamID) =>
-            useTransaction(async (tx) =>
-                tx
-                    .select({
-                        games: baseGamesTable,
-                        categories: categoriesTable
-                    })
-                    .from(steamLibraryTable)
-                    .where(
-                        and(
-                            eq(steamLibraryTable.ownerID, steamID),
-                            isNull(steamLibraryTable.timeDeleted)
-                        )
-                    )
-                    .innerJoin(
-                        baseGamesTable,
-                        eq(baseGamesTable.id, steamLibraryTable.gameID),
-                    )
-                    .innerJoin(
-                        gamesTable,
-                        eq(gamesTable.baseGameID, baseGamesTable.id),
-                    )
-                    .innerJoin(
-                        categoriesTable,
-                        eq(categoriesTable.slug, gamesTable.categorySlug),
-                    )
-                    .execute()
-                    .then(rows => Game.serialize(rows))
-            )
-    )
-
-    export const fromSteamIDs = fn(
-        Info.shape.ownerID.array(),
-        (steamIDs) =>
-            useTransaction(async (tx) =>
-                tx
-                    .select({
-                        games: baseGamesTable,
-                        categories: categoriesTable
-                    })
-                    .from(steamLibraryTable)
-                    .where(
-                        and(
-                            inArray(steamLibraryTable.ownerID, steamIDs),
-                            isNull(steamLibraryTable.timeDeleted)
-                        )
-                    )
-                    .innerJoin(
-                        baseGamesTable,
-                        eq(baseGamesTable.id, steamLibraryTable.gameID),
-                    )
-                    .innerJoin(
-                        gamesTable,
-                        eq(gamesTable.baseGameID, baseGamesTable.id),
-                    )
-                    .innerJoin(
-                        categoriesTable,
-                        eq(categoriesTable.slug, gamesTable.categorySlug),
-                    )
-                    .execute()
-                    .then(rows => Game.serialize(rows))
-            )
-    )
 
 }

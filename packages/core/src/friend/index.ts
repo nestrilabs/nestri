@@ -47,6 +47,21 @@ export namespace Friend {
                     );
                 }
 
+                const results =
+                    await tx
+                        .select()
+                        .from(friendTable)
+                        .where(
+                            and(
+                                eq(friendTable.steamID, steamID),
+                                eq(friendTable.friendSteamID, input.friendSteamID),
+                                isNull(friendTable.timeDeleted)
+                            )
+                        )
+                        .execute()
+
+                if (results.length > 0) return null
+
                 await tx
                     .insert(friendTable)
                     .values({

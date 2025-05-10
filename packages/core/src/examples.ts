@@ -156,8 +156,8 @@ export namespace Examples {
         releaseDate: new Date("2024-05-29T06:53:24.000Z"),
         compatibility: "high" as const,
         size: {
-            downloadSize: 7907568608,//"7.91 GB",
-            sizeOnDisk: 13176088178,//"13.18 GB"
+            downloadSize: 7907568608,// 7.91 GB 
+            sizeOnDisk: 13176088178,// 13.18 GB 
         },
         primaryGenre: "Action",
         score: 4.7,

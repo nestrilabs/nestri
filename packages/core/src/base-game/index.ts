@@ -4,6 +4,7 @@ import { Common } from "../common";
 import { Examples } from "../examples";
 import { createTransaction } from "../drizzle/transaction";
 import { CompatibilityEnum, baseGamesTable, Size } from "./base-game.sql";
+import { eq, isNull, or, and } from "drizzle-orm";
 
 export namespace BaseGame {
     export const Info = z.object({
@@ -20,7 +21,7 @@ export namespace BaseGame {
             example: Examples.BaseGame.name
         }),
         size: Size.openapi({
-            description: "Total required storage space in gigabytes, including both download size and installed size",
+            description: "Storage requirements in bytes: downloadSize represents the compressed download, and sizeOnDisk represents the installed size",
             example: Examples.BaseGame.size
         }),
         releaseDate: z.date().openapi({
@@ -59,11 +60,26 @@ export namespace BaseGame {
         Info,
         (input) =>
             createTransaction(async (tx) => {
+                const results = await tx
+                    .select()
+                    .from(baseGamesTable)
+                    .where(
+                        and(
+                            or(
+                                eq(baseGamesTable.slug, input.slug),
+                                eq(baseGamesTable.id, input.id),
+                            ),
+                            isNull(baseGamesTable.timeDeleted)
+                        )
+                    )
+                    .execute()
+
+                if (results.length > 0) return null
+
                 await tx
                     .insert(baseGamesTable)
-                    .values({
-                        ...input
-                    })
+                    .values(input)
+
                 return input.id
             })
     )
