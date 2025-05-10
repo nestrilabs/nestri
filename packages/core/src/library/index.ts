@@ -93,6 +93,13 @@ export namespace Library {
                         eq(categoriesTable.type, gamesTable.categoryType),
                     )
                 )
+                // Joining imagesTable 1-N with gamesTable multiplies rows; the subsequent Game.serialize has to uniqueBy to undo this.
+                // For large libraries with many screenshots the Cartesian effect can significantly bloat the result and network payload.
+                // One option is to aggregate the images in SQL before joining to keep exactly one row per game:
+                // .leftJoin(
+                //     sql<typeof imagesTable.$inferSelect[]>`(SELECT * FROM images WHERE base_game_id = ${gamesTable.baseGameID} AND time_deleted IS NULL ORDER BY type, position)`.as("images"),
+                //     sql`TRUE`
+                // )
                 .leftJoin(
                     imagesTable,
                     and(

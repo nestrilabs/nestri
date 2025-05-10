@@ -98,7 +98,7 @@ const base_games = table("base_games")
         description: string(),
         primary_genre: string(),
         controller_support: string().optional(),
-        compatibility: enumeration<"high" | "mid" | "low">(),
+        compatibility: enumeration<"high" | "mid" | "low" | "unknown">(),
         score: number(),
         ...timestamps
     })
