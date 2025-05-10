@@ -8,7 +8,7 @@ export const steamLibraryTable = pgTable(
     "game_libraries",
     {
         ...timestamps,
-        gameID: varchar("game_id", { length: 255 })
+        baseGameID: varchar("base_game_id", { length: 255 })
             .notNull()
             .references(() => baseGamesTable.id, {
                 onDelete: "cascade"
@@ -21,7 +21,7 @@ export const steamLibraryTable = pgTable(
     },
     (table) => [
         primaryKey({
-            columns: [table.gameID, table.ownerID]
+            columns: [table.baseGameID, table.ownerID]
         }),
         index("idx_game_libraries_owner_id").on(table.ownerID),
     ],

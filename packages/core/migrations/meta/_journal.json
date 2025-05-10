@@ -78,6 +78,20 @@
       "when": 1746726715456,
       "tag": "0010_certain_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1746904821461,
+      "tag": "0011_simple_azazel",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1746905730079,
+      "tag": "0012_glorious_jetstream",
+      "breakpoints": true
     }
   ]
 }

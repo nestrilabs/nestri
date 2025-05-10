@@ -207,17 +207,60 @@ export namespace Examples {
         ],
     }
 
-    export const Game = {
-        ...BaseGame,
-        ...Categories
+    export const CommonImg = [
+        {
+            hash: "db880dc2f0187bfe0c5d3c44a06d1002351eb3107970a83bf5667ffd3b369acd",
+            averageColor: {
+                hex: "#352c36",
+                isDark: true
+            },
+            dimensions: {
+                width: 3840,
+                height: 2160
+            },
+            fileSize: 976004
+        },
+        {
+            hash: "99f603e41dd3efde21a145fd00c9f107025c09433c084a5e5005bc2ac30e46ea",
+            averageColor: {
+                hex: "#596774",
+                isDark: true
+            },
+            dimensions: {
+                width: 2560,
+                height: 1440
+            },
+            fileSize: 895134
+        },
+        {
+            hash: "2c4193c19160392be01d08e6957ed682649117742c5abaa8c469e7408382572f",
+            averageColor: {
+                hex: "#444b5b",
+                isDark: true
+            },
+            dimensions: {
+                width: 2560,
+                height: 1440
+            },
+            fileSize: 738701
+        }
+    ]
+
+    // type: "screenshots" as const, // or boxart(square), poster(vertical), superheroart(background), heroart(horizontal), logo, icon
+    export const Images = {
+        screenshots: CommonImg,
+        boxArts: CommonImg,
+        posters: CommonImg,
+        heroArts: CommonImg,
+        superHeroArts: CommonImg,
+        backgrounds: CommonImg,
+        logos: CommonImg,
+        icons: CommonImg,
     }
 
-    // export const image = {
-    //     type: "screenshot" as const, // or square, vertical, horizontal, movie
-    //     hash: "3a5e805fd4c1e04e26a97af0b9c6fab2dee91a19",
-    //     gameID: Game.id,
-    //     extractedColors: [{}]
-    // }
-
-
+    export const Game = {
+        ...BaseGame,
+        ...Categories,
+        ...Images
+    }
 }

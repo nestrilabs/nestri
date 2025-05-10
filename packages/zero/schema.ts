@@ -1,5 +1,6 @@
 import { Size } from "@nestri/core/src/base-game/base-game.sql";
 import { type Limitations } from "@nestri/core/src/steam/steam.sql";
+import { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
 import {
     json,
     table,
@@ -82,9 +83,10 @@ const games = table("games")
     .columns({
         base_game_id: string(),
         category_slug: string(),
+        type: enumeration<"tag" | "genre" | "publisher" | "developer">(),
         ...timestamps
     })
-    .primaryKey("category_slug", "base_game_id")
+    .primaryKey("category_slug", "base_game_id", "type")
 
 const base_games = table("base_games")
     .columns({
@@ -96,7 +98,7 @@ const base_games = table("base_games")
         description: string(),
         primary_genre: string(),
         controller_support: string().optional(),
-        compatibility: enumeration<"high" | "mid" | "low">(),
+        compatibility: enumeration<"high" | "mid" | "low" | "unknown">(),
         score: number(),
         ...timestamps
     })
@@ -109,17 +111,29 @@ const categories = table("categories")
         name: string(),
         ...timestamps
     })
-    .primaryKey("slug")
+    .primaryKey("slug", "type")
 
 const game_libraries = table("game_libraries")
     .columns({
-        game_id: string(),
-        owner_id: string()
-    })
+        base_game_id: string(),
+        owner_id: string(),
+        ...timestamps
+    }).primaryKey("base_game_id", "owner_id")
+
+const images = table("images")
+    .columns({
+        image_hash: string(),
+        base_game_id: string(),
+        type: enumeration<"heroArt" | "icon" | "logo" | "superHeroArt" | "poster" | "boxArt" | "screenshot" | "background">(),
+        position: number(),
+        dimensions: json<ImageDimensions>(),
+        extracted_color: json<ImageColor>(),
+        ...timestamps
+    }).primaryKey("image_hash", "type", "base_game_id", "position")
 
 // Schema and Relationships
 export const schema = createSchema({
-    tables: [users, steam_accounts, teams, members, friends_list, categories, base_games, games, game_libraries],
+    tables: [users, steam_accounts, teams, members, friends_list, categories, base_games, games, game_libraries, images],
     relationships: [
         relationships(steam_accounts, (r) => ({
             user: r.one({
@@ -215,21 +229,36 @@ export const schema = createSchema({
             libraries: r.many({
                 sourceField: ["id"],
                 destSchema: game_libraries,
-                destField: ["game_id"]
+                destField: ["base_game_id"]
+            }),
+            images: r.many({
+                sourceField: ["id"],
+                destSchema: images,
+                destField: ["base_game_id"]
             })
         })),
         relationships(categories, (r) => ({
-            games: r.many({
+            games_slug: r.many({
                 sourceField: ["slug"],
                 destSchema: games,
                 destField: ["category_slug"]
+            }),
+            games_type: r.many({
+                sourceField: ["type"],
+                destSchema: games,
+                destField: ["type"]
             })
         })),
         relationships(games, (r) => ({
-            category: r.one({
+            category_slug: r.one({
                 sourceField: ["category_slug"],
                 destSchema: categories,
                 destField: ["slug"],
+            }),
+            category_type: r.one({
+                sourceField: ["type"],
+                destSchema: categories,
+                destField: ["type"],
             }),
             base_game: r.one({
                 sourceField: ["base_game_id"],
@@ -239,13 +268,20 @@ export const schema = createSchema({
         })),
         relationships(game_libraries, (r) => ({
             base_game: r.one({
-                sourceField: ["game_id"],
+                sourceField: ["base_game_id"],
                 destSchema: base_games,
                 destField: ["id"],
             }),
             owner: r.one({
                 sourceField: ["owner_id"],
                 destSchema: steam_accounts,
+                destField: ["id"],
+            }),
+        })),
+        relationships(images, (r) => ({
+            base_game: r.one({
+                sourceField: ["base_game_id"],
+                destSchema: base_games,
                 destField: ["id"],
             }),
         })),
@@ -307,6 +343,17 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                 ]
             },
         },
+        game_libraries: {
+            row: {
+                select: [
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.where("user_id", auth.sub)),
+                    //allow team members to see the other members' libraries
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.related("memberEntries", (f) => f.where("user_id", auth.sub))),
+                    //allow friends to see their friends libraries
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.related("friends", (f) => f.related("friend", (s) => s.where("user_id", auth.sub)))),
+                ]
+            }
+        },
         //Games are publicly viewable
         games: {
             row: {
@@ -323,14 +370,10 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                 select: ANYONE_CAN
             }
         },
-        game_libraries: {
+        images: {
             row: {
-                select: [
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.where("user_id", auth.sub)),
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.related("memberEntries", (f) => f.where("user_id", auth.sub))),
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'game_libraries'>) => q.exists("owner", (u) => u.related("friends", (f) => f.related("friend", (s) => s.where("user_id", auth.sub)))),
-                ]
+                select: ANYONE_CAN
             }
-        }
+        },
     };
 });
