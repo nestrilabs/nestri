@@ -10,10 +10,12 @@ import { groupBy, map, pipe, uniqueBy, values } from "remeda";
 import { baseGamesTable } from "../base-game/base-game.sql";
 import { categoriesTable } from "../categories/categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { Images } from "../images";
+import { imagesTable } from "../images/images.sql";
 
 export namespace Game {
     export const Info = z
-        .intersection(BaseGame.Info, Categories.Info)
+        .intersection(BaseGame.Info, Categories.Info, Images.Info)
         .openapi({
             ref: "Game",
             description: "Detailed information about a game available in the Nestri library, including technical specifications, categories and metadata",
@@ -65,6 +67,7 @@ export namespace Game {
                     .select({
                         games: baseGamesTable,
                         categories: categoriesTable,
+                        images: imagesTable
                     })
                     .from(gamesTable)
                     .innerJoin(baseGamesTable,
@@ -74,6 +77,12 @@ export namespace Game {
                         and(
                             eq(categoriesTable.slug, gamesTable.categorySlug),
                             eq(categoriesTable.type, gamesTable.categoryType),
+                        )
+                    )
+                    .leftJoin(imagesTable,
+                        and(
+                            eq(imagesTable.baseGameID, gamesTable.baseGameID),
+                            isNull(imagesTable.timeDeleted),
                         )
                     )
                     .where(
@@ -88,7 +97,7 @@ export namespace Game {
     )
 
     export function serialize(
-        input: { games: typeof baseGamesTable.$inferSelect; categories: typeof categoriesTable.$inferSelect | null }[],
+        input: { games: typeof baseGamesTable.$inferSelect; categories: typeof categoriesTable.$inferSelect | null; images: typeof imagesTable.$inferSelect | null }[],
     ): z.infer<typeof Info>[] {
         return pipe(
             input,
@@ -100,10 +109,16 @@ export namespace Game {
                     group.map(r => r.categories).filter((c): c is typeof categoriesTable.$inferSelect => Boolean(c)),
                     (c) => `${c.slug}:${c.type}`
                 )
+                const imgs = uniqueBy(
+                    group.map(r => r.images).filter((c): c is typeof imagesTable.$inferSelect => Boolean(c)),
+                    (c) => `${c.type}:${c.imageHash}:${c.position}`
+                )
                 const byType = Categories.serialize(cats)
+                const byImg = Images.serialize(imgs)
                 return {
                     ...game,
                     ...byType,
+                    ...byImg
                 }
             })
         )

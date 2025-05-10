@@ -9,6 +9,7 @@ import { baseGamesTable } from "../base-game/base-game.sql";
 import { categoriesTable } from "../categories/categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { Actor } from "../actor";
+import { imagesTable } from "../images/images.sql";
 
 export namespace Library {
     export const Info = createSelectSchema(steamLibraryTable)
@@ -71,6 +72,7 @@ export namespace Library {
                 .select({
                     games: baseGamesTable,
                     categories: categoriesTable,
+                    images: imagesTable
                 })
                 .from(steamLibraryTable)
                 .where(
@@ -92,6 +94,13 @@ export namespace Library {
                     and(
                         eq(categoriesTable.slug, gamesTable.categorySlug),
                         eq(categoriesTable.type, gamesTable.categoryType),
+                    )
+                )
+                .leftJoin(
+                    imagesTable,
+                    and(
+                        eq(imagesTable.baseGameID, gamesTable.baseGameID),
+                        isNull(imagesTable.timeDeleted),
                     )
                 )
                 .execute()
