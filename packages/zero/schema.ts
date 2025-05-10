@@ -189,7 +189,7 @@ export const schema = createSchema({
                 destField: ["id"],
             }),
             steamAccount: r.one({
-                sourceField: ["id"],
+                sourceField: ["steam_id"],
                 destSchema: steam_accounts,
                 destField: ["id"],
             }),
