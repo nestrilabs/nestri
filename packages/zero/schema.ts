@@ -1,3 +1,4 @@
+import { Size } from "@nestri/core/src/base-game/base-game.sql";
 import { type Limitations } from "@nestri/core/src/steam/steam.sql";
 import {
     json,
@@ -8,6 +9,8 @@ import {
     relationships,
     definePermissions,
     type ExpressionBuilder,
+    enumeration,
+    ANYONE_CAN,
 } from "@rocicorp/zero";
 
 const timestamps = {
@@ -75,9 +78,42 @@ const friends_list = table("friends_list")
     })
     .primaryKey("steam_id", "friend_steam_id");
 
+const games = table("games")
+    .columns({
+        base_game_id: string(),
+        category_slug: string(),
+        ...timestamps
+    })
+    .primaryKey("category_slug", "base_game_id")
+
+const base_games = table("base_games")
+    .columns({
+        id: string(),
+        slug: string(),
+        name: string(),
+        release_date: number(),
+        size: json<Size>(),
+        description: string(),
+        primary_genre: string(),
+        controller_support: string().optional(),
+        compatibility: enumeration<"high" | "mid" | "low">(),
+        score: string(),
+        ...timestamps
+    })
+    .primaryKey("id")
+
+const categories = table("categories")
+    .columns({
+        slug: string(),
+        type: enumeration<"tag" | "genre" | "publisher" | "developer">(),
+        name: string(),
+        ...timestamps
+    })
+    .primaryKey("slug")
+
 // Schema and Relationships
 export const schema = createSchema({
-    tables: [users, steam_accounts, teams, members, friends_list],
+    tables: [users, steam_accounts, teams, members, friends_list, categories, base_games, games],
     relationships: [
         relationships(steam_accounts, (r) => ({
             user: r.one({
@@ -159,6 +195,32 @@ export const schema = createSchema({
                 destField: ["steam_id"],
             }),
         })),
+        relationships(base_games, (r) => ({
+            games: r.many({
+                sourceField: ["id"],
+                destSchema: games,
+                destField: ["base_game_id"]
+            })
+        })),
+        relationships(categories, (r) => ({
+            games: r.many({
+                sourceField: ["slug"],
+                destSchema: games,
+                destField: ["category_slug"]
+            })
+        })),
+        relationships(games, (r) => ({
+            category: r.one({
+                sourceField: ["category_slug"],
+                destSchema: categories,
+                destField: ["slug"],
+            }),
+            base_game: r.one({
+                sourceField: ["base_game_id"],
+                destSchema: base_games,
+                destField: ["id"],
+            }),
+        })),
     ],
 });
 
@@ -197,7 +259,7 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                     //Allow friends to view friends steam accounts
                     (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("friends", (u) => u.related("friend", (f) => f.where("user_id", auth.sub))),
                     //allow other team members to see a user's steam account
-                    (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("memberEntries", (u) => u.related("team",(t) => t.related("members", (m) => m.where("user_id", auth.sub)))),
+                    (auth: Auth, q: ExpressionBuilder<Schema, 'steam_accounts'>) => q.exists("memberEntries", (u) => u.related("team", (t) => t.related("members", (m) => m.where("user_id", auth.sub)))),
                 ]
             },
         },
@@ -216,5 +278,21 @@ export const permissions = definePermissions<Auth, Schema>(schema, () => {
                 ]
             },
         },
+        //Games are publicly viewable
+        games: {
+            row: {
+                select: ANYONE_CAN
+            }
+        },
+        base_games: {
+            row: {
+                select: ANYONE_CAN
+            }
+        },
+        categories: {
+            row: {
+                select: ANYONE_CAN
+            }
+        }
     };
 });

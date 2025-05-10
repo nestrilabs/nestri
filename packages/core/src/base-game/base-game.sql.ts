@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { utc } from "../drizzle/types";
+import { timestamps, utc } from "../drizzle/types";
 import { json, numeric, pgEnum, pgTable, text, unique, varchar } from "drizzle-orm/pg-core";
 
 export const CompatibilityEnum = pgEnum("compatibility", ["high", "mid", "low"])
@@ -15,6 +15,7 @@ export type Size = z.infer<typeof Size>
 export const baseGamesTable = pgTable(
     "base_games",
     {
+        ...timestamps,
         id: varchar("id", { length: 255 })
             .primaryKey()
             .notNull(),

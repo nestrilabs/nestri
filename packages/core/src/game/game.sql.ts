@@ -1,13 +1,13 @@
 import { timestamps} from "../drizzle/types";
 import { baseGamesTable } from "../base-game/base-game.sql";
-import { categoriesTable } from "../category/category.sql";
+import { categoriesTable } from "../categories/categories.sql";
 import { pgTable, primaryKey, varchar } from "drizzle-orm/pg-core";
 
 export const gamesTable = pgTable(
     'games',
     {
         ...timestamps,
-        gameID: varchar('game_id', { length: 255 })
+        baseGameID: varchar('base_game_id', { length: 255 })
             .notNull()
             .references(() => baseGamesTable.id,
                 { onDelete: "cascade" }
@@ -20,7 +20,7 @@ export const gamesTable = pgTable(
     },
     (table) => [
         primaryKey({
-            columns: [table.gameID, table.categorySlug]
+            columns: [table.baseGameID, table.categorySlug]
         }),
     ]
 );

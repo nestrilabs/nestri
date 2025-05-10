@@ -2,7 +2,7 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Examples } from "../examples";
 import { createSelectSchema } from "drizzle-zod";
-import { categoriesTable } from "./category.sql";
+import { categoriesTable } from "./categories.sql";
 import { createTransaction } from "../drizzle/transaction";
 
 export namespace Categories {

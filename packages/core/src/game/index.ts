@@ -3,12 +3,12 @@ import { fn } from "../utils";
 import { Examples } from "../examples";
 import { BaseGame } from "../base-game";
 import { gamesTable } from "./game.sql";
-import { Categories } from "../category";
+import { Categories } from "../categories";
 import { eq, and, isNull } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-zod";
 import { groupBy, map, pipe, values } from "remeda";
-import { categoriesTable } from "../category/category.sql";
 import { baseGamesTable } from "../base-game/base-game.sql";
+import { categoriesTable } from "../categories/categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Game {
@@ -28,31 +28,29 @@ export namespace Game {
     export const create = fn(
         InputInfo,
         (input) =>
-            createTransaction(async (tx) => {
-
-                await tx.insert(gamesTable)
+            createTransaction(async (tx) =>
+                tx
+                    .insert(gamesTable)
                     .values(input)
-
-                return input.gameID
-            })
+            )
     )
 
     export const fromID = fn(
-        InputInfo.shape.gameID,
+        InputInfo.shape.baseGameID,
         (gameID) =>
             useTransaction(async (tx) =>
                 tx
                     .select()
                     .from(gamesTable)
                     .innerJoin(baseGamesTable,
-                        eq(baseGamesTable.id, gamesTable.gameID)
+                        eq(baseGamesTable.id, gamesTable.baseGameID)
                     )
                     .leftJoin(categoriesTable,
                         eq(categoriesTable.slug, gamesTable.categorySlug)
                     )
                     .where(
                         and(
-                            eq(gamesTable.gameID, gameID),
+                            eq(gamesTable.baseGameID, gameID),
                             isNull(gamesTable.timeDeleted)
                         )
                     )
