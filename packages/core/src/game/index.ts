@@ -40,7 +40,10 @@ export namespace Game {
         (gameID) =>
             useTransaction(async (tx) =>
                 tx
-                    .select()
+                    .select({
+                        games: baseGamesTable,
+                        categories: categoriesTable
+                    })
                     .from(gamesTable)
                     .innerJoin(baseGamesTable,
                         eq(baseGamesTable.id, gamesTable.baseGameID)
@@ -60,14 +63,14 @@ export namespace Game {
     )
 
     export function serialize(
-        input: { base_games: typeof baseGamesTable.$inferSelect; categories: typeof categoriesTable.$inferSelect | null }[],
+        input: { games: typeof baseGamesTable.$inferSelect; categories: typeof categoriesTable.$inferSelect | null }[],
     ): z.infer<typeof Info>[] {
         return pipe(
             input,
-            groupBy((row) => row.base_games.id),
+            groupBy((row) => row.games.id),
             values(),
             map((group) => {
-                const game = BaseGame.serialize(group[0].base_games)
+                const game = BaseGame.serialize(group[0].games)
                 const cats = group.map(r => r.categories).filter((c): c is typeof categoriesTable.$inferSelect => Boolean(c))
                 const byType = Categories.serialize(cats)
                 return {

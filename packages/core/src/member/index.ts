@@ -3,8 +3,9 @@ import { Actor } from "../actor";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createID, fn } from "../utils";
+import { and, eq, isNull } from "drizzle-orm"
 import { memberTable, RoleEnum } from "./member.sql";
-import { createTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Member {
     export const Info = z
@@ -59,6 +60,26 @@ export namespace Member {
                 return id;
             }),
     );
+
+    export const fromTeamID = fn(
+        Info.shape.teamID,
+        (teamID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(memberTable)
+                    .where(
+                        and(
+                            eq(memberTable.userID, Actor.userID()),
+                            eq(memberTable.teamID, teamID),
+                            isNull(memberTable.timeDeleted)
+                        )
+                    )
+                    .execute()
+                    .then(rows => rows.map(serialize).at(0))
+            )
+
+    )
 
     /**
      * Converts a raw member database row into a standardized {@link Member.Info} object.

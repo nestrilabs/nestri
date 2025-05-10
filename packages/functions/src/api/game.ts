@@ -1,32 +1,32 @@
 import { z } from "zod"
 import { Hono } from "hono";
-import { validator } from "hono-openapi/zod";
 import { describeRoute } from "hono-openapi";
+import { Game } from "@nestri/core/game/index";
 import { Examples } from "@nestri/core/examples";
-import { Friend } from "@nestri/core/friend/index";
-import { ErrorResponses, notPublic, Result } from "./utils";
+import { Library } from "@nestri/core/library/index";
+import { ErrorResponses, notPublic, Result, validator } from "./utils";
 
-export namespace FriendApi {
+export namespace GameApi {
     export const route = new Hono()
         .use(notPublic)
         .get("/",
             describeRoute({
-                tags: ["Friend"],
-                summary: "List friends accounts",
-                description: "List all this user's friends accounts",
+                tags: ["Game"],
+                summary: "List games",
+                description: "List all the games on a user's library",
                 responses: {
                     200: {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Friend.Info.array().openapi({
-                                        description: "All friends accounts",
-                                        example: [Examples.Friend]
+                                    Game.Info.array().openapi({
+                                        description: "All games",
+                                        example: [Examples.Game]
                                     })
                                 ),
                             },
                         },
-                        description: "Friends accounts details"
+                        description: "Game details"
                     },
                     400: ErrorResponses[400],
                     404: ErrorResponses[404],
@@ -35,30 +35,29 @@ export namespace FriendApi {
             }),
             async (c) =>
                 c.json({
-                    data: await Friend.list()
+                    data: await Library.list()
                 })
         )
         .get("/:id",
             describeRoute({
-                tags: ["Friend"],
-                summary: "Get a friend",
-                description: "Get a friend's details by their SteamID",
+                tags: ["Game"],
+                summary: "Get game",
+                description: "Get a game by its id, it does not have to be in user's library",
                 responses: {
                     200: {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Friend.Info.openapi({
-                                        description: "Friend's accounts",
-                                        example: Examples.Friend
+                                    Game.Info.openapi({
+                                        description: "Game details",
+                                        example: Examples.Game
                                     })
                                 ),
                             },
                         },
-                        description: "Friends accounts details"
+                        description: "Game details"
                     },
                     400: ErrorResponses[400],
-                    404: ErrorResponses[404],
                     429: ErrorResponses[429],
                 }
             }),
@@ -66,20 +65,19 @@ export namespace FriendApi {
                 "param",
                 z.object({
                     id: z.string().openapi({
-                        description: "ID of the friend to get.",
-                        example: Examples.Friend.id,
+                        description: "ID of the game to get.",
+                        example: Examples.Game.id,
                     }),
                 }),
             ),
             async (c) => {
-                const friendSteamID = c.req.valid("param").id
+                const gameID = c.req.valid("param").id
 
-                const friend = await Friend.fromFriendID(friendSteamID)
+                const game = await Game.fromID(gameID)
 
                 return c.json({
-                    data: friend
+                    data: game
                 })
-
             }
         )
 }

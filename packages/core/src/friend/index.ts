@@ -8,9 +8,9 @@ import { friendTable } from "./friend.sql";
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { createSelectSchema } from "drizzle-zod";
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { groupBy, map, pipe, values } from "remeda";
 import { ErrorCodes, VisibleError } from "../error";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Friend {
@@ -24,12 +24,14 @@ export namespace Friend {
         .openapi({
             ref: "Friend",
             description: "Represents a friend's information stored on Nestri",
-            example: { ...Examples.SteamAccount, user: Examples.User },
+            example: Examples.Friend,
         });
+
 
     export const InputInfo = createSelectSchema(friendTable)
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
 
+    export type Info = z.infer<typeof Info>;
     export type InputInfo = z.infer<typeof InputInfo>;
 
     export const add = fn(
@@ -76,35 +78,41 @@ export namespace Friend {
             )
     )
 
-    export const list = async () =>
-        useTransaction(async (tx) => {
-            const userSteamAccounts =
-                await tx
-                    .select()
-                    .from(steamTable)
-                    .where(eq(steamTable.userID, Actor.userID()))
-                    .execute();
-
-            if (userSteamAccounts.length === 0) {
-                return []; // User has no steam accounts
-            }
-
-            const friendPromises =
-                userSteamAccounts.map(async (steamAccount) => {
-                    return await fromSteamID(steamAccount.id)
+    export const list = () =>
+        useTransaction(async (tx) =>
+            tx
+                .select({
+                    steam: steamTable,
+                    user: userTable,
                 })
+                .from(friendTable)
+                .innerJoin(
+                    steamTable,
+                    eq(friendTable.friendSteamID, steamTable.id)
+                )
+                .leftJoin(
+                    userTable,
+                    eq(steamTable.userID, userTable.id)
+                )
+                .where(
+                    and(
+                        eq(friendTable.steamID, Actor.steamID()),
+                        isNull(friendTable.timeDeleted)
+                    )
+                )
+                .limit(100)
+                .execute()
+                .then(rows => serialize(rows))
+        )
 
-            return (await Promise.all(friendPromises)).flat()
-        })
-
-    export const fromSteamID = fn(
-        InputInfo.shape.steamID,
-        (steamID) =>
+    export const fromFriendID = fn(
+        InputInfo.shape.friendSteamID,
+        (friendSteamID) =>
             useTransaction(async (tx) =>
                 tx
                     .select({
                         steam: steamTable,
-                        user: userTable
+                        user: userTable,
                     })
                     .from(friendTable)
                     .innerJoin(
@@ -117,28 +125,29 @@ export namespace Friend {
                     )
                     .where(
                         and(
-                            eq(friendTable.steamID, steamID),
+                            eq(friendTable.steamID, Actor.steamID()),
+                            eq(friendTable.friendSteamID, friendSteamID),
                             isNull(friendTable.timeDeleted)
                         )
                     )
-                    .orderBy(friendTable.timeCreated)
-                    .limit(100)
+                    .limit(1)
                     .execute()
-                    .then((rows) => serialize(rows))
+                    .then(rows => serialize(rows).at(0))
             )
     )
 
+
     export const areFriends = fn(
-        InputInfo,
-        (input) =>
+        InputInfo.shape.friendSteamID,
+        (friendSteamID) =>
             useTransaction(async (tx) => {
                 const result = await tx
                     .select()
                     .from(friendTable)
                     .where(
                         and(
-                            eq(friendTable.steamID, input.steamID),
-                            eq(friendTable.friendSteamID, input.friendSteamID),
+                            eq(friendTable.steamID, Actor.steamID()),
+                            eq(friendTable.friendSteamID, friendSteamID),
                             isNull(friendTable.timeDeleted)
                         )
                     )

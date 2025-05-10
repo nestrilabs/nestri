@@ -90,6 +90,11 @@ export namespace Examples {
         variants: [ProductVariant]
     }
 
+    export const Friend = {
+        ...Examples.SteamAccount,
+        user: Examples.User
+    }
+
     export const Subscription = {
         id: Id("subscription"),
         teamID: Team.id,

@@ -4,6 +4,7 @@ import { Actor } from "@nestri/core/actor";
 import { type MiddlewareHandler } from "hono";
 import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
+import { Member } from "@nestri/core/member/index";
 
 const client = createClient({
   clientID: "api",
@@ -43,23 +44,34 @@ export const auth: MiddlewareHandler = async (c, next) => {
   }
 
   if (result.subject.type === "user") {
-    const user = { ...result.subject.properties }
     const teamID = c.req.header("x-nestri-team");
     if (!teamID) {
-      return Actor.provide("user", {
-        ...user
-      }, next);
+      return Actor.provide(result.subject.type, result.subject.properties, next);
     }
+    const userID = result.subject.properties.userID
     return Actor.provide(
       "system",
       {
         teamID
       },
-      async () =>
-        Actor.provide("user", {
-          ...user
-        }, next)
-    );
+      async () => {
+        const member = await Member.fromUserID(userID)
+        if (!member || !member.userID) {
+          return new VisibleError(
+            "authentication",
+            ErrorCodes.Authentication.UNAUTHORIZED,
+            `You don't have permission to access this resource.`
+          )
+        }
+        return Actor.provide(
+          "member",
+          {
+            steamID: member.steamID,
+            userID: member.userID,
+            teamID: member.teamID
+          },
+          next)
+      });
   }
 
   return Actor.provide("public", {}, next);

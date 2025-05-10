@@ -3,7 +3,7 @@ import { createContext } from "./context";
 import { ErrorCodes, VisibleError } from "./error";
 
 export namespace Actor {
-  
+
   export interface User {
     type: "user";
     properties: {
@@ -28,9 +28,11 @@ export namespace Actor {
   }
 
   export interface Token {
-    type: "steam";
+    type: "member";
     properties: {
+      userID: string;
       steamID: string;
+      teamID: string;
     };
   }
 
@@ -52,7 +54,7 @@ export namespace Actor {
       `You don't have permission to access this resource.`,
     );
   }
-  
+
   export function steamID() {
     const actor = Context.use();
     if ("steamID" in actor.properties) return actor.properties.steamID;
@@ -62,7 +64,7 @@ export namespace Actor {
       `You don't have permission to access this resource.`,
     );
   }
-  
+
   export function user() {
     const actor = Context.use();
     if (actor.type == "user") return actor.properties;
@@ -82,7 +84,7 @@ export namespace Actor {
       `You don't have permission to access this resource.`,
     );
   }
-  
+
   export function fingerprint() {
     const actor = Context.use();
     if ("fingerprint" in actor.properties) return actor.properties.fingerprint;
