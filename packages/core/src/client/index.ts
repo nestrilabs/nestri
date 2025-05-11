@@ -11,7 +11,7 @@ import { Utils } from "./utils";
 import { SteamApiResponse } from "./types";
 import SteamCommunity from "steamcommunity";
 import { Credentials } from "../credentials";
-import CSteamUser from "steamcommunity/classes/CSteamUser";
+import type CSteamUser from "steamcommunity/classes/CSteamUser";
 
 export namespace Client {
     export const getUserLibrary = fn(
