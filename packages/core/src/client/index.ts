@@ -97,12 +97,24 @@ export namespace Client {
                 description: Utils.cleanDescription(details.strDescription),
                 controller_support: game.common.controller_support as "partial" | "full" ?? "unknown",
                 release_date: new Date(Number(game.common.steam_release_date) * 1000),
-                primary_genre: Utils.getPrimaryGenre(genres, game.common.genres!, game.common.primary_genre!),
-                developers: Array.from(Utils.getAssociationsByTypeWithSlug(game.common.associations!, "developer")),
-                publishers: Array.from(Utils.getAssociationsByTypeWithSlug(game.common.associations!, "publisher")),
-                compatibility: Utils.compatibilityType(
-                    game.common.steam_deck_compatibility?.category as any
+                primary_genre: Utils.getPrimaryGenre(
+                    genres,
+                    game.common.genres!,
+                    game.common.primary_genre!
                 ),
+                developers: Array.from(
+                    Utils.getAssociationsByTypeWithSlug(
+                        game.common.associations!,
+                        "developer"
+                    )
+                ),
+                publishers: Array.from(
+                    Utils.getAssociationsByTypeWithSlug(
+                        game.common.associations!,
+                        "publisher"
+                    )
+                ),
+                compatibility: Utils.compatibilityType(game.common.steam_deck_compatibility?.category),
                 tags: [
                     ...Utils.mapGameTags(
                         tags,
