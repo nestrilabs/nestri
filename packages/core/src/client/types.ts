@@ -285,8 +285,8 @@ export interface AppInfo {
     gameid: string;
     release_date: Date;
     description: string;
-    compatibility: string;
-    controller_support: string;
+    compatibility: "low" | "mid" | "high" | "unknown";
+    controller_support: "partial" | "full" | "unknown";
     primary_genre: string | null;
     size: { download_size: number; size_on_disk: number };
     tags: Array<{ name: string; slug: string; type: "tag" }>;

@@ -68,7 +68,7 @@ export namespace Utils {
             .map((a) => ({ name: a.name.trim(), slug: createSlug(a.name.trim()), type }));
     }
 
-    export function compatibilityType(type?: string): string {
+    export function compatibilityType(type?: string): "low" | "mid" | "high" | "unknown" {
         switch (type) {
             case "1":
                 return "low";
