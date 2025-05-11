@@ -2,9 +2,9 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Common } from "../common";
 import { Examples } from "../examples";
-import { createTransaction } from "../drizzle/transaction";
-import { CompatibilityEnum, baseGamesTable, Size } from "./base-game.sql";
 import { eq, isNull, or, and } from "drizzle-orm";
+import { createTransaction } from "../drizzle/transaction";
+import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum } from "./base-game.sql";
 
 export namespace BaseGame {
     export const Info = z.object({
@@ -40,7 +40,7 @@ export namespace BaseGame {
             description: "The main category or genre that best represents the game's content and gameplay style",
             example: Examples.BaseGame.primaryGenre
         }),
-        controllerSupport: z.string().nullable().openapi({
+        controllerSupport: z.enum(ControllerEnum.enumValues).openapi({
             description: "Indicates the level of gamepad/controller compatibility: 'Full', 'Partial', or null for no support",
             example: Examples.BaseGame.controllerSupport
         }),

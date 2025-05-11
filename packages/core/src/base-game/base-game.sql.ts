@@ -3,6 +3,7 @@ import { timestamps, utc } from "../drizzle/types";
 import { json, numeric, pgEnum, pgTable, text, unique, varchar } from "drizzle-orm/pg-core";
 
 export const CompatibilityEnum = pgEnum("compatibility", ["high", "mid", "low", "unknown"])
+export const ControllerEnum = pgEnum("controller_support", ["full", "unknown"])
 
 export const Size =
     z.object({
@@ -26,7 +27,7 @@ export const baseGamesTable = pgTable(
         size: json("size").$type<Size>().notNull(),
         description: text("description").notNull(),
         primaryGenre: text("primary_genre").notNull(),
-        controllerSupport: text("controller_support"),
+        controllerSupport: ControllerEnum("controller_support").notNull(),
         compatibility: CompatibilityEnum("compatibility").notNull().default("unknown"),
         // Score ranges from 0.0 to 5.0
         score: numeric("score", { precision: 2, scale: 1 })
