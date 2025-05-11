@@ -26,7 +26,7 @@ export const baseGamesTable = pgTable(
         releaseDate: utc("release_date").notNull(),
         size: json("size").$type<Size>().notNull(),
         description: text("description").notNull(),
-        primaryGenre: text("primary_genre").notNull(),
+        primaryGenre: text("primary_genre"),
         controllerSupport: ControllerEnum("controller_support").notNull(),
         compatibility: CompatibilityEnum("compatibility").notNull().default("unknown"),
         // Score ranges from 0.0 to 5.0

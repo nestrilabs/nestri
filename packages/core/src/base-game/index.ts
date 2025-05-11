@@ -36,7 +36,7 @@ export namespace BaseGame {
             description: "The aggregate user review score on Steam, represented as a percentage of positive reviews",
             example: Examples.BaseGame.score
         }),
-        primaryGenre: z.string().openapi({
+        primaryGenre: z.string().nullable().openapi({
             description: "The main category or genre that best represents the game's content and gameplay style",
             example: Examples.BaseGame.primaryGenre
         }),
