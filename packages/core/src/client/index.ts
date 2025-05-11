@@ -1,5 +1,13 @@
+import type {
+    AppInfo,
+    GameDetailsResponse,
+    GameTagsResponse,
+    SteamAppDataResponse,
+} from "./types";
+import { z } from "zod";
 import SteamID from "steamid"
 import { fn } from "../utils";
+import { Utils } from "./utils";
 import { SteamApiResponse } from "./types";
 import SteamCommunity from "steamcommunity";
 import { Credentials } from "../credentials";
@@ -9,8 +17,7 @@ export namespace Client {
     export const getUserLibrary = fn(
         Credentials.Info.shape.accessToken,
         async (accessToken) =>
-            await fetch(`https://api.steampowered.com/IFamilyGroupsService/GetSharedLibraryApps/v1/?access_token=${accessToken}&family_groupid=0&include_excluded=true&include_free=true&include_non_games=false&include_own=true`)
-                .then(r => r.json()) as SteamApiResponse
+            await Utils.fetchApi<SteamApiResponse>(`https://api.steampowered.com/IFamilyGroupsService/GetSharedLibraryApps/v1/?access_token=${accessToken}&family_groupid=0&include_excluded=true&include_free=true&include_non_games=false&include_own=true`)
     )
 
     export const getFriendsList = fn(
@@ -61,5 +68,56 @@ export namespace Client {
                     }
                 })
             }) as Promise<CSteamUser>
+    )
+
+    export const getAppInfo = fn(
+        z.string(),
+        async (appid) => {
+            const [infoData, tagsData, details] = await Promise.all([
+                Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
+                Utils.fetchApi<GameTagsResponse>("https://store.steampowered.com/actions/ajaxgetstoretags"),
+                Utils.fetchApi<GameDetailsResponse>(
+                    `https://store.steampowered.com/apphover/${appid}?full=1&review_score_preference=1&pagev6=true&json=1`
+                ),
+            ]);
+
+            const tags = tagsData.tags;
+            const game = infoData.data[appid];
+            const genres = Utils.parseGenres(details.strGenres);
+
+            const controllerTag = !!game.common.controller_support ? Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) : Utils.createTag(`Uknown Controller Support`)
+            const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Controller Support`)
+
+            const appInfo: AppInfo = {
+                genres,
+                gameid: game.appid,
+                name: game.common.name.trim(),
+                size: Utils.getPublicDepotSizes(game.depots!),
+                slug: Utils.createSlug(game.common.name.trim()),
+                description: Utils.cleanDescription(details.strDescription),
+                controller_support: game.common.controller_support ?? "unknown",
+                release_date: new Date(Number(game.common.steam_release_date) * 1000),
+                primary_genre: Utils.getPrimaryGenre(genres, game.common.genres!, game.common.primary_genre!),
+                developers: Array.from(Utils.getAssociationsByTypeWithSlug(game.common.associations!, "developer")),
+                publishers: Array.from(Utils.getAssociationsByTypeWithSlug(game.common.associations!, "publisher")),
+                compatibility: Utils.compatibilityType(
+                    game.common.steam_deck_compatibility?.category as any
+                ).toLowerCase(),
+                tags: [
+                    ...Utils.mapGameTags(
+                        tags,
+                        game.common.store_tags!,
+                    ),
+                    controllerTag,
+                    compatibilityTag
+                ],
+                score: Utils.getRating(
+                    details.ReviewSummary.cRecommendationsPositive,
+                    details.ReviewSummary.cRecommendationsNegative
+                ),
+            };
+
+            return appInfo
+        }
     )
 }
