@@ -96,7 +96,7 @@ const base_games = table("base_games")
         size: json<Size>(),
         description: string(),
         primary_genre: string().optional(),
-        controller_support: enumeration<"full" | "unknown">(),
+        controller_support: enumeration<"full" | "partial" | "unknown">(),
         compatibility: enumeration<"high" | "mid" | "low" | "unknown">(),
         score: number(),
         ...timestamps

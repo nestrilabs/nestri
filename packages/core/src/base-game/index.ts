@@ -41,7 +41,7 @@ export namespace BaseGame {
             example: Examples.BaseGame.primaryGenre
         }),
         controllerSupport: z.enum(ControllerEnum.enumValues).openapi({
-            description: "Indicates the level of gamepad/controller compatibility: 'Full', 'Partial', or null for no support",
+            description: "Indicates the level of gamepad/controller compatibility: 'Full', 'Partial', or 'Unkown' for no support",
             example: Examples.BaseGame.controllerSupport
         }),
         compatibility: z.enum(CompatibilityEnum.enumValues).openapi({

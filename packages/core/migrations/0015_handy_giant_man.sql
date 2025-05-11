@@ -1,0 +1,1 @@
+ALTER TYPE "public"."controller_support" ADD VALUE 'partial' BEFORE 'unknown';

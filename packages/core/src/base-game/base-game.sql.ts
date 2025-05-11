@@ -3,7 +3,7 @@ import { timestamps, utc } from "../drizzle/types";
 import { json, numeric, pgEnum, pgTable, text, unique, varchar } from "drizzle-orm/pg-core";
 
 export const CompatibilityEnum = pgEnum("compatibility", ["high", "mid", "low", "unknown"])
-export const ControllerEnum = pgEnum("controller_support", ["full", "unknown"])
+export const ControllerEnum = pgEnum("controller_support", ["full","partial", "unknown"])
 
 export const Size =
     z.object({
