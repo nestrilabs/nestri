@@ -15,29 +15,36 @@ export namespace Client {
 
     export const getFriendsList = fn(
         Credentials.Info.shape.cookies,
-        async (cookies) =>
-            new Promise((resolve, reject) => {
-                const community = new SteamCommunity()
-                community.setCookies(cookies);
-                community.getFriendsList((error, allFriends) => {
-                    if (error) {
-                        reject(`Could not get friends list: ${error.message}`)
-                    } else {
-                        const friends = Object.entries(allFriends);
-                        for (const [id, _nonce] of friends) {
-                            const friendID = new SteamID(id);
-                            community.getSteamUser(friendID, async (err, user) => {
-                                if (err) {
-                                    reject(`Could not get steam user info: ${err.message}`)
-                                } else {
-                                    resolve(user)
-                                }
-                            })
-                        }
+        async (cookies): Promise<CSteamUser[]> => {
+            const community = new SteamCommunity();
+            community.setCookies(cookies);
+
+            const allFriends = await new Promise<Record<string, any>>((resolve, reject) => {
+                community.getFriendsList((err, friends) => {
+                    if (err) {
+                        return reject(new Error(`Could not get friends list: ${err.message}`));
                     }
+                    resolve(friends);
+                });
+            });
+
+            const friendIds = Object.keys(allFriends);
+
+            const userPromises: Promise<CSteamUser>[] = friendIds.map(id =>
+                new Promise<CSteamUser>((resolve, reject) => {
+                    const sid = new SteamID(id);
+                    community.getSteamUser(sid, (err, user) => {
+                        if (err) {
+                            return reject(new Error(`Could not get steam user info for ${id}: ${err.message}`));
+                        }
+                        resolve(user);
+                    });
                 })
-            }) as Promise<CSteamUser>
-    )
+            );
+
+            return (await Promise.allSettled(userPromises)).filter(s => s.status === "fulfilled").map(i => i.value);
+        }
+    );
 
     export const getUserInfo = fn(
         Credentials.Info.pick({ cookies: true, id: true }),

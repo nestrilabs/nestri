@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { ulid } from "ulid";
 import { Hono } from "hono";
+import { Resource } from "sst";
 import { streamSSE } from "hono/streaming";
 import { Actor } from "@nestri/core/actor";
 import SteamCommunity from "steamcommunity";
@@ -8,10 +10,15 @@ import { Steam } from "@nestri/core/steam/index";
 import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
 import { Member } from "@nestri/core/member/index";
+import { Client } from "@nestri/core/client/index";
+import { Library } from "@nestri/core/library/index";
+import { chunkArray } from "@nestri/core/utils/helper";
 import { ErrorResponses, validator, Result } from "./utils";
 import { Credentials } from "@nestri/core/credentials/index";
+import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { LoginSession, EAuthTokenPlatformType } from "steam-session";
-import type CSteamUser from "steamcommunity/classes/CSteamUser";
+
+const sqs = new SQSClient({});
 
 export namespace SteamApi {
     export const route = new Hono()
@@ -157,15 +164,7 @@ export namespace SteamApi {
                             const community = new SteamCommunity();
                             community.setCookies(cookies);
 
-                            const user = await new Promise((res, rej) => {
-                                community.getSteamUser(session.steamID, async (error, user) => {
-                                    if (!error) {
-                                        res(user)
-                                    } else {
-                                        rej(error)
-                                    }
-                                })
-                            }) as CSteamUser
+                            const user = await Client.getUserInfo({ id: steamID, cookies })
 
                             const wasAdded =
                                 await Steam.create({
@@ -190,13 +189,23 @@ export namespace SteamApi {
                             await Credentials.create({ refreshToken, id: steamID, username })
 
                             if (!!wasAdded) {
+                                const [rawFirst] = user.name.split(' ') as [string];
+
+                                const firstName = rawFirst
+                                    .charAt(0)                  // first character
+                                    .toUpperCase()              // make it uppercase
+                                    + rawFirst
+                                        .slice(1)               // rest of the string
+                                        .toLowerCase();
+
                                 // create a team
                                 const teamID = await Team.create({
                                     slug: username,
-                                    name: `${user.name.split(" ")[0]}'s Team`,
+                                    name: `${firstName}'s Team`,
                                     ownerID: currentUser.userID,
                                 })
 
+                                // Add us as the member
                                 await Actor.provide(
                                     "system",
                                     { teamID },
@@ -207,6 +216,7 @@ export namespace SteamApi {
                                             steamID
                                         })
                                     })
+
                             } else {
                                 await Steam.updateOwner({ userID: currentUser.userID, steamID })
                             }
@@ -216,11 +226,57 @@ export namespace SteamApi {
                                 data: JSON.stringify({ username })
                             })
 
-                            //TODO: Get game library
+                            // Get game library
+                            const games = await Client.getUserLibrary(accessToken);
 
-                            await stream.close()
+                            // Get a batch of 5 games each
+                            const chunkedGames = chunkArray(games.response.apps, 5)
 
-                            resolve()
+                            const team = await Team.fromSlug(username)
+
+                            // Get the batches to the queue
+                            const processQueue = chunkedGames.map(async (chunk) => {
+                                const myGames = chunk.map(i => {
+                                    return {
+                                        appID: i.appid,
+                                        totalPlaytime: i.rt_playtime,
+                                        isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
+                                        isFamilyShareAble: i.exclude_reason === 0,
+                                        ownedByUs: i.owner_steamids.includes(steamID),
+                                        lastPlayed: new Date(i.rt_last_played * 1000),
+                                        timeAcquired: new Date(i.rt_time_acquired * 1000),
+                                    }
+                                })
+
+                                if (team) {
+                                    await Actor.provide(
+                                        "member",
+                                        {
+                                            steamID,
+                                            teamID: team.id,
+                                            userID: currentUser.userID
+                                        },
+                                        async () => {
+                                            const payload = Library.Events.Queue.create(myGames);
+
+                                            await sqs.send(
+                                                new SendMessageCommand({
+                                                    MessageGroupId: team.id,
+                                                    QueueUrl: Resource.LibraryQueue.url,
+                                                    MessageBody: JSON.stringify(payload),
+                                                    MessageDeduplicationId: ["queue", ulid()].join("_"),
+                                                })
+                                            )
+                                        }
+                                    )
+                                }
+                            })
+
+                            await Promise.allSettled(processQueue)
+
+                            await stream.close();
+
+                            resolve();
                         })
 
                     })

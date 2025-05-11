@@ -2,6 +2,7 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Game } from "../game";
 import { Actor } from "../actor";
+import { createEvent } from "../event";
 import { gamesTable } from "../game/game.sql";
 import { createSelectSchema } from "drizzle-zod";
 import { steamLibraryTable } from "./library.sql";
@@ -16,6 +17,21 @@ export namespace Library {
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
 
     export type Info = z.infer<typeof Info>;
+
+    export const Events = {
+        Queue: createEvent(
+            "library.queue",
+            z.object({
+                appID: z.number(),
+                totalPlaytime: z.number(),
+                isFamilyShared: z.boolean(),
+                isFamilyShareAble: z.boolean(),
+                ownedByUs: z.boolean(),
+                lastPlayed: z.date(),
+                timeAcquired: z.date(),
+            }).array(),
+        ),
+    };
 
     export const add = fn(
         Info,

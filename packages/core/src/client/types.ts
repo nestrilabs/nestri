@@ -1,10 +1,3 @@
-/**
- * Steam API Response Types
- */
-
-/**
- * Represents a Steam application/game
- */
 interface SteamApp {
     /** Steam application ID */
     appid: number;

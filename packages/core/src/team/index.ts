@@ -144,6 +144,22 @@ export namespace Team {
                 .then((rows) => serialize(rows))
         )
 
+    export const fromSlug = fn(
+        Info.shape.slug,
+        (slug) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(teamTable)
+                    .where(
+                        and(
+                            eq(teamTable.slug, slug),
+                            isNull(teamTable.timeDeleted),
+                        )
+                    ).then(rows => rows.at(0))
+            )
+    )
+
     export function serialize(
         input: { teams: typeof teamTable.$inferSelect; steam_accounts: typeof steamTable.$inferSelect | null }[]
     ): z.infer<typeof Info>[] {

@@ -45,14 +45,14 @@ export namespace Credentials {
                         refreshToken: input.refreshToken,
                         expiry: new Date(payload.exp * 1000),
                     })
-                // await afterTx(async () =>
-                //     await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
-                // );
+                await afterTx(async () =>
+                    await bus.publish(Resource.Bus, Events.New, { steamID: input.id })
+                );
                 return id
             })
         });
 
-    export const getByID = fn(
+    export const fromID = fn(
         Info.shape.id,
         (id) =>
             useTransaction(async (tx) => {
@@ -76,31 +76,6 @@ export namespace Credentials {
                 return serialize(credential);
             })
     );
-    
-    // export const getBySteamID = fn(
-    //     Info.shape.steamID,
-    //     (steamID) =>
-    //         useTransaction(async (tx) => {
-    //             const now = new Date()
-
-    //             const credential = await tx
-    //                 .select()
-    //                 .from(steamCredentialsTable)
-    //                 .where(
-    //                     and(
-    //                         eq(steamCredentialsTable.steamID, steamID),
-    //                         isNull(steamCredentialsTable.timeDeleted),
-    //                         gt(steamCredentialsTable.expiry, now)
-    //                     )
-    //                 )
-    //                 .execute()
-    //                 .then(rows => rows.at(0));
-
-    //             if (!credential) return null;
-
-    //             return serialize(credential);
-    //         })
-    // );
 
     export function serialize(
         input: typeof steamCredentialsTable.$inferSelect,
