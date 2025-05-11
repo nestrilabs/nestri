@@ -192,16 +192,16 @@ export namespace SteamApi {
                                 const [rawFirst] = user.name.split(' ') as [string];
 
                                 const firstName = rawFirst
-                                    .charAt(0)                  // first character
-                                    .toUpperCase()              // make it uppercase
+                                    .charAt(0) // first character
+                                    .toUpperCase() // make it uppercase
                                     + rawFirst
-                                        .slice(1)               // rest of the string
+                                        .slice(1) // rest of the string
                                         .toLowerCase();
 
                                 // create a team
                                 const teamID = await Team.create({
                                     slug: username,
-                                    name: `${firstName}'s Team`,
+                                    name: firstName,
                                     ownerID: currentUser.userID,
                                 })
 
@@ -240,11 +240,11 @@ export namespace SteamApi {
                                     return {
                                         appID: i.appid,
                                         totalPlaytime: i.rt_playtime,
-                                        isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
                                         isFamilyShareAble: i.exclude_reason === 0,
                                         ownedByUs: i.owner_steamids.includes(steamID),
                                         lastPlayed: new Date(i.rt_last_played * 1000),
                                         timeAcquired: new Date(i.rt_time_acquired * 1000),
+                                        isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
                                     }
                                 })
 
