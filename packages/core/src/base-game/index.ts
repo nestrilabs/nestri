@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { fn } from "../utils";
+import { Resource } from "sst";
+import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { Examples } from "../examples";
-import { eq, isNull, or, and } from "drizzle-orm";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { createEvent } from "../event";
+import { eq, isNull, and } from "drizzle-orm";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum } from "./base-game.sql";
 
 export namespace BaseGame {
@@ -56,6 +59,15 @@ export namespace BaseGame {
 
     export type Info = z.infer<typeof Info>;
 
+    export const Events = {
+        New: createEvent(
+            "new_game.added",
+            z.object({
+                appID: Info.shape.id,
+            }),
+        ),
+    };
+
     export const create = fn(
         Info,
         (input) =>
@@ -69,6 +81,10 @@ export namespace BaseGame {
                             timeDeleted: null
                         }
                     })
+
+                await afterTx(async () => {
+                    await bus.publish(Resource.Bus, Events.New, { appID: input.id })
+                })
 
                 return input.id
             })

@@ -2,11 +2,12 @@ import { bus } from "sst/aws/bus";
 import { Steam } from "@nestri/core/steam/index";
 import { Client } from "@nestri/core/client/index";
 import { Friend } from "@nestri/core/friend/index";
+import { BaseGame } from "@nestri/core/base-game/index";
 import { Credentials } from "@nestri/core/credentials/index";
 import { EAuthTokenPlatformType, LoginSession } from "steam-session";
 
 export const handler = bus.subscriber(
-  [Credentials.Events.New],
+  [Credentials.Events.New, BaseGame.Events.New],
   async (event) => {
     console.log(event.type, event.properties, event.metadata);
     switch (event.type) {
@@ -50,6 +51,9 @@ export const handler = bus.subscriber(
           await Promise.allSettled(putFriends)
         }
         break;
+      }
+      case "new_game.added": {
+        // Get images and save to s3
       }
     }
   },

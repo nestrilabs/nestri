@@ -96,7 +96,7 @@ export namespace Categories {
                     )
                     .limit(1)
                     .execute()
-                    .then(rows => rows.at(0))
+                    .then(rows => serialize(rows))
             )
     )
 

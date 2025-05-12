@@ -6,6 +6,7 @@ import {
     table,
     number,
     string,
+    boolean,
     enumeration,
     createSchema,
     relationships,
@@ -116,6 +117,10 @@ const game_libraries = table("game_libraries")
     .columns({
         base_game_id: string(),
         owner_id: string(),
+        time_acquired: number(),
+        last_played: number(),
+        total_playtime: number(),
+        is_family_shared: boolean(),
         ...timestamps
     }).primaryKey("base_game_id", "owner_id")
 
