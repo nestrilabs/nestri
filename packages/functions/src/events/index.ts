@@ -1,3 +1,4 @@
+import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
 import { Steam } from "@nestri/core/steam/index";
 import { Client } from "@nestri/core/client/index";
@@ -5,9 +6,8 @@ import { Images } from "@nestri/core/images/index";
 import { Friend } from "@nestri/core/friend/index";
 import { BaseGame } from "@nestri/core/base-game/index";
 import { Credentials } from "@nestri/core/credentials/index";
+import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { EAuthTokenPlatformType, LoginSession } from "steam-session";
-import { GetObjectCommand, NoSuchKey, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { Resource } from "sst";
 
 const s3 = new S3Client({});
 
@@ -80,9 +80,9 @@ export const handler = bus.subscriber(
             await s3.send(
               new PutObjectCommand({
                 Bucket: Resource.Storage.name,
-                Key: image.hash,
-                ContentType: image.format && `image/${image.format}`,
-                Body: image.buffer
+                Key: `images/${image.hash}`,
+                Body: image.buffer,
+                ...(image.format && { ContentType: `image/${image.format}` }),
               })
             )
           })
