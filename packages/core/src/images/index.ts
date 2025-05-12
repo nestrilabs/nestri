@@ -38,13 +38,13 @@ export namespace Images {
             description: "Vertical 2:3 aspect ratio promotional artwork, similar to movie posters",
             example: Examples.Images.posters
         }),
-        heroArts: Image.array().openapi({
+        banners: Image.array().openapi({
             description: "Horizontal promotional artwork optimized for header displays and banners",
-            example: Examples.Images.heroArts
+            example: Examples.Images.banners
         }),
-        superHeroArts: Image.array().openapi({
+        heroArts: Image.array().openapi({
             description: "High-resolution, wide-format artwork designed for featured content and main entries",
-            example: Examples.Images.superHeroArts
+            example: Examples.Images.heroArts
         }),
         backdrops: Image.array().openapi({
             description: "Full-width backdrop images optimized for page layouts and decorative purposes",
@@ -107,7 +107,7 @@ export namespace Images {
             }, {
                 screenshots: [],
                 boxArts: [],
-                superHeroArts: [],
+                banners: [],
                 heroArts: [],
                 posters: [],
                 backdrops: [],

@@ -39,7 +39,7 @@ export const handler: SQSHandler = async (event) => {
                             controllerSupport: appInfo.controllerSupport,
                         })
 
-                        if(game.isFamilyShareAble){
+                        if (game.isFamilyShareAble) {
                             tags.push(Utils.createTag("Family Share"))
                         }
 
@@ -47,13 +47,16 @@ export const handler: SQSHandler = async (event) => {
 
                         await Promise.allSettled(
                             allCategories.map(async (cat) => {
-                                //Use a single db transaction to get or set the category
-                                await Categories.create({
-                                    type: cat.type, slug: cat.slug, name: cat.name
-                                })
+                                // Put up a guard, just in case
+                                if (cat.slug && cat.type && cat.name) {
+                                    //Use a single db transaction to get or set the category
+                                    await Categories.create({
+                                        type: cat.type, slug: cat.slug, name: cat.name
+                                    })
 
-                                // Use a single db transaction to get or create the game
-                                await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
+                                    // Use a single db transaction to get or create the game
+                                    await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
+                                }
                             })
                         )
                     }

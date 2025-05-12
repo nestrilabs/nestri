@@ -127,6 +127,13 @@
       "when": 1747034424687,
       "tag": "0017_zippy_nico_minoru",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1747073173196,
+      "tag": "0018_solid_enchantress",
+      "breakpoints": true
     }
   ]
 }

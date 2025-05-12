@@ -83,7 +83,7 @@ export namespace Client {
 
             const tags = tagsData.tags;
             const game = infoData.data[appid];
-            const genres = Utils.parseGenres(details.strGenres);
+            const genres = !!details.strGenres ? Utils.parseGenres(details.strGenres) : [];
 
             const controllerTag = !!game.common.controller_support ? Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) : Utils.createTag(`Uknown Controller Support`)
             const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Controller Support`)
@@ -97,29 +97,32 @@ export namespace Client {
                 description: Utils.cleanDescription(details.strDescription),
                 controllerSupport: game.common.controller_support as "partial" | "full" ?? "unknown",
                 releaseDate: new Date(Number(game.common.steam_release_date) * 1000),
-                primaryGenre: Utils.getPrimaryGenre(
+                primaryGenre: (!!game?.common.genres && !!details.strGenres) ? Utils.getPrimaryGenre(
                     genres,
                     game.common.genres!,
                     game.common.primary_genre!
-                ),
-                developers: Array.from(
-                    Utils.getAssociationsByTypeWithSlug(
-                        game.common.associations!,
-                        "developer"
-                    )
-                ),
-                publishers: Array.from(
-                    Utils.getAssociationsByTypeWithSlug(
-                        game.common.associations!,
-                        "publisher"
-                    )
-                ),
+                ) : null,
+                developers: game.common.associations ?
+                    Array.from(
+                        Utils.getAssociationsByTypeWithSlug(
+                            game.common.associations!,
+                            "developer"
+                        )
+                    ) : [],
+                publishers: game.common.associations ?
+                    Array.from(
+                        Utils.getAssociationsByTypeWithSlug(
+                            game.common.associations!,
+                            "publisher"
+                        )
+                    ) : [],
                 compatibility: Utils.compatibilityType(game.common.steam_deck_compatibility?.category),
                 tags: [
-                    ...Utils.mapGameTags(
-                        tags,
-                        game.common.store_tags!,
-                    ),
+                    ...(game?.common.store_tags ?
+                        Utils.mapGameTags(
+                            tags,
+                            game.common.store_tags!,
+                        ) : []),
                     controllerTag,
                     compatibilityTag
                 ],

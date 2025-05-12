@@ -3,7 +3,7 @@ import { timestamps } from "../drizzle/types";
 import { baseGamesTable } from "../base-game/base-game.sql";
 import { index, integer, json, pgEnum, pgTable, primaryKey, text, varchar } from "drizzle-orm/pg-core";
 
-export const ImageTypeEnum = pgEnum("image_type", ["heroArt", "icon", "logo", "superHeroArt", "poster", "boxArt", "screenshot", "backdrop"])
+export const ImageTypeEnum = pgEnum("image_type", ["heroArt", "icon", "logo", "banner", "poster", "boxArt", "screenshot", "backdrop"])
 
 export const ImageDimensions = z.object({
     width: z.number().int(),
