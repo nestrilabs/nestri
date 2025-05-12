@@ -122,6 +122,7 @@ export interface LibraryAssetsFull {
     library_header: ImageSet;
     library_hero: ImageSet;
     library_logo: ImageSet & { logo_position: LogoPosition };
+    [key: string]: any
 }
 
 export interface ImageSet {
@@ -293,4 +294,25 @@ export interface AppInfo {
     genres: Array<{ type: "genre"; name: string; slug: string }>;
     developers: Array<{ name: string; slug: string; type: "developer" }>;
     publishers: Array<{ name: string; slug: string; type: "publisher" }>;
+}
+
+export type ImageType =
+    | 'screenshot'
+    | 'boxArt'
+    | 'banner'
+    | 'icon'
+    | 'logo'
+    | 'poster'
+    | 'heroArt';
+
+export interface ImageInfo {
+    type: ImageType;
+    position: number;
+    hash: string;
+    sourceUrl: string | null;
+    format?: string;
+    averageColor: { hex: string; isDark: boolean };
+    dimensions: { width: number; height: number };
+    fileSize: number;
+    buffer: Buffer;
 }

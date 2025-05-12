@@ -32,7 +32,11 @@
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
         "drizzle-zod": "^0.7.1",
+        "fast-average-color": "^9.5.0",
+        "lru-cache": "^11.1.0",
+        "p-limit": "^6.2.0",
         "postgres": "^3.4.5",
+        "sharp": "^0.34.1",
         "steam-session": "*"
     }
 }

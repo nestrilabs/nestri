@@ -4,6 +4,8 @@ import type {
     SteamApiResponse,
     GameDetailsResponse,
     SteamAppDataResponse,
+    ImageInfo,
+    ImageType
 } from "./types";
 import { z } from "zod";
 import SteamID from "steamid"
@@ -133,6 +135,75 @@ export namespace Client {
             };
 
             return appInfo
+        }
+    )
+
+    export const getImages = fn(
+        z.string().or(z.number()),
+        async (appid) => {
+            const [appData, details] = await Promise.all([
+                Utils.fetchJson<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
+                Utils.fetchJson<GameDetailsResponse>(
+                    `https://store.steampowered.com/apphover/${appid}?full=1&review_score_preference=1&pagev6=true&json=1`
+                ),
+            ]);
+            const game = appData.data[appid]?.common;
+            if (!game) throw new Error('Game info missing');
+
+            // 2. Prepare URLs
+            const screenshotUrls = Utils.getScreenshotUrls(details.rgScreenshots || []);
+            const assetUrls = Utils.getAssetUrls(game.library_assets_full, appid, game.header_image.english);
+            const iconUrl = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
+
+            // 3. Download screenshot buffers in parallel
+            const shots = await Promise.all(
+                screenshotUrls.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
+            );
+
+            // 4. Score screenshots (or pick single)
+            const scores =
+                shots.length === 1
+                    ? [{ url: shots[0].url, score: 0 }]
+                    : await Utils.scoreBuffers(shots);
+
+            // Build url->rank map
+            const rankMap = new Map<string, number>();
+            scores.forEach((s, i) => rankMap.set(s.url, i));
+
+            // 5. Create tasks for all images
+            const tasks: Array<Promise<ImageInfo>> = [];
+
+            // 5a. Screenshots and heroArt metadata (top 4)
+            for (const { url, buffer } of shots) {
+                const rank = rankMap.get(url);
+                if (rank === undefined || rank >= 4) continue;
+                const type: ImageType = rank === 0 ? 'heroArt' : 'screenshot';
+                tasks.push(
+                    Utils.getImageMetadata(buffer).then(meta => ({ ...meta, sourceUrl: url, position: type == "screenshot" ? rank - 1 : rank, type } as ImageInfo))
+                );
+            }
+
+            // 5b. Asset images
+            for (const [type, url] of Object.entries({ ...assetUrls, icon: iconUrl })) {
+                if (!url) continue;
+                tasks.push(
+                    Utils.fetchBuffer(url)
+                        .then(buf => Utils.getImageMetadata(buf))
+                        .then(meta => ({ ...meta, position: 0, sourceUrl: url, type: type as ImageType } as ImageInfo))
+                );
+            }
+
+            // 5c. Box art
+            tasks.push(
+                Utils.createBoxArtBuffer(game.library_assets_full, appid)
+                    .then(buf => Utils.getImageMetadata(buf))
+                    .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
+            );
+
+            // 6. Await all and return
+            const results = await Promise.all(tasks);
+
+            return results;
         }
     )
 }

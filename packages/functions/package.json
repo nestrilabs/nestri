@@ -17,6 +17,7 @@
   "dependencies": {
     "@actor-core/bun": "^0.8.0",
     "@actor-core/file-system": "^0.8.0",
+    "@aws-sdk/client-s3": "^3.806.0",
     "@aws-sdk/client-sqs": "^3.806.0",
     "@nestri/core": "workspace:",
     "actor-core": "^0.8.0",

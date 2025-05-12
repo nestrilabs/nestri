@@ -30,7 +30,7 @@ export const imagesTable = pgTable(
             .references(() => baseGamesTable.id, {
                 onDelete: "cascade"
             }),
-        sourceUrl: text("source_url").notNull(),
+        sourceUrl: text("source_url"), // The BoxArt is source Url will always be null;
         position: integer("position").notNull().default(0),
         fileSize: integer("file_size").notNull(),
         dimensions: json("dimensions").$type<ImageDimensions>().notNull(),
