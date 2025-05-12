@@ -1,9 +1,9 @@
+import { z } from "zod";
 import { timestamps } from "../drizzle/types";
 import { baseGamesTable } from "../base-game/base-game.sql";
 import { index, integer, json, pgEnum, pgTable, primaryKey, text, varchar } from "drizzle-orm/pg-core";
-import { z } from "zod";
 
-export const ImageTypeEnum = pgEnum("image_type", ["heroArt", "icon", "logo", "superHeroArt", "poster", "boxArt", "screenshot","background"])
+export const ImageTypeEnum = pgEnum("image_type", ["heroArt", "icon", "logo", "superHeroArt", "poster", "boxArt", "screenshot", "backdrop"])
 
 export const ImageDimensions = z.object({
     width: z.number().int(),
@@ -11,8 +11,8 @@ export const ImageDimensions = z.object({
 })
 
 export const ImageColor = z.object({
-   hex: z.string(),
-   isDark: z.boolean()
+    hex: z.string(),
+    isDark: z.boolean()
 })
 
 export type ImageColor = z.infer<typeof ImageColor>;

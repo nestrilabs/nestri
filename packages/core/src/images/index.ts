@@ -46,9 +46,9 @@ export namespace Images {
             description: "High-resolution, wide-format artwork designed for featured content and main entries",
             example: Examples.Images.superHeroArts
         }),
-        backgrounds: Image.array().openapi({
-            description: "Full-width background images optimized for page layouts and decorative purposes",
-            example: Examples.Images.backgrounds
+        backdrops: Image.array().openapi({
+            description: "Full-width backdrop images optimized for page layouts and decorative purposes",
+            example: Examples.Images.backdrops
         }),
         logos: Image.array().openapi({
             description: "Official game logo artwork, typically with transparent backgrounds for flexible placement",
@@ -110,7 +110,7 @@ export namespace Images {
                 superHeroArts: [],
                 heroArts: [],
                 posters: [],
-                backgrounds: [],
+                backdrops: [],
                 icons: [],
                 logos: [],
             })

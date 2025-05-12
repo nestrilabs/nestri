@@ -253,7 +253,7 @@ export namespace Examples {
         posters: CommonImg,
         heroArts: CommonImg,
         superHeroArts: CommonImg,
-        backgrounds: CommonImg,
+        backdrops: CommonImg,
         logos: CommonImg,
         icons: CommonImg,
     }
