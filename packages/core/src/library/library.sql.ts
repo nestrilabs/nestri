@@ -1,9 +1,8 @@
-import { timestamps, } from "../drizzle/types";
+import { timestamps, utc, } from "../drizzle/types";
 import { steamTable } from "../steam/steam.sql";
 import { baseGamesTable } from "../base-game/base-game.sql";
-import { index, pgTable, primaryKey, varchar, } from "drizzle-orm/pg-core";
+import { boolean, index, integer, pgTable, primaryKey, varchar, } from "drizzle-orm/pg-core";
 
-//TODO: Add playtime here
 export const steamLibraryTable = pgTable(
     "game_libraries",
     {
@@ -18,6 +17,10 @@ export const steamLibraryTable = pgTable(
             .references(() => steamTable.id, {
                 onDelete: "cascade"
             }),
+        timeAcquired: utc("time_acquired").notNull(),
+        lastPlayed: utc("last_played").notNull(),
+        totalPlaytime: integer("total_playtime").notNull(),
+        isFamilyShared: boolean("is_family_shared").notNull()
     },
     (table) => [
         primaryKey({

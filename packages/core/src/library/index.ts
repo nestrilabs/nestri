@@ -34,27 +34,37 @@ export namespace Library {
     };
 
     export const add = fn(
-        Info,
+        Info.partial({ ownerID: true }),
         async (input) =>
             createTransaction(async (tx) => {
-                const results =
+                const ownerSteamID = input.ownerID ?? Actor.steamID()
+                const result =
                     await tx
                         .select()
                         .from(steamLibraryTable)
                         .where(
                             and(
                                 eq(steamLibraryTable.baseGameID, input.baseGameID),
-                                eq(steamLibraryTable.ownerID, input.ownerID),
+                                eq(steamLibraryTable.ownerID, ownerSteamID),
                                 isNull(steamLibraryTable.timeDeleted)
                             )
                         )
+                        .limit(1)
                         .execute()
+                        .then(rows => rows.at(0))
 
-                if (results.length > 0) return null
+                if (result) return result.baseGameID
 
                 await tx
                     .insert(steamLibraryTable)
-                    .values(input)
+                    .values({
+                        ownerID: ownerSteamID,
+                        baseGameID: input.baseGameID,
+                        lastPlayed:input.lastPlayed,
+                        totalPlaytime: input.totalPlaytime,
+                        timeAcquired: input.timeAcquired,
+                        isFamilyShared: input.isFamilyShared
+                    })
                     .onConflictDoUpdate({
                         target: [steamLibraryTable.ownerID, steamLibraryTable.baseGameID],
                         set: { timeDeleted: null }

@@ -3,7 +3,7 @@ import { fn } from "../utils";
 import { Examples } from "../examples";
 import { createSelectSchema } from "drizzle-zod";
 import { categoriesTable } from "./categories.sql";
-import { createTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { eq, isNull, and } from "drizzle-orm";
 
 export namespace Categories {
@@ -52,20 +52,21 @@ export namespace Categories {
         InputInfo,
         (input) =>
             createTransaction(async (tx) => {
-                const results =
-                    await tx
-                        .select()
-                        .from(categoriesTable)
-                        .where(
-                            and(
-                                eq(categoriesTable.slug, input.slug),
-                                eq(categoriesTable.type, input.type),
-                                isNull(categoriesTable.timeDeleted)
-                            )
+                const result = await tx
+                    .select()
+                    .from(categoriesTable)
+                    .where(
+                        and(
+                            eq(categoriesTable.slug, input.slug),
+                            eq(categoriesTable.type, input.type),
+                            isNull(categoriesTable.timeDeleted)
                         )
-                        .execute()
+                    )
+                    .limit(1)
+                    .execute()
+                    .then(rows => rows.at(0))
 
-                if (results.length > 0) return null
+                if (result) return result.slug
 
                 await tx
                     .insert(categoriesTable)
@@ -77,6 +78,26 @@ export namespace Categories {
 
                 return input.slug
             })
+    )
+
+    export const get = fn(
+        InputInfo.pick({ slug: true, type: true }),
+        (input) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(categoriesTable)
+                    .where(
+                        and(
+                            eq(categoriesTable.slug, input.slug),
+                            eq(categoriesTable.type, input.type),
+                            isNull(categoriesTable.timeDeleted)
+                        )
+                    )
+                    .limit(1)
+                    .execute()
+                    .then(rows => rows.at(0))
+            )
     )
 
     export function serialize(

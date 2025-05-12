@@ -283,12 +283,12 @@ export interface AppInfo {
     slug: string;
     score: number;
     gameid: string;
-    release_date: Date;
+    releaseDate: Date;
     description: string;
     compatibility: "low" | "mid" | "high" | "unknown";
-    controller_support: "partial" | "full" | "unknown";
-    primary_genre: string | null;
-    size: { download_size: number; size_on_disk: number };
+    controllerSupport: "partial" | "full" | "unknown";
+    primaryGenre: string | null;
+    size: { downloadSize: number; sizeOnDisk: number };
     tags: Array<{ name: string; slug: string; type: "tag" }>;
     genres: Array<{ type: "genre"; name: string; slug: string }>;
     developers: Array<{ name: string; slug: string; type: "developer" }>;

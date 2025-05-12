@@ -1,14 +1,14 @@
 import type {
     AppInfo,
-    GameDetailsResponse,
     GameTagsResponse,
+    SteamApiResponse,
+    GameDetailsResponse,
     SteamAppDataResponse,
 } from "./types";
 import { z } from "zod";
 import SteamID from "steamid"
 import { fn } from "../utils";
 import { Utils } from "./utils";
-import { SteamApiResponse } from "./types";
 import SteamCommunity from "steamcommunity";
 import { Credentials } from "../credentials";
 import type CSteamUser from "steamcommunity/classes/CSteamUser";
@@ -95,9 +95,9 @@ export namespace Client {
                 size: Utils.getPublicDepotSizes(game.depots!),
                 slug: Utils.createSlug(game.common.name.trim()),
                 description: Utils.cleanDescription(details.strDescription),
-                controller_support: game.common.controller_support as "partial" | "full" ?? "unknown",
-                release_date: new Date(Number(game.common.steam_release_date) * 1000),
-                primary_genre: Utils.getPrimaryGenre(
+                controllerSupport: game.common.controller_support as "partial" | "full" ?? "unknown",
+                releaseDate: new Date(Number(game.common.steam_release_date) * 1000),
+                primaryGenre: Utils.getPrimaryGenre(
                     genres,
                     game.common.genres!,
                     game.common.primary_genre!

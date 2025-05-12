@@ -133,7 +133,7 @@ export namespace Utils {
                 sum.size += Number(entry.manifests.public.size);
             }
         }
-        return { download_size: sum.download, size_on_disk: sum.size };
+        return { downloadSize: sum.download, sizeOnDisk: sum.size };
     }
 
     export function parseGenres(str: string): GenreType[] {

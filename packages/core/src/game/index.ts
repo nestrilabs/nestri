@@ -31,7 +31,7 @@ export namespace Game {
         InputInfo,
         (input) =>
             createTransaction(async (tx) => {
-                const results =
+                const result =
                     await tx
                         .select()
                         .from(gamesTable)
@@ -43,9 +43,11 @@ export namespace Game {
                                 isNull(gamesTable.timeDeleted)
                             )
                         )
+                        .limit(1)
                         .execute()
+                        .then(rows => rows.at(0))
 
-                if (results.length > 0) return null
+                if (result) return result.baseGameID
 
                 await tx
                     .insert(gamesTable)

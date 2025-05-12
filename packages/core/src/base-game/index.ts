@@ -3,7 +3,7 @@ import { fn } from "../utils";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { eq, isNull, or, and } from "drizzle-orm";
-import { createTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum } from "./base-game.sql";
 
 export namespace BaseGame {
@@ -60,28 +60,36 @@ export namespace BaseGame {
         Info,
         (input) =>
             createTransaction(async (tx) => {
-                const results = await tx
+                await tx
+                    .insert(baseGamesTable)
+                    .values(input)
+                    .onConflictDoUpdate({
+                        target: [baseGamesTable.id, baseGamesTable.slug],
+                        set: {
+                            timeDeleted: null
+                        }
+                    })
+
+                return input.id
+            })
+    )
+
+    export const fromID = fn(
+        Info.shape.id,
+        (id) =>
+            useTransaction(async (tx) =>
+                tx
                     .select()
                     .from(baseGamesTable)
                     .where(
                         and(
-                            or(
-                                eq(baseGamesTable.slug, input.slug),
-                                eq(baseGamesTable.id, input.id),
-                            ),
+                            eq(baseGamesTable.id, id),
                             isNull(baseGamesTable.timeDeleted)
                         )
                     )
-                    .execute()
-
-                if (results.length > 0) return null
-
-                await tx
-                    .insert(baseGamesTable)
-                    .values(input)
-
-                return input.id
-            })
+                    .limit(1)
+                    .then(rows => rows.map(serialize).at(0))
+            )
     )
 
     export function serialize(
