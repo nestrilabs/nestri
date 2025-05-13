@@ -189,7 +189,7 @@ export namespace SteamApi {
                             await Credentials.create({ refreshToken, id: steamID, username })
 
                             if (!!wasAdded) {
-                                const [rawFirst] = user.name.split(' ') as [string];
+                                const rawFirst = (user.name ?? username).trim().split(/\s+/)[0] ?? username;
 
                                 const firstName = rawFirst
                                     .charAt(0) // first character
