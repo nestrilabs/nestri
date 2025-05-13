@@ -76,7 +76,7 @@ export namespace BaseGame {
                     .insert(baseGamesTable)
                     .values(input)
                     .onConflictDoUpdate({
-                        target: [baseGamesTable.id, baseGamesTable.slug],
+                        target: [baseGamesTable.id],
                         set: {
                             timeDeleted: null
                         }

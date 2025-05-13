@@ -18,12 +18,16 @@ const fac = new FastAverageColor()
 // --- Configuration ---
 const httpAgent = new HttpAgent({ keepAlive: true, maxSockets: 50 });
 const httpsAgent = new HttpsAgent({ keepAlive: true, maxSockets: 50 });
-const downloadCache = new LRUCache<string, Buffer>({ max: 100 });
+const downloadCache = new LRUCache<string, Buffer>({
+    max: 100,
+    ttl: 1000 * 60 * 30,      // 30-minute expiry
+    allowStale: false,
+});
 const downloadLimit = pLimit(10); // max concurrent downloads
 
 export namespace Utils {
     export async function fetchJson<T>(url: string): Promise<T> {
-        const res = await fetch(url);
+        const res = await fetch(url, { agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent } as RequestInit);
         if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
         return res.json() as Promise<T>;
     }
@@ -44,11 +48,14 @@ export namespace Utils {
         const { width, height, format, size: fileSize } = await sharp(buffer).metadata();
         if (!width || !height) throw new Error('Invalid dimensions');
 
-        const slice = await sharp(buffer).ensureAlpha().raw().toBuffer();
+        const slice = await sharp(buffer)
+            .resize({ width: Math.min(width, 256) }) // cheap shrink
+            .ensureAlpha()
+            .raw()
+            .toBuffer();
+
         const pixelArray = new Uint8Array(slice.buffer);
         const { hex, isDark } = fac.prepareResult(fac.getColorFromArray4(pixelArray, { mode: "precision" }));
-
-        // const { hex, isDark } = await getAverageColor(buffer, { mode: "precision" });
 
         return { hash, format, averageColor: { hex, isDark }, dimensions: { width, height }, fileSize, buffer };
     }
@@ -112,7 +119,9 @@ export namespace Utils {
    */
     export async function fetchApi<T>(url: string): Promise<T> {
         const response = await fetch(url, {
+            agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent,
             method: "GET",
+            timeout: 15_000,
             headers: {
                 "User-Agent": "Steam 1291812 / iPhone",
                 "Accept-Language": "en-us",
@@ -189,23 +198,23 @@ export namespace Utils {
             .raw()
             .toBuffer();
 
+        const pixelArray = new Uint8Array(slice);
         let brightnessSum = 0;
-        let count = 0;
         const seen = new Set<number>();
 
-        for (let i = 0; i < h; i++) {
-            const pixelArray = new Uint8Array(slice.buffer);
-            const { value } = fac.prepareResult(fac.getColorFromArray4(pixelArray, { mode: "precision" }))
-            // const { value } = await getAverageColor(slice, { mode: "precision" });
-            const [r, g, b] = value;
+        // RGBA comes in groups of 4 bytes per pixel:
+        for (let i = 0; i < pixelArray.length; i += 4) {
+            const [r, g, b] = pixelArray.slice(i, i + 3);
             brightnessSum += (r + g + b) / 3;
-            seen.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
-            count++;
+            const bucket = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+            seen.add(bucket);
         }
 
+        const count = pixelArray.length / 4; // total pixels
         const avgB = brightnessSum / count;
         const darknessScore = 255 - avgB;
         const varietyScore = seen.size / (count / 100);
+
         return { url, darknessScore, varietyScore, buffer };
     }
 
@@ -221,30 +230,7 @@ export namespace Utils {
             .sort((a, b) => b.fastScore - a.fastScore)
             .slice(0, 10);
 
-        // 3. Setup Tesseract workers based on CPU
-        // const cpus = require('os').cpus().length;
-        // const numWorkers = Math.max(1, cpus - 1);
-        // const scheduler = Tesseract.createScheduler();
-        // for (let i = 0; i < numWorkers; i++) {
-        //     const w = await Tesseract.createWorker();
-        //     w.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT })
-        //     // await w..loadLanguage('eng'); await w.initialize('eng');
-        //     scheduler.addWorker(w);
-        // }
-
-        // // 4. OCR top 10 (limit 2 parallel jobs)
-        // const ocrLimit = pLimit(3);
-        // const results = await Promise.all(
-        //     top.map(t => ocrLimit(async () => {
-        //         const { data: { text } } = await scheduler.addJob('recognize', t.buffer);
-        //         const textScore = - (text.trim().length);
-        //         return textScore;
-        //     }))
-        // );
-
-        // 5. Compute total, cleanup
-        // await scheduler.terminate();
-
+        // 3. Return all results with their scores
         const results = await Promise.all(
             top.map(async (item) => {
                 const { blobs, totalArea } = await simpleTextBlobCount(item.buffer);
@@ -259,6 +245,7 @@ export namespace Utils {
         );
 
         const final = top.map((t, i) => ({ score: t.darknessScore * 1.5 + t.varietyScore * 20 + results[i].textScore * 2, url: t.url }));
+        
         return final.sort((a, b) => b.score - a.score);
     }
 
@@ -368,7 +355,10 @@ export namespace Utils {
     }
 
     export function parseGenres(str: string): GenreType[] {
-        return str.split(',').map((g) => ({ type: 'genre', name: g.trim(), slug: createSlug(g) }));
+        return str.split(',')
+            .map((g) => g.trim())
+            .filter(Boolean)
+            .map((g) => ({ type: 'genre', name: g.trim(), slug: createSlug(g) }));
     }
 
     export function getPrimaryGenre(

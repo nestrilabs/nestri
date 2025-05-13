@@ -23,12 +23,11 @@ export namespace Library {
             "library.queue",
             z.object({
                 appID: z.number(),
+                lastPlayed: z.date(),
+                timeAcquired: z.date(),
                 totalPlaytime: z.number(),
                 isFamilyShared: z.boolean(),
                 isFamilyShareAble: z.boolean(),
-                ownedByUs: z.boolean(),
-                lastPlayed: z.date(),
-                timeAcquired: z.date(),
             }).array(),
         ),
     };
@@ -60,14 +59,22 @@ export namespace Library {
                     .values({
                         ownerID: ownerSteamID,
                         baseGameID: input.baseGameID,
-                        lastPlayed:input.lastPlayed,
+                        lastPlayed: input.lastPlayed,
                         totalPlaytime: input.totalPlaytime,
                         timeAcquired: input.timeAcquired,
                         isFamilyShared: input.isFamilyShared
                     })
                     .onConflictDoUpdate({
                         target: [steamLibraryTable.ownerID, steamLibraryTable.baseGameID],
-                        set: { timeDeleted: null }
+                        set: {
+                            timeDeleted: null,
+                            ownerID: ownerSteamID,
+                            baseGameID: input.baseGameID,
+                            lastPlayed: input.lastPlayed,
+                            timeAcquired: input.timeAcquired,
+                            totalPlaytime: input.totalPlaytime,
+                            isFamilyShared: input.isFamilyShared
+                        }
                     })
 
             })

@@ -45,33 +45,34 @@ export const handler: SQSHandler = async (event) => {
 
                         const allCategories = [...tags, ...appInfo.genres, ...appInfo.publishers, ...appInfo.developers]
 
-                        await Promise.allSettled(
-                            allCategories.map(async (cat) => {
-                                // Put up a guard, just in case
-                                if (cat.slug && cat.type && cat.name) {
-                                    //Use a single db transaction to get or set the category
-                                    await Categories.create({
-                                        type: cat.type, slug: cat.slug, name: cat.name
-                                    })
+                        const uniqueCategories = Array.from(
+                            new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()
+                        );
 
-                                    // Use a single db transaction to get or create the game
-                                    await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
-                                }
+                        await Promise.allSettled(
+                            uniqueCategories.map(async (cat) => {
+                                //Use a single db transaction to get or set the category
+                                await Categories.create({
+                                    type: cat.type, slug: cat.slug, name: cat.name
+                                })
+
+                                // Use a single db transaction to get or create the game
+                                await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
                             })
-                        )
+                        ).then(i => i.filter(v => v.status === "rejected").map(f => console.error(f.reason)))
                     }
 
                     // Add to user's library
                     await Library.add({
                         baseGameID: appID,
-                        isFamilyShared: game.isFamilyShared,
-                        totalPlaytime: game.totalPlaytime,
-                        timeAcquired: game.timeAcquired,
                         lastPlayed: game.lastPlayed,
+                        timeAcquired: game.timeAcquired,
+                        totalPlaytime: game.totalPlaytime,
+                        isFamilyShared: game.isFamilyShared,
                     })
                 })
 
-                await Promise.allSettled(processGames)
+                await Promise.allSettled(processGames).then(i => i.filter(v => v.status === "rejected").map(i => console.error(i.reason)))
             }
         )
     }

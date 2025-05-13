@@ -46,7 +46,7 @@ export const handler = bus.subscriber(
                 }
               })
 
-            if (!!wasAdded) {
+            if (!wasAdded) {
               console.log(`Steam user ${user.steamID.toString()} already exists`)
             }
 

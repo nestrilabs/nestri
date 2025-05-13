@@ -158,9 +158,8 @@ export interface AppConfig {
 }
 
 export interface AppDepots {
-    [depotId: string]: DepotEntry | string | undefined;
-    branches: any;
-    privatebranches: string;
+    branches: AppDepotBranches;
+    privatebranches: Record<string, AppDepotBranches>
 }
 
 
@@ -244,7 +243,7 @@ export interface GameDetailsResponse {
     strDescription: string;
     rgScreenshots: Screenshot[];
     rgCategories: Category[];
-    strGenres: string;
+    strGenres?: string;
     strFullDescription: string;
     strMicroTrailerURL: string;
     ReviewSummary: ReviewSummary;

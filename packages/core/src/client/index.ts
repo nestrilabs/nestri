@@ -51,7 +51,13 @@ export namespace Client {
                 })
             );
 
-            return (await Promise.allSettled(userPromises)).filter(s => s.status === "fulfilled").map(i => i.value);
+            const settled = await Promise.allSettled(userPromises)
+
+            settled
+                .filter(r => r.status === "rejected")
+                .forEach(r => console.warn("[getFriendsList] failed:", (r as PromiseRejectedResult).reason));
+
+            return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<CSteamUser>).value);
         }
     );
 
@@ -85,10 +91,14 @@ export namespace Client {
 
             const tags = tagsData.tags;
             const game = infoData.data[appid];
+            // Guard against an empty string - When there are no genres, Steam returns an empty string
             const genres = !!details.strGenres ? Utils.parseGenres(details.strGenres) : [];
 
-            const controllerTag = !!game.common.controller_support ? Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) : Utils.createTag(`Uknown Controller Support`)
-            const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Controller Support`)
+            const controllerTag = game.common.controller_support ?
+                Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) :
+                Utils.createTag(`Unknown Controller Support`)
+
+            const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Compatibility`)
 
             const appInfo: AppInfo = {
                 genres,
@@ -147,6 +157,7 @@ export namespace Client {
                     `https://store.steampowered.com/apphover/${appid}?full=1&review_score_preference=1&pagev6=true&json=1`
                 ),
             ]);
+
             const game = appData.data[appid]?.common;
             if (!game) throw new Error('Game info missing');
 
