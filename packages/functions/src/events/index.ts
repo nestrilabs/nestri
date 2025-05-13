@@ -62,7 +62,7 @@ export const handler = bus.subscriber(
         // Get images and save to s3
         const images = await Client.getImages(input.appID);
 
-        await Promise.allSettled(
+        (await Promise.allSettled(
           images.map(async (image) => {
             // Put the images into the db
             await Images.create({
@@ -86,7 +86,9 @@ export const handler = bus.subscriber(
               })
             )
           })
-        )
+        ))
+          .filter(i => i.status === "rejected")
+          .forEach(r => console.warn("[createImages] failed:", (r as PromiseRejectedResult).reason));
 
         break;
       }
