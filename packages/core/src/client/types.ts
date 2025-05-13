@@ -159,7 +159,10 @@ export interface AppConfig {
 
 export interface AppDepots {
     branches: AppDepotBranches;
-    privatebranches: Record<string, AppDepotBranches>
+    privatebranches: Record<string, AppDepotBranches>;
+    [depotId: string]: DepotEntry 
+        | AppDepotBranches 
+        | Record<string, AppDepotBranches>;
 }
 
 

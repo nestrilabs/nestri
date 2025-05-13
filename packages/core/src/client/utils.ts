@@ -4,11 +4,13 @@ import type {
     AppDepots,
     GenreType,
     LibraryAssetsFull,
+    DepotEntry,
 } from "./types";
 import sharp from 'sharp';
 import crypto from 'crypto';
 import pLimit from 'p-limit';
 import { LRUCache } from 'lru-cache';
+import sanitizeHtml from 'sanitize-html';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 import fetch, { RequestInit } from 'node-fetch';
@@ -24,6 +26,10 @@ const downloadCache = new LRUCache<string, Buffer>({
     allowStale: false,
 });
 const downloadLimit = pLimit(10); // max concurrent downloads
+
+const DARKNESS_WEIGHT = 1.5;   // Prefer darker images (good for contrast)
+const VARIETY_WEIGHT = 20;     // Strongly prefer images with color variety
+const TEXT_WEIGHT = 2;         // Slightly penalize images with too much text
 
 export namespace Utils {
     export async function fetchJson<T>(url: string): Promise<T> {
@@ -244,8 +250,8 @@ export namespace Utils {
             })
         );
 
-        const final = top.map((t, i) => ({ score: t.darknessScore * 1.5 + t.varietyScore * 20 + results[i].textScore * 2, url: t.url }));
-        
+        const final = top.map((t, i) => ({ score: t.darknessScore * DARKNESS_WEIGHT + t.varietyScore * VARIETY_WEIGHT + results[i].textScore * TEXT_WEIGHT, url: t.url }));
+
         return final.sort((a, b) => b.score - a.score);
     }
 
@@ -345,8 +351,8 @@ export namespace Utils {
         const sum = { download: 0, size: 0 };
         for (const key in depots) {
             if (key === 'branches' || key === 'privatebranches') continue;
-            const entry = (depots as any)[key];
-            if (entry?.manifests?.public) {
+            const entry = depots[key] as DepotEntry;
+            if ('manifests' in entry && entry.manifests.public) {
                 sum.download += Number(entry.manifests.public.download);
                 sum.size += Number(entry.manifests.public.size);
             }
@@ -371,9 +377,13 @@ export namespace Utils {
     }
 
     export function cleanDescription(input: string): string {
-        return input.replace(/<br\s*\/?>(\s*)/g, ' ').replace(/&[a-zA-Z#0-9]+;/g, (entity) => {
-            const map: Record<string, string> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
-            return map[entity] || entity;
-        }).trim();
+        
+        const cleaned = sanitizeHtml(input, {
+            allowedTags: [],         // no tags allowed
+            allowedAttributes: {},   // no attributes anywhere
+            textFilter: (text) => text.replace(/\s+/g, ' '), // collapse runs of whitespace
+        });
+
+        return cleaned.trim()
     }
 }

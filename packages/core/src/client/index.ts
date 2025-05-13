@@ -8,12 +8,15 @@ import type {
     ImageType
 } from "./types";
 import { z } from "zod";
-import SteamID from "steamid"
+import pLimit from 'p-limit';
+import SteamID from "steamid";
 import { fn } from "../utils";
 import { Utils } from "./utils";
 import SteamCommunity from "steamcommunity";
 import { Credentials } from "../credentials";
 import type CSteamUser from "steamcommunity/classes/CSteamUser";
+
+const requestLimit = pLimit(10); // max concurrent requests
 
 export namespace Client {
     export const getUserLibrary = fn(
@@ -40,7 +43,7 @@ export namespace Client {
             const friendIds = Object.keys(allFriends);
 
             const userPromises: Promise<CSteamUser>[] = friendIds.map(id =>
-                new Promise<CSteamUser>((resolve, reject) => {
+                requestLimit(() => new Promise<CSteamUser>((resolve, reject) => {
                     const sid = new SteamID(id);
                     community.getSteamUser(sid, (err, user) => {
                         if (err) {
@@ -48,7 +51,7 @@ export namespace Client {
                         }
                         resolve(user);
                     });
-                })
+                }))
             );
 
             const settled = await Promise.allSettled(userPromises)
@@ -92,7 +95,7 @@ export namespace Client {
             const tags = tagsData.tags;
             const game = infoData.data[appid];
             // Guard against an empty string - When there are no genres, Steam returns an empty string
-            const genres = !!details.strGenres ? Utils.parseGenres(details.strGenres) : [];
+            const genres = details.strGenres ? Utils.parseGenres(details.strGenres) : [];
 
             const controllerTag = game.common.controller_support ?
                 Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) :
@@ -211,10 +214,14 @@ export namespace Client {
                     .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
             );
 
-            // 6. Await all and return
-            const results = await Promise.all(tasks);
+            const settled = await Promise.allSettled(tasks)
 
-            return results;
+            settled
+                .filter(r => r.status === "rejected")
+                .forEach(r => console.warn("[getImages] failed:", (r as PromiseRejectedResult).reason));
+
+            // 6. Await all and return
+            return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<ImageInfo>).value)
         }
     )
 }

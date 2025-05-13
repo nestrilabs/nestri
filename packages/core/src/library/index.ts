@@ -27,7 +27,7 @@ export namespace Library {
                 timeAcquired: z.date(),
                 totalPlaytime: z.number(),
                 isFamilyShared: z.boolean(),
-                isFamilyShareAble: z.boolean(),
+                isFamilyShareable: z.boolean(),
             }).array(),
         ),
     };
@@ -68,8 +68,6 @@ export namespace Library {
                         target: [steamLibraryTable.ownerID, steamLibraryTable.baseGameID],
                         set: {
                             timeDeleted: null,
-                            ownerID: ownerSteamID,
-                            baseGameID: input.baseGameID,
                             lastPlayed: input.lastPlayed,
                             timeAcquired: input.timeAcquired,
                             totalPlaytime: input.totalPlaytime,

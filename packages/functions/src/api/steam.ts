@@ -240,7 +240,7 @@ export namespace SteamApi {
                                     return {
                                         appID: i.appid,
                                         totalPlaytime: i.rt_playtime,
-                                        isFamilyShareAble: i.exclude_reason === 0,
+                                        isFamilyShareable: i.exclude_reason === 0,
                                         // ownedByUs: i.owner_steamids.includes(steamID),
                                         lastPlayed: new Date(i.rt_last_played * 1000),
                                         timeAcquired: new Date(i.rt_time_acquired * 1000),
@@ -272,7 +272,13 @@ export namespace SteamApi {
                                 }
                             })
 
-                            await Promise.allSettled(processQueue)
+                            const settled = await Promise.allSettled(processQueue)
+
+                            settled
+                                .filter(r => r.status === "rejected")
+                                .forEach(r =>
+                                    console.error("[LibraryQueue] enqueue failed:", (r as PromiseRejectedResult).reason),
+                                );
 
                             await stream.close();
 

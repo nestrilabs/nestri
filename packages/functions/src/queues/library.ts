@@ -39,7 +39,7 @@ export const handler: SQSHandler = async (event) => {
                             controllerSupport: appInfo.controllerSupport,
                         })
 
-                        if (game.isFamilyShareAble) {
+                        if (game.isFamilyShareable) {
                             tags.push(Utils.createTag("Family Share"))
                         }
 
@@ -49,7 +49,7 @@ export const handler: SQSHandler = async (event) => {
                             new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()
                         );
 
-                        await Promise.allSettled(
+                        const settled = await Promise.allSettled(
                             uniqueCategories.map(async (cat) => {
                                 //Use a single db transaction to get or set the category
                                 await Categories.create({
@@ -59,7 +59,11 @@ export const handler: SQSHandler = async (event) => {
                                 // Use a single db transaction to get or create the game
                                 await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
                             })
-                        ).then(i => i.filter(v => v.status === "rejected").map(f => console.error(f.reason)))
+                        )
+
+                        settled
+                            .filter(r => r.status === "rejected")
+                            .forEach(r => console.warn("[uniqueCategories] failed:", (r as PromiseRejectedResult).reason));
                     }
 
                     // Add to user's library
@@ -72,7 +76,11 @@ export const handler: SQSHandler = async (event) => {
                     })
                 })
 
-                await Promise.allSettled(processGames).then(i => i.filter(v => v.status === "rejected").map(i => console.error(i.reason)))
+                const settled = await Promise.allSettled(processGames)
+
+                settled
+                    .filter(r => r.status === "rejected")
+                    .forEach(r => console.warn("[processGames] failed:", (r as PromiseRejectedResult).reason));
             }
         )
     }
