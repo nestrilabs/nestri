@@ -19,6 +19,7 @@ import sanitizeHtml from 'sanitize-html';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 import sharp, { type Metadata } from 'sharp';
+import AbortController from 'abort-controller';
 import fetch, { RequestInit } from 'node-fetch';
 import { FastAverageColor } from 'fast-average-color';
 
@@ -38,7 +39,7 @@ const compareCache = new LRUCache<string, CompareResult>({
 });
 
 export namespace Utils {
-    export async function fetchBuffer(url: string,retries = 3): Promise<Buffer> {
+    export async function fetchBuffer(url: string, retries = 3): Promise<Buffer> {
         if (downloadCache.has(url)) {
             return downloadCache.get(url)!;
         }
@@ -47,10 +48,13 @@ export namespace Utils {
 
         for (let attempt = 0; attempt < retries; attempt++) {
             try {
+                const controller = new AbortController();
+                const id = setTimeout(() => controller.abort(), 15_000);
                 const res = await fetch(url, {
-                    timeout: 15_000,
+                    signal: controller.signal,
                     agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent
                 } as RequestInit);
+                clearTimeout(id);
                 if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
                 const buf = Buffer.from(await res.arrayBuffer());
                 downloadCache.set(url, buf);
@@ -147,13 +151,11 @@ export namespace Utils {
                 const response = await fetch(url, {
                     agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent,
                     method: "GET",
-                    timeout: 15_000,
                     headers: {
                         "User-Agent": "Steam 1291812 / iPhone",
                         "Accept-Language": "en-us",
                     },
-                });
-
+                } as RequestInit);
                 if (!response.ok) {
                     throw new Error(`API error: ${response.status} ${response.statusText}`);
                 }

@@ -226,70 +226,71 @@ export namespace SteamApi {
                                 data: JSON.stringify({ username })
                             })
 
-                            // Get game library
-                            const games = await Client.getUserLibrary(accessToken);
+                            // Get game library in the background
+                            c.executionCtx.waitUntil(new Promise(async () => {
+                                const games = await Client.getUserLibrary(accessToken);
 
-                            // Get a batch of 5 games each
-                            const apps = games?.response?.apps || [];
-                            if (apps.length === 0) {
-                                console.info("[SteamApi] Is Steam okay? No games returned for user:", { steamID });
-                                await stream.close();
-                                return resolve(); // nothing to enqueue
-                            }
+                                // Get a batch of 5 games each
+                                const apps = games?.response?.apps || [];
+                                if (apps.length === 0) {
+                                    console.info("[SteamApi] Is Steam okay? No games returned for user:", { steamID });
+                                    return
+                                }
 
-                            const chunkedGames = chunkArray(apps, 5);
+                                const chunkedGames = chunkArray(apps, 5);
 
-                            const team = await Team.fromSlug(username)
+                                const team = await Team.fromSlug(username)
 
-                            // Get the batches to the queue
-                            const processQueue = chunkedGames.map(async (chunk) => {
-                                const myGames = chunk.map(i => {
-                                    return {
-                                        appID: i.appid,
-                                        totalPlaytime: i.rt_playtime,
-                                        isFamilyShareable: i.exclude_reason === 0,
-                                        lastPlayed: new Date(i.rt_last_played * 1000),
-                                        timeAcquired: new Date(i.rt_time_acquired * 1000),
-                                        isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
+                                // Get the batches to the queue
+                                const processQueue = chunkedGames.map(async (chunk) => {
+                                    const myGames = chunk.map(i => {
+                                        return {
+                                            appID: i.appid,
+                                            totalPlaytime: i.rt_playtime,
+                                            isFamilyShareable: i.exclude_reason === 0,
+                                            lastPlayed: new Date(i.rt_last_played * 1000),
+                                            timeAcquired: new Date(i.rt_time_acquired * 1000),
+                                            isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
+                                        }
+                                    })
+
+                                    if (team) {
+                                        const deduplicationId = crypto
+                                            .createHash('md5')
+                                            .update(`${team.id}_${chunk.map(g => g.appid).join(',')}`)
+                                            .digest('hex');
+
+                                        await Actor.provide(
+                                            "member",
+                                            {
+                                                steamID,
+                                                teamID: team.id,
+                                                userID: currentUser.userID
+                                            },
+                                            async () => {
+                                                const payload = Library.Events.Queue.create(myGames);
+
+                                                await sqs.send(
+                                                    new SendMessageCommand({
+                                                        MessageGroupId: team.id,
+                                                        QueueUrl: Resource.LibraryQueue.url,
+                                                        MessageBody: JSON.stringify(payload),
+                                                        MessageDeduplicationId: deduplicationId,
+                                                    })
+                                                )
+                                            }
+                                        )
                                     }
                                 })
 
-                                if (team) {
-                                    const deduplicationId = crypto
-                                        .createHash('md5')
-                                        .update(`${team.id}_${chunk.map(g => g.appid).join(',')}`)
-                                        .digest('hex');
+                                const settled = await Promise.allSettled(processQueue)
 
-                                    await Actor.provide(
-                                        "member",
-                                        {
-                                            steamID,
-                                            teamID: team.id,
-                                            userID: currentUser.userID
-                                        },
-                                        async () => {
-                                            const payload = Library.Events.Queue.create(myGames);
-
-                                            await sqs.send(
-                                                new SendMessageCommand({
-                                                    MessageGroupId: team.id,
-                                                    QueueUrl: Resource.LibraryQueue.url,
-                                                    MessageBody: JSON.stringify(payload),
-                                                    MessageDeduplicationId: deduplicationId,
-                                                })
-                                            )
-                                        }
-                                    )
-                                }
-                            })
-
-                            const settled = await Promise.allSettled(processQueue)
-
-                            settled
-                                .filter(r => r.status === "rejected")
-                                .forEach(r =>
-                                    console.error("[LibraryQueue] enqueue failed:", (r as PromiseRejectedResult).reason),
-                                );
+                                settled
+                                    .filter(r => r.status === "rejected")
+                                    .forEach(r =>
+                                        console.error("[LibraryQueue] enqueue failed:", (r as PromiseRejectedResult).reason),
+                                    );
+                            }))
 
                             await stream.close();
 
