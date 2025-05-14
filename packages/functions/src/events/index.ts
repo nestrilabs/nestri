@@ -6,8 +6,8 @@ import { Images } from "@nestri/core/images/index";
 import { Friend } from "@nestri/core/friend/index";
 import { BaseGame } from "@nestri/core/base-game/index";
 import { Credentials } from "@nestri/core/credentials/index";
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { EAuthTokenPlatformType, LoginSession } from "steam-session";
+import { PutObjectCommand, S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
 
 const s3 = new S3Client({});
 
@@ -24,9 +24,9 @@ export const handler = bus.subscriber(
 
           session.refreshToken = credentials.refreshToken;
 
-          const cookies = await session.getWebCookies()
+          const cookies = await session.getWebCookies();
 
-          const friends = await Client.getFriendsList(cookies)
+          const friends = await Client.getFriendsList(cookies);
 
           const putFriends = friends.map(async (user) => {
             const wasAdded =
@@ -53,7 +53,11 @@ export const handler = bus.subscriber(
             await Friend.add({ friendSteamID: user.steamID.toString(), steamID: input.steamID })
           })
 
-          await Promise.allSettled(putFriends)
+          const settled = await Promise.allSettled(putFriends);
+
+          settled
+            .filter(result => result.status === 'rejected')
+            .forEach(result => console.warn('[putFriends] failed:', (result as PromiseRejectedResult).reason))
         }
         break;
       }
@@ -76,15 +80,28 @@ export const handler = bus.subscriber(
               fileSize: image.fileSize
             });
 
-            // Save to s3
-            await s3.send(
-              new PutObjectCommand({
-                Bucket: Resource.Storage.name,
-                Key: `images/${image.hash}`,
-                Body: image.buffer,
-                ...(image.format && { ContentType: `image/${image.format}` }),
-              })
-            )
+            try {
+              //Check whether the image already exists
+              await s3.send(
+                new HeadObjectCommand({
+                  Bucket: Resource.Storage.name,
+                  Key: `images/${image.hash}`,
+                })
+              );
+
+            } catch (e) {
+              // Save to s3 because it doesn't already exist
+              await s3.send(
+                new PutObjectCommand({
+                  Bucket: Resource.Storage.name,
+                  Key: `images/${image.hash}`,
+                  Body: image.buffer,
+                  ...(image.format && { ContentType: `image/${image.format}` }),
+                })
+              )
+            }
+
+
           })
         ))
           .filter(i => i.status === "rejected")

@@ -5,14 +5,20 @@ import type {
     GenreType,
     LibraryAssetsFull,
     DepotEntry,
+    CompareOpts,
+    CompareResult,
+    RankedShot,
+    Shot,
 } from "./types";
-import sharp from 'sharp';
 import crypto from 'crypto';
 import pLimit from 'p-limit';
+import { PNG } from 'pngjs';
+import pixelmatch from 'pixelmatch';
 import { LRUCache } from 'lru-cache';
 import sanitizeHtml from 'sanitize-html';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
+import sharp, { type Metadata } from 'sharp';
 import fetch, { RequestInit } from 'node-fetch';
 import { FastAverageColor } from 'fast-average-color';
 
@@ -27,22 +33,15 @@ const downloadCache = new LRUCache<string, Buffer>({
 });
 const downloadLimit = pLimit(10); // max concurrent downloads
 
-const DARKNESS_WEIGHT = 1.5;   // Prefer darker images (good for contrast)
-const VARIETY_WEIGHT = 20;     // Strongly prefer images with color variety
-const TEXT_WEIGHT = 2;         // Slightly penalize images with too much text
-
 export namespace Utils {
-    export async function fetchJson<T>(url: string): Promise<T> {
-        const res = await fetch(url, { agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent } as RequestInit);
-        if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-        return res.json() as Promise<T>;
-    }
-
     export async function fetchBuffer(url: string): Promise<Buffer> {
         if (downloadCache.has(url)) {
             return downloadCache.get(url)!;
         }
-        const res = await fetch(url, { agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent } as RequestInit);
+        const res = await fetch(url, {
+            timeout: 15_000,
+            agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent
+        } as RequestInit);
         if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
         const buf = Buffer.from(await res.arrayBuffer());
         downloadCache.set(url, buf);
@@ -81,8 +80,19 @@ export namespace Utils {
         };
 
         const [bgBuf, logoBuf] = await Promise.all([
-            downloadLimit(() => fetchBuffer(pick('library_hero'))),
-            downloadLimit(() => fetchBuffer(pick('library_logo'))),
+            downloadLimit(() =>
+                fetchBuffer(pick('library_hero'))
+                    .catch(error => {
+                        console.error(`Failed to download hero image for ${appid}:`, error);
+                        throw new Error(`Failed to create box art: hero image unavailable`);
+                    }),
+            ),
+            downloadLimit(() => fetchBuffer(pick('library_logo'))
+                .catch(error => {
+                    console.error(`Failed to download logo image for ${appid}:`, error);
+                    throw new Error(`Failed to create box art: logo image unavailable`);
+                }),
+            ),
         ]);
 
         const bgImage = sharp(bgBuf);
@@ -107,38 +117,42 @@ export namespace Utils {
             .toBuffer();
     }
 
-    export async function simpleTextBlobCount(buffer: Buffer) {
-        // 1a. Preprocess: resize, grayscale, threshold → raw 0/255 buffer
-        const { data, info } = await sharp(buffer)
-            .resize({ width: 300 })   // downscale for speed
-            .grayscale()              // collapse color
-            .threshold(180)           // tune this level
-            .raw()
-            .toBuffer({ resolveWithObject: true });
-
-        // 1b. Connected-component analysis
-        return countBlackBlobs(data, info.width, info.height);
-    }
-
     /**
    * Fetch JSON from the given URL, with Steam-like headers
    */
-    export async function fetchApi<T>(url: string): Promise<T> {
-        const response = await fetch(url, {
-            agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent,
-            method: "GET",
-            timeout: 15_000,
-            headers: {
-                "User-Agent": "Steam 1291812 / iPhone",
-                "Accept-Language": "en-us",
-            },
-        });
+    export async function fetchApi<T>(url: string, retries = 3): Promise<T> {
+        let lastError: Error | null = null;
 
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status} ${response.statusText}`);
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                const response = await fetch(url, {
+                    agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent,
+                    method: "GET",
+                    timeout: 15_000,
+                    headers: {
+                        "User-Agent": "Steam 1291812 / iPhone",
+                        "Accept-Language": "en-us",
+                    },
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status} ${response.statusText}`);
+                }
+
+                return (await response.json()) as T;
+            } catch (error: any) {
+                lastError = error as Error;
+                // Only retry on network errors or 5xx status codes
+                if (error.message.includes('API error: 5') || !error.message.includes('API error')) {
+                    console.warn(`Attempt ${attempt + 1} failed for ${url}: ${error.message}`);
+                    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+                    continue;
+                }
+                throw error;
+            }
         }
 
-        return (await response.json()) as T;
+        throw lastError || new Error(`Failed to fetch ${url} after ${retries} attempts`);
     }
 
     /**
@@ -153,106 +167,78 @@ export namespace Utils {
             .trim();
     }
 
-    function countBlackBlobs(pixels: Uint8Array, w: number, h: number) {
-        const seen = new Uint8Array(w * h);
-        let blobs = 0;
-        let totalArea = 0;
+    /**
+     * Compare a candidate screenshot against a UI-free baseline to find how much UI/HUD remains.
+     *
+     * @param baselineBuffer - PNG/JPEG buffer of the clean background.
+     * @param candidateBuffer - PNG/JPEG buffer of the screenshot to test.
+     * @param opts - Options.
+     * @returns Promise resolving to diff ratio (and optional diff image).
+     */
+    export async function compareWithBaseline(
+        baselineBuffer: Buffer,
+        candidateBuffer: Buffer,
+        opts: CompareOpts = {}
+    ): Promise<CompareResult> {
+        const { threshold = 0.1, diffOutput = false } = opts;
 
-        const inBounds = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h;
-        const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-        for (let i = 0; i < w * h; i++) {
-            if (pixels[i] === 0 && !seen[i]) {
-                blobs++;
-                let area = 0;
-                const stack = [i];
-                seen[i] = 1;
-
-                while (stack.length) {
-                    const idx = stack.pop()!;
-                    area++;
-                    const x = idx % w, y = Math.floor(idx / w);
-
-                    for (const [dx, dy] of dirs) {
-                        const nx = x + dx, ny = y + dy;
-                        if (!inBounds(nx, ny)) continue;
-                        const ni = ny * w + nx;
-                        if (pixels[ni] === 0 && !seen[ni]) {
-                            seen[ni] = 1;
-                            stack.push(ni);
-                        }
-                    }
-                }
-
-                totalArea += area;
-            }
+        // Get dimensions of baseline
+        const baseMeta: Metadata = await sharp(baselineBuffer).metadata();
+        if (!baseMeta.width || !baseMeta.height) {
+            throw new Error('Invalid baseline dimensions');
         }
 
-        return { blobs, totalArea };
-    }
+        // Produce PNG buffers of same size
+        const [pngBaseBuf, pngCandBuf] = await Promise.all([
+            sharp(baselineBuffer).png().toBuffer(),
+            sharp(candidateBuffer)
+                .resize(baseMeta.width, baseMeta.height)
+                .png()
+                .toBuffer(),
+        ]);
 
-    export async function analyzeFast(buffer: Buffer, url: string) {
-        const image = sharp(buffer).ensureAlpha();
-        const { width, height } = await image.metadata();
-        if (!width || !height) throw new Error('Invalid dimensions');
+        const imgBase = PNG.sync.read(pngBaseBuf);
+        const imgCand = PNG.sync.read(pngCandBuf);
+        const diffImg = new PNG({ width: baseMeta.width, height: baseMeta.height });
 
-        // Extract upper 30% raw pixels
-        const h = Math.floor(height * 0.7)
+        const numDiff = pixelmatch(
+            imgBase.data,
+            imgCand.data,
+            diffImg.data,
+            baseMeta.width,
+            baseMeta.height,
+            { threshold }
+        );
 
-        const slice = await image
-            .extract({ left: 0, top: 0, width, height: h })
-            .raw()
-            .toBuffer();
+        const total = baseMeta.width * baseMeta.height;
+        const diffRatio = numDiff / total;
 
-        const pixelArray = new Uint8Array(slice);
-        let brightnessSum = 0;
-        const seen = new Set<number>();
-
-        // RGBA comes in groups of 4 bytes per pixel:
-        for (let i = 0; i < pixelArray.length; i += 4) {
-            const [r, g, b] = pixelArray.slice(i, i + 3);
-            brightnessSum += (r + g + b) / 3;
-            const bucket = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
-            seen.add(bucket);
+        const result: CompareResult = { diffRatio };
+        if (diffOutput) {
+            result.diffBuffer = PNG.sync.write(diffImg);
         }
-
-        const count = pixelArray.length / 4; // total pixels
-        const avgB = brightnessSum / count;
-        const darknessScore = 255 - avgB;
-        const varietyScore = seen.size / (count / 100);
-
-        return { url, darknessScore, varietyScore, buffer };
+        return result;
     }
 
-    export async function scoreBuffers(screenshots: { buffer: Buffer; url: string }[]): Promise<{ score: number; url: string }[]> {
-        // 1. Fast analysis in parallel (throttled)
-        const fast = await Promise.all(
-            screenshots.map(s => downloadLimit(() => analyzeFast(s.buffer, s.url)))
-        );
-
-        // 2. Keep top 10 by fast score
-        const top = fast
-            .map(f => ({ ...f, fastScore: f.darknessScore + f.varietyScore }))
-            .sort((a, b) => b.fastScore - a.fastScore)
-            .slice(0, 10);
-
-        // 3. Return all results with their scores
-        const results = await Promise.all(
-            top.map(async (item) => {
-                const { blobs, totalArea } = await simpleTextBlobCount(item.buffer);
-
-                // Example scoring: fewer blobs → higher score
-                // you can also factor in totalArea if you like
-                const textScore = -blobs;
-                return {
-                    item, textScore, blobs, totalArea
-                }
-            })
-        );
-
-        const final = top.map((t, i) => ({ score: t.darknessScore * DARKNESS_WEIGHT + t.varietyScore * VARIETY_WEIGHT + results[i].textScore * TEXT_WEIGHT, url: t.url }));
-
-        return final.sort((a, b) => b.score - a.score);
+    /**
+ * Given a baseline buffer and an array of screenshots, returns them sorted
+ * ascending by diffRatio (least UI first).
+ */
+    export async function rankScreenshots(
+        baselineBuffer: Buffer,
+        shots: Shot[],
+        opts: CompareOpts = {}
+    ): Promise<RankedShot[]> {
+        const results: RankedShot[] = [];
+        for (const shot of shots) {
+            const { diffRatio } = await compareWithBaseline(
+                baselineBuffer,
+                shot.buffer,
+                opts
+            );
+            results.push({ url: shot.url, score: diffRatio });
+        }
+        return results.sort((a, b) => a.score - b.score);
     }
 
     // --- Helpers for URLs ---
@@ -377,7 +363,7 @@ export namespace Utils {
     }
 
     export function cleanDescription(input: string): string {
-        
+
         const cleaned = sanitizeHtml(input, {
             allowedTags: [],         // no tags allowed
             allowedAttributes: {},   // no attributes anywhere

@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ulid } from "ulid";
 import { Hono } from "hono";
+import crypto from 'crypto';
 import { Resource } from "sst";
 import { streamSSE } from "hono/streaming";
 import { Actor } from "@nestri/core/actor";
@@ -230,7 +230,8 @@ export namespace SteamApi {
                             const games = await Client.getUserLibrary(accessToken);
 
                             // Get a batch of 5 games each
-                            const chunkedGames = chunkArray(games.response.apps, 5)
+                            const apps = games?.response?.apps || [];
+                            const chunkedGames = chunkArray(apps, 5);
 
                             const team = await Team.fromSlug(username)
 
@@ -241,14 +242,21 @@ export namespace SteamApi {
                                         appID: i.appid,
                                         totalPlaytime: i.rt_playtime,
                                         isFamilyShareable: i.exclude_reason === 0,
-                                        // ownedByUs: i.owner_steamids.includes(steamID),
                                         lastPlayed: new Date(i.rt_last_played * 1000),
                                         timeAcquired: new Date(i.rt_time_acquired * 1000),
                                         isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
                                     }
                                 })
 
+
+
+
                                 if (team) {
+                                    const deduplicationId = crypto
+                                        .createHash('md5')
+                                        .update(`${team.id}_${chunk.map(g => g.appid).join(',')}`)
+                                        .digest('hex');
+
                                     await Actor.provide(
                                         "member",
                                         {
@@ -264,7 +272,7 @@ export namespace SteamApi {
                                                     MessageGroupId: team.id,
                                                     QueueUrl: Resource.LibraryQueue.url,
                                                     MessageBody: JSON.stringify(payload),
-                                                    MessageDeduplicationId: ["queue", ulid()].join("_"),
+                                                    MessageDeduplicationId: deduplicationId,
                                                 })
                                             )
                                         }

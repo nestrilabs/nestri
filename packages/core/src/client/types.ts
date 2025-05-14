@@ -318,3 +318,26 @@ export interface ImageInfo {
     fileSize: number;
     buffer: Buffer;
 }
+
+export interface CompareOpts {
+    /** Pixelmatch color threshold (0–1). Default: 0.1 */
+    threshold?: number;
+    /** If true, return an image buffer of the diff map. Default: false */
+    diffOutput?: boolean;
+}
+
+export interface CompareResult {
+    diffRatio: number;
+    /** Present only if `diffOutput: true` */
+    diffBuffer?: Buffer;
+}
+
+export interface Shot {
+    url: string;
+    buffer: Buffer;
+}
+
+export interface RankedShot {
+    url: string;
+    score: number;
+}

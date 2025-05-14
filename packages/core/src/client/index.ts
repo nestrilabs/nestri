@@ -5,7 +5,8 @@ import type {
     GameDetailsResponse,
     SteamAppDataResponse,
     ImageInfo,
-    ImageType
+    ImageType,
+    Shot
 } from "./types";
 import { z } from "zod";
 import pLimit from 'p-limit';
@@ -155,8 +156,8 @@ export namespace Client {
         z.string().or(z.number()),
         async (appid) => {
             const [appData, details] = await Promise.all([
-                Utils.fetchJson<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
-                Utils.fetchJson<GameDetailsResponse>(
+                Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
+                Utils.fetchApi<GameDetailsResponse>(
                     `https://store.steampowered.com/apphover/${appid}?full=1&review_score_preference=1&pagev6=true&json=1`
                 ),
             ]);
@@ -169,8 +170,10 @@ export namespace Client {
             const assetUrls = Utils.getAssetUrls(game.library_assets_full, appid, game.header_image.english);
             const iconUrl = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
 
+            const baselineBuffer = await Utils.fetchBuffer(assetUrls.backdrop);
+
             // 3. Download screenshot buffers in parallel
-            const shots = await Promise.all(
+            const shots: Shot[] = await Promise.all(
                 screenshotUrls.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
             );
 
@@ -178,7 +181,10 @@ export namespace Client {
             const scores =
                 shots.length === 1
                     ? [{ url: shots[0].url, score: 0 }]
-                    : await Utils.scoreBuffers(shots);
+                    : (await Utils.rankScreenshots(baselineBuffer, shots, {
+                        threshold: 0.08,
+                        // Get the first 5
+                    })).slice(0, 4);
 
             // Build url->rank map
             const rankMap = new Map<string, number>();
