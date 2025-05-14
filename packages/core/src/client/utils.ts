@@ -38,18 +38,33 @@ const compareCache = new LRUCache<string, CompareResult>({
 });
 
 export namespace Utils {
-    export async function fetchBuffer(url: string): Promise<Buffer> {
+    export async function fetchBuffer(url: string,retries = 3): Promise<Buffer> {
         if (downloadCache.has(url)) {
             return downloadCache.get(url)!;
         }
-        const res = await fetch(url, {
-            timeout: 15_000,
-            agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent
-        } as RequestInit);
-        if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-        const buf = Buffer.from(await res.arrayBuffer());
-        downloadCache.set(url, buf);
-        return buf;
+
+        let lastError: Error | null = null;
+
+        for (let attempt = 0; attempt < retries; attempt++) {
+            try {
+                const res = await fetch(url, {
+                    timeout: 15_000,
+                    agent: (_parsed) => _parsed.protocol === 'http:' ? httpAgent : httpsAgent
+                } as RequestInit);
+                if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+                const buf = Buffer.from(await res.arrayBuffer());
+                downloadCache.set(url, buf);
+                return buf;
+            } catch (error: any) {
+                lastError = error as Error;
+                console.warn(`Attempt ${attempt + 1} failed for ${url}: ${error.message}`);
+                if (attempt < retries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+                }
+            }
+        }
+
+        throw lastError || new Error(`Failed to fetch ${url} after ${retries} attempts`);
     }
 
     export async function getImageMetadata(buffer: Buffer) {

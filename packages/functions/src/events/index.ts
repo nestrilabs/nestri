@@ -72,12 +72,12 @@ export const handler = bus.subscriber(
             await Images.create({
               type: image.type,
               imageHash: image.hash,
-              extractedColor: image.averageColor,
-              dimensions: image.dimensions,
               baseGameID: input.appID,
-              sourceUrl: image.sourceUrl,
               position: image.position,
-              fileSize: image.fileSize
+              fileSize: image.fileSize,
+              sourceUrl: image.sourceUrl,
+              dimensions: image.dimensions,
+              extractedColor: image.averageColor,
             });
 
             try {
@@ -100,7 +100,6 @@ export const handler = bus.subscriber(
                 })
               )
             }
-
 
           })
         ))
