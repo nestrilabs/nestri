@@ -170,6 +170,7 @@ export namespace Client {
             const assetUrls = Utils.getAssetUrls(game.library_assets_full, appid, game.header_image.english);
             const iconUrl = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
 
+            //2.5 Get the backdrop buffer and use it to get the best screenshot
             const baselineBuffer = await Utils.fetchBuffer(assetUrls.backdrop);
 
             // 3. Download screenshot buffers in parallel
