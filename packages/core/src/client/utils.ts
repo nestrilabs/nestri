@@ -113,7 +113,7 @@ export namespace Utils {
 
         return await squareBg
             .composite([{ input: logoResized, left: logoLeft, top: logoTop }])
-            .jpeg({ quality: 95 })
+            .jpeg({ quality: 100 })
             .toBuffer();
     }
 
