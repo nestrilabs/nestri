@@ -32,6 +32,10 @@ const downloadCache = new LRUCache<string, Buffer>({
     allowStale: false,
 });
 const downloadLimit = pLimit(10); // max concurrent downloads
+const compareCache = new LRUCache<string, CompareResult>({
+    max: 50,
+    ttl: 1000 * 60 * 10,  // 10-minute expiry
+});
 
 export namespace Utils {
     export async function fetchBuffer(url: string): Promise<Buffer> {
@@ -180,6 +184,17 @@ export namespace Utils {
         candidateBuffer: Buffer,
         opts: CompareOpts = {}
     ): Promise<CompareResult> {
+        // Generate cache key from buffer hashes
+        const baseHash = crypto.createHash('md5').update(baselineBuffer).digest('hex');
+        const candHash = crypto.createHash('md5').update(candidateBuffer).digest('hex');
+        const optsKey = JSON.stringify(opts);
+        const cacheKey = `${baseHash}:${candHash}:${optsKey}`;
+
+        // Check cache
+        if (compareCache.has(cacheKey)) {
+            return compareCache.get(cacheKey)!;
+        }
+
         const { threshold = 0.1, diffOutput = false } = opts;
 
         // Get dimensions of baseline
@@ -217,6 +232,8 @@ export namespace Utils {
         if (diffOutput) {
             result.diffBuffer = PNG.sync.write(diffImg);
         }
+
+        compareCache.set(cacheKey, result);
         return result;
     }
 
@@ -229,15 +246,23 @@ export namespace Utils {
         shots: Shot[],
         opts: CompareOpts = {}
     ): Promise<RankedShot[]> {
-        const results: RankedShot[] = [];
-        for (const shot of shots) {
-            const { diffRatio } = await compareWithBaseline(
-                baselineBuffer,
-                shot.buffer,
-                opts
-            );
-            results.push({ url: shot.url, score: diffRatio });
-        }
+        // Process up to 5 comparisons in parallel
+        const compareLimit = pLimit(5);
+
+        // Run all comparisons with limited concurrency
+        const results = await Promise.all(
+            shots.map(shot =>
+                compareLimit(async () => {
+                    const { diffRatio } = await compareWithBaseline(
+                        baselineBuffer,
+                        shot.buffer,
+                        opts
+                    );
+                    return { url: shot.url, score: diffRatio };
+                })
+            )
+        );
+
         return results.sort((a, b) => a.score - b.score);
     }
 
@@ -257,12 +282,17 @@ export namespace Utils {
     }
 
     /**
-     * Compute a 0–5 score from positive/negative votes
+     *  Compute a 0–5 score from positive/negative votes using a Wilson score confidence interval.
+     *  This formula adjusts the raw ratio based on the total number of votes to account for 
+     *  statistical confidence. With few votes, the score regresses toward 2.5 (neutral).
+     * 
+     *  Compute a 0–5 score from positive/negative votes
      */
     export function getRating(positive: number, negative: number): number {
         const total = positive + negative;
         if (!total) return 0;
         const avg = positive / total;
+        // Apply Wilson score confidence adjustment and scale to 0-5 range
         const score = avg - (avg - 0.5) * Math.pow(2, -Math.log10(total + 1));
         return Math.round(score * 5 * 10) / 10;
     }

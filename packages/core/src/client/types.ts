@@ -302,6 +302,7 @@ export type ImageType =
     | 'screenshot'
     | 'boxArt'
     | 'banner'
+    | 'backdrop'
     | 'icon'
     | 'logo'
     | 'poster'

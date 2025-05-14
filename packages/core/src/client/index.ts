@@ -153,7 +153,7 @@ export namespace Client {
     )
 
     export const getImages = fn(
-        z.string().or(z.number()),
+        z.string(),
         async (appid) => {
             const [appData, details] = await Promise.all([
                 Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
@@ -184,8 +184,7 @@ export namespace Client {
                     ? [{ url: shots[0].url, score: 0 }]
                     : (await Utils.rankScreenshots(baselineBuffer, shots, {
                         threshold: 0.08,
-                        // Get the first 5
-                    })).slice(0, 4);
+                    }))
 
             // Build url->rank map
             const rankMap = new Map<string, number>();
@@ -206,7 +205,7 @@ export namespace Client {
 
             // 5b. Asset images
             for (const [type, url] of Object.entries({ ...assetUrls, icon: iconUrl })) {
-                if (!url) continue;
+                if (!url || type === "backdrop") continue;
                 tasks.push(
                     Utils.fetchBuffer(url)
                         .then(buf => Utils.getImageMetadata(buf))
@@ -214,7 +213,13 @@ export namespace Client {
                 );
             }
 
-            // 5c. Box art
+            // 5c. Backdrop
+            tasks.push(
+                Utils.getImageMetadata(baselineBuffer)
+                    .then(meta => ({ ...meta, position: 0, sourceUrl: assetUrls.backdrop, type: "backdrop" as const } as ImageInfo))
+            )
+
+            // 5d. Box art
             tasks.push(
                 Utils.createBoxArtBuffer(game.library_assets_full, appid)
                     .then(buf => Utils.getImageMetadata(buf))

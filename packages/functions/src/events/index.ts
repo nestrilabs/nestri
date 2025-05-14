@@ -18,7 +18,7 @@ export const handler = bus.subscriber(
     switch (event.type) {
       case "new_credentials.added": {
         const input = event.properties
-        const credentials = await Credentials.fromID(input.steamID)
+        const credentials = await Credentials.fromSteamID(input.steamID)
         if (credentials) {
           const session = new LoginSession(EAuthTokenPlatformType.MobileApp);
 

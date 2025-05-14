@@ -17,9 +17,9 @@ export const steamCredentialsTable = pgTable(
         expiry: utc("expiry").notNull(),
         username: varchar("username", { length: 255 }).notNull(),
     },
-    (tables) => [
+    (table) => [
         primaryKey({
-            columns: [tables.steamID, tables.id]
+            columns: [table.steamID, table.id]
         })
     ]
 )

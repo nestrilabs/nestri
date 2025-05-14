@@ -188,7 +188,7 @@ export namespace SteamApi {
                             // Does not matter if the user is already there or has just been created, just store the credentials
                             await Credentials.create({ refreshToken, steamID, username })
 
-                            if (!!wasAdded) {
+                            if (wasAdded) {
                                 const rawFirst = (user.name ?? username).trim().split(/\s+/)[0] ?? username;
 
                                 const firstName = rawFirst
@@ -231,6 +231,12 @@ export namespace SteamApi {
 
                             // Get a batch of 5 games each
                             const apps = games?.response?.apps || [];
+                            if (apps.length === 0) {
+                                console.info("[SteamApi] Is Steam okay? No games returned for user:", { steamID });
+                                await stream.close();
+                                return resolve(); // nothing to enqueue
+                            }
+
                             const chunkedGames = chunkArray(apps, 5);
 
                             const team = await Team.fromSlug(username)

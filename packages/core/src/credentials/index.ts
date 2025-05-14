@@ -54,7 +54,7 @@ export namespace Credentials {
             })
         });
 
-    export const fromID = fn(
+    export const fromSteamID = fn(
         Info.shape.steamID,
         (steamID) =>
             useTransaction(async (tx) => {
