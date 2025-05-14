@@ -1,11 +1,11 @@
 import "zod-openapi/extend";
-import { Env, Hono } from "hono";
 import { cors } from "hono/cors";
 import { GameApi } from "./game";
 import { SteamApi } from "./steam";
 import { auth } from "./utils/auth";
 import { FriendApi } from "./friend";
 import { logger } from "hono/logger";
+import { type Env, Hono } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
