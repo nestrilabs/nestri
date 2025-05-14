@@ -16,7 +16,7 @@ bus.subscribe("Event", {
     ...allSecrets
   ],
   timeout: "10 minutes",
-  memory: "5120 MB",// For faster processing of large(r) images
+  memory: "3002 MB",// For faster processing of large(r) images
   permissions: [
     {
       actions: ["ses:SendEmail"],

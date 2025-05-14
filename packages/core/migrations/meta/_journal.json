@@ -134,6 +134,13 @@
       "when": 1747073173196,
       "tag": "0018_solid_enchantress",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1747202158003,
+      "tag": "0019_charming_namorita",
+      "breakpoints": true
     }
   ]
 }

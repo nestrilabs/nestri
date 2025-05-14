@@ -164,7 +164,7 @@ export namespace SteamApi {
                             const community = new SteamCommunity();
                             community.setCookies(cookies);
 
-                            const user = await Client.getUserInfo({ id: steamID, cookies })
+                            const user = await Client.getUserInfo({ steamID, cookies })
 
                             const wasAdded =
                                 await Steam.create({
@@ -186,7 +186,7 @@ export namespace SteamApi {
                                 })
 
                             // Does not matter if the user is already there or has just been created, just store the credentials
-                            await Credentials.create({ refreshToken, id: steamID, username })
+                            await Credentials.create({ refreshToken, steamID, username })
 
                             if (!!wasAdded) {
                                 const rawFirst = (user.name ?? username).trim().split(/\s+/)[0] ?? username;
@@ -247,9 +247,6 @@ export namespace SteamApi {
                                         isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
                                     }
                                 })
-
-
-
 
                                 if (team) {
                                     const deduplicationId = crypto

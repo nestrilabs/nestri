@@ -66,12 +66,12 @@ export namespace Client {
     );
 
     export const getUserInfo = fn(
-        Credentials.Info.pick({ cookies: true, id: true }),
+        Credentials.Info.pick({ cookies: true, steamID: true }),
         async (input) =>
             new Promise((resolve, reject) => {
                 const community = new SteamCommunity()
                 community.setCookies(input.cookies);
-                const steamID = new SteamID(input.id);
+                const steamID = new SteamID(input.steamID);
                 community.getSteamUser(steamID, async (err, user) => {
                     if (err) {
                         reject(`Could not get steam user info: ${err.message}`)
