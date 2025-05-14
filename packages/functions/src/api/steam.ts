@@ -227,7 +227,7 @@ export namespace SteamApi {
                             })
 
                             // Get game library in the background
-                            c.executionCtx.waitUntil(new Promise(async () => {
+                            c.executionCtx.waitUntil((async () => {
                                 const games = await Client.getUserLibrary(accessToken);
 
                                 // Get a batch of 5 games each
@@ -287,10 +287,8 @@ export namespace SteamApi {
 
                                 settled
                                     .filter(r => r.status === "rejected")
-                                    .forEach(r =>
-                                        console.error("[LibraryQueue] enqueue failed:", (r as PromiseRejectedResult).reason),
-                                    );
-                            }))
+                                    .forEach(r => console.error("[LibraryQueue] enqueue failed:", (r as PromiseRejectedResult).reason));
+                            })())
 
                             await stream.close();
 
