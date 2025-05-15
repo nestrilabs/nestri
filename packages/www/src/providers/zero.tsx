@@ -9,14 +9,14 @@ import { createInitializedContext } from "@nestri/www/common/context"
 
 export const { use: useZero, provider: ZeroProvider } =
     createInitializedContext("ZeroContext", () => {
+        const team = useTeam()
         const auth = useOpenAuth()
         const account = useAccount()
-        const team = useTeam()
         const zero = new Zero({
-            schema: schema,
+            schema,
+            storageKey: team().id,
             auth: () => auth.access(),
             userID: account.current.id,
-            storageKey: team().id,
             server: import.meta.env.VITE_ZERO_URL,
         })
 

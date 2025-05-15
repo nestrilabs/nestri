@@ -97,6 +97,10 @@ export const handler = bus.subscriber(
                   Key: `images/${image.hash}`,
                   Body: image.buffer,
                   ...(image.format && { ContentType: `image/${image.format}` }),
+                  Metadata: {
+                    type: image.type,
+                    appID: input.appID,
+                  }
                 })
               )
             }
