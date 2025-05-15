@@ -1,10 +1,10 @@
-import { Resource } from "sst"
+import { Resource } from "sst";
 import { type Env } from "hono";
-import { PasswordUI, Select } from "./ui";
 import { logger } from "hono/logger";
-import { subjects } from "../subjects"
+import { subjects } from "../subjects";
+import { PasswordUI, Select } from "./ui";
 import { issuer } from "@openauthjs/openauth";
-import { User } from "@nestri/core/user/index"
+import { User } from "@nestri/core/user/index";
 import { Email } from "@nestri/core/email/index";
 import { patchLogger } from "../utils/patch-logger";
 import { handleDiscord, handleGithub } from "./utils";
@@ -26,7 +26,7 @@ const app = issuer({
         logo: "https://nestri.io/logo.webp",
         favicon: "https://nestri.io/seo/favicon.ico",
         background: {
-            light: "#f5f5f5 ",
+            light: "#F5F5F5",
             dark: "#171717"
         },
         radius: "lg",

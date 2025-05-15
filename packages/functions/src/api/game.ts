@@ -4,8 +4,8 @@ import { describeRoute } from "hono-openapi";
 import { Game } from "@nestri/core/game/index";
 import { Examples } from "@nestri/core/examples";
 import { Library } from "@nestri/core/library/index";
-import { ErrorResponses, notPublic, Result, validator } from "./utils";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
+import { ErrorResponses, notPublic, Result, validator } from "./utils";
 
 export namespace GameApi {
     export const route = new Hono()
@@ -14,20 +14,20 @@ export namespace GameApi {
             describeRoute({
                 tags: ["Game"],
                 summary: "List games",
-                description: "List all the games on a user's library",
+                description: "List all the games on this user's library",
                 responses: {
                     200: {
                         content: {
                             "application/json": {
                                 schema: Result(
                                     Game.Info.array().openapi({
-                                        description: "All games",
+                                        description: "All games in the library",
                                         example: [Examples.Game]
                                     })
                                 ),
                             },
                         },
-                        description: "Game details"
+                        description: "All games in the library"
                     },
                     400: ErrorResponses[400],
                     404: ErrorResponses[404],

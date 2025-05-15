@@ -104,6 +104,7 @@ export namespace Client {
 
             const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Compatibility`)
 
+            const controller = (game.common.controller_support === "partial" || game.common.controller_support === "full") ? game.common.controller_support : "unknown";
             const appInfo: AppInfo = {
                 genres,
                 gameid: game.appid,
@@ -111,7 +112,7 @@ export namespace Client {
                 size: Utils.getPublicDepotSizes(game.depots!),
                 slug: Utils.createSlug(game.common.name.trim()),
                 description: Utils.cleanDescription(details.strDescription),
-                controllerSupport: game.common.controller_support as "partial" | "full" ?? "unknown",
+                controllerSupport: controller,
                 releaseDate: new Date(Number(game.common.steam_release_date) * 1000),
                 primaryGenre: (!!game?.common.genres && !!details.strGenres) ? Utils.getPrimaryGenre(
                     genres,
