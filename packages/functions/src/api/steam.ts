@@ -294,7 +294,6 @@ export namespace SteamApi {
 
                             resolve();
                         })
-
                     })
                 })
             }
