@@ -10,7 +10,6 @@ import { createID, fn, Invite } from "../utils";
 import { memberTable } from "../member/member.sql";
 import { groupBy, pipe, values, map } from "remeda";
 import { createTransaction, useTransaction, type Transaction } from "../drizzle/transaction";
-import { VisibleError } from "../error";
 
 export namespace Team {
     export const Info = z

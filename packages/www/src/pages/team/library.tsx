@@ -1,7 +1,7 @@
+import { For } from "solid-js";
+import { styled } from "@macaron-css/solid";
 import { FullScreen, theme } from "@nestri/www/ui";
 import { Header } from "@nestri/www/pages/team/header";
-import { styled } from "@macaron-css/solid";
-import { For } from "solid-js";
 
 const Container = styled("div", {
     base: {
@@ -37,12 +37,12 @@ const SquareImage = styled("img", {
         borderRadius: 10,
         transitionDuration: "0.4s",
         transitionTimingFunction: "cubic-bezier(0.4,0,0.2,1)",
-        transitionProperty: "all",
+        transitionProperty: "opacity",
         cursor: "pointer",
-        border: `2px solid transparent`,
+        border: `3px solid transparent`,
         ":hover": {
             // transform: "scale(1.01)",
-            outline: `2px solid ${theme.color.brand}`
+            outline: `3px solid ${theme.color.brand}`
         }
     }
 })
@@ -126,7 +126,7 @@ const Logo = styled("svg", {
         opacity: "70%",
     }
 })
-
+//MaRt@6563
 export function LibraryRoute() {
 
     return (
