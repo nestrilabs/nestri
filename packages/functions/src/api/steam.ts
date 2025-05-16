@@ -203,7 +203,7 @@ export namespace SteamApi {
                                 // create a team
                                 teamID = await Team.create({
                                     slug: username,
-                                    name: `${firstName}'s Games`,
+                                    name: firstName,
                                     ownerID: currentUser.userID,
                                 })
 

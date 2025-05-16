@@ -1,7 +1,6 @@
 import { FullScreen, theme } from "@nestri/www/ui";
 import { styled } from "@macaron-css/solid";
 import { Header } from "@nestri/www/pages/team/header";
-import { useSteam } from "@nestri/www/providers/steam";
 import { Modal } from "@nestri/www/ui/modal";
 import { createEffect, createSignal, Match, onCleanup, Switch } from "solid-js";
 import { Text } from "@nestri/www/ui/text"
@@ -411,6 +410,7 @@ export function HomeRoute() {
                             <Portal />
                         </PortalContainer>
                     </LastPlayedWrapper>
+                    */}
                     <GamesContainer>
                         <GamesWrapper>
                             <GameSquareImage draggable={false} alt="Assasin's Creed Shadows" src="https://assets-prd.ignimgs.com/2024/05/15/acshadows-1715789601294.jpg" />
@@ -508,7 +508,7 @@ export function HomeRoute() {
                                 </SteamGameContainer>
                             </div>
                         </SteamLibrary>
-                    </GamesContainer>*/}
+                    </GamesContainer>
                 </FullScreen>
             </Header>
         </>

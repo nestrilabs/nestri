@@ -155,11 +155,11 @@ export namespace Team {
                     .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
                     .where(
                         and(
-                            eq(teamTable.slug, slug),
-                            isNull(teamTable.timeDeleted),
-                            isNull(steamTable.timeDeleted),
+                            eq(memberTable.userID, Actor.userID()),
                             isNull(memberTable.timeDeleted),
-                            eq(memberTable.userID, Actor.userID())
+                            isNull(steamTable.timeDeleted),
+                            isNull(teamTable.timeDeleted),
+                            eq(teamTable.slug, slug),
                         )
                     )
                     .then((rows) => serialize(rows).at(0))
@@ -180,10 +180,9 @@ export namespace Team {
                 ownerID: group[0].teams.ownerID,
                 maxMembers: group[0].teams.maxMembers,
                 inviteCode: group[0].teams.inviteCode,
-                members:
-                    !group[0].steam_accounts ?
-                        [] :
-                        group.map((item) => Steam.serialize(item.steam_accounts!))
+                members: group.map(i => i.steam_accounts)
+                    .filter((c): c is typeof steamTable.$inferSelect => Boolean(c))
+                    .map((item) => Steam.serialize(item))
             })),
         )
     }
