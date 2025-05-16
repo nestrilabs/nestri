@@ -188,6 +188,8 @@ export namespace SteamApi {
                             // Does not matter if the user is already there or has just been created, just store the credentials
                             await Credentials.create({ refreshToken, steamID, username })
 
+                            let teamID: string | undefined
+
                             if (wasAdded) {
                                 const rawFirst = (user.name ?? username).trim().split(/\s+/)[0] ?? username;
 
@@ -199,26 +201,43 @@ export namespace SteamApi {
                                         .toLowerCase();
 
                                 // create a team
-                                const teamID = await Team.create({
+                                teamID = await Team.create({
                                     slug: username,
-                                    name: firstName,
+                                    name: `${firstName}'s Games`,
                                     ownerID: currentUser.userID,
                                 })
 
-                                // Add us as the member
+                                // Add us as a member
                                 await Actor.provide(
                                     "system",
                                     { teamID },
-                                    async () => {
+                                    async () =>
                                         await Member.create({
                                             role: "adult",
                                             userID: currentUser.userID,
                                             steamID
                                         })
-                                    })
+                                )
 
                             } else {
+                                // Update the owner of the Steam account
                                 await Steam.updateOwner({ userID: currentUser.userID, steamID })
+                                const t = await Actor.provide(
+                                    "user",
+                                    currentUser,
+                                    async () => {
+                                        // Get the team associated with this username
+                                        const team = await Team.fromSlug(username);
+                                        // This should never happen
+                                        if (!team) throw Error(`Is Nestri okay???, we could not find the team with this slug ${username}`)
+
+                                        teamID = team.id
+
+                                        return team.id
+                                    }
+                                )
+                                console.log("t",t)
+                                console.log("teamID",teamID)
                             }
 
                             await stream.writeSSE({
@@ -238,9 +257,6 @@ export namespace SteamApi {
                                 }
 
                                 const chunkedGames = chunkArray(apps, 5);
-
-                                const team = await Team.fromSlug(username)
-
                                 // Get the batches to the queue
                                 const processQueue = chunkedGames.map(async (chunk) => {
                                     const myGames = chunk.map(i => {
@@ -254,25 +270,25 @@ export namespace SteamApi {
                                         }
                                     })
 
-                                    if (team) {
+                                    if (teamID) {
                                         const deduplicationId = crypto
                                             .createHash('md5')
-                                            .update(`${team.id}_${chunk.map(g => g.appid).join(',')}`)
+                                            .update(`${teamID}_${chunk.map(g => g.appid).join(',')}`)
                                             .digest('hex');
 
                                         await Actor.provide(
                                             "member",
                                             {
+                                                teamID,
                                                 steamID,
-                                                teamID: team.id,
                                                 userID: currentUser.userID
                                             },
                                             async () => {
-                                                const payload = Library.Events.Queue.create(myGames);
+                                                const payload = await Library.Events.Queue.create(myGames);
 
                                                 await sqs.send(
                                                     new SendMessageCommand({
-                                                        MessageGroupId: team.id,
+                                                        MessageGroupId: teamID,
                                                         QueueUrl: Resource.LibraryQueue.url,
                                                         MessageBody: JSON.stringify(payload),
                                                         MessageDeduplicationId: deduplicationId,

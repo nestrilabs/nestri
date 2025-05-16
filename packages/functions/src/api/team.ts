@@ -1,33 +1,31 @@
 import { z } from "zod"
 import { Hono } from "hono";
-import { validator } from "hono-openapi/zod";
 import { describeRoute } from "hono-openapi";
+import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
-import { Friend } from "@nestri/core/friend/index";
-import { ErrorResponses, notPublic, Result } from "./utils";
+import { ErrorResponses, Result, validator } from "./utils";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
-export namespace FriendApi {
+export namespace TeamApi {
     export const route = new Hono()
-        .use(notPublic)
         .get("/",
             describeRoute({
-                tags: ["Friend"],
-                summary: "List friends accounts",
-                description: "List all this user's friends accounts",
+                tags: ["Team"],
+                summary: "List user teams",
+                description: "List the current user's team details",
                 responses: {
                     200: {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Friend.Info.array().openapi({
-                                        description: "All friends accounts",
-                                        example: [Examples.Friend]
+                                    Team.Info.array().openapi({
+                                        description: "All team information",
+                                        example: [Examples.Team]
                                     })
                                 ),
                             },
                         },
-                        description: "Friends accounts details"
+                        description: "All team details"
                     },
                     400: ErrorResponses[400],
                     404: ErrorResponses[404],
@@ -36,27 +34,27 @@ export namespace FriendApi {
             }),
             async (c) =>
                 c.json({
-                    data: await Friend.list()
+                    data: await Team.list()
                 })
         )
-        .get("/:id",
+        .get("/:slug",
             describeRoute({
-                tags: ["Friend"],
-                summary: "Get a friend",
-                description: "Get a friend's details by their SteamID",
+                tags: ["Team"],
+                summary: "Get team by slug",
+                description: "Get the current user's team details, by its slug",
                 responses: {
                     200: {
                         content: {
                             "application/json": {
                                 schema: Result(
-                                    Friend.Info.openapi({
-                                        description: "Friend's accounts",
-                                        example: Examples.Friend
+                                    Team.Info.openapi({
+                                        description: "Team details",
+                                        example: Examples.Team
                                     })
                                 ),
                             },
                         },
-                        description: "Friends accounts details"
+                        description: "Team details"
                     },
                     400: ErrorResponses[400],
                     404: ErrorResponses[404],
@@ -66,27 +64,27 @@ export namespace FriendApi {
             validator(
                 "param",
                 z.object({
-                    id: z.string().openapi({
-                        description: "ID of the friend to get",
-                        example: Examples.Friend.id,
+                    slug: z.string().openapi({
+                        description: "SLug of the team to get",
+                        example: Examples.Team.slug,
                     }),
                 }),
             ),
             async (c) => {
-                const friendSteamID = c.req.valid("param").id
+                const teamSlug = c.req.valid("param").slug
 
-                const friend = await Friend.fromFriendID(friendSteamID)
+                const team = await Team.fromSlug(teamSlug)
 
-                if (!friend) {
+                if (!team) {
                     throw new VisibleError(
                         "not_found",
                         ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
-                        `Friend ${friendSteamID} not found`
+                        `Team ${teamSlug} not found`
                     )
                 }
 
                 return c.json({
-                    data: friend
+                    data: team
                 })
             }
         )

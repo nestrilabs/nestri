@@ -151,12 +151,18 @@ export namespace Team {
                 tx
                     .select()
                     .from(teamTable)
+                    .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                    .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
                     .where(
                         and(
                             eq(teamTable.slug, slug),
                             isNull(teamTable.timeDeleted),
+                            isNull(steamTable.timeDeleted),
+                            isNull(memberTable.timeDeleted),
+                            eq(memberTable.userID, Actor.userID())
                         )
-                    ).then(rows => rows.at(0))
+                    )
+                    .then((rows) => serialize(rows).at(0))
             )
     )
 
