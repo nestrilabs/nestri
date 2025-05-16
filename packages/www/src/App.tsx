@@ -92,23 +92,24 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        <OpenAuthProvider
-            issuer={import.meta.env.VITE_AUTH_URL}
-            clientID="web"
-        >
+        // <OpenAuthProvider
+        //     issuer={import.meta.env.VITE_AUTH_URL}
+        //     clientID="web"
+        // >
             <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
                 <Router>
                     <Route
                         path="*"
                         component={(props) => (
-                            <AccountProvider
-                                loadingUI={
-                                    <FullScreen>
-                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                                    </FullScreen>
-                                }>
-                                {props.children}
-                            </AccountProvider>
+                            // <AccountProvider
+                            //     loadingUI={
+                            //         <FullScreen>
+                            //             <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                            //         </FullScreen>
+                            //     }>
+                                // {props.children}
+                                props.children
+                            // </AccountProvider>
                         )}
                     >
                         <Route path=":teamSlug">{TeamRoute}</Route>
@@ -141,6 +142,6 @@ export const App: Component = () => {
                     </Route>
                 </Router>
             </Root>
-        </OpenAuthProvider>
+        // </OpenAuthProvider>
     )
 }

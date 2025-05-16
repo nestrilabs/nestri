@@ -1,19 +1,22 @@
 import { vpc } from "./vpc";
+import { storage } from "./storage";
 // import { email } from "./email";
-import { allSecrets } from "./secret";
 import { postgres } from "./postgres";
+import { steamEncryptionKey } from "./secret";
 
 export const bus = new sst.aws.Bus("Bus");
 
 bus.subscribe("Event", {
   vpc,
-  handler: "./packages/functions/src/event/event.handler",
+  handler: "packages/functions/src/events/index.handler",
   link: [
     // email,
     postgres,
-    ...allSecrets
+    storage,
+    steamEncryptionKey
   ],
-  timeout: "5 minutes",
+  timeout: "10 minutes",
+  memory: "3002 MB",// For faster processing of large(r) images
   permissions: [
     {
       actions: ["ses:SendEmail"],

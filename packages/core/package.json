@@ -15,6 +15,8 @@
     },
     "devDependencies": {
         "@tsconfig/node20": "^20.1.4",
+        "@types/pngjs": "^6.0.5",
+        "@types/sanitize-html": "^2.16.0",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
         "mqtt": "^5.10.3",
@@ -32,7 +34,14 @@
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
         "drizzle-zod": "^0.7.1",
+        "fast-average-color": "^9.5.0",
+        "lru-cache": "^11.1.0",
+        "p-limit": "^6.2.0",
+        "pixelmatch": "^7.1.0",
+        "pngjs": "^7.0.0",
         "postgres": "^3.4.5",
+        "sanitize-html": "^2.16.0",
+        "sharp": "^0.34.1",
         "steam-session": "*"
     }
 }

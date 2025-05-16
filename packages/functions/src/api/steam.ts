@@ -1,17 +1,24 @@
 import { z } from "zod";
 import { Hono } from "hono";
+import crypto from 'crypto';
+import { Resource } from "sst";
 import { streamSSE } from "hono/streaming";
 import { Actor } from "@nestri/core/actor";
 import SteamCommunity from "steamcommunity";
 import { describeRoute } from "hono-openapi";
-import { Steam } from "@nestri/core/steam/index";
 import { Team } from "@nestri/core/team/index";
 import { Examples } from "@nestri/core/examples";
+import { Steam } from "@nestri/core/steam/index";
 import { Member } from "@nestri/core/member/index";
+import { Client } from "@nestri/core/client/index";
+import { Library } from "@nestri/core/library/index";
+import { chunkArray } from "@nestri/core/utils/helper";
 import { ErrorResponses, validator, Result } from "./utils";
 import { Credentials } from "@nestri/core/credentials/index";
+import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { LoginSession, EAuthTokenPlatformType } from "steam-session";
-import type CSteamUser from "steamcommunity/classes/CSteamUser";
+
+const sqs = new SQSClient({});
 
 export namespace SteamApi {
     export const route = new Hono()
@@ -157,15 +164,7 @@ export namespace SteamApi {
                             const community = new SteamCommunity();
                             community.setCookies(cookies);
 
-                            const user = await new Promise((res, rej) => {
-                                community.getSteamUser(session.steamID, async (error, user) => {
-                                    if (!error) {
-                                        res(user)
-                                    } else {
-                                        rej(error)
-                                    }
-                                })
-                            }) as CSteamUser
+                            const user = await Client.getUserInfo({ steamID, cookies })
 
                             const wasAdded =
                                 await Steam.create({
@@ -187,28 +186,58 @@ export namespace SteamApi {
                                 })
 
                             // Does not matter if the user is already there or has just been created, just store the credentials
-                            await Credentials.create({ refreshToken, id: steamID, username })
+                            await Credentials.create({ refreshToken, steamID, username })
 
-                            if (!!wasAdded) {
+                            let teamID: string | undefined
+
+                            if (wasAdded) {
+                                const rawFirst = (user.name ?? username).trim().split(/\s+/)[0] ?? username;
+
+                                const firstName = rawFirst
+                                    .charAt(0) // first character
+                                    .toUpperCase() // make it uppercase
+                                    + rawFirst
+                                        .slice(1) // rest of the string
+                                        .toLowerCase();
+
                                 // create a team
-                                const teamID = await Team.create({
+                                teamID = await Team.create({
                                     slug: username,
-                                    name: `${user.name.split(" ")[0]}'s Team`,
+                                    name: firstName,
                                     ownerID: currentUser.userID,
                                 })
 
+                                // Add us as a member
                                 await Actor.provide(
                                     "system",
                                     { teamID },
-                                    async () => {
+                                    async () =>
                                         await Member.create({
                                             role: "adult",
                                             userID: currentUser.userID,
                                             steamID
                                         })
-                                    })
+                                )
+
                             } else {
+                                // Update the owner of the Steam account
                                 await Steam.updateOwner({ userID: currentUser.userID, steamID })
+                                const t = await Actor.provide(
+                                    "user",
+                                    currentUser,
+                                    async () => {
+                                        // Get the team associated with this username
+                                        const team = await Team.fromSlug(username);
+                                        // This should never happen
+                                        if (!team) throw Error(`Is Nestri okay???, we could not find the team with this slug ${username}`)
+
+                                        teamID = team.id
+
+                                        return team.id
+                                    }
+                                )
+                                console.log("t",t)
+                                console.log("teamID",teamID)
                             }
 
                             await stream.writeSSE({
@@ -216,13 +245,71 @@ export namespace SteamApi {
                                 data: JSON.stringify({ username })
                             })
 
-                            //TODO: Get game library
+                            // Get game library in the background
+                            c.executionCtx.waitUntil((async () => {
+                                const games = await Client.getUserLibrary(accessToken);
 
-                            await stream.close()
+                                // Get a batch of 5 games each
+                                const apps = games?.response?.apps || [];
+                                if (apps.length === 0) {
+                                    console.info("[SteamApi] Is Steam okay? No games returned for user:", { steamID });
+                                    return
+                                }
 
-                            resolve()
+                                const chunkedGames = chunkArray(apps, 5);
+                                // Get the batches to the queue
+                                const processQueue = chunkedGames.map(async (chunk) => {
+                                    const myGames = chunk.map(i => {
+                                        return {
+                                            appID: i.appid,
+                                            totalPlaytime: i.rt_playtime,
+                                            isFamilyShareable: i.exclude_reason === 0,
+                                            lastPlayed: new Date(i.rt_last_played * 1000),
+                                            timeAcquired: new Date(i.rt_time_acquired * 1000),
+                                            isFamilyShared: !i.owner_steamids.includes(steamID) && i.exclude_reason === 0,
+                                        }
+                                    })
+
+                                    if (teamID) {
+                                        const deduplicationId = crypto
+                                            .createHash('md5')
+                                            .update(`${teamID}_${chunk.map(g => g.appid).join(',')}`)
+                                            .digest('hex');
+
+                                        await Actor.provide(
+                                            "member",
+                                            {
+                                                teamID,
+                                                steamID,
+                                                userID: currentUser.userID
+                                            },
+                                            async () => {
+                                                const payload = await Library.Events.Queue.create(myGames);
+
+                                                await sqs.send(
+                                                    new SendMessageCommand({
+                                                        MessageGroupId: teamID,
+                                                        QueueUrl: Resource.LibraryQueue.url,
+                                                        MessageBody: JSON.stringify(payload),
+                                                        MessageDeduplicationId: deduplicationId,
+                                                    })
+                                                )
+                                            }
+                                        )
+                                    }
+                                })
+
+                                const settled = await Promise.allSettled(processQueue)
+
+                                settled
+                                    .filter(r => r.status === "rejected")
+                                    .forEach(r => console.error("[LibraryQueue] enqueue failed:", (r as PromiseRejectedResult).reason));
+                            })())
+
+                            await stream.close();
+
+                            resolve();
                         })
-
                     })
                 })
             }

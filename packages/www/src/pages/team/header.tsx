@@ -1,5 +1,5 @@
 import { animate, scroll } from "motion"
-import { A } from "@solidjs/router";
+import { A, useLocation } from "@solidjs/router";
 import { Container } from "@nestri/www/ui";
 import Avatar from "@nestri/www/ui/avatar";
 import { styled } from "@macaron-css/solid";
@@ -200,6 +200,15 @@ const Nav = styled("nav", {
     }
 })
 
+const capitalize = (name: string) => {
+    return name
+        .charAt(0) // first character
+        .toUpperCase() // make it uppercase
+        + name
+            .slice(1) // rest of the string
+            .toLowerCase();
+}
+
 /**
  * Displays the application's fixed top navigation bar with branding, team information, and navigation links.
  *
@@ -230,7 +239,8 @@ export function Header(props: ParentProps) {
     })
 
     // const account = useAccount()
-    
+    const location = useLocation()
+
     return (
         <PageWrapper>
             <NavWrapper scrolled={hasScrolled()}>
@@ -313,6 +323,21 @@ export function Header(props: ParentProps) {
                                         d="M72.61 83.06a8 8 0 0 1 1.73-8.72l48-48a8 8 0 0 1 11.32 0l48 48A8 8 0 0 1 176 88H80a8 8 0 0 1-7.39-4.94M176 168H80a8 8 0 0 0-5.66 13.66l48 48a8 8 0 0 0 11.32 0l48-48A8 8 0 0 0 176 168" />
                                 </DropIcon>
                             </TeamRoot>
+                            {/**Fixme, this does not work for us */}
+                            <Show when={location.pathname.split("/").pop() !== "home"} >
+                                <LineSvg
+                                    height="16"
+                                    stroke-linejoin="round"
+                                    viewBox="0 0 16 16"
+                                    width="16">
+                                    <path
+                                        fill-rule="evenodd"
+                                        clip-rule="evenodd"
+                                        d="M4.01526 15.3939L4.3107 14.7046L10.3107 0.704556L10.6061 0.0151978L11.9849 0.606077L11.6894 1.29544L5.68942 15.2954L5.39398 15.9848L4.01526 15.3939Z" fill="currentColor"></path>
+                                </LineSvg>
+                                <div>{capitalize(location.pathname.split("/").pop()!)}</div>
+                            </Show>
+
                         </LogoRoot>
                         {/* </Show> */}
                     </Container>
@@ -332,17 +357,17 @@ export function Header(props: ParentProps) {
                                 </NavLink>
                             </NavRoot>
                         </Show>
-                        <div style={{ "margin-bottom": "2px" }} >
+                        {/* <div style={{ "margin-bottom": "2px" }} >
                             <AvatarImg src={"https://avatars.githubusercontent.com/u/71614375?v=4"} alt={`Wanjohi's avatar`} />
-                            {/* <Switch>
+                            <Switch>
                                 <Match when={account.current.avatarUrl} >
-                                <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
+                                    <AvatarImg src={account.current.avatarUrl} alt={`${account.current.name}'s avatar`} />
                                 </Match>
                                 <Match when={!account.current.avatarUrl}>
                                     <Avatar size={32} name={`${account.current.name}#${account.current.discriminator}`} />
                                 </Match>
-                            </Switch> */}
-                        </div>
+                            </Switch>
+                        </div> */}
                     </RightRoot>
                 </Nav>
             </NavWrapper>

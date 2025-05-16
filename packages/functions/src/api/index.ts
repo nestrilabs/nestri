@@ -1,11 +1,11 @@
 import "zod-openapi/extend";
-import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { GameApi } from "./game";
 import { SteamApi } from "./steam";
 import { auth } from "./utils/auth";
 import { FriendApi } from "./friend";
 import { logger } from "hono/logger";
+import { type Env, Hono } from "hono";
 import { Realtime } from "./realtime";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
@@ -98,8 +98,8 @@ export default {
     port: 3001,
     idleTimeout: 255,
     webSocketHandler: Realtime.webSocketHandler,
-    fetch: (req: Request) =>
-        app.fetch(req, undefined, {
+    fetch: (req: Request,env: Env) =>
+        app.fetch(req, env, {
             waitUntil: (fn) => fn,
             passThroughOnException: () => { },
         }),

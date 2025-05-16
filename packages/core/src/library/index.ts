@@ -2,6 +2,7 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Game } from "../game";
 import { Actor } from "../actor";
+import { createEvent } from "../event";
 import { gamesTable } from "../game/game.sql";
 import { createSelectSchema } from "drizzle-zod";
 import { steamLibraryTable } from "./library.sql";
@@ -17,31 +18,61 @@ export namespace Library {
 
     export type Info = z.infer<typeof Info>;
 
+    export const Events = {
+        Queue: createEvent(
+            "library.queue",
+            z.object({
+                appID: z.number(),
+                lastPlayed: z.date(),
+                timeAcquired: z.date(),
+                totalPlaytime: z.number(),
+                isFamilyShared: z.boolean(),
+                isFamilyShareable: z.boolean(),
+            }).array(),
+        ),
+    };
+
     export const add = fn(
-        Info,
+        Info.partial({ ownerID: true }),
         async (input) =>
             createTransaction(async (tx) => {
-                const results =
+                const ownerSteamID = input.ownerID ?? Actor.steamID()
+                const result =
                     await tx
                         .select()
                         .from(steamLibraryTable)
                         .where(
                             and(
                                 eq(steamLibraryTable.baseGameID, input.baseGameID),
-                                eq(steamLibraryTable.ownerID, input.ownerID),
+                                eq(steamLibraryTable.ownerID, ownerSteamID),
                                 isNull(steamLibraryTable.timeDeleted)
                             )
                         )
+                        .limit(1)
                         .execute()
+                        .then(rows => rows.at(0))
 
-                if (results.length > 0) return null
+                if (result) return result.baseGameID
 
                 await tx
                     .insert(steamLibraryTable)
-                    .values(input)
+                    .values({
+                        ownerID: ownerSteamID,
+                        baseGameID: input.baseGameID,
+                        lastPlayed: input.lastPlayed,
+                        totalPlaytime: input.totalPlaytime,
+                        timeAcquired: input.timeAcquired,
+                        isFamilyShared: input.isFamilyShared
+                    })
                     .onConflictDoUpdate({
                         target: [steamLibraryTable.ownerID, steamLibraryTable.baseGameID],
-                        set: { timeDeleted: null }
+                        set: {
+                            timeDeleted: null,
+                            lastPlayed: input.lastPlayed,
+                            timeAcquired: input.timeAcquired,
+                            totalPlaytime: input.totalPlaytime,
+                            isFamilyShared: input.isFamilyShared
+                        }
                     })
 
             })

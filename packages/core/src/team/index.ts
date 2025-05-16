@@ -10,7 +10,6 @@ import { createID, fn, Invite } from "../utils";
 import { memberTable } from "../member/member.sql";
 import { groupBy, pipe, values, map } from "remeda";
 import { createTransaction, useTransaction, type Transaction } from "../drizzle/transaction";
-import { VisibleError } from "../error";
 
 export namespace Team {
     export const Info = z
@@ -144,6 +143,28 @@ export namespace Team {
                 .then((rows) => serialize(rows))
         )
 
+    export const fromSlug = fn(
+        Info.shape.slug,
+        (slug) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(teamTable)
+                    .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                    .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
+                    .where(
+                        and(
+                            eq(memberTable.userID, Actor.userID()),
+                            isNull(memberTable.timeDeleted),
+                            isNull(steamTable.timeDeleted),
+                            isNull(teamTable.timeDeleted),
+                            eq(teamTable.slug, slug),
+                        )
+                    )
+                    .then((rows) => serialize(rows).at(0))
+            )
+    )
+
     export function serialize(
         input: { teams: typeof teamTable.$inferSelect; steam_accounts: typeof steamTable.$inferSelect | null }[]
     ): z.infer<typeof Info>[] {
@@ -158,10 +179,9 @@ export namespace Team {
                 ownerID: group[0].teams.ownerID,
                 maxMembers: group[0].teams.maxMembers,
                 inviteCode: group[0].teams.inviteCode,
-                members:
-                    !group[0].steam_accounts ?
-                        [] :
-                        group.map((item) => Steam.serialize(item.steam_accounts!))
+                members: group.map(i => i.steam_accounts)
+                    .filter((c): c is typeof steamTable.$inferSelect => Boolean(c))
+                    .map((item) => Steam.serialize(item))
             })),
         )
     }

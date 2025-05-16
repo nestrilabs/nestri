@@ -88,7 +88,6 @@ export namespace FriendApi {
                 return c.json({
                     data: friend
                 })
-
             }
         )
 }

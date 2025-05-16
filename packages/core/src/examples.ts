@@ -251,9 +251,9 @@ export namespace Examples {
         screenshots: CommonImg,
         boxArts: CommonImg,
         posters: CommonImg,
+        banners: CommonImg,
         heroArts: CommonImg,
-        superHeroArts: CommonImg,
-        backgrounds: CommonImg,
+        backdrops: CommonImg,
         logos: CommonImg,
         icons: CommonImg,
     }

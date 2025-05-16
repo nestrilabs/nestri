@@ -38,17 +38,17 @@ export namespace Images {
             description: "Vertical 2:3 aspect ratio promotional artwork, similar to movie posters",
             example: Examples.Images.posters
         }),
-        heroArts: Image.array().openapi({
+        banners: Image.array().openapi({
             description: "Horizontal promotional artwork optimized for header displays and banners",
+            example: Examples.Images.banners
+        }),
+        heroArts: Image.array().openapi({
+            description: "High-resolution, wide-format artwork designed for featured content and main entries",
             example: Examples.Images.heroArts
         }),
-        superHeroArts: Image.array().openapi({
-            description: "High-resolution, wide-format artwork designed for featured content and main entries",
-            example: Examples.Images.superHeroArts
-        }),
-        backgrounds: Image.array().openapi({
-            description: "Full-width background images optimized for page layouts and decorative purposes",
-            example: Examples.Images.backgrounds
+        backdrops: Image.array().openapi({
+            description: "Full-width backdrop images optimized for page layouts and decorative purposes",
+            example: Examples.Images.backdrops
         }),
         logos: Image.array().openapi({
             description: "Official game logo artwork, typically with transparent backgrounds for flexible placement",
@@ -107,10 +107,10 @@ export namespace Images {
             }, {
                 screenshots: [],
                 boxArts: [],
-                superHeroArts: [],
+                banners: [],
                 heroArts: [],
                 posters: [],
-                backgrounds: [],
+                backdrops: [],
                 icons: [],
                 logos: [],
             })

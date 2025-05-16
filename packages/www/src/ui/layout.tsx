@@ -6,6 +6,7 @@ export const FullScreen = styled("div", {
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
+        position:"relative",
         textAlign: "center",
         width: "100%",
         justifyContent: "center"
@@ -15,7 +16,7 @@ export const FullScreen = styled("div", {
             none: {},
             header: {
                 paddingTop: `calc(1px + ${theme.headerHeight.root})`,
-                minHeight: `calc(100dvh - ${theme.headerHeight.root})`,
+                // minHeight: `calc(100dvh - ${theme.headerHeight.root})`,
             },
         },
     },

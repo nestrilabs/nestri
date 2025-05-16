@@ -8,8 +8,8 @@ import { Categories } from "../categories";
 import { eq, and, isNull } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-zod";
 import { imagesTable } from "../images/images.sql";
-import { groupBy, map, pipe, uniqueBy, values } from "remeda";
 import { baseGamesTable } from "../base-game/base-game.sql";
+import { groupBy, map, pipe, uniqueBy, values } from "remeda";
 import { categoriesTable } from "../categories/categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
@@ -22,7 +22,7 @@ export namespace Game {
             example: Examples.Game
         })
 
-    export type Info = z.infer<typeof Info>
+    export type Info = z.infer<typeof Info>;
 
     export const InputInfo = createSelectSchema(gamesTable)
         .omit({ timeCreated: true, timeDeleted: true, timeUpdated: true })
@@ -31,7 +31,7 @@ export namespace Game {
         InputInfo,
         (input) =>
             createTransaction(async (tx) => {
-                const results =
+                const result =
                     await tx
                         .select()
                         .from(gamesTable)
@@ -43,9 +43,11 @@ export namespace Game {
                                 isNull(gamesTable.timeDeleted)
                             )
                         )
+                        .limit(1)
                         .execute()
+                        .then(rows => rows.at(0))
 
-                if (results.length > 0) return null
+                if (result) return result.baseGameID
 
                 await tx
                     .insert(gamesTable)
