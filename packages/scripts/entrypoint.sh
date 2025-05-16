@@ -141,24 +141,58 @@ main() {
 
         if [[ -z "$nvidia_driver_version" ]]; then
             log "Error: Failed to determine NVIDIA driver version."
-            exit 1
+            # Check for other GPU vendors before exiting
+            if [[ -n "${vendor_devices[amd]:-}" || -n "${vendor_devices[intel]:-}" ]]; then
+                log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver."
+            else
+                log "No other GPUs detected, exiting due to NVIDIA driver version failure."
+                exit 1
+            fi
+        else
+            log "Detected NVIDIA driver version: $nvidia_driver_version"
+
+            # Set up cache and get installer
+            setup_cache
+            local arch=$(uname -m)
+            local filename="NVIDIA-Linux-${arch}-${nvidia_driver_version}.run"
+            cd "$NVIDIA_INSTALLER_DIR" || {
+                log "Error: Failed to change to $NVIDIA_INSTALLER_DIR."
+                exit 1
+            }
+            get_nvidia_installer "$nvidia_driver_version" "$arch" || {
+                # Check for other GPU vendors before exiting
+                if [[ -n "${vendor_devices[amd]:-}" || -n "${vendor_devices[intel]:-}" ]]; then
+                    log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver."
+                else
+                    log "No other GPUs detected, exiting due to NVIDIA installer failure."
+                    exit 1
+                fi
+            }
+
+            # Install driver
+            install_nvidia_driver "$filename" || {
+                # Check for other GPU vendors before exiting
+                if [[ -n "${vendor_devices[amd]:-}" || -n "${vendor_devices[intel]:-}" ]]; then
+                    log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver."
+                else
+                    log "No other GPUs detected, exiting due to NVIDIA driver installation failure."
+                    exit 1
+                fi
+            }
         fi
-        log "Detected NVIDIA driver version: $nvidia_driver_version"
-
-        # Set up cache and get installer
-        setup_cache
-        local arch=$(uname -m)
-        local filename="NVIDIA-Linux-${arch}-${nvidia_driver_version}.run"
-        cd "$NVIDIA_INSTALLER_DIR" || {
-            log "Error: Failed to change to $NVIDIA_INSTALLER_DIR."
-            exit 1
-        }
-        get_nvidia_installer "$nvidia_driver_version" "$arch" || exit 1
-
-        # Install driver
-        install_nvidia_driver "$filename" || exit 1
     else
         log "No NVIDIA GPU detected, skipping driver fix."
+    fi
+
+    # Make sure gamescope has CAP_SYS_NICE capabilities if available
+    log "Checking for CAP_SYS_NICE availability..."
+    if capsh --print | grep -q "Current:.*cap_sys_nice"; then
+        log "Giving gamescope compositor CAP_SYS_NICE permissions..."
+        setcap 'CAP_SYS_NICE+eip' /usr/bin/gamescope 2>/dev/null || {
+            log "Warning: Failed to set CAP_SYS_NICE on gamescope, continuing without it..."
+        }
+    else
+        log "Skipping CAP_SYS_NICE for gamescope, capability not available..."
     fi
 
     # Switch to nestri user

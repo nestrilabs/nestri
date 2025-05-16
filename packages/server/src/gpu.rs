@@ -84,7 +84,7 @@ pub fn get_gpus() -> Vec<GPUInfo> {
 
 fn parse_pci_device(line: &str) -> Option<(String, String, String, String)> {
     let re = Regex::new(
-        r#"^(?P<pci_addr>\S+)\s+"[^\[]*\[(?P<class_id>[0-9a-f]{4})\].*?"\s+"[^\[]*\[(?P<vendor_id>[0-9a-f]{4})\].*?"\s+"(?P<device_name>[^"]+?)""#,
+        r#"^(?P<pci_addr>\S+)\s+"[^\[]*\[(?P<class_id>[0-9a-f]{4})\].*?"\s+"[^"]*?\[(?P<vendor_id>[0-9a-f]{4})\][^"]*?"\s+"(?P<device_name>[^"]+?)""#,
     ).unwrap();
 
     let caps = re.captures(line)?;
