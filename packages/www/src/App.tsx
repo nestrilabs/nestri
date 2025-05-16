@@ -39,7 +39,7 @@ globalStyle("html", {
     // Hardcode colors
     "@media": {
         "(prefers-color-scheme: light)": {
-            backgroundColor: "rgba(255,255,255,0.8)",
+            backgroundColor: "#f4f5f6",
         },
         "(prefers-color-scheme: dark)": {
             backgroundColor: "rgb(19,21,23)",
