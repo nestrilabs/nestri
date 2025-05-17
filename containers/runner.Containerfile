@@ -132,9 +132,11 @@ RUN sed -i \
 # Core system components
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --needed --noconfirm \
-        vulkan-intel lib32-vulkan-intel vpl-gpu-rt mesa \
+        vulkan-intel lib32-vulkan-intel vpl-gpu-rt \
+        vulkan-radeon lib32-vulkan-radeon \
+        mesa \
         steam steam-native-runtime gtk3 lib32-gtk3 \
-        sudo xorg-xwayland seatd libinput labwc wlr-randr gamescope mangohud \
+        sudo xorg-xwayland seatd libinput gamescope mangohud \
         libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \

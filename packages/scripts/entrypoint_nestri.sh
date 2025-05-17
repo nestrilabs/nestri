@@ -85,39 +85,21 @@ start_nestri_server() {
     restart_chain
 }
 
-# Starts compositor (labwc)
+# Starts compositor (gamescope) with Steam
 start_compositor() {
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
 
-    log "Pre-configuring compositor..."
-    mkdir -p "${HOME}/.config/labwc/"
-    cat > ~/.config/labwc/rc.xml << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<labwc_config>
-    <keyboard><default/></keyboard>
-    <mouse><default/>
-        <context name="Root">
-            <mousebind button="Left" action="Press"/>
-            <mousebind button="Right" action="Press"/>
-            <mousebind button="Middle" action="Press"/>
-        </context>
-    </mouse>
-</labwc_config>
-EOF
-    echo '<?xml version="1.0" encoding="UTF-8"?><openbox_menu></openbox_menu>' > ~/.config/labwc/menu.xml
-
-    log "Starting compositor..."
+    log "Starting compositor with Steam..."
     rm -rf /tmp/.X11-unix && mkdir -p /tmp/.X11-unix && chown nestri:nestri /tmp/.X11-unix
-    WAYLAND_DISPLAY=wayland-1 WLR_BACKENDS=wayland labwc &
+    WAYLAND_DISPLAY=wayland-1 gamescope --backend wayland -g -f -e --rt --mangoapp -W "${WIDTH}" -H "${HEIGHT}" -- steam-native -tenfoot -cef-force-gpu &
     COMPOSITOR_PID=$!
 
     log "Waiting for compositor to initialize..."
-    COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/wayland-0"
+    COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
     for ((i=1; i<=15; i++)); do
         if [[ -e "$COMPOSITOR_SOCKET" ]]; then
-            log "Compositor initialized, wayland-0 ready."
+            log "Compositor initialized, gamescope-0 ready."
             sleep 2
-            start_wlr_randr
             return
         fi
         sleep 1
@@ -126,46 +108,6 @@ EOF
     log "Error: Compositor did not initialize."
     increment_retry "compositor"
     start_compositor
-}
-
-# Configures resolution with wlr-randr
-start_wlr_randr() {
-    log "Configuring resolution with wlr-randr..."
-    OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
-    if [[ -z "$OUTPUT_NAME" ]]; then
-        log "Error: No enabled outputs detected."
-        exit 1
-    fi
-
-    local WLR_RETRIES=0
-    while ! WAYLAND_DISPLAY=wayland-0 wlr-randr --output "$OUTPUT_NAME" --custom-mode "$RESOLUTION"; do
-        log "Error: Failed to configure wlr-randr. Retrying..."
-        ((WLR_RETRIES++))
-        if [[ "$WLR_RETRIES" -ge "$MAX_RETRIES" ]]; then
-            log "Error: Max retries reached for wlr-randr."
-            exit 1
-        fi
-        sleep 2
-    done
-    log "wlr-randr configuration successful."
-    sleep 2
-}
-
-# Starts Steam
-start_steam() {
-    kill_if_running "${STEAM_PID:-}" "Steam"
-
-    log "Starting Steam with -tenfoot..."
-    steam-native -tenfoot &
-    STEAM_PID=$!
-
-    sleep 2
-    if ! kill -0 "$STEAM_PID" 2>/dev/null; then
-        log "Error: Steam failed to start."
-        return 1
-    fi
-    log "Steam started successfully."
-    return 0
 }
 
 # Increments retry counter
@@ -190,7 +132,6 @@ cleanup() {
     log "Terminating processes..."
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
-    kill_if_running "${STEAM_PID:-}" "Steam"
     exit 0
 }
 
@@ -205,18 +146,11 @@ main_loop() {
             log "nestri-server died."
             increment_retry "nestri-server"
             restart_chain
-            start_steam || increment_retry "Steam"
         # Check compositor
         elif [[ -n "${COMPOSITOR_PID:-}" ]] && ! kill -0 "${COMPOSITOR_PID}" 2>/dev/null; then
             log "compositor died."
             increment_retry "compositor"
             start_compositor
-            start_steam || increment_retry "Steam"
-        # Check Steam
-        elif [[ -n "${STEAM_PID:-}" ]] && ! kill -0 "${STEAM_PID}" 2>/dev/null; then
-            log "Steam died."
-            increment_retry "Steam"
-            start_steam || increment_retry "Steam"
         fi
     done
 }
@@ -224,9 +158,8 @@ main_loop() {
 main() {
     chown_user_directory
     load_envs
-    #parse_resolution "${RESOLUTION:-1920x1080}" || exit 1 # Not used currently
+    parse_resolution "${RESOLUTION:-1920x1080}" || exit 1
     restart_chain
-    start_steam || increment_retry "Steam"
     main_loop
 }
 
