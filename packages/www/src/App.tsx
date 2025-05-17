@@ -8,7 +8,6 @@ import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
 import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
-import { Screen as FullScreen } from '@nestri/www/ui/layout';
 import { TeamRoute } from '@nestri/www/pages/team';
 import { OpenAuthProvider } from "@openauthjs/solid";
 import { NotFound } from '@nestri/www/pages/not-found';
@@ -16,6 +15,7 @@ import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { useStorage } from '@nestri/www/providers/account';
 import { CreateTeamComponent } from '@nestri/www/pages/new';
+import { Screen as FullScreen } from '@nestri/www/ui/layout';
 import { darkClass, lightClass, theme } from '@nestri/www/ui/theme';
 import { AccountProvider, useAccount } from '@nestri/www/providers/account';
 import { Component, createSignal, Match, onCleanup, Switch } from 'solid-js';
@@ -92,24 +92,23 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        // <OpenAuthProvider
-        //     issuer={import.meta.env.VITE_AUTH_URL}
-        //     clientID="web"
-        // >
+        <OpenAuthProvider
+            issuer={import.meta.env.VITE_AUTH_URL}
+            clientID="web"
+        >
             <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
                 <Router>
                     <Route
                         path="*"
                         component={(props) => (
-                            // <AccountProvider
-                            //     loadingUI={
-                            //         <FullScreen>
-                            //             <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                            //         </FullScreen>
-                            //     }>
-                                // {props.children}
-                                props.children
-                            // </AccountProvider>
+                            <AccountProvider
+                                loadingUI={
+                                    <FullScreen>
+                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                                    </FullScreen>
+                                }>
+                                {props.children}
+                            </AccountProvider>
                         )}
                     >
                         <Route path=":teamSlug">{TeamRoute}</Route>

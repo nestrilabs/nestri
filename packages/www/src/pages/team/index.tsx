@@ -11,53 +11,53 @@ import { useAccount, useStorage } from "@nestri/www/providers/account";
 
 export const TeamRoute = (
     <Route
-        // component={(props) => {
-        //     const params = useParams();
-        //     const account = useAccount();
-        //     const storage = useStorage();
-        //     const openauth = useOpenAuth();
+        component={(props) => {
+            const params = useParams();
+            const account = useAccount();
+            const storage = useStorage();
+            const openauth = useOpenAuth();
 
-        //     const team = createMemo(() =>
-        //         account.current.teams.find(
-        //             (item) => item.slug === params.teamSlug,
-        //         ),
-        //     );
+            const team = createMemo(() =>
+                account.current.teams.find(
+                    (item) => item.slug === params.teamSlug,
+                ),
+            );
 
-        //     createEffect(() => {
-        //         const t = team();
-        //         if (!t) return;
-        //         storage.set("team", t.id);
-        //     });
+            createEffect(() => {
+                const t = team();
+                if (!t) return;
+                storage.set("team", t.id);
+            });
 
-        //     createEffect(() => {
-        //         const teamSlug = params.teamSlug;
-        //         for (const item of Object.values(account.all)) {
-        //             for (const team of item.teams) {
-        //                 if (team.slug === teamSlug && item.id !== openauth.subject!.id) {
-        //                     openauth.switch(item.email);
-        //                 }
-        //             }
-        //         }
-        //     })
+            createEffect(() => {
+                const teamSlug = params.teamSlug;
+                for (const item of Object.values(account.all)) {
+                    for (const team of item.teams) {
+                        if (team.slug === teamSlug && item.id !== openauth.subject!.id) {
+                            openauth.switch(item.email);
+                        }
+                    }
+                }
+            })
 
-        //     return (
-        //         <Switch>
-        //             <Match when={!team()}>
-        //                 {/* TODO: Add a public page for (other) teams */}
-        //                 <NotAllowed header />
-        //             </Match>
-        //             <Match when={team()}>
-        //                 <TeamContext.Provider value={() => team()!}>
-        //                     <ZeroProvider>
-        //                     <ApiProvider>
-        //                         {props.children}
-        //                     </ApiProvider>
-        //                     </ZeroProvider>
-        //                 </TeamContext.Provider>
-        //             </Match>
-        //         </Switch>
-        //     )
-        // }}
+            return (
+                <Switch>
+                    <Match when={!team()}>
+                        {/* TODO: Add a public page for (other) teams */}
+                        <NotAllowed header />
+                    </Match>
+                    <Match when={team()}>
+                        <TeamContext.Provider value={() => team()!}>
+                            <ZeroProvider>
+                            <ApiProvider>
+                                {props.children}
+                            </ApiProvider>
+                            </ZeroProvider>
+                        </TeamContext.Provider>
+                    </Match>
+                </Switch>
+            )
+        }}
     >
         <Route path="" component={HomeRoute} />
         <Route path="library" component={LibraryRoute} />
