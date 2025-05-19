@@ -1,6 +1,6 @@
-import { Size } from "@nestri/core/src/base-game/base-game.sql";
-import { type Limitations } from "@nestri/core/src/steam/steam.sql";
-import { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
+import type { Size } from "@nestri/core/src/base-game/base-game.sql";
+import type { Limitations } from "@nestri/core/src/steam/steam.sql";
+import type { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
 import {
     json,
     table,

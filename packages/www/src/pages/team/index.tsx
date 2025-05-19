@@ -3,7 +3,6 @@ import { LibraryRoute } from "./library";
 import { useOpenAuth } from "@openauthjs/solid";
 import { Route, useParams } from "@solidjs/router";
 import { ApiProvider } from "@nestri/www/providers/api";
-import { ZeroProvider } from "@nestri/www/providers/zero";
 import { TeamContext } from "@nestri/www/providers/context";
 import { createEffect, createMemo, Match, Switch } from "solid-js";
 import { NotAllowed, NotFound } from "@nestri/www/pages/not-found";
@@ -48,11 +47,9 @@ export const TeamRoute = (
                     </Match>
                     <Match when={team()}>
                         <TeamContext.Provider value={() => team()!}>
-                            <ZeroProvider>
-                            <ApiProvider>
-                                {props.children}
-                            </ApiProvider>
-                            </ZeroProvider>
+                                <ApiProvider>
+                                    {props.children}
+                                </ApiProvider>
                         </TeamContext.Provider>
                     </Match>
                 </Switch>
