@@ -12,7 +12,6 @@ export const { use: useZero, provider: ZeroProvider } =
             schema,
             auth: () => auth.access(),
             userID: account.current.id,
-            storageKey: account.current.id,
             server: import.meta.env.VITE_ZERO_URL,
         })
 
