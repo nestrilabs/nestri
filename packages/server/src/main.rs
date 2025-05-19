@@ -206,10 +206,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     let gpu = gpu.unwrap();
 
-    // TODO: Currently DMA-BUF only works for NVIDIA
-    if args.app.dma_buf && *gpu.vendor() != GPUVendor::NVIDIA {
-        log::warn!("DMA-BUF is currently unsupported outside NVIDIA GPUs, force disabling..");
-        args.app.dma_buf = false;
+    if args.app.dma_buf {
+        log::warn!("DMA-BUF is experimental, it may or may not improve performance, or even work at all.");
     }
 
     // Handle video encoder selection
@@ -288,7 +286,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ))?;
     caps_filter.set_property("caps", &caps);
 
-    // GL Upload Element
+    // GL Upload element
     let glupload = gst::ElementFactory::make("glupload").build()?;
 
     // GL color convert element
@@ -298,6 +296,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let gl_caps_filter = gst::ElementFactory::make("capsfilter").build()?;
     let gl_caps = gst::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
     gl_caps_filter.set_property("caps", &gl_caps);
+
+    // GL download element
+    let gl_download = gst::ElementFactory::make("gldownload").build()?;
 
     // Video Converter Element
     let video_converter = gst::ElementFactory::make("videoconvert").build()?;
@@ -372,7 +373,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // If DMA-BUF is enabled, add glupload, color conversion and caps filter
     if args.app.dma_buf {
-        pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter])?;
+        pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter, &gl_download])?;
     }
 
     // Link main audio branch
@@ -398,6 +399,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &glupload,
             &glcolorconvert,
             &gl_caps_filter,
+            &gl_download,
             &video_encoder,
         ])?;
     } else {
