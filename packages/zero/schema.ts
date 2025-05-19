@@ -2,7 +2,7 @@ import type { Size } from "@nestri/core/src/base-game/base-game.sql";
 import type { Limitations } from "@nestri/core/src/steam/steam.sql";
 import type { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
 import {
-    // json,
+    json,
     table,
     number,
     string,
@@ -12,7 +12,6 @@ import {
     relationships,
     definePermissions,
     type ExpressionBuilder,
-    json,
 } from "@rocicorp/zero";
 
 const timestamps = {

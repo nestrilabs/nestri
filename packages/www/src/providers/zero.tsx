@@ -1,5 +1,4 @@
 import { Zero } from "@rocicorp/zero"
-// import { createEffect } from "solid-js"
 import { schema } from "@nestri/zero/schema"
 import { useOpenAuth } from "@openauthjs/solid"
 import { useAccount } from "@nestri/www/providers/account"
