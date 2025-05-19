@@ -1,3 +1,4 @@
+import "zod-openapi/extend";
 import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
 import { Steam } from "@nestri/core/steam/index";

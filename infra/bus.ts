@@ -2,7 +2,7 @@ import { vpc } from "./vpc";
 import { storage } from "./storage";
 // import { email } from "./email";
 import { postgres } from "./postgres";
-import { steamEncryptionKey } from "./secret";
+import { steamEncryptionKey, secret } from "./secret";
 
 export const bus = new sst.aws.Bus("Bus");
 
@@ -13,6 +13,7 @@ bus.subscribe("Event", {
     // email,
     postgres,
     storage,
+    secret.PolarSecret,
     steamEncryptionKey
   ],
   timeout: "10 minutes",

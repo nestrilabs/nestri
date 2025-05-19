@@ -1,6 +1,6 @@
 import { vpc } from "./vpc";
 import { postgres } from "./postgres";
-import { steamEncryptionKey } from "./secret";
+import { steamEncryptionKey, secret } from "./secret";
 
 export const LibraryQueue = new sst.aws.Queue("LibraryQueue", {
     fifo: true,
@@ -14,6 +14,7 @@ LibraryQueue.subscribe({
     handler: "packages/functions/src/queues/library.handler",
     link: [
         postgres,
-        steamEncryptionKey
+        steamEncryptionKey,
+        secret.PolarSecret
     ],
 });

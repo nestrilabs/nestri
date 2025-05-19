@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Examples } from "../examples";
+import { eq, isNull, and } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-zod";
 import { categoriesTable } from "./categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { eq, isNull, and } from "drizzle-orm";
 
 export namespace Categories {
 

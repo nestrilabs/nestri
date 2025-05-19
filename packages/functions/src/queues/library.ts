@@ -1,3 +1,4 @@
+import "zod-openapi/extend";
 import { SQSHandler } from "aws-lambda";
 import { Actor } from "@nestri/core/actor";
 import { Game } from "@nestri/core/game/index";
