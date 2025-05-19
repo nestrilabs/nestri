@@ -1,6 +1,7 @@
 {
   "name": "@nestri/www",
   "type": "module",
+  "private": true,
   "scripts": {
     "start": "vite",
     "dev": "vite",
@@ -30,7 +31,7 @@
     "@nestri/zero": "*",
     "@openauthjs/openauth": "*",
     "@openauthjs/solid": "0.0.0-20250311201457",
-    "@rocicorp/zero": "*",
+    "@rocicorp/zero": "0.20.2025051800",
     "@solid-primitives/event-listener": "^2.4.0",
     "@solid-primitives/storage": "^4.3.1",
     "@solidjs/router": "^0.15.3",

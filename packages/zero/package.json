@@ -1,13 +1,17 @@
 {
   "name": "@nestri/zero",
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "dependencies": {
-    "@rocicorp/zero": "*",
-    "@nestri/core": "*"
+    "@nestri/core": "*",
+    "@rocicorp/zero": "0.20.2025051800"
   },
   "scripts": {
     "dev": "zero-deploy-permissions && zero-cache",
     "generate": "zero-deploy-permissions --output-format=sql --output-file=permissions.sql"
-  }
+  },
+  "trustedDependencies": [
+    "@rocicorp/zero-sqlite3"
+  ]
 }

@@ -8,6 +8,7 @@ import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
 import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
+import { ZeroProvider } from './providers/zero';
 import { TeamRoute } from '@nestri/www/pages/team';
 import { OpenAuthProvider } from "@openauthjs/solid";
 import { NotFound } from '@nestri/www/pages/not-found';
@@ -107,7 +108,9 @@ export const App: Component = () => {
                                         <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
                                     </FullScreen>
                                 }>
-                                {props.children}
+                                <ZeroProvider>
+                                    {props.children}
+                                </ZeroProvider>
                             </AccountProvider>
                         )}
                     >

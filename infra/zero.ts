@@ -28,6 +28,7 @@ const zeroEnv = {
     ZERO_LITESTREAM_RESTORE_PARALLELISM: "64",
     ZERO_APP_ID: $app.stage,
     ZERO_AUTH_JWKS_URL: $interpolate`${auth.url}/.well-known/jwks.json`,
+    ZERO_INITIAL_SYNC_ROW_BATCH_SIZE: "30000",
     NODE_OPTIONS: "--max-old-space-size=8192",
     ...($dev
         ? {
