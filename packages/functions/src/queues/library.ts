@@ -70,8 +70,8 @@ export const handler: SQSHandler = async (event) => {
                     // Add to user's library
                     await Library.add({
                         baseGameID: appID,
-                        lastPlayed: game.lastPlayed,
-                        timeAcquired: game.timeAcquired,
+                        lastPlayed: new Date(game.lastPlayed),
+                        timeAcquired: new Date(game.timeAcquired),
                         totalPlaytime: game.totalPlaytime,
                         isFamilyShared: game.isFamilyShared,
                     })

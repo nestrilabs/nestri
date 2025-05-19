@@ -380,17 +380,32 @@ export namespace Utils {
                 .toLowerCase();
     }
 
+    function isDepotEntry(e: any): e is DepotEntry {
+        return (
+            e != null &&
+            typeof e === 'object' &&
+            'manifests' in e &&
+            e.manifests != null &&
+            typeof e.manifests.public?.download === 'string'
+        );
+    }
+
     export function getPublicDepotSizes(depots: AppDepots) {
-        const sum = { download: 0, size: 0 };
-        for (const key in depots) {
+        let download = 0;
+        let size = 0;
+
+        for (const key of Object.keys(depots)) {
             if (key === 'branches' || key === 'privatebranches') continue;
             const entry = depots[key] as DepotEntry;
-            if ('manifests' in entry && entry.manifests.public) {
-                sum.download += Number(entry.manifests.public.download);
-                sum.size += Number(entry.manifests.public.size);
+            if (!isDepotEntry(entry)) {
+                console.warn(`Skipping non-depot key ${key}`, entry);
+                continue;
             }
+            download += Number(entry.manifests.public.download);
+            size += Number(entry.manifests.public.size);
         }
-        return { downloadSize: sum.download, sizeOnDisk: sum.size };
+        
+        return { downloadSize: download, sizeOnDisk: size };
     }
 
     export function parseGenres(str: string): GenreType[] {

@@ -1,3 +1,4 @@
+import { bus } from "./bus";
 import { vpc } from "./vpc";
 import { postgres } from "./postgres";
 import { steamEncryptionKey, secret } from "./secret";
@@ -13,6 +14,7 @@ LibraryQueue.subscribe({
     memory: "3002 MB",
     handler: "packages/functions/src/queues/library.handler",
     link: [
+        bus,
         postgres,
         steamEncryptionKey,
         secret.PolarSecret
