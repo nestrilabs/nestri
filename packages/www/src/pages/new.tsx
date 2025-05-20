@@ -1,6 +1,5 @@
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
-import { useNavigate } from "@solidjs/router";
 import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
 
 const Card = styled("div", {
@@ -44,18 +43,12 @@ const Logo = styled("svg", {
 
 const Title = styled("h1", {
     base: {
-        lineHeight: "2.2rem",
+        lineHeight: "2rem",
+        textWrap: "balance",
+        letterSpacing: "-0.029375rem",
         fontSize: theme.font.size["4xl"],
         fontFamily: theme.font.family.heading,
         fontWeight: theme.font.weight.semibold,
-    }
-})
-
-const Subtitle = styled("h2", {
-    base: {
-        fontSize: theme.font.size["base"],
-        fontWeight: theme.font.weight.regular,
-        color: theme.color.gray.d900,
     }
 })
 
@@ -170,13 +163,13 @@ const Divider = styled("div", {
         ":before": {
             width: "100%",
             content: "",
-            borderTop: `1px solid ${theme.color.gray.d400}`,
+            borderTop: `1px solid ${theme.color.gray.d500}`,
             alignSelf: "center"
         },
         ":after": {
             width: "100%",
             content: "",
-            borderTop: `1px solid ${theme.color.gray.d400}`,
+            borderTop: `1px solid ${theme.color.gray.d500}`,
             alignSelf: "center"
         }
     }
@@ -193,9 +186,6 @@ const DividerText = styled("span", {
 })
 
 export function CreateTeamComponent() {
-
-    const nav = useNavigate();
-
     return (
         <FullScreen>
             <Container
