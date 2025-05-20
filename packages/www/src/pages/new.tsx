@@ -186,6 +186,82 @@ const DividerText = styled("span", {
 })
 
 export function CreateTeamComponent() {
+
+    const openPopup = () => {
+        const POLL_INTERVAL = 300;
+        const BASE_URL = import.meta.env.VITE_API_URL;
+
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent
+        );
+
+        const createDesktopWindow = (authUrl: string) => {
+            const config = {
+                width: 700,
+                height: 700,
+                features: "toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no,copyhistory=no"
+            };
+
+            const top = window.top!.outerHeight / 2 + window.top!.screenY - (config.height / 2);
+            const left = window.top!.outerWidth / 2 + window.top!.screenX - (config.width / 2);
+
+            return window.open(
+                authUrl,
+                'Steam Popup',
+                `width=${config.width},height=${config.height},left=${left},top=${top},${config.features}`
+            );
+        };
+
+        const monitorAuthWindow = (targetWindow: Window) => {
+            return new Promise((resolve, reject) => {
+                const handleAuthSuccess = (event: { origin: string; data: string; }) => {
+                    if (event.origin !== BASE_URL) return;
+
+                    try {
+                        const data = JSON.parse(event.data);
+                        if (data.type === 'auth_success') {
+                            cleanup();
+                            //FIXME: Navigate to this place
+                            // window.location.href = window.location.origin + "/" + provider + "/callback" + data.searchParams;
+                            resolve("");
+                        }
+                    } catch (e) {
+                        // Ignore invalid JSON messages
+                    }
+                };
+
+                window.addEventListener('message', handleAuthSuccess);
+
+                const timer = setInterval(() => {
+                    if (targetWindow.closed) {
+                        cleanup();
+                        reject(new Error('Authentication window was closed'));
+                    }
+                }, POLL_INTERVAL);
+
+                function cleanup() {
+                    clearInterval(timer);
+                    window.removeEventListener('message', handleAuthSuccess);
+                    if (!targetWindow.closed) {
+                        targetWindow.location.href = 'about:blank'
+                        targetWindow.close();
+                    }
+                    window.focus();
+                }
+            });
+        };
+
+
+        const authUrl = `${BASE_URL}/steam/popup`;
+        const newWindow = isMobile ? window.open(authUrl, '_blank') : createDesktopWindow(authUrl);
+
+        if (!newWindow) {
+            throw new Error('Failed to open authentication window');
+        }
+
+        return monitorAuthWindow(newWindow);
+    }
+
     return (
         <FullScreen>
             <Container
@@ -196,7 +272,7 @@ export function CreateTeamComponent() {
                     <Card >
                         <Title>Connect your game library to get started</Title>
                         <ButtonContainer>
-                            <Button steamBtn>
+                            <Button onClick={openPopup} steamBtn>
                                 <ButtonIcon
                                     xmlns="http://www.w3.org/2000/svg"
                                     width={32}
