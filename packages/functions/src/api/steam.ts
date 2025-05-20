@@ -49,14 +49,21 @@ export namespace SteamApi {
                 })
         )
         .get("/callback",
-            (c) => {
+            async (c) => {
                 const params = new URL(c.req.url).searchParams;
 
                 //TODO: Do it here
+                const steamID = params.get('openid.claimed_id')?.split('/').pop();
 
-                const steamID = params.get('openid.claimed_id')?.split('/').pop()
+                // const userInfo = await Client.getUserInfo([steamID!])
 
-                return c.json(params)
+                const friends = await Client.getFriendsList(steamID!);
+
+                const friendSteamIDs = friends.friendslist.friends.map(f => f.steamid)
+
+                const friendsInfo = await Client.getUserInfo(friendSteamIDs)
+
+                return c.json(friendsInfo)
             }
         )
         .get("/popup",

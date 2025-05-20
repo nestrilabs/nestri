@@ -1,86 +1,85 @@
 import type {
+    Shot,
     AppInfo,
-    GameTagsResponse,
-    SteamApiResponse,
-    GameDetailsResponse,
-    SteamAppDataResponse,
     ImageInfo,
     ImageType,
-    Shot
+    SteamAccount,
+    GameTagsResponse,
+    GameDetailsResponse,
+    SteamAppDataResponse,
+    SteamOwnedGamesResponse,
+    SteamPlayerBansResponse,
+    SteamFriendsListResponse,
+    SteamPlayerSummaryResponse,
 } from "./types";
 import { z } from "zod";
-import pLimit from 'p-limit';
-import SteamID from "steamid";
 import { fn } from "../utils";
+import { Resource } from "sst";
 import { Utils } from "./utils";
-import SteamCommunity from "steamcommunity";
-import { Credentials } from "../credentials";
-import type CSteamUser from "steamcommunity/classes/CSteamUser";
-
-const requestLimit = pLimit(10); // max concurrent requests
 
 export namespace Client {
     export const getUserLibrary = fn(
-        Credentials.Info.shape.accessToken,
-        async (accessToken) =>
-            await Utils.fetchApi<SteamApiResponse>(`https://api.steampowered.com/IFamilyGroupsService/GetSharedLibraryApps/v1/?access_token=${accessToken}&family_groupid=0&include_excluded=true&include_free=true&include_non_games=false&include_own=true`)
+        z.string(),
+        async (steamID) =>
+            await Utils.fetchApi<SteamOwnedGamesResponse>(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${Resource.SteamApiKey.value}&steamid=${steamID}&include_appinfo=1&format=json&include_played_free_games=1&skip_unvetted_apps=0`)
     )
 
     export const getFriendsList = fn(
-        Credentials.Info.shape.cookies,
-        async (cookies): Promise<CSteamUser[]> => {
-            const community = new SteamCommunity();
-            community.setCookies(cookies);
-
-            const allFriends = await new Promise<Record<string, any>>((resolve, reject) => {
-                community.getFriendsList((err, friends) => {
-                    if (err) {
-                        return reject(new Error(`Could not get friends list: ${err.message}`));
-                    }
-                    resolve(friends);
-                });
-            });
-
-            const friendIds = Object.keys(allFriends);
-
-            const userPromises: Promise<CSteamUser>[] = friendIds.map(id =>
-                requestLimit(() => new Promise<CSteamUser>((resolve, reject) => {
-                    const sid = new SteamID(id);
-                    community.getSteamUser(sid, (err, user) => {
-                        if (err) {
-                            return reject(new Error(`Could not get steam user info for ${id}: ${err.message}`));
-                        }
-                        resolve(user);
-                    });
-                }))
-            );
-
-            const settled = await Promise.allSettled(userPromises)
-
-            settled
-                .filter(r => r.status === "rejected")
-                .forEach(r => console.warn("[getFriendsList] failed:", (r as PromiseRejectedResult).reason));
-
-            return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<CSteamUser>).value);
-        }
+        z.string(),
+        async (steamID) =>
+            await Utils.fetchApi<SteamFriendsListResponse>(`https://api.steampowered.com/ISteamUser/GetFriendList/v0001/?key=${Resource.SteamApiKey.value}&steamid=${steamID}&relationship=friend`)
     );
 
     export const getUserInfo = fn(
-        Credentials.Info.pick({ cookies: true, steamID: true }),
-        async (input) =>
-            new Promise((resolve, reject) => {
-                const community = new SteamCommunity()
-                community.setCookies(input.cookies);
-                const steamID = new SteamID(input.steamID);
-                community.getSteamUser(steamID, async (err, user) => {
-                    if (err) {
-                        reject(`Could not get steam user info: ${err.message}`)
+        z.string().array(),
+        async (steamIDs) => {
+            const [userInfo, banInfo, profileInfo] = await Promise.all([
+                Utils.fetchApi<SteamPlayerSummaryResponse>(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=${Resource.SteamApiKey.value}&steamids=${steamIDs.join(",")}`),
+                Utils.fetchApi<SteamPlayerBansResponse>(`https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=${Resource.SteamApiKey.value}&steamids=${steamIDs.join(",")}`),
+                Utils.fetchProfilesInfo(steamIDs)
+            ])
+
+            // Create a map of bans by steamID for fast lookup
+            const bansBySteamID = new Map(
+                banInfo.players.map((b) => [b.SteamId, b])
+            );
+
+            // Map userInfo.players to your desired output using Promise.allSettled 
+            // to prevent one error from closing down the whole pipeline
+            const steamAccounts = await Promise.allSettled(
+                userInfo.response.players.map(async (player) => {
+                    const ban = bansBySteamID.get(player.steamid);
+                    const info = profileInfo.get(player.steamid)!;
+
+                    if ('error' in info) {
+                        throw new Error(`error handling profile info for: ${player.steamid}:${info.error}`)
                     } else {
-                        resolve(user)
+                        return {
+                            steamID: player.steamid,
+                            name: player.personaname,
+                            realName: player.realname ?? null,
+                            steamMemberSince: new Date(player.timecreated * 1000),
+                            avatarHash: player.avatarhash,
+                            limitations: {
+                                isLimited: info.isLimited,
+                                privacyState: info.privacyState,
+                                isVacBanned: ban?.VACBanned ?? false,
+                                tradeBanState: ban?.EconomyBan ?? "none",
+                                visibilityState: player.communityvisibilitystate,
+                            },
+                            lastSyncedAt: new Date(),
+                            profileUrl: player.profileurl,
+                        };
                     }
                 })
-            }) as Promise<CSteamUser>
-    )
+            );
+
+            steamAccounts
+                .filter(result => result.status === 'rejected')
+                .forEach(result => console.warn('[userInfo] failed:', (result as PromiseRejectedResult).reason))
+
+            return steamAccounts.filter(result => result.status === "fulfilled").map(result => (result as PromiseFulfilledResult<SteamAccount>).value)
+        })
 
     export const getAppInfo = fn(
         z.string(),

@@ -9,6 +9,7 @@ import type {
     CompareResult,
     RankedShot,
     Shot,
+    ProfileInfo,
 } from "./types";
 import crypto from 'crypto';
 import pLimit from 'p-limit';
@@ -18,6 +19,7 @@ import { LRUCache } from 'lru-cache';
 import sanitizeHtml from 'sanitize-html';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
+import { parseStringPromise } from "xml2js";
 import sharp, { type Metadata } from 'sharp';
 import AbortController from 'abort-controller';
 import fetch, { RequestInit } from 'node-fetch';
@@ -404,7 +406,7 @@ export namespace Utils {
             download += Number(entry.manifests.public.download);
             size += Number(entry.manifests.public.size);
         }
-        
+
         return { downloadSize: download, sizeOnDisk: size };
     }
 
@@ -433,5 +435,65 @@ export namespace Utils {
         });
 
         return cleaned.trim()
+    }
+
+    /**
+     * Fetches and parses a single Steam community profile XML.
+     * @param steamIdOrVanity - The 64-bit SteamID or vanity name.
+     * @returns Promise resolving to ProfileInfo.
+     */
+    export async function fetchProfileInfo(
+        steamIdOrVanity: string
+    ): Promise<ProfileInfo> {
+        const isNumericId = /^\d+$/.test(steamIdOrVanity);
+        const path = isNumericId ? `profiles/${steamIdOrVanity}` : `id/${steamIdOrVanity}`;
+        const url = `https://steamcommunity.com/${path}/?xml=1`;
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch ${steamIdOrVanity}: HTTP ${response.status}`);
+        }
+
+        const xml = await response.text();
+        const { profile } = await parseStringPromise(xml, {
+            explicitArray: false,
+            trim: true,
+            mergeAttrs: true
+        }) as { profile: any };
+
+        // Extract fields (fall back to limitedAccount tag if needed)
+        const limitedFlag = profile.isLimitedAccount ?? profile.limitedAccount;
+        const isLimited = limitedFlag === '1';
+
+        return {
+            isLimited,
+            steamID64: profile.steamID64,
+            privacyState: profile.privacyState,
+            visibility: profile.visibilityState
+        };
+    }
+
+    /**
+     * Batch-fetches multiple Steam profiles in parallel.
+     * @param idsOrVanities - Array of SteamID64 strings or vanity names.
+     * @returns Promise resolving to a record mapping each input to its ProfileInfo or an error.
+     */
+    export async function fetchProfilesInfo(
+        idsOrVanities: string[]
+    ): Promise<Map<string, ProfileInfo | { error: string }>> {
+        const results = await Promise.all(
+            idsOrVanities.map(async (input) => {
+                try {
+                    const info = await fetchProfileInfo(input);
+                    return { input, result: info };
+                } catch (err) {
+                    return { input, result: { error: (err as Error).message } };
+                }
+            })
+        );
+
+        return new Map(
+            results.map(({ input, result }) => [input, result] as [string, ProfileInfo | { error: string }])
+        );
     }
 }
