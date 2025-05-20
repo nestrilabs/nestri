@@ -1,7 +1,7 @@
 import { bus } from "./bus";
 import { vpc } from "./vpc";
+import { secret } from "./secret";
 import { postgres } from "./postgres";
-import { steamEncryptionKey, secret } from "./secret";
 
 export const LibraryQueue = new sst.aws.Queue("LibraryQueue", {
     fifo: true,
@@ -10,13 +10,13 @@ export const LibraryQueue = new sst.aws.Queue("LibraryQueue", {
 
 LibraryQueue.subscribe({
     vpc,
-    timeout: "10 minutes",
     memory: "3002 MB",
+    timeout: "10 minutes",
     handler: "packages/functions/src/queues/library.handler",
     link: [
         bus,
         postgres,
-        steamEncryptionKey,
+        secret.SteamApiKey,
         secret.PolarSecret
     ],
 });

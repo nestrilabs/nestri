@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fn } from "../utils";
+import { createID, fn } from "../utils";
 import { Actor } from "../actor";
 import { Common } from "../common";
 import { createEvent } from "../event";
@@ -14,6 +14,10 @@ export namespace Steam {
             id: z.string().openapi({
                 description: Common.IdDescription,
                 example: Examples.SteamAccount.id
+            }),
+            steamID: z.string().openapi({
+                description: "The Steam ID of this Steam account",
+                example: Examples.SteamAccount.steamID
             }),
             avatarHash: z.string().openapi({
                 description: "The Steam avatar hash that this account owns",
@@ -31,14 +35,6 @@ export namespace Steam {
                 description: "The steam community url of this account",
                 example: Examples.SteamAccount.profileUrl
             }),
-            username: z.string()
-                .regex(/^[a-z0-9]{1,32}$/, "The Steam username is not slug friendly")
-                .nullable()
-                .openapi({
-                    description: "The unique username of this account",
-                    example: Examples.SteamAccount.username
-                })
-                .default("unknown"),
             realName: z.string().nullable().openapi({
                 description: "The real name behind of this Steam account",
                 example: Examples.SteamAccount.realName
@@ -91,9 +87,10 @@ export namespace Steam {
                 useUser: z.boolean(),
             })
             .partial({
-                useUser: true,
+                id: true,
                 userID: true,
                 status: true,
+                useUser: true,
                 lastSyncedAt: true
             }),
         (input) =>
@@ -104,8 +101,8 @@ export namespace Steam {
                         .from(steamTable)
                         .where(
                             and(
-                                eq(steamTable.id, input.id),
-                                isNull(steamTable.timeDeleted)
+                                isNull(steamTable.timeDeleted),
+                                eq(steamTable.steamID, input.steamID)
                             )
                         )
                         .execute()
@@ -115,18 +112,19 @@ export namespace Steam {
                 if (accounts.length > 0) return null
 
                 const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : null;
+                const id = input.id ?? createID("steam")
                 await tx
                     .insert(steamTable)
                     .values({
+                        id,
                         userID,
-                        id: input.id,
                         name: input.name,
+                        steamID: input.steamID,
                         realName: input.realName,
                         profileUrl: input.profileUrl,
                         avatarHash: input.avatarHash,
                         limitations: input.limitations,
                         status: input.status ?? "offline",
-                        username: input.username ?? "unknown",
                         steamMemberSince: input.steamMemberSince,
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
@@ -205,9 +203,9 @@ export namespace Steam {
         return {
             id: input.id,
             name: input.name,
-            userID: input.userID,
             status: input.status,
-            username: input.username,
+            userID: input.userID,
+            steamID: input.steamID,
             realName: input.realName,
             avatarHash: input.avatarHash,
             limitations: input.limitations,

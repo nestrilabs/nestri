@@ -33,8 +33,9 @@ export namespace Examples {
     }
 
     export const SteamAccount = {
+        id: Id("steam"),
         status: "online" as const, //offline,dnd(do not disturb) or playing 
-        id: "74839300282033",// Primary key
+        steamID: "74839300282033",// Steam ID
         userID: User.id,// | null  FK to User (null if not linked)
         name: "JD The 65th",
         username: "jdoe",

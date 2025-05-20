@@ -90,8 +90,8 @@ declare module "sst" {
       "endpoint": string
       "type": "sst.aws.Realtime"
     }
-    "SteamEncryptionKey": {
-      "type": "random.index/randomString.RandomString"
+    "SteamApiKey": {
+      "type": "sst.sst.Secret"
       "value": string
     }
     "Storage": {

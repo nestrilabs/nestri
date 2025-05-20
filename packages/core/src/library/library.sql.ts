@@ -14,7 +14,7 @@ export const steamLibraryTable = pgTable(
             }),
         ownerID: varchar("owner_id", { length: 255 })
             .notNull()
-            .references(() => steamTable.id, {
+            .references(() => steamTable.steamID, {
                 onDelete: "cascade"
             }),
         timeAcquired: utc("time_acquired").notNull(),

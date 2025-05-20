@@ -17,7 +17,7 @@ export const memberTable = pgTable(
             }),
         steamID: varchar("steam_id", { length: 255 })
             .notNull()
-            .references(() => steamTable.id, {
+            .references(() => steamTable.steamID, {
                 onDelete: "cascade",
                 onUpdate: "restrict"
             }),
