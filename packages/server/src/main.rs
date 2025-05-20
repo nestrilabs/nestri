@@ -172,7 +172,7 @@ fn handle_encoder_audio(args: &args::Args) -> String {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
-    let mut args = args::Args::new();
+    let args = args::Args::new();
     if args.app.verbose {
         args.debug_print();
     }
@@ -207,7 +207,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let gpu = gpu.unwrap();
 
     if args.app.dma_buf {
-        log::warn!("DMA-BUF is experimental, it may or may not improve performance, or even work at all.");
+        log::warn!(
+            "DMA-BUF is experimental, it may or may not improve performance, or even work at all."
+        );
     }
 
     // Handle video encoder selection
@@ -297,7 +299,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let gl_caps = gst::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
     gl_caps_filter.set_property("caps", &gl_caps);
 
-    // GL download element
+    // GL download element (needed only for DMA-BUF outside NVIDIA GPUs)
     let gl_download = gst::ElementFactory::make("gldownload").build()?;
 
     // Video Converter Element
@@ -373,7 +375,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // If DMA-BUF is enabled, add glupload, color conversion and caps filter
     if args.app.dma_buf {
-        pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter, &gl_download])?;
+        if *gpu.vendor() == GPUVendor::NVIDIA {
+            pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter])?;
+        } else {
+            pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter, &gl_download])?;
+        }
     }
 
     // Link main audio branch
@@ -390,20 +396,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // With DMA-BUF, also link glupload and it's caps
     if args.app.dma_buf {
-        // Link video source to caps_filter, glupload, gl_caps_filter, video_converter, video_encoder, webrtcsink
-        gst::Element::link_many(&[
-            &video_source,
-            &caps_filter,
-            &video_queue,
-            &video_clocksync,
-            &glupload,
-            &glcolorconvert,
-            &gl_caps_filter,
-            &gl_download,
-            &video_encoder,
-        ])?;
+        if *gpu.vendor() == GPUVendor::NVIDIA {
+            gst::Element::link_many(&[
+                &video_source,
+                &caps_filter,
+                &video_queue,
+                &video_clocksync,
+                &glupload,
+                &glcolorconvert,
+                &gl_caps_filter,
+                &video_encoder,
+            ])?;
+        } else {
+            gst::Element::link_many(&[
+                &video_source,
+                &caps_filter,
+                &video_queue,
+                &video_clocksync,
+                &glupload,
+                &glcolorconvert,
+                &gl_caps_filter,
+                &gl_download,
+                &video_encoder,
+            ])?;
+        }
     } else {
-        // Link video source to caps_filter, video_converter, video_encoder, webrtcsink
         gst::Element::link_many(&[
             &video_source,
             &caps_filter,
@@ -439,7 +456,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let result = run_pipeline(pipeline.clone()).await;
 
     match result {
-        Ok(_) => log::info!("All tasks completed successfully"),
+        Ok(_) => log::info!("All tasks finished"),
         Err(e) => {
             log::error!("Error occurred in one of the tasks: {}", e);
             return Err("Error occurred in one of the tasks".into());
