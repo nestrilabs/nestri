@@ -63,6 +63,7 @@ export namespace SteamApi {
 
                 const friendsInfo = await Client.getUserInfo(friendSteamIDs)
 
+                // FIXME: Continue from here; have a way to add this to the db
                 return c.json(friendsInfo)
             }
         )
