@@ -400,11 +400,18 @@ export namespace Utils {
             if (key === 'branches' || key === 'privatebranches') continue;
             const entry = depots[key] as DepotEntry;
             if (!isDepotEntry(entry)) {
-                console.warn(`Skipping non-depot key ${key}`, entry);
                 continue;
             }
-            download += Number(entry.manifests.public.download);
-            size += Number(entry.manifests.public.size);
+
+            const dl = Number(entry.manifests.public.download);
+            const sz = Number(entry.manifests.public.size);
+            if (!Number.isFinite(dl) || !Number.isFinite(sz)) {
+                console.warn(`[getPublicDepotSizes] non-numeric size for depot ${key}`);
+                continue;
+            }
+
+            download += dl;
+            size += sz;
         }
 
         return { downloadSize: download, sizeOnDisk: size };

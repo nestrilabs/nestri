@@ -15,6 +15,7 @@ import { chunkArray } from "@nestri/core/utils/helper";
 import { ErrorResponses, validator, Result, notPublic } from "./utils";
 import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { LoginSession, EAuthTokenPlatformType } from "steam-session";
+import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
 const sqs = new SQSClient({});
 
@@ -52,19 +53,43 @@ export namespace SteamApi {
             async (c) => {
                 const params = new URL(c.req.url).searchParams;
 
-                //TODO: Do it here
-                const steamID = params.get('openid.claimed_id')?.split('/').pop();
+                // Verify OpenID response and get steamID
+                const steamID = await Client.verifyOpenIDResponse(params);
 
-                // const userInfo = await Client.getUserInfo([steamID!])
+                // If verification failed, return error
+                if (!steamID) {
+                    throw new VisibleError(
+                        "authentication",
+                        ErrorCodes.Authentication.UNAUTHORIZED,
+                        "Invalid OpenID authentication response"
+                    );
+                }
 
-                const friends = await Client.getFriendsList(steamID!);
+                const userInfo = await Client.getUserInfo([steamID])
 
-                const friendSteamIDs = friends.friendslist.friends.map(f => f.steamid)
+            
 
-                const friendsInfo = await Client.getUserInfo(friendSteamIDs)
+                // Get friends info
+                // const friends = await Client.getFriendsList(steamID!);
 
-                // FIXME: Continue from here; have a way to add this to the db
-                return c.json(friendsInfo)
+                // const friendSteamIDs = friends.friendslist.friends.map(f => f.steamid)
+
+                // const friendsInfo = await Client.getUserInfo(friendSteamIDs)
+
+                //Get user library
+                const gameLibrary = await Client.getUserLibrary(steamID)
+
+                // const settled = await Promise.allSettled(gameLibrary.response.games.map(async (game) => {
+                //     return await Client.getAppInfo(game.appid.toString())
+                // }))
+
+                // settled.filter(i => i.status === "rejected").forEach(e => console.warn(`[getAppInfo]: Failed to get game metadata: ${e.reason}`))
+
+                // const gameInfo = settled.filter(i => i.status === "fulfilled").map(f => f.value)
+
+                // console.log(`${gameLibrary.response.game_count} === ${gameInfo.length}`)
+
+                return c.json(gameLibrary)
             }
         )
         .get("/popup",

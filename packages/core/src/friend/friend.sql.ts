@@ -8,12 +8,12 @@ export const friendTable = pgTable(
         ...timestamps,
         steamID: varchar("steam_id", { length: 255 })
             .notNull()
-            .references(() => steamTable.steamID, {
+            .references(() => steamTable.id, {
                 onDelete: "cascade"
             }),
         friendSteamID: varchar("friend_steam_id", { length: 255 })
             .notNull()
-            .references(() => steamTable.steamID, {
+            .references(() => steamTable.id, {
                 onDelete: "cascade"
             }),
     },

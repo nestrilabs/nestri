@@ -33,10 +33,10 @@ export namespace Library {
     };
 
     export const add = fn(
-        Info.partial({ ownerID: true }),
+        Info.partial({ ownerSteamID: true }),
         async (input) =>
             createTransaction(async (tx) => {
-                const ownerSteamID = input.ownerID ?? Actor.steamID()
+                const ownerSteamID = input.ownerSteamID ?? Actor.steamID()
                 const result =
                     await tx
                         .select()
@@ -44,7 +44,7 @@ export namespace Library {
                         .where(
                             and(
                                 eq(steamLibraryTable.baseGameID, input.baseGameID),
-                                eq(steamLibraryTable.ownerID, ownerSteamID),
+                                eq(steamLibraryTable.ownerSteamID, ownerSteamID),
                                 isNull(steamLibraryTable.timeDeleted)
                             )
                         )
@@ -57,21 +57,17 @@ export namespace Library {
                 await tx
                     .insert(steamLibraryTable)
                     .values({
-                        ownerID: ownerSteamID,
+                        ownerSteamID: ownerSteamID,
                         baseGameID: input.baseGameID,
                         lastPlayed: input.lastPlayed,
                         totalPlaytime: input.totalPlaytime,
-                        timeAcquired: input.timeAcquired,
-                        isFamilyShared: input.isFamilyShared
                     })
                     .onConflictDoUpdate({
-                        target: [steamLibraryTable.ownerID, steamLibraryTable.baseGameID],
+                        target: [steamLibraryTable.ownerSteamID, steamLibraryTable.baseGameID],
                         set: {
                             timeDeleted: null,
                             lastPlayed: input.lastPlayed,
-                            timeAcquired: input.timeAcquired,
                             totalPlaytime: input.totalPlaytime,
-                            isFamilyShared: input.isFamilyShared
                         }
                     })
 
@@ -87,7 +83,7 @@ export namespace Library {
                     .set({ timeDeleted: sql`now()` })
                     .where(
                         and(
-                            eq(steamLibraryTable.ownerID, input.ownerID),
+                            eq(steamLibraryTable.ownerSteamID, input.ownerSteamID),
                             eq(steamLibraryTable.baseGameID, input.baseGameID),
                         )
                     )
@@ -105,7 +101,7 @@ export namespace Library {
                 .from(steamLibraryTable)
                 .where(
                     and(
-                        eq(steamLibraryTable.ownerID, Actor.steamID()),
+                        eq(steamLibraryTable.ownerSteamID, Actor.steamID()),
                         isNull(steamLibraryTable.timeDeleted)
                     )
                 )

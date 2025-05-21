@@ -19,8 +19,8 @@ export const steamTable = pgTable(
     "steam_accounts",
     {
         ...timestamps,
-        ...id,
-        steamID: varchar("steam_id", { length: 255 })
+        id: varchar("id", { length: 255 })
+            .primaryKey()
             .notNull(),
         userID: ulid("user_id")
             .references(() => userTable.id, {
@@ -34,8 +34,5 @@ export const steamTable = pgTable(
         profileUrl: varchar("profile_url", { length: 255 }),
         avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         limitations: json("limitations").$type<Limitations>().notNull(),
-    },
-    (table) => [
-        unique("idx_steam_steam_id").on(table.steamID)
-    ]
+    }
 );

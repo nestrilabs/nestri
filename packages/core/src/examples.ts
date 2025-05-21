@@ -33,9 +33,8 @@ export namespace Examples {
     }
 
     export const SteamAccount = {
-        id: Id("steam"),
         status: "online" as const, //offline,dnd(do not disturb) or playing 
-        steamID: "74839300282033",// Steam ID
+        id: "74839300282033",// Steam ID
         userID: User.id,// | null  FK to User (null if not linked)
         name: "JD The 65th",
         username: "jdoe",
@@ -56,11 +55,10 @@ export namespace Examples {
 
     export const Team = {
         id: Id("team"),// Primary key
-        name: "John's Console", // Team name (not null, unique)
-        ownerID: User.id, // FK to User who owns/created the team
-        slug: SteamAccount.profileUrl.toLowerCase(),
+        name: "John", // Team name (not null, unique)
         maxMembers: 3,
         inviteCode: "xwydjf",
+        ownerSteamID: SteamAccount.id, // FK to User who owns/created the team
         members: [SteamAccount]
     };
 

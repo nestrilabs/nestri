@@ -49,7 +49,11 @@ export namespace Client {
             const steamAccounts = await Promise.allSettled(
                 userInfo.response.players.map(async (player) => {
                     const ban = bansBySteamID.get(player.steamid);
-                    const info = profileInfo.get(player.steamid)!;
+                    const info = profileInfo.get(player.steamid);
+
+                    if (!info) {
+                        throw new Error(`[userInfo] profile info missing for ${player.steamid}`)
+                    }
 
                     if ('error' in info) {
                         throw new Error(`error handling profile info for: ${player.steamid}:${info.error}`)
@@ -236,4 +240,57 @@ export namespace Client {
             return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<ImageInfo>).value)
         }
     )
+
+    /**
+     * Verifies a Steam OpenID response by sending a request back to Steam
+     * with mode=check_authentication
+     */
+    export async function verifyOpenIDResponse(params: URLSearchParams): Promise<string | null> {
+        try {
+            // Create a new URLSearchParams with all the original parameters
+            const verificationParams = new URLSearchParams();
+
+            // Copy all parameters from the original request
+            for (const [key, value] of params.entries()) {
+                verificationParams.append(key, value);
+            }
+
+            // Change mode to check_authentication for verification
+            verificationParams.set('openid.mode', 'check_authentication');
+
+            // Send verification request to Steam
+            const verificationResponse = await fetch('https://steamcommunity.com/openid/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: verificationParams.toString()
+            });
+
+            const responseText = await verificationResponse.text();
+
+            // Check if verification was successful
+            if (!responseText.includes('is_valid:true')) {
+                console.error('OpenID verification failed:', responseText);
+                return null;
+            }
+
+            // Extract steamID from the claimed_id
+            const claimedId = params.get('openid.claimed_id');
+            if (!claimedId) {
+                return null;
+            }
+
+            // Extract the Steam ID from the claimed_id
+            const steamID = claimedId.split('/').pop();
+            if (!steamID || !/^\d+$/.test(steamID)) {
+                return null;
+            }
+
+            return steamID;
+        } catch (error) {
+            console.error('OpenID verification error:', error);
+            return null;
+        }
+    }
 }

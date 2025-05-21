@@ -13,7 +13,6 @@ export const prefixes = {
   game: "gme",
   usage: "usg",
   subscription: "sub",
-  steam: "stm",
   // task: "tsk",
   // invite: "inv",
   // product: "prd",

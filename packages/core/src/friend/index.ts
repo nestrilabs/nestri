@@ -8,9 +8,9 @@ import { friendTable } from "./friend.sql";
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { createSelectSchema } from "drizzle-zod";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { groupBy, map, pipe, values } from "remeda";
 import { ErrorCodes, VisibleError } from "../error";
-import { and, eq, isNull, sql } from "drizzle-orm";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Friend {

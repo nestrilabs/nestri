@@ -15,10 +15,6 @@ export namespace Steam {
                 description: Common.IdDescription,
                 example: Examples.SteamAccount.id
             }),
-            steamID: z.string().openapi({
-                description: "The Steam ID of this Steam account",
-                example: Examples.SteamAccount.steamID
-            }),
             avatarHash: z.string().openapi({
                 description: "The Steam avatar hash that this account owns",
                 example: Examples.SteamAccount.avatarHash
@@ -87,7 +83,6 @@ export namespace Steam {
                 useUser: z.boolean(),
             })
             .partial({
-                id: true,
                 userID: true,
                 status: true,
                 useUser: true,
@@ -102,7 +97,7 @@ export namespace Steam {
                         .where(
                             and(
                                 isNull(steamTable.timeDeleted),
-                                eq(steamTable.steamID, input.steamID)
+                                eq(steamTable.id, input.id)
                             )
                         )
                         .execute()
@@ -112,14 +107,12 @@ export namespace Steam {
                 if (accounts.length > 0) return null
 
                 const userID = typeof input.userID === "string" ? input.userID : input.useUser ? Actor.userID() : null;
-                const id = input.id ?? createID("steam")
                 await tx
                     .insert(steamTable)
                     .values({
-                        id,
                         userID,
+                        id:input.id,
                         name: input.name,
-                        steamID: input.steamID,
                         realName: input.realName,
                         profileUrl: input.profileUrl,
                         avatarHash: input.avatarHash,
@@ -205,13 +198,12 @@ export namespace Steam {
             name: input.name,
             status: input.status,
             userID: input.userID,
-            steamID: input.steamID,
             realName: input.realName,
+            profileUrl: input.profileUrl,
             avatarHash: input.avatarHash,
             limitations: input.limitations,
             lastSyncedAt: input.lastSyncedAt,
             steamMemberSince: input.steamMemberSince,
-            profileUrl: input.profileUrl ? `https://steamcommunity.com/id/${input.profileUrl}` : null,
         };
     }
 
