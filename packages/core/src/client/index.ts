@@ -16,6 +16,7 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Resource } from "sst";
 import { Utils } from "./utils";
+import { ImageTypeEnum } from "../images/images.sql";
 
 export namespace Client {
     export const getUserLibrary = fn(
@@ -59,7 +60,7 @@ export namespace Client {
                         throw new Error(`error handling profile info for: ${player.steamid}:${info.error}`)
                     } else {
                         return {
-                            steamID: player.steamid,
+                            id: player.steamid,
                             name: player.personaname,
                             realName: player.realname ?? null,
                             steamMemberSince: new Date(player.timecreated * 1000),
@@ -110,7 +111,7 @@ export namespace Client {
             const controller = (game.common.controller_support === "partial" || game.common.controller_support === "full") ? game.common.controller_support : "unknown";
             const appInfo: AppInfo = {
                 genres,
-                gameid: game.appid,
+                id: game.appid,
                 name: game.common.name.trim(),
                 size: Utils.getPublicDepotSizes(game.depots!),
                 slug: Utils.createSlug(game.common.name.trim()),
@@ -156,7 +157,7 @@ export namespace Client {
         }
     )
 
-    export const getImages = fn(
+    export const getImageUrls = fn(
         z.string(),
         async (appid) => {
             const [appData, details] = await Promise.all([
@@ -170,17 +171,112 @@ export namespace Client {
             if (!game) throw new Error('Game info missing');
 
             // 2. Prepare URLs
-            const screenshotUrls = Utils.getScreenshotUrls(details.rgScreenshots || []);
+            const screenshots = Utils.getScreenshotUrls(details.rgScreenshots || []);
             const assetUrls = Utils.getAssetUrls(game.library_assets_full, appid, game.header_image.english);
-            const iconUrl = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
+            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
 
-            //2.5 Get the backdrop buffer and use it to get the best screenshot
-            const baselineBuffer = await Utils.fetchBuffer(assetUrls.backdrop);
+            return { screenshots, icon, ...assetUrls }
+            // //2.5 Get the backdrop buffer and use it to get the best screenshot
+            // const baselineBuffer = await Utils.fetchBuffer(assetUrls.backdrop);
 
-            // 3. Download screenshot buffers in parallel
+            // // 3. Download screenshot buffers in parallel
+            // const shots: Shot[] = await Promise.all(
+            //     screenshotUrls.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
+            // );
+
+            // // 4. Score screenshots (or pick single)
+            // const scores =
+            //     shots.length === 1
+            //         ? [{ url: shots[0].url, score: 0 }]
+            //         : (await Utils.rankScreenshots(baselineBuffer, shots, {
+            //             threshold: 0.08,
+            //         }))
+
+            // // Build url->rank map
+            // const rankMap = new Map<string, number>();
+            // scores.forEach((s, i) => rankMap.set(s.url, i));
+
+            // // 5. Create tasks for all images
+            // const tasks: Array<Promise<ImageInfo>> = [];
+
+            // // 5a. Screenshots and heroArt metadata (top 4)
+            // for (const { url, buffer } of shots) {
+            //     const rank = rankMap.get(url);
+            //     if (rank === undefined || rank >= 4) continue;
+            //     const type: ImageType = rank === 0 ? 'heroArt' : 'screenshot';
+            //     tasks.push(
+            //         Utils.getImageMetadata(buffer).then(meta => ({ ...meta, sourceUrl: url, position: type == "screenshot" ? rank - 1 : rank, type } as ImageInfo))
+            //     );
+            // }
+
+            // // 5b. Asset images
+            // for (const [type, url] of Object.entries({ ...assetUrls, icon: iconUrl })) {
+            //     if (!url || type === "backdrop") continue;
+            //     tasks.push(
+            //         Utils.fetchBuffer(url)
+            //             .then(buf => Utils.getImageMetadata(buf))
+            //             .then(meta => ({ ...meta, position: 0, sourceUrl: url, type: type as ImageType } as ImageInfo))
+            //     );
+            // }
+
+            // // 5c. Backdrop
+            // tasks.push(
+            //     Utils.getImageMetadata(baselineBuffer)
+            //         .then(meta => ({ ...meta, position: 0, sourceUrl: assetUrls.backdrop, type: "backdrop" as const } as ImageInfo))
+            // )
+
+            // // 5d. Box art
+            // tasks.push(
+            //     Utils.createBoxArtBuffer(game.library_assets_full, appid)
+            //         .then(buf => Utils.getImageMetadata(buf))
+            //         .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
+            // );
+
+            // const settled = await Promise.allSettled(tasks)
+
+            // settled
+            //     .filter(r => r.status === "rejected")
+            //     .forEach(r => console.warn("[getImages] failed:", (r as PromiseRejectedResult).reason));
+
+            // // 6. Await all and return
+            // return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<ImageInfo>).value)
+        }
+    )
+
+    export const getImageInfo = fn(
+        z.object({
+            type: z.enum(ImageTypeEnum.enumValues),
+            url: z.string()
+        }),
+        async (input) =>
+            Utils.fetchBuffer(input.url)
+                .then(buf => Utils.getImageMetadata(buf))
+                .then(meta => ({ ...meta, position: 0, sourceUrl: input.url, type: input.type } as ImageInfo))
+    )
+
+    export const createBoxArt = fn(
+        z.object({
+            backgroundUrl: z.string(),
+            logoUrl: z.string(),
+        }),
+        async (input) =>
+            Utils.createBoxArtBuffer(input.logoUrl, input.backgroundUrl)
+                .then(buf => Utils.getImageMetadata(buf))
+                .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
+    )
+
+    export const createHeroArt = fn(
+        z.object({
+            screenshots: z.string().array(),
+            backdropUrl: z.string()
+        }),
+        async (input) => {
+            // Download screenshot buffers in parallel
             const shots: Shot[] = await Promise.all(
-                screenshotUrls.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
+                input.screenshots.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
             );
+
+            const baselineBuffer = await Utils.fetchBuffer(input.backdropUrl);
 
             // 4. Score screenshots (or pick single)
             const scores =
@@ -207,36 +303,13 @@ export namespace Client {
                 );
             }
 
-            // 5b. Asset images
-            for (const [type, url] of Object.entries({ ...assetUrls, icon: iconUrl })) {
-                if (!url || type === "backdrop") continue;
-                tasks.push(
-                    Utils.fetchBuffer(url)
-                        .then(buf => Utils.getImageMetadata(buf))
-                        .then(meta => ({ ...meta, position: 0, sourceUrl: url, type: type as ImageType } as ImageInfo))
-                );
-            }
-
-            // 5c. Backdrop
-            tasks.push(
-                Utils.getImageMetadata(baselineBuffer)
-                    .then(meta => ({ ...meta, position: 0, sourceUrl: assetUrls.backdrop, type: "backdrop" as const } as ImageInfo))
-            )
-
-            // 5d. Box art
-            tasks.push(
-                Utils.createBoxArtBuffer(game.library_assets_full, appid)
-                    .then(buf => Utils.getImageMetadata(buf))
-                    .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
-            );
-
-            const settled = await Promise.allSettled(tasks)
+            const settled = await Promise.allSettled(tasks);
 
             settled
                 .filter(r => r.status === "rejected")
-                .forEach(r => console.warn("[getImages] failed:", (r as PromiseRejectedResult).reason));
+                .forEach(r => console.warn("[getHeroArt] failed:", (r as PromiseRejectedResult).reason));
 
-            // 6. Await all and return
+            // Await all and return
             return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<ImageInfo>).value)
         }
     )
@@ -271,19 +344,21 @@ export namespace Client {
 
             // Check if verification was successful
             if (!responseText.includes('is_valid:true')) {
-                console.error('OpenID verification failed:', responseText);
+                console.error('OpenID verification failed: Invalid response from Steam', responseText);
                 return null;
             }
 
             // Extract steamID from the claimed_id
             const claimedId = params.get('openid.claimed_id');
             if (!claimedId) {
+                console.error('OpenID verification failed: Missing claimed_id');
                 return null;
             }
 
             // Extract the Steam ID from the claimed_id
             const steamID = claimedId.split('/').pop();
             if (!steamID || !/^\d+$/.test(steamID)) {
+                console.error('OpenID verification failed: Invalid steamID format', steamID);
                 return null;
             }
 

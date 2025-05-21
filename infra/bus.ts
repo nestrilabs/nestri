@@ -11,6 +11,7 @@ bus.subscribe("Event", {
   handler: "packages/functions/src/events/index.handler",
   link: [
     // email,
+    bus,
     postgres,
     storage,
     secret.PolarSecret,

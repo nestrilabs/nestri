@@ -285,7 +285,7 @@ export interface AppInfo {
     name: string;
     slug: string;
     score: number;
-    gameid: string;
+    id: string;
     releaseDate: Date;
     description: string;
     compatibility: "low" | "mid" | "high" | "unknown";
@@ -383,7 +383,7 @@ export interface SteamPlayerBan {
 }
 
 export type SteamAccount = {
-  steamID: string;
+  id: string;
   name: string;
   realName: string | null;
   steamMemberSince: Date;

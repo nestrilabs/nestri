@@ -1,12 +1,14 @@
 import { z } from "zod";
-import { createID, fn } from "../utils";
+import { fn } from "../utils";
+import { Resource } from "sst";
+import { bus } from "sst/aws/bus";
 import { Actor } from "../actor";
 import { Common } from "../common";
-import { createEvent } from "../event";
 import { Examples } from "../examples";
+import { createEvent } from "../event";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { steamTable, StatusEnum, Limitations } from "./steam.sql";
-import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
     export const Info = z
@@ -65,7 +67,7 @@ export namespace Steam {
             "steam_account.created",
             z.object({
                 steamID: Info.shape.id,
-                userID: Info.shape.userID
+                userID: Info.shape.userID,
             }),
         ),
         Updated: createEvent(
@@ -111,7 +113,7 @@ export namespace Steam {
                     .insert(steamTable)
                     .values({
                         userID,
-                        id:input.id,
+                        id: input.id,
                         name: input.name,
                         realName: input.realName,
                         profileUrl: input.profileUrl,
@@ -122,9 +124,9 @@ export namespace Steam {
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
 
-                // await afterTx(async () =>
-                //     bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
-                // );
+                await afterTx(async () =>
+                    bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
+                );
 
                 return input.id
             }),
@@ -139,8 +141,8 @@ export namespace Steam {
             .partial({
                 userID: true
             }),
-        (input) =>
-            useTransaction(async (tx) => {
+        async (input) =>
+            createTransaction(async (tx) => {
                 const userID = input.userID ?? Actor.userID()
                 await tx
                     .update(steamTable)
@@ -148,6 +150,12 @@ export namespace Steam {
                         userID
                     })
                     .where(eq(steamTable.id, input.steamID));
+
+                await afterTx(async () =>
+                    bus.publish(Resource.Bus, Events.Updated, { userID, steamID: input.steamID })
+                );
+
+                return input.steamID
             })
     )
 

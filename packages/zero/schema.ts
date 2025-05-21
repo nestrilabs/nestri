@@ -6,7 +6,6 @@ import {
     table,
     number,
     string,
-    boolean,
     enumeration,
     createSchema,
     relationships,

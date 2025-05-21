@@ -2,10 +2,12 @@ import { z } from "zod";
 import { fn } from "../utils";
 import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
+import { Client } from "../client";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createEvent } from "../event";
 import { eq, isNull, and } from "drizzle-orm";
+import { ImageTypeEnum } from "../images/images.sql";
 import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
 import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum } from "./base-game.sql";
 
@@ -61,9 +63,27 @@ export namespace BaseGame {
 
     export const Events = {
         New: createEvent(
-            "new_game.added",
+            "new_image.save",
             z.object({
                 appID: Info.shape.id,
+                url: z.string().url(),
+                type: z.enum(ImageTypeEnum.enumValues)
+            }),
+        ),
+        NewBoxArt: createEvent(
+            "new_box_art_image.save",
+            z.object({
+                appID: Info.shape.id,
+                logoUrl: z.string().url(),
+                backgroundUrl: z.string().url(),
+            }),
+        ),
+        NewHeroArt: createEvent(
+            "new_hero_art_image.save",
+            z.object({
+                appID: Info.shape.id,
+                backdropUrl: z.string().url(),
+                screenshots: z.string().url().array(),
             }),
         ),
     };
@@ -72,6 +92,21 @@ export namespace BaseGame {
         Info,
         (input) =>
             createTransaction(async (tx) => {
+                const result = await tx
+                    .select()
+                    .from(baseGamesTable)
+                    .where(
+                        and(
+                            eq(baseGamesTable.id, input.id),
+                            isNull(baseGamesTable.timeDeleted)
+                        )
+                    )
+                    .limit(1)
+                    .execute()
+                    .then(rows => rows.at(0))
+
+                if (result) return result.id
+
                 await tx
                     .insert(baseGamesTable)
                     .values(input)
@@ -83,7 +118,55 @@ export namespace BaseGame {
                     })
 
                 await afterTx(async () => {
-                    await bus.publish(Resource.Bus, Events.New, { appID: input.id })
+                    const imageUrls = await Client.getImageUrls(input.id);
+
+                    // Spread them into different event buses as they take up way too much RAM if done in one go
+                    await Promise.all(
+                        ImageTypeEnum.enumValues.map(async (type) => {
+                            switch (type) {
+                                case "backdrop": {
+                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "backdrop", url: imageUrls.backdrop })
+                                    break;
+                                }
+                                case "banner": {
+                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "banner", url: imageUrls.banner })
+                                    break;
+                                }
+                                case "icon": {
+                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "icon", url: imageUrls.icon })
+                                    break;
+                                }
+                                case "logo": {
+                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "icon", url: imageUrls.logo })
+                                    break;
+                                }
+                                case "poster": {
+                                    await bus.publish(
+                                        Resource.Bus,
+                                        Events.New,
+                                        { appID: input.id, type: "poster", url: imageUrls.poster }
+                                    )
+                                    break;
+                                }
+                                case "heroArt": {
+                                    await bus.publish(
+                                        Resource.Bus,
+                                        Events.NewHeroArt,
+                                        { appID: input.id, backdropUrl: imageUrls.backdrop, screenshots: imageUrls.screenshots }
+                                    )
+                                    break;
+                                }
+                                case "boxArt": {
+                                    await bus.publish(
+                                        Resource.Bus,
+                                        Events.NewBoxArt,
+                                        { appID: input.id, logoUrl: imageUrls.logo, backgroundUrl: imageUrls.backdrop }
+                                    )
+                                    break;
+                                }
+                            }
+                        })
+                    )
                 })
 
                 return input.id

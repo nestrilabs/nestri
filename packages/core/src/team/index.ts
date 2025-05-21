@@ -132,27 +132,27 @@ export namespace Team {
                 .then((rows) => serialize(rows))
         )
 
-    // export const fromSlug = fn(
-    //     Info.shape.slug,
-    //     (slug) =>
-    //         useTransaction((tx) =>
-    //             tx
-    //                 .select()
-    //                 .from(teamTable)
-    //                 .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
-    //                 .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
-    //                 .where(
-    //                     and(
-    //                         eq(memberTable.userID, Actor.userID()),
-    //                         isNull(memberTable.timeDeleted),
-    //                         isNull(steamTable.timeDeleted),
-    //                         isNull(teamTable.timeDeleted),
-    //                         eq(teamTable.slug, slug),
-    //                     )
-    //                 )
-    //                 .then((rows) => serialize(rows).at(0))
-    //         )
-    // )
+    export const fromSteamID = fn(
+        Info.shape.ownerSteamID,
+        (steamID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(teamTable)
+                    .innerJoin(memberTable, eq(memberTable.teamID, teamTable.id))
+                    .innerJoin(steamTable, eq(memberTable.steamID, steamTable.id))
+                    .where(
+                        and(
+                            eq(memberTable.userID, Actor.userID()),
+                            isNull(memberTable.timeDeleted),
+                            isNull(steamTable.timeDeleted),
+                            isNull(teamTable.timeDeleted),
+                            eq(teamTable.ownerSteamID, steamID),
+                        )
+                    )
+                    .then((rows) => serialize(rows).at(0))
+            )
+    )
 
     export function serialize(
         input: { teams: typeof teamTable.$inferSelect; steam_accounts: typeof steamTable.$inferSelect | null }[]

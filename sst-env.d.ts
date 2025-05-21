@@ -53,10 +53,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "LibraryQueue": {
-      "type": "sst.aws.Queue"
-      "url": string
-    }
     "NestriFamilyMonthly": {
       "type": "sst.sst.Secret"
       "value": string

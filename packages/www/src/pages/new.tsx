@@ -1,6 +1,7 @@
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
 import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
+import { useAccount } from "../providers/account";
 
 const Card = styled("div", {
     base: {
@@ -186,6 +187,7 @@ const DividerText = styled("span", {
 })
 
 export function CreateTeamComponent() {
+    const account = useAccount()
 
     const openPopup = () => {
         const POLL_INTERVAL = 300;
@@ -252,7 +254,7 @@ export function CreateTeamComponent() {
         };
 
 
-        const authUrl = `${BASE_URL}/steam/popup`;
+        const authUrl = `${BASE_URL}/steam/popup/${account.current.id}`;
         const newWindow = isMobile ? window.open(authUrl, '_blank') : createDesktopWindow(authUrl);
 
         if (!newWindow) {

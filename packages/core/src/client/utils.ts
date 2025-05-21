@@ -92,29 +92,21 @@ export namespace Utils {
 
     // --- Optimized Box Art creation ---
     export async function createBoxArtBuffer(
-        assets: LibraryAssetsFull,
-        appid: number | string,
+        logoUrl: string,
+        backgroundUrl: string,
         logoPercent = 0.9
     ): Promise<Buffer> {
-        const base = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}`;
-        const pick = (key: string) => {
-            const set = assets[key];
-            const path = set?.image2x?.english || set?.image?.english;
-            if (!path) throw new Error(`Missing asset for ${key}`);
-            return `${base}/${path}`;
-        };
-
         const [bgBuf, logoBuf] = await Promise.all([
             downloadLimit(() =>
-                fetchBuffer(pick('library_hero'))
+                fetchBuffer(backgroundUrl)
                     .catch(error => {
-                        console.error(`Failed to download hero image for ${appid}:`, error);
+                        console.error(`Failed to download hero image from ${backgroundUrl}:`, error);
                         throw new Error(`Failed to create box art: hero image unavailable`);
                     }),
             ),
-            downloadLimit(() => fetchBuffer(pick('library_logo'))
+            downloadLimit(() => fetchBuffer(logoUrl)
                 .catch(error => {
-                    console.error(`Failed to download logo image for ${appid}:`, error);
+                    console.error(`Failed to download logo image from ${logoUrl}:`, error);
                     throw new Error(`Failed to create box art: logo image unavailable`);
                 }),
             ),
