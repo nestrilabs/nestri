@@ -1,4 +1,7 @@
-use clap::{Arg, Command};
+use crate::args::encoding_args::AudioCaptureMethod;
+use crate::enc_helper::{AudioCodec, EncoderType, VideoCodec};
+use clap::{Arg, Command, value_parser};
+use clap::builder::{BoolishValueParser, NonEmptyStringValueParser};
 
 pub mod app_args;
 pub mod device_args;
@@ -19,6 +22,7 @@ impl Args {
                     .long("verbose")
                     .env("VERBOSE")
                     .help("Enable verbose output")
+                    .value_parser(BoolishValueParser::new())
                     .default_value("false"),
             )
             .arg(
@@ -26,7 +30,8 @@ impl Args {
                     .short('d')
                     .long("debug")
                     .env("DEBUG")
-                    .help("Enable additional debugging information and features")
+                    .help("Enable additional debugging features")
+                    .value_parser(BoolishValueParser::new())
                     .default_value("false"),
             )
             .arg(
@@ -34,6 +39,7 @@ impl Args {
                     .short('u')
                     .long("relay-url")
                     .env("RELAY_URL")
+                    .value_parser(NonEmptyStringValueParser::new())
                     .help("Nestri relay URL"),
             )
             .arg(
@@ -42,6 +48,7 @@ impl Args {
                     .long("resolution")
                     .env("RESOLUTION")
                     .help("Display/stream resolution in 'WxH' format")
+                    .value_parser(NonEmptyStringValueParser::new())
                     .default_value("1280x720"),
             )
             .arg(
@@ -50,6 +57,7 @@ impl Args {
                     .long("framerate")
                     .env("FRAMERATE")
                     .help("Display/stream framerate")
+                    .value_parser(value_parser!(u32).range(5..240))
                     .default_value("60"),
             )
             .arg(
@@ -63,7 +71,7 @@ impl Args {
                     .short('g')
                     .long("gpu-vendor")
                     .env("GPU_VENDOR")
-                    .help("GPU to find by vendor (e.g. 'nvidia')")
+                    .help("GPU to use by vendor")
                     .required(false),
             )
             .arg(
@@ -71,7 +79,7 @@ impl Args {
                     .short('n')
                     .long("gpu-name")
                     .env("GPU_NAME")
-                    .help("GPU to find by name (e.g. 'rtx 3060')")
+                    .help("GPU to use by name")
                     .required(false),
             )
             .arg(
@@ -79,14 +87,15 @@ impl Args {
                     .short('i')
                     .long("gpu-index")
                     .env("GPU_INDEX")
-                    .help("GPU index, if multiple similar GPUs are present")
-                    .default_value("0"),
+                    .help("GPU to use by index")
+                    .value_parser(value_parser!(i32).range(-1..))
+                    .default_value("-1")
             )
             .arg(
                 Arg::new("gpu-card-path")
                     .long("gpu-card-path")
                     .env("GPU_CARD_PATH")
-                    .help("Force a specific GPU by card/render path (e.g. '/dev/dri/card0')")
+                    .help("Force a specific GPU by /dev/dri/ card or render path")
                     .required(false)
                     .conflicts_with_all(["gpu-vendor", "gpu-name", "gpu-index"]),
             )
@@ -95,27 +104,30 @@ impl Args {
                     .short('c')
                     .long("video-codec")
                     .env("VIDEO_CODEC")
-                    .help("Preferred video codec ('h264', 'h265', 'av1')")
+                    .help("Preferred video codec")
+                    .value_parser(value_parser!(VideoCodec))
                     .default_value("h264"),
             )
             .arg(
                 Arg::new("video-encoder")
                     .long("video-encoder")
                     .env("VIDEO_ENCODER")
-                    .help("Override video encoder (e.g. 'vah264enc')"),
+                    .help("Override video encoder"),
             )
             .arg(
                 Arg::new("video-rate-control")
                     .long("video-rate-control")
                     .env("VIDEO_RATE_CONTROL")
-                    .help("Rate control method ('cqp', 'vbr', 'cbr')")
-                    .default_value("vbr"),
+                    .help("Rate control method")
+                    .value_parser(value_parser!(encoding_args::RateControlMethod))
+                    .default_value("cbr"),
             )
             .arg(
                 Arg::new("video-cqp")
                     .long("video-cqp")
                     .env("VIDEO_CQP")
                     .help("Constant Quantization Parameter (CQP) quality")
+                    .value_parser(value_parser!(u32).range(1..51))
                     .default_value("26"),
             )
             .arg(
@@ -123,6 +135,7 @@ impl Args {
                     .long("video-bitrate")
                     .env("VIDEO_BITRATE")
                     .help("Target bitrate in kbps")
+                    .value_parser(value_parser!(u32).range(1..))
                     .default_value("6000"),
             )
             .arg(
@@ -130,27 +143,31 @@ impl Args {
                     .long("video-bitrate-max")
                     .env("VIDEO_BITRATE_MAX")
                     .help("Maximum bitrate in kbps")
+                    .value_parser(value_parser!(u32).range(1..))
                     .default_value("8000"),
             )
             .arg(
                 Arg::new("video-encoder-type")
                     .long("video-encoder-type")
                     .env("VIDEO_ENCODER_TYPE")
-                    .help("Encoder type ('hardware', 'software')")
+                    .help("Encoder type")
+                    .value_parser(value_parser!(EncoderType))
                     .default_value("hardware"),
             )
             .arg(
                 Arg::new("audio-capture-method")
                     .long("audio-capture-method")
                     .env("AUDIO_CAPTURE_METHOD")
-                    .help("Audio capture method ('pipewire', 'pulseaudio', 'alsa')")
-                    .default_value("pulseaudio"),
+                    .help("Audio capture method")
+                    .value_parser(value_parser!(AudioCaptureMethod))
+                    .default_value("pipewire"),
             )
             .arg(
                 Arg::new("audio-codec")
                     .long("audio-codec")
                     .env("AUDIO_CODEC")
-                    .help("Preferred audio codec ('opus', 'aac')")
+                    .help("Preferred audio codec")
+                    .value_parser(value_parser!(AudioCodec))
                     .default_value("opus"),
             )
             .arg(
@@ -163,14 +180,16 @@ impl Args {
                 Arg::new("audio-rate-control")
                     .long("audio-rate-control")
                     .env("AUDIO_RATE_CONTROL")
-                    .help("Rate control method ('cqp', 'vbr', 'cbr')")
-                    .default_value("vbr"),
+                    .help("Rate control method")
+                    .value_parser(value_parser!(encoding_args::RateControlMethod))
+                    .default_value("cbr"),
             )
             .arg(
                 Arg::new("audio-bitrate")
                     .long("audio-bitrate")
                     .env("AUDIO_BITRATE")
                     .help("Target bitrate in kbps")
+                    .value_parser(value_parser!(u32).range(1..))
                     .default_value("128"),
             )
             .arg(
@@ -178,6 +197,7 @@ impl Args {
                     .long("audio-bitrate-max")
                     .env("AUDIO_BITRATE_MAX")
                     .help("Maximum bitrate in kbps")
+                    .value_parser(value_parser!(u32).range(1..))
                     .default_value("192"),
             )
             .arg(
@@ -185,6 +205,7 @@ impl Args {
                     .long("dma-buf")
                     .env("DMA_BUF")
                     .help("Use DMA-BUF for pipeline")
+                    .value_parser(BoolishValueParser::new())
                     .default_value("false"),
             )
             .get_matches();

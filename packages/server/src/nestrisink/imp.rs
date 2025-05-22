@@ -21,14 +21,14 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 pub struct Signaller {
     nestri_ws: PLRwLock<Option<Arc<NestriWebSocket>>>,
-    pipeline: PLRwLock<Option<Arc<gst::Pipeline>>>,
+    wayland_src: PLRwLock<Option<Arc<gst::Element>>>,
     data_channel: AtomicRefCell<Option<gst_webrtc::WebRTCDataChannel>>,
 }
 impl Default for Signaller {
     fn default() -> Self {
         Self {
             nestri_ws: PLRwLock::new(None),
-            pipeline: PLRwLock::new(None),
+            wayland_src: PLRwLock::new(None),
             data_channel: AtomicRefCell::new(None),
         }
     }
@@ -38,12 +38,12 @@ impl Signaller {
         *self.nestri_ws.write() = Some(nestri_ws);
     }
 
-    pub fn set_pipeline(&self, pipeline: Arc<gst::Pipeline>) {
-        *self.pipeline.write() = Some(pipeline);
+    pub fn set_wayland_src(&self, wayland_src: Arc<gst::Element>) {
+        *self.wayland_src.write() = Some(wayland_src);
     }
 
-    pub fn get_pipeline(&self) -> Option<Arc<gst::Pipeline>> {
-        self.pipeline.read().clone()
+    pub fn get_wayland_src(&self) -> Option<Arc<gst::Element>> {
+        self.wayland_src.read().clone()
     }
 
     pub fn set_data_channel(&self, data_channel: gst_webrtc::WebRTCDataChannel) {
@@ -159,8 +159,8 @@ impl Signaller {
                     );
                     if let Some(data_channel) = data_channel {
                         gst::info!(gst::CAT_DEFAULT, "Data channel created");
-                        if let Some(pipeline) = signaller.imp().get_pipeline() {
-                            setup_data_channel(&data_channel, &pipeline);
+                        if let Some(wayland_src) = signaller.imp().get_wayland_src() {
+                            setup_data_channel(&data_channel, &wayland_src);
                             signaller.imp().set_data_channel(data_channel);
                         } else {
                             gst::error!(gst::CAT_DEFAULT, "Wayland display source not set");
@@ -201,7 +201,7 @@ impl SignallableImpl for Signaller {
                 // Wait for a reconnection notification
                 reconnected_notify.notified().await;
 
-                println!("Reconnected to relay, re-negotiating...");
+                tracing::warn!("Reconnected to relay, re-negotiating...");
                 gst::warning!(gst::CAT_DEFAULT, "Reconnected to relay, re-negotiating...");
 
                 // Emit "session-ended" first to make sure the element is cleaned up
@@ -255,7 +255,7 @@ impl SignallableImpl for Signaller {
         };
         if let Ok(encoded) = encode_message(&join_msg) {
             if let Err(e) = nestri_ws.send_message(encoded) {
-                eprintln!("Failed to send join message: {:?}", e);
+                tracing::error!("Failed to send join message: {:?}", e);
                 gst::error!(gst::CAT_DEFAULT, "Failed to send join message: {:?}", e);
             }
         } else {
@@ -283,7 +283,7 @@ impl SignallableImpl for Signaller {
         };
         if let Ok(encoded) = encode_message(&sdp_message) {
             if let Err(e) = nestri_ws.send_message(encoded) {
-                eprintln!("Failed to send SDP message: {:?}", e);
+                tracing::error!("Failed to send SDP message: {:?}", e);
                 gst::error!(gst::CAT_DEFAULT, "Failed to send SDP message: {:?}", e);
             }
         } else {
@@ -319,7 +319,7 @@ impl SignallableImpl for Signaller {
         };
         if let Ok(encoded) = encode_message(&ice_message) {
             if let Err(e) = nestri_ws.send_message(encoded) {
-                eprintln!("Failed to send ICE message: {:?}", e);
+                tracing::error!("Failed to send ICE message: {:?}", e);
                 gst::error!(gst::CAT_DEFAULT, "Failed to send ICE message: {:?}", e);
             }
         } else {
@@ -361,8 +361,8 @@ impl ObjectImpl for Signaller {
     }
 }
 
-fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &gst::Pipeline) {
-    let pipeline = pipeline.clone();
+fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, wayland_src: &gst::Element) {
+    let wayland_src = wayland_src.clone();
 
     data_channel.connect_on_message_data(move |_data_channel, data| {
         if let Some(data) = data {
@@ -371,15 +371,17 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &g
                     if let Some(input_msg) = message_input.data {
                         // Process the input message and create an event
                         if let Some(event) = handle_input_message(input_msg) {
-                            // Send the event to pipeline, result bool is ignored
-                            let _ = pipeline.send_event(event);
+                            // Send the event to wayland source, result bool is ignored
+                            let res = wayland_src.send_event(event);
+                            if !res {
+                            }
                         }
                     } else {
-                        eprintln!("Failed to parse InputMessage");
+                        tracing::error!("Failed to parse InputMessage");
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to decode MessageInput: {:?}", e);
+                    tracing::error!("Failed to decode MessageInput: {:?}", e);
                 }
             }
         }

@@ -10,6 +10,16 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Ensures user directory ownership
+chown_user_directory() {
+    local user_group="${USER}:${GID}"
+    if ! chown -R -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
+        echo "Error: Failed to change ownership of ${HOME} to ${user_group}" >&2
+        return 1
+    fi
+    return 0
+}
+
 # Waits for a given socket to be ready
 wait_for_socket() {
     local socket_path="$1"
@@ -110,6 +120,13 @@ install_nvidia_driver() {
     return 0
 }
 
+function log_gpu_info {
+    log "Detected GPUs:"
+    for vendor in "${!vendor_devices[@]}"; do
+        log "> $vendor: ${vendor_devices[$vendor]}"
+    done
+}
+
 main() {
     # Wait for required sockets
     wait_for_socket "/run/dbus/system_bus_socket" "DBus" || exit 1
@@ -126,10 +143,11 @@ main() {
         log "Error: Failed to detect GPU information."
         exit 1
     }
+    log_gpu_info
 
     # Handle NVIDIA GPU
     if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
-        log "NVIDIA GPU detected, applying driver fix..."
+        log "NVIDIA GPU(s) detected, applying driver fix..."
 
         # Determine NVIDIA driver version
         local nvidia_driver_version=""
@@ -180,8 +198,6 @@ main() {
                 fi
             }
         fi
-    else
-        log "No NVIDIA GPU detected, skipping driver fix."
     fi
 
     # Make sure gamescope has CAP_SYS_NICE capabilities if available
@@ -194,6 +210,10 @@ main() {
     else
         log "Skipping CAP_SYS_NICE for gamescope, capability not available..."
     fi
+
+    # Handle user directory permissions
+    log "Ensuring user directory permissions..."
+    chown_user_directory || exit 1
 
     # Switch to nestri user
     log "Switching to nestri user for application startup..."

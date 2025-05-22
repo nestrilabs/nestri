@@ -1,4 +1,8 @@
+use crate::enc_helper::Codec::{Audio, Video};
+use crate::enc_helper::{AudioCodec, Codec, EncoderType, VideoCodec};
+use clap::ValueEnum;
 use std::ops::Deref;
+use std::str::FromStr;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RateControlCQP {
@@ -8,14 +12,42 @@ pub struct RateControlCQP {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RateControlVBR {
     /// Target bitrate in kbps
-    pub target_bitrate: i32,
+    pub target_bitrate: u32,
     /// Maximum bitrate in kbps
-    pub max_bitrate: i32,
+    pub max_bitrate: u32,
 }
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct RateControlCBR {
     /// Target bitrate in kbps
-    pub target_bitrate: i32,
+    pub target_bitrate: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, ValueEnum)]
+pub enum RateControlMethod {
+    CQP,
+    VBR,
+    CBR,
+}
+impl RateControlMethod {
+    pub fn as_str(&self) -> &str {
+        match self {
+            RateControlMethod::CQP => "cqp",
+            RateControlMethod::VBR => "vbr",
+            RateControlMethod::CBR => "cbr",
+        }
+    }
+}
+impl FromStr for RateControlMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "cqp" => Ok(RateControlMethod::CQP),
+            "vbr" => Ok(RateControlMethod::VBR),
+            "cbr" => Ok(RateControlMethod::CBR),
+            _ => Err(format!("Invalid rate control method: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -30,7 +62,7 @@ pub enum RateControl {
 
 pub struct EncodingOptionsBase {
     /// Codec (e.g. "h264", "opus" etc.)
-    pub codec: String,
+    pub codec: Codec,
     /// Overridable encoder (e.g. "vah264lpenc", "opusenc" etc.)
     pub encoder: String,
     /// Rate control method (e.g. "cqp", "vbr", "cbr")
@@ -38,28 +70,21 @@ pub struct EncodingOptionsBase {
 }
 impl EncodingOptionsBase {
     pub fn debug_print(&self) {
-        println!("> Codec: {}", self.codec);
-        println!(
-            "> Encoder: {}",
-            if self.encoder.is_empty() {
-                "Auto-Selection"
-            } else {
-                &self.encoder
-            }
-        );
+        tracing::info!("> Codec: '{}'", self.codec.as_str());
+        tracing::info!("> Encoder: '{}'", self.encoder);
         match &self.rate_control {
             RateControl::CQP(cqp) => {
-                println!("> Rate Control: CQP");
-                println!("-> Quality: {}", cqp.quality);
+                tracing::info!("> Rate Control: CQP");
+                tracing::info!("-> Quality: {}", cqp.quality);
             }
             RateControl::VBR(vbr) => {
-                println!("> Rate Control: VBR");
-                println!("-> Target Bitrate: {}", vbr.target_bitrate);
-                println!("-> Max Bitrate: {}", vbr.max_bitrate);
+                tracing::info!("> Rate Control: VBR");
+                tracing::info!("-> Target Bitrate: {}", vbr.target_bitrate);
+                tracing::info!("-> Max Bitrate: {}", vbr.max_bitrate);
             }
             RateControl::CBR(cbr) => {
-                println!("> Rate Control: CBR");
-                println!("-> Target Bitrate: {}", cbr.target_bitrate);
+                tracing::info!("> Rate Control: CBR");
+                tracing::info!("-> Target Bitrate: {}", cbr.target_bitrate);
             }
         }
     }
@@ -67,63 +92,62 @@ impl EncodingOptionsBase {
 
 pub struct VideoEncodingOptions {
     pub base: EncodingOptionsBase,
-    /// Encoder type (e.g. "hardware", "software")
-    pub encoder_type: String,
+    pub encoder_type: EncoderType,
 }
 impl VideoEncodingOptions {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
         Self {
             base: EncodingOptionsBase {
-                codec: matches.get_one::<String>("video-codec").unwrap().clone(),
+                codec: Video(
+                    matches
+                        .get_one::<VideoCodec>("video-codec")
+                        .unwrap_or(&VideoCodec::H264)
+                        .clone(),
+                ),
                 encoder: matches
                     .get_one::<String>("video-encoder")
                     .unwrap_or(&"".to_string())
                     .clone(),
                 rate_control: match matches
-                    .get_one::<String>("video-rate-control")
-                    .unwrap()
-                    .as_str()
+                    .get_one::<RateControlMethod>("video-rate-control")
+                    .unwrap_or(&RateControlMethod::CBR)
                 {
-                    "cqp" => RateControl::CQP(RateControlCQP {
+                    RateControlMethod::CQP => RateControl::CQP(RateControlCQP {
                         quality: matches
                             .get_one::<String>("video-cqp")
                             .unwrap()
                             .parse::<u32>()
                             .unwrap(),
                     }),
-                    "cbr" => RateControl::CBR(RateControlCBR {
+                    RateControlMethod::CBR => RateControl::CBR(RateControlCBR {
                         target_bitrate: matches
-                            .get_one::<String>("video-bitrate")
+                            .get_one::<u32>("video-bitrate")
                             .unwrap()
-                            .parse::<i32>()
-                            .unwrap(),
+                            .clone(),
                     }),
-                    "vbr" => RateControl::VBR(RateControlVBR {
+                    RateControlMethod::VBR => RateControl::VBR(RateControlVBR {
                         target_bitrate: matches
-                            .get_one::<String>("video-bitrate")
+                            .get_one::<u32>("video-bitrate")
                             .unwrap()
-                            .parse::<i32>()
-                            .unwrap(),
+                            .clone(),
                         max_bitrate: matches
-                            .get_one::<String>("video-bitrate-max")
+                            .get_one::<u32>("video-bitrate-max")
                             .unwrap()
-                            .parse::<i32>()
-                            .unwrap(),
+                            .clone(),
                     }),
-                    _ => panic!("Invalid rate control method for video"),
                 },
             },
             encoder_type: matches
-                .get_one::<String>("video-encoder-type")
-                .unwrap_or(&"hardware".to_string())
+                .get_one::<EncoderType>("video-encoder-type")
+                .unwrap_or(&EncoderType::HARDWARE)
                 .clone(),
         }
     }
 
     pub fn debug_print(&self) {
-        println!("Video Encoding Options:");
+        tracing::info!("Video Encoding Options:");
         self.base.debug_print();
-        println!("> Encoder Type: {}", self.encoder_type);
+        tracing::info!("> Encoder Type: {}", self.encoder_type.as_str());
     }
 }
 impl Deref for VideoEncodingOptions {
@@ -134,18 +158,30 @@ impl Deref for VideoEncodingOptions {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, ValueEnum)]
 pub enum AudioCaptureMethod {
-    PulseAudio,
-    PipeWire,
+    PULSEAUDIO,
+    PIPEWIRE,
     ALSA,
 }
 impl AudioCaptureMethod {
     pub fn as_str(&self) -> &str {
         match self {
-            AudioCaptureMethod::PulseAudio => "pulseaudio",
-            AudioCaptureMethod::PipeWire => "pipewire",
-            AudioCaptureMethod::ALSA => "alsa",
+            AudioCaptureMethod::PULSEAUDIO => "PulseAudio",
+            AudioCaptureMethod::PIPEWIRE => "PipeWire",
+            AudioCaptureMethod::ALSA => "ALSA",
+        }
+    }
+}
+impl FromStr for AudioCaptureMethod {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "pulseaudio" => Ok(AudioCaptureMethod::PULSEAUDIO),
+            "pipewire" => Ok(AudioCaptureMethod::PIPEWIRE),
+            "alsa" => Ok(AudioCaptureMethod::ALSA),
+            _ => Err(format!("Invalid audio capture method: {}", s)),
         }
     }
 }
@@ -158,56 +194,50 @@ impl AudioEncodingOptions {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
         Self {
             base: EncodingOptionsBase {
-                codec: matches.get_one::<String>("audio-codec").unwrap().clone(),
+                codec: Audio(
+                    matches
+                        .get_one::<AudioCodec>("audio-codec")
+                        .unwrap_or(&AudioCodec::OPUS)
+                        .clone(),
+                ),
                 encoder: matches
                     .get_one::<String>("audio-encoder")
                     .unwrap_or(&"".to_string())
                     .clone(),
                 rate_control: match matches
-                    .get_one::<String>("audio-rate-control")
-                    .unwrap()
-                    .as_str()
+                    .get_one::<RateControlMethod>("audio-rate-control")
+                    .unwrap_or(&RateControlMethod::CBR)
                 {
-                    "cbr" => RateControl::CBR(RateControlCBR {
+                    RateControlMethod::CBR => RateControl::CBR(RateControlCBR {
                         target_bitrate: matches
-                            .get_one::<String>("audio-bitrate")
+                            .get_one::<u32>("audio-bitrate")
                             .unwrap()
-                            .parse::<i32>()
-                            .unwrap(),
+                            .clone(),
                     }),
-                    "vbr" => RateControl::VBR(RateControlVBR {
+                    RateControlMethod::VBR => RateControl::VBR(RateControlVBR {
                         target_bitrate: matches
-                            .get_one::<String>("audio-bitrate")
+                            .get_one::<u32>("audio-bitrate")
                             .unwrap()
-                            .parse::<i32>()
-                            .unwrap(),
+                            .clone(),
                         max_bitrate: matches
-                            .get_one::<String>("audio-bitrate-max")
+                            .get_one::<u32>("audio-bitrate-max")
                             .unwrap()
-                            .parse::<i32>()
-                            .unwrap(),
+                            .clone(),
                     }),
-                    _ => panic!("Invalid rate control method for audio"),
+                    wot => panic!("Invalid rate control method for audio: {}", wot.as_str()),
                 },
             },
-            capture_method: match matches
-                .get_one::<String>("audio-capture-method")
-                .unwrap()
-                .as_str()
-            {
-                "pulseaudio" => AudioCaptureMethod::PulseAudio,
-                "pipewire" => AudioCaptureMethod::PipeWire,
-                "alsa" => AudioCaptureMethod::ALSA,
-                // Default to PulseAudio
-                _ => AudioCaptureMethod::PulseAudio,
-            },
+            capture_method: matches
+                .get_one::<AudioCaptureMethod>("audio-capture-method")
+                .unwrap_or(&AudioCaptureMethod::PIPEWIRE) // Default to PulseAudio
+                .clone(),
         }
     }
 
     pub fn debug_print(&self) {
-        println!("Audio Encoding Options:");
+        tracing::info!("Audio Encoding Options:");
         self.base.debug_print();
-        println!("> Capture Method: {}", self.capture_method.as_str());
+        tracing::info!("> Capture Method: {}", self.capture_method.as_str());
     }
 }
 impl Deref for AudioEncodingOptions {
@@ -233,7 +263,7 @@ impl EncodingArgs {
     }
 
     pub fn debug_print(&self) {
-        println!("Encoding Arguments:");
+        tracing::info!("Encoding Arguments:");
         self.video.debug_print();
         self.audio.debug_print();
     }

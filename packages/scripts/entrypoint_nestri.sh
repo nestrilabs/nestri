@@ -5,16 +5,6 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
 }
 
-# Ensures user directory ownership
-chown_user_directory() {
-    local user_group="$(id -nu):$(id -ng)"
-    chown -f "$user_group" ~ 2>/dev/null ||
-        sudo chown -f "$user_group" ~ 2>/dev/null ||
-        chown -R -f -h --no-preserve-root "$user_group" ~ 2>/dev/null ||
-        sudo chown -R -f -h --no-preserve-root "$user_group" ~ 2>/dev/null ||
-        log "Warning: Failed to change user directory permissions, there may be permission issues, continuing..."
-}
-
 # Parses resolution string
 parse_resolution() {
     local resolution="$1"
@@ -156,7 +146,6 @@ main_loop() {
 }
 
 main() {
-    chown_user_directory
     load_envs
     parse_resolution "${RESOLUTION:-1920x1080}" || exit 1
     restart_chain

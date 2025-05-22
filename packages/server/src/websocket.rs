@@ -1,8 +1,7 @@
-use crate::messages::{MessageBase, MessageLog, decode_message, encode_message};
+use crate::messages::decode_message;
 use futures_util::StreamExt;
 use futures_util::sink::SinkExt;
 use futures_util::stream::{SplitSink, SplitStream};
-use log::{Level, Log, Metadata, Record};
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{Arc, RwLock};
@@ -63,7 +62,7 @@ impl NestriWebSocket {
                     return Ok(ws_stream);
                 }
                 Err(e) => {
-                    eprintln!("Failed to connect to WebSocket, retrying: {:?}", e);
+                    tracing::error!("Failed to connect to WebSocket, retrying: {:?}", e);
                     sleep(Duration::from_secs(3)).await; // Wait before retrying
                 }
             }
@@ -87,7 +86,7 @@ impl NestriWebSocket {
                 let mut ws_read = match ws_read_option {
                     Some(ws_read) => ws_read,
                     None => {
-                        eprintln!("Reader is None, cannot proceed");
+                        tracing::error!("Reader is None, cannot proceed");
                         return;
                     }
                 };
@@ -101,7 +100,7 @@ impl NestriWebSocket {
                             let base_message = match decode_message(data.to_string()) {
                                 Ok(base_message) => base_message,
                                 Err(e) => {
-                                    eprintln!("Failed to decode message: {:?}", e);
+                                    tracing::error!("Failed to decode message: {:?}", e);
                                     continue;
                                 }
                             };
@@ -113,7 +112,7 @@ impl NestriWebSocket {
                             }
                         }
                         Err(e) => {
-                            eprintln!(
+                            tracing::error!(
                                 "Error receiving message: {:?}, reconnecting in 3 seconds...",
                                 e
                             );
@@ -150,10 +149,10 @@ impl NestriWebSocket {
                                     break;
                                 }
                                 Err(e) => {
-                                    eprintln!("Error sending message: {:?}", e);
+                                    tracing::error!("Error sending message: {:?}", e);
                                     // Attempt to reconnect
                                     if let Err(e) = self_clone.reconnect().await {
-                                        eprintln!("Error during reconnection: {:?}", e);
+                                        tracing::error!("Error during reconnection: {:?}", e);
                                         // Wait before retrying
                                         sleep(Duration::from_secs(3)).await;
                                         continue;
@@ -161,10 +160,10 @@ impl NestriWebSocket {
                                 }
                             }
                         } else {
-                            eprintln!("Writer is None, cannot send message");
+                            tracing::error!("Writer is None, cannot send message");
                             // Attempt to reconnect
                             if let Err(e) = self_clone.reconnect().await {
-                                eprintln!("Error during reconnection: {:?}", e);
+                                tracing::error!("Error during reconnection: {:?}", e);
                                 // Wait before retrying
                                 sleep(Duration::from_secs(3)).await;
                                 continue;
@@ -196,7 +195,7 @@ impl NestriWebSocket {
                     return Ok(());
                 }
                 Err(e) => {
-                    eprintln!("Failed to reconnect to WebSocket: {:?}", e);
+                    tracing::error!("Failed to reconnect to WebSocket: {:?}", e);
                     sleep(Duration::from_secs(3)).await; // Wait before retrying
                 }
             }
@@ -222,41 +221,5 @@ impl NestriWebSocket {
     /// Subscribe to event for reconnection
     pub fn subscribe_reconnected(&self) -> Arc<Notify> {
         self.reconnected_notify.clone()
-    }
-}
-impl Log for NestriWebSocket {
-    fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Info
-    }
-
-    fn log(&self, record: &Record) {
-        if self.enabled(record.metadata()) {
-            let level = record.level().to_string();
-            let message = record.args().to_string();
-            let time = chrono::Local::now().to_rfc3339();
-
-            // Print to console as well
-            println!("{}: {}", level, message);
-
-            // Encode and send the log message
-            let log_message = MessageLog {
-                base: MessageBase {
-                    payload_type: "log".to_string(),
-                    latency: None,
-                },
-                level,
-                message,
-                time,
-            };
-            if let Ok(encoded_message) = encode_message(&log_message) {
-                if let Err(e) = self.send_message(encoded_message) {
-                    eprintln!("Failed to send log message: {:?}", e);
-                }
-            }
-        }
-    }
-
-    fn flush(&self) {
-        // No-op for this logger
     }
 }

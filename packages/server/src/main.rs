@@ -8,6 +8,7 @@ mod proto;
 mod websocket;
 
 use crate::args::encoding_args;
+use crate::enc_helper::EncoderType;
 use crate::gpu::GPUVendor;
 use crate::nestrisink::NestriSignaller;
 use crate::websocket::NestriWebSocket;
@@ -21,15 +22,16 @@ use std::sync::Arc;
 
 // Handles gathering GPU information and selecting the most suitable GPU
 fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
-    println!("Gathering GPU information..");
+    tracing::info!("Gathering GPU information..");
     let gpus = gpu::get_gpus();
     if gpus.is_empty() {
-        println!("No GPUs found");
+        tracing::warn!("No GPUs found");
         return None;
     }
-    for gpu in &gpus {
-        println!(
-            "> [GPU] Vendor: '{}', Card Path: '{}', Render Path: '{}', Device Name: '{}'",
+    for (i, gpu) in gpus.iter().enumerate() {
+        tracing::info!(
+            "> [GPU:{}]  Vendor: '{}', Card Path: '{}', Render Path: '{}', Device Name: '{}'",
+            i,
             gpu.vendor_string(),
             gpu.card_path(),
             gpu.render_path(),
@@ -50,9 +52,9 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
         if !args.device.gpu_name.is_empty() {
             filtered_gpus = gpu::get_gpus_by_device_name(&filtered_gpus, &args.device.gpu_name);
         }
-        if args.device.gpu_index != 0 {
+        if args.device.gpu_index > -1 {
             // get single GPU by index
-            gpu = filtered_gpus.get(args.device.gpu_index as usize).cloned();
+            gpu = gpu::get_gpu_by_index(&filtered_gpus, args.device.gpu_index);
         } else {
             // get first GPU
             gpu = filtered_gpus
@@ -61,7 +63,7 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
         }
     }
     if gpu.is_none() {
-        println!(
+        tracing::warn!(
             "No GPU found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
             args.device.gpu_vendor,
             args.device.gpu_name,
@@ -71,25 +73,24 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
         return None;
     }
     let gpu = gpu.unwrap();
-    println!("Selected GPU: '{}'", gpu.device_name());
+    tracing::info!("Selected GPU: '{}'", gpu.device_name());
     Some(gpu)
 }
 
 // Handles picking video encoder
-fn handle_encoder_video(args: &args::Args) -> Option<enc_helper::VideoEncoderInfo> {
-    println!("Getting compatible video encoders..");
+fn handle_encoder_video(args: &args::Args) -> Result<enc_helper::VideoEncoderInfo, Box<dyn Error>> {
+    tracing::info!("Getting compatible video encoders..");
     let video_encoders = enc_helper::get_compatible_encoders();
     if video_encoders.is_empty() {
-        println!("No compatible video encoders found");
-        return None;
+        return Err("No compatible video encoders found".into());
     }
     for encoder in &video_encoders {
-        println!(
+        tracing::info!(
             "> [Video Encoder] Name: '{}', Codec: '{}', API: '{}', Type: '{}', Device: '{}'",
             encoder.name,
-            encoder.codec.to_str(),
+            encoder.codec.as_str(),
             encoder.encoder_api.to_str(),
-            encoder.encoder_type.to_str(),
+            encoder.encoder_type.as_str(),
             if let Some(gpu) = &encoder.gpu_info {
                 gpu.device_name()
             } else {
@@ -101,26 +102,16 @@ fn handle_encoder_video(args: &args::Args) -> Option<enc_helper::VideoEncoderInf
     let video_encoder;
     if !args.encoding.video.encoder.is_empty() {
         video_encoder =
-            enc_helper::get_encoder_by_name(&video_encoders, &args.encoding.video.encoder);
+            enc_helper::get_encoder_by_name(&video_encoders, &args.encoding.video.encoder)?;
     } else {
         video_encoder = enc_helper::get_best_compatible_encoder(
             &video_encoders,
-            enc_helper::VideoCodec::from_str(&args.encoding.video.codec),
-            enc_helper::EncoderType::from_str(&args.encoding.video.encoder_type),
-        );
+            &args.encoding.video.codec,
+            &args.encoding.video.encoder_type,
+        )?;
     }
-    if video_encoder.is_none() {
-        println!(
-            "No video encoder found with the specified parameters: name='{}', vcodec='{}', type='{}'",
-            args.encoding.video.encoder,
-            args.encoding.video.codec,
-            args.encoding.video.encoder_type
-        );
-        return None;
-    }
-    let video_encoder = video_encoder.unwrap();
-    println!("Selected video encoder: '{}'", video_encoder.name);
-    Some(video_encoder)
+    tracing::info!("Selected video encoder: '{}'", video_encoder.name);
+    Ok(video_encoder)
 }
 
 // Handles picking preferred settings for video encoder
@@ -150,7 +141,7 @@ fn handle_encoder_video_settings(
                 enc_helper::encoder_cbr_params(&optimized_encoder, cbr.target_bitrate as u32);
         }
     }
-    println!(
+    tracing::info!(
         "Selected video encoder settings: '{}'",
         optimized_encoder.get_parameters_string()
     );
@@ -165,16 +156,23 @@ fn handle_encoder_audio(args: &args::Args) -> String {
     } else {
         args.encoding.audio.encoder.clone()
     };
-    println!("Selected audio encoder: '{}'", audio_encoder);
+    tracing::info!("Selected audio encoder: '{}'", audio_encoder);
     audio_encoder
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
-    let args = args::Args::new();
+    let mut args = args::Args::new();
     if args.app.verbose {
+        // Make sure tracing has INFO level
+        tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .init();
+
         args.debug_print();
+    } else {
+        tracing_subscriber::fmt::init();
     }
 
     rustls::crypto::ring::default_provider()
@@ -192,8 +190,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Setup our websocket
     let nestri_ws = Arc::new(NestriWebSocket::new(ws_url).await?);
-    log::set_max_level(log::LevelFilter::Info);
-    log::set_boxed_logger(Box::new(nestri_ws.clone())).unwrap();
 
     gst::init()?;
     gstrswebrtc::plugin_register_static()?;
@@ -201,24 +197,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Handle GPU selection
     let gpu = handle_gpus(&args);
     if gpu.is_none() {
-        log::error!("Failed to find a suitable GPU. Exiting..");
+        tracing::error!("Failed to find a suitable GPU. Exiting..");
         return Err("Failed to find a suitable GPU. Exiting..".into());
     }
     let gpu = gpu.unwrap();
 
     if args.app.dma_buf {
-        log::warn!(
-            "DMA-BUF is experimental, it may or may not improve performance, or even work at all."
-        );
+        if args.encoding.video.encoder_type != EncoderType::HARDWARE {
+            tracing::warn!("DMA-BUF is only supported with hardware encoders, disabling DMA-BUF..");
+            args.app.dma_buf = false;
+        } else {
+            tracing::warn!(
+                "DMA-BUF is experimental, it may or may not improve performance, or even work at all."
+            );
+        }
     }
 
     // Handle video encoder selection
-    let video_encoder_info = handle_encoder_video(&args);
-    if video_encoder_info.is_none() {
-        log::error!("Failed to find a suitable video encoder. Exiting..");
-        return Err("Failed to find a suitable video encoder. Exiting..".into());
-    }
-    let mut video_encoder_info = video_encoder_info.unwrap();
+    let mut video_encoder_info = match handle_encoder_video(&args) {
+        Ok(encoder) => encoder,
+        Err(e) => {
+            tracing::error!("Failed to find a suitable video encoder: {}", e);
+            return Err("Failed to find a suitable video encoder".into());
+        }
+    };
+
     // Handle video encoder settings
     video_encoder_info = handle_encoder_video_settings(&args, &video_encoder_info);
 
@@ -232,10 +235,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     /* Audio */
     // Audio Source Element
     let audio_source = match args.encoding.audio.capture_method {
-        encoding_args::AudioCaptureMethod::PulseAudio => {
+        encoding_args::AudioCaptureMethod::PULSEAUDIO => {
             gst::ElementFactory::make("pulsesrc").build()?
         }
-        encoding_args::AudioCaptureMethod::PipeWire => {
+        encoding_args::AudioCaptureMethod::PIPEWIRE => {
             gst::ElementFactory::make("pipewiresrc").build()?
         }
         encoding_args::AudioCaptureMethod::ALSA => gst::ElementFactory::make("alsasrc").build()?,
@@ -257,8 +260,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     audio_encoder.set_property(
         "bitrate",
         &match &args.encoding.audio.rate_control {
-            encoding_args::RateControl::CBR(cbr) => cbr.target_bitrate * 1000i32,
-            encoding_args::RateControl::VBR(vbr) => vbr.target_bitrate * 1000i32,
+            encoding_args::RateControl::CBR(cbr) => (cbr.target_bitrate * 1000u32) as i32,
+            encoding_args::RateControl::VBR(vbr) => (vbr.target_bitrate * 1000u32) as i32,
             _ => 128000i32,
         },
     );
@@ -269,7 +272,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /* Video */
     // Video Source Element
-    let video_source = gst::ElementFactory::make("waylanddisplaysrc").build()?;
+    let video_source = Arc::new(gst::ElementFactory::make("waylanddisplaysrc").build()?);
     video_source.set_property_from_str("render-node", gpu.render_path());
 
     // Caps Filter Element (resolution, fps)
@@ -323,7 +326,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /* Output */
     // WebRTC sink Element
-    let signaller = NestriSignaller::new(nestri_ws.clone(), pipeline.clone());
+    let signaller = NestriSignaller::new(nestri_ws.clone(), video_source.clone());
     let webrtcsink = BaseWebRTCSink::with_signaller(Signallable::from(signaller.clone()));
     webrtcsink.set_property_from_str("stun-server", "stun://stun.l.google.com:19302");
     webrtcsink.set_property_from_str("congestion-control", "disabled");
@@ -456,9 +459,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let result = run_pipeline(pipeline.clone()).await;
 
     match result {
-        Ok(_) => log::info!("All tasks finished"),
+        Ok(_) => tracing::info!("All tasks finished"),
         Err(e) => {
-            log::error!("Error occurred in one of the tasks: {}", e);
+            tracing::error!("Error occurred in one of the tasks: {}", e);
             return Err("Error occurred in one of the tasks".into());
         }
     }
@@ -471,7 +474,7 @@ async fn run_pipeline(pipeline: Arc<gst::Pipeline>) -> Result<(), Box<dyn Error>
 
     {
         if let Err(e) = pipeline.set_state(gst::State::Playing) {
-            log::error!("Failed to start pipeline: {}", e);
+            tracing::error!("Failed to start pipeline: {}", e);
             return Err("Failed to start pipeline".into());
         }
     }
@@ -479,12 +482,12 @@ async fn run_pipeline(pipeline: Arc<gst::Pipeline>) -> Result<(), Box<dyn Error>
     // Wait for EOS or error (don't lock the pipeline indefinitely)
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
-            log::info!("Pipeline interrupted via Ctrl+C");
+            tracing::info!("Pipeline interrupted via Ctrl+C");
         }
         result = listen_for_gst_messages(bus) => {
             match result {
-                Ok(_) => log::info!("Pipeline finished with EOS"),
-                Err(err) => log::error!("Pipeline error: {}", err),
+                Ok(_) => tracing::info!("Pipeline finished with EOS"),
+                Err(err) => tracing::error!("Pipeline error: {}", err),
             }
         }
     }
@@ -504,7 +507,7 @@ async fn listen_for_gst_messages(bus: gst::Bus) -> Result<(), Box<dyn Error>> {
     while let Some(msg) = bus_stream.next().await {
         match msg.view() {
             gst::MessageView::Eos(_) => {
-                log::info!("Received EOS");
+                tracing::info!("Received EOS");
                 break;
             }
             gst::MessageView::Error(err) => {

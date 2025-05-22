@@ -107,7 +107,6 @@ pub fn encode_message<T: Serialize>(message: &T) -> Result<String, Box<dyn Error
 }
 
 pub fn decode_message(data: String) -> Result<MessageBase, Box<dyn Error + Send + Sync>> {
-    println!("Data: {}", data);
     let base_message: MessageBase = serde_json::from_str(&data)?;
     Ok(base_message)
 }
