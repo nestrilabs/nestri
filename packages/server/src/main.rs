@@ -132,13 +132,13 @@ fn handle_encoder_video_settings(
         encoding_args::RateControl::VBR(vbr) => {
             optimized_encoder = enc_helper::encoder_vbr_params(
                 &optimized_encoder,
-                vbr.target_bitrate as u32,
-                vbr.max_bitrate as u32,
+                vbr.target_bitrate,
+                vbr.max_bitrate,
             );
         }
         encoding_args::RateControl::CBR(cbr) => {
             optimized_encoder =
-                enc_helper::encoder_cbr_params(&optimized_encoder, cbr.target_bitrate as u32);
+                enc_helper::encoder_cbr_params(&optimized_encoder, cbr.target_bitrate);
         }
     }
     tracing::info!(
