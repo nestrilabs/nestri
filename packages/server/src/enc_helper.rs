@@ -1,9 +1,9 @@
 use crate::args::encoding_args::RateControl;
 use crate::gpu::{self, GPUInfo, get_gpu_by_card_path, get_gpus_by_vendor};
+use clap::ValueEnum;
 use gst::prelude::*;
 use std::error::Error;
 use std::str::FromStr;
-use clap::ValueEnum;
 
 #[derive(Debug, Eq, PartialEq, Clone, ValueEnum)]
 pub enum AudioCodec {
@@ -107,18 +107,6 @@ impl EncoderType {
     }
 }
 
-impl FromStr for EncoderType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "software" => Ok(Self::SOFTWARE),
-            "hardware" => Ok(Self::HARDWARE),
-            _ => Err(format!("Invalid encoder type: {}", s)),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct VideoEncoderInfo {
     pub name: String,
@@ -190,14 +178,11 @@ fn get_encoder_api(encoder: &str, encoder_type: &EncoderType) -> EncoderAPI {
 }
 
 fn codec_from_encoder_name(name: &str) -> Option<VideoCodec> {
-    if name.contains("h264") {
-        Some(VideoCodec::H264)
-    } else if name.contains("h265") {
-        Some(VideoCodec::H265)
-    } else if name.contains("av1") {
-        Some(VideoCodec::AV1)
-    } else {
-        None
+    match name.to_lowercase() {
+        n if n.contains("h264") => Some(VideoCodec::H264),
+        n if n.contains("h265") => Some(VideoCodec::H265),
+        n if n.contains("av1") => Some(VideoCodec::AV1),
+        _ => None,
     }
 }
 
@@ -452,7 +437,7 @@ pub fn get_encoder_by_name(
     {
         Ok(encoder.clone())
     } else {
-        Err(format!("Encoder {} not found", name).into())
+        Err(format!("Encoder '{}' not found", name).into())
     }
 }
 

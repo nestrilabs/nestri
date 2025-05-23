@@ -160,7 +160,7 @@ impl Signaller {
                     if let Some(data_channel) = data_channel {
                         gst::info!(gst::CAT_DEFAULT, "Data channel created");
                         if let Some(wayland_src) = signaller.imp().get_wayland_src() {
-                            setup_data_channel(&data_channel, &wayland_src);
+                            setup_data_channel(&data_channel, &*wayland_src);
                             signaller.imp().set_data_channel(data_channel);
                         } else {
                             gst::error!(gst::CAT_DEFAULT, "Wayland display source not set");
@@ -372,9 +372,7 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, wayland_src:
                         // Process the input message and create an event
                         if let Some(event) = handle_input_message(input_msg) {
                             // Send the event to wayland source, result bool is ignored
-                            let res = wayland_src.send_event(event);
-                            if !res {
-                            }
+                            let _ = wayland_src.send_event(event);
                         }
                     } else {
                         tracing::error!("Failed to parse InputMessage");

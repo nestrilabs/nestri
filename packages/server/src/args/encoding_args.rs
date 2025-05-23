@@ -229,7 +229,7 @@ impl AudioEncodingOptions {
             },
             capture_method: matches
                 .get_one::<AudioCaptureMethod>("audio-capture-method")
-                .unwrap_or(&AudioCaptureMethod::PIPEWIRE) // Default to PulseAudio
+                .unwrap_or(&AudioCaptureMethod::PIPEWIRE)
                 .clone(),
         }
     }

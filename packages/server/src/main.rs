@@ -21,12 +21,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 // Handles gathering GPU information and selecting the most suitable GPU
-fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
+fn handle_gpus(args: &args::Args) -> Result<gpu::GPUInfo, Box<dyn Error>> {
     tracing::info!("Gathering GPU information..");
     let gpus = gpu::get_gpus();
     if gpus.is_empty() {
-        tracing::warn!("No GPUs found");
-        return None;
+        return Err("No GPUs found".into());
     }
     for (i, gpu) in gpus.iter().enumerate() {
         tracing::info!(
@@ -54,7 +53,10 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
         }
         if args.device.gpu_index > -1 {
             // get single GPU by index
-            gpu = gpu::get_gpu_by_index(&filtered_gpus, args.device.gpu_index);
+            gpu = gpu::get_gpu_by_index(&filtered_gpus, args.device.gpu_index).or_else(|| {
+                tracing::warn!("GPU index {} is out of range", args.device.gpu_index);
+                None
+            });
         } else {
             // get first GPU
             gpu = filtered_gpus
@@ -63,18 +65,17 @@ fn handle_gpus(args: &args::Args) -> Option<gpu::GPUInfo> {
         }
     }
     if gpu.is_none() {
-        tracing::warn!(
+        return Err(format!(
             "No GPU found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
             args.device.gpu_vendor,
             args.device.gpu_name,
             args.device.gpu_index,
             args.device.gpu_card_path
-        );
-        return None;
+        ).into());
     }
     let gpu = gpu.unwrap();
     tracing::info!("Selected GPU: '{}'", gpu.device_name());
-    Some(gpu)
+    Ok(gpu)
 }
 
 // Handles picking video encoder
@@ -195,12 +196,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     gstrswebrtc::plugin_register_static()?;
 
     // Handle GPU selection
-    let gpu = handle_gpus(&args);
-    if gpu.is_none() {
-        tracing::error!("Failed to find a suitable GPU. Exiting..");
-        return Err("Failed to find a suitable GPU. Exiting..".into());
-    }
-    let gpu = gpu.unwrap();
+    let gpu = match handle_gpus(&args) {
+        Ok(gpu) => gpu,
+        Err(e) => {
+            tracing::error!("Failed to find a suitable GPU: {}", e);
+            return Err(e);
+        }
+    };
 
     if args.app.dma_buf {
         if args.encoding.video.encoder_type != EncoderType::HARDWARE {
@@ -218,7 +220,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(encoder) => encoder,
         Err(e) => {
             tracing::error!("Failed to find a suitable video encoder: {}", e);
-            return Err("Failed to find a suitable video encoder".into());
+            return Err(e);
         }
     };
 
@@ -260,8 +262,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     audio_encoder.set_property(
         "bitrate",
         &match &args.encoding.audio.rate_control {
-            encoding_args::RateControl::CBR(cbr) => (cbr.target_bitrate * 1000u32) as i32,
-            encoding_args::RateControl::VBR(vbr) => (vbr.target_bitrate * 1000u32) as i32,
+            encoding_args::RateControl::CBR(cbr) => cbr.target_bitrate.saturating_mul(1000) as i32,
+            encoding_args::RateControl::VBR(vbr) => vbr.target_bitrate.saturating_mul(1000) as i32,
             _ => 128000i32,
         },
     );
