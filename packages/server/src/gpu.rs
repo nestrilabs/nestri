@@ -161,3 +161,11 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
         })
         .cloned()
 }
+
+pub fn get_gpu_by_index(gpus: &[GPUInfo], index: i32) -> Option<GPUInfo> {
+    if index < 0 || index as usize >= gpus.len() {
+        None
+    } else {
+        Some(gpus[index as usize].clone())
+    }
+}

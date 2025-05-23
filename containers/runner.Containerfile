@@ -168,8 +168,7 @@ ENV USER="nestri" \
     USER_PWD="nestri1234" \
     XDG_RUNTIME_DIR=/run/user/1000 \
     HOME=/home/nestri \
-    NVIDIA_DRIVER_CAPABILITIES=all \
-    NVIDIA_VISIBLE_DEVICES=all
+    NVIDIA_DRIVER_CAPABILITIES=all
 
 RUN mkdir -p /home/${USER} && \
     groupadd -g ${GID} ${USER} && \

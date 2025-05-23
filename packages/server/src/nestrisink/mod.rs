@@ -11,10 +11,10 @@ glib::wrapper! {
 }
 
 impl NestriSignaller {
-    pub fn new(nestri_ws: Arc<NestriWebSocket>, pipeline: Arc<gst::Pipeline>) -> Self {
+    pub fn new(nestri_ws: Arc<NestriWebSocket>, wayland_src: Arc<gst::Element>) -> Self {
         let obj: Self = glib::Object::new();
         obj.imp().set_nestri_ws(nestri_ws);
-        obj.imp().set_pipeline(pipeline);
+        obj.imp().set_wayland_src(wayland_src);
         obj
     }
 }

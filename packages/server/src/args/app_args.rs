@@ -20,10 +20,8 @@ pub struct AppArgs {
 impl AppArgs {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
         Self {
-            verbose: matches.get_one::<String>("verbose").unwrap() == "true"
-                || matches.get_one::<String>("verbose").unwrap() == "1",
-            debug: matches.get_one::<String>("debug").unwrap() == "true"
-                || matches.get_one::<String>("debug").unwrap() == "1",
+            verbose: matches.get_one::<bool>("verbose").unwrap_or(&false).clone(),
+            debug: matches.get_one::<bool>("debug").unwrap_or(&false).clone(),
             resolution: {
                 let res = matches
                     .get_one::<String>("resolution")
@@ -39,11 +37,7 @@ impl AppArgs {
                     (1280, 720)
                 }
             },
-            framerate: matches
-                .get_one::<String>("framerate")
-                .unwrap()
-                .parse::<u32>()
-                .unwrap_or(60),
+            framerate: matches.get_one::<u32>("framerate").unwrap_or(&60).clone(),
             relay_url: matches
                 .get_one::<String>("relay-url")
                 .expect("relay url cannot be empty")
@@ -53,19 +47,18 @@ impl AppArgs {
                 .get_one::<String>("room")
                 .unwrap_or(&rand::random::<u32>().to_string())
                 .clone(),
-            dma_buf: matches.get_one::<String>("dma-buf").unwrap() == "true"
-                || matches.get_one::<String>("dma-buf").unwrap() == "1",
+            dma_buf: matches.get_one::<bool>("dma-buf").unwrap_or(&false).clone(),
         }
     }
 
     pub fn debug_print(&self) {
-        println!("AppArgs:");
-        println!("> verbose: {}", self.verbose);
-        println!("> debug: {}", self.debug);
-        println!("> resolution: {}x{}", self.resolution.0, self.resolution.1);
-        println!("> framerate: {}", self.framerate);
-        println!("> relay_url: {}", self.relay_url);
-        println!("> room: {}", self.room);
-        println!("> dma_buf: {}", self.dma_buf);
+        tracing::info!("AppArgs:");
+        tracing::info!("> verbose: {}", self.verbose);
+        tracing::info!("> debug: {}", self.debug);
+        tracing::info!("> resolution: '{}x{}'", self.resolution.0, self.resolution.1);
+        tracing::info!("> framerate: {}", self.framerate);
+        tracing::info!("> relay_url: '{}'", self.relay_url);
+        tracing::info!("> room: '{}'", self.room);
+        tracing::info!("> dma_buf: {}", self.dma_buf);
     }
 }

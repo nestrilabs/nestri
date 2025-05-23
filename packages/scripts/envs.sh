@@ -11,6 +11,3 @@ export PROTON_NO_FSYNC=1
 
 # Sleeker Mangohud preset :)
 export MANGOHUD_CONFIG=preset=2
-
-# Our preferred prefix
-export WINEPREFIX=/home/${USER}/.nestripfx/

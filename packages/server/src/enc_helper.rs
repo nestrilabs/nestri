@@ -1,31 +1,70 @@
 use crate::args::encoding_args::RateControl;
 use crate::gpu::{self, GPUInfo, get_gpu_by_card_path, get_gpus_by_vendor};
+use clap::ValueEnum;
 use gst::prelude::*;
+use std::error::Error;
+use std::str::FromStr;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, ValueEnum)]
+pub enum AudioCodec {
+    OPUS,
+}
+impl AudioCodec {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OPUS => "Opus",
+        }
+    }
+}
+impl FromStr for AudioCodec {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "opus" => Ok(Self::OPUS),
+            _ => Err(format!("Invalid audio codec: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone, ValueEnum)]
 pub enum VideoCodec {
     H264,
     H265,
     AV1,
-    UNKNOWN,
 }
-
 impl VideoCodec {
-    pub fn to_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::H264 => "H.264",
             Self::H265 => "H.265",
             Self::AV1 => "AV1",
-            Self::UNKNOWN => "Unknown",
         }
     }
+}
+impl FromStr for VideoCodec {
+    type Err = String;
 
-    pub fn from_str(s: &str) -> Self {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "h264" | "h.264" | "avc" => Self::H264,
-            "h265" | "h.265" | "hevc" | "hev1" => Self::H265,
-            "av1" => Self::AV1,
-            _ => Self::UNKNOWN,
+            "h264" | "h.264" | "avc" => Ok(Self::H264),
+            "h265" | "h.265" | "hevc" | "hev1" => Ok(Self::H265),
+            "av1" => Ok(Self::AV1),
+            _ => Err(format!("Invalid video codec: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Clone)]
+pub enum Codec {
+    Audio(AudioCodec),
+    Video(VideoCodec),
+}
+impl Codec {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Audio(codec) => codec.as_str(),
+            Self::Video(codec) => codec.as_str(),
         }
     }
 }
@@ -53,27 +92,17 @@ impl EncoderAPI {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, ValueEnum)]
 pub enum EncoderType {
     SOFTWARE,
     HARDWARE,
-    UNKNOWN,
 }
 
 impl EncoderType {
-    pub fn to_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::SOFTWARE => "Software",
             Self::HARDWARE => "Hardware",
-            Self::UNKNOWN => "Unknown",
-        }
-    }
-
-    pub fn from_str(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "software" => Self::SOFTWARE,
-            "hardware" => Self::HARDWARE,
-            _ => Self::UNKNOWN,
         }
     }
 }
@@ -121,7 +150,7 @@ impl VideoEncoderInfo {
         for (key, value) in &self.parameters {
             if element.has_property(key) {
                 if verbose {
-                    println!("Setting property {} to {}", key, value);
+                    tracing::debug!("Setting property {} to {}", key, value);
                 }
                 element.set_property_from_str(key, value);
             }
@@ -145,19 +174,15 @@ fn get_encoder_api(encoder: &str, encoder_type: &EncoderType) -> EncoderAPI {
             }
         }
         EncoderType::SOFTWARE => EncoderAPI::SOFTWARE,
-        _ => EncoderAPI::UNKNOWN,
     }
 }
 
 fn codec_from_encoder_name(name: &str) -> Option<VideoCodec> {
-    if name.contains("h264") {
-        Some(VideoCodec::H264)
-    } else if name.contains("h265") {
-        Some(VideoCodec::H265)
-    } else if name.contains("av1") {
-        Some(VideoCodec::AV1)
-    } else {
-        None
+    match name.to_lowercase() {
+        n if n.contains("h264") => Some(VideoCodec::H264),
+        n if n.contains("h265") => Some(VideoCodec::H265),
+        n if n.contains("av1") => Some(VideoCodec::AV1),
+        _ => None,
     }
 }
 
@@ -272,7 +297,6 @@ pub fn encoder_low_latency_params(
             let usage = match encoder_optz.codec {
                 VideoCodec::H264 | VideoCodec::H265 => "ultra-low-latency",
                 VideoCodec::AV1 => "low-latency",
-                _ => "",
             };
             if !usage.is_empty() {
                 encoder_optz.set_parameter("usage", usage);
@@ -378,8 +402,8 @@ pub fn get_compatible_encoders() -> Vec<VideoEncoderInfo> {
                     }
                 })
                 .unwrap_or_else(|_| {
-                    log::error!(
-                        "Panic occurred while querying properties for {}",
+                    tracing::error!(
+                        "Error occurred while querying properties for {}",
                         encoder_name
                     );
                     None
@@ -401,16 +425,20 @@ pub fn get_compatible_encoders() -> Vec<VideoEncoderInfo> {
 /// * `encoders` - A vector containing information about each encoder.
 /// * `name` - A string slice that holds the encoder name.
 /// # Returns
-/// * `Option<EncoderInfo>` - A reference to an EncoderInfo struct if found.
+/// * `Result<EncoderInfo, Box<dyn Error>>` - A Result containing EncoderInfo if found, or an error.
 pub fn get_encoder_by_name(
     encoders: &Vec<VideoEncoderInfo>,
     name: &str,
-) -> Option<VideoEncoderInfo> {
+) -> Result<VideoEncoderInfo, Box<dyn Error>> {
     let name = name.to_lowercase();
-    encoders
+    if let Some(encoder) = encoders
         .iter()
         .find(|encoder| encoder.name.to_lowercase() == name)
-        .cloned()
+    {
+        Ok(encoder.clone())
+    } else {
+        Err(format!("Encoder '{}' not found", name).into())
+    }
 }
 
 /// Helper to get encoders from vector by video codec.
@@ -453,14 +481,22 @@ pub fn get_encoders_by_type(
 /// * `codec` - Desired codec.
 /// * `encoder_type` - Desired encoder type.
 /// # Returns
-/// * `Option<EncoderInfo>` - Best-case compatible encoder.
+/// * `Result<VideoEncoderInfo, Box<dyn Error>>` - A Result containing the best compatible encoder if found, or an error.
 pub fn get_best_compatible_encoder(
     encoders: &Vec<VideoEncoderInfo>,
-    codec: VideoCodec,
-    encoder_type: EncoderType,
-) -> Option<VideoEncoderInfo> {
+    codec: &Codec,
+    encoder_type: &EncoderType,
+) -> Result<VideoEncoderInfo, Box<dyn Error>> {
     let mut best_encoder: Option<VideoEncoderInfo> = None;
     let mut best_score: i32 = 0;
+
+    let codec = match codec {
+        Codec::Video(c) => c.clone(),
+        Codec::Audio(_) => {
+            // Only for video currently
+            return Err("Attempted to get best compatible video encoder with audio codec".into());
+        }
+    };
 
     // Filter by codec and type first
     let encoders = get_encoders_by_videocodec(encoders, &codec);
@@ -498,5 +534,9 @@ pub fn get_best_compatible_encoder(
         }
     }
 
-    best_encoder
+    if let Some(encoder) = best_encoder {
+        Ok(encoder)
+    } else {
+        Err("No compatible encoder found".into())
+    }
 }
