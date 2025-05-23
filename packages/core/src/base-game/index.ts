@@ -121,52 +121,7 @@ export namespace BaseGame {
                     const imageUrls = await Client.getImageUrls(input.id);
 
                     // Spread them into different event buses as they take up way too much RAM if done in one go
-                    await Promise.all(
-                        ImageTypeEnum.enumValues.map(async (type) => {
-                            switch (type) {
-                                case "backdrop": {
-                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "backdrop", url: imageUrls.backdrop })
-                                    break;
-                                }
-                                case "banner": {
-                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "banner", url: imageUrls.banner })
-                                    break;
-                                }
-                                case "icon": {
-                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "icon", url: imageUrls.icon })
-                                    break;
-                                }
-                                case "logo": {
-                                    await bus.publish(Resource.Bus, Events.New, { appID: input.id, type: "icon", url: imageUrls.logo })
-                                    break;
-                                }
-                                case "poster": {
-                                    await bus.publish(
-                                        Resource.Bus,
-                                        Events.New,
-                                        { appID: input.id, type: "poster", url: imageUrls.poster }
-                                    )
-                                    break;
-                                }
-                                case "heroArt": {
-                                    await bus.publish(
-                                        Resource.Bus,
-                                        Events.NewHeroArt,
-                                        { appID: input.id, backdropUrl: imageUrls.backdrop, screenshots: imageUrls.screenshots }
-                                    )
-                                    break;
-                                }
-                                case "boxArt": {
-                                    await bus.publish(
-                                        Resource.Bus,
-                                        Events.NewBoxArt,
-                                        { appID: input.id, logoUrl: imageUrls.logo, backgroundUrl: imageUrls.backdrop }
-                                    )
-                                    break;
-                                }
-                            }
-                        })
-                    )
+                    
                 })
 
                 return input.id

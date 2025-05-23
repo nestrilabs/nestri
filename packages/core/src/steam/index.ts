@@ -124,9 +124,9 @@ export namespace Steam {
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
 
-                await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
-                );
+                // await afterTx(async () =>
+                //     bus.publish(Resource.Bus, Events.Created, { userID, steamID: input.id })
+                // );
 
                 return input.id
             }),
@@ -151,9 +151,9 @@ export namespace Steam {
                     })
                     .where(eq(steamTable.id, input.steamID));
 
-                await afterTx(async () =>
-                    bus.publish(Resource.Bus, Events.Updated, { userID, steamID: input.steamID })
-                );
+                // await afterTx(async () =>
+                //     bus.publish(Resource.Bus, Events.Updated, { userID, steamID: input.steamID })
+                // );
 
                 return input.steamID
             })

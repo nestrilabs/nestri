@@ -89,6 +89,8 @@ export namespace Client {
     export const getAppInfo = fn(
         z.string(),
         async (appid) => {
+            // FIXME: Redo this game details retrieval, 
+            // and use one from the undocumented API, this endpoint(s) are a hit or miss and i am not liking that
             const [infoData, tagsData, details] = await Promise.all([
                 Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
                 Utils.fetchApi<GameTagsResponse>("https://store.steampowered.com/actions/ajaxgetstoretags"),
@@ -109,6 +111,11 @@ export namespace Client {
             const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Compatibility`)
 
             const controller = (game.common.controller_support === "partial" || game.common.controller_support === "full") ? game.common.controller_support : "unknown";
+
+            const screenshots = Utils.getScreenshotUrls(details.rgScreenshots || []);
+            const assetUrls = Utils.getAssetUrls(game.common.library_assets_full, appid, game.common.header_image.english);
+            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.common.icon}.jpg`;
+
             const appInfo: AppInfo = {
                 genres,
                 id: game.appid,
@@ -147,6 +154,7 @@ export namespace Client {
                     controllerTag,
                     compatibilityTag
                 ],
+                images: { screenshots, icon, ...assetUrls },
                 score: Utils.getRating(
                     details.ReviewSummary.cRecommendationsPositive,
                     details.ReviewSummary.cRecommendationsNegative

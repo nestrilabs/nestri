@@ -23,12 +23,9 @@ export namespace Library {
             "library.queue",
             z.object({
                 appID: z.number(),
-                lastPlayed: z.date(),
-                timeAcquired: z.date(),
+                lastPlayed: z.date().nullable(),
                 totalPlaytime: z.number(),
-                isFamilyShared: z.boolean(),
-                isFamilyShareable: z.boolean(),
-            }).array(),
+            }),
         ),
     };
 

@@ -161,78 +161,78 @@ export const handler = bus.subscriber(
 
         break;
       }
-      case "steam_account.updated":
-      case "steam_account.created": {
-        //Get user library and commit it to the db
-        const steamID = event.properties.steamID;
+      // case "steam_account.updated":
+      // case "steam_account.created": {
+      //   //Get user library and commit it to the db
+      //   const steamID = event.properties.steamID;
 
-        await Actor.provide(
-          event.metadata.actor.type,
-          event.metadata.actor.properties,
-          async () => {
-            //Get user library
-            const gameLibrary = await Client.getUserLibrary(steamID);
+      //   await Actor.provide(
+      //     event.metadata.actor.type,
+      //     event.metadata.actor.properties,
+      //     async () => {
+      //       //Get user library
+      //       const gameLibrary = await Client.getUserLibrary(steamID);
 
-            const myLibrary = new Map(gameLibrary.response.games.map(g => [g.appid, g]))
+      //       const myLibrary = new Map(gameLibrary.response.games.map(g => [g.appid, g]))
 
-            const queryLib = await Promise.allSettled(
-              gameLibrary.response.games.map(async (game) => {
-                return await Client.getAppInfo(game.appid.toString())
-              })
-            )
+      //       const queryLib = await Promise.allSettled(
+      //         gameLibrary.response.games.map(async (game) => {
+      //           return await Client.getAppInfo(game.appid.toString())
+      //         })
+      //       )
 
-            queryLib
-              .filter(i => i.status === "rejected")
-              .forEach(e => console.warn(`[getAppInfo]: Failed to get game metadata: ${e.reason}`))
+      //       queryLib
+      //         .filter(i => i.status === "rejected")
+      //         .forEach(e => console.warn(`[getAppInfo]: Failed to get game metadata: ${e.reason}`))
 
-            const gameInfo = queryLib.filter(i => i.status === "fulfilled").map(f => f.value)
+      //       const gameInfo = queryLib.filter(i => i.status === "fulfilled").map(f => f.value)
 
-            const queryGames = gameInfo.map(async (game) => {
-              await BaseGame.create(game);
+      //       const queryGames = gameInfo.map(async (game) => {
+      //         await BaseGame.create(game);
 
-              const allCategories = [...game.tags, ...game.genres, ...game.publishers, ...game.developers];
+      //         const allCategories = [...game.tags, ...game.genres, ...game.publishers, ...game.developers];
 
-              const uniqueCategories = Array.from(
-                new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()
-              );
+      //         const uniqueCategories = Array.from(
+      //           new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()
+      //         );
 
-              const gameSettled = await Promise.allSettled(
-                uniqueCategories.map(async (cat) => {
-                  //Use a single db transaction to get or set the category
-                  await Categories.create({
-                    type: cat.type, slug: cat.slug, name: cat.name
-                  })
+      //         const gameSettled = await Promise.allSettled(
+      //           uniqueCategories.map(async (cat) => {
+      //             //Use a single db transaction to get or set the category
+      //             await Categories.create({
+      //               type: cat.type, slug: cat.slug, name: cat.name
+      //             })
 
-                  // Use a single db transaction to get or create the game
-                  await Game.create({ baseGameID: game.id, categorySlug: cat.slug, categoryType: cat.type })
-                })
-              )
+      //             // Use a single db transaction to get or create the game
+      //             await Game.create({ baseGameID: game.id, categorySlug: cat.slug, categoryType: cat.type })
+      //           })
+      //         )
 
-              gameSettled
-                .filter(r => r.status === "rejected")
-                .forEach(r => console.warn("[uniqueCategories] failed:", (r as PromiseRejectedResult).reason));
+      //         gameSettled
+      //           .filter(r => r.status === "rejected")
+      //           .forEach(r => console.warn("[uniqueCategories] failed:", (r as PromiseRejectedResult).reason));
 
-              const currentGameInLibrary = myLibrary.get(parseInt(game.id))
-              if (currentGameInLibrary) {
-                await Library.add({
-                  baseGameID: game.id,
-                  lastPlayed: currentGameInLibrary.rtime_last_played ? new Date(currentGameInLibrary.rtime_last_played * 1000) : null,
-                  totalPlaytime: currentGameInLibrary.playtime_forever,
-                })
-              } else {
-                throw new Error(`Game is not in library, but was found in app info:${game.id}`)
-              }
-            })
+      //         const currentGameInLibrary = myLibrary.get(parseInt(game.id))
+      //         if (currentGameInLibrary) {
+      //           await Library.add({
+      //             baseGameID: game.id,
+      //             lastPlayed: currentGameInLibrary.rtime_last_played ? new Date(currentGameInLibrary.rtime_last_played * 1000) : null,
+      //             totalPlaytime: currentGameInLibrary.playtime_forever,
+      //           })
+      //         } else {
+      //           throw new Error(`Game is not in library, but was found in app info:${game.id}`)
+      //         }
+      //       })
 
-            const settled = await Promise.allSettled(queryGames);
+      //       const settled = await Promise.allSettled(queryGames);
 
-            settled
-              .filter(i => i.status === "rejected")
-              .forEach(e => console.warn(`[gameCreate]: Failed to create game: ${e.reason}`))
-          })
+      //       settled
+      //         .filter(i => i.status === "rejected")
+      //         .forEach(e => console.warn(`[gameCreate]: Failed to create game: ${e.reason}`))
+      //     })
 
-        break;
-      }
+      //   break;
+      // }
     }
   },
 );

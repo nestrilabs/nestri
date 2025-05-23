@@ -160,9 +160,9 @@ export interface AppConfig {
 export interface AppDepots {
     branches: AppDepotBranches;
     privatebranches: Record<string, AppDepotBranches>;
-    [depotId: string]: DepotEntry 
-        | AppDepotBranches 
-        | Record<string, AppDepotBranches>;
+    [depotId: string]: DepotEntry
+    | AppDepotBranches
+    | Record<string, AppDepotBranches>;
 }
 
 
@@ -284,6 +284,14 @@ export type GenreType = {
 export interface AppInfo {
     name: string;
     slug: string;
+    images: {
+        logo: string;
+        backdrop: string;
+        poster: string;
+        banner: string;
+        screenshots: string[];
+        icon: string;
+    }
     score: number;
     id: string;
     releaseDate: Date;
@@ -344,103 +352,103 @@ export interface RankedShot {
 }
 
 export interface SteamPlayerSummaryResponse {
-  response: {
-    players: SteamPlayerSummary[];
-  };
+    response: {
+        players: SteamPlayerSummary[];
+    };
 }
 
 export interface SteamPlayerSummary {
-  steamid: string;
-  communityvisibilitystate: number;
-  profilestate?: number;
-  personaname: string;
-  profileurl: string;
-  avatar: string;
-  avatarmedium: string;
-  avatarfull: string;
-  avatarhash: string;
-  lastlogoff?: number;
-  personastate: number;
-  realname?: string;
-  primaryclanid?: string;
-  timecreated: number;
-  personastateflags?: number;
-  loccountrycode?: string;  
+    steamid: string;
+    communityvisibilitystate: number;
+    profilestate?: number;
+    personaname: string;
+    profileurl: string;
+    avatar: string;
+    avatarmedium: string;
+    avatarfull: string;
+    avatarhash: string;
+    lastlogoff?: number;
+    personastate: number;
+    realname?: string;
+    primaryclanid?: string;
+    timecreated: number;
+    personastateflags?: number;
+    loccountrycode?: string;
 }
 
 export interface SteamPlayerBansResponse {
-  players: SteamPlayerBan[];
+    players: SteamPlayerBan[];
 }
 
 export interface SteamPlayerBan {
-  SteamId: string;
-  CommunityBanned: boolean;
-  VACBanned: boolean;
-  NumberOfVACBans: number;
-  DaysSinceLastBan: number;
-  NumberOfGameBans: number;
-  EconomyBan: 'none' | 'probation' | 'banned'; // Enum based on known possible values
+    SteamId: string;
+    CommunityBanned: boolean;
+    VACBanned: boolean;
+    NumberOfVACBans: number;
+    DaysSinceLastBan: number;
+    NumberOfGameBans: number;
+    EconomyBan: 'none' | 'probation' | 'banned'; // Enum based on known possible values
 }
 
 export type SteamAccount = {
-  id: string;
-  name: string;
-  realName: string | null;
-  steamMemberSince: Date;
-  avatarHash: string;
-  limitations: {
-    isLimited: boolean;
-    tradeBanState: 'none' | 'probation' | 'banned';
-    isVacBanned: boolean;
-    visibilityState: number;
-    privacyState: 'public' | 'private' | 'friendsonly';
-  };
-  profileUrl: string;
-  lastSyncedAt: Date;
+    id: string;
+    name: string;
+    realName: string | null;
+    steamMemberSince: Date;
+    avatarHash: string;
+    limitations: {
+        isLimited: boolean;
+        tradeBanState: 'none' | 'probation' | 'banned';
+        isVacBanned: boolean;
+        visibilityState: number;
+        privacyState: 'public' | 'private' | 'friendsonly';
+    };
+    profileUrl: string;
+    lastSyncedAt: Date;
 };
 
 export interface SteamFriendsListResponse {
-  friendslist: {
-    friends: SteamFriend[];
-  };
+    friendslist: {
+        friends: SteamFriend[];
+    };
 }
 
 export interface SteamFriend {
-  steamid: string;
-  relationship: 'friend'; // could expand this if Steam ever adds more types
-  friend_since: number; // Unix timestamp (seconds)
+    steamid: string;
+    relationship: 'friend'; // could expand this if Steam ever adds more types
+    friend_since: number; // Unix timestamp (seconds)
 }
 
 export interface SteamOwnedGamesResponse {
-  response: {
-    game_count: number;
-    games: SteamOwnedGame[];
-  };
+    response: {
+        game_count: number;
+        games: SteamOwnedGame[];
+    };
 }
 
 export interface SteamOwnedGame {
-  appid: number;
-  name: string;
-  playtime_forever: number;
-  img_icon_url: string;
+    appid: number;
+    name: string;
+    playtime_forever: number;
+    img_icon_url: string;
 
-  playtime_windows_forever?: number;
-  playtime_mac_forever?: number;
-  playtime_linux_forever?: number;
-  playtime_deck_forever?: number;
+    playtime_windows_forever?: number;
+    playtime_mac_forever?: number;
+    playtime_linux_forever?: number;
+    playtime_deck_forever?: number;
 
-  rtime_last_played?: number; // Unix timestamp
-  content_descriptorids?: number[];
-  playtime_disconnected?: number;
-  has_community_visible_stats?: boolean;
+    rtime_last_played?: number; // Unix timestamp
+    content_descriptorids?: number[];
+    playtime_disconnected?: number;
+    has_community_visible_stats?: boolean;
 }
 
 /**
  * The shape of the parsed Steam profile information.
  */
 export interface ProfileInfo {
-  steamID64: string;
-  isLimited: boolean;
-  privacyState: 'public' | 'private' | 'friendsonly' | string;
-  visibility: string;
+    steamID64: string;
+    isLimited: boolean;
+    privacyState: 'public' | 'private' | 'friendsonly' | string;
+    visibility: string;
 }

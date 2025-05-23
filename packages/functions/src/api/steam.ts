@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Hono } from "hono";
+import { Resource } from "sst";
 import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
 import { Team } from "@nestri/core/team/index";
@@ -112,7 +113,7 @@ export namespace SteamApi {
                 if (wasAdded) {
                     // create a team
                     teamID = await Team.create({
-                        name:  user.name,
+                        name: user.name,
                         ownerSteamID: steamID,
                     })
 
@@ -161,15 +162,19 @@ export namespace SteamApi {
                         friendChunks.map(async (friendIDs) => {
                             const friendsInfo = await Client.getUserInfo(friendIDs)
 
-                            friendsInfo.map(async (friend) => {
-                                const wasAdded = await Steam.create(friend);
+                            return await Promise.all(
+                                friendsInfo.map(async (friend) => {
+                                    const wasAdded = await Steam.create(friend);
 
-                                if (!wasAdded) {
-                                    console.log(`Friend ${friend.id} already exists`)
-                                }
+                                    if (!wasAdded) {
+                                        console.log(`Friend ${friend.id} already exists`)
+                                    }
 
-                                await Friend.add({ friendSteamID: friend.id, steamID })
-                            })
+                                    await Friend.add({ friendSteamID: friend.id, steamID })
+
+                                    return friend.id
+                                })
+                            )
                         })
                     )
 
@@ -177,6 +182,53 @@ export namespace SteamApi {
                         .filter(result => result.status === 'rejected')
                         .forEach(result => console.warn('[putFriends] failed:', (result as PromiseRejectedResult).reason))
 
+                    const friendIDs = settled
+                        .filter(result => result.status === "fulfilled")
+                        .map(f => f.value)
+                        .flat()
+
+                    const multipleIDs = [...friendIDs, steamID]
+
+                    Promise.all(
+                        multipleIDs.map(async (currentSteamID) => {
+                            // Get user library
+                            const gameLibrary = await Client.getUserLibrary(currentSteamID);
+
+                            const queryLib = await Promise.allSettled(
+                                gameLibrary.response.games.map(async (game) => {
+                                    if (teamID) {
+                                        await Actor.provide(
+                                            "steam",
+                                            {
+                                                steamID: currentSteamID,
+                                            },
+                                            async () => {
+                                                const payload = await Library.Events.Queue.create({
+                                                    appID: game.appid,
+                                                    lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
+                                                    totalPlaytime: game.playtime_forever
+                                                });
+
+                                                await sqs.send(
+                                                    new SendMessageCommand({
+                                                        MessageGroupId: currentSteamID,
+                                                        QueueUrl: Resource.LibraryQueue.url,
+                                                        // Prevent bombarding Steam with requests at the same time
+                                                        DelaySeconds: 30,
+                                                        MessageBody: JSON.stringify(payload),
+                                                        MessageDeduplicationId: game.appid.toString(),
+                                                    })
+                                                )
+                                            }
+                                        )
+                                    }
+                                })
+                            )
+
+                            queryLib
+                                .filter(i => i.status === "rejected")
+                                .forEach(e => console.warn(`[getUserLib]: Failed to get user library: ${e.reason}`))
+                        }))
                 })())
 
                 return c.json({ data: "ok" })
