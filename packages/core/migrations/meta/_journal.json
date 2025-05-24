@@ -141,6 +141,13 @@
       "when": 1747202158003,
       "tag": "0019_charming_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1747795508868,
+      "tag": "0020_vengeful_wallop",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@ import { isNotNull } from "drizzle-orm";
 import { userTable } from "../user/user.sql";
 import { steamTable } from "../steam/steam.sql";
 import { timestamps, teamID, ulid } from "../drizzle/types";
-import { bigint, pgEnum, pgTable, primaryKey, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { pgEnum, pgTable, primaryKey, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 
 export const RoleEnum = pgEnum("member_role", ["child", "adult"])
 

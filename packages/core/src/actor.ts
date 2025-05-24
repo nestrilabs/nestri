@@ -18,6 +18,13 @@ export namespace Actor {
       teamID: string;
     };
   }
+  
+  export interface Steam {
+    type: "steam";
+    properties: {
+      steamID: string;
+    };
+  }
 
   export interface Machine {
     type: "machine";
@@ -41,7 +48,7 @@ export namespace Actor {
     properties: {};
   }
 
-  export type Info = User | Public | Token | System | Machine;
+  export type Info = User | Public | Token | System | Machine | Steam;
 
   export const Context = createContext<Info>();
 

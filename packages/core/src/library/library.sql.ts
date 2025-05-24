@@ -1,7 +1,7 @@
-import { timestamps, utc, } from "../drizzle/types";
 import { steamTable } from "../steam/steam.sql";
+import { timestamps, utc, } from "../drizzle/types";
 import { baseGamesTable } from "../base-game/base-game.sql";
-import { boolean, index, integer, pgTable, primaryKey, varchar, } from "drizzle-orm/pg-core";
+import { index, integer, pgTable, primaryKey, varchar, } from "drizzle-orm/pg-core";
 
 export const steamLibraryTable = pgTable(
     "game_libraries",
@@ -12,20 +12,18 @@ export const steamLibraryTable = pgTable(
             .references(() => baseGamesTable.id, {
                 onDelete: "cascade"
             }),
-        ownerID: varchar("owner_id", { length: 255 })
+        ownerSteamID: varchar("owner_steam_id", { length: 255 })
             .notNull()
             .references(() => steamTable.id, {
                 onDelete: "cascade"
             }),
-        timeAcquired: utc("time_acquired").notNull(),
-        lastPlayed: utc("last_played").notNull(),
+        lastPlayed: utc("last_played"),
         totalPlaytime: integer("total_playtime").notNull(),
-        isFamilyShared: boolean("is_family_shared").notNull()
     },
     (table) => [
         primaryKey({
-            columns: [table.baseGameID, table.ownerID]
+            columns: [table.baseGameID, table.ownerSteamID]
         }),
-        index("idx_game_libraries_owner_id").on(table.ownerID),
+        index("idx_game_libraries_owner_id").on(table.ownerSteamID),
     ],
 );

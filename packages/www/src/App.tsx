@@ -97,7 +97,7 @@ export const App: Component = () => {
             issuer={import.meta.env.VITE_AUTH_URL}
             clientID="web"
         >
-            <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
+            <Root class={theme() === "light" ? lightClass : darkClass}>
                 <Router>
                     <Route
                         path="*"
@@ -108,13 +108,14 @@ export const App: Component = () => {
                                         <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
                                     </FullScreen>
                                 }>
-                                <ZeroProvider>
-                                    {props.children}
-                                </ZeroProvider>
+                                {/* //     <ZeroProvider> */}
+                                {/* props.children */}
+                                {props.children}
+                                {/* //     </ZeroProvider> */}
                             </AccountProvider>
                         )}
                     >
-                        <Route path=":teamSlug">{TeamRoute}</Route>
+                        <Route path=":teamID">{TeamRoute}</Route>
                         <Route path="new" component={CreateTeamComponent} />
                         <Route
                             path="/"
@@ -122,14 +123,13 @@ export const App: Component = () => {
                                 const account = useAccount();
                                 return (
                                     <Switch>
-                                        {/**FIXME: Somehow this does not work when the user is in the "/new" page */}
                                         <Match when={account.current.teams.length > 0}>
                                             <Navigate
                                                 href={`/${(
                                                     account.current.teams.find(
                                                         (w) => w.id === storage.value.team,
                                                     ) || account.current.teams[0]
-                                                ).slug
+                                                ).id
                                                     }`}
                                             />
                                         </Match>
@@ -144,6 +144,6 @@ export const App: Component = () => {
                     </Route>
                 </Router>
             </Root>
-        // </OpenAuthProvider>
+        </OpenAuthProvider>
     )
 }

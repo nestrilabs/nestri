@@ -14,6 +14,9 @@
   "peerDependencies": {
     "typescript": "^5"
   },
+  "exports": {
+    "./*": "./src/*.ts"
+  },
   "dependencies": {
     "@actor-core/bun": "^0.8.0",
     "@actor-core/file-system": "^0.8.0",

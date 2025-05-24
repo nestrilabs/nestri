@@ -1,8 +1,8 @@
 import { bus } from "./bus";
 import { domain } from "./dns";
+import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
-import { secret, steamEncryptionKey } from "./secret";
 
 export const authService = new sst.aws.Service("Auth", {
     cluster,
@@ -13,7 +13,6 @@ export const authService = new sst.aws.Service("Auth", {
         bus,
         postgres,
         secret.PolarSecret,
-        steamEncryptionKey,
         secret.GithubClientID,
         secret.DiscordClientID,
         secret.GithubClientSecret,

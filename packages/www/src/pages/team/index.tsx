@@ -18,7 +18,7 @@ export const TeamRoute = (
 
             const team = createMemo(() =>
                 account.current.teams.find(
-                    (item) => item.slug === params.teamSlug,
+                    (item) => item.id === params.teamID,
                 ),
             );
 
@@ -29,10 +29,10 @@ export const TeamRoute = (
             });
 
             createEffect(() => {
-                const teamSlug = params.teamSlug;
+                const teamID = params.teamID;
                 for (const item of Object.values(account.all)) {
                     for (const team of item.teams) {
-                        if (team.slug === teamSlug && item.id !== openauth.subject!.id) {
+                        if (team.id === teamID && item.id !== openauth.subject!.id) {
                             openauth.switch(item.email);
                         }
                     }

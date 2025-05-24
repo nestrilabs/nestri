@@ -6,7 +6,6 @@ import {
     table,
     number,
     string,
-    boolean,
     enumeration,
     createSchema,
     relationships,
@@ -53,10 +52,9 @@ const teams = table("teams")
     .columns({
         id: string(),
         name: string(),
-        slug: string(),
-        owner_id: string(),
         invite_code: string(),
         max_members: number(),
+        owner_steam_id: string(),
         ...timestamps,
     })
     .primaryKey("id");
@@ -116,13 +114,11 @@ const categories = table("categories")
 const game_libraries = table("game_libraries")
     .columns({
         base_game_id: string(),
-        owner_id: string(),
-        time_acquired: number(),
-        last_played: number(),
         total_playtime: number(),
-        is_family_shared: boolean(),
+        owner_steam_id: string(),
+        last_played: number().optional(),
         ...timestamps
-    }).primaryKey("base_game_id", "owner_id")
+    }).primaryKey("base_game_id", "owner_steam_id")
 
 const images = table("images")
     .columns({
@@ -150,6 +146,11 @@ export const schema = createSchema({
                 destSchema: members,
                 destField: ["steam_id"],
             }),
+            teams: r.many({
+                sourceField: ["id"],
+                destSchema: teams,
+                destField: ["owner_steam_id"],
+            }),
             friends: r.many(
                 {
                     sourceField: ["id"],
@@ -166,7 +167,7 @@ export const schema = createSchema({
                 {
                     sourceField: ["id"],
                     destSchema: game_libraries,
-                    destField: ["owner_id"],
+                    destField: ["owner_steam_id"],
                 },
                 {
                     sourceField: ["base_game_id"],
@@ -176,11 +177,6 @@ export const schema = createSchema({
             ),
         })),
         relationships(users, (r) => ({
-            teams: r.many({
-                sourceField: ["id"],
-                destSchema: teams,
-                destField: ["owner_id"],
-            }),
             members: r.many({
                 sourceField: ["id"],
                 destSchema: members,
@@ -194,8 +190,8 @@ export const schema = createSchema({
         })),
         relationships(teams, (r) => ({
             owner: r.one({
-                sourceField: ["owner_id"],
-                destSchema: users,
+                sourceField: ["owner_steam_id"],
+                destSchema: steam_accounts,
                 destField: ["id"],
             }),
             members: r.many({
@@ -229,7 +225,7 @@ export const schema = createSchema({
                     destField: ["base_game_id"],
                 },
                 {
-                    sourceField: ["owner_id"],
+                    sourceField: ["owner_steam_id"],
                     destSchema: steam_accounts,
                     destField: ["id"],
                 }
@@ -289,7 +285,7 @@ export const schema = createSchema({
 
         relationships(game_libraries, (r) => ({
             owner: r.one({
-                sourceField: ["owner_id"],
+                sourceField: ["owner_steam_id"],
                 destSchema: steam_accounts,
                 destField: ["id"]
             }),
