@@ -81,7 +81,7 @@ const games = table("games")
     .columns({
         base_game_id: string(),
         category_slug: string(),
-        type: enumeration<"tag" | "genre" | "publisher" | "developer">(),
+        type: enumeration<"tag" | "genre" | "publisher" | "developer" | "categorie" | "franchise">(),
         ...timestamps
     })
     .primaryKey("category_slug", "base_game_id", "type")

@@ -204,6 +204,13 @@ export namespace Examples {
                 slug: "redcandlegames"
             }
         ],
+        franchises: [],
+        categories: [
+            {
+                name: "Partial Controller",
+                slug: "partial-controller"
+            }
+        ]
     }
 
     export const CommonImg = [

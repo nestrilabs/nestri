@@ -150,85 +150,91 @@ export namespace SteamApi {
                 }
 
                 c.executionCtx.waitUntil((async () => {
-                    // Get friends info
-                    const friends = await Client.getFriendsList(steamID);
+                    try {
+                        // Get friends info
+                        const friends = await Client.getFriendsList(steamID);
 
-                    const friendSteamIDs = friends.friendslist.friends.map(f => f.steamid);
+                        const friendSteamIDs = friends.friendslist.friends.map(f => f.steamid);
 
-                    // Steam API has a limit of requesting 100 friends at a go
-                    const friendChunks = chunkArray(friendSteamIDs, 100);
+                        // Steam API has a limit of requesting 100 friends at a go
+                        const friendChunks = chunkArray(friendSteamIDs, 100);
 
-                    const settled = await Promise.allSettled(
-                        friendChunks.map(async (friendIDs) => {
-                            const friendsInfo = await Client.getUserInfo(friendIDs)
+                        const settled = await Promise.allSettled(
+                            friendChunks.map(async (friendIDs) => {
+                                const friendsInfo = await Client.getUserInfo(friendIDs)
 
-                            return await Promise.all(
-                                friendsInfo.map(async (friend) => {
-                                    const wasAdded = await Steam.create(friend);
+                                return await Promise.all(
+                                    friendsInfo.map(async (friend) => {
+                                        const wasAdded = await Steam.create(friend);
 
-                                    if (!wasAdded) {
-                                        console.log(`Friend ${friend.id} already exists`)
-                                    }
+                                        if (!wasAdded) {
+                                            console.log(`Friend ${friend.id} already exists`)
+                                        }
 
-                                    await Friend.add({ friendSteamID: friend.id, steamID })
+                                        await Friend.add({ friendSteamID: friend.id, steamID })
 
-                                    return friend.id
-                                })
-                            )
-                        })
-                    )
+                                        return friend.id
+                                    })
+                                )
+                            })
+                        )
 
-                    settled
-                        .filter(result => result.status === 'rejected')
-                        .forEach(result => console.warn('[putFriends] failed:', (result as PromiseRejectedResult).reason))
+                        settled
+                            .filter(result => result.status === 'rejected')
+                            .forEach(result => console.warn('[putFriends] failed:', (result as PromiseRejectedResult).reason))
 
-                    const friendIDs = settled
-                        .filter(result => result.status === "fulfilled")
-                        .map(f => f.value)
-                        .flat()
+                        const friendIDs = [
+                            steamID,
+                            ...settled
+                                .filter(result => result.status === "fulfilled")
+                                .map(f => f.value)
+                                .flat()
+                        ]
 
-                    const multipleIDs = [...friendIDs, steamID]
+                        await Promise.all(
+                            friendIDs.map(async (currentSteamID) => {
+                                // Get user library
+                                const gameLibrary = await Client.getUserLibrary(currentSteamID);
 
-                    Promise.all(
-                        multipleIDs.map(async (currentSteamID) => {
-                            // Get user library
-                            const gameLibrary = await Client.getUserLibrary(currentSteamID);
+                                const queryLib = await Promise.allSettled(
+                                    gameLibrary.response.games.map(async (game) => {
+                                        if (teamID) {
+                                            await Actor.provide(
+                                                "steam",
+                                                {
+                                                    steamID: currentSteamID,
+                                                },
+                                                async () => {
+                                                    const payload = await Library.Events.Queue.create({
+                                                        appID: game.appid,
+                                                        lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
+                                                        totalPlaytime: game.playtime_forever
+                                                    });
 
-                            const queryLib = await Promise.allSettled(
-                                gameLibrary.response.games.map(async (game) => {
-                                    if (teamID) {
-                                        await Actor.provide(
-                                            "steam",
-                                            {
-                                                steamID: currentSteamID,
-                                            },
-                                            async () => {
-                                                const payload = await Library.Events.Queue.create({
-                                                    appID: game.appid,
-                                                    lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
-                                                    totalPlaytime: game.playtime_forever
-                                                });
+                                                    await sqs.send(
+                                                        new SendMessageCommand({
+                                                            // MessageGroupId: currentSteamID,
+                                                            QueueUrl: Resource.LibraryQueue.url,
+                                                            // Prevent bombarding Steam with requests at the same time
+                                                            DelaySeconds: 30,
+                                                            MessageBody: JSON.stringify(payload),
+                                                            MessageDeduplicationId: `${currentSteamID}_${game.appid.toString()}`,
+                                                        })
+                                                    )
+                                                }
+                                            )
+                                        }
+                                    })
+                                )
 
-                                                await sqs.send(
-                                                    new SendMessageCommand({
-                                                        MessageGroupId: currentSteamID,
-                                                        QueueUrl: Resource.LibraryQueue.url,
-                                                        // Prevent bombarding Steam with requests at the same time
-                                                        DelaySeconds: 30,
-                                                        MessageBody: JSON.stringify(payload),
-                                                        MessageDeduplicationId: game.appid.toString(),
-                                                    })
-                                                )
-                                            }
-                                        )
-                                    }
-                                })
-                            )
-
-                            queryLib
-                                .filter(i => i.status === "rejected")
-                                .forEach(e => console.warn(`[getUserLib]: Failed to get user library: ${e.reason}`))
-                        }))
+                                queryLib
+                                    .filter(i => i.status === "rejected")
+                                    .forEach(e => console.warn(`[pushUserLib]: Failed to push user library to queue: ${e.reason}`))
+                            })
+                        )
+                    } catch (error: any) {
+                        console.error(`Failed to process Steam data for user ${userID}:`, error);
+                    }
                 })())
 
                 return c.json({ data: "ok" })

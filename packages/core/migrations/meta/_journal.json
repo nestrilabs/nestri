@@ -148,6 +148,20 @@
       "when": 1747795508868,
       "tag": "0020_vengeful_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1747975397543,
+      "tag": "0021_real_skreet",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1748099972605,
+      "tag": "0022_clean_living_lightning",
+      "breakpoints": true
     }
   ]
 }

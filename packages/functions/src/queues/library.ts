@@ -34,8 +34,8 @@ export const handler: SQSHandler = async (event) => {
                         id: appID,
                         name: appInfo.name,
                         size: appInfo.size,
-                        score: appInfo.score,
                         slug: appInfo.slug,
+                        score: appInfo.score,
                         description: appInfo.description,
                         releaseDate: appInfo.releaseDate,
                         primaryGenre: appInfo.primaryGenre,
@@ -51,12 +51,12 @@ export const handler: SQSHandler = async (event) => {
 
                     await Promise.all(
                         uniqueCategories.map(async (cat) => {
-                            //Use a single db transaction to get or set the category
+                            //Create category if it doesn't exist
                             await Categories.create({
                                 type: cat.type, slug: cat.slug, name: cat.name
                             })
 
-                            // Use a single db transaction to get or create the game
+                            //Create game if it doesn't exist
                             await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
                         })
                     )
