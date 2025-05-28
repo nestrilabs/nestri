@@ -78,14 +78,14 @@ export class WebRTCStream {
     });
 
     this._p2p.addEventListener("peer:connect", async (e) => {
-      console.log("Peer connected:", e.detail);
+      console.debug("Peer connected:", e.detail);
     });
     this._p2p.addEventListener("peer:disconnect", (e) => {
-      console.log("Peer disconnected:", e.detail);
+      console.debug("Peer disconnected:", e.detail);
     });
 
     const ma = multiaddr(serverURL);
-    console.log("Dialing peer at:", ma.toString());
+    console.debug("Dialing peer at:", ma.toString());
     this._p2pConn = await this._p2p.dial(ma);
 
     if (this._p2pConn) {
@@ -99,7 +99,6 @@ export class WebRTCStream {
 
         let iceHolder: RTCIceCandidateInit[] = [];
         this._p2pSafeStream.registerCallback("ice-candidate", (data) => {
-          console.log("Received ICE candidate:", data);
           if (this._pc) {
             if (this._pc.remoteDescription) {
               this._pc.addIceCandidate(data.candidate).catch((err) => {
@@ -121,7 +120,6 @@ export class WebRTCStream {
         });
 
         this._p2pSafeStream.registerCallback("offer", async (data) => {
-          console.log("Received offer:", data);
           if (!this._pc) {
             // Setup peer connection now
             this._setupPeerConnection();
@@ -135,6 +133,11 @@ export class WebRTCStream {
           // Send answer back
           const answerMsg = NewMessageSDP("answer", answer);
           await this._p2pSafeStream.writeMessage(answerMsg);
+        });
+
+        this._p2pSafeStream.registerCallback("request-stream-offline", (data) => {
+          console.warn("Stream is offline for room:", data.roomName);
+          this._onConnected?.(null);
         });
 
         // Send stream request
@@ -172,7 +175,7 @@ export class WebRTCStream {
     });
 
     this._pc.ontrack = (e) => {
-      console.log("Track received: ", e.track);
+      console.debug("Track received: ", e.track);
       if (e.track.kind === "audio") this._audioTrack = e.track;
       else if (e.track.kind === "video") this._videoTrack = e.track;
 
@@ -180,12 +183,12 @@ export class WebRTCStream {
     };
 
     this._pc.onconnectionstatechange = () => {
-      console.log("Connection state changed to: ", this._pc!.connectionState);
+      console.debug("Connection state changed to: ", this._pc!.connectionState);
       this._checkConnectionState();
     };
 
     this._pc.oniceconnectionstatechange = () => {
-      console.log(
+      console.debug(
         "ICE connection state changed to: ",
         this._pc!.iceConnectionState,
       );
@@ -193,7 +196,7 @@ export class WebRTCStream {
     };
 
     this._pc.onicegatheringstatechange = () => {
-      console.log(
+      console.debug(
         "ICE gathering state changed to: ",
         this._pc!.iceGatheringState,
       );
@@ -222,7 +225,7 @@ export class WebRTCStream {
   private _checkConnectionState() {
     if (!this._pc) return;
 
-    console.log("Checking connection state:", {
+    console.debug("Checking connection state:", {
       connectionState: this._pc.connectionState,
       iceConnectionState: this._pc.iceConnectionState,
       hasAudioTrack: !!this._audioTrack,

@@ -106,11 +106,25 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 			if room == nil || !room.IsOnline() || room.OwnerID != sp.relay.ID {
 				// TODO: Allow forward requests to other relays from here?
 				slog.Error("Cannot provide stream for nil, offline or non-owned room", "room", roomName, "is_online", room != nil && room.IsOnline(), "is_owner", room != nil && room.OwnerID == sp.relay.ID)
+				// Respond with "request-stream-offline" message with room name
+				// TODO: Store the peer and send "online" message when the room comes online
+				roomNameData, err := json.Marshal(roomName)
+				if err != nil {
+					slog.Error("Failed to marshal room name for request stream offline", "room", roomName, "err", err)
+					continue
+				} else {
+					if err = safeBRW.SendJSON(connections.NewMessageRaw(
+						"request-stream-offline",
+						roomNameData,
+					)); err != nil {
+						slog.Error("Failed to send request stream offline message", "room", roomName, "err", err)
+					}
+				}
 				continue
 			}
 
 			pc, err := common.CreatePeerConnection(func() {
-				slog.Info("Relay PeerConnection closed for requested stream", "room", roomName)
+				slog.Info("PeerConnection closed for requested stream", "room", roomName)
 				// Cleanup the stream connection
 				if ok := sp.servedConns.Has(stream.Conn().RemotePeer()); ok {
 					sp.servedConns.Delete(stream.Conn().RemotePeer())
@@ -504,7 +518,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				slog.Error("Failed to unmarshal ICE candidate from data", "err", err)
 				continue
 			}
-			if conn, ok := sp.incomingConns.Get(stream.Conn().RemotePeer().String()); ok && conn.pc.RemoteDescription() != nil {
+			if conn, ok := sp.incomingConns.Get(room.Name); ok && conn.pc.RemoteDescription() != nil {
 				if err = conn.pc.AddICECandidate(iceMsg.Candidate); err != nil {
 					slog.Error("Failed to add ICE candidate for pushed stream", "err", err)
 				}
@@ -658,7 +672,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 			}
 
 			// Store the connection
-			sp.incomingConns.Set(stream.Conn().RemotePeer().String(), &StreamConnection{
+			sp.incomingConns.Set(room.Name, &StreamConnection{
 				pc:  pc,
 				ndc: room.DataChannel, // if it exists, if not it will be set later
 			})

@@ -47,6 +47,10 @@ impl Signaller {
         *self.stream_room.write() = Some(room);
     }
 
+    fn get_stream_protocol(&self) -> Option<Arc<NestriStreamProtocol>> {
+        self.stream_protocol.read().clone()
+    }
+
     pub fn set_wayland_src(&self, wayland_src: Arc<gst::Element>) {
         *self.wayland_src.write() = Some(wayland_src);
     }
@@ -67,11 +71,9 @@ impl Signaller {
 
     /// Helper method to clean things up
     fn register_callbacks(&self) {
-        let stream_protocol = {
-            self.stream_protocol
-                .read()
-                .clone()
-                .expect("Stream protocol not set")
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
         };
         {
             let self_obj = self.obj().clone();
@@ -205,11 +207,9 @@ impl SignallableImpl for Signaller {
             data: serde_json::Value::from(stream_room),
         };
 
-        let stream_protocol = {
-            self.stream_protocol
-                .read()
-                .clone()
-                .expect("Stream protocol not set")
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
         };
 
         if let Err(e) = stream_protocol.send_message(&push_msg) {
@@ -230,11 +230,9 @@ impl SignallableImpl for Signaller {
             sdp: RTCSessionDescription::offer(sdp.sdp().as_text().unwrap()).unwrap(),
         };
 
-        let stream_protocol = {
-            self.stream_protocol
-                .read()
-                .clone()
-                .expect("Stream protocol not set")
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
         };
 
         if let Err(e) = stream_protocol.send_message(&sdp_message) {
@@ -263,11 +261,9 @@ impl SignallableImpl for Signaller {
             candidate: candidate_init,
         };
 
-        let stream_protocol = {
-            self.stream_protocol
-                .read()
-                .clone()
-                .expect("Stream protocol not set")
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
         };
 
         if let Err(e) = stream_protocol.send_message(&ice_message) {

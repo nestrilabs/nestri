@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -59,13 +60,19 @@ func (r *Relay) publishRelayMetrics(ctx context.Context) error {
 
 // checkAllPeerLatencies measures latency to all currently connected peers.
 func (r *Relay) checkAllPeerLatencies(ctx context.Context) {
+	var wg sync.WaitGroup
 	for _, p := range r.Host.Network().Peers() {
 		if p == r.ID {
 			continue // Skip self
 		}
+		wg.Add(1)
 		// Run checks concurrently
-		go r.measureLatencyToPeer(ctx, p)
+		go func(peerID peer.ID) {
+			defer wg.Done()
+			go r.measureLatencyToPeer(ctx, peerID)
+		}(p)
 	}
+	wg.Wait() // Wait for all latency checks to complete
 }
 
 // measureLatencyToPeer pings a specific peer and updates the local latency map.

@@ -53,6 +53,7 @@ export function NewMessageSDP(
 }
 
 const MAX_SIZE = 1024 * 1024; // 1MB
+const MAX_QUEUE_SIZE = 1000; // Maximum number of messages in the queue
 
 // Custom 4-byte length encoder
 export const length4ByteEncoder = (length: number) => {
@@ -101,6 +102,8 @@ export class SafeStream {
   private closed: boolean = false;
   private messageQueue: Uint8Array[] = [];
   private writeLock = false;
+  private readRetries = 0;
+  private readonly MAX_RETRIES = 5;
 
   constructor(stream: Stream) {
     this.stream = stream;
@@ -125,7 +128,9 @@ export class SafeStream {
 
         try {
           const data = chunk.slice();
-          const message = JSON.parse(new TextDecoder().decode(data)) as MessageBase;
+          const message = JSON.parse(
+            new TextDecoder().decode(data),
+          ) as MessageBase;
           const msgType = message.payload_type;
 
           if (this.callbacks.has(msgType)) {
@@ -146,15 +151,22 @@ export class SafeStream {
       console.error("Stream reading error:", err);
     } finally {
       this.isReading = false;
+      this.readRetries++;
 
       // If not closed, try to restart reading
-      if (!this.closed) {
+      if (!this.closed && this.readRetries < this.MAX_RETRIES)
         setTimeout(() => this.startReading(), 100);
-      }
+      else if (this.readRetries >= this.MAX_RETRIES)
+        console.error(
+          "Max retries reached for reading stream, stopping attempts",
+        );
     }
   }
 
-  public registerCallback(msgType: string, callback: (data: any) => void): void {
+  public registerCallback(
+    msgType: string,
+    callback: (data: any) => void,
+  ): void {
     if (!this.callbacks.has(msgType)) {
       this.callbacks.set(msgType, []);
     }
@@ -183,63 +195,42 @@ export class SafeStream {
     this.isWriting = true;
 
     try {
-      // Create a single async generator that never completes
-      const continuousSource = (async function* () {
-        while (true) {
-          // Signal to keep connection alive even when no data
-          yield new Uint8Array(0);
-          // Wait a bit before next keep-alive
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-      })();
+      // Create an async generator for real-time message processing
+      const messageSource = async function* () {
+        while (!this.closed) {
+          // Check if we have messages to send
+          if (this.messageQueue.length > 0) {
+            this.writeLock = true;
 
-      // Start the sink with our continuous source
-      // This keeps it open indefinitely
-      await pipe(
-        continuousSource,
-        async function* (source) {
-          for await (const _ of source) {
-            // Process any messages in the queue when they appear
-            while (this.messageQueue.length > 0 && !this.closed) {
-              this.writeLock = true;
+            try {
+              const message = this.messageQueue[0];
 
-              try {
-                const message = this.messageQueue[0];
+              // Encode the message
+              const encoded = encode([message], {
+                maxDataLength: MAX_SIZE,
+                lengthEncoder: length4ByteEncoder,
+              });
 
-                // Wait for stream to be ready
-                if (this.stream.writeStatus !== 'ready' && this.stream.writeStatus !== 'writing') {
-                  await new Promise(resolve => setTimeout(resolve, 50));
-                  continue;
-                }
-
-                // Encode the message
-                const encoded = encode([message], {
-                  maxDataLength: MAX_SIZE,
-                  lengthEncoder: length4ByteEncoder,
-                });
-
-                for await (const chunk of encoded) {
-                  yield chunk;
-                }
-
-                // Remove message after successful sending
-                this.messageQueue.shift();
-              } catch (err) {
-                console.error("Error encoding or sending message:", err);
-                await new Promise(resolve => setTimeout(resolve, 100));
-              } finally {
-                this.writeLock = false;
+              for await (const chunk of encoded) {
+                yield chunk;
               }
-            }
 
-            // If we have no messages, yield the keep-alive signal
-            if (!this.closed) {
-              yield _;
+              // Remove message after successful sending
+              this.messageQueue.shift();
+            } catch (err) {
+              console.error("Error encoding or sending message:", err);
+            } finally {
+              this.writeLock = false;
             }
+          } else {
+            // No messages to send, yield a small keep-alive packet
+            yield new Uint8Array(0);
+            await new Promise((resolve) => setTimeout(resolve, 100));
           }
-        }.bind(this),
-        this.stream.sink
-      ).catch(err => {
+        }
+      }.bind(this);
+
+      await pipe(messageSource(), this.stream.sink).catch((err) => {
         console.error("Sink error:", err);
         this.isWriting = false;
 
@@ -264,12 +255,17 @@ export class SafeStream {
       throw new Error("Cannot write to closed stream");
     }
 
+    // Check if the message queue is too large
+    if (this.messageQueue.length >= MAX_QUEUE_SIZE) {
+      throw new Error("Message queue is full, cannot write message");
+    }
+
     // Add message to the queue, the writing loop will pick it up
     this.messageQueue.push(message);
 
     // Return a promise that resolves when message is likely processed
     // This is not a guarantee but provides some back-pressure
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       const checkProcessed = () => {
         if (!this.messageQueue.includes(message) || this.closed) {
           resolve();

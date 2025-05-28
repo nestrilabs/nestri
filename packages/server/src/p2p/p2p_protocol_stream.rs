@@ -5,10 +5,35 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use tokio::sync::mpsc;
 
-type Callback = Box<dyn Fn(Vec<u8>) + Send + Sync>;
+// Cloneable callback type
+pub type CallbackInner = dyn Fn(Vec<u8>) + Send + Sync + 'static;
+pub struct Callback(Arc<CallbackInner>);
+impl Callback {
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(Vec<u8>) + Send + Sync + 'static,
+    {
+        Callback(Arc::new(f))
+    }
 
+    pub fn call(&self, data: Vec<u8>) {
+        self.0(data)
+    }
+}
+impl Clone for Callback {
+    fn clone(&self) -> Self {
+        Callback(Arc::clone(&self.0))
+    }
+}
+impl From<Box<CallbackInner>> for Callback {
+    fn from(boxed: Box<CallbackInner>) -> Self {
+        Callback(Arc::from(boxed))
+    }
+}
+
+/// NestriStreamProtocol manages the stream protocol for Nestri connections.
 pub struct NestriStreamProtocol {
-    tx: mpsc::UnboundedSender<Vec<u8>>,
+    tx: mpsc::Sender<Vec<u8>>,
     safe_stream: Arc<SafeStream>,
     callbacks: Arc<RwLock<HashMap<String, Callback>>>,
 }
@@ -31,7 +56,7 @@ impl NestriStreamProtocol {
             }
         };
 
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(1000);
 
         let sp = NestriStreamProtocol {
             tx,
@@ -64,11 +89,14 @@ impl NestriStreamProtocol {
                 match serde_json::from_slice::<crate::messages::MessageBase>(&data) {
                     Ok(base_message) => {
                         let response_type = base_message.payload_type;
-                        let callbacks_lock = callbacks.write().unwrap();
+                        let callback = {
+                            let callbacks_lock = callbacks.read().unwrap();
+                            callbacks_lock.get(&response_type).cloned()
+                        };
 
-                        if let Some(callback) = callbacks_lock.get(&response_type) {
+                        if let Some(callback) = callback {
                             // Call the registered callback with the raw data
-                            callback(data.clone());
+                            callback.call(data);
                         } else {
                             tracing::warn!(
                                 "No callback registered for response type: {}",
@@ -84,10 +112,7 @@ impl NestriStreamProtocol {
         })
     }
 
-    fn spawn_write_loop(
-        &self,
-        mut rx: mpsc::UnboundedReceiver<Vec<u8>>,
-    ) -> tokio::task::JoinHandle<()> {
+    fn spawn_write_loop(&self, mut rx: mpsc::Receiver<Vec<u8>>) -> tokio::task::JoinHandle<()> {
         let safe_stream = self.safe_stream.clone();
         tokio::spawn(async move {
             loop {
@@ -109,7 +134,7 @@ impl NestriStreamProtocol {
         message: &M,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let json_data = serde_json::to_vec(message)?;
-        self.tx.send(json_data)?;
+        self.tx.try_send(json_data)?;
         Ok(())
     }
 
@@ -119,6 +144,6 @@ impl NestriStreamProtocol {
         F: Fn(Vec<u8>) + Send + Sync + 'static,
     {
         let mut callbacks_lock = self.callbacks.write().unwrap();
-        callbacks_lock.insert(response_type.to_string(), Box::new(callback));
+        callbacks_lock.insert(response_type.to_string(), Callback::new(callback));
     }
 }

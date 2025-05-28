@@ -85,8 +85,11 @@ impl NestriP2P {
 
 async fn swarm_loop(swarm: Arc<Mutex<Swarm<NestriBehaviour>>>) {
     loop {
-        let mut swarm_lock = swarm.lock().await;
-        match swarm_lock.select_next_some().await {
+        let event = {
+            let mut swarm_lock = swarm.lock().await;
+            swarm_lock.select_next_some().await
+        };
+        match event {
             SwarmEvent::NewListenAddr { address, .. } => {
                 tracing::info!("Listening on: '{}'", address);
             }
