@@ -205,7 +205,7 @@ export class SafeStream {
 
     try {
       // Create an async generator for real-time message processing
-      const messageSource = async function* () {
+      const messageSource = async function* (this: SafeStream) {
         while (!this.closed) {
           // Check if we have messages to send
           if (this.messageQueue.length > 0) {
