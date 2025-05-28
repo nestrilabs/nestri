@@ -28,7 +28,7 @@ bus.subscribe("Event", {
   // transform: {
   //   function: {
   //     deadLetterConfig: {
-  //       targetArn: libraryDlq.arn,
+  //       targetArn: EventDlq.arn,
   //     },
   //   },
   // },

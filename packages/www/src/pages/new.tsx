@@ -186,6 +186,11 @@ const DividerText = styled("span", {
     }
 })
 
+//TODO: Fix, on popup quit, we let the user go and choose the Steam/Team to play in, so:
+// 1. We need a base home route
+// 2. The memory/hash router we were talking about 
+// 3. A really good UI to choose teams on
+
 export function CreateTeamComponent() {
     const account = useAccount()
 
