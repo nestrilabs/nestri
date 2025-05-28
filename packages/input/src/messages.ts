@@ -126,6 +126,8 @@ export class SafeStream {
       for await (const chunk of decodedSource) {
         if (this.closed) break;
 
+        this.readRetries = 0;
+
         try {
           const data = chunk.slice();
           const message = JSON.parse(
@@ -281,5 +283,6 @@ export class SafeStream {
     this.closed = true;
     this.callbacks.clear();
     this.messageQueue = [];
+    this.readRetries = 0;
   }
 }
