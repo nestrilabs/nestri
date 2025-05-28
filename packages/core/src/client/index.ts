@@ -93,7 +93,7 @@ export namespace Client {
         async (appid) => {
             const info = await Promise.all([
                 Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
-                Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
+                Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?key=${Resource.SteamApiKey.value}&input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
             ]);
 
             const cmd = info[0].data[appid]!
