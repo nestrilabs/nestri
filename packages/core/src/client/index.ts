@@ -11,10 +11,12 @@ import type {
     SteamPlayerBansResponse,
     SteamFriendsListResponse,
     SteamPlayerSummaryResponse,
+    SteamStoreResponse,
 } from "./types";
 import { z } from "zod";
 import { fn } from "../utils";
 import { Resource } from "sst";
+import { Steam } from "./steam";
 import { Utils } from "./utils";
 import { ImageTypeEnum } from "../images/images.sql";
 
@@ -89,79 +91,68 @@ export namespace Client {
     export const getAppInfo = fn(
         z.string(),
         async (appid) => {
-            // FIXME: Redo this game details retrieval, 
-            // and use one from the undocumented API, this endpoint(s) are a hit or miss and i am not liking that
-            const [infoData, tagsData, details] = await Promise.all([
+            const info = await Promise.all([
                 Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
-                Utils.fetchApi<GameTagsResponse>("https://store.steampowered.com/actions/ajaxgetstoretags"),
-                Utils.fetchApi<GameDetailsResponse>(
-                    `https://store.steampowered.com/apphover/${appid}?full=1&review_score_preference=1&pagev6=true&json=1`
-                ),
+                Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
             ]);
 
-            const tags = tagsData.tags;
-            const game = infoData.data[appid];
-            // Guard against an empty string - When there are no genres, Steam returns an empty string
-            const genres = details.strGenres ? Utils.parseGenres(details.strGenres) : [];
+            const cmd = info[0].data[appid]!
+            const store = info[1].response.store_items[0]
 
-            const controllerTag = game.common.controller_support ?
-                Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) :
-                Utils.createTag(`Unknown Controller Support`)
+            if (store.success != 1) {
+                throw new Error("Could not get store information")
+            }
 
-            const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Compatibility`)
+            const tags = store.tagids
+                .map(id => Steam.tags[id.toString() as keyof typeof Steam.tags])
+                .filter((name): name is string => typeof name === 'string')
 
-            const controller = (game.common.controller_support === "partial" || game.common.controller_support === "full") ? game.common.controller_support : "unknown";
+            const publishers = store.basic_info.publishers
+                .map(i => i.name)
 
-            const screenshots = Utils.getScreenshotUrls(details.rgScreenshots || []);
-            const assetUrls = Utils.getAssetUrls(game.common.library_assets_full, appid, game.common.header_image.english);
-            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.common.icon}.jpg`;
+            const developers = store.basic_info.publishers
+                .map(i => i.name)
 
-            const appInfo: AppInfo = {
-                genres,
-                id: game.appid,
-                name: game.common.name.trim(),
-                size: Utils.getPublicDepotSizes(game.depots!),
-                slug: Utils.createSlug(game.common.name.trim()),
-                description: Utils.cleanDescription(details.strDescription),
-                controllerSupport: controller,
-                releaseDate: new Date(Number(game.common.steam_release_date) * 1000),
-                primaryGenre: (!!game?.common.genres && !!details.strGenres) ? Utils.getPrimaryGenre(
-                    genres,
-                    game.common.genres!,
-                    game.common.primary_genre!
-                ) : null,
-                developers: game.common.associations ?
-                    Array.from(
-                        Utils.getAssociationsByTypeWithSlug(
-                            game.common.associations!,
-                            "developer"
-                        )
-                    ) : [],
-                publishers: game.common.associations ?
-                    Array.from(
-                        Utils.getAssociationsByTypeWithSlug(
-                            game.common.associations!,
-                            "publisher"
-                        )
-                    ) : [],
-                compatibility: Utils.compatibilityType(game.common.steam_deck_compatibility?.category),
-                tags: [
-                    ...(game?.common.store_tags ?
-                        Utils.mapGameTags(
-                            tags,
-                            game.common.store_tags!,
-                        ) : []),
-                    controllerTag,
-                    compatibilityTag
-                ],
+            const franchises = store.basic_info.franchises
+                ?.map(i => i.name)
+
+            const genres = cmd?.common.genres &&
+                Object.keys(cmd?.common.genres)
+                    .map(id => Steam.genres[id.toString() as keyof typeof Steam.genres])
+                    .filter((name): name is string => typeof name === 'string')
+
+            const categories = [
+                ...(store.categories?.controller_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? []),
+                ...(store.categories?.supported_player_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? [])
+            ].filter((name): name is string => typeof name === 'string')
+
+            const assetUrls = Utils.getAssetUrls(cmd?.common.library_assets_full, appid, cmd?.common.header_image.english);
+
+            const screenshots = store.screenshots.all_ages_screenshots.map(i => `https://shared.cloudflare.steamstatic.com/store_item_assets/${i.filename}`);
+
+            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${cmd?.common.icon}.jpg`;
+
+            const data: AppInfo = {
+                id: appid,
+                name: cmd?.common.name.trim(),
+                tags: Utils.createType(tags, "tag"),
                 images: { screenshots, icon, ...assetUrls },
-                score: Utils.getRating(
-                    details.ReviewSummary.cRecommendationsPositive,
-                    details.ReviewSummary.cRecommendationsNegative
-                ),
-            };
+                size: Utils.getPublicDepotSizes(cmd?.depots!),
+                slug: Utils.createSlug(cmd?.common.name.trim()),
+                publishers: Utils.createType(publishers, "publisher"),
+                developers: Utils.createType(developers, "developer"),
+                categories: Utils.createType(categories, "categorie"),
+                genres: genres ? Utils.createType(genres, "genre") : [],
+                franchises: franchises ? Utils.createType(franchises, "franchise") : [],
+                description: store.basic_info.short_description ? Utils.cleanDescription(store.basic_info.short_description) : null,
+                controllerSupport: cmd?.common.controller_support ?? "unknown" as any,
+                releaseDate: new Date(Number(cmd?.common.steam_release_date) * 1000),
+                primaryGenre: !!cmd?.common.primary_genre && Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] ? Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] : null,
+                compatibility: store?.platforms.steam_os_compat_category ? Utils.compatibilityType(store?.platforms.steam_os_compat_category.toString() as any).toLowerCase() : "unknown" as any,
+                score: Utils.estimateRatingFromSummary(store.reviews.summary_filtered.review_count, store.reviews.summary_filtered.percent_positive)
+            }
 
-            return appInfo
+            return data
         }
     )
 

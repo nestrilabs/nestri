@@ -176,9 +176,11 @@ export namespace Utils {
     export function createSlug(name: string): string {
         return name
             .toLowerCase()
-            .replace(/[^\w\s -]/g, "")
-            .replace(/\s+/g, "-")
-            .replace(/-+/g, "-")
+            .normalize("NFKD") // Normalize to decompose accented characters
+            .replace(/[^\p{L}\p{N}\s-]/gu, '') // Keep Unicode letters, numbers, spaces, and hyphens
+            .replace(/\s+/g, '-')              // Replace spaces with hyphens
+            .replace(/-+/g, '-')               // Collapse multiple hyphens
+            .replace(/^-+|-+$/g, '')           // Trim leading/trailing hyphens
             .trim();
     }
 
@@ -322,14 +324,24 @@ export namespace Utils {
     export function compatibilityType(type?: string): "low" | "mid" | "high" | "unknown" {
         switch (type) {
             case "1":
-                return "low";
+                return "high";
             case "2":
                 return "mid";
             case "3":
-                return "high";
+                return "low";
             default:
                 return "unknown";
         }
+    }
+
+
+    export function estimateRatingFromSummary(
+        reviewCount: number,
+        percentPositive: number
+    ): number {
+        const positiveVotes = Math.round((percentPositive / 100) * reviewCount);
+        const negativeVotes = reviewCount - positiveVotes;
+        return getRating(positiveVotes, negativeVotes);
     }
 
     export function mapGameTags<
@@ -345,6 +357,18 @@ export namespace Utils {
             .map((t) => ({ name: t.name.trim(), slug: createSlug(t.name), type: 'tag' as T }));
 
         return result;
+    }
+
+    export function createType(
+        names: string[],
+        type: string
+    ) {
+        return names
+            .map(name => ({
+                type,
+                name: name.trim(),
+                slug: createSlug(name.trim())
+            }));
     }
 
     /**
