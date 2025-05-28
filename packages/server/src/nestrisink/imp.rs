@@ -192,11 +192,9 @@ impl SignallableImpl for Signaller {
         // Subscribe to reconnection notifications
         // TODO: Re-implement reconnection handling
 
-        let stream_room = {
-            self.stream_room
-                .read()
-                .clone()
-                .expect("Stream room not set")
+        let Some(stream_room) = self.stream_room.read().clone() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream room not set");
+            return;
         };
 
         let push_msg = MessageRaw {

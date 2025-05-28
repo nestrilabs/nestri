@@ -82,10 +82,10 @@ export const length4ByteDecoder = (data: Uint8ArrayList) => {
   // Read the length from the first 4 bytes
   let length = 0;
   length =
-    (data.subarray(0, 1)[0] << 24) |
-    (data.subarray(1, 2)[0] << 16) |
-    (data.subarray(2, 3)[0] << 8) |
-    data.subarray(3, 4)[0];
+    (data.subarray(0, 1)[0] >>> 0) * 0x1000000 +
+    (data.subarray(1, 2)[0] >>> 0) * 0x10000 +
+    (data.subarray(2, 3)[0] >>> 0) * 0x100 +
+    (data.subarray(3, 4)[0] >>> 0);
 
   // Set bytes read to 4
   length4ByteDecoder.bytes = 4;
@@ -94,13 +94,19 @@ export const length4ByteDecoder = (data: Uint8ArrayList) => {
 };
 length4ByteDecoder.bytes = 4;
 
+interface PromiseMessage {
+  data: Uint8Array;
+  resolve: () => void;
+  reject: (error: Error) => void;
+}
+
 export class SafeStream {
   private stream: Stream;
   private callbacks: Map<string, ((data: any) => void)[]> = new Map();
   private isReading: boolean = false;
   private isWriting: boolean = false;
   private closed: boolean = false;
-  private messageQueue: Uint8Array[] = [];
+  private messageQueue: PromiseMessage[] = [];
   private writeLock = false;
   private readRetries = 0;
   private readonly MAX_RETRIES = 5;
@@ -208,7 +214,7 @@ export class SafeStream {
               const message = this.messageQueue[0];
 
               // Encode the message
-              const encoded = encode([message], {
+              const encoded = encode([message.data], {
                 maxDataLength: MAX_SIZE,
                 lengthEncoder: length4ByteEncoder,
               });
@@ -225,8 +231,7 @@ export class SafeStream {
               this.writeLock = false;
             }
           } else {
-            // No messages to send, yield a small keep-alive packet
-            yield new Uint8Array(0);
+            // No messages to send, wait for a short period
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
         }
@@ -257,25 +262,19 @@ export class SafeStream {
       throw new Error("Cannot write to closed stream");
     }
 
+    // Validate message size before queuing
+    if (message.length > MAX_SIZE) {
+      throw new Error("Message size exceeds maximum size limit");
+    }
+
     // Check if the message queue is too large
     if (this.messageQueue.length >= MAX_QUEUE_SIZE) {
       throw new Error("Message queue is full, cannot write message");
     }
 
-    // Add message to the queue, the writing loop will pick it up
-    this.messageQueue.push(message);
-
-    // Return a promise that resolves when message is likely processed
-    // This is not a guarantee but provides some back-pressure
-    return new Promise((resolve) => {
-      const checkProcessed = () => {
-        if (!this.messageQueue.includes(message) || this.closed) {
-          resolve();
-        } else {
-          setTimeout(checkProcessed, 10);
-        }
-      };
-      setTimeout(checkProcessed, 10);
+    // Create a promise to resolve when the message is sent
+    return new Promise((resolve, reject) => {
+      this.messageQueue.push({ data: message, resolve, reject } as PromiseMessage);
     });
   }
 

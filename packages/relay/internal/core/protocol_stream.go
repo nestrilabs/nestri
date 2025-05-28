@@ -105,7 +105,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 			room := sp.relay.GetRoomByName(roomName)
 			if room == nil || !room.IsOnline() || room.OwnerID != sp.relay.ID {
 				// TODO: Allow forward requests to other relays from here?
-				slog.Error("Cannot provide stream for nil, offline or non-owned room", "room", roomName, "is_online", room != nil && room.IsOnline(), "is_owner", room != nil && room.OwnerID == sp.relay.ID)
+				slog.Debug("Cannot provide stream for nil, offline or non-owned room", "room", roomName, "is_online", room != nil && room.IsOnline(), "is_owner", room != nil && room.OwnerID == sp.relay.ID)
 				// Respond with "request-stream-offline" message with room name
 				// TODO: Store the peer and send "online" message when the room comes online
 				roomNameData, err := json.Marshal(roomName)
