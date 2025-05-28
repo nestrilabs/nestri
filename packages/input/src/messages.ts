@@ -221,11 +221,11 @@ export class SafeStream {
               });
 
               for await (const chunk of encoded) {
-                this.writeRetries = 0;
                 yield chunk;
               }
 
               // Remove message after successful sending
+              this.writeRetries = 0;
               const sentMessage = this.messageQueue.shift();
               if (sentMessage)
                 sentMessage.resolve();
