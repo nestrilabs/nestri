@@ -128,7 +128,7 @@ export class WebRTCStream {
           await this._pc!.setLocalDescription(answer);
           // Send answer back
           const answerMsg = NewMessageSDP("answer", answer);
-          await this._p2pSafeStream.writeMessage(answerMsg);
+          await this._p2pSafeStream?.writeMessage(answerMsg);
         });
 
         this._p2pSafeStream.registerCallback("request-stream-offline", (data) => {
