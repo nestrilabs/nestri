@@ -300,12 +300,12 @@ export interface AppInfo {
     controllerSupport: "partial" | "full" | "unknown";
     primaryGenre: string | null;
     size: { downloadSize: number; sizeOnDisk: number };
-    tags: Array<{ name: string; slug: string; type: string }>;
-    genres: Array<{ type: string; name: string; slug: string }>;
-    categories: Array<{ name: string; slug: string; type: string }>;
-    franchises: Array<{ name: string; slug: string; type: string }>;
-    developers: Array<{ name: string; slug: string; type: string }>;
-    publishers: Array<{ name: string; slug: string; type: string }>;
+    tags: Array<{ name: string; slug: string; type: "tag" }>;
+    genres: Array<{ type: "genre"; name: string; slug: string }>;
+    categories: Array<{ name: string; slug: string; type: "categorie" }>;
+    franchises: Array<{ name: string; slug: string; type: "franchise" }>;
+    developers: Array<{ name: string; slug: string; type: "developer" }>;
+    publishers: Array<{ name: string; slug: string; type: "publisher" }>;
 }
 
 export type ImageType =

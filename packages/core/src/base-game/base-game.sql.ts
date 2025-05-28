@@ -23,9 +23,9 @@ export const baseGamesTable = pgTable(
         slug: varchar("slug", { length: 255 })
             .notNull(),
         name: text("name").notNull(),
+        description: text("description"),
         releaseDate: utc("release_date").notNull(),
         size: json("size").$type<Size>().notNull(),
-        description: text("description").notNull(),
         primaryGenre: text("primary_genre"),
         controllerSupport: ControllerEnum("controller_support").notNull(),
         compatibility: CompatibilityEnum("compatibility").notNull().default("unknown"),

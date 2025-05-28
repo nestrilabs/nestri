@@ -28,7 +28,6 @@ export const handler: SQSHandler = async (event) => {
 
                 if (!exists) {
                     const appInfo = await Client.getAppInfo(appID);
-                    const tags = appInfo.tags;
 
                     await BaseGame.create({
                         id: appID,
@@ -43,7 +42,7 @@ export const handler: SQSHandler = async (event) => {
                         controllerSupport: appInfo.controllerSupport,
                     })
 
-                    const allCategories = [...tags, ...appInfo.genres, ...appInfo.publishers, ...appInfo.developers]
+                    const allCategories = [...appInfo.tags, ...appInfo.genres, ...appInfo.publishers, ...appInfo.developers, ...appInfo.categories, ...appInfo.franchises]
 
                     const uniqueCategories = Array.from(
                         new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()

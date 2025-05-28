@@ -359,9 +359,11 @@ export namespace Utils {
         return result;
     }
 
-    export function createType(
+    export function createType<
+        T extends "developer" | "publisher" | "franchise" | "tag" | "categorie" | "genre"
+    >(
         names: string[],
-        type: string
+        type: T
     ) {
         return names
             .map(name => ({

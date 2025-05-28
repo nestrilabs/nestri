@@ -33,7 +33,7 @@ export namespace BaseGame {
             description: "The initial public release date of the game on Steam",
             example: Examples.BaseGame.releaseDate
         }),
-        description: z.string().openapi({
+        description: z.string().nullable().openapi({
             description: "A comprehensive overview of the game, including its features, storyline, and gameplay elements",
             example: Examples.BaseGame.description
         }),
