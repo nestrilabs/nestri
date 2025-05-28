@@ -72,7 +72,7 @@ export default component$(() => {
   });
 
   const lockPlay = $(async () => {
-    if (!canvas.value || !playState.hasStream) return;
+    if (!canvas.value || !playState.hasStream || playState.nestriLock) return;
 
     try {
       await canvas.value.requestPointerLock();
@@ -156,18 +156,22 @@ export default component$(() => {
     });
   });
 
-
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(({ track }) => {
     track(() => canvas.value);
     if (!canvas.value) return; // Ensure canvas is available
+    // Get query parameter "peerURL" from the URL
+    let peerURL = new URLSearchParams(window.location.search).get("peerURL");
+    if (!peerURL || peerURL.length <= 0) {
+      peerURL = "/dnsaddr/relay.dathorse.com/p2p/12D3KooWPK4v5wKYNYx9oXWjqLM8Xix6nm13o91j1Feqq98fLBsw";
+    }
 
     setupPointerLockListener();
     try {
       if (!playState.video) {
-        playState.video = document.createElement("video") as HTMLVideoElement
+        playState.video = document.createElement("video") as HTMLVideoElement;
         playState.video.style.visibility = "hidden";
-        playState.webrtc = noSerialize(new WebRTCStream("https://relay.dathorse.com", id, async (mediaStream) => {
+        playState.webrtc = noSerialize(new WebRTCStream(peerURL, id, async (mediaStream) => {
           if (playState.video && mediaStream && playState.video.srcObject === null) {
             console.log("Setting mediastream");
             playState.video.srcObject = mediaStream;

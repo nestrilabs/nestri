@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"log"
 	"log/slog"
 	"os"
 	"os/signal"
-	"relay/internal"
 	"relay/internal/common"
+	"relay/internal/core"
 	"syscall"
 )
 
@@ -33,7 +32,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Start relay
-	err := internal.InitRelay(mainCtx, mainStopper, common.GetFlags().MeshPort)
+	err := core.InitRelay(mainCtx, mainStopper)
 	if err != nil {
 		slog.Error("Failed to initialize relay", "err", err)
 		mainStopper()
@@ -42,5 +41,5 @@ func main() {
 
 	// Wait for exit signal
 	<-mainCtx.Done()
-	log.Println("Shutting down gracefully by signal...")
+	slog.Info("Shutting down gracefully by signal...")
 }
