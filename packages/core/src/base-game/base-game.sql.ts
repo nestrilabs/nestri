@@ -9,9 +9,12 @@ export const Size =
     z.object({
         downloadSize: z.number().positive().int(),
         sizeOnDisk: z.number().positive().int()
-    })
+    });
 
-export type Size = z.infer<typeof Size>
+export const Links = z.string().array();
+
+export type Size = z.infer<typeof Size>;
+export type Links = z.infer<typeof Links>;
 
 export const baseGamesTable = pgTable(
     "base_games",
@@ -20,8 +23,7 @@ export const baseGamesTable = pgTable(
         id: varchar("id", { length: 255 })
             .primaryKey()
             .notNull(),
-        links: text("links")
-            .array(),
+        links: json("links").$type<Links>(),
         slug: varchar("slug", { length: 255 })
             .notNull(),
         name: text("name").notNull(),

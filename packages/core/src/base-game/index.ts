@@ -1,15 +1,12 @@
 import { z } from "zod";
 import { fn } from "../utils";
-import { Resource } from "sst";
-import { bus } from "sst/aws/bus";
-import { Client } from "../client";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createEvent } from "../event";
 import { eq, isNull, and } from "drizzle-orm";
 import { ImageTypeEnum } from "../images/images.sql";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum } from "./base-game.sql";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum, Links } from "./base-game.sql";
 
 export namespace BaseGame {
     export const Info = z.object({
@@ -41,8 +38,7 @@ export namespace BaseGame {
             description: "The aggregate user review score on Steam, represented as a percentage of positive reviews",
             example: Examples.BaseGame.score
         }),
-        links: z.string()
-            .array()
+        links: Links
             .nullable()
             .openapi({
                 description: "The social links of this game",
@@ -123,13 +119,6 @@ export namespace BaseGame {
                             timeDeleted: null
                         }
                     })
-
-                await afterTx(async () => {
-                    const imageUrls = await Client.getImageUrls(input.id);
-
-                    // Spread them into different event buses as they take up way too much RAM if done in one go
-
-                })
 
                 return input.id
             })

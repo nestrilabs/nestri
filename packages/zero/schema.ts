@@ -1,4 +1,4 @@
-import type { Size } from "@nestri/core/src/base-game/base-game.sql";
+import type { Size, Links} from "@nestri/core/src/base-game/base-game.sql";
 import type { Limitations } from "@nestri/core/src/steam/steam.sql";
 import type { ImageColor, ImageDimensions } from "@nestri/core/src/images/images.sql";
 import {
@@ -91,9 +91,11 @@ const base_games = table("base_games")
         id: string(),
         slug: string(),
         name: string(),
-        release_date: number(),
+        // This should be an array, and i dunno how to include it here
         size: json<Size>(),
-        description: string(),
+        release_date: number(),
+        links: json<Links>().optional(),
+        description: string().optional(),
         primary_genre: string().optional(),
         controller_support: enumeration<"full" | "partial" | "unknown">(),
         compatibility: enumeration<"high" | "mid" | "low" | "unknown">(),

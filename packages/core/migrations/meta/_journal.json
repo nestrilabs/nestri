@@ -169,6 +169,13 @@
       "when": 1748411845939,
       "tag": "0023_flawless_steel_serpent",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1748414049463,
+      "tag": "0024_damp_cerise",
+      "breakpoints": true
     }
   ]
 }

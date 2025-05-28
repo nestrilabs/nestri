@@ -216,7 +216,7 @@ export namespace SteamApi {
                                                             // MessageGroupId: currentSteamID,
                                                             QueueUrl: Resource.LibraryQueue.url,
                                                             // Prevent bombarding Steam with requests at the same time
-                                                            DelaySeconds: 30,
+                                                            DelaySeconds: 10,
                                                             MessageBody: JSON.stringify(payload),
                                                             MessageDeduplicationId: `${currentSteamID}_${game.appid.toString()}`,
                                                         })

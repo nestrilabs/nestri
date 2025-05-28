@@ -74,7 +74,7 @@ export const handler: SQSHandler = async (event) => {
                                     break;
                                 }
                                 case "icon": {
-                                    await bus.publish(Resource.Bus,BaseGame. Events.New, { appID, type: "icon", url: imageUrls.icon })
+                                    await bus.publish(Resource.Bus, BaseGame.Events.New, { appID, type: "icon", url: imageUrls.icon })
                                     break;
                                 }
                                 case "logo": {
