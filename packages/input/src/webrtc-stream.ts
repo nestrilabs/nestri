@@ -1,8 +1,4 @@
 import {
-  MessageBase,
-  MessageRaw,
-  MessageICE,
-  MessageSDP,
   NewMessageRaw,
   NewMessageSDP,
   NewMessageICE,
@@ -14,7 +10,7 @@ import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { identify } from "@libp2p/identify";
 import { multiaddr } from "@multiformats/multiaddr";
-import { Connection, Stream } from "@libp2p/interface";
+import { Connection } from "@libp2p/interface";
 import { ping } from "@libp2p/ping";
 
 //FIXME: Sometimes the room will wait to say offline, then appear to be online after retrying :D

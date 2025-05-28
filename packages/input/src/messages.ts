@@ -224,9 +224,14 @@ export class SafeStream {
               }
 
               // Remove message after successful sending
-              this.messageQueue.shift();
+              const sentMessage = this.messageQueue.shift();
+              if (sentMessage)
+                sentMessage.resolve();
             } catch (err) {
               console.error("Error encoding or sending message:", err);
+              const failedMessage = this.messageQueue.shift();
+              if (failedMessage)
+                failedMessage.reject(new Error(`Failed to send message: ${err}`));
             } finally {
               this.writeLock = false;
             }
