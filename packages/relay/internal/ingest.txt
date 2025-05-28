@@ -4,22 +4,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/pion/rtp"
-	"github.com/pion/webrtc/v4"
 	"io"
 	"log/slog"
 	"relay/internal/common"
 	"relay/internal/connections"
+	"relay/internal/core"
+	"relay/internal/shared"
 	"strings"
+
+	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v4"
 )
 
-func IngestHandler(room *Room) {
-	relay := GetRelay()
+func IngestHandler(room *shared.Room) {
+	relay := core.GetRelay()
 
 	// Callback for closing PeerConnection
 	onPCClose := func() {
 		slog.Debug("ingest PeerConnection closed", "room", room.Name)
-		room.Online = false
 		room.signalParticipantsOffline()
 		relay.DeleteRoomIfEmpty(room)
 	}
@@ -62,10 +64,12 @@ func IngestHandler(room *Room) {
 				break
 			}
 
-			// Use PlayoutDelayExtension for low latency, only for video tracks
-			if err := rtpPacket.SetExtension(common.ExtensionMap[common.ExtensionPlayoutDelay], playoutPayload); err != nil {
-				slog.Error("Failed to set PlayoutDelayExtension for room", "room", room.Name, "err", err)
-				continue
+			// Use PlayoutDelayExtension for low latency, if set for this track kind
+			if extID, ok := common.GetExtension(remoteTrack.Kind(), common.ExtensionPlayoutDelay); ok {
+				if err := rtpPacket.SetExtension(extID, playoutPayload); err != nil {
+					slog.Error("Failed to set PlayoutDelayExtension for room", "room", room.Name, "err", err)
+					continue
+				}
 			}
 
 			err = localTrack.WriteRTP(rtpPacket)
@@ -91,9 +95,10 @@ func IngestHandler(room *Room) {
 
 		room.DataChannel.OnClose(func() {
 			slog.Debug("ingest DataChannel closed for room", "room", room.Name)
+			room.DataChannel = nil
 		})
 
-		// We do not handle any messages from ingest via DataChannel yet
+		// We do not handle any messages from downstream here
 	})
 
 	room.PeerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
@@ -159,7 +164,8 @@ func IngestHandler(room *Room) {
 			slog.Error("Failed to decode log message from ingest for room", "room", room.Name, "err", err)
 			return
 		}
-		// TODO: Handle log message sending to metrics server
+		// TODO: Handle log message sending to metrics server or other processing
+		slog.Debug("Received log message from ingest", "room", room.Name, "log", logMsg)
 	})
 
 	// Metrics callback
@@ -174,7 +180,6 @@ func IngestHandler(room *Room) {
 
 	room.WebSocket.RegisterOnClose(func() {
 		slog.Debug("ingest WebSocket closed for room", "room", room.Name)
-		room.Online = false
 		room.signalParticipantsOffline()
 		relay.DeleteRoomIfEmpty(room)
 	})
@@ -186,7 +191,7 @@ func IngestHandler(room *Room) {
 }
 
 // SDP offer handler, returns SDP answer
-func handleIngestSDP(room *Room, offerMsg connections.MessageSDP) *webrtc.SessionDescription {
+func handleIngestSDP(room *shared.Room, offerMsg connections.MessageSDP) *webrtc.SessionDescription {
 	var err error
 
 	sdpOffer := offerMsg.SDP.SDP

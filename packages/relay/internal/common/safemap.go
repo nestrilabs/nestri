@@ -1,16 +1,9 @@
 package common
 
 import (
-	"errors"
-	"reflect"
+	"encoding/json"
+	"fmt"
 	"sync"
-)
-
-var (
-	ErrKeyNotFound     = errors.New("key not found")
-	ErrValueNotPointer = errors.New("value is not a pointer")
-	ErrFieldNotFound   = errors.New("field not found")
-	ErrTypeMismatch    = errors.New("type mismatch")
 )
 
 // SafeMap is a generic thread-safe map with its own mutex
@@ -32,6 +25,14 @@ func (sm *SafeMap[K, V]) Get(key K) (V, bool) {
 	defer sm.mu.RUnlock()
 	v, ok := sm.m[key]
 	return v, ok
+}
+
+// Has checks if a key exists in the map
+func (sm *SafeMap[K, V]) Has(key K) bool {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	_, ok := sm.m[key]
+	return ok
 }
 
 // Set adds or updates a value in the map
@@ -66,36 +67,31 @@ func (sm *SafeMap[K, V]) Copy() map[K]V {
 	return copied
 }
 
-// Update updates a specific field in the value data
-func (sm *SafeMap[K, V]) Update(key K, fieldName string, newValue any) error {
+// Range iterates over the map and applies a function to each key-value pair
+func (sm *SafeMap[K, V]) Range(f func(K, V) bool) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	for k, v := range sm.m {
+		if !f(k, v) {
+			break
+		}
+	}
+}
+
+func (sm *SafeMap[K, V]) MarshalJSON() ([]byte, error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return json.Marshal(sm.m)
+}
+
+func (sm *SafeMap[K, V]) UnmarshalJSON(data []byte) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
+	return json.Unmarshal(data, &sm.m)
+}
 
-	v, ok := sm.m[key]
-	if !ok {
-		return ErrKeyNotFound
-	}
-
-	// Use reflect to update the field
-	rv := reflect.ValueOf(v)
-	if rv.Kind() != reflect.Ptr {
-		return ErrValueNotPointer
-	}
-
-	rv = rv.Elem()
-	// Check if the field exists
-	field := rv.FieldByName(fieldName)
-	if !field.IsValid() || !field.CanSet() {
-		return ErrFieldNotFound
-	}
-
-	newRV := reflect.ValueOf(newValue)
-	if newRV.Type() != field.Type() {
-		return ErrTypeMismatch
-	}
-
-	field.Set(newRV)
-	sm.m[key] = v
-
-	return nil
+func (sm *SafeMap[K, V]) String() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return fmt.Sprintf("%+v", sm.m)
 }

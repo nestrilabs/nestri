@@ -3,15 +3,18 @@ package internal
 import (
 	"context"
 	"encoding/json"
-	"github.com/pion/webrtc/v4"
-	"google.golang.org/protobuf/proto"
 	"log/slog"
 	"relay/internal/common"
 	"relay/internal/connections"
+	"relay/internal/core"
 	gen "relay/internal/proto"
+	"relay/internal/shared"
+
+	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
 
-func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
+func ParticipantHandler(participant *shared.Participant, room *shared.Room, relay *core.Relay) {
 	onPCClose := func() {
 		slog.Debug("Participant PeerConnection closed", "participant", participant.ID, "room", room.Name)
 		room.removeParticipantByID(participant.ID)
@@ -26,12 +29,12 @@ func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 
 	// Data channel settings
 	settingOrdered := true
-	settingMaxRetransmits := uint16(0)
+	settingMaxRetransmits := uint16(2)
 	dc, err := participant.PeerConnection.CreateDataChannel("data", &webrtc.DataChannelInit{
 		Ordered:        &settingOrdered,
 		MaxRetransmits: &settingMaxRetransmits,
 	})
-	if err != nil {
+	if err != nil || dc == nil {
 		slog.Error("Failed to create data channel for participant", "participant", participant.ID, "room", room.Name, "err", err)
 		return
 	}
@@ -49,7 +52,7 @@ func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 
 	// Register text message handling
 	participant.DataChannel.RegisterMessageCallback("input", func(data []byte) {
-		ForwardParticipantDataChannelMessage(participant, room, data)
+		forwardParticipantDataChannelMessage(relay, participant, room, data)
 	})
 
 	participant.PeerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
@@ -90,7 +93,7 @@ func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 	participant.WebSocket.RegisterMessageCallback("sdp", func(data []byte) {
 		var sdpMsg connections.MessageSDP
 		if err = json.Unmarshal(data, &sdpMsg); err != nil {
-			slog.Error("Failed to decode SDP message from participant", "participant", participant.ID, "room", room.Name, "err", err)
+			slog.Error("Failed to decode SDP message from participant", "participant", participant.ID, "room", room.Name, "err", err, "data", string(data))
 			return
 		}
 		handleParticipantSDP(participant, sdpMsg)
@@ -103,12 +106,14 @@ func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 			slog.Error("Failed to decode log message from participant", "participant", participant.ID, "room", room.Name, "err", err)
 			return
 		}
-		// TODO: Handle log message sending to metrics server
+		// TODO: Handle log message sending to metrics server or other processing
+		slog.Debug("Log message from participant", "participant", participant.ID, "room", room.Name, "log", logMsg)
 	})
 
 	// Metrics callback
 	participant.WebSocket.RegisterMessageCallback("metrics", func(data []byte) {
 		// Ignore for now
+		// TODO: Handle metrics from participants
 	})
 
 	participant.WebSocket.RegisterOnClose(func() {
@@ -122,27 +127,25 @@ func ParticipantHandler(participant *Participant, room *Room, relay *Relay) {
 		slog.Error("Failed to send OK answer", "participant", participant.ID, "room", room.Name, "err", err)
 	}
 
-	// If room is online, also send offer
-	if room.Online {
+	// If room is online locally, signal tracks
+	if room.IsOnline() {
 		if err = room.signalParticipantWithTracks(participant); err != nil {
 			slog.Error("Failed to signal participant with tracks", "participant", participant.ID, "room", room.Name, "err", err)
 		}
 	} else {
-		active, provider := relay.IsRoomActive(room.ID)
-		if active {
-			slog.Debug("Room active remotely, requesting stream", "room", room.Name, "provider", provider)
-			if _, err := relay.requestStream(context.Background(), room.Name, room.ID, provider); err != nil {
-				slog.Error("Failed to request stream", "room", room.Name, "err", err)
-			} else {
-				slog.Debug("Stream requested successfully", "room", room.Name, "provider", provider)
+		// Check if room is active remotely and request stream
+		if remoteRoom := relay.GetRemoteRoomByName(room.Name); remoteRoom != nil {
+			slog.Debug("Room is active remotely, requesting stream", "participant", participant.ID, "room", room.Name)
+			if err = relay.StreamProtocol.RequestStream(context.Background(), room, remoteRoom.OwnerID); err != nil {
+				slog.Error("Failed to request stream from remote room", "err", err)
 			}
 		}
 	}
 }
 
 // SDP answer handler for participants
-func handleParticipantSDP(participant *Participant, answerMsg connections.MessageSDP) {
-	// Get SDP offer
+func handleParticipantSDP(participant *shared.Participant, answerMsg connections.MessageSDP) {
+	// Get SDP answer
 	sdpAnswer := answerMsg.SDP.SDP
 
 	// Set remote description
@@ -155,7 +158,7 @@ func handleParticipantSDP(participant *Participant, answerMsg connections.Messag
 	}
 }
 
-func ForwardParticipantDataChannelMessage(participant *Participant, room *Room, data []byte) {
+func forwardParticipantDataChannelMessage(relay *core.Relay, participant *shared.Participant, room *shared.Room, data []byte) {
 	// Debug mode: Add latency timestamp
 	if common.GetFlags().Debug {
 		var inputMsg gen.ProtoMessageInput
@@ -167,7 +170,6 @@ func ForwardParticipantDataChannelMessage(participant *Participant, room *Room, 
 		if protoLat != nil {
 			lat := common.LatencyTrackerFromProto(protoLat)
 			lat.AddTimestamp("relay_to_node")
-			protoLat = lat.ToProto()
 		}
 		if newData, err := proto.Marshal(&inputMsg); err != nil {
 			slog.Error("Failed to marshal input message from participant", "participant", participant.ID, "room", room.Name, "err", err)
@@ -182,6 +184,14 @@ func ForwardParticipantDataChannelMessage(participant *Participant, room *Room, 
 	if room.DataChannel != nil {
 		if err := room.DataChannel.SendBinary(data); err != nil {
 			slog.Error("Failed to send input message to room", "participant", participant.ID, "room", room.Name, "err", err)
+		}
+	} else {
+		// If no local DataChannel, check if there is a remote room
+		if conn, ok := relay.StreamProtocol.requestedConns.Get(room.Name); ok && conn.ndc != nil {
+			// If the room is remote, forward to it's DataChannel
+			if err := conn.ndc.SendBinary(data); err != nil {
+				slog.Error("Failed to send input message to remote room DataChannel", "participant", participant.ID, "room", room.Name, "err", err)
+			}
 		}
 	}
 }

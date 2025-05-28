@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gorilla/websocket"
-	"github.com/libp2p/go-reuseport"
 	"log/slog"
 	"net/http"
 	"relay/internal/common"
 	"relay/internal/connections"
+	"relay/internal/core"
 	"strconv"
+
+	"github.com/gorilla/websocket"
+	"github.com/libp2p/go-reuseport"
 )
 
 var httpMux *http.ServeMux
@@ -94,7 +96,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rel := GetRelay()
+	rel := core.GetRelay()
 	// Get or create room in any case
 	room := rel.GetOrCreateRoom(roomName)
 
@@ -126,7 +128,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		switch joinMsg.JoinerType {
 		case connections.JoinerNode:
 			// If room already online, send InUse answer
-			if room.Online {
+			if room.IsOnline() {
 				if err = ws.SendAnswerMessageWS(connections.AnswerInUse); err != nil {
 					slog.Error("Failed to send InUse answer to node", "room", room.Name, "err", err)
 				}
@@ -136,10 +138,15 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			go IngestHandler(room)
 		case connections.JoinerClient:
 			// Create participant and add to room regardless of online status
-			participant := NewParticipant(ws)
+			participant, err := NewParticipant(ws)
+			if err != nil {
+				slog.Error("Failed to create participant", "err", err)
+				return
+			}
+
 			room.AddParticipant(participant)
 			// If room not online, send Offline answer
-			if !room.Online {
+			if !room.IsOnline() {
 				if err = ws.SendAnswerMessageWS(connections.AnswerOffline); err != nil {
 					slog.Error("Failed to send offline answer to participant", "room", room.Name, "err", err)
 				}
@@ -191,11 +198,13 @@ func controlHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		ctx := r.Context()
-		if err := GetRelay().ConnectToRelay(ctx, msg.Value); err != nil {
+		if err := core.GetRelay().ConnectToRelay(ctx, msg.Value); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to connect: %v", err), http.StatusInternalServerError)
 			return
 		}
-		w.Write([]byte("Successfully connected to relay"))
+		if _, err := w.Write([]byte("Successfully connected to relay")); err != nil {
+			slog.Error("Failed to write success message", "err", err)
+		}
 	default:
 		logHTTPError(w, "unknown control message type", http.StatusBadRequest)
 	}

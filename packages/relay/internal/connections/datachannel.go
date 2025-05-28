@@ -1,11 +1,14 @@
 package connections
 
 import (
-	"github.com/pion/webrtc/v4"
-	"google.golang.org/protobuf/proto"
 	"log/slog"
 	gen "relay/internal/proto"
+
+	"github.com/pion/webrtc/v4"
+	"google.golang.org/protobuf/proto"
 )
+
+type OnMessageCallback func(data []byte)
 
 // NestriDataChannel is a custom data channel with callbacks
 type NestriDataChannel struct {
@@ -37,7 +40,7 @@ func NewNestriDataChannel(dc *webrtc.DataChannel) *NestriDataChannel {
 		// Handle message type callback
 		if callback, ok := ndc.callbacks["input"]; ok {
 			go callback(msg.Data)
-		} // TODO: Log unknown message type?
+		} // We don't care about unhandled messages
 	})
 
 	return ndc

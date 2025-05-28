@@ -2,9 +2,10 @@ package common
 
 import (
 	"fmt"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	gen "relay/internal/proto"
 	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type TimestampEntry struct {

@@ -19,14 +19,14 @@ webrtc = "0.13"
 regex = "1.11"
 rand = "0.9"
 rustls = { version = "0.23", features = ["ring"] }
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 chrono = "0.4"
 futures-util = "0.3"
-num-derive = "0.4"
-num-traits = "0.2"
 prost = "0.13"
 prost-types = "0.13"
 parking_lot = "0.12"
 atomic_refcell = "0.1"
+byteorder = "1.5"
+libp2p = { version = "0.55", features = ["identify", "dns", "tcp", "noise", "ping", "tokio", "serde", "yamux", "macros"] }
+libp2p-stream = "0.3.0-alpha"
