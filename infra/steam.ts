@@ -3,6 +3,8 @@ import { vpc } from "./vpc";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 
+export const libraryDlq = new sst.aws.Queue("LibraryDLQ");
+
 export const libraryQueue = new sst.aws.Queue("LibraryQueue", {
     visibilityTimeout: "5 minutes",
 });
@@ -17,4 +19,17 @@ libraryQueue.subscribe({
         postgres,
         secret.SteamApiKey
     ],
+    permissions: [
+        {
+            actions: ["sqs:SendMessage"],
+            resources: ["*"],
+        },
+    ],
+    transform: {
+        function: {
+            deadLetterConfig: {
+                targetArn: libraryDlq.arn,
+            },
+        },
+    },
 });

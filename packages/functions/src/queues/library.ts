@@ -1,4 +1,3 @@
-/** This will be kept here for posterity and future reference */
 import "zod-openapi/extend";
 import { Resource } from "sst";
 import { bus } from "sst/aws/bus";
@@ -34,6 +33,7 @@ export const handler: SQSHandler = async (event) => {
                         name: appInfo.name,
                         size: appInfo.size,
                         slug: appInfo.slug,
+                        links: appInfo.links,
                         score: appInfo.score,
                         description: appInfo.description,
                         releaseDate: appInfo.releaseDate,

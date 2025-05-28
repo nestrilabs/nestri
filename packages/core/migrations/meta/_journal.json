@@ -162,6 +162,13 @@
       "when": 1748099972605,
       "tag": "0022_clean_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1748411845939,
+      "tag": "0023_flawless_steel_serpent",
+      "breakpoints": true
     }
   ]
 }

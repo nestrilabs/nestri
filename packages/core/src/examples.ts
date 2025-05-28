@@ -151,6 +151,9 @@ export namespace Examples {
         id: "1809540",
         slug: "nine-sols",
         name: "Nine Sols",
+        links:[
+            "https://example.com"
+        ],
         controllerSupport: "full" as const,
         releaseDate: new Date("2024-05-29T06:53:24.000Z"),
         compatibility: "high" as const,

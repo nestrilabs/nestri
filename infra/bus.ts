@@ -12,8 +12,8 @@ bus.subscribe("Event", {
   link: [
     // email,
     bus,
-    postgres,
     storage,
+    postgres,
     secret.PolarSecret,
     secret.SteamApiKey
   ],
@@ -21,8 +21,15 @@ bus.subscribe("Event", {
   memory: "3002 MB",// For faster processing of large(r) images
   permissions: [
     {
-      actions: ["ses:SendEmail"],
+      actions: ["ses:SendEmail","sqs:SendMessage"],
       resources: ["*"],
     },
   ],
+  // transform: {
+  //   function: {
+  //     deadLetterConfig: {
+  //       targetArn: libraryDlq.arn,
+  //     },
+  //   },
+  // },
 });

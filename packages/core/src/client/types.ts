@@ -292,6 +292,7 @@ export interface AppInfo {
         screenshots: string[];
         icon: string;
     }
+    links: string[] | null;
     score: number;
     id: string;
     releaseDate: Date;
@@ -520,7 +521,7 @@ export interface SteamStoreItem {
     };
     supported_languages: SupportedLanguage[];
     full_description: string;
-    links: {
+    links?: {
         link_type: number;
         url: string;
     }[];

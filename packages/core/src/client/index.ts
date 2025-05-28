@@ -96,11 +96,15 @@ export namespace Client {
                 Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?key=${Resource.SteamApiKey.value}&input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
             ]);
 
-            const cmd = info[0].data[appid]!
+            const cmd = info[0].data[appid]
             const store = info[1].response.store_items[0]
 
-            if (store.success != 1) {
-                throw new Error("Could not get store information")
+            if (!cmd) {
+                throw new Error(`App data not found for appid: ${appid}`)
+            }
+
+            if (!store || store.success !== 1) {
+                throw new Error(`Could not get store information or appid: ${appid}`)
             }
 
             const tags = store.tagids
@@ -110,7 +114,7 @@ export namespace Client {
             const publishers = store.basic_info.publishers
                 .map(i => i.name)
 
-            const developers = store.basic_info.publishers
+            const developers = store.basic_info.developers
                 .map(i => i.name)
 
             const franchises = store.basic_info.franchises
@@ -142,6 +146,7 @@ export namespace Client {
                 publishers: Utils.createType(publishers, "publisher"),
                 developers: Utils.createType(developers, "developer"),
                 categories: Utils.createType(categories, "categorie"),
+                links: store.links ? store.links.map(i => i.url) : null,
                 genres: genres ? Utils.createType(genres, "genre") : [],
                 franchises: franchises ? Utils.createType(franchises, "franchise") : [],
                 description: store.basic_info.short_description ? Utils.cleanDescription(store.basic_info.short_description) : null,
@@ -175,70 +180,6 @@ export namespace Client {
             const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
 
             return { screenshots, icon, ...assetUrls }
-            // //2.5 Get the backdrop buffer and use it to get the best screenshot
-            // const baselineBuffer = await Utils.fetchBuffer(assetUrls.backdrop);
-
-            // // 3. Download screenshot buffers in parallel
-            // const shots: Shot[] = await Promise.all(
-            //     screenshotUrls.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
-            // );
-
-            // // 4. Score screenshots (or pick single)
-            // const scores =
-            //     shots.length === 1
-            //         ? [{ url: shots[0].url, score: 0 }]
-            //         : (await Utils.rankScreenshots(baselineBuffer, shots, {
-            //             threshold: 0.08,
-            //         }))
-
-            // // Build url->rank map
-            // const rankMap = new Map<string, number>();
-            // scores.forEach((s, i) => rankMap.set(s.url, i));
-
-            // // 5. Create tasks for all images
-            // const tasks: Array<Promise<ImageInfo>> = [];
-
-            // // 5a. Screenshots and heroArt metadata (top 4)
-            // for (const { url, buffer } of shots) {
-            //     const rank = rankMap.get(url);
-            //     if (rank === undefined || rank >= 4) continue;
-            //     const type: ImageType = rank === 0 ? 'heroArt' : 'screenshot';
-            //     tasks.push(
-            //         Utils.getImageMetadata(buffer).then(meta => ({ ...meta, sourceUrl: url, position: type == "screenshot" ? rank - 1 : rank, type } as ImageInfo))
-            //     );
-            // }
-
-            // // 5b. Asset images
-            // for (const [type, url] of Object.entries({ ...assetUrls, icon: iconUrl })) {
-            //     if (!url || type === "backdrop") continue;
-            //     tasks.push(
-            //         Utils.fetchBuffer(url)
-            //             .then(buf => Utils.getImageMetadata(buf))
-            //             .then(meta => ({ ...meta, position: 0, sourceUrl: url, type: type as ImageType } as ImageInfo))
-            //     );
-            // }
-
-            // // 5c. Backdrop
-            // tasks.push(
-            //     Utils.getImageMetadata(baselineBuffer)
-            //         .then(meta => ({ ...meta, position: 0, sourceUrl: assetUrls.backdrop, type: "backdrop" as const } as ImageInfo))
-            // )
-
-            // // 5d. Box art
-            // tasks.push(
-            //     Utils.createBoxArtBuffer(game.library_assets_full, appid)
-            //         .then(buf => Utils.getImageMetadata(buf))
-            //         .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
-            // );
-
-            // const settled = await Promise.allSettled(tasks)
-
-            // settled
-            //     .filter(r => r.status === "rejected")
-            //     .forEach(r => console.warn("[getImages] failed:", (r as PromiseRejectedResult).reason));
-
-            // // 6. Await all and return
-            // return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<ImageInfo>).value)
         }
     )
 

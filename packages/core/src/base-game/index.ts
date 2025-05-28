@@ -41,6 +41,13 @@ export namespace BaseGame {
             description: "The aggregate user review score on Steam, represented as a percentage of positive reviews",
             example: Examples.BaseGame.score
         }),
+        links: z.string()
+            .array()
+            .nullable()
+            .openapi({
+                description: "The social links of this game",
+                example: Examples.BaseGame.links
+            }),
         primaryGenre: z.string().nullable().openapi({
             description: "The main category or genre that best represents the game's content and gameplay style",
             example: Examples.BaseGame.primaryGenre
@@ -52,7 +59,7 @@ export namespace BaseGame {
         compatibility: z.enum(CompatibilityEnum.enumValues).openapi({
             description: "Steam Deck/Proton compatibility rating indicating how well the game runs on Linux systems",
             example: Examples.BaseGame.compatibility
-        })
+        }),
     }).openapi({
         ref: "BaseGame",
         description: "Detailed information about a game available in the Nestri library, including technical specifications and metadata",
@@ -121,7 +128,7 @@ export namespace BaseGame {
                     const imageUrls = await Client.getImageUrls(input.id);
 
                     // Spread them into different event buses as they take up way too much RAM if done in one go
-                    
+
                 })
 
                 return input.id
@@ -154,6 +161,7 @@ export namespace BaseGame {
             name: input.name,
             slug: input.slug,
             size: input.size,
+            links: input.links,
             score: input.score,
             description: input.description,
             releaseDate: input.releaseDate,
