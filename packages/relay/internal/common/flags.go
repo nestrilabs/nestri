@@ -13,6 +13,7 @@ import (
 var globalFlags *Flags
 
 type Flags struct {
+	RegenIdentity  bool   // Remove old identity on startup and regenerate it
 	Verbose        bool   // Log everything to console
 	Debug          bool   // Enable debug mode, implies Verbose
 	EndpointPort   int    // Port for HTTP/S and WS/S endpoint (TCP)
@@ -22,12 +23,12 @@ type Flags struct {
 	UDPMuxPort     int    // WebRTC UDP mux port - if set, overrides UDP port range
 	AutoAddLocalIP bool   // Automatically add local IP to NAT 1 to 1 IPs
 	NAT11IP        string // WebRTC NAT 1 to 1 IP - allows specifying IP of relay if behind NAT
-	TLSCert        string // Path to TLS certificate
-	TLSKey         string // Path to TLS key
+	PersistDir     string // Directory to save persistent data to
 }
 
 func (flags *Flags) DebugLog() {
 	slog.Debug("Relay flags",
+		"regenIdentity", flags.RegenIdentity,
 		"verbose", flags.Verbose,
 		"debug", flags.Debug,
 		"endpointPort", flags.EndpointPort,
@@ -37,8 +38,7 @@ func (flags *Flags) DebugLog() {
 		"webrtcUDPMux", flags.UDPMuxPort,
 		"autoAddLocalIP", flags.AutoAddLocalIP,
 		"webrtcNAT11IPs", flags.NAT11IP,
-		"tlsCert", flags.TLSCert,
-		"tlsKey", flags.TLSKey,
+		"persistDir", flags.PersistDir,
 	)
 }
 
@@ -72,6 +72,7 @@ func InitFlags() {
 	// Create Flags struct
 	globalFlags = &Flags{}
 	// Get flags
+	flag.BoolVar(&globalFlags.RegenIdentity, "regenIdentity", getEnvAsBool("REGEN_IDENTITY", false), "Regenerate identity on startup")
 	flag.BoolVar(&globalFlags.Verbose, "verbose", getEnvAsBool("VERBOSE", false), "Verbose mode")
 	flag.BoolVar(&globalFlags.Debug, "debug", getEnvAsBool("DEBUG", false), "Debug mode")
 	flag.IntVar(&globalFlags.EndpointPort, "endpointPort", getEnvAsInt("ENDPOINT_PORT", 8088), "HTTP endpoint port")
@@ -83,8 +84,7 @@ func InitFlags() {
 	// String with comma separated IPs
 	nat11IP := ""
 	flag.StringVar(&nat11IP, "webrtcNAT11IP", getEnvAsString("WEBRTC_NAT_IP", ""), "WebRTC NAT 1 to 1 IP")
-	flag.StringVar(&globalFlags.TLSCert, "tlsCert", getEnvAsString("TLS_CERT", ""), "Path to TLS certificate")
-	flag.StringVar(&globalFlags.TLSKey, "tlsKey", getEnvAsString("TLS_KEY", ""), "Path to TLS key")
+	flag.StringVar(&globalFlags.PersistDir, "persistDir", getEnvAsString("PERSIST_DIR", "./persist-data"), "Directory to save persistent data to")
 	// Parse flags
 	flag.Parse()
 

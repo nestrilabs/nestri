@@ -32,7 +32,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Start relay
-	err := core.InitRelay(mainCtx, mainStopper, common.GetFlags().EndpointPort)
+	err := core.InitRelay(mainCtx, mainStopper)
 	if err != nil {
 		slog.Error("Failed to initialize relay", "err", err)
 		mainStopper()

@@ -2,14 +2,17 @@ package core
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"log/slog"
+	"os"
 	"relay/internal/common"
 	"relay/internal/shared"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/protocol/ping"
@@ -56,7 +59,7 @@ type Relay struct {
 	pubTopicRelayMetrics *pubsub.Topic // topic for relay metrics/status
 }
 
-func NewRelay(ctx context.Context, port int) (*Relay, error) {
+func NewRelay(ctx context.Context, port int, identityKey crypto.PrivKey) (*Relay, error) {
 	listenAddrs := []string{
 		fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port),    // IPv4 - Raw TCP
 		fmt.Sprintf("/ip6/::/tcp/%d", port),         // IPv6 - Raw TCP
@@ -73,19 +76,10 @@ func NewRelay(ctx context.Context, port int) (*Relay, error) {
 		muAddrs = append(muAddrs, multiAddr)
 	}
 
-	// TODO: Get identity from flags/config or generate random one
-	// use crypto to generate a deterministic identity based on the token (crypto.PrivKey)
-	/*idHash := sha256.Sum256([]byte("nestri"))
-	idEd25519 := ed25519.NewKeyFromSeed(idHash[:])
-	idKey, err := crypto.UnmarshalEd25519PrivateKey(idEd25519)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal ed25519 private key: %w", err)
-	}*/
-
 	// Initialize libp2p host
 	p2pHost, err := libp2p.New(
 		// TODO: Currently static identity
-		//libp2p.Identity(idKey),
+		libp2p.Identity(identityKey),
 		// Enable required transports
 		libp2p.Transport(tcp.NewTCPTransport),
 		libp2p.Transport(ws.New),
@@ -158,9 +152,55 @@ func NewRelay(ctx context.Context, port int) (*Relay, error) {
 	return r, nil
 }
 
-func InitRelay(ctx context.Context, ctxCancel context.CancelFunc, port int) error {
+func InitRelay(ctx context.Context, ctxCancel context.CancelFunc) error {
 	var err error
-	globalRelay, err = NewRelay(ctx, port)
+	persistentDir := common.GetFlags().PersistDir
+
+	// Load or generate identity key
+	var identityKey crypto.PrivKey
+	var privKey ed25519.PrivateKey
+	// First check if we need to generate identity
+	hasIdentity := len(persistentDir) > 0 && common.GetFlags().RegenIdentity == false
+	if hasIdentity {
+		_, err = os.Stat(persistentDir + "/identity.key")
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to check identity key file: %w", err)
+		} else if os.IsNotExist(err) {
+			hasIdentity = false
+		}
+	}
+	if !hasIdentity {
+		// Make sure the persistent directory exists
+		if err = os.MkdirAll(persistentDir, 0700); err != nil {
+			return fmt.Errorf("failed to create persistent data directory: %w", err)
+		}
+		// Generate
+		slog.Info("Generating new identity for relay")
+		privKey, err = common.GenerateED25519Key()
+		if err != nil {
+			return fmt.Errorf("failed to generate new identity: %w", err)
+		}
+		// Save the key
+		if err = common.SaveED25519Key(privKey, persistentDir+"/identity.key"); err != nil {
+			return fmt.Errorf("failed to save identity key: %w", err)
+		}
+		slog.Info("New identity generated and saved", "path", persistentDir+"/identity.key")
+	} else {
+		slog.Info("Loading existing identity for relay", "path", persistentDir+"/identity.key")
+		// Load the key
+		privKey, err = common.LoadED25519Key(persistentDir + "/identity.key")
+		if err != nil {
+			return fmt.Errorf("failed to load identity key: %w", err)
+		}
+	}
+
+	// Convert to libp2p crypto.PrivKey
+	identityKey, err = crypto.UnmarshalEd25519PrivateKey(privKey)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal ED25519 private key: %w", err)
+	}
+
+	globalRelay, err = NewRelay(ctx, common.GetFlags().EndpointPort, identityKey)
 	if err != nil {
 		return fmt.Errorf("failed to create relay: %w", err)
 	}
