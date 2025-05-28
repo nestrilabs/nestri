@@ -109,6 +109,7 @@ export class SafeStream {
   private messageQueue: PromiseMessage[] = [];
   private writeLock = false;
   private readRetries = 0;
+  private writeRetries = 0;
   private readonly MAX_RETRIES = 5;
 
   constructor(stream: Stream) {
@@ -220,6 +221,7 @@ export class SafeStream {
               });
 
               for await (const chunk of encoded) {
+                this.writeRetries = 0;
                 yield chunk;
               }
 
@@ -245,19 +247,25 @@ export class SafeStream {
       await pipe(messageSource(), this.stream.sink).catch((err) => {
         console.error("Sink error:", err);
         this.isWriting = false;
+        this.writeRetries++;
 
         // Try to restart if not closed
-        if (!this.closed) {
+        if (!this.closed && this.writeRetries < this.MAX_RETRIES) {
           setTimeout(() => this.startWriting(), 1000);
+        } else if (this.writeRetries >= this.MAX_RETRIES) {
+          console.error("Max retries reached for writing to stream sink, stopping attempts");
         }
       });
     } catch (err) {
       console.error("Stream writing error:", err);
       this.isWriting = false;
+      this.writeRetries++;
 
       // Try to restart if not closed
-      if (!this.closed) {
+      if (!this.closed && this.writeRetries < this.MAX_RETRIES) {
         setTimeout(() => this.startWriting(), 1000);
+      } else if (this.writeRetries >= this.MAX_RETRIES) {
+        console.error("Max retries reached for writing stream, stopping attempts");
       }
     }
   }
@@ -286,7 +294,12 @@ export class SafeStream {
   public close(): void {
     this.closed = true;
     this.callbacks.clear();
+    // Reject pending messages
+    for (const msg of this.messageQueue)
+      msg.reject(new Error("Stream closed"));
+
     this.messageQueue = [];
     this.readRetries = 0;
+    this.writeRetries = 0;
   }
 }
