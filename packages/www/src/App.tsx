@@ -6,6 +6,7 @@ import '@fontsource/geist-sans/600.css';
 import '@fontsource/geist-sans/700.css';
 import '@fontsource/geist-sans/800.css';
 import '@fontsource/geist-sans/900.css';
+import { HomeRoute } from './pages/home';
 import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
 import { ZeroProvider } from './providers/zero';
@@ -93,57 +94,58 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        <OpenAuthProvider
-            issuer={import.meta.env.VITE_AUTH_URL}
-            clientID="web"
-        >
-            <Root class={theme() === "light" ? lightClass : darkClass}>
-                <Router>
+        // <OpenAuthProvider
+        //     issuer={import.meta.env.VITE_AUTH_URL}
+        //     clientID="web"
+        // >
+        <Root class={theme() === "light" ? lightClass : darkClass}>
+            <Router>
+                <Route
+                    path="*"
+                    component={(props) => (
+                        // <AccountProvider
+                        //     loadingUI={
+                        //         <FullScreen>
+                        //             <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                        //         </FullScreen>
+                        //     }>
+                        // {/* //     <ZeroProvider> */}
+                        props.children
+                        // {/* {props.children} */}
+                        // {/* //     </ZeroProvider> */}
+                        // {/* </AccountProvider> */}
+                    )}
+                >
+                    <Route path=":teamID">{TeamRoute}</Route>
+                    <Route path="home" component={HomeRoute} />
+                    <Route path="new" component={CreateTeamComponent} />
                     <Route
-                        path="*"
-                        component={(props) => (
-                            <AccountProvider
-                                loadingUI={
-                                    <FullScreen>
-                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                                    </FullScreen>
-                                }>
-                                {/* //     <ZeroProvider> */}
-                                {/* props.children */}
-                                {props.children}
-                                {/* //     </ZeroProvider> */}
-                            </AccountProvider>
-                        )}
-                    >
-                        <Route path=":teamID">{TeamRoute}</Route>
-                        <Route path="new" component={CreateTeamComponent} />
-                        <Route
-                            path="/"
-                            component={() => {
-                                const account = useAccount();
-                                return (
-                                    <Switch>
-                                        <Match when={account.current.teams.length > 0}>
-                                            <Navigate
-                                                href={`/${(
-                                                    account.current.teams.find(
-                                                        (w) => w.id === storage.value.team,
-                                                    ) || account.current.teams[0]
-                                                ).id
-                                                    }`}
-                                            />
-                                        </Match>
-                                        <Match when={true}>
-                                            <Navigate href={`/new`} />
-                                        </Match>
-                                    </Switch>
-                                );
-                            }}
-                        />
-                        <Route path="*" component={() => <NotFound />} />
-                    </Route>
-                </Router>
-            </Root>
-        </OpenAuthProvider>
+                        path="/"
+                        component={() => {
+                            const account = useAccount();
+                            return (
+                                <Switch>
+                                    <Match when={account.current.teams.length > 0}>
+                                        <Navigate
+                                            href={`/${(
+                                                account.current.teams.find(
+                                                    (w) => w.id === storage.value.team,
+                                                ) || account.current.teams[0]
+                                            ).id
+                                                }`}
+                                        />
+                                    </Match>
+                                    <Match when={true}>
+                                        <Navigate href={`/new`} />
+                                    </Match>
+                                </Switch>
+                            );
+                        }}
+                    />
+                    <Route path="*" component={() => <NotFound />} />
+                </Route>
+            </Router>
+        </Root>
+        // </OpenAuthProvider>
     )
 }

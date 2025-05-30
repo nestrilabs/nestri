@@ -1,16 +1,16 @@
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
-import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
 import { useAccount } from "../providers/account";
+import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
 
 const Card = styled("div", {
     base: {
-        padding: `10px 20px`,
+        gap: 40,
         maxWidth: 400,
         width: "100%",
-        position: "relative",
         display: "flex",
-        gap: 40,
+        padding: `10px 20px`,
+        position: "relative",
         flexDirection: "column",
         justifyContent: "center",
     }
