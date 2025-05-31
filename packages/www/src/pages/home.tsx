@@ -1,5 +1,46 @@
+import { keyframes } from "@macaron-css/core";
 import { styled } from "@macaron-css/solid";
 import { Container, Screen as FullScreen, theme } from "@nestri/www/ui";
+
+const Background = styled("div", {
+    base: {
+        position: "fixed",
+        zIndex: "-1",
+        inset: 0,
+        ":after": {
+            inset: 0,
+            content: "",
+            userSelect: "none",
+            position: "absolute",
+            pointerEvents: "none",
+            background: `linear-gradient(0deg,${theme.color.background.d200} 30%,transparent),linear-gradient(0deg,${theme.color.background.d200} 30%,transparent)`
+        }
+    }
+})
+
+const gradient = keyframes({
+    "0%": {
+        backgroundPosition: "50% 100%",
+    },
+    "50%": {
+        backgroundPosition: "50% 50%",
+    },
+    "100%": {
+        backgroundPosition: "100% 50%",
+    }
+})
+
+const BackgroundImage = styled("div", {
+    base: {
+        position: "relative",
+        background: "linear-gradient(120deg,#32eaff 20%,#f644ff 50%,#ff822e 70%)",
+        width: "100%",
+        height: "70%",
+        animation: `${gradient} 2s infinite alternate`,
+        backgroundSize: "300%",
+        filter: "saturate(120%)"
+    }
+})
 
 const Wrapper = styled("div", {
     base: {
@@ -63,6 +104,9 @@ export function HomeRoute() {
                 vertical="center"
                 horizontal="center"
                 style={{ position: "fixed", height: "100%", width: "100%" }} >
+                <Background>
+                    <BackgroundImage />
+                </Background>
                 <Wrapper>
                     <Title>
                         Who's playing?
