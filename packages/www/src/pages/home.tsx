@@ -20,25 +20,27 @@ const Background = styled("div", {
 
 const gradient = keyframes({
     "0%": {
-        backgroundPosition: "50% 100%",
+        backgroundPosition: "0% 50%",
     },
     "50%": {
-        backgroundPosition: "50% 50%",
+        backgroundPosition: "100% 50%",
     },
     "100%": {
-        backgroundPosition: "100% 50%",
-    }
+        backgroundPosition: "0% 50%",
+    },
 })
 
 const BackgroundImage = styled("div", {
     base: {
-        position: "relative",
-        background: "linear-gradient(120deg,#32eaff 20%,#f644ff 50%,#ff822e 70%)",
         width: "100%",
         height: "70%",
-        animation: `${gradient} 2s infinite alternate`,
-        backgroundSize: "300%",
-        filter: "saturate(120%)"
+        position: "relative",
+        filter: "saturate(120%)",
+        backgroundSize: "300% 100%",
+        backgroundPosition: "0% 0%",
+        backgroundRepeat: "repeat-x",
+        animation: `${gradient} 35s linear 0s infinite`,
+        backgroundImage: "linear-gradient(120deg, rgb(232,23,98) 1.26%, rgb(30,134,248) 18.6%, rgb(91,108,255) 34.56%, rgb(52,199,89) 49.76%, rgb(245,197,5) 64.87%, rgb(236,62,62) 85.7%)",
     }
 })
 
@@ -46,6 +48,9 @@ const Wrapper = styled("div", {
     base: {
         margin: "100px 0",
         textAlign: "center",
+        justifyContent:"center",
+        display:"flex",
+        flexDirection:"column",
         width: "100%",
         maxWidth: 700,
     }
@@ -89,11 +94,31 @@ const ProfilePicture = styled("div", {
 
 const ProfileName = styled("div", {
     base: {
-        color: theme.color.gray.d900,
-        transition: "all 300ms ease",
         margin: "20px 0",
         lineHeight: "1.25em",
+        color: theme.color.gray.d900,
+        transition: "all 300ms ease",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
         fontSize: theme.font.size.lg
+    }
+})
+
+const NewButton = styled("div", {
+    base: {
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        cursor: "pointer",
+        padding: "0px 14px",
+        gap: 10,
+        width:"max-content",
+        alignSelf:"center",
+        height: 48,
+        borderRadius: theme.space["2"],
+        backgroundColor: theme.color.background.d100,
+        border: `1px solid ${theme.color.gray.d400}`
     }
 })
 
@@ -131,9 +156,12 @@ export function HomeRoute() {
                             <ProfilePicture>
                                 <img src="https://avatars.cloudflare.steamstatic.com/c55b317fdf7d85e3179a0998090790448e597fcb_full.jpg" style={{ height: "100%", width: "100%" }} />
                             </ProfilePicture>
-                            <ProfileName>Wanjohi</ProfileName>
+                            <ProfileName>WanjohiRyan</ProfileName>
                         </Profile>
                     </Profiles>
+                    <NewButton>
+                        Link Steam Account
+                    </NewButton>
                 </Wrapper>
             </Container>
         </FullScreen>
