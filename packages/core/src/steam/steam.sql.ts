@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { userTable } from "../user/user.sql";
-import { timestamps, ulid, utc } from "../drizzle/types";
+import { id, timestamps, ulid, utc } from "../drizzle/types";
 import { pgTable, varchar, pgEnum, json, unique } from "drizzle-orm/pg-core";
 
 export const StatusEnum = pgEnum("steam_status", ["online", "offline", "dnd", "playing"])
@@ -32,11 +32,7 @@ export const steamTable = pgTable(
         steamMemberSince: utc("member_since").notNull(),
         name: varchar("name", { length: 255 }).notNull(),
         profileUrl: varchar("profile_url", { length: 255 }),
-        username: varchar("username", { length: 255 }).notNull(),
         avatarHash: varchar("avatar_hash", { length: 255 }).notNull(),
         limitations: json("limitations").$type<Limitations>().notNull(),
-    },
-    (table) => [
-        unique("idx_steam_username").on(table.username)
-    ]
+    }
 );

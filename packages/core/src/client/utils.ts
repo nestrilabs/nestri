@@ -9,6 +9,7 @@ import type {
     CompareResult,
     RankedShot,
     Shot,
+    ProfileInfo,
 } from "./types";
 import crypto from 'crypto';
 import pLimit from 'p-limit';
@@ -18,6 +19,7 @@ import { LRUCache } from 'lru-cache';
 import sanitizeHtml from 'sanitize-html';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
+import { parseStringPromise } from "xml2js";
 import sharp, { type Metadata } from 'sharp';
 import AbortController from 'abort-controller';
 import fetch, { RequestInit } from 'node-fetch';
@@ -90,29 +92,21 @@ export namespace Utils {
 
     // --- Optimized Box Art creation ---
     export async function createBoxArtBuffer(
-        assets: LibraryAssetsFull,
-        appid: number | string,
+        logoUrl: string,
+        backgroundUrl: string,
         logoPercent = 0.9
     ): Promise<Buffer> {
-        const base = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appid}`;
-        const pick = (key: string) => {
-            const set = assets[key];
-            const path = set?.image2x?.english || set?.image?.english;
-            if (!path) throw new Error(`Missing asset for ${key}`);
-            return `${base}/${path}`;
-        };
-
         const [bgBuf, logoBuf] = await Promise.all([
             downloadLimit(() =>
-                fetchBuffer(pick('library_hero'))
+                fetchBuffer(backgroundUrl)
                     .catch(error => {
-                        console.error(`Failed to download hero image for ${appid}:`, error);
+                        console.error(`Failed to download hero image from ${backgroundUrl}:`, error);
                         throw new Error(`Failed to create box art: hero image unavailable`);
                     }),
             ),
-            downloadLimit(() => fetchBuffer(pick('library_logo'))
+            downloadLimit(() => fetchBuffer(logoUrl)
                 .catch(error => {
-                    console.error(`Failed to download logo image for ${appid}:`, error);
+                    console.error(`Failed to download logo image from ${logoUrl}:`, error);
                     throw new Error(`Failed to create box art: logo image unavailable`);
                 }),
             ),
@@ -182,9 +176,11 @@ export namespace Utils {
     export function createSlug(name: string): string {
         return name
             .toLowerCase()
-            .replace(/[^\w\s -]/g, "")
-            .replace(/\s+/g, "-")
-            .replace(/-+/g, "-")
+            .normalize("NFKD") // Normalize to decompose accented characters
+            .replace(/[^\p{L}\p{N}\s-]/gu, '') // Keep Unicode letters, numbers, spaces, and hyphens
+            .replace(/\s+/g, '-')              // Replace spaces with hyphens
+            .replace(/-+/g, '-')               // Collapse multiple hyphens
+            .replace(/^-+|-+$/g, '')           // Trim leading/trailing hyphens
             .trim();
     }
 
@@ -328,14 +324,24 @@ export namespace Utils {
     export function compatibilityType(type?: string): "low" | "mid" | "high" | "unknown" {
         switch (type) {
             case "1":
-                return "low";
+                return "high";
             case "2":
                 return "mid";
             case "3":
-                return "high";
+                return "low";
             default:
                 return "unknown";
         }
+    }
+
+
+    export function estimateRatingFromSummary(
+        reviewCount: number,
+        percentPositive: number
+    ): number {
+        const positiveVotes = Math.round((percentPositive / 100) * reviewCount);
+        const negativeVotes = reviewCount - positiveVotes;
+        return getRating(positiveVotes, negativeVotes);
     }
 
     export function mapGameTags<
@@ -351,6 +357,20 @@ export namespace Utils {
             .map((t) => ({ name: t.name.trim(), slug: createSlug(t.name), type: 'tag' as T }));
 
         return result;
+    }
+
+    export function createType<
+        T extends "developer" | "publisher" | "franchise" | "tag" | "categorie" | "genre"
+    >(
+        names: string[],
+        type: T
+    ) {
+        return names
+            .map(name => ({
+                type,
+                name: name.trim(),
+                slug: createSlug(name.trim())
+            }));
     }
 
     /**
@@ -380,17 +400,39 @@ export namespace Utils {
                 .toLowerCase();
     }
 
+    function isDepotEntry(e: any): e is DepotEntry {
+        return (
+            e != null &&
+            typeof e === 'object' &&
+            'manifests' in e &&
+            e.manifests != null &&
+            typeof e.manifests.public?.download === 'string'
+        );
+    }
+
     export function getPublicDepotSizes(depots: AppDepots) {
-        const sum = { download: 0, size: 0 };
-        for (const key in depots) {
+        let download = 0;
+        let size = 0;
+
+        for (const key of Object.keys(depots)) {
             if (key === 'branches' || key === 'privatebranches') continue;
             const entry = depots[key] as DepotEntry;
-            if ('manifests' in entry && entry.manifests.public) {
-                sum.download += Number(entry.manifests.public.download);
-                sum.size += Number(entry.manifests.public.size);
+            if (!isDepotEntry(entry)) {
+                continue;
             }
+
+            const dl = Number(entry.manifests.public.download);
+            const sz = Number(entry.manifests.public.size);
+            if (!Number.isFinite(dl) || !Number.isFinite(sz)) {
+                console.warn(`[getPublicDepotSizes] non-numeric size for depot ${key}`);
+                continue;
+            }
+
+            download += dl;
+            size += sz;
         }
-        return { downloadSize: sum.download, sizeOnDisk: sum.size };
+
+        return { downloadSize: download, sizeOnDisk: size };
     }
 
     export function parseGenres(str: string): GenreType[] {
@@ -418,5 +460,65 @@ export namespace Utils {
         });
 
         return cleaned.trim()
+    }
+
+    /**
+     * Fetches and parses a single Steam community profile XML.
+     * @param steamIdOrVanity - The 64-bit SteamID or vanity name.
+     * @returns Promise resolving to ProfileInfo.
+     */
+    export async function fetchProfileInfo(
+        steamIdOrVanity: string
+    ): Promise<ProfileInfo> {
+        const isNumericId = /^\d+$/.test(steamIdOrVanity);
+        const path = isNumericId ? `profiles/${steamIdOrVanity}` : `id/${steamIdOrVanity}`;
+        const url = `https://steamcommunity.com/${path}/?xml=1`;
+
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch ${steamIdOrVanity}: HTTP ${response.status}`);
+        }
+
+        const xml = await response.text();
+        const { profile } = await parseStringPromise(xml, {
+            explicitArray: false,
+            trim: true,
+            mergeAttrs: true
+        }) as { profile: any };
+
+        // Extract fields (fall back to limitedAccount tag if needed)
+        const limitedFlag = profile.isLimitedAccount ?? profile.limitedAccount;
+        const isLimited = limitedFlag === '1';
+
+        return {
+            isLimited,
+            steamID64: profile.steamID64,
+            privacyState: profile.privacyState,
+            visibility: profile.visibilityState
+        };
+    }
+
+    /**
+     * Batch-fetches multiple Steam profiles in parallel.
+     * @param idsOrVanities - Array of SteamID64 strings or vanity names.
+     * @returns Promise resolving to a record mapping each input to its ProfileInfo or an error.
+     */
+    export async function fetchProfilesInfo(
+        idsOrVanities: string[]
+    ): Promise<Map<string, ProfileInfo | { error: string }>> {
+        const results = await Promise.all(
+            idsOrVanities.map(async (input) => {
+                try {
+                    const info = await fetchProfileInfo(input);
+                    return { input, result: info };
+                } catch (err) {
+                    return { input, result: { error: (err as Error).message } };
+                }
+            })
+        );
+
+        return new Map(
+            results.map(({ input, result }) => [input, result] as [string, ProfileInfo | { error: string }])
+        );
     }
 }

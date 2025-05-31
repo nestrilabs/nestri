@@ -18,17 +18,13 @@ export namespace Team {
                 description: Common.IdDescription,
                 example: Examples.Team.id,
             }),
-            slug: z.string().regex(/^[a-z0-9-]{1,32}$/, "Use a URL friendly name.").openapi({
-                description: "URL-friendly unique username (lowercase alphanumeric with hyphens)",
-                example: Examples.Team.slug
-            }),
             name: z.string().openapi({
                 description: "Display name of the team",
                 example: Examples.Team.name
             }),
-            ownerID: z.string().openapi({
-                description: "Unique identifier of the team owner",
-                example: Examples.Team.ownerID
+            ownerSteamID: z.string().openapi({
+                description: "Unique Steam identifier of the team owner",
+                example: Examples.Team.ownerSteamID
             }),
             maxMembers: z.number().openapi({
                 description: "Maximum allowed team members based on subscription tier",
@@ -94,7 +90,7 @@ export namespace Team {
                 id: true,
                 inviteCode: true,
                 maxMembers: true,
-                ownerID: true
+                ownerSteamID: true
             }),
         async (input) =>
             createTransaction(async (tx) => {
@@ -105,16 +101,9 @@ export namespace Team {
                     .values({
                         id,
                         inviteCode,
-                        slug: input.slug,
                         name: input.name,
-                        ownerID: input.ownerID ?? Actor.userID(),
+                        ownerSteamID: input.ownerSteamID ?? Actor.steamID(),
                         maxMembers: input.maxMembers ?? 1,
-                    })
-                    .onConflictDoUpdate({
-                        target: [teamTable.slug],
-                        set: {
-                            timeDeleted: null
-                        }
                     })
 
                 return id;
@@ -143,9 +132,9 @@ export namespace Team {
                 .then((rows) => serialize(rows))
         )
 
-    export const fromSlug = fn(
-        Info.shape.slug,
-        (slug) =>
+    export const fromSteamID = fn(
+        Info.shape.ownerSteamID,
+        (steamID) =>
             useTransaction((tx) =>
                 tx
                     .select()
@@ -158,7 +147,7 @@ export namespace Team {
                             isNull(memberTable.timeDeleted),
                             isNull(steamTable.timeDeleted),
                             isNull(teamTable.timeDeleted),
-                            eq(teamTable.slug, slug),
+                            eq(teamTable.ownerSteamID, steamID),
                         )
                     )
                     .then((rows) => serialize(rows).at(0))
@@ -174,11 +163,10 @@ export namespace Team {
             values(),
             map((group) => ({
                 id: group[0].teams.id,
-                slug: group[0].teams.slug,
                 name: group[0].teams.name,
-                ownerID: group[0].teams.ownerID,
                 maxMembers: group[0].teams.maxMembers,
                 inviteCode: group[0].teams.inviteCode,
+                ownerSteamID: group[0].teams.ownerSteamID,
                 members: group.map(i => i.steam_accounts)
                     .filter((c): c is typeof steamTable.$inferSelect => Boolean(c))
                     .map((item) => Steam.serialize(item))

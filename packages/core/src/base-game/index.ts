@@ -1,13 +1,12 @@
 import { z } from "zod";
 import { fn } from "../utils";
-import { Resource } from "sst";
-import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createEvent } from "../event";
 import { eq, isNull, and } from "drizzle-orm";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum } from "./base-game.sql";
+import { ImageTypeEnum } from "../images/images.sql";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
+import { CompatibilityEnum, baseGamesTable, Size, ControllerEnum, Links } from "./base-game.sql";
 
 export namespace BaseGame {
     export const Info = z.object({
@@ -31,7 +30,7 @@ export namespace BaseGame {
             description: "The initial public release date of the game on Steam",
             example: Examples.BaseGame.releaseDate
         }),
-        description: z.string().openapi({
+        description: z.string().nullable().openapi({
             description: "A comprehensive overview of the game, including its features, storyline, and gameplay elements",
             example: Examples.BaseGame.description
         }),
@@ -39,6 +38,12 @@ export namespace BaseGame {
             description: "The aggregate user review score on Steam, represented as a percentage of positive reviews",
             example: Examples.BaseGame.score
         }),
+        links: Links
+            .nullable()
+            .openapi({
+                description: "The social links of this game",
+                example: Examples.BaseGame.links
+            }),
         primaryGenre: z.string().nullable().openapi({
             description: "The main category or genre that best represents the game's content and gameplay style",
             example: Examples.BaseGame.primaryGenre
@@ -50,7 +55,7 @@ export namespace BaseGame {
         compatibility: z.enum(CompatibilityEnum.enumValues).openapi({
             description: "Steam Deck/Proton compatibility rating indicating how well the game runs on Linux systems",
             example: Examples.BaseGame.compatibility
-        })
+        }),
     }).openapi({
         ref: "BaseGame",
         description: "Detailed information about a game available in the Nestri library, including technical specifications and metadata",
@@ -61,9 +66,27 @@ export namespace BaseGame {
 
     export const Events = {
         New: createEvent(
-            "new_game.added",
+            "new_image.save",
             z.object({
                 appID: Info.shape.id,
+                url: z.string().url(),
+                type: z.enum(ImageTypeEnum.enumValues)
+            }),
+        ),
+        NewBoxArt: createEvent(
+            "new_box_art_image.save",
+            z.object({
+                appID: Info.shape.id,
+                logoUrl: z.string().url(),
+                backgroundUrl: z.string().url(),
+            }),
+        ),
+        NewHeroArt: createEvent(
+            "new_hero_art_image.save",
+            z.object({
+                appID: Info.shape.id,
+                backdropUrl: z.string().url(),
+                screenshots: z.string().url().array(),
             }),
         ),
     };
@@ -72,6 +95,21 @@ export namespace BaseGame {
         Info,
         (input) =>
             createTransaction(async (tx) => {
+                const result = await tx
+                    .select()
+                    .from(baseGamesTable)
+                    .where(
+                        and(
+                            eq(baseGamesTable.id, input.id),
+                            isNull(baseGamesTable.timeDeleted)
+                        )
+                    )
+                    .limit(1)
+                    .execute()
+                    .then(rows => rows.at(0))
+
+                if (result) return result.id
+
                 await tx
                     .insert(baseGamesTable)
                     .values(input)
@@ -81,10 +119,6 @@ export namespace BaseGame {
                             timeDeleted: null
                         }
                     })
-
-                await afterTx(async () => {
-                    await bus.publish(Resource.Bus, Events.New, { appID: input.id })
-                })
 
                 return input.id
             })
@@ -116,6 +150,7 @@ export namespace BaseGame {
             name: input.name,
             slug: input.slug,
             size: input.size,
+            links: input.links,
             score: input.score,
             description: input.description,
             releaseDate: input.releaseDate,

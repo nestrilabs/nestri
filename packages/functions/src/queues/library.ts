@@ -1,11 +1,14 @@
+import "zod-openapi/extend";
+import { Resource } from "sst";
+import { bus } from "sst/aws/bus";
 import { SQSHandler } from "aws-lambda";
 import { Actor } from "@nestri/core/actor";
 import { Game } from "@nestri/core/game/index";
-import { Utils } from "@nestri/core/client/utils";
 import { Client } from "@nestri/core/client/index";
 import { Library } from "@nestri/core/library/index";
 import { BaseGame } from "@nestri/core/base-game/index";
 import { Categories } from "@nestri/core/categories/index";
+import { ImageTypeEnum } from "@nestri/core/images/images.sql";
 
 export const handler: SQSHandler = async (event) => {
     for (const record of event.Records) {
@@ -17,71 +20,103 @@ export const handler: SQSHandler = async (event) => {
             parsed.metadata.actor.type,
             parsed.metadata.actor.properties,
             async () => {
-                const processGames = parsed.properties.map(async (game) => {
-                    // First check whether the base_game exists, if not get it
-                    const appID = game.appID.toString()
-                    const exists = await BaseGame.fromID(appID)
+                const game = parsed.properties
+                // First check whether the base_game exists, if not get it
+                const appID = game.appID.toString();
+                const exists = await BaseGame.fromID(appID);
 
-                    if (!exists) {
-                        const appInfo = await Client.getAppInfo(appID);
-                        const tags = appInfo.tags;
+                if (!exists) {
+                    const appInfo = await Client.getAppInfo(appID);
 
-                        await BaseGame.create({
-                            id: appID,
-                            name: appInfo.name,
-                            size: appInfo.size,
-                            score: appInfo.score,
-                            slug: appInfo.slug,
-                            description: appInfo.description,
-                            releaseDate: appInfo.releaseDate,
-                            primaryGenre: appInfo.primaryGenre,
-                            compatibility: appInfo.compatibility,
-                            controllerSupport: appInfo.controllerSupport,
-                        })
-
-                        if (game.isFamilyShareable) {
-                            tags.push(Utils.createTag("Family Share"))
-                        }
-
-                        const allCategories = [...tags, ...appInfo.genres, ...appInfo.publishers, ...appInfo.developers]
-
-                        const uniqueCategories = Array.from(
-                            new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()
-                        );
-
-                        const settled = await Promise.allSettled(
-                            uniqueCategories.map(async (cat) => {
-                                //Use a single db transaction to get or set the category
-                                await Categories.create({
-                                    type: cat.type, slug: cat.slug, name: cat.name
-                                })
-
-                                // Use a single db transaction to get or create the game
-                                await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
-                            })
-                        )
-
-                        settled
-                            .filter(r => r.status === "rejected")
-                            .forEach(r => console.warn("[uniqueCategories] failed:", (r as PromiseRejectedResult).reason));
-                    }
-
-                    // Add to user's library
-                    await Library.add({
-                        baseGameID: appID,
-                        lastPlayed: game.lastPlayed,
-                        timeAcquired: game.timeAcquired,
-                        totalPlaytime: game.totalPlaytime,
-                        isFamilyShared: game.isFamilyShared,
+                    await BaseGame.create({
+                        id: appID,
+                        name: appInfo.name,
+                        size: appInfo.size,
+                        slug: appInfo.slug,
+                        links: appInfo.links,
+                        score: appInfo.score,
+                        description: appInfo.description,
+                        releaseDate: appInfo.releaseDate,
+                        primaryGenre: appInfo.primaryGenre,
+                        compatibility: appInfo.compatibility,
+                        controllerSupport: appInfo.controllerSupport,
                     })
+
+                    const allCategories = [...appInfo.tags, ...appInfo.genres, ...appInfo.publishers, ...appInfo.developers, ...appInfo.categories, ...appInfo.franchises]
+
+                    const uniqueCategories = Array.from(
+                        new Map(allCategories.map(c => [`${c.type}:${c.slug}`, c])).values()
+                    );
+
+                    await Promise.all(
+                        uniqueCategories.map(async (cat) => {
+                            //Create category if it doesn't exist
+                            await Categories.create({
+                                type: cat.type, slug: cat.slug, name: cat.name
+                            })
+
+                            //Create game if it doesn't exist
+                            await Game.create({ baseGameID: appID, categorySlug: cat.slug, categoryType: cat.type })
+                        })
+                    )
+
+                    const imageUrls = appInfo.images
+
+                    await Promise.all(
+                        ImageTypeEnum.enumValues.map(async (type) => {
+                            switch (type) {
+                                case "backdrop": {
+                                    await bus.publish(Resource.Bus, BaseGame.Events.New, { appID, type: "backdrop", url: imageUrls.backdrop })
+                                    break;
+                                }
+                                case "banner": {
+                                    await bus.publish(Resource.Bus, BaseGame.Events.New, { appID, type: "banner", url: imageUrls.banner })
+                                    break;
+                                }
+                                case "icon": {
+                                    await bus.publish(Resource.Bus, BaseGame.Events.New, { appID, type: "icon", url: imageUrls.icon })
+                                    break;
+                                }
+                                case "logo": {
+                                    await bus.publish(Resource.Bus, BaseGame.Events.New, { appID, type: "logo", url: imageUrls.logo })
+                                    break;
+                                }
+                                case "poster": {
+                                    await bus.publish(
+                                        Resource.Bus,
+                                        BaseGame.Events.New,
+                                        { appID, type: "poster", url: imageUrls.poster }
+                                    )
+                                    break;
+                                }
+                                case "heroArt": {
+                                    await bus.publish(
+                                        Resource.Bus,
+                                        BaseGame.Events.NewHeroArt,
+                                        { appID, backdropUrl: imageUrls.backdrop, screenshots: imageUrls.screenshots }
+                                    )
+                                    break;
+                                }
+                                case "boxArt": {
+                                    await bus.publish(
+                                        Resource.Bus,
+                                        BaseGame.Events.NewBoxArt,
+                                        { appID, logoUrl: imageUrls.logo, backgroundUrl: imageUrls.backdrop }
+                                    )
+                                    break;
+                                }
+                            }
+                        })
+                    )
+                }
+
+                // Add to user's library
+                await Library.add({
+                    baseGameID: appID,
+                    lastPlayed: game.lastPlayed ? new Date(game.lastPlayed) : null,
+                    totalPlaytime: game.totalPlaytime,
                 })
-
-                const settled = await Promise.allSettled(processGames)
-
-                settled
-                    .filter(r => r.status === "rejected")
-                    .forEach(r => console.warn("[processGames] failed:", (r as PromiseRejectedResult).reason));
-            }
-        )
+            })
     }
 }
+
