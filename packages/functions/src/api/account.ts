@@ -20,7 +20,7 @@ export namespace AccountApi {
                                 schema: Result(
                                     Account.Info.openapi({
                                         description: "User account information",
-                                        example: { ...Examples.User, teams: [Examples.Team] }
+                                        example: { ...Examples.User, profiles: [Examples.SteamAccount] }
                                     })
                                 ),
                             },

@@ -1,14 +1,12 @@
 import { z } from "zod";
 import { fn } from "../utils";
-import { Resource } from "sst";
-import { bus } from "sst/aws/bus";
 import { Actor } from "../actor";
 import { Common } from "../common";
 import { Examples } from "../examples";
 import { createEvent } from "../event";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { steamTable, StatusEnum, Limitations } from "./steam.sql";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
     export const Info = z
@@ -170,6 +168,26 @@ export namespace Steam {
                     .orderBy(desc(steamTable.timeCreated))
                     .execute()
                     .then((rows) => rows.map(serialize))
+            )
+    )
+
+    export const confirmOwnerShip = fn(
+        z.string().min(1),
+        (userID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(steamTable)
+                    .where(
+                        and(
+                            eq(steamTable.userID, userID),
+                            eq(steamTable.id, Actor.steamID()),
+                            isNull(steamTable.timeDeleted)
+                        )
+                    )
+                    .orderBy(desc(steamTable.timeCreated))
+                    .execute()
+                    .then((rows) => rows.map(serialize).at(0))
             )
     )
 

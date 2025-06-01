@@ -11,13 +11,6 @@ export namespace Actor {
       email: string;
     };
   }
-
-  export interface System {
-    type: "system";
-    properties: {
-      teamID: string;
-    };
-  }
   
   export interface Steam {
     type: "steam";
@@ -39,7 +32,6 @@ export namespace Actor {
     properties: {
       userID: string;
       steamID: string;
-      teamID: string;
     };
   }
 
@@ -48,7 +40,7 @@ export namespace Actor {
     properties: {};
   }
 
-  export type Info = User | Public | Token | System | Machine | Steam;
+  export type Info = User | Public | Token | Machine | Steam;
 
   export const Context = createContext<Info>();
 

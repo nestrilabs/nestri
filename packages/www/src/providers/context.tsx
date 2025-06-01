@@ -1,10 +1,10 @@
-import { Team } from "@nestri/core/team/index";
+import { Steam } from "@nestri/core/steam/index";
 import { Accessor, createContext, useContext } from "solid-js";
 
-export const TeamContext = createContext<Accessor<Team.Info>>();
+export const SteamContext = createContext<Accessor<Steam.Info>>();
 
-export function useTeam() {
-  const context = useContext(TeamContext);
-  if (!context) throw new Error("No team context");
+export function useSteam() {
+  const context = useContext(SteamContext);
+  if (!context) throw new Error("No steam context");
   return context;
 }

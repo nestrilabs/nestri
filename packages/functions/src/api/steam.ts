@@ -3,12 +3,10 @@ import { Hono } from "hono";
 import { Resource } from "sst";
 import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
-import { Team } from "@nestri/core/team/index";
 import { User } from "@nestri/core/user/index";
 import { Examples } from "@nestri/core/examples";
 import { Steam } from "@nestri/core/steam/index";
 import { getCookie, setCookie } from "hono/cookie";
-import { Member } from "@nestri/core/member/index";
 import { Client } from "@nestri/core/client/index";
 import { Friend } from "@nestri/core/friend/index";
 import { Library } from "@nestri/core/library/index";
@@ -108,45 +106,9 @@ export namespace SteamApi {
 
                 const wasAdded = await Steam.create({ ...user, userID });
 
-                let teamID: string | undefined
-
-                if (wasAdded) {
-                    // create a team
-                    teamID = await Team.create({
-                        name: user.name,
-                        ownerSteamID: steamID,
-                    })
-
-                    // Add us as a member
-                    await Actor.provide(
-                        "system",
-                        { teamID },
-                        async () =>
-                            await Member.create({
-                                role: "adult",
-                                userID: userID,
-                                steamID
-                            })
-                    )
-
-                } else {
+                if (!wasAdded) {
                     // Update the owner of the Steam account
                     await Steam.updateOwner({ userID, steamID })
-                    await Actor.provide(
-                        "user",
-                        {
-                            email: currentUser.email,
-                            userID: currentUser.id
-                        },
-                        async () => {
-                            // Get the team associated with this steamID
-                            const team = await Team.fromSteamID(steamID);
-                            // This should never happen
-                            if (!team) throw Error(`Is Nestri okay???, we could not find the team with this steam_id ${steamID}`)
-
-                            teamID = team.id
-                        }
-                    )
                 }
 
                 c.executionCtx.waitUntil((async () => {
@@ -198,32 +160,30 @@ export namespace SteamApi {
 
                                 const queryLib = await Promise.allSettled(
                                     gameLibrary.response.games.map(async (game) => {
-                                        if (teamID) {
-                                            await Actor.provide(
-                                                "steam",
-                                                {
-                                                    steamID: currentSteamID,
-                                                },
-                                                async () => {
-                                                    const payload = await Library.Events.Queue.create({
-                                                        appID: game.appid,
-                                                        lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
-                                                        totalPlaytime: game.playtime_forever
-                                                    });
+                                        await Actor.provide(
+                                            "steam",
+                                            {
+                                                steamID: currentSteamID,
+                                            },
+                                            async () => {
+                                                const payload = await Library.Events.Queue.create({
+                                                    appID: game.appid,
+                                                    lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
+                                                    totalPlaytime: game.playtime_forever
+                                                });
 
-                                                    await sqs.send(
-                                                        new SendMessageCommand({
-                                                            // MessageGroupId: currentSteamID,
-                                                            QueueUrl: Resource.LibraryQueue.url,
-                                                            // Prevent bombarding Steam with requests at the same time
-                                                            DelaySeconds: 10,
-                                                            MessageBody: JSON.stringify(payload),
-                                                            MessageDeduplicationId: `${currentSteamID}_${game.appid.toString()}`,
-                                                        })
-                                                    )
-                                                }
-                                            )
-                                        }
+                                                await sqs.send(
+                                                    new SendMessageCommand({
+                                                        // MessageGroupId: currentSteamID,
+                                                        QueueUrl: Resource.LibraryQueue.url,
+                                                        // Prevent bombarding Steam with requests at the same time
+                                                        DelaySeconds: 10,
+                                                        MessageBody: JSON.stringify(payload),
+                                                        MessageDeduplicationId: `${currentSteamID}_${game.appid.toString()}`,
+                                                    })
+                                                )
+                                            }
+                                        )
                                     })
                                 )
 

@@ -191,7 +191,7 @@ const DividerText = styled("span", {
 // 2. The memory/hash router we were talking about 
 // 3. A really good UI to choose teams on
 
-export function CreateTeamComponent() {
+export function NewProfile() {
     const account = useAccount()
 
     const openPopup = () => {

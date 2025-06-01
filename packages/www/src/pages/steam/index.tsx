@@ -1,14 +1,13 @@
-import { HomeRoute } from "../home";
 import { LibraryRoute } from "./library";
 import { useOpenAuth } from "@openauthjs/solid";
 import { Route, useParams } from "@solidjs/router";
 import { ApiProvider } from "@nestri/www/providers/api";
-import { TeamContext } from "@nestri/www/providers/context";
+import { SteamContext } from "@nestri/www/providers/context";
 import { createEffect, createMemo, Match, Switch } from "solid-js";
 import { NotAllowed, NotFound } from "@nestri/www/pages/not-found";
 import { useAccount, useStorage } from "@nestri/www/providers/account";
 
-export const TeamRoute = (
+export const SteamRoute = (
     <Route
         // component={(props) => {
         //     const params = useParams();
@@ -18,22 +17,22 @@ export const TeamRoute = (
 
         //     const team = createMemo(() =>
         //         account.current.teams.find(
-        //             (item) => item.id === params.teamID,
+        //             (item) => item.id === params.steamID,
         //         ),
         //     );
 
         //     createEffect(() => {
         //         const t = team();
         //         if (!t) return;
-        //         storage.set("team", t.id);
+        //         storage.set("steam", t.id);
         //     });
 
         //     createEffect(() => {
-        //         const teamID = params.teamID;
+        //         const steamID = params.steamID;
         //         for (const item of Object.values(account.all)) {
-        //             for (const team of item.teams) {
-        //                 if (team.id === teamID && item.id !== openauth.subject!.id) {
-        //                     openauth.switch(item.email);
+        //             for (const profile of item.profiles) {
+        //                 if (profile.id === steamID && item.id !== openauth.subject!.id) {
+        //                     openauth.switch(item.id);
         //                 }
         //             }
         //         }
@@ -56,7 +55,6 @@ export const TeamRoute = (
         //     )
         // }}
     >
-        <Route path="" component={HomeRoute} />
         <Route path="library" component={LibraryRoute} />
         <Route path="*" component={() => <NotFound header />} />
     </Route>

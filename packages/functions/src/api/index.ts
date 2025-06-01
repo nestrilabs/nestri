@@ -79,9 +79,9 @@ app.get(
                     },
                     TeamID: {
                         type: "apiKey",
-                        description: "The team ID to use for this query",
+                        description: "The steam ID to use for this query",
                         in: "header",
-                        name: "x-nestri-team"
+                        name: "x-nestri-steam"
                     },
                 },
             },

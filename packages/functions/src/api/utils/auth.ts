@@ -2,9 +2,9 @@ import { Resource } from "sst";
 import { subjects } from "../../subjects";
 import { Actor } from "@nestri/core/actor";
 import { type MiddlewareHandler } from "hono";
+import { Steam } from "@nestri/core/steam/index";
 import { createClient } from "@openauthjs/openauth/client";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-import { Member } from "@nestri/core/member/index";
 
 const client = createClient({
   clientID: "api",
@@ -44,19 +44,19 @@ export const auth: MiddlewareHandler = async (c, next) => {
   }
 
   if (result.subject.type === "user") {
-    const teamID = c.req.header("x-nestri-team");
-    if (!teamID) {
+    const steamID = c.req.header("x-nestri-steam");
+    if (!steamID) {
       return Actor.provide(result.subject.type, result.subject.properties, next);
     }
     const userID = result.subject.properties.userID
     return Actor.provide(
-      "system",
+      "steam",
       {
-        teamID
+        steamID
       },
       async () => {
-        const member = await Member.fromUserID(userID)
-        if (!member || !member.userID) {
+        const steamAcc = await Steam.confirmOwnerShip(userID)
+        if (!steamAcc) {
           throw new VisibleError(
             "authentication",
             ErrorCodes.Authentication.UNAUTHORIZED,
@@ -66,9 +66,8 @@ export const auth: MiddlewareHandler = async (c, next) => {
         return Actor.provide(
           "member",
           {
-            steamID: member.steamID,
-            userID: member.userID,
-            teamID: member.teamID
+            steamID,
+            userID,
           },
           next)
       });

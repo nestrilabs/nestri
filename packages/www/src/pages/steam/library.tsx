@@ -1,7 +1,7 @@
 import { For } from "solid-js";
 import { styled } from "@macaron-css/solid";
 import { FullScreen, theme } from "@nestri/www/ui";
-import { Header } from "@nestri/www/pages/team/header";
+import { Header } from "@nestri/www/pages/steam/header";
 
 const Container = styled("div", {
     base: {
