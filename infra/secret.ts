@@ -1,5 +1,6 @@
 export const secret = {
     PolarSecret: new sst.Secret("PolarSecret", process.env.POLAR_API_KEY),
+    SteamApiKey: new sst.Secret("SteamApiKey"),
     GithubClientID: new sst.Secret("GithubClientID"),
     DiscordClientID: new sst.Secret("DiscordClientID"),
     PolarWebhookSecret: new sst.Secret("PolarWebhookSecret"),
@@ -15,16 +16,3 @@ export const secret = {
 };
 
 export const allSecrets = Object.values(secret);
-
-sst.Linkable.wrap(random.RandomString, (resource) => ({
-    properties: {
-        value: resource.result,
-    },
-}));
-
-export const steamEncryptionKey = new random.RandomString(
-    "SteamEncryptionKey",
-    {
-        length: 32,
-    },
-);

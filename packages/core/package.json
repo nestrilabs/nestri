@@ -17,6 +17,7 @@
         "@tsconfig/node20": "^20.1.4",
         "@types/pngjs": "^6.0.5",
         "@types/sanitize-html": "^2.16.0",
+        "@types/xml2js": "^0.4.14",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
         "mqtt": "^5.10.3",
@@ -42,6 +43,7 @@
         "postgres": "^3.4.5",
         "sanitize-html": "^2.16.0",
         "sharp": "^0.34.1",
-        "steam-session": "*"
+        "steam-session": "*",
+        "xml2js": "^0.6.2"
     }
 }

@@ -1,159 +1,172 @@
 import type {
+    Shot,
     AppInfo,
-    GameTagsResponse,
-    SteamApiResponse,
-    GameDetailsResponse,
-    SteamAppDataResponse,
     ImageInfo,
     ImageType,
-    Shot
+    SteamAccount,
+    GameTagsResponse,
+    GameDetailsResponse,
+    SteamAppDataResponse,
+    SteamOwnedGamesResponse,
+    SteamPlayerBansResponse,
+    SteamFriendsListResponse,
+    SteamPlayerSummaryResponse,
+    SteamStoreResponse,
 } from "./types";
 import { z } from "zod";
-import pLimit from 'p-limit';
-import SteamID from "steamid";
 import { fn } from "../utils";
+import { Resource } from "sst";
+import { Steam } from "./steam";
 import { Utils } from "./utils";
-import SteamCommunity from "steamcommunity";
-import { Credentials } from "../credentials";
-import type CSteamUser from "steamcommunity/classes/CSteamUser";
-
-const requestLimit = pLimit(10); // max concurrent requests
+import { ImageTypeEnum } from "../images/images.sql";
 
 export namespace Client {
     export const getUserLibrary = fn(
-        Credentials.Info.shape.accessToken,
-        async (accessToken) =>
-            await Utils.fetchApi<SteamApiResponse>(`https://api.steampowered.com/IFamilyGroupsService/GetSharedLibraryApps/v1/?access_token=${accessToken}&family_groupid=0&include_excluded=true&include_free=true&include_non_games=false&include_own=true`)
+        z.string(),
+        async (steamID) =>
+            await Utils.fetchApi<SteamOwnedGamesResponse>(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v0001/?key=${Resource.SteamApiKey.value}&steamid=${steamID}&include_appinfo=1&format=json&include_played_free_games=1&skip_unvetted_apps=0`)
     )
 
     export const getFriendsList = fn(
-        Credentials.Info.shape.cookies,
-        async (cookies): Promise<CSteamUser[]> => {
-            const community = new SteamCommunity();
-            community.setCookies(cookies);
-
-            const allFriends = await new Promise<Record<string, any>>((resolve, reject) => {
-                community.getFriendsList((err, friends) => {
-                    if (err) {
-                        return reject(new Error(`Could not get friends list: ${err.message}`));
-                    }
-                    resolve(friends);
-                });
-            });
-
-            const friendIds = Object.keys(allFriends);
-
-            const userPromises: Promise<CSteamUser>[] = friendIds.map(id =>
-                requestLimit(() => new Promise<CSteamUser>((resolve, reject) => {
-                    const sid = new SteamID(id);
-                    community.getSteamUser(sid, (err, user) => {
-                        if (err) {
-                            return reject(new Error(`Could not get steam user info for ${id}: ${err.message}`));
-                        }
-                        resolve(user);
-                    });
-                }))
-            );
-
-            const settled = await Promise.allSettled(userPromises)
-
-            settled
-                .filter(r => r.status === "rejected")
-                .forEach(r => console.warn("[getFriendsList] failed:", (r as PromiseRejectedResult).reason));
-
-            return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<CSteamUser>).value);
-        }
+        z.string(),
+        async (steamID) =>
+            await Utils.fetchApi<SteamFriendsListResponse>(`https://api.steampowered.com/ISteamUser/GetFriendList/v0001/?key=${Resource.SteamApiKey.value}&steamid=${steamID}&relationship=friend`)
     );
 
     export const getUserInfo = fn(
-        Credentials.Info.pick({ cookies: true, steamID: true }),
-        async (input) =>
-            new Promise((resolve, reject) => {
-                const community = new SteamCommunity()
-                community.setCookies(input.cookies);
-                const steamID = new SteamID(input.steamID);
-                community.getSteamUser(steamID, async (err, user) => {
-                    if (err) {
-                        reject(`Could not get steam user info: ${err.message}`)
+        z.string().array(),
+        async (steamIDs) => {
+            const [userInfo, banInfo, profileInfo] = await Promise.all([
+                Utils.fetchApi<SteamPlayerSummaryResponse>(`https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/?key=${Resource.SteamApiKey.value}&steamids=${steamIDs.join(",")}`),
+                Utils.fetchApi<SteamPlayerBansResponse>(`https://api.steampowered.com/ISteamUser/GetPlayerBans/v1/?key=${Resource.SteamApiKey.value}&steamids=${steamIDs.join(",")}`),
+                Utils.fetchProfilesInfo(steamIDs)
+            ])
+
+            // Create a map of bans by steamID for fast lookup
+            const bansBySteamID = new Map(
+                banInfo.players.map((b) => [b.SteamId, b])
+            );
+
+            // Map userInfo.players to your desired output using Promise.allSettled 
+            // to prevent one error from closing down the whole pipeline
+            const steamAccounts = await Promise.allSettled(
+                userInfo.response.players.map(async (player) => {
+                    const ban = bansBySteamID.get(player.steamid);
+                    const info = profileInfo.get(player.steamid);
+
+                    if (!info) {
+                        throw new Error(`[userInfo] profile info missing for ${player.steamid}`)
+                    }
+
+                    if ('error' in info) {
+                        throw new Error(`error handling profile info for: ${player.steamid}:${info.error}`)
                     } else {
-                        resolve(user)
+                        return {
+                            id: player.steamid,
+                            name: player.personaname,
+                            realName: player.realname ?? null,
+                            steamMemberSince: new Date(player.timecreated * 1000),
+                            avatarHash: player.avatarhash,
+                            limitations: {
+                                isLimited: info.isLimited,
+                                privacyState: info.privacyState,
+                                isVacBanned: ban?.VACBanned ?? false,
+                                tradeBanState: ban?.EconomyBan ?? "none",
+                                visibilityState: player.communityvisibilitystate,
+                            },
+                            lastSyncedAt: new Date(),
+                            profileUrl: player.profileurl,
+                        };
                     }
                 })
-            }) as Promise<CSteamUser>
-    )
+            );
+
+            steamAccounts
+                .filter(result => result.status === 'rejected')
+                .forEach(result => console.warn('[userInfo] failed:', (result as PromiseRejectedResult).reason))
+
+            return steamAccounts.filter(result => result.status === "fulfilled").map(result => (result as PromiseFulfilledResult<SteamAccount>).value)
+        })
 
     export const getAppInfo = fn(
         z.string(),
         async (appid) => {
-            const [infoData, tagsData, details] = await Promise.all([
-                Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
-                Utils.fetchApi<GameTagsResponse>("https://store.steampowered.com/actions/ajaxgetstoretags"),
-                Utils.fetchApi<GameDetailsResponse>(
-                    `https://store.steampowered.com/apphover/${appid}?full=1&review_score_preference=1&pagev6=true&json=1`
-                ),
-            ]);
+            try {
+                const info = await Promise.all([
+                    Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
+                    Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?key=${Resource.SteamApiKey.value}&input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
+                ]);
 
-            const tags = tagsData.tags;
-            const game = infoData.data[appid];
-            // Guard against an empty string - When there are no genres, Steam returns an empty string
-            const genres = details.strGenres ? Utils.parseGenres(details.strGenres) : [];
+                const cmd = info[0].data[appid]
+                const store = info[1].response.store_items[0]
 
-            const controllerTag = game.common.controller_support ?
-                Utils.createTag(`${Utils.capitalise(game.common.controller_support)} Controller Support`) :
-                Utils.createTag(`Unknown Controller Support`)
+                if (!cmd) {
+                    throw new Error(`App data not found for appid: ${appid}`)
+                }
 
-            const compatibilityTag = Utils.createTag(`${Utils.capitalise(Utils.compatibilityType(game.common.steam_deck_compatibility?.category))} Compatibility`)
+                if (!store || store.success !== 1) {
+                    throw new Error(`Could not get store information or appid: ${appid}`)
+                }
 
-            const controller = (game.common.controller_support === "partial" || game.common.controller_support === "full") ? game.common.controller_support : "unknown";
-            const appInfo: AppInfo = {
-                genres,
-                gameid: game.appid,
-                name: game.common.name.trim(),
-                size: Utils.getPublicDepotSizes(game.depots!),
-                slug: Utils.createSlug(game.common.name.trim()),
-                description: Utils.cleanDescription(details.strDescription),
-                controllerSupport: controller,
-                releaseDate: new Date(Number(game.common.steam_release_date) * 1000),
-                primaryGenre: (!!game?.common.genres && !!details.strGenres) ? Utils.getPrimaryGenre(
-                    genres,
-                    game.common.genres!,
-                    game.common.primary_genre!
-                ) : null,
-                developers: game.common.associations ?
-                    Array.from(
-                        Utils.getAssociationsByTypeWithSlug(
-                            game.common.associations!,
-                            "developer"
-                        )
-                    ) : [],
-                publishers: game.common.associations ?
-                    Array.from(
-                        Utils.getAssociationsByTypeWithSlug(
-                            game.common.associations!,
-                            "publisher"
-                        )
-                    ) : [],
-                compatibility: Utils.compatibilityType(game.common.steam_deck_compatibility?.category),
-                tags: [
-                    ...(game?.common.store_tags ?
-                        Utils.mapGameTags(
-                            tags,
-                            game.common.store_tags!,
-                        ) : []),
-                    controllerTag,
-                    compatibilityTag
-                ],
-                score: Utils.getRating(
-                    details.ReviewSummary.cRecommendationsPositive,
-                    details.ReviewSummary.cRecommendationsNegative
-                ),
-            };
+                const tags = store.tagids
+                    .map(id => Steam.tags[id.toString() as keyof typeof Steam.tags])
+                    .filter((name): name is string => typeof name === 'string')
 
-            return appInfo
+                const publishers = store.basic_info.publishers
+                    .map(i => i.name)
+
+                const developers = store.basic_info.developers
+                    .map(i => i.name)
+
+                const franchises = store.basic_info.franchises
+                    ?.map(i => i.name)
+
+                const genres = cmd?.common.genres &&
+                    Object.keys(cmd?.common.genres)
+                        .map(id => Steam.genres[id.toString() as keyof typeof Steam.genres])
+                        .filter((name): name is string => typeof name === 'string')
+
+                const categories = [
+                    ...(store.categories?.controller_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? []),
+                    ...(store.categories?.supported_player_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? [])
+                ].filter((name): name is string => typeof name === 'string')
+
+                const assetUrls = Utils.getAssetUrls(cmd?.common.library_assets_full, appid, cmd?.common.header_image.english);
+
+                const screenshots = store.screenshots.all_ages_screenshots?.map(i => `https://shared.cloudflare.steamstatic.com/store_item_assets/${i.filename}`) ?? [];
+
+                const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${cmd?.common.icon}.jpg`;
+
+                const data: AppInfo = {
+                    id: appid,
+                    name: cmd?.common.name.trim(),
+                    tags: Utils.createType(tags, "tag"),
+                    images: { screenshots, icon, ...assetUrls },
+                    size: Utils.getPublicDepotSizes(cmd?.depots!),
+                    slug: Utils.createSlug(cmd?.common.name.trim()),
+                    publishers: Utils.createType(publishers, "publisher"),
+                    developers: Utils.createType(developers, "developer"),
+                    categories: Utils.createType(categories, "categorie"),
+                    links: store.links ? store.links.map(i => i.url) : null,
+                    genres: genres ? Utils.createType(genres, "genre") : [],
+                    franchises: franchises ? Utils.createType(franchises, "franchise") : [],
+                    description: store.basic_info.short_description ? Utils.cleanDescription(store.basic_info.short_description) : null,
+                    controllerSupport: cmd?.common.controller_support ?? "unknown" as any,
+                    releaseDate: new Date(Number(cmd?.common.steam_release_date) * 1000),
+                    primaryGenre: !!cmd?.common.primary_genre && Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] ? Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] : null,
+                    compatibility: store?.platforms.steam_os_compat_category ? Utils.compatibilityType(store?.platforms.steam_os_compat_category.toString() as any).toLowerCase() : "unknown" as any,
+                    score: Utils.estimateRatingFromSummary(store.reviews.summary_filtered.review_count, store.reviews.summary_filtered.percent_positive)
+                }
+
+                return data
+            } catch (err) {
+                console.log(`Error handling: ${appid}`)
+                throw err
+            }
         }
     )
 
-    export const getImages = fn(
+    export const getImageUrls = fn(
         z.string(),
         async (appid) => {
             const [appData, details] = await Promise.all([
@@ -167,17 +180,48 @@ export namespace Client {
             if (!game) throw new Error('Game info missing');
 
             // 2. Prepare URLs
-            const screenshotUrls = Utils.getScreenshotUrls(details.rgScreenshots || []);
+            const screenshots = Utils.getScreenshotUrls(details.rgScreenshots || []);
             const assetUrls = Utils.getAssetUrls(game.library_assets_full, appid, game.header_image.english);
-            const iconUrl = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
+            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${game.icon}.jpg`;
 
-            //2.5 Get the backdrop buffer and use it to get the best screenshot
-            const baselineBuffer = await Utils.fetchBuffer(assetUrls.backdrop);
+            return { screenshots, icon, ...assetUrls }
+        }
+    )
 
-            // 3. Download screenshot buffers in parallel
+    export const getImageInfo = fn(
+        z.object({
+            type: z.enum(ImageTypeEnum.enumValues),
+            url: z.string()
+        }),
+        async (input) =>
+            Utils.fetchBuffer(input.url)
+                .then(buf => Utils.getImageMetadata(buf))
+                .then(meta => ({ ...meta, position: 0, sourceUrl: input.url, type: input.type } as ImageInfo))
+    )
+
+    export const createBoxArt = fn(
+        z.object({
+            backgroundUrl: z.string(),
+            logoUrl: z.string(),
+        }),
+        async (input) =>
+            Utils.createBoxArtBuffer(input.logoUrl, input.backgroundUrl)
+                .then(buf => Utils.getImageMetadata(buf))
+                .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
+    )
+
+    export const createHeroArt = fn(
+        z.object({
+            screenshots: z.string().array(),
+            backdropUrl: z.string()
+        }),
+        async (input) => {
+            // Download screenshot buffers in parallel
             const shots: Shot[] = await Promise.all(
-                screenshotUrls.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
+                input.screenshots.map(async url => ({ url, buffer: await Utils.fetchBuffer(url) }))
             );
+
+            const baselineBuffer = await Utils.fetchBuffer(input.backdropUrl);
 
             // 4. Score screenshots (or pick single)
             const scores =
@@ -204,37 +248,69 @@ export namespace Client {
                 );
             }
 
-            // 5b. Asset images
-            for (const [type, url] of Object.entries({ ...assetUrls, icon: iconUrl })) {
-                if (!url || type === "backdrop") continue;
-                tasks.push(
-                    Utils.fetchBuffer(url)
-                        .then(buf => Utils.getImageMetadata(buf))
-                        .then(meta => ({ ...meta, position: 0, sourceUrl: url, type: type as ImageType } as ImageInfo))
-                );
-            }
-
-            // 5c. Backdrop
-            tasks.push(
-                Utils.getImageMetadata(baselineBuffer)
-                    .then(meta => ({ ...meta, position: 0, sourceUrl: assetUrls.backdrop, type: "backdrop" as const } as ImageInfo))
-            )
-
-            // 5d. Box art
-            tasks.push(
-                Utils.createBoxArtBuffer(game.library_assets_full, appid)
-                    .then(buf => Utils.getImageMetadata(buf))
-                    .then(meta => ({ ...meta, position: 0, sourceUrl: null, type: 'boxArt' as const }) as ImageInfo)
-            );
-
-            const settled = await Promise.allSettled(tasks)
+            const settled = await Promise.allSettled(tasks);
 
             settled
                 .filter(r => r.status === "rejected")
-                .forEach(r => console.warn("[getImages] failed:", (r as PromiseRejectedResult).reason));
+                .forEach(r => console.warn("[getHeroArt] failed:", (r as PromiseRejectedResult).reason));
 
-            // 6. Await all and return
+            // Await all and return
             return settled.filter(s => s.status === "fulfilled").map(r => (r as PromiseFulfilledResult<ImageInfo>).value)
         }
     )
+
+    /**
+     * Verifies a Steam OpenID response by sending a request back to Steam
+     * with mode=check_authentication
+     */
+    export async function verifyOpenIDResponse(params: URLSearchParams): Promise<string | null> {
+        try {
+            // Create a new URLSearchParams with all the original parameters
+            const verificationParams = new URLSearchParams();
+
+            // Copy all parameters from the original request
+            for (const [key, value] of params.entries()) {
+                verificationParams.append(key, value);
+            }
+
+            // Change mode to check_authentication for verification
+            verificationParams.set('openid.mode', 'check_authentication');
+
+            // Send verification request to Steam
+            const verificationResponse = await fetch('https://steamcommunity.com/openid/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: verificationParams.toString()
+            });
+
+            const responseText = await verificationResponse.text();
+
+            // Check if verification was successful
+            if (!responseText.includes('is_valid:true')) {
+                console.error('OpenID verification failed: Invalid response from Steam', responseText);
+                return null;
+            }
+
+            // Extract steamID from the claimed_id
+            const claimedId = params.get('openid.claimed_id');
+            if (!claimedId) {
+                console.error('OpenID verification failed: Missing claimed_id');
+                return null;
+            }
+
+            // Extract the Steam ID from the claimed_id
+            const steamID = claimedId.split('/').pop();
+            if (!steamID || !/^\d+$/.test(steamID)) {
+                console.error('OpenID verification failed: Invalid steamID format', steamID);
+                return null;
+            }
+
+            return steamID;
+        } catch (error) {
+            console.error('OpenID verification error:', error);
+            return null;
+        }
+    }
 }

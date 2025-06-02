@@ -1,10 +1,10 @@
 import { z } from "zod";
 import { fn } from "../utils";
 import { Examples } from "../examples";
+import { eq, isNull, and } from "drizzle-orm";
 import { createSelectSchema } from "drizzle-zod";
 import { categoriesTable } from "./categories.sql";
 import { createTransaction, useTransaction } from "../drizzle/transaction";
-import { eq, isNull, and } from "drizzle-orm";
 
 export namespace Categories {
 
@@ -36,7 +36,16 @@ export namespace Categories {
             genres: Category.array().openapi({
                 description: "Primary classification categories that define the game's style and type of gameplay",
                 example: Examples.Categories.genres
-            })
+            }),
+            categories: Category.array().openapi({
+                description: "Primary classification categories that define the game's categorisation on Steam",
+                example: Examples.Categories.genres
+            }),
+            franchises: Category.array().openapi({
+                description: "The franchise this game belongs belongs to on Steam",
+                example: Examples.Categories.genres
+            }),
+
         }).openapi({
             ref: "Categories",
             description: "A comprehensive categorization system for games, including publishing details, development credits, and content classification",
@@ -111,7 +120,9 @@ export namespace Categories {
             tags: [],
             genres: [],
             publishers: [],
-            developers: []
+            developers: [],
+            categories: [],
+            franchises: []
         })
     }
 }

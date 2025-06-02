@@ -53,6 +53,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "LibraryDLQ": {
+      "type": "sst.aws.Queue"
+      "url": string
+    }
     "LibraryQueue": {
       "type": "sst.aws.Queue"
       "url": string
@@ -90,8 +94,8 @@ declare module "sst" {
       "endpoint": string
       "type": "sst.aws.Realtime"
     }
-    "SteamEncryptionKey": {
-      "type": "random.index/randomString.RandomString"
+    "SteamApiKey": {
+      "type": "sst.sst.Secret"
       "value": string
     }
     "Storage": {

@@ -1,6 +1,6 @@
 import { z } from "zod"
 import { User } from "../user";
-import { Team } from "../team";
+import { Steam } from "../steam";
 import { Actor } from "../actor";
 import { Examples } from "../examples";
 import { ErrorCodes, VisibleError } from "../error";
@@ -9,26 +9,26 @@ export namespace Account {
     export const Info =
         User.Info
             .extend({
-                teams: Team.Info
+                profiles: Steam.Info
                     .array()
                     .openapi({
-                        description: "The teams that this user is part of",
-                        example: [Examples.Team]
+                        description: "The Steam accounts this user owns",
+                        example: [Examples.SteamAccount]
                     })
             })
             .openapi({
                 ref: "Account",
                 description: "Represents an account's information stored on Nestri",
-                example: { ...Examples.User, teams: [Examples.Team] },
+                example: { ...Examples.User, profiles: [Examples.SteamAccount] },
             });
 
     export type Info = z.infer<typeof Info>;
 
     export const list = async (): Promise<Info> => {
-        const [userResult, teamsResult] =
+        const [userResult, steamResult] =
             await Promise.allSettled([
                 User.fromID(Actor.userID()),
-                Team.list()
+                Steam.list()
             ])
 
         if (userResult.status === "rejected" || !userResult.value)
@@ -40,7 +40,7 @@ export namespace Account {
 
         return {
             ...userResult.value,
-            teams: teamsResult.status === "rejected" ? [] : teamsResult.value
+            profiles: steamResult.status === "rejected" ? [] : steamResult.value
         }
     }
 
