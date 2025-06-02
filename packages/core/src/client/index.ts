@@ -91,73 +91,78 @@ export namespace Client {
     export const getAppInfo = fn(
         z.string(),
         async (appid) => {
-            const info = await Promise.all([
-                Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
-                Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?key=${Resource.SteamApiKey.value}&input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
-            ]);
+            try {
+                const info = await Promise.all([
+                    Utils.fetchApi<SteamAppDataResponse>(`https://api.steamcmd.net/v1/info/${appid}`),
+                    Utils.fetchApi<SteamStoreResponse>(`https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?key=${Resource.SteamApiKey.value}&input_json={"ids":[{"appid":"${appid}"}],"context":{"language":"english","country_code":"US","steam_realm":"1"},"data_request":{"include_assets":true,"include_release":true,"include_platforms":true,"include_all_purchase_options":true,"include_screenshots":true,"include_trailers":true,"include_ratings":true,"include_tag_count":"40","include_reviews":true,"include_basic_info":true,"include_supported_languages":true,"include_full_description":true,"include_included_items":true,"include_assets_without_overrides":true,"apply_user_filters":true,"include_links":true}}`),
+                ]);
 
-            const cmd = info[0].data[appid]
-            const store = info[1].response.store_items[0]
+                const cmd = info[0].data[appid]
+                const store = info[1].response.store_items[0]
 
-            if (!cmd) {
-                throw new Error(`App data not found for appid: ${appid}`)
-            }
+                if (!cmd) {
+                    throw new Error(`App data not found for appid: ${appid}`)
+                }
 
-            if (!store || store.success !== 1) {
-                throw new Error(`Could not get store information or appid: ${appid}`)
-            }
+                if (!store || store.success !== 1) {
+                    throw new Error(`Could not get store information or appid: ${appid}`)
+                }
 
-            const tags = store.tagids
-                .map(id => Steam.tags[id.toString() as keyof typeof Steam.tags])
-                .filter((name): name is string => typeof name === 'string')
-
-            const publishers = store.basic_info.publishers
-                .map(i => i.name)
-
-            const developers = store.basic_info.developers
-                .map(i => i.name)
-
-            const franchises = store.basic_info.franchises
-                ?.map(i => i.name)
-
-            const genres = cmd?.common.genres &&
-                Object.keys(cmd?.common.genres)
-                    .map(id => Steam.genres[id.toString() as keyof typeof Steam.genres])
+                const tags = store.tagids
+                    .map(id => Steam.tags[id.toString() as keyof typeof Steam.tags])
                     .filter((name): name is string => typeof name === 'string')
 
-            const categories = [
-                ...(store.categories?.controller_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? []),
-                ...(store.categories?.supported_player_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? [])
-            ].filter((name): name is string => typeof name === 'string')
+                const publishers = store.basic_info.publishers
+                    .map(i => i.name)
 
-            const assetUrls = Utils.getAssetUrls(cmd?.common.library_assets_full, appid, cmd?.common.header_image.english);
+                const developers = store.basic_info.developers
+                    .map(i => i.name)
 
-            const screenshots = store.screenshots.all_ages_screenshots.map(i => `https://shared.cloudflare.steamstatic.com/store_item_assets/${i.filename}`);
+                const franchises = store.basic_info.franchises
+                    ?.map(i => i.name)
 
-            const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${cmd?.common.icon}.jpg`;
+                const genres = cmd?.common.genres &&
+                    Object.keys(cmd?.common.genres)
+                        .map(id => Steam.genres[id.toString() as keyof typeof Steam.genres])
+                        .filter((name): name is string => typeof name === 'string')
 
-            const data: AppInfo = {
-                id: appid,
-                name: cmd?.common.name.trim(),
-                tags: Utils.createType(tags, "tag"),
-                images: { screenshots, icon, ...assetUrls },
-                size: Utils.getPublicDepotSizes(cmd?.depots!),
-                slug: Utils.createSlug(cmd?.common.name.trim()),
-                publishers: Utils.createType(publishers, "publisher"),
-                developers: Utils.createType(developers, "developer"),
-                categories: Utils.createType(categories, "categorie"),
-                links: store.links ? store.links.map(i => i.url) : null,
-                genres: genres ? Utils.createType(genres, "genre") : [],
-                franchises: franchises ? Utils.createType(franchises, "franchise") : [],
-                description: store.basic_info.short_description ? Utils.cleanDescription(store.basic_info.short_description) : null,
-                controllerSupport: cmd?.common.controller_support ?? "unknown" as any,
-                releaseDate: new Date(Number(cmd?.common.steam_release_date) * 1000),
-                primaryGenre: !!cmd?.common.primary_genre && Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] ? Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] : null,
-                compatibility: store?.platforms.steam_os_compat_category ? Utils.compatibilityType(store?.platforms.steam_os_compat_category.toString() as any).toLowerCase() : "unknown" as any,
-                score: Utils.estimateRatingFromSummary(store.reviews.summary_filtered.review_count, store.reviews.summary_filtered.percent_positive)
+                const categories = [
+                    ...(store.categories?.controller_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? []),
+                    ...(store.categories?.supported_player_categoryids?.map(i => Steam.categories[i.toString() as keyof typeof Steam.categories]) ?? [])
+                ].filter((name): name is string => typeof name === 'string')
+
+                const assetUrls = Utils.getAssetUrls(cmd?.common.library_assets_full, appid, cmd?.common.header_image.english);
+
+                const screenshots = store.screenshots.all_ages_screenshots?.map(i => `https://shared.cloudflare.steamstatic.com/store_item_assets/${i.filename}`) ?? [];
+
+                const icon = `https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/${appid}/${cmd?.common.icon}.jpg`;
+
+                const data: AppInfo = {
+                    id: appid,
+                    name: cmd?.common.name.trim(),
+                    tags: Utils.createType(tags, "tag"),
+                    images: { screenshots, icon, ...assetUrls },
+                    size: Utils.getPublicDepotSizes(cmd?.depots!),
+                    slug: Utils.createSlug(cmd?.common.name.trim()),
+                    publishers: Utils.createType(publishers, "publisher"),
+                    developers: Utils.createType(developers, "developer"),
+                    categories: Utils.createType(categories, "categorie"),
+                    links: store.links ? store.links.map(i => i.url) : null,
+                    genres: genres ? Utils.createType(genres, "genre") : [],
+                    franchises: franchises ? Utils.createType(franchises, "franchise") : [],
+                    description: store.basic_info.short_description ? Utils.cleanDescription(store.basic_info.short_description) : null,
+                    controllerSupport: cmd?.common.controller_support ?? "unknown" as any,
+                    releaseDate: new Date(Number(cmd?.common.steam_release_date) * 1000),
+                    primaryGenre: !!cmd?.common.primary_genre && Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] ? Steam.genres[cmd?.common.primary_genre as keyof typeof Steam.genres] : null,
+                    compatibility: store?.platforms.steam_os_compat_category ? Utils.compatibilityType(store?.platforms.steam_os_compat_category.toString() as any).toLowerCase() : "unknown" as any,
+                    score: Utils.estimateRatingFromSummary(store.reviews.summary_filtered.review_count, store.reviews.summary_filtered.percent_positive)
+                }
+
+                return data
+            } catch (err) {
+                console.log(`Error handling: ${appid}`)
+                throw err
             }
-
-            return data
         }
     )
 

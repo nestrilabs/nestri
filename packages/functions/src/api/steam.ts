@@ -145,12 +145,14 @@ export namespace SteamApi {
                             .filter(result => result.status === 'rejected')
                             .forEach(result => console.warn('[putFriends] failed:', (result as PromiseRejectedResult).reason))
 
+                        const prod = (Resource.App.stage === "production" || Resource.App.stage === "dev")
+
                         const friendIDs = [
                             steamID,
-                            ...settled
+                            ...(prod ? settled
                                 .filter(result => result.status === "fulfilled")
                                 .map(f => f.value)
-                                .flat()
+                                .flat() : [])
                         ]
 
                         await Promise.all(

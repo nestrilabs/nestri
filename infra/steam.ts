@@ -6,6 +6,7 @@ import { postgres } from "./postgres";
 export const libraryDlq = new sst.aws.Queue("LibraryDLQ");
 
 export const libraryQueue = new sst.aws.Queue("LibraryQueue", {
+    dlq: libraryDlq.arn,
     visibilityTimeout: "5 minutes",
 });
 
@@ -25,11 +26,4 @@ libraryQueue.subscribe({
             resources: ["*"],
         },
     ],
-    transform: {
-        function: {
-            deadLetterConfig: {
-                targetArn: libraryDlq.arn,
-            },
-        },
-    },
 });
