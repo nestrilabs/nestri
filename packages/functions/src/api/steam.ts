@@ -174,12 +174,10 @@ export namespace SteamApi {
 
                                                 await sqs.send(
                                                     new SendMessageCommand({
-                                                        // MessageGroupId: currentSteamID,
                                                         QueueUrl: Resource.LibraryQueue.url,
                                                         // Prevent bombarding Steam with requests at the same time
                                                         DelaySeconds: 10,
                                                         MessageBody: JSON.stringify(payload),
-                                                        MessageDeduplicationId: `${currentSteamID}_${game.appid.toString()}`,
                                                     })
                                                 )
                                             }
@@ -197,7 +195,14 @@ export namespace SteamApi {
                     }
                 })())
 
-                return c.json({ data: "ok" })
+                return c.html(
+                    `
+                    <script>
+                       window.location.href = "about:blank";
+                       window.close()
+                    </script>
+                    `
+                )
             }
         )
         .get("/popup/:id",

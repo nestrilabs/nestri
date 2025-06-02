@@ -37,7 +37,6 @@ const steam_accounts = table("steam_accounts")
         name: string(),
         status: string(),
         user_id: string(),
-        username: string(),
         avatar_hash: string(),
         member_since: number(),
         last_synced_at: number(),

@@ -2,6 +2,7 @@ import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
 import { useAccount } from "../providers/account";
 import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
+import { useNavigate } from "@solidjs/router";
 
 const Card = styled("div", {
     base: {
@@ -186,16 +187,11 @@ const DividerText = styled("span", {
     }
 })
 
-//TODO: Fix, on popup quit, we let the user go and choose the Steam/Team to play in, so:
-// 1. We need a base home route
-// 2. The memory/hash router we were talking about 
-// 3. A really good UI to choose teams on
-
 export function NewProfile() {
-    const account = useAccount()
+    const nav = useNavigate();
+    const account = useAccount();
 
     const openPopup = () => {
-        const POLL_INTERVAL = 300;
         const BASE_URL = import.meta.env.VITE_API_URL;
 
         const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -219,40 +215,36 @@ export function NewProfile() {
             );
         };
 
-        const monitorAuthWindow = (targetWindow: Window) => {
-            return new Promise((resolve, reject) => {
-                const handleAuthSuccess = (event: { origin: string; data: string; }) => {
-                    if (event.origin !== BASE_URL) return;
+        const monitorAuthWindow = (
+            targetWindow: Window,
+            { timeoutMs = 3 * 60 * 1000, pollInterval = 250 } = {}
+        ) => {
+            return new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(async() => {
+                    await cleanup();
+                    reject(new Error("Authentication timed out"));
+                }, timeoutMs);
 
-                    try {
-                        const data = JSON.parse(event.data);
-                        if (data.type === 'auth_success') {
-                            cleanup();
-                            //FIXME: Navigate to this place
-                            // window.location.href = window.location.origin + "/" + provider + "/callback" + data.searchParams;
-                            resolve("");
-                        }
-                    } catch (e) {
-                        // Ignore invalid JSON messages
-                    }
-                };
-
-                window.addEventListener('message', handleAuthSuccess);
-
-                const timer = setInterval(() => {
+                const poll = setInterval(async () => {
                     if (targetWindow.closed) {
-                        cleanup();
-                        reject(new Error('Authentication window was closed'));
+                        await cleanup();
+                        resolve(); // Auth window closed by user
                     }
-                }, POLL_INTERVAL);
+                }, pollInterval);
 
-                function cleanup() {
-                    clearInterval(timer);
-                    window.removeEventListener('message', handleAuthSuccess);
+                async function cleanup() {
+                    clearTimeout(timeout);
+                    clearInterval(poll);
                     if (!targetWindow.closed) {
-                        targetWindow.location.href = 'about:blank'
-                        targetWindow.close();
+                        try {
+                            targetWindow.location.href = "about:blank";
+                            targetWindow.close();
+                        } catch {
+                            // Ignore cross-origin issues
+                        }
                     }
+                    await account.refresh(account.current.id)
+                    nav("/profiles")
                     window.focus();
                 }
             });

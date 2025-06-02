@@ -94,57 +94,57 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        // <OpenAuthProvider
-        //     issuer={import.meta.env.VITE_AUTH_URL}
-        //     clientID="web"
-        // >
-        <Root class={theme() === "light" ? lightClass : darkClass}>
-            <Router>
-                <Route
-                    path="*"
-                    component={(props) => (
-                        // <AccountProvider
-                        //     loadingUI={
-                        //         <FullScreen>
-                        //             <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                        //         </FullScreen>
-                        //     }>
-                        // {/* //     <ZeroProvider> */}
-                        props.children
-                        // {/* {props.children} */}
-                        // {/* //     </ZeroProvider> */}
-                        // {/* </AccountProvider> */}
-                    )}
-                >
-                    <Route path=":steamID">{SteamRoute}</Route>
-                    <Route path="" component={ProfilesRoute} />
-                    <Route path="new" component={NewProfile} />
+        <OpenAuthProvider
+            issuer={import.meta.env.VITE_AUTH_URL}
+            clientID="web"
+        >
+            <Root class={theme() === "light" ? lightClass : darkClass}>
+                <Router>
                     <Route
-                        path="/"
-                        component={() => {
-                            const account = useAccount();
-                            return (
-                                <Switch>
-                                    <Match when={account.current.profiles.length > 0}>
-                                        <Navigate
-                                            href={`/${(
-                                                account.current.profiles.find(
-                                                    (w) => w.id === storage.value.steam,
-                                                ) || account.current.profiles[0]
-                                            ).id}`}
-                                        />
-                                    </Match>
-                                    <Match when={true}>
-                                        <Navigate href={`/new`} />
-                                    </Match>
-                                </Switch>
-                            );
-                        }}
-                    />
-                    <Route path="*" component={() => <NotFound />} />
-                </Route>
-            </Router>
-        </Root>
-        // </OpenAuthProvider>
+                        path="*"
+                        component={(props) => (
+                            <AccountProvider
+                                loadingUI={
+                                    <FullScreen>
+                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                                    </FullScreen>
+                                }>
+                                <ZeroProvider>
+                                    {/* props.children */}
+                                    {props.children}
+                                </ZeroProvider>
+                            </AccountProvider>
+                        )}
+                    >
+                        <Route path=":steamID">{SteamRoute}</Route>
+                        <Route path="profiles" component={ProfilesRoute} />
+                        <Route path="new" component={NewProfile} />
+                        <Route
+                            path="/"
+                            component={() => {
+                                const account = useAccount();
+                                return (
+                                    <Switch>
+                                        <Match when={account.current.profiles.length > 0}>
+                                            <Navigate
+                                                href={`/${(
+                                                    account.current.profiles.find(
+                                                        (w) => w.id === storage.value.steam,
+                                                    ) || account.current.profiles[0]
+                                                ).id}`}
+                                            />
+                                        </Match>
+                                        <Match when={true}>
+                                            <Navigate href={`/new`} />
+                                        </Match>
+                                    </Switch>
+                                );
+                            }}
+                        />
+                        <Route path="*" component={() => <NotFound />} />
+                    </Route>
+                </Router>
+            </Root>
+        </OpenAuthProvider>
     )
 }
