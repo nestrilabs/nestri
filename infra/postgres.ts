@@ -1,16 +1,12 @@
 import { vpc } from "./vpc";
-import { isPermanentStage } from "./stage";
 
-// TODO: Add a dev db to use, this will help with running zero locally... and testing it
 export const postgres = new sst.aws.Aurora("Database", {
   vpc,
   engine: "postgres",
-  scaling: isPermanentStage
-    ? undefined
-    : {
-      min: "0 ACU",
-      max: "1 ACU",
-    },
+  scaling: {
+    min: "0 ACU",
+    max: "1 ACU",
+  },
   transform: {
     clusterParameterGroup: {
       parameters: [
