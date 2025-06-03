@@ -19,8 +19,8 @@ export namespace Library {
     export type Info = z.infer<typeof Info>;
 
     export const Events = {
-        Queue: createEvent(
-            "library.queue",
+        Add: createEvent(
+            "library.add",
             z.object({
                 appID: z.number(),
                 lastPlayed: z.date().nullable(),

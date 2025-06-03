@@ -40,6 +40,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "Dlq": {
+      "type": "sst.aws.Queue"
+      "url": string
+    }
     "Email": {
       "configSet": string
       "sender": string
@@ -52,14 +56,6 @@ declare module "sst" {
     "GithubClientSecret": {
       "type": "sst.sst.Secret"
       "value": string
-    }
-    "LibraryDLQ": {
-      "type": "sst.aws.Queue"
-      "url": string
-    }
-    "LibraryQueue": {
-      "type": "sst.aws.Queue"
-      "url": string
     }
     "NestriFamilyMonthly": {
       "type": "sst.sst.Secret"
@@ -93,6 +89,10 @@ declare module "sst" {
       "authorizer": string
       "endpoint": string
       "type": "sst.aws.Realtime"
+    }
+    "RetryQueue": {
+      "type": "sst.aws.Queue"
+      "url": string
     }
     "SteamApiKey": {
       "type": "sst.sst.Secret"
