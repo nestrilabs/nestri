@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Hono } from "hono";
 import { Resource } from "sst";
+import { bus } from "sst/aws/bus";
 import { Actor } from "@nestri/core/actor";
 import { describeRoute } from "hono-openapi";
 import { User } from "@nestri/core/user/index";
@@ -12,10 +13,8 @@ import { Friend } from "@nestri/core/friend/index";
 import { Library } from "@nestri/core/library/index";
 import { chunkArray } from "@nestri/core/utils/helper";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
-import { SendMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import { ErrorResponses, validator, Result, notPublic } from "./utils";
 
-const sqs = new SQSClient({});
 
 export namespace SteamApi {
     export const route = new Hono()
@@ -168,20 +167,17 @@ export namespace SteamApi {
                                                 steamID: currentSteamID,
                                             },
                                             async () => {
-                                                const payload = await Library.Events.Queue.create({
-                                                    appID: game.appid,
-                                                    lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
-                                                    totalPlaytime: game.playtime_forever
-                                                });
 
-                                                await sqs.send(
-                                                    new SendMessageCommand({
-                                                        QueueUrl: Resource.LibraryQueue.url,
-                                                        // Prevent bombarding Steam with requests at the same time
-                                                        DelaySeconds: 10,
-                                                        MessageBody: JSON.stringify(payload),
-                                                    })
+                                               await bus.publish(
+                                                    Resource.Bus,
+                                                    Library.Events.Add,
+                                                    {
+                                                        appID: game.appid,
+                                                        totalPlaytime: game.playtime_forever,
+                                                        lastPlayed: game.rtime_last_played ? new Date(game.rtime_last_played * 1000) : null,
+                                                    }
                                                 )
+
                                             }
                                         )
                                     })
