@@ -55,7 +55,7 @@ export const authService = new sst.aws.Service("Auth", {
     transform: {
         taskDefinition: (args) => {
             const volumes = $output(args.volumes).apply(v => {
-                const next = [...v, {
+                const next = [...(v || []), {
                     name: "shared-tmp",
                     dockerVolumeConfiguration: {
                         scope: "shared",

@@ -146,9 +146,9 @@ export const zero = new sst.aws.Service("Zero", {
                 ZERO_NUM_SYNC_WORKERS: "1",
             }
             : {
-                ZERO_CHANGE_STREAMER_URI: replicationManager.url.apply((val) =>
+                ZERO_CHANGE_STREAMER_URI: replicationManager?.url.apply((val) =>
                     val.replace("http://", "ws://"),
-                ),
+                ) ?? "",
                 ZERO_UPSTREAM_MAX_CONNS: "15",
                 ZERO_CVR_MAX_CONNS: "160",
             }),

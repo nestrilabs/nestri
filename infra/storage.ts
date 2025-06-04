@@ -1,1 +1,3 @@
-export const storage = new sst.aws.Bucket("Storage");
+export const storage = new sst.aws.Bucket("Storage",{
+    access: "cloudfront",
+});

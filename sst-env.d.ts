@@ -57,6 +57,10 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "ImageRouter": {
+      "type": "sst.aws.Router"
+      "url": string
+    }
     "NestriFamilyMonthly": {
       "type": "sst.sst.Secret"
       "value": string
@@ -115,6 +119,15 @@ declare module "sst" {
       "type": "sst.aws.Service"
       "url": string
     }
+  }
+}
+// cloudflare 
+import * as cloudflare from "@cloudflare/workers-types";
+declare module "sst" {
+  export interface Resource {
+    "ImageBucket": cloudflare.R2Bucket
+    "ImageCDN": cloudflare.Service
+    "ImageCache": cloudflare.KVNamespace
   }
 }
 

@@ -50,7 +50,7 @@ export const apiService = new sst.aws.Service("Api", {
     transform: {
         taskDefinition: (args) => {
             const volumes = $output(args.volumes).apply(v => {
-                const next = [...v, {
+                const next = [...(v || []), {
                     name: "shared-tmp",
                     dockerVolumeConfiguration: {
                         scope: "shared",
