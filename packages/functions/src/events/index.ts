@@ -261,6 +261,8 @@ export const handler = bus.subscriber(
               totalPlaytime: game.totalPlaytime,
             })
           })
+
+          break;
       }
     }
   },
