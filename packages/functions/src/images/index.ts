@@ -5,7 +5,7 @@ import { ImageRoute } from "./image";
 const app = new Hono();
 app
     .use(logger(), async (c, next) => {
-        c.header("Cache-Control", "public, max-age=315360000, immutable");
+        // c.header("Cache-Control", "public, max-age=315360000, immutable");
         return next();
     })
 

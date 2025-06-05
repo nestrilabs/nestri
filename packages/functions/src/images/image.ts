@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { Resource } from "sst";
+import { HTTPException } from "hono/http-exception";
 
 export namespace ImageRoute {
     export const route = new Hono()
         .get(
             "/:hashWithExt",
-            (c) => {
+            async (c) => {
                 const { hashWithExt } = c.req.param();
 
                 // Validate format
@@ -34,17 +34,36 @@ export namespace ImageRoute {
                     throw new HTTPException(400, { message: "Invalid dpr" });
                 }
 
-                const image = `${Resource.ImageRouter.url}/images/00641801e0f80a82bbbbf9dec5593cd7cbe2a5eec45d36199a5c14ed30d8df66`
+                console.log("url",Resource.Api.url)
 
+                const imageBytes = await fetch(`${Resource.Api.url}/image/${hash}`,{
+                    method:"POST",
+                    body:JSON.stringify({   
+                        dpr,
+                        width,
+                        height,
+                        format
+                    })
+                })
+
+                console.log("imahe",imageBytes.headers)
 
                 // Normalize and build cache key
-                const cacheKey = `${hash}_${format}_w${width}${height ? `_h${height}` : ""}_dpr${dpr}`;
+                // const cacheKey = `${hash}_${format}_w${width}${height ? `_h${height}` : ""}_dpr${dpr}`;
 
                 // Add aggressive caching
-                c.header("Cache-Control", "public, max-age=315360000, immutable");
+                // c.header("Cache-Control", "public, max-age=315360000, immutable");
 
                 // Placeholder image response (to be replaced by real logic)
-                return c.text(`Would serve image: ${cacheKey}`);
+                return c.newResponse(await imageBytes.arrayBuffer(),
+                    // {
+                    //     headers: {
+                    //        ...imageBytes.headers
+                    //     }
+                    // }
+                );
+
+                return c.text("success")
             }
         )
 }

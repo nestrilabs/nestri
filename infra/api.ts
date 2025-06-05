@@ -4,6 +4,7 @@ import { domain } from "./dns";
 import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
+import { storage } from "./storage";
 
 export const apiService = new sst.aws.Service("Api", {
     cluster,
@@ -12,6 +13,7 @@ export const apiService = new sst.aws.Service("Api", {
     link: [
         bus,
         auth,
+        storage,
         postgres,
         secret.SteamApiKey,
         secret.PolarSecret,

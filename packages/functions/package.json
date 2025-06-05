@@ -26,9 +26,6 @@
     "@nestri/core": "workspace:",
     "actor-core": "^0.8.0",
     "hono": "^4.7.8",
-    "hono-openapi": "^0.4.8",
-    "steam-session": "*",
-    "steamcommunity": "^3.48.6",
-    "steamid": "^2.1.0"
+    "hono-openapi": "^0.4.8"
   }
 }

@@ -2,6 +2,7 @@ import "zod-openapi/extend";
 import { cors } from "hono/cors";
 import { GameApi } from "./game";
 import { SteamApi } from "./steam";
+import { ImageApi } from "./image";
 import { auth } from "./utils/auth";
 import { FriendApi } from "./friend";
 import { logger } from "hono/logger";
@@ -25,9 +26,13 @@ app
     })
     .use(auth)
 
+// Private routes
+app.
+    route("/image", ImageApi.route)
+    
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
-    .route("/games",GameApi.route)
+    .route("/games", GameApi.route)
     .route("/steam", SteamApi.route)
     .route("/realtime", Realtime.route)
     .route("/friends", FriendApi.route)
@@ -77,7 +82,7 @@ app.get(
                         scheme: "bearer",
                         bearerFormat: "JWT",
                     },
-                    TeamID: {
+                    SteamID: {
                         type: "apiKey",
                         description: "The steam ID to use for this query",
                         in: "header",
@@ -85,7 +90,7 @@ app.get(
                     },
                 },
             },
-            security: [{ Bearer: [], TeamID: [] }],
+            security: [{ Bearer: [], SteamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
                 { description: "Sandbox", url: "https://api.dev.nestri.io" },
@@ -98,7 +103,7 @@ export default {
     port: 3001,
     idleTimeout: 255,
     webSocketHandler: Realtime.webSocketHandler,
-    fetch: (req: Request,env: Env) =>
+    fetch: (req: Request, env: Env) =>
         app.fetch(req, env, {
             waitUntil: (fn) => fn,
             passThroughOnException: () => { },

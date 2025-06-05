@@ -1,23 +1,14 @@
+import {api} from "./api"
 import { domain } from "./dns";
-import { storage } from "./storage";
 
 const cache = new sst.cloudflare.Kv("ImageCache");
 
 const bucket = new sst.cloudflare.Bucket("ImageBucket");
 
-const imageRouter = new sst.aws.Router("ImageRouter", {
-    routes: {
-        "/*": {
-            bucket: storage,    
-            rewrite: { regex: "^/([a-zA-Z0-9_-]+)$", to: "/images/$1" },
-        },
-    },
-});
-
 export const imageCdn = new sst.cloudflare.Worker("ImageCDN", {
     url: true,
     domain: "cdn." + domain,
-    link: [bucket, cache, imageRouter],
+    link: [bucket, cache, api],
     handler: "packages/functions/src/images/index.ts",
 });
 

@@ -57,10 +57,6 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "ImageRouter": {
-      "type": "sst.aws.Router"
-      "url": string
-    }
     "NestriFamilyMonthly": {
       "type": "sst.sst.Secret"
       "value": string

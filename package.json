@@ -37,6 +37,7 @@
     "packages/*"
   ],
   "dependencies": {
+    "sharp": "^0.34.2",
     "sst": "^3.11.21"
   }
 }
