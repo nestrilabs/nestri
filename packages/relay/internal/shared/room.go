@@ -1,32 +1,28 @@
-package internal
+package shared
 
 import (
-	"context"
-	"fmt"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/oklog/ulid/v2"
-	"github.com/pion/webrtc/v4"
 	"log/slog"
 	"relay/internal/common"
 	"relay/internal/connections"
+
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/oklog/ulid/v2"
+	"github.com/pion/webrtc/v4"
 )
 
 type RoomInfo struct {
 	ID      ulid.ULID `json:"id"`
 	Name    string    `json:"name"`
-	Online  bool      `json:"online"`
 	OwnerID peer.ID   `json:"owner_id"`
 }
 
 type Room struct {
 	RoomInfo
-	WebSocket      *connections.SafeWebSocket
 	PeerConnection *webrtc.PeerConnection
 	AudioTrack     *webrtc.TrackLocalStaticRTP
 	VideoTrack     *webrtc.TrackLocalStaticRTP
 	DataChannel    *connections.NestriDataChannel
 	Participants   *common.SafeMap[ulid.ULID, *Participant]
-	Relay          *Relay
 }
 
 func NewRoom(name string, roomID ulid.ULID, ownerID peer.ID) *Room {
@@ -34,19 +30,10 @@ func NewRoom(name string, roomID ulid.ULID, ownerID peer.ID) *Room {
 		RoomInfo: RoomInfo{
 			ID:      roomID,
 			Name:    name,
-			Online:  false,
 			OwnerID: ownerID,
 		},
 		Participants: common.NewSafeMap[ulid.ULID, *Participant](),
 	}
-}
-
-// AssignWebSocket assigns a WebSocket connection to a Room
-func (r *Room) AssignWebSocket(ws *connections.SafeWebSocket) {
-	if r.WebSocket != nil {
-		slog.Warn("WebSocket already assigned to room", "room", r.Name)
-	}
-	r.WebSocket = ws
 }
 
 // AddParticipant adds a Participant to a Room
@@ -62,21 +49,8 @@ func (r *Room) removeParticipantByID(pID ulid.ULID) {
 	}
 }
 
-// Removes a Participant from a Room by participant's name
-func (r *Room) removeParticipantByName(pName string) {
-	for id, participant := range r.Participants.Copy() {
-		if participant.Name == pName {
-			if err := r.signalParticipantOffline(participant); err != nil {
-				slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
-			}
-			r.Participants.Delete(id)
-			break
-		}
-	}
-}
-
 // Removes all participants from a Room
-func (r *Room) removeAllParticipants() {
+/*func (r *Room) removeAllParticipants() {
 	for id, participant := range r.Participants.Copy() {
 		if err := r.signalParticipantOffline(participant); err != nil {
 			slog.Error("Failed to signal participant offline", "participant", participant.ID, "room", r.Name, "err", err)
@@ -84,24 +58,28 @@ func (r *Room) removeAllParticipants() {
 		r.Participants.Delete(id)
 		slog.Debug("Removed participant from room", "participant", id, "room", r.Name)
 	}
+}*/
+
+// IsOnline checks if the room is online (has both audio and video tracks)
+func (r *Room) IsOnline() bool {
+	return r.AudioTrack != nil && r.VideoTrack != nil
 }
 
 func (r *Room) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.TrackLocalStaticRTP) {
+	//oldOnline := r.IsOnline()
+
 	switch trackType {
 	case webrtc.RTPCodecTypeAudio:
 		r.AudioTrack = track
-		slog.Debug("Audio track set", "room", r.Name, "track", track != nil)
 	case webrtc.RTPCodecTypeVideo:
 		r.VideoTrack = track
-		slog.Debug("Video track set", "room", r.Name, "track", track != nil)
 	default:
 		slog.Warn("Unknown track type", "room", r.Name, "trackType", trackType)
 	}
 
-	newOnline := r.AudioTrack != nil && r.VideoTrack != nil
-	if r.Online != newOnline {
-		r.Online = newOnline
-		if r.Online {
+	/*newOnline := r.IsOnline()
+	if oldOnline != newOnline {
+		if newOnline {
 			slog.Debug("Room online, participants will be signaled", "room", r.Name)
 			r.signalParticipantsWithTracks()
 		} else {
@@ -109,15 +87,16 @@ func (r *Room) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.TrackLocalS
 			r.signalParticipantsOffline()
 		}
 
-		// Publish updated state to mesh
+		// TODO: Publish updated state to mesh
 		go func() {
 			if err := r.Relay.publishRoomStates(context.Background()); err != nil {
 				slog.Error("Failed to publish room states on change", "room", r.Name, "err", err)
 			}
 		}()
-	}
+	}*/
 }
 
+/* TODO: libp2p'ify
 func (r *Room) signalParticipantsWithTracks() {
 	for _, participant := range r.Participants.Copy() {
 		if err := r.signalParticipantWithTracks(participant); err != nil {
@@ -162,3 +141,4 @@ func (r *Room) signalParticipantOffline(participant *Participant) error {
 	}
 	return nil
 }
+*/

@@ -2,12 +2,13 @@ package common
 
 import (
 	"fmt"
+	"log/slog"
+	"strconv"
+
 	"github.com/libp2p/go-reuseport"
 	"github.com/pion/ice/v4"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
-	"log/slog"
-	"strconv"
 )
 
 var globalWebRTCAPI *webrtc.API
@@ -24,17 +25,9 @@ func InitWebRTCAPI() error {
 	// Media engine
 	mediaEngine := &webrtc.MediaEngine{}
 
-	// Register additional header extensions to reduce latency
-	// Playout Delay
-	if err := mediaEngine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{
-		URI: ExtensionPlayoutDelay,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		return err
-	}
-	if err := mediaEngine.RegisterHeaderExtension(webrtc.RTPHeaderExtensionCapability{
-		URI: ExtensionPlayoutDelay,
-	}, webrtc.RTPCodecTypeAudio); err != nil {
-		return err
+	// Register our extensions
+	if err := RegisterExtensions(mediaEngine); err != nil {
+		return fmt.Errorf("failed to register extensions: %w", err)
 	}
 
 	// Default codecs cover most of our needs
@@ -75,9 +68,10 @@ func InitWebRTCAPI() error {
 	// New in v4, reduces CPU usage and latency when enabled
 	settingEngine.EnableSCTPZeroChecksum(true)
 
-	nat11IPs := GetFlags().NAT11IPs
-	if len(nat11IPs) > 0 {
-		settingEngine.SetNAT1To1IPs(nat11IPs, webrtc.ICECandidateTypeHost)
+	nat11IP := GetFlags().NAT11IP
+	if len(nat11IP) > 0 {
+		settingEngine.SetNAT1To1IPs([]string{nat11IP}, webrtc.ICECandidateTypeSrflx)
+		slog.Info("Using NAT 1:1 IP for WebRTC", "nat11_ip", nat11IP)
 	}
 
 	muxPort := GetFlags().UDPMuxPort
@@ -85,7 +79,7 @@ func InitWebRTCAPI() error {
 		// Use reuseport to allow multiple listeners on the same port
 		pktListener, err := reuseport.ListenPacket("udp", ":"+strconv.Itoa(muxPort))
 		if err != nil {
-			return fmt.Errorf("failed to create UDP listener: %w", err)
+			return fmt.Errorf("failed to create WebRTC muxed UDP listener: %w", err)
 		}
 
 		mux := ice.NewMultiUDPMuxDefault(ice.NewUDPMuxDefault(ice.UDPMuxParams{
@@ -95,10 +89,13 @@ func InitWebRTCAPI() error {
 		settingEngine.SetICEUDPMux(mux)
 	}
 
-	// Set the UDP port range used by WebRTC
-	err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
-	if err != nil {
-		return err
+	if flags.WebRTCUDPStart > 0 && flags.WebRTCUDPEnd > 0 && flags.WebRTCUDPStart < flags.WebRTCUDPEnd {
+		// Set the UDP port range used by WebRTC
+		err = settingEngine.SetEphemeralUDPPortRange(uint16(flags.WebRTCUDPStart), uint16(flags.WebRTCUDPEnd))
+		if err != nil {
+			return err
+		}
+		slog.Info("Using WebRTC UDP Port Range", "start", flags.WebRTCUDPStart, "end", flags.WebRTCUDPEnd)
 	}
 
 	settingEngine.SetIncludeLoopbackCandidate(true) // Just in case
@@ -107,11 +104,6 @@ func InitWebRTCAPI() error {
 	globalWebRTCAPI = webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine), webrtc.WithSettingEngine(settingEngine), webrtc.WithInterceptorRegistry(interceptorRegistry))
 
 	return nil
-}
-
-// GetWebRTCAPI returns the global WebRTC API
-func GetWebRTCAPI() *webrtc.API {
-	return globalWebRTCAPI
 }
 
 // CreatePeerConnection sets up a new peer connection

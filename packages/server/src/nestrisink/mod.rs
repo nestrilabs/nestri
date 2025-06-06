@@ -1,4 +1,4 @@
-use crate::websocket::NestriWebSocket;
+use crate::p2p::p2p::NestriConnection;
 use gst::glib;
 use gst::subclass::prelude::*;
 use gstrswebrtc::signaller::Signallable;
@@ -11,15 +11,20 @@ glib::wrapper! {
 }
 
 impl NestriSignaller {
-    pub fn new(nestri_ws: Arc<NestriWebSocket>, wayland_src: Arc<gst::Element>) -> Self {
+    pub async fn new(
+        room: String,
+        nestri_conn: NestriConnection,
+        wayland_src: Arc<gst::Element>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
         let obj: Self = glib::Object::new();
-        obj.imp().set_nestri_ws(nestri_ws);
+        obj.imp().set_stream_room(room);
+        obj.imp().set_nestri_connection(nestri_conn).await?;
         obj.imp().set_wayland_src(wayland_src);
-        obj
+        Ok(obj)
     }
 }
 impl Default for NestriSignaller {
     fn default() -> Self {
-        panic!("Cannot create NestriSignaller without NestriWebSocket");
+        panic!("Cannot create NestriSignaller without NestriConnection and WaylandSrc");
     }
 }

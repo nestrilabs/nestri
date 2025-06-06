@@ -4,14 +4,14 @@ mod gpu;
 mod latency;
 mod messages;
 mod nestrisink;
+mod p2p;
 mod proto;
-mod websocket;
 
 use crate::args::encoding_args;
 use crate::enc_helper::EncoderType;
 use crate::gpu::GPUVendor;
 use crate::nestrisink::NestriSignaller;
-use crate::websocket::NestriWebSocket;
+use crate::p2p::p2p::NestriP2P;
 use futures_util::StreamExt;
 use gst::prelude::*;
 use gstrswebrtc::signaller::Signallable;
@@ -19,6 +19,8 @@ use gstrswebrtc::webrtcsink::BaseWebRTCSink;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::filter::LevelFilter;
 
 // Handles gathering GPU information and selecting the most suitable GPU
 fn handle_gpus(args: &args::Args) -> Result<gpu::GPUInfo, Box<dyn Error>> {
@@ -165,32 +167,29 @@ fn handle_encoder_audio(args: &args::Args) -> String {
 async fn main() -> Result<(), Box<dyn Error>> {
     // Parse command line arguments
     let mut args = args::Args::new();
-    if args.app.verbose {
-        // Make sure tracing has INFO level
-        tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
-            .init();
 
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env()?,
+        )
+        .init();
+
+    if args.app.verbose {
         args.debug_print();
-    } else {
-        tracing_subscriber::fmt::init();
     }
 
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install ring crypto provider");
 
-    // Begin connection attempt to the relay WebSocket endpoint
-    // replace any http/https with ws/wss
-    let replaced_relay_url = args
-        .app
-        .relay_url
-        .replace("http://", "ws://")
-        .replace("https://", "wss://");
-    let ws_url = format!("{}/api/ws/{}", replaced_relay_url, args.app.room,);
+    // Get relay URL from arguments
+    let relay_url = args.app.relay_url.trim();
 
-    // Setup our websocket
-    let nestri_ws = Arc::new(NestriWebSocket::new(ws_url).await?);
+    // Initialize libp2p (logically the sink should handle the connection to be independent)
+    let nestri_p2p = Arc::new(NestriP2P::new().await?);
+    let p2p_conn = nestri_p2p.connect(relay_url).await?;
 
     gst::init()?;
     gstrswebrtc::plugin_register_static()?;
@@ -328,7 +327,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /* Output */
     // WebRTC sink Element
-    let signaller = NestriSignaller::new(nestri_ws.clone(), video_source.clone());
+    let signaller =
+        NestriSignaller::new(args.app.room, p2p_conn.clone(), video_source.clone()).await?;
     let webrtcsink = BaseWebRTCSink::with_signaller(Signallable::from(signaller.clone()));
     webrtcsink.set_property_from_str("stun-server", "stun://stun.l.google.com:19302");
     webrtcsink.set_property_from_str("congestion-control", "disabled");

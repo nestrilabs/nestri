@@ -1,12 +1,10 @@
-use crate::messages::{
-    AnswerType, JoinerType, MessageAnswer, MessageBase, MessageICE, MessageJoin, MessageSDP,
-    decode_message_as, encode_message,
-};
+use crate::messages::{MessageBase, MessageICE, MessageRaw, MessageSDP};
+use crate::p2p::p2p::NestriConnection;
+use crate::p2p::p2p_protocol_stream::NestriStreamProtocol;
 use crate::proto::proto::proto_input::InputType::{
     KeyDown, KeyUp, MouseKeyDown, MouseKeyUp, MouseMove, MouseMoveAbs, MouseWheel,
 };
 use crate::proto::proto::{ProtoInput, ProtoMessageInput};
-use crate::websocket::NestriWebSocket;
 use atomic_refcell::AtomicRefCell;
 use glib::subclass::prelude::*;
 use gst::glib;
@@ -20,22 +18,37 @@ use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 pub struct Signaller {
-    nestri_ws: PLRwLock<Option<Arc<NestriWebSocket>>>,
+    stream_room: PLRwLock<Option<String>>,
+    stream_protocol: PLRwLock<Option<Arc<NestriStreamProtocol>>>,
     wayland_src: PLRwLock<Option<Arc<gst::Element>>>,
     data_channel: AtomicRefCell<Option<gst_webrtc::WebRTCDataChannel>>,
 }
 impl Default for Signaller {
     fn default() -> Self {
         Self {
-            nestri_ws: PLRwLock::new(None),
+            stream_room: PLRwLock::new(None),
+            stream_protocol: PLRwLock::new(None),
             wayland_src: PLRwLock::new(None),
             data_channel: AtomicRefCell::new(None),
         }
     }
 }
 impl Signaller {
-    pub fn set_nestri_ws(&self, nestri_ws: Arc<NestriWebSocket>) {
-        *self.nestri_ws.write() = Some(nestri_ws);
+    pub async fn set_nestri_connection(
+        &self,
+        nestri_conn: NestriConnection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let stream_protocol = NestriStreamProtocol::new(nestri_conn).await?;
+        *self.stream_protocol.write() = Some(Arc::new(stream_protocol));
+        Ok(())
+    }
+
+    pub fn set_stream_room(&self, room: String) {
+        *self.stream_room.write() = Some(room);
+    }
+
+    fn get_stream_protocol(&self) -> Option<Arc<NestriStreamProtocol>> {
+        self.stream_protocol.read().clone()
     }
 
     pub fn set_wayland_src(&self, wayland_src: Arc<gst::Element>) {
@@ -58,16 +71,14 @@ impl Signaller {
 
     /// Helper method to clean things up
     fn register_callbacks(&self) {
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .clone()
-                .expect("NestriWebSocket not set")
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
         };
         {
             let self_obj = self.obj().clone();
-            let _ = nestri_ws.register_callback("sdp", move |data| {
-                if let Ok(message) = decode_message_as::<MessageSDP>(data) {
+            stream_protocol.register_callback("answer", move |data| {
+                if let Ok(message) = serde_json::from_slice::<MessageSDP>(&data) {
                     let sdp =
                         gst_sdp::SDPMessage::parse_buffer(message.sdp.sdp.as_bytes()).unwrap();
                     let answer = WebRTCSessionDescription::new(WebRTCSDPType::Answer, sdp);
@@ -82,12 +93,11 @@ impl Signaller {
         }
         {
             let self_obj = self.obj().clone();
-            let _ = nestri_ws.register_callback("ice", move |data| {
-                if let Ok(message) = decode_message_as::<MessageICE>(data) {
+            stream_protocol.register_callback("ice-candidate", move |data| {
+                if let Ok(message) = serde_json::from_slice::<MessageICE>(&data) {
                     let candidate = message.candidate;
                     let sdp_m_line_index = candidate.sdp_mline_index.unwrap_or(0) as u32;
                     let sdp_mid = candidate.sdp_mid;
-
                     self_obj.emit_by_name::<()>(
                         "handle-ice",
                         &[
@@ -104,29 +114,28 @@ impl Signaller {
         }
         {
             let self_obj = self.obj().clone();
-            let _ = nestri_ws.register_callback("answer", move |data| {
-                if let Ok(answer) = decode_message_as::<MessageAnswer>(data) {
-                    gst::info!(gst::CAT_DEFAULT, "Received answer: {:?}", answer);
-                    match answer.answer_type {
-                        AnswerType::AnswerOK => {
-                            gst::info!(gst::CAT_DEFAULT, "Received OK answer");
-                            // Send our SDP offer
-                            self_obj.emit_by_name::<()>(
-                                "session-requested",
-                                &[
-                                    &"unique-session-id",
-                                    &"consumer-identifier",
-                                    &None::<WebRTCSessionDescription>,
-                                ],
-                            );
-                        }
-                        AnswerType::AnswerInUse => {
-                            gst::error!(gst::CAT_DEFAULT, "Room is in use by another node");
-                        }
-                        AnswerType::AnswerOffline => {
-                            gst::warning!(gst::CAT_DEFAULT, "Room is offline");
-                        }
+            stream_protocol.register_callback("push-stream-ok", move |data| {
+                if let Ok(answer) = serde_json::from_slice::<MessageRaw>(&data) {
+                    // Decode room name string
+                    if let Some(room_name) = answer.data.as_str() {
+                        gst::info!(
+                            gst::CAT_DEFAULT,
+                            "Received OK answer for room: {}",
+                            room_name
+                        );
+                    } else {
+                        gst::error!(gst::CAT_DEFAULT, "Failed to decode room name from answer");
                     }
+
+                    // Send our SDP offer
+                    self_obj.emit_by_name::<()>(
+                        "session-requested",
+                        &[
+                            &"unique-session-id",
+                            &"consumer-identifier",
+                            &None::<WebRTCSessionDescription>,
+                        ],
+                    );
                 } else {
                     gst::error!(gst::CAT_DEFAULT, "Failed to decode answer");
                 }
@@ -177,89 +186,32 @@ impl SignallableImpl for Signaller {
     fn start(&self) {
         gst::info!(gst::CAT_DEFAULT, "Signaller started");
 
-        // Get WebSocket connection
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .clone()
-                .expect("NestriWebSocket not set")
-        };
-
         // Register message callbacks
         self.register_callbacks();
 
         // Subscribe to reconnection notifications
-        let reconnected_notify = nestri_ws.subscribe_reconnected();
+        // TODO: Re-implement reconnection handling
 
-        // Clone necessary references
-        let self_clone = self.obj().clone();
-        let nestri_ws_clone = nestri_ws.clone();
+        let Some(stream_room) = self.stream_room.read().clone() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream room not set");
+            return;
+        };
 
-        // Spawn a task to handle actions upon reconnection
-        tokio::spawn(async move {
-            loop {
-                // Wait for a reconnection notification
-                reconnected_notify.notified().await;
-
-                tracing::warn!("Reconnected to relay, re-negotiating...");
-                gst::warning!(gst::CAT_DEFAULT, "Reconnected to relay, re-negotiating...");
-
-                // Emit "session-ended" first to make sure the element is cleaned up
-                self_clone.emit_by_name::<bool>("session-ended", &[&"unique-session-id"]);
-
-                // Send a new join message
-                let join_msg = MessageJoin {
-                    base: MessageBase {
-                        payload_type: "join".to_string(),
-                        latency: None,
-                    },
-                    joiner_type: JoinerType::JoinerNode,
-                };
-                if let Ok(encoded) = encode_message(&join_msg) {
-                    if let Err(e) = nestri_ws_clone.send_message(encoded) {
-                        gst::error!(
-                            gst::CAT_DEFAULT,
-                            "Failed to send join message after reconnection: {:?}",
-                            e
-                        );
-                    }
-                } else {
-                    gst::error!(
-                        gst::CAT_DEFAULT,
-                        "Failed to encode join message after reconnection"
-                    );
-                }
-
-                // If we need to interact with GStreamer or GLib, schedule it on the main thread
-                let self_clone_for_main = self_clone.clone();
-                glib::MainContext::default().invoke(move || {
-                    // Emit the "session-requested" signal
-                    self_clone_for_main.emit_by_name::<()>(
-                        "session-requested",
-                        &[
-                            &"unique-session-id",
-                            &"consumer-identifier",
-                            &None::<WebRTCSessionDescription>,
-                        ],
-                    );
-                });
-            }
-        });
-
-        let join_msg = MessageJoin {
+        let push_msg = MessageRaw {
             base: MessageBase {
-                payload_type: "join".to_string(),
+                payload_type: "push-stream-room".to_string(),
                 latency: None,
             },
-            joiner_type: JoinerType::JoinerNode,
+            data: serde_json::Value::from(stream_room),
         };
-        if let Ok(encoded) = encode_message(&join_msg) {
-            if let Err(e) = nestri_ws.send_message(encoded) {
-                tracing::error!("Failed to send join message: {:?}", e);
-                gst::error!(gst::CAT_DEFAULT, "Failed to send join message: {:?}", e);
-            }
-        } else {
-            gst::error!(gst::CAT_DEFAULT, "Failed to encode join message");
+
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
+        };
+
+        if let Err(e) = stream_protocol.send_message(&push_msg) {
+            tracing::error!("Failed to send push stream room message: {:?}", e);
         }
     }
 
@@ -268,26 +220,21 @@ impl SignallableImpl for Signaller {
     }
 
     fn send_sdp(&self, _session_id: &str, sdp: &WebRTCSessionDescription) {
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .clone()
-                .expect("NestriWebSocket not set")
-        };
         let sdp_message = MessageSDP {
             base: MessageBase {
-                payload_type: "sdp".to_string(),
+                payload_type: "offer".to_string(),
                 latency: None,
             },
             sdp: RTCSessionDescription::offer(sdp.sdp().as_text().unwrap()).unwrap(),
         };
-        if let Ok(encoded) = encode_message(&sdp_message) {
-            if let Err(e) = nestri_ws.send_message(encoded) {
-                tracing::error!("Failed to send SDP message: {:?}", e);
-                gst::error!(gst::CAT_DEFAULT, "Failed to send SDP message: {:?}", e);
-            }
-        } else {
-            gst::error!(gst::CAT_DEFAULT, "Failed to encode SDP message");
+
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
+        };
+
+        if let Err(e) = stream_protocol.send_message(&sdp_message) {
+            tracing::error!("Failed to send SDP message: {:?}", e);
         }
     }
 
@@ -298,12 +245,6 @@ impl SignallableImpl for Signaller {
         sdp_m_line_index: u32,
         sdp_mid: Option<String>,
     ) {
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .clone()
-                .expect("NestriWebSocket not set")
-        };
         let candidate_init = RTCIceCandidateInit {
             candidate: candidate.to_string(),
             sdp_mid,
@@ -312,18 +253,19 @@ impl SignallableImpl for Signaller {
         };
         let ice_message = MessageICE {
             base: MessageBase {
-                payload_type: "ice".to_string(),
+                payload_type: "ice-candidate".to_string(),
                 latency: None,
             },
             candidate: candidate_init,
         };
-        if let Ok(encoded) = encode_message(&ice_message) {
-            if let Err(e) = nestri_ws.send_message(encoded) {
-                tracing::error!("Failed to send ICE message: {:?}", e);
-                gst::error!(gst::CAT_DEFAULT, "Failed to send ICE message: {:?}", e);
-            }
-        } else {
-            gst::error!(gst::CAT_DEFAULT, "Failed to encode ICE message");
+
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
+        };
+
+        if let Err(e) = stream_protocol.send_message(&ice_message) {
+            tracing::error!("Failed to send ICE candidate message: {:?}", e);
         }
     }
 
