@@ -2,7 +2,6 @@ import "zod-openapi/extend";
 import { cors } from "hono/cors";
 import { GameApi } from "./game";
 import { SteamApi } from "./steam";
-import { ImageApi } from "./image";
 import { auth } from "./utils/auth";
 import { FriendApi } from "./friend";
 import { logger } from "hono/logger";
@@ -25,10 +24,6 @@ app
         return next();
     })
     .use(auth)
-
-// Private routes
-app.
-    route("/image", ImageApi.route)
     
 const routes = app
     .get("/", (c) => c.text("Hello World!"))

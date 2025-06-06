@@ -57,6 +57,15 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "ImageInvokerAccessKey": {
+      "key": string
+      "secret": string
+      "type": "aws.iam/accessKey.AccessKey"
+    }
+    "ImageProcessor": {
+      "name": string
+      "type": "sst.aws.Function"
+    }
     "NestriFamilyMonthly": {
       "type": "sst.sst.Secret"
       "value": string

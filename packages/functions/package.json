@@ -25,6 +25,7 @@
     "@aws-sdk/client-sqs": "^3.806.0",
     "@nestri/core": "workspace:",
     "actor-core": "^0.8.0",
+    "aws4fetch": "^1.0.20",
     "hono": "^4.7.8",
     "hono-openapi": "^0.4.8"
   }
