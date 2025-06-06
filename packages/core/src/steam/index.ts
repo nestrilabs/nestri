@@ -1,15 +1,12 @@
 import { z } from "zod";
 import { fn } from "../utils";
-import { Resource } from "sst";
 import { Actor } from "../actor";
-import { bus } from "sst/aws/bus";
 import { Common } from "../common";
-import { createEvent } from "../event";
 import { Examples } from "../examples";
+import { createEvent } from "../event";
 import { eq, and, isNull, desc } from "drizzle-orm";
 import { steamTable, StatusEnum, Limitations } from "./steam.sql";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
-import { teamTable } from "../team/team.sql";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace Steam {
     export const Info = z
@@ -34,14 +31,6 @@ export namespace Steam {
                 description: "The steam community url of this account",
                 example: Examples.SteamAccount.profileUrl
             }),
-            username: z.string()
-                .regex(/^[a-z0-9]{1,32}$/, "The Steam username is not slug friendly")
-                .nullable()
-                .openapi({
-                    description: "The unique username of this account",
-                    example: Examples.SteamAccount.username
-                })
-                .default("unknown"),
             realName: z.string().nullable().openapi({
                 description: "The real name behind of this Steam account",
                 example: Examples.SteamAccount.realName
@@ -76,7 +65,7 @@ export namespace Steam {
             "steam_account.created",
             z.object({
                 steamID: Info.shape.id,
-                userID: Info.shape.userID
+                userID: Info.shape.userID,
             }),
         ),
         Updated: createEvent(
@@ -94,9 +83,9 @@ export namespace Steam {
                 useUser: z.boolean(),
             })
             .partial({
-                useUser: true,
                 userID: true,
                 status: true,
+                useUser: true,
                 lastSyncedAt: true
             }),
         (input) =>
@@ -107,8 +96,8 @@ export namespace Steam {
                         .from(steamTable)
                         .where(
                             and(
-                                eq(steamTable.id, input.id),
-                                isNull(steamTable.timeDeleted)
+                                isNull(steamTable.timeDeleted),
+                                eq(steamTable.id, input.id)
                             )
                         )
                         .execute()
@@ -129,7 +118,6 @@ export namespace Steam {
                         avatarHash: input.avatarHash,
                         limitations: input.limitations,
                         status: input.status ?? "offline",
-                        username: input.username ?? "unknown",
                         steamMemberSince: input.steamMemberSince,
                         lastSyncedAt: input.lastSyncedAt ?? Common.utc(),
                     })
@@ -151,8 +139,8 @@ export namespace Steam {
             .partial({
                 userID: true
             }),
-        (input) =>
-            useTransaction(async (tx) => {
+        async (input) =>
+            createTransaction(async (tx) => {
                 const userID = input.userID ?? Actor.userID()
                 await tx
                     .update(steamTable)
@@ -160,6 +148,12 @@ export namespace Steam {
                         userID
                     })
                     .where(eq(steamTable.id, input.steamID));
+
+                // await afterTx(async () =>
+                //     bus.publish(Resource.Bus, Events.Updated, { userID, steamID: input.steamID })
+                // );
+
+                return input.steamID
             })
     )
 
@@ -174,6 +168,26 @@ export namespace Steam {
                     .orderBy(desc(steamTable.timeCreated))
                     .execute()
                     .then((rows) => rows.map(serialize))
+            )
+    )
+
+    export const confirmOwnerShip = fn(
+        z.string().min(1),
+        (userID) =>
+            useTransaction((tx) =>
+                tx
+                    .select()
+                    .from(steamTable)
+                    .where(
+                        and(
+                            eq(steamTable.userID, userID),
+                            eq(steamTable.id, Actor.steamID()),
+                            isNull(steamTable.timeDeleted)
+                        )
+                    )
+                    .orderBy(desc(steamTable.timeCreated))
+                    .execute()
+                    .then((rows) => rows.map(serialize).at(0))
             )
     )
 
@@ -208,15 +222,14 @@ export namespace Steam {
         return {
             id: input.id,
             name: input.name,
-            userID: input.userID,
             status: input.status,
-            username: input.username,
+            userID: input.userID,
             realName: input.realName,
+            profileUrl: input.profileUrl,
             avatarHash: input.avatarHash,
             limitations: input.limitations,
             lastSyncedAt: input.lastSyncedAt,
             steamMemberSince: input.steamMemberSince,
-            profileUrl: input.profileUrl ? `https://steamcommunity.com/id/${input.profileUrl}` : null,
         };
     }
 

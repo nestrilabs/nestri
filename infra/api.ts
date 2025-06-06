@@ -1,10 +1,9 @@
 import { bus } from "./bus";
 import { auth } from "./auth";
 import { domain } from "./dns";
+import { secret } from "./secret";
 import { cluster } from "./cluster";
 import { postgres } from "./postgres";
-import { LibraryQueue } from "./steam";
-import { secret, steamEncryptionKey } from "./secret";
 
 export const apiService = new sst.aws.Service("Api", {
     cluster,
@@ -14,8 +13,7 @@ export const apiService = new sst.aws.Service("Api", {
         bus,
         auth,
         postgres,
-        LibraryQueue,
-        steamEncryptionKey,
+        secret.SteamApiKey,
         secret.PolarSecret,
         secret.PolarWebhookSecret,
         secret.NestriFamilyMonthly,

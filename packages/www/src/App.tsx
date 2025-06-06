@@ -9,13 +9,14 @@ import '@fontsource/geist-sans/900.css';
 import { Text } from '@nestri/www/ui/text';
 import { styled } from "@macaron-css/solid";
 import { ZeroProvider } from './providers/zero';
-import { TeamRoute } from '@nestri/www/pages/team';
+import { ProfilesRoute } from './pages/profiles';
+import { NewProfile } from '@nestri/www/pages/new';
+import { SteamRoute } from '@nestri/www/pages/steam';
 import { OpenAuthProvider } from "@openauthjs/solid";
 import { NotFound } from '@nestri/www/pages/not-found';
 import { Navigate, Route, Router } from "@solidjs/router";
 import { globalStyle, macaron$ } from "@macaron-css/core";
 import { useStorage } from '@nestri/www/providers/account';
-import { CreateTeamComponent } from '@nestri/www/pages/new';
 import { Screen as FullScreen } from '@nestri/www/ui/layout';
 import { darkClass, lightClass, theme } from '@nestri/www/ui/theme';
 import { AccountProvider, useAccount } from '@nestri/www/providers/account';
@@ -97,7 +98,7 @@ export const App: Component = () => {
             issuer={import.meta.env.VITE_AUTH_URL}
             clientID="web"
         >
-            <Root class={theme() === "light" ? lightClass : darkClass} id="styled">
+            <Root class={theme() === "light" ? lightClass : darkClass}>
                 <Router>
                     <Route
                         path="*"
@@ -109,28 +110,28 @@ export const App: Component = () => {
                                     </FullScreen>
                                 }>
                                 <ZeroProvider>
+                                    {/* props.children */}
                                     {props.children}
                                 </ZeroProvider>
                             </AccountProvider>
                         )}
                     >
-                        <Route path=":teamSlug">{TeamRoute}</Route>
-                        <Route path="new" component={CreateTeamComponent} />
+                        <Route path=":steamID">{SteamRoute}</Route>
+                        <Route path="profiles" component={ProfilesRoute} />
+                        <Route path="new" component={NewProfile} />
                         <Route
                             path="/"
                             component={() => {
                                 const account = useAccount();
                                 return (
                                     <Switch>
-                                        {/**FIXME: Somehow this does not work when the user is in the "/new" page */}
-                                        <Match when={account.current.teams.length > 0}>
+                                        <Match when={account.current.profiles.length > 0}>
                                             <Navigate
                                                 href={`/${(
-                                                    account.current.teams.find(
-                                                        (w) => w.id === storage.value.team,
-                                                    ) || account.current.teams[0]
-                                                ).slug
-                                                    }`}
+                                                    account.current.profiles.find(
+                                                        (w) => w.id === storage.value.steam,
+                                                    ) || account.current.profiles[0]
+                                                ).id}`}
                                             />
                                         </Match>
                                         <Match when={true}>
@@ -144,6 +145,6 @@ export const App: Component = () => {
                     </Route>
                 </Router>
             </Root>
-        // </OpenAuthProvider>
+        </OpenAuthProvider>
     )
 }

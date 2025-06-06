@@ -1,6 +1,6 @@
 import { FullScreen, theme } from "@nestri/www/ui";
 import { styled } from "@macaron-css/solid";
-import { Header } from "@nestri/www/pages/team/header";
+import { Header } from "@nestri/www/pages/steam/header";
 import { Modal } from "@nestri/www/ui/modal";
 import { createEffect, createSignal, Match, onCleanup, Switch } from "solid-js";
 import { Text } from "@nestri/www/ui/text"

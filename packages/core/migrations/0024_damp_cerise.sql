@@ -1,0 +1,1 @@
+ALTER TABLE "base_games" ALTER COLUMN "links" SET DATA TYPE json;

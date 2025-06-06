@@ -37,6 +37,7 @@
     "@solidjs/router": "^0.15.3",
     "body-scroll-lock-upgrade": "^1.1.0",
     "eventsource": "^3.0.5",
+    "fast-average-color": "9.5.0",
     "focus-trap": "^7.6.4",
     "hono": "^4.7.4",
     "modern-normalize": "^3.0.1",

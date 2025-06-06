@@ -1,22 +1,17 @@
-import { EventSource } from 'eventsource'
-import { QRCode } from "../ui/custom-qr";
 import { styled } from "@macaron-css/solid";
 import { theme } from "@nestri/www/ui/theme";
-import { useNavigate } from "@solidjs/router";
-import { keyframes } from "@macaron-css/core";
-import { useOpenAuth } from "@openauthjs/solid";
 import { useAccount } from "../providers/account";
-import { createEffect, createSignal, onCleanup } from "solid-js";
 import { Container, Screen as FullScreen } from "@nestri/www/ui/layout";
+import { useNavigate } from "@solidjs/router";
 
 const Card = styled("div", {
     base: {
-        padding: `10px 20px`,
-        maxWidth: 360,
+        gap: 40,
+        maxWidth: 400,
         width: "100%",
-        position: "relative",
         display: "flex",
-        gap: 20,
+        padding: `10px 20px`,
+        position: "relative",
         flexDirection: "column",
         justifyContent: "center",
     }
@@ -48,33 +43,45 @@ const Logo = styled("svg", {
     }
 })
 
-const Title = styled("h2", {
+const Title = styled("h1", {
     base: {
-        fontSize: theme.font.size["2xl"],
+        lineHeight: "2rem",
+        textWrap: "balance",
+        letterSpacing: "-0.029375rem",
+        fontSize: theme.font.size["4xl"],
+        fontFamily: theme.font.family.heading,
         fontWeight: theme.font.weight.semibold,
-        fontFamily: theme.font.family.heading
-    }
-})
-
-const Subtitle = styled("h2", {
-    base: {
-        fontSize: theme.font.size["base"],
-        fontWeight: theme.font.weight.regular,
-        color: theme.color.gray.d900,
     }
 })
 
 const Button = styled("button", {
     base: {
         display: "flex",
-        justifyContent: "space-between",
+        justifyContent: "center",
         alignItems: "center",
-        cursor: "not-allowed",
-        padding: "10px 20px",
-        gap: theme.space["2"],
+        cursor: "pointer",
+        padding: "0px 14px",
+        gap: 10,
+        height: 48,
         borderRadius: theme.space["2"],
         backgroundColor: theme.color.background.d100,
         border: `1px solid ${theme.color.gray.d400}`
+    },
+    variants: {
+        comingSoon: {
+            true: {
+                justifyContent: "space-between",
+                padding: "10px 20px",
+                gap: theme.space["2"],
+                cursor: "not-allowed",
+            }
+        },
+        steamBtn: {
+            true: {
+                color: "#FFF",
+                backgroundColor: "#2D73FF"
+            }
+        }
     }
 })
 
@@ -86,7 +93,7 @@ const ButtonText = styled("span", {
         position: "relative",
         display: "flex",
         alignItems: "center"
-    }
+    },
 })
 
 const ButtonIcon = styled("svg", {
@@ -105,230 +112,6 @@ const ButtonContainer = styled("div", {
     }
 })
 
-const bgRotate = keyframes({
-    'to': { transform: 'rotate(1turn)' },
-});
-
-const shake = keyframes({
-    "0%": {
-        transform: "translateX(0)",
-    },
-    "50%": {
-        transform: "translateX(10px)",
-    },
-    "100%": {
-        transform: "translateX(0)",
-    },
-});
-
-const opacity = keyframes({
-    "0%": { opacity: 1 },
-    "100%": { opacity: 0 }
-})
-
-const QRContainer = styled("div", {
-    base: {
-        position: "relative",
-        display: "flex",
-        overflow: "hidden",
-        justifyContent: "center",
-        alignItems: "center",
-        borderRadius: 30,
-        padding: 9,
-        isolation: "isolate",
-        ":after": {
-            content: "",
-            zIndex: -1,
-            inset: 10,
-            backgroundColor: theme.color.background.d100,
-            borderRadius: 30,
-            position: "absolute"
-        }
-    },
-    variants: {
-        login: {
-            true: {
-                ":before": {
-                    content: "",
-                    backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.blue.d700} 10%,${theme.color.blue.d700} 25%,transparent 35%)`,
-                    animation: `${bgRotate} 2.25s linear infinite`,
-                    width: "200%",
-                    height: "200%",
-                    zIndex: -2,
-                    top: "-50%",
-                    left: "-50%",
-                    position: "absolute"
-                },
-            }
-        },
-        error: {
-            true: {
-                animation: `${shake} 100ms ease 3`,
-                ":before": {
-                    content: "",
-                    inset: 1,
-                    background: theme.color.red.d700,
-                    opacity: 0,
-                    position: "absolute",
-                    animation: `${opacity} 3s ease`,
-                    width: "200%",
-                    height: "200%",
-                }
-            }
-        },
-        success: {
-            true: {
-                animation: `${shake} 100ms ease 3`,
-                // ":before": {
-                //     content: "",
-                //     backgroundImage: `conic-gradient(from 0deg,transparent 0,${theme.color.green.d700} 10%,${theme.color.green.d700} 25%,transparent 35%)`,
-                //     animation: `${bgRotate} 2.25s linear infinite`,
-                //     width: "200%",
-                //     height: "200%",
-                //     zIndex: -2,
-                //     top: "-50%",
-                //     left: "-50%",
-                //     position: "absolute"
-                // },
-                ":before": {
-                    content: "",
-                    inset: 1,
-                    background: theme.color.teal.d700,
-                    opacity: 0,
-                    position: "absolute",
-                    animation: `${opacity} 1.1s ease infinite`,
-                    width: "200%",
-                    height: "200%",
-                }
-            }
-        }
-    }
-})
-
-
-const QRBg = styled("div", {
-    base: {
-        backgroundColor: theme.color.background.d200,
-        position: "absolute",
-        inset: 0,
-        margin: 5,
-        borderRadius: 27
-    }
-})
-
-const QRWrapper = styled("div", {
-    base: {
-        height: "max-content",
-        width: "max-content",
-        backgroundColor: theme.color.d1000.gray,
-        position: "relative",
-        textWrap: "balance",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        overflow: "hidden",
-        borderRadius: 22,
-        padding: 20,
-    },
-    variants: {
-        error: {
-            true: {
-                filter: "blur(3px)",
-            }
-        }
-    }
-})
-
-const QRReloadBtn = styled("button", {
-    base: {
-        background: "none",
-        border: "none",
-        width: 50,
-        height: 50,
-        position: "absolute",
-        borderRadius: 25,
-        zIndex: 5,
-        right: 2,
-        bottom: 2,
-        cursor: "pointer",
-        color: theme.color.blue.d700,
-        transition: "color 200ms",
-        overflow: "hidden",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        ":before": {
-            zIndex: 3,
-            content: "",
-            position: "absolute",
-            inset: 0,
-            opacity: 0,
-            transition: "opacity 200ms",
-            background: "#FFF"
-        }
-    }
-})
-
-const QRRealoadContainer = styled("div", {
-    base: {
-        position: "absolute",
-        inset: 0,
-        isolation: "isolate",
-        ":before": {
-            background: `conic-gradient( from 90deg, currentColor 10%, #FFF 80% )`,
-            inset: 3,
-            borderRadius: 16,
-            position: "absolute",
-            content: "",
-            zIndex: 1
-        }
-    }
-})
-
-const QRReloadSvg = styled("svg", {
-    base: {
-        zIndex: 2,
-        width: "100%",
-        height: "100%",
-        position: "relative",
-        display: "block"
-    }
-})
-
-const LogoContainer = styled("div", {
-    base: {
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-        color: theme.color.gray.d100
-    }
-})
-
-const LogoIcon = styled("svg", {
-    base: {
-        zIndex: 6,
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        transform: "translate(-50%,-50%)",
-        overflow: "hidden",
-        borderRadius: 17,
-    }
-})
-
-const Divider = styled("hr", {
-    base: {
-        height: "100%",
-        backgroundColor: theme.color.gray.d400,
-        width: 2,
-        border: "none",
-        margin: "0 20px",
-        padding: 0,
-    }
-})
-
 const CardWrapper = styled("div", {
     base: {
         width: "100%",
@@ -338,7 +121,7 @@ const CardWrapper = styled("div", {
         display: "flex",
         alignItems: "start",
         justifyContent: "start",
-        top: "25vh"
+        top: "16vh"
     }
 })
 
@@ -374,97 +157,109 @@ const Link = styled("a", {
     }
 })
 
-export function CreateTeamComponent() {
+const Divider = styled("div", {
+    base: {
+        display: "flex",
+        whiteSpace: "nowrap",
+        textAlign: "center",
+        ":before": {
+            width: "100%",
+            content: "",
+            borderTop: `1px solid ${theme.color.gray.d500}`,
+            alignSelf: "center"
+        },
+        ":after": {
+            width: "100%",
+            content: "",
+            borderTop: `1px solid ${theme.color.gray.d500}`,
+            alignSelf: "center"
+        }
+    }
+})
 
+const DividerText = styled("span", {
+    base: {
+        margin: "0px 10px",
+        fontSize: theme.font.size["xs"],
+        color: theme.color.gray.d900,
+        lineHeight: "20px",
+        textOverflow: "ellipsis"
+    }
+})
+
+export function NewProfile() {
     const nav = useNavigate();
-    const auth = useOpenAuth();
     const account = useAccount();
 
-    const [challengeUrl, setChallengeUrl] = createSignal<string | null>(null);
-    const [timedOut, setTimedOut] = createSignal(false);
-    const [errorMsg, setErrorMsg] = createSignal<string | null>("");
-    const [loginSuccess, setLoginSuccess] = createSignal(false);
+    const openPopup = () => {
+        const BASE_URL = import.meta.env.VITE_API_URL;
 
-    // bump this to reconnect
-    const [retryCount, setRetryCount] = createSignal(0);
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent
+        );
 
-    let currentStream: EventSource | null = null;
+        const createDesktopWindow = (authUrl: string) => {
+            const config = {
+                width: 700,
+                height: 700,
+                features: "toolbar=no,location=no,directories=no,status=no,menubar=no,scrollbars=no,resizable=no,copyhistory=no"
+            };
 
-    const connectStream = async () => {
-        // clear previous state
-        setChallengeUrl(null);
-        setTimedOut(false);
-        setErrorMsg(null);
+            const top = window.top!.outerHeight / 2 + window.top!.screenY - (config.height / 2);
+            const left = window.top!.outerWidth / 2 + window.top!.screenX - (config.width / 2);
 
-        if (currentStream) {
-            currentStream.close();
+            return window.open(
+                authUrl,
+                'Steam Popup',
+                `width=${config.width},height=${config.height},left=${left},top=${top},${config.features}`
+            );
+        };
+
+        const monitorAuthWindow = (
+            targetWindow: Window,
+            { timeoutMs = 3 * 60 * 1000, pollInterval = 250 } = {}
+        ) => {
+            return new Promise<void>((resolve, reject) => {
+                const timeout = setTimeout(async() => {
+                    await cleanup();
+                    reject(new Error("Authentication timed out"));
+                }, timeoutMs);
+
+                const poll = setInterval(async () => {
+                    if (targetWindow.closed) {
+                        await cleanup();
+                        resolve(); // Auth window closed by user
+                    }
+                }, pollInterval);
+
+                async function cleanup() {
+                    clearTimeout(timeout);
+                    clearInterval(poll);
+                    if (!targetWindow.closed) {
+                        try {
+                            targetWindow.location.href = "about:blank";
+                            targetWindow.close();
+                        } catch {
+                            // Ignore cross-origin issues
+                        }
+                    }
+                    await account.refresh(account.current.id)
+                    nav("/profiles")
+                    window.focus();
+                }
+            });
+        };
+
+
+        const authUrl = `${BASE_URL}/steam/popup/${account.current.id}`;
+        const newWindow = isMobile ? window.open(authUrl, '_blank') : createDesktopWindow(authUrl);
+
+        if (!newWindow) {
+            throw new Error('Failed to open authentication window');
         }
 
-        const token = await auth.access();
-        const stream = new EventSource(
-            `${import.meta.env.VITE_API_URL}/steam/login`,
-            {
-                fetch: (input, init) =>
-                    fetch(input, {
-                        ...init,
-                        headers: {
-                            ...init?.headers,
-                            Authorization: `Bearer ${token}`,
-                        },
-                    }),
-            }
-        );
-        currentStream = stream;
-
-        // status
-        // stream.addEventListener("status", (e) => {
-        //     // setStatus(JSON.parse(e.data).message);
-        // });
-
-        // challenge URL
-        stream.addEventListener("challenge_url", (e) => {
-            setChallengeUrl(JSON.parse(e.data).url);
-        });
-
-        // success
-        stream.addEventListener("login_success", (e) => {
-            setLoginSuccess(true);
-        });
-
-        // timed out
-        stream.addEventListener("timed_out", (e) => {
-            setTimedOut(true);
-        });
-
-        // server-side error
-        stream.addEventListener("error", (e: any) => {
-            // Network‐level errors also fire here
-            try {
-                const err = JSON.parse(e.data).message
-                setErrorMsg(err);
-            } catch {
-                setErrorMsg("Connection error");
-            }
-            //Event source has inbuilt retry method,this is to prevent it from firing
-            stream.close()
-        });
-
-        // team slug
-        stream.addEventListener("team_slug", async (e) => {
-            await account.refresh(account.current.id)
-            {/**FIXME: Somehow this does not work when the user is in the "/new" page */ }
-            nav(`/${JSON.parse(e.data).username}`)
-        });
-    };
-
-    // kick it off on mount _and_ whenever retryCount changes
-    createEffect(() => {
-        // read retryCount so effect re-runs
-        retryCount();
-        connectStream();
-        // ensure cleanup if component unmounts
-        onCleanup(() => currentStream?.close());
-    });
+        return monitorAuthWindow(newWindow);
+    }
 
     return (
         <FullScreen>
@@ -474,9 +269,28 @@ export function CreateTeamComponent() {
                 style={{ position: "fixed", height: "100%" }} >
                 <CardWrapper>
                     <Card >
-                        <Title>Connect your game library to get started.</Title>
+                        <Title>Connect your game library to get started</Title>
                         <ButtonContainer>
-                            <Button>
+                            <Button onClick={openPopup} steamBtn>
+                                <ButtonIcon
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    width={32}
+                                    height={32}
+                                    viewBox="0 0 16 16"
+                                >
+                                    <g fill="currentColor">
+                                        <path d="M.329 10.333A8.01 8.01 0 0 0 7.99 16C12.414 16 16 12.418 16 8s-3.586-8-8.009-8A8.006 8.006 0 0 0 0 7.468l.003.006l4.304 1.769A2.2 2.2 0 0 1 5.62 8.88l1.96-2.844l-.001-.04a3.046 3.046 0 0 1 3.042-3.043a3.046 3.046 0 0 1 3.042 3.043a3.047 3.047 0 0 1-3.111 3.044l-2.804 2a2.223 2.223 0 0 1-3.075 2.11a2.22 2.22 0 0 1-1.312-1.568L.33 10.333Z" />
+                                        <path d="M4.868 12.683a1.715 1.715 0 0 0 1.318-3.165a1.7 1.7 0 0 0-1.263-.02l1.023.424a1.261 1.261 0 1 1-.97 2.33l-.99-.41a1.7 1.7 0 0 0 .882.84Zm3.726-6.687a2.03 2.03 0 0 0 2.027 2.029a2.03 2.03 0 0 0 2.027-2.029a2.03 2.03 0 0 0-2.027-2.027a2.03 2.03 0 0 0-2.027 2.027m2.03-1.527a1.524 1.524 0 1 1-.002 3.048a1.524 1.524 0 0 1 .002-3.048" />
+                                    </g>
+                                </ButtonIcon>
+                                <ButtonText>
+                                    Continue with Steam
+                                </ButtonText>
+                            </Button>
+                            <Divider>
+                                <DividerText>Or link</DividerText>
+                            </Divider>
+                            <Button comingSoon>
                                 <ButtonText>
                                     GOG.com
                                     <Soon>Soon</Soon>
@@ -485,7 +299,7 @@ export function CreateTeamComponent() {
                                     <path fill="currentColor" d="M31,31H3a3,3,0,0,1-3-3V3A3,3,0,0,1,3,0H31a3,3,0,0,1,3,3V28A3,3,0,0,1,31,31ZM4,24.5A1.5,1.5,0,0,0,5.5,26H11V24H6.5a.5.5,0,0,1-.5-.5v-3a.5.5,0,0,1,.5-.5H11V18H5.5A1.5,1.5,0,0,0,4,19.5Zm8-18A1.5,1.5,0,0,0,10.5,5h-5A1.5,1.5,0,0,0,4,6.5v5A1.5,1.5,0,0,0,5.5,13H9V11H6.5a.5.5,0,0,1-.5-.5v-3A.5.5,0,0,1,6.5,7h3a.5.5,0,0,1,.5.5v6a.5.5,0,0,1-.5.5H4v2h6.5A1.5,1.5,0,0,0,12,14.5Zm0,13v5A1.5,1.5,0,0,0,13.5,26h5A1.5,1.5,0,0,0,20,24.5v-5A1.5,1.5,0,0,0,18.5,18h-5A1.5,1.5,0,0,0,12,19.5Zm9-13A1.5,1.5,0,0,0,19.5,5h-5A1.5,1.5,0,0,0,13,6.5v5A1.5,1.5,0,0,0,14.5,13h5A1.5,1.5,0,0,0,21,11.5Zm9,0A1.5,1.5,0,0,0,28.5,5h-5A1.5,1.5,0,0,0,22,6.5v5A1.5,1.5,0,0,0,23.5,13H27V11H24.5a.5.5,0,0,1-.5-.5v-3a.5.5,0,0,1,.5-.5h3a.5.5,0,0,1,.5.5v6a.5.5,0,0,1-.5.5H22v2h6.5A1.5,1.5,0,0,0,30,14.5ZM30,18H22.5A1.5,1.5,0,0,0,21,19.5V26h2V20.5a.5.5,0,0,1,.5-.5h1v6h2V20H28v6h2ZM18.5,11h-3a.5.5,0,0,1-.5-.5v-3a.5.5,0,0,1,.5-.5h3a.5.5,0,0,1,.5.5v3A.5.5,0,0,1,18.5,11Zm-4,9h3a.5.5,0,0,1,.5.5v3a.5.5,0,0,1-.5.5h-3a.5.5,0,0,1-.5-.5v-3A.5.5,0,0,1,14.5,20Z" />
                                 </ButtonIcon>
                             </Button>
-                            <Button>
+                            <Button comingSoon>
                                 <ButtonText>
                                     Epic Games
                                     <Soon>Soon</Soon>
@@ -494,7 +308,7 @@ export function CreateTeamComponent() {
                                     <path fill="currentColor" d="M3.537 0C2.165 0 1.66.506 1.66 1.879V18.44a4 4 0 0 0 .02.433c.031.3.037.59.316.92c.027.033.311.245.311.245c.153.075.258.13.43.2l8.335 3.491c.433.199.614.276.928.27h.002c.314.006.495-.071.928-.27l8.335-3.492c.172-.07.277-.124.43-.2c0 0 .284-.211.311-.243c.28-.33.285-.621.316-.92a4 4 0 0 0 .02-.434V1.879c0-1.373-.506-1.88-1.878-1.88zm13.366 3.11h.68c1.138 0 1.688.553 1.688 1.696v1.88h-1.374v-1.8c0-.369-.17-.54-.523-.54h-.235c-.367 0-.537.17-.537.539v5.81c0 .369.17.54.537.54h.262c.353 0 .523-.171.523-.54V8.619h1.373v2.143c0 1.144-.562 1.71-1.7 1.71h-.694c-1.138 0-1.7-.566-1.7-1.71V4.82c0-1.144.562-1.709 1.7-1.709zm-12.186.08h3.114v1.274H6.117v2.603h1.648v1.275H6.117v2.774h1.74v1.275h-3.14zm3.816 0h2.198c1.138 0 1.7.564 1.7 1.708v2.445c0 1.144-.562 1.71-1.7 1.71h-.799v3.338h-1.4zm4.53 0h1.4v9.201h-1.4zm-3.13 1.235v3.392h.575c.354 0 .523-.171.523-.54V4.965c0-.368-.17-.54-.523-.54zm-3.74 10.147a1.7 1.7 0 0 1 .591.108a1.8 1.8 0 0 1 .49.299l-.452.546a1.3 1.3 0 0 0-.308-.195a.9.9 0 0 0-.363-.068a.7.7 0 0 0-.28.06a.7.7 0 0 0-.224.163a.8.8 0 0 0-.151.243a.8.8 0 0 0-.056.299v.008a.9.9 0 0 0 .056.31a.7.7 0 0 0 .157.245a.7.7 0 0 0 .238.16a.8.8 0 0 0 .303.058a.8.8 0 0 0 .445-.116v-.339h-.548v-.565H7.37v1.255a2 2 0 0 1-.524.307a1.8 1.8 0 0 1-.683.123a1.6 1.6 0 0 1-.602-.107a1.5 1.5 0 0 1-.478-.3a1.4 1.4 0 0 1-.318-.455a1.4 1.4 0 0 1-.115-.58v-.008a1.4 1.4 0 0 1 .113-.57a1.5 1.5 0 0 1 .312-.46a1.4 1.4 0 0 1 .474-.309a1.6 1.6 0 0 1 .598-.111h.045zm11.963.008a2 2 0 0 1 .612.094a1.6 1.6 0 0 1 .507.277l-.386.546a1.6 1.6 0 0 0-.39-.205a1.2 1.2 0 0 0-.388-.07a.35.35 0 0 0-.208.052a.15.15 0 0 0-.07.127v.008a.16.16 0 0 0 .022.084a.2.2 0 0 0 .076.066a1 1 0 0 0 .147.06q.093.03.236.061a3 3 0 0 1 .43.122a1.3 1.3 0 0 1 .328.17a.7.7 0 0 1 .207.24a.74.74 0 0 1 .071.337v.008a.9.9 0 0 1-.081.382a.8.8 0 0 1-.229.285a1 1 0 0 1-.353.18a1.6 1.6 0 0 1-.46.061a2.2 2.2 0 0 1-.71-.116a1.7 1.7 0 0 1-.593-.346l.43-.514q.416.335.9.335a.46.46 0 0 0 .236-.05a.16.16 0 0 0 .082-.142v-.008a.15.15 0 0 0-.02-.077a.2.2 0 0 0-.073-.066a1 1 0 0 0-.143-.062a3 3 0 0 0-.233-.062a5 5 0 0 1-.413-.113a1.3 1.3 0 0 1-.331-.16a.7.7 0 0 1-.222-.243a.73.73 0 0 1-.082-.36v-.008a.9.9 0 0 1 .074-.359a.8.8 0 0 1 .214-.283a1 1 0 0 1 .34-.185a1.4 1.4 0 0 1 .448-.066zm-9.358.025h.742l1.183 2.81h-.825l-.203-.499H8.623l-.198.498h-.81zm2.197.02h.814l.663 1.08l.663-1.08h.814v2.79h-.766v-1.602l-.711 1.091h-.016l-.707-1.083v1.593h-.754zm3.469 0h2.235v.658h-1.473v.422h1.334v.61h-1.334v.442h1.493v.658h-2.255zm-5.3.897l-.315.793h.624zm-1.145 5.19h8.014l-4.09 1.348z" />
                                 </ButtonIcon>
                             </Button>
-                            <Button>
+                            <Button comingSoon>
                                 <ButtonText>
                                     Amazon Games
                                     <Soon>Soon</Soon>
@@ -507,77 +321,6 @@ export function CreateTeamComponent() {
                         <Footer>
                             <Link target="_blank" href="https://discord.gg/6um5K6jrYj" >Help I can't connect my account</Link>
                         </Footer>
-                    </Card>
-                    <Divider />
-                    <Card
-                        style={{
-                            "--nestri-qr-dot-color": theme.color.gray.d100,
-                            "--nestri-body-background": theme.color.d1000.gray,
-                            "align-items": "center",
-                        }}>
-                        <QRContainer success={loginSuccess()} login={!loginSuccess() && !!challengeUrl() && !timedOut() && !errorMsg()} error={!loginSuccess() && (timedOut() || !!errorMsg())}>
-                            <QRBg />
-                            <QRWrapper error={loginSuccess() || timedOut() || !!errorMsg()}>
-                                <LogoContainer>
-                                    <LogoIcon
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        width={32}
-                                        height={32}
-                                        viewBox="0 0 16 16"
-                                    >
-                                        <g fill="currentColor">
-                                            <path d="M.329 10.333A8.01 8.01 0 0 0 7.99 16C12.414 16 16 12.418 16 8s-3.586-8-8.009-8A8.006 8.006 0 0 0 0 7.468l.003.006l4.304 1.769A2.2 2.2 0 0 1 5.62 8.88l1.96-2.844l-.001-.04a3.046 3.046 0 0 1 3.042-3.043a3.046 3.046 0 0 1 3.042 3.043a3.047 3.047 0 0 1-3.111 3.044l-2.804 2a2.223 2.223 0 0 1-3.075 2.11a2.22 2.22 0 0 1-1.312-1.568L.33 10.333Z" />
-                                            <path d="M4.868 12.683a1.715 1.715 0 0 0 1.318-3.165a1.7 1.7 0 0 0-1.263-.02l1.023.424a1.261 1.261 0 1 1-.97 2.33l-.99-.41a1.7 1.7 0 0 0 .882.84Zm3.726-6.687a2.03 2.03 0 0 0 2.027 2.029a2.03 2.03 0 0 0 2.027-2.029a2.03 2.03 0 0 0-2.027-2.027a2.03 2.03 0 0 0-2.027 2.027m2.03-1.527a1.524 1.524 0 1 1-.002 3.048a1.524 1.524 0 0 1 .002-3.048" />
-                                        </g>
-                                    </LogoIcon>
-                                </LogoContainer>
-                                {(challengeUrl()
-                                    && !timedOut()
-                                    && !loginSuccess()
-                                    && !errorMsg()) ? (<QRCode
-                                        uri={challengeUrl() as string}
-                                        size={180}
-                                        ecl="H"
-                                        clearArea={true}
-                                    />) : (<QRCode
-                                        uri={"https://nestri.io"}
-                                        size={180}
-                                        ecl="H"
-                                        clearArea={true}
-                                    />)}
-
-                            </QRWrapper>
-                            {(!loginSuccess() && timedOut() || errorMsg()) && (
-                                <QRReloadBtn onClick={() => setRetryCount((c) => c + 1)}>
-                                    <QRRealoadContainer>
-                                        <QRReloadSvg
-                                            aria-hidden="true"
-                                            width="32"
-                                            height="32"
-                                            viewBox="0 0 32 32"
-                                            fill="currentColor"
-                                            xmlns="http://www.w3.org/2000/svg"
-                                        >
-                                            <path fill-rule="evenodd" clip-rule="evenodd" d="M32 16C32 24.8366 24.8366 32 16 32C7.16344 32 0 24.8366 0 16C0 7.16344 7.16344 0 16 0C24.8366 0 32 7.16344 32 16ZM24.5001 8.74263C25.0834 8.74263 25.5563 9.21551 25.5563 9.79883V14.5997C25.5563 15.183 25.0834 15.6559 24.5001 15.6559H19.6992C19.1159 15.6559 18.643 15.183 18.643 14.5997C18.643 14.0164 19.1159 13.5435 19.6992 13.5435H21.8378L20.071 11.8798C20.0632 11.8724 20.0555 11.865 20.048 11.8574C19.1061 10.915 17.8835 10.3042 16.5643 10.1171C15.2452 9.92999 13.9009 10.1767 12.7341 10.82C11.5674 11.4634 10.6413 12.4685 10.0955 13.684C9.54968 14.8994 9.41368 16.2593 9.70801 17.5588C10.0023 18.8583 10.711 20.0269 11.7273 20.8885C12.7436 21.7502 14.0124 22.2582 15.3425 22.336C16.6726 22.4138 17.9919 22.0572 19.1017 21.3199C19.5088 21.0495 19.8795 20.7333 20.2078 20.3793C20.6043 19.9515 21.2726 19.9262 21.7004 20.3228C22.1282 20.7194 22.1534 21.3876 21.7569 21.8154C21.3158 22.2912 20.8176 22.7161 20.2706 23.0795C18.7793 24.0702 17.0064 24.5493 15.2191 24.4448C13.4318 24.3402 11.7268 23.6576 10.3612 22.4998C8.9956 21.3419 8.0433 19.7716 7.6478 18.0254C7.2523 16.2793 7.43504 14.4519 8.16848 12.8186C8.90192 11.1854 10.1463 9.83471 11.7142 8.97021C13.282 8.10572 15.0884 7.77421 16.861 8.02565C18.6282 8.27631 20.2664 9.09278 21.5304 10.3525L23.4439 12.1544V9.79883C23.4439 9.21551 23.9168 8.74263 24.5001 8.74263Z" fill="currentColor" />
-                                        </QRReloadSvg>
-                                    </QRRealoadContainer>
-                                </QRReloadBtn>
-                            )}
-                        </QRContainer>
-                        <ButtonContainer>
-                            <Title>{loginSuccess() ?
-                                "Login successful" :
-                                (timedOut() || !!errorMsg()) ?
-                                    "Login timed out" :
-                                    "Scan to connect Steam"
-                            }</Title>
-                            <Subtitle>{
-                                loginSuccess() ?
-                                    "Just a minute while we create your team" :
-                                    (timedOut() || !!errorMsg()) ?
-                                        "Failed to connect Steam. Please try again." :
-                                        "On your mobile phone, open the Steam App to scan this code"}</Subtitle>
-                        </ButtonContainer>
                     </Card>
                 </CardWrapper>
             </Container>

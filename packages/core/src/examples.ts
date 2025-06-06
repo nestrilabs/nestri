@@ -34,7 +34,7 @@ export namespace Examples {
 
     export const SteamAccount = {
         status: "online" as const, //offline,dnd(do not disturb) or playing 
-        id: "74839300282033",// Primary key
+        id: "74839300282033",// Steam ID
         userID: User.id,// | null  FK to User (null if not linked)
         name: "JD The 65th",
         username: "jdoe",
@@ -55,11 +55,10 @@ export namespace Examples {
 
     export const Team = {
         id: Id("team"),// Primary key
-        name: "John's Console", // Team name (not null, unique)
-        ownerID: User.id, // FK to User who owns/created the team
-        slug: SteamAccount.profileUrl.toLowerCase(),
+        name: "John", // Team name (not null, unique)
         maxMembers: 3,
         inviteCode: "xwydjf",
+        ownerSteamID: SteamAccount.id, // FK to User who owns/created the team
         members: [SteamAccount]
     };
 
@@ -152,6 +151,9 @@ export namespace Examples {
         id: "1809540",
         slug: "nine-sols",
         name: "Nine Sols",
+        links:[
+            "https://example.com"
+        ],
         controllerSupport: "full" as const,
         releaseDate: new Date("2024-05-29T06:53:24.000Z"),
         compatibility: "high" as const,
@@ -205,6 +207,13 @@ export namespace Examples {
                 slug: "redcandlegames"
             }
         ],
+        franchises: [],
+        categories: [
+            {
+                name: "Partial Controller",
+                slug: "partial-controller"
+            }
+        ]
     }
 
     export const CommonImg = [

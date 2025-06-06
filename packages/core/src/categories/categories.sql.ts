@@ -1,7 +1,8 @@
 import { timestamps } from "../drizzle/types";
 import { index, pgEnum, pgTable, primaryKey, text, varchar } from "drizzle-orm/pg-core";
 
-export const CategoryTypeEnum = pgEnum("category_type", ["tag", "genre", "publisher", "developer"])
+// Intentional grammatical error on category
+export const CategoryTypeEnum = pgEnum("category_type", ["tag", "genre", "publisher", "developer", "categorie", "franchise"])
 
 export const categoriesTable = pgTable(
     "categories",

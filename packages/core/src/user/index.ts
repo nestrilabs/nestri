@@ -1,15 +1,13 @@
 import { z } from "zod";
-import { Resource } from "sst";
-import { bus } from "sst/aws/bus";
 import { Common } from "../common";
 import { createEvent } from "../event";
 import { Polar } from "../polar/index";
 import { createID, fn } from "../utils";
 import { userTable } from "./user.sql";
 import { Examples } from "../examples";
-import { and, eq, isNull, asc} from "drizzle-orm";
+import { and, eq, isNull, asc } from "drizzle-orm";
 import { ErrorCodes, VisibleError } from "../error";
-import { afterTx, createTransaction, useTransaction } from "../drizzle/transaction";
+import { createTransaction, useTransaction } from "../drizzle/transaction";
 
 export namespace User {
     export const Info = z
