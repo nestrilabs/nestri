@@ -1,24 +1,19 @@
 import { Resource } from "sst";
-import { type Env } from "hono";
 import { logger } from "hono/logger";
 import { subjects } from "../subjects";
+import { handle } from "hono/aws-lambda";
 import { PasswordUI, Select } from "./ui";
 import { issuer } from "@openauthjs/openauth";
 import { User } from "@nestri/core/user/index";
 import { Email } from "@nestri/core/email/index";
 import { patchLogger } from "../utils/patch-logger";
 import { handleDiscord, handleGithub } from "./utils";
-import { MemoryStorage } from "@openauthjs/openauth/storage/memory";
 import { DiscordAdapter, PasswordAdapter, GithubAdapter } from "./adapters";
 
 patchLogger();
 
 const app = issuer({
-    //TODO: Create our own Storage (?)
     select: Select(),
-    storage: MemoryStorage({
-        persist: process.env.STORAGE
-    }),
     theme: {
         title: "Nestri | Auth",
         primary: "#FF4F01",
@@ -161,13 +156,4 @@ const app = issuer({
     },
 }).use(logger())
 
-
-export default {
-    port: 3002,
-    idleTimeout: 255,
-    fetch: (req: Request, env: Env) =>
-        app.fetch(req, env, {
-            waitUntil: (fn) => fn,
-            passThroughOnException: () => { },
-        }),
-};
+export const handler = handle(app);

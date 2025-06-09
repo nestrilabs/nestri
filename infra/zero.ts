@@ -1,4 +1,3 @@
-import { vpc } from "./vpc";
 import { auth } from "./auth";
 import { domain } from "./dns";
 import { readFileSync } from "fs";
@@ -6,7 +5,6 @@ import { cluster } from "./cluster";
 import { storage } from "./storage";
 import { postgres } from "./postgres";
 
-// const connectionString = $interpolate`postgresql://${postgres.username}:${postgres.password}@${postgres.host}/${postgres.database}`
 const connectionString = $interpolate`postgresql://${postgres.username}:${postgres.password}@${postgres.host}:${postgres.port}/${postgres.database}`;
 
 const tag = $dev
@@ -43,12 +41,9 @@ const replicationManager = !$dev
     ? new sst.aws.Service(`ZeroReplication`, {
         cluster,
         wait: true,
-        ...($app.stage === "production"
-            ? {
-                cpu: "2 vCPU",
-                memory: "4 GB",
-            }
-            : {}),
+        cpu: "0.5 vCPU",
+        memory: "1 GB",
+        capacity: "spot",
         architecture: "arm64",
         image: zeroEnv.ZERO_IMAGE_URL,
         link: [storage, postgres],
@@ -130,15 +125,9 @@ export const zero = new sst.aws.Service("Zero", {
     image: zeroEnv.ZERO_IMAGE_URL,
     link: [storage, postgres],
     architecture: "arm64",
-    ...($app.stage === "production"
-        ? {
-            cpu: "2 vCPU",
-            memory: "4 GB",
-            capacity: "spot"
-        }
-        : {
-            capacity: "spot"
-        }),
+    cpu: "0.5 vCPU",
+    memory: "1 GB",
+    capacity: "spot",
     environment: {
         ...zeroEnv,
         ...($dev
