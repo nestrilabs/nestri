@@ -18,7 +18,6 @@ patchLogger();
 export const app = new Hono();
 app
     .use(logger())
-    .use(cors())
     .use(async (c, next) => {
         c.header("Cache-Control", "no-store");
         return next();
