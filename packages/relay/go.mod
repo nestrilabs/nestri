@@ -9,8 +9,8 @@ require (
 	github.com/multiformats/go-multiaddr v0.15.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pion/ice/v4 v4.0.10
-	github.com/pion/interceptor v0.1.38
-	github.com/pion/rtp v1.8.15
+	github.com/pion/interceptor v0.1.39
+	github.com/pion/rtp v1.8.18
 	github.com/pion/webrtc/v4 v4.1.1
 	google.golang.org/protobuf v1.36.6
 )
