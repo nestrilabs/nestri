@@ -1,10 +1,12 @@
 import { bus } from "./bus";
+import { vpc } from "./vpc";
 import { auth } from "./auth";
 import { domain } from "./dns";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 
 const apiFn = new sst.aws.Function("ApiFn", {
+    vpc,
     handler: "packages/functions/src/api/index.handler",
     streaming: !$dev,
     link: [
