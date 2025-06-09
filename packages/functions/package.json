@@ -7,10 +7,6 @@
     "@types/bun": "latest",
     "@types/steamcommunity": "^3.43.8"
   },
-  "scripts": {
-    "dev:auth": "bun run --watch ./src/auth/index.ts",
-    "dev:api": "bun run --watch ./src/api/index.ts"
-  },
   "peerDependencies": {
     "typescript": "^5"
   },
