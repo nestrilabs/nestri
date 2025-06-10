@@ -5,12 +5,21 @@ import { domain } from "./dns";
 import { secret } from "./secret";
 import { postgres } from "./postgres";
 
+const urls = new sst.Linkable("Urls", {
+    properties: {
+        api: `https://api.${domain}`,
+        auth: `https://auth.${domain}`,
+        site: $dev ? "http://localhost:3000" : `https://console.${domain}`,
+    }
+})
+
 const apiFn = new sst.aws.Function("ApiFn", {
     vpc,
     handler: "packages/functions/src/api/index.handler",
     streaming: !$dev,
     link: [
         bus,
+        urls,
         auth,
         postgres,
         secret.SteamApiKey,

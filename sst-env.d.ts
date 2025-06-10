@@ -105,6 +105,12 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bucket"
     }
+    "Urls": {
+      "api": string
+      "auth": string
+      "site": string
+      "type": "sst.sst.Linkable"
+    }
     "VPC": {
       "bastion": string
       "type": "sst.aws.Vpc"

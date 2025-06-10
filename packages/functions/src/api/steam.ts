@@ -236,7 +236,7 @@ export namespace SteamApi {
 
                 setCookie(c, "user_id", user.id);
 
-                const returnUrl = `${new URL(c.req.url).origin}/steam/callback/${userID}`
+                const returnUrl = `${new URL(Resource.Urls.api).origin}/steam/callback/${userID}`
 
                 const params = new URLSearchParams({
                     'openid.ns': 'http://specs.openid.net/auth/2.0',
