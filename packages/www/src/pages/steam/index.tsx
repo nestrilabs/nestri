@@ -9,51 +9,50 @@ import { useAccount, useStorage } from "@nestri/www/providers/account";
 
 export const SteamRoute = (
     <Route
-        // component={(props) => {
-        //     const params = useParams();
-        //     const account = useAccount();
-        //     const storage = useStorage();
-        //     const openauth = useOpenAuth();
+        component={(props) => {
+            const params = useParams();
+            const account = useAccount();
+            const storage = useStorage();
+            const openauth = useOpenAuth();
 
-        //     const team = createMemo(() =>
-        //         account.current.teams.find(
-        //             (item) => item.id === params.steamID,
-        //         ),
-        //     );
+            const steam = createMemo(() =>
+                account.current.profiles.find(
+                    (item) => item.id === params.steamID,
+                ),
+            );
 
-        //     createEffect(() => {
-        //         const t = team();
-        //         if (!t) return;
-        //         storage.set("steam", t.id);
-        //     });
+            createEffect(() => {
+                const t = steam();
+                if (!t) return;
+                storage.set("steam", t.id);
+            });
 
-        //     createEffect(() => {
-        //         const steamID = params.steamID;
-        //         for (const item of Object.values(account.all)) {
-        //             for (const profile of item.profiles) {
-        //                 if (profile.id === steamID && item.id !== openauth.subject!.id) {
-        //                     openauth.switch(item.id);
-        //                 }
-        //             }
-        //         }
-        //     })
+            createEffect(() => {
+                const steamID = params.steamID;
+                for (const item of Object.values(account.all)) {
+                    for (const profile of item.profiles) {
+                        if (profile.id === steamID && item.id !== openauth.subject!.id) {
+                            openauth.switch(item.id);
+                        }
+                    }
+                }
+            })
 
-        //     return (
-        //         <Switch>
-        //             <Match when={!team()}>
-        //                 {/* TODO: Add a public page for (other) teams */}
-        //                 <NotAllowed header />
-        //             </Match>
-        //             <Match when={team()}>
-        //                 <TeamContext.Provider value={() => team()!}>
-        //                         <ApiProvider>
-        //                             {props.children}
-        //                         </ApiProvider>
-        //                 </TeamContext.Provider>
-        //             </Match>
-        //         </Switch>
-        //     )
-        // }}
+            return (
+                <Switch>
+                    <Match when={!steam()}>
+                        <NotAllowed header />
+                    </Match>
+                    <Match when={steam()}>
+                        <SteamContext.Provider value={() => steam()!}>
+                            <ApiProvider>
+                                {props.children}
+                            </ApiProvider>
+                        </SteamContext.Provider>
+                    </Match>
+                </Switch>
+            )
+        }}
     >
         <Route path="library" component={LibraryRoute} />
         <Route path="*" component={() => <NotFound header />} />
