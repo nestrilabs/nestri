@@ -17,6 +17,19 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   );
 }
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/src/assets/service-worker.js')
+      .then((reg) => {
+        console.log('[SW] Registered:', reg.scope);
+      })
+      .catch((err) => {
+        console.error('[SW] Registration failed:', err);
+      });
+  });
+}
+
 render(
   () => (
     <StorageProvider>

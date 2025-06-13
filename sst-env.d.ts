@@ -24,6 +24,10 @@ declare module "sst" {
       "name": string
       "type": "sst.aws.Bus"
     }
+    "CDNRouter": {
+      "type": "sst.aws.Router"
+      "url": string
+    }
     "Database": {
       "clusterArn": string
       "database": string
@@ -123,6 +127,10 @@ declare module "sst" {
       "service": string
       "type": "sst.aws.Service"
       "url": string
+    }
+    "ZeroStorage": {
+      "name": string
+      "type": "sst.aws.Bucket"
     }
   }
 }

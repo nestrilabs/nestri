@@ -2,8 +2,8 @@ import { auth } from "./auth";
 import { domain } from "./dns";
 import { readFileSync } from "fs";
 import { cluster } from "./cluster";
-import { storage } from "./storage";
 import { postgres } from "./postgres";
+import { zeroStorage } from "./storage";
 
 const connectionString = $interpolate`postgresql://${postgres.username}:${postgres.password}@${postgres.host}:${postgres.port}/${postgres.database}`;
 
@@ -32,7 +32,7 @@ const zeroEnv = {
         ? {
         }
         : {
-            ZERO_LITESTREAM_BACKUP_URL: $interpolate`s3://${storage.name}/zero/0`,
+            ZERO_LITESTREAM_BACKUP_URL: $interpolate`s3://${zeroStorage.name}/zero/0`,
         }),
 };
 
@@ -46,7 +46,7 @@ const replicationManager = !$dev
         capacity: "spot",
         architecture: "arm64",
         image: zeroEnv.ZERO_IMAGE_URL,
-        link: [storage, postgres],
+        link: [zeroStorage, postgres],
         health: {
             command: ["CMD-SHELL", "curl -f http://localhost:4849/ || exit 1"],
             interval: "5 seconds",
@@ -123,7 +123,7 @@ const replicationManager = !$dev
 export const zero = new sst.aws.Service("Zero", {
     cluster,
     image: zeroEnv.ZERO_IMAGE_URL,
-    link: [storage, postgres],
+    link: [zeroStorage, postgres],
     architecture: "arm64",
     cpu: "0.5 vCPU",
     memory: "1 GB",
