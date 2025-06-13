@@ -48,7 +48,7 @@ export const handler = bus.subscriber(
           await s3.send(
             new HeadObjectCommand({
               Bucket: Resource.Storage.name,
-              Key: `images/${image.hash}`,
+              Key: `public/${image.hash}`,
             })
           );
 
@@ -57,7 +57,7 @@ export const handler = bus.subscriber(
           await s3.send(
             new PutObjectCommand({
               Bucket: Resource.Storage.name,
-              Key: `images/${image.hash}`,
+              Key: `public/${image.hash}`,
               Body: image.buffer,
               ...(image.format && { ContentType: `image/${image.format}` }),
               Metadata: {
@@ -91,7 +91,7 @@ export const handler = bus.subscriber(
           await s3.send(
             new HeadObjectCommand({
               Bucket: Resource.Storage.name,
-              Key: `images/${image.hash}`,
+              Key: `public/${image.hash}`,
             })
           );
 
@@ -100,7 +100,7 @@ export const handler = bus.subscriber(
           await s3.send(
             new PutObjectCommand({
               Bucket: Resource.Storage.name,
-              Key: `images/${image.hash}`,
+              Key: `public/${image.hash}`,
               Body: image.buffer,
               ...(image.format && { ContentType: `image/${image.format}` }),
               Metadata: {
@@ -136,7 +136,7 @@ export const handler = bus.subscriber(
               await s3.send(
                 new HeadObjectCommand({
                   Bucket: Resource.Storage.name,
-                  Key: `images/${image.hash}`,
+                  Key: `public/${image.hash}`,
                 })
               );
 
@@ -145,7 +145,7 @@ export const handler = bus.subscriber(
               await s3.send(
                 new PutObjectCommand({
                   Bucket: Resource.Storage.name,
-                  Key: `images/${image.hash}`,
+                  Key: `public/${image.hash}`,
                   Body: image.buffer,
                   ...(image.format && { ContentType: `image/${image.format}` }),
                   Metadata: {
