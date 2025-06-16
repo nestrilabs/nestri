@@ -347,7 +347,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Video Converter Element
-    let video_converter = gstreamer::ElementFactory::make("videoconvert").build()?;
+    let mut video_converter = None;
+    if !args.app.dma_buf {
+        video_converter = Some(gstreamer::ElementFactory::make("videoconvert").build()?);
+    }
 
     // Video Encoder Element
     let video_encoder =
@@ -411,7 +414,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pipeline.add_many(&[
         webrtcsink.upcast_ref(),
         &video_encoder,
-        &video_converter,
         &caps_filter,
         &video_queue,
         &video_clocksync,
@@ -424,6 +426,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_converter,
         &audio_source,
     ])?;
+
+    if let Some(video_converter) = &video_converter {
+        pipeline.add(video_converter)?;
+    }
 
     if let Some(parser) = &audio_parser {
         pipeline.add(parser)?;
@@ -503,7 +509,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &caps_filter,
             &video_queue,
             &video_clocksync,
-            &video_converter,
+            &video_converter.unwrap(),
             &video_encoder,
         ])?;
     }

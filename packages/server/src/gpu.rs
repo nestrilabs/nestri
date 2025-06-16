@@ -166,6 +166,12 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
 }
 
 pub fn get_nvidia_gpu_by_cuda_id(gpus: &[GPUInfo], cuda_device_id: usize) -> Option<GPUInfo> {
+    // Check if nvidia-smi is available
+    if Command::new("which").arg("nvidia-smi").output().ok()?.status.success() == false {
+        tracing::warn!("nvidia-smi not found, cannot get NVIDIA GPU by CUDA ID");
+        return None;
+    }
+    
     // Run nvidia-smi to get information about the CUDA device
     let output = Command::new("nvidia-smi")
         .args([

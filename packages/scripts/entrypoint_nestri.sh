@@ -60,7 +60,7 @@ start_steam_namespaceless_patcher() {
         # < Add more entrypoints here if needed >
     )
     local custom_entrypoint="/etc/nestri/_v2-entry-point"
-    local temp_entrypoint_base="/tmp/_v2-entry-point.padded"
+    local temp_entrypoint="/tmp/_v2-entry-point.padded"
 
     if [[ ! -f "$custom_entrypoint" ]]; then
         log "Error: Custom _v2-entry-point not found at $custom_entrypoint"
@@ -72,7 +72,6 @@ start_steam_namespaceless_patcher() {
         while true; do
             for i in "${!entrypoints[@]}"; do
                 local steam_entrypoint="${entrypoints[$i]}"
-                local temp_entrypoint="${temp_entrypoint_base}-${i}"
 
                 if [[ -f "$steam_entrypoint" ]]; then
                     # Get original file size
@@ -95,15 +94,17 @@ start_steam_namespaceless_patcher() {
                         continue
                     }
 
-                    # Copy padded file to Steam's entrypoint
-                    cp "$temp_entrypoint" "$steam_entrypoint" 2>/dev/null || {
-                        log "Warning: Failed to patch $steam_entrypoint"
-                    }
+                    # Copy padded file to Steam's entrypoint, if contents differ
+                    if ! cmp -s "$temp_entrypoint" "$steam_entrypoint"; then
+                        cp "$temp_entrypoint" "$steam_entrypoint" 2>/dev/null || {
+                            log "Warning: Failed to patch $steam_entrypoint"
+                        }
+                    fi
                 fi
             done
 
-            # Sleep for 100ms
-            sleep 0.1
+            # Sleep for 1s
+            sleep 1
         done
     ) &
     PATCHER_PID=$!
@@ -134,7 +135,7 @@ start_nestri_server() {
     
     # Workaround for gstreamer being bit slow at times
     log "Clearing gstreamer cache.."
-    rm -r "${HOME}/.cache/gstreamer-1.0"
+    rm -rf "${HOME}/.cache/gstreamer-1.0" 2>/dev/null || true
 
     increment_retry "nestri-server"
     restart_chain
@@ -216,7 +217,7 @@ main_loop() {
         elif [[ -n "${PATCHER_PID:-}" ]] && ! kill -0 "${PATCHER_PID}" 2>/dev/null; then
             log "steam-patcher died."
             increment_retry "steam-patcher"
-            setup_steam_namespaceless
+            start_steam_namespaceless_patcher
         fi
     done
 }

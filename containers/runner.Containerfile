@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Clone repository
-RUN git clone -b "dev-dmabuf" https://github.com/DatCaptainHorse/gst-wayland-display.git
+RUN git clone --depth 1 -b "dev-dmabuf" https://github.com/DatCaptainHorse/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -156,7 +156,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
 
 ### SSH Configuration ###
 RUN ssh-keygen -A && \
-    echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
+    echo "PermitRootLogin no" >> /etc/ssh/sshd_config && \
     echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
 ### User Configuration ###
