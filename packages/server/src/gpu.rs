@@ -45,6 +45,10 @@ impl GPUInfo {
     pub fn device_name(&self) -> &str {
         &self.device_name
     }
+
+    pub fn pci_bus_id(&self) -> &str {
+        &self.pci_bus_id
+    }
 }
 
 fn get_gpu_vendor(vendor_id: &str) -> GPUVendor {
@@ -167,8 +171,8 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
 
 pub fn get_nvidia_gpu_by_cuda_id(gpus: &[GPUInfo], cuda_device_id: usize) -> Option<GPUInfo> {
     // Check if nvidia-smi is available
-    if Command::new("which").arg("nvidia-smi").output().ok()?.status.success() == false {
-        tracing::warn!("nvidia-smi not found, cannot get NVIDIA GPU by CUDA ID");
+    if Command::new("nvidia-smi").arg("--help").output().is_err() {
+        tracing::warn!("nvidia-smi is not available");
         return None;
     }
     

@@ -155,8 +155,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     rm -rf /usr/share/{info,man,doc}/*
 
 ### SSH Configuration ###
-RUN ssh-keygen -A && \
-    echo "PermitRootLogin no" >> /etc/ssh/sshd_config && \
+RUN echo "PermitRootLogin no" >> /etc/ssh/sshd_config && \
     echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
 
 ### User Configuration ###
