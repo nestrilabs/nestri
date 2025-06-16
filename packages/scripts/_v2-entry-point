@@ -1,0 +1,10 @@
+#!/bin/bash
+
+while true; do
+  case "$1" in
+    --*) shift ;;
+    *) break ;;
+  esac
+done
+
+exec "$@"
