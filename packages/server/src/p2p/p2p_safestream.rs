@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ByteOrder};
-use futures_util::io::{ReadHalf, WriteHalf};
-use futures_util::{AsyncReadExt, AsyncWriteExt};
+use libp2p::futures::io::{ReadHalf, WriteHalf};
+use libp2p::futures::{AsyncReadExt, AsyncWriteExt};
 use prost::Message;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -63,21 +63,15 @@ impl SafeStream {
 
     async fn send_with_length_prefix(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
         if data.len() > MAX_SIZE {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Data exceeds maximum size",
-            )));
+            return Err("Data exceeds maximum size".into());
         }
 
+        let mut buffer = Vec::with_capacity(4 + data.len());
+        buffer.extend_from_slice(&(data.len() as u32).to_be_bytes()); // Length prefix
+        buffer.extend_from_slice(data); // Payload
+
         let mut stream_write = self.stream_write.lock().await;
-
-        // Write the 4-byte length prefix
-        let mut length_prefix = [0u8; 4];
-        BigEndian::write_u32(&mut length_prefix, data.len() as u32);
-        stream_write.write_all(&length_prefix).await?;
-
-        // Write the actual data
-        stream_write.write_all(data).await?;
+        stream_write.write_all(&buffer).await?; // Single write
         stream_write.flush().await?;
         Ok(())
     }
@@ -85,20 +79,16 @@ impl SafeStream {
     async fn receive_with_length_prefix(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut stream_read = self.stream_read.lock().await;
 
-        // Read the 4-byte length prefix
+        // Read length prefix + data in one syscall
         let mut length_prefix = [0u8; 4];
         stream_read.read_exact(&mut length_prefix).await?;
         let length = BigEndian::read_u32(&length_prefix) as usize;
 
         if length > MAX_SIZE {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Data exceeds maximum size",
-            )));
+            return Err("Data exceeds maximum size".into());
         }
 
-        // Read the actual data
-        let mut buffer = vec![0; length];
+        let mut buffer = vec![0u8; length];
         stream_read.read_exact(&mut buffer).await?;
         Ok(buffer)
     }

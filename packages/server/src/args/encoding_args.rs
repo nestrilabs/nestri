@@ -120,20 +120,11 @@ impl VideoEncodingOptions {
                             .unwrap(),
                     }),
                     RateControlMethod::CBR => RateControl::CBR(RateControlCBR {
-                        target_bitrate: matches
-                            .get_one::<u32>("video-bitrate")
-                            .unwrap()
-                            .clone(),
+                        target_bitrate: matches.get_one::<u32>("video-bitrate").unwrap().clone(),
                     }),
                     RateControlMethod::VBR => RateControl::VBR(RateControlVBR {
-                        target_bitrate: matches
-                            .get_one::<u32>("video-bitrate")
-                            .unwrap()
-                            .clone(),
-                        max_bitrate: matches
-                            .get_one::<u32>("video-bitrate-max")
-                            .unwrap()
-                            .clone(),
+                        target_bitrate: matches.get_one::<u32>("video-bitrate").unwrap().clone(),
+                        max_bitrate: matches.get_one::<u32>("video-bitrate-max").unwrap().clone(),
                     }),
                 },
             },
@@ -209,20 +200,11 @@ impl AudioEncodingOptions {
                     .unwrap_or(&RateControlMethod::CBR)
                 {
                     RateControlMethod::CBR => RateControl::CBR(RateControlCBR {
-                        target_bitrate: matches
-                            .get_one::<u32>("audio-bitrate")
-                            .unwrap()
-                            .clone(),
+                        target_bitrate: matches.get_one::<u32>("audio-bitrate").unwrap().clone(),
                     }),
                     RateControlMethod::VBR => RateControl::VBR(RateControlVBR {
-                        target_bitrate: matches
-                            .get_one::<u32>("audio-bitrate")
-                            .unwrap()
-                            .clone(),
-                        max_bitrate: matches
-                            .get_one::<u32>("audio-bitrate-max")
-                            .unwrap()
-                            .clone(),
+                        target_bitrate: matches.get_one::<u32>("audio-bitrate").unwrap().clone(),
+                        max_bitrate: matches.get_one::<u32>("audio-bitrate-max").unwrap().clone(),
                     }),
                     wot => panic!("Invalid rate control method for audio: {}", wot.as_str()),
                 },

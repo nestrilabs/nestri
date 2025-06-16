@@ -36,6 +36,12 @@ wait_for_socket() {
     return 1
 }
 
+# Prepares environment for namespace-less applications (like Steam)
+setup_namespaceless() {
+    rm -f /run/systemd/container || true
+    mkdir -p /run/pressure-vessel || true
+}
+
 # Ensures cache directory exists
 setup_cache() {
     log "Setting up NVIDIA driver cache directory at $CACHE_DIR..."
@@ -103,8 +109,10 @@ get_nvidia_installer() {
 install_nvidia_driver() {
     local filename="$1"
     log "Installing NVIDIA driver components from $filename..."
-    sudo ./"$filename" \
+    bash ./"$filename" \
         --silent \
+        --skip-depmod \
+        --skip-module-unload \
         --no-kernel-module \
         --install-compat32-libs \
         --no-nouveau-check \
@@ -116,11 +124,21 @@ install_nvidia_driver() {
         log "Error: NVIDIA driver installation failed."
         return 1
     }
+
+    # Install CUDA package
+    log "Checking if CUDA is already installed"
+    if ! pacman -Q cuda &>/dev/null; then
+        log "Installing CUDA package"
+        pacman -S --noconfirm cuda --assume-installed opencl-nvidia
+    else
+        log "CUDA package is already installed, skipping"
+    fi
+
     log "NVIDIA driver installation completed."
     return 0
 }
 
-function log_gpu_info {
+log_gpu_info() {
     log "Detected GPUs:"
     for vendor in "${!vendor_devices[@]}"; do
         log "> $vendor: ${vendor_devices[$vendor]}"
@@ -128,6 +146,28 @@ function log_gpu_info {
 }
 
 main() {
+    # Configure and start SSH if enabled
+    if [ "${SSH_ENABLE_PORT}" -ne 0 ]; then
+        log "Configuring SSH server to listen on port ${SSH_ENABLE_PORT}"
+        # Ensure SSH host keys exist
+        ssh-keygen -A 2>/dev/null || {
+            log "Error: Failed to generate SSH host keys."
+            exit 1
+        }
+        # Update SSHD config with the specified port
+        sed -i "s/^#Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
+            log "Error: Failed to update SSH port configuration."
+            exit 1
+        }
+        # Start SSH server in background
+        log "Starting SSH server on port ${SSH_ENABLE_PORT}..."
+        /usr/sbin/sshd -D -p "${SSH_ENABLE_PORT}" &
+        SSH_PID=$!
+        log "SSH server started with PID ${SSH_PID}"
+    else
+        log "SSH_ENABLE_PORT set to 0, skipping SSH setup.."
+    fi
+
     # Wait for required sockets
     wait_for_socket "/run/dbus/system_bus_socket" "DBus" || exit 1
     wait_for_socket "/run/user/${UID}/pipewire-0" "PipeWire" || exit 1
@@ -214,6 +254,9 @@ main() {
     # Handle user directory permissions
     log "Ensuring user directory permissions..."
     chown_user_directory || exit 1
+
+    # Setup namespaceless env
+    setup_namespaceless
 
     # Switch to nestri user
     log "Switching to nestri user for application startup..."
