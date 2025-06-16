@@ -139,6 +139,11 @@ install_nvidia_driver() {
 }
 
 log_gpu_info() {
+    if ! declare -p vendor_devices &>/dev/null; then
+        log "Warning: vendor_devices array is not defined"
+        return
+    fi
+
     log "Detected GPUs:"
     for vendor in "${!vendor_devices[@]}"; do
         log "> $vendor: ${vendor_devices[$vendor]}"
@@ -147,7 +152,7 @@ log_gpu_info() {
 
 main() {
     # Configure and start SSH if enabled
-    if [ "${SSH_ENABLE_PORT}" -ne 0 ]; then
+    if [ "${SSH_ENABLE_PORT:-0}" -ne 0 ]; then
         log "Configuring SSH server to listen on port ${SSH_ENABLE_PORT}"
         # Ensure SSH host keys exist
         ssh-keygen -A 2>/dev/null || {
@@ -256,6 +261,7 @@ main() {
     chown_user_directory || exit 1
 
     # Setup namespaceless env
+    log "Applying namespace-less configuration"
     setup_namespaceless
 
     # Switch to nestri user
