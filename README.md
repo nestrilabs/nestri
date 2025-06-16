@@ -15,8 +15,6 @@
 <br/>
 <br/>
 
-</div>
-
 <div align="center">
 
 [![][github-release-shield]][github-release-link]
@@ -48,10 +46,9 @@
 ## 📦 Installation & Setup  
 ### 🔧 Prerequisites for BYOG  
 Ensure you have the following installed:  
-- A Linux distribution (e.g. Debian, Ubuntu, Fedora or Arch)  
-- [Docker](https://www.docker.com/get-started) or [Podman](https://podman.io/get-started)  
-- A compatible NVIDIA, Intel, or AMD GPU  
-- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) *(NVIDIA GPUs only)*  
+- A Linux distribution (e.g. Fedora, Arch. Ubuntu works but is not recommended)
+- [Podman](https://podman.io/get-started) or [Docker](https://www.docker.com/get-started)
+- A compatible NVIDIA, Intel, or AMD GPU
 
 ### 🚀 Quick Start  
 ➞ *Coming soon*  
@@ -59,8 +56,8 @@ Ensure you have the following installed:
 ## 🏗 Architecture Overview
 ```mermaid
 graph TD;
-    A[User Browser] <-- WebRTC Streaming --> B[Nestri Relay];
-    B <-- WebRTC (NAT Traversal) --> C[Nestri Runner];
+    A[User Browser] <-- Game Stream (WebRTC) and Inputs --> B[Nestri Relay];
+    B <-- Game Stream (WebRTC) and Inputs --> C[Nestri Node];
 ```
 
 ## 🛠 Documentation
