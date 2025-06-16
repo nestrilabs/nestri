@@ -7,9 +7,9 @@ use crate::proto::proto::proto_input::InputType::{
 use crate::proto::proto::{ProtoInput, ProtoMessageInput};
 use atomic_refcell::AtomicRefCell;
 use glib::subclass::prelude::*;
-use gst::glib;
-use gst::prelude::*;
-use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription, gst_sdp};
+use gstreamer::glib;
+use gstreamer::prelude::*;
+use gstreamer_webrtc::{gst_sdp, WebRTCSDPType, WebRTCSessionDescription};
 use gstrswebrtc::signaller::{Signallable, SignallableImpl};
 use parking_lot::RwLock as PLRwLock;
 use prost::Message;
@@ -20,8 +20,8 @@ use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 pub struct Signaller {
     stream_room: PLRwLock<Option<String>>,
     stream_protocol: PLRwLock<Option<Arc<NestriStreamProtocol>>>,
-    wayland_src: PLRwLock<Option<Arc<gst::Element>>>,
-    data_channel: AtomicRefCell<Option<gst_webrtc::WebRTCDataChannel>>,
+    wayland_src: PLRwLock<Option<Arc<gstreamer::Element>>>,
+    data_channel: AtomicRefCell<Option<gstreamer_webrtc::WebRTCDataChannel>>,
 }
 impl Default for Signaller {
     fn default() -> Self {
@@ -51,19 +51,19 @@ impl Signaller {
         self.stream_protocol.read().clone()
     }
 
-    pub fn set_wayland_src(&self, wayland_src: Arc<gst::Element>) {
+    pub fn set_wayland_src(&self, wayland_src: Arc<gstreamer::Element>) {
         *self.wayland_src.write() = Some(wayland_src);
     }
 
-    pub fn get_wayland_src(&self) -> Option<Arc<gst::Element>> {
+    pub fn get_wayland_src(&self) -> Option<Arc<gstreamer::Element>> {
         self.wayland_src.read().clone()
     }
 
-    pub fn set_data_channel(&self, data_channel: gst_webrtc::WebRTCDataChannel) {
+    pub fn set_data_channel(&self, data_channel: gstreamer_webrtc::WebRTCDataChannel) {
         match self.data_channel.try_borrow_mut() {
             Ok(mut dc) => *dc = Some(data_channel),
-            Err(_) => gst::warning!(
-                gst::CAT_DEFAULT,
+            Err(_) => gstreamer::warning!(
+                gstreamer::CAT_DEFAULT,
                 "Failed to set data channel - already borrowed"
             ),
         }
@@ -72,7 +72,7 @@ impl Signaller {
     /// Helper method to clean things up
     fn register_callbacks(&self) {
         let Some(stream_protocol) = self.get_stream_protocol() else {
-            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
         {
@@ -87,7 +87,7 @@ impl Signaller {
                         &[&"unique-session-id", &answer],
                     );
                 } else {
-                    gst::error!(gst::CAT_DEFAULT, "Failed to decode SDP message");
+                    gstreamer::error!(gstreamer::CAT_DEFAULT, "Failed to decode SDP message");
                 }
             });
         }
@@ -108,7 +108,7 @@ impl Signaller {
                         ],
                     );
                 } else {
-                    gst::error!(gst::CAT_DEFAULT, "Failed to decode ICE message");
+                    gstreamer::error!(gstreamer::CAT_DEFAULT, "Failed to decode ICE message");
                 }
             });
         }
@@ -118,13 +118,16 @@ impl Signaller {
                 if let Ok(answer) = serde_json::from_slice::<MessageRaw>(&data) {
                     // Decode room name string
                     if let Some(room_name) = answer.data.as_str() {
-                        gst::info!(
-                            gst::CAT_DEFAULT,
+                        gstreamer::info!(
+                            gstreamer::CAT_DEFAULT,
                             "Received OK answer for room: {}",
                             room_name
                         );
                     } else {
-                        gst::error!(gst::CAT_DEFAULT, "Failed to decode room name from answer");
+                        gstreamer::error!(
+                            gstreamer::CAT_DEFAULT,
+                            "Failed to decode room name from answer"
+                        );
                     }
 
                     // Send our SDP offer
@@ -137,7 +140,7 @@ impl Signaller {
                         ],
                     );
                 } else {
-                    gst::error!(gst::CAT_DEFAULT, "Failed to decode answer");
+                    gstreamer::error!(gstreamer::CAT_DEFAULT, "Failed to decode answer");
                 }
             });
         }
@@ -147,44 +150,52 @@ impl Signaller {
             self_obj.connect_closure(
                 "webrtcbin-ready",
                 false,
-                glib::closure!(move |signaller: &super::NestriSignaller,
-                                     _consumer_identifier: &str,
-                                     webrtcbin: &gst::Element| {
-                    gst::info!(gst::CAT_DEFAULT, "Adding data channels");
-                    // Create data channels on webrtcbin
-                    let data_channel = Some(
-                        webrtcbin.emit_by_name::<gst_webrtc::WebRTCDataChannel>(
-                            "create-data-channel",
-                            &[
-                                &"nestri-data-channel",
-                                &gst::Structure::builder("config")
-                                    .field("ordered", &true)
-                                    .field("max-retransmits", &2u32)
-                                    .field("priority", "high")
-                                    .field("protocol", "raw")
-                                    .build(),
-                            ],
-                        ),
-                    );
-                    if let Some(data_channel) = data_channel {
-                        gst::info!(gst::CAT_DEFAULT, "Data channel created");
-                        if let Some(wayland_src) = signaller.imp().get_wayland_src() {
-                            setup_data_channel(&data_channel, &*wayland_src);
-                            signaller.imp().set_data_channel(data_channel);
+                glib::closure!(
+                    move |signaller: &super::NestriSignaller,
+                          _consumer_identifier: &str,
+                          webrtcbin: &gstreamer::Element| {
+                        gstreamer::info!(gstreamer::CAT_DEFAULT, "Adding data channels");
+                        // Create data channels on webrtcbin
+                        let data_channel = Some(
+                            webrtcbin.emit_by_name::<gstreamer_webrtc::WebRTCDataChannel>(
+                                "create-data-channel",
+                                &[
+                                    &"nestri-data-channel",
+                                    &gstreamer::Structure::builder("config")
+                                        .field("ordered", &true)
+                                        .field("max-retransmits", &2u32)
+                                        .field("priority", "high")
+                                        .field("protocol", "raw")
+                                        .build(),
+                                ],
+                            ),
+                        );
+                        if let Some(data_channel) = data_channel {
+                            gstreamer::info!(gstreamer::CAT_DEFAULT, "Data channel created");
+                            if let Some(wayland_src) = signaller.imp().get_wayland_src() {
+                                setup_data_channel(&data_channel, &*wayland_src);
+                                signaller.imp().set_data_channel(data_channel);
+                            } else {
+                                gstreamer::error!(
+                                    gstreamer::CAT_DEFAULT,
+                                    "Wayland display source not set"
+                                );
+                            }
                         } else {
-                            gst::error!(gst::CAT_DEFAULT, "Wayland display source not set");
+                            gstreamer::error!(
+                                gstreamer::CAT_DEFAULT,
+                                "Failed to create data channel"
+                            );
                         }
-                    } else {
-                        gst::error!(gst::CAT_DEFAULT, "Failed to create data channel");
                     }
-                }),
+                ),
             );
         }
     }
 }
 impl SignallableImpl for Signaller {
     fn start(&self) {
-        gst::info!(gst::CAT_DEFAULT, "Signaller started");
+        gstreamer::info!(gstreamer::CAT_DEFAULT, "Signaller started");
 
         // Register message callbacks
         self.register_callbacks();
@@ -193,7 +204,7 @@ impl SignallableImpl for Signaller {
         // TODO: Re-implement reconnection handling
 
         let Some(stream_room) = self.stream_room.read().clone() else {
-            gst::error!(gst::CAT_DEFAULT, "Stream room not set");
+            gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream room not set");
             return;
         };
 
@@ -206,7 +217,7 @@ impl SignallableImpl for Signaller {
         };
 
         let Some(stream_protocol) = self.get_stream_protocol() else {
-            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
 
@@ -216,7 +227,7 @@ impl SignallableImpl for Signaller {
     }
 
     fn stop(&self) {
-        gst::info!(gst::CAT_DEFAULT, "Signaller stopped");
+        gstreamer::info!(gstreamer::CAT_DEFAULT, "Signaller stopped");
     }
 
     fn send_sdp(&self, _session_id: &str, sdp: &WebRTCSessionDescription) {
@@ -229,7 +240,7 @@ impl SignallableImpl for Signaller {
         };
 
         let Some(stream_protocol) = self.get_stream_protocol() else {
-            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
 
@@ -260,7 +271,7 @@ impl SignallableImpl for Signaller {
         };
 
         let Some(stream_protocol) = self.get_stream_protocol() else {
-            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
 
@@ -270,7 +281,7 @@ impl SignallableImpl for Signaller {
     }
 
     fn end_session(&self, session_id: &str) {
-        gst::info!(gst::CAT_DEFAULT, "Ending session: {}", session_id);
+        gstreamer::info!(gstreamer::CAT_DEFAULT, "Ending session: {}", session_id);
     }
 }
 #[glib::object_subclass]
@@ -303,7 +314,10 @@ impl ObjectImpl for Signaller {
     }
 }
 
-fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, wayland_src: &gst::Element) {
+fn setup_data_channel(
+    data_channel: &gstreamer_webrtc::WebRTCDataChannel,
+    wayland_src: &gstreamer::Element,
+) {
     let wayland_src = wayland_src.clone();
 
     data_channel.connect_on_message_data(move |_data_channel, data| {
@@ -328,64 +342,64 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, wayland_src:
     });
 }
 
-fn handle_input_message(input_msg: ProtoInput) -> Option<gst::Event> {
+fn handle_input_message(input_msg: ProtoInput) -> Option<gstreamer::Event> {
     if let Some(input_type) = input_msg.input_type {
         match input_type {
             MouseMove(data) => {
-                let structure = gst::Structure::builder("MouseMoveRelative")
+                let structure = gstreamer::Structure::builder("MouseMoveRelative")
                     .field("pointer_x", data.x as f64)
                     .field("pointer_y", data.y as f64)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
             MouseMoveAbs(data) => {
-                let structure = gst::Structure::builder("MouseMoveAbsolute")
+                let structure = gstreamer::Structure::builder("MouseMoveAbsolute")
                     .field("pointer_x", data.x as f64)
                     .field("pointer_y", data.y as f64)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
             KeyDown(data) => {
-                let structure = gst::Structure::builder("KeyboardKey")
+                let structure = gstreamer::Structure::builder("KeyboardKey")
                     .field("key", data.key as u32)
                     .field("pressed", true)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
             KeyUp(data) => {
-                let structure = gst::Structure::builder("KeyboardKey")
+                let structure = gstreamer::Structure::builder("KeyboardKey")
                     .field("key", data.key as u32)
                     .field("pressed", false)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
             MouseWheel(data) => {
-                let structure = gst::Structure::builder("MouseAxis")
+                let structure = gstreamer::Structure::builder("MouseAxis")
                     .field("x", data.x as f64)
                     .field("y", data.y as f64)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
             MouseKeyDown(data) => {
-                let structure = gst::Structure::builder("MouseButton")
+                let structure = gstreamer::Structure::builder("MouseButton")
                     .field("button", data.key as u32)
                     .field("pressed", true)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
             MouseKeyUp(data) => {
-                let structure = gst::Structure::builder("MouseButton")
+                let structure = gstreamer::Structure::builder("MouseButton")
                     .field("button", data.key as u32)
                     .field("pressed", false)
                     .build();
 
-                Some(gst::event::CustomUpstream::new(structure))
+                Some(gstreamer::event::CustomUpstream::new(structure))
             }
         }
     } else {

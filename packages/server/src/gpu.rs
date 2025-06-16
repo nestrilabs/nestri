@@ -3,7 +3,7 @@ use std::fs;
 use std::process::Command;
 use std::str;
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub enum GPUVendor {
     UNKNOWN,
     INTEL,
@@ -11,12 +11,13 @@ pub enum GPUVendor {
     AMD,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct GPUInfo {
     vendor: GPUVendor,
     card_path: String,
     render_path: String,
     device_name: String,
+    pci_bus_id: String,
 }
 
 impl GPUInfo {
@@ -71,14 +72,17 @@ pub fn get_gpus() -> Vec<GPUInfo> {
         .filter(|(class_id, _, _, _)| matches!(class_id.as_str(), "0300" | "0302" | "0380"))
         .filter_map(|(_, vendor_id, device_name, pci_addr)| {
             get_dri_device_path(&pci_addr)
-                .map(|(card, render)| (vendor_id, card, render, device_name))
+                .map(|(card, render)| (vendor_id, card, render, device_name, pci_addr))
         })
-        .map(|(vid, card_path, render_path, device_name)| GPUInfo {
-            vendor: get_gpu_vendor(&vid),
-            card_path,
-            render_path,
-            device_name,
-        })
+        .map(
+            |(vid, card_path, render_path, device_name, pci_bus_id)| GPUInfo {
+                vendor: get_gpu_vendor(&vid),
+                card_path,
+                render_path,
+                device_name,
+                pci_bus_id,
+            },
+        )
         .collect()
 }
 
@@ -137,7 +141,6 @@ fn get_dri_device_path(pci_addr: &str) -> Option<(String, String)> {
     None
 }
 
-// Helper functions remain similar with improved readability:
 pub fn get_gpus_by_vendor(gpus: &[GPUInfo], vendor: &str) -> Vec<GPUInfo> {
     let target = vendor.to_lowercase();
     gpus.iter()
@@ -162,10 +165,36 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
         .cloned()
 }
 
-pub fn get_gpu_by_index(gpus: &[GPUInfo], index: i32) -> Option<GPUInfo> {
-    if index < 0 || index as usize >= gpus.len() {
-        None
-    } else {
-        Some(gpus[index as usize].clone())
+pub fn get_nvidia_gpu_by_cuda_id(gpus: &[GPUInfo], cuda_device_id: usize) -> Option<GPUInfo> {
+    // Run nvidia-smi to get information about the CUDA device
+    let output = Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=pci.bus_id",
+            "--format=csv,noheader",
+            "-i",
+            &cuda_device_id.to_string(),
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
     }
+
+    // Parse the output to get the PCI bus ID
+    let pci_bus_id = str::from_utf8(&output.stdout).ok()?.trim().to_uppercase(); // nvidia-smi returns uppercase PCI IDs
+
+    // Convert from 00000000:05:00.0 to 05:00.0 if needed
+    let pci_bus_id = if pci_bus_id.starts_with("00000000:") {
+        pci_bus_id[9..].to_string() // Skip the domain part
+    } else if pci_bus_id.starts_with("0000:") {
+        pci_bus_id[5..].to_string() // Alternate check for older nvidia-smi versions
+    } else {
+        pci_bus_id
+    };
+
+    // Find the GPU with the matching PCI bus ID
+    gpus.iter()
+        .find(|gpu| gpu.vendor == GPUVendor::NVIDIA && gpu.pci_bus_id.to_uppercase() == pci_bus_id)
+        .cloned()
 }

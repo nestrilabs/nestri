@@ -1,4 +1,4 @@
-use futures_util::StreamExt;
+use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
 use libp2p::{
     Multiaddr, PeerId, Swarm, identify, noise, ping,
@@ -20,6 +20,7 @@ struct NestriBehaviour {
     identify: identify::Behaviour,
     ping: ping::Behaviour,
     stream: libp2p_stream::Behaviour,
+    autonatv2: libp2p::autonat::v2::client::Behaviour,
 }
 
 pub struct NestriP2P {
@@ -36,6 +37,8 @@ impl NestriP2P {
                     yamux::Config::default,
                 )?
                 .with_dns()?
+                .with_websocket(noise::Config::new, yamux::Config::default)
+                .await?
                 .with_behaviour(|key| {
                     let identify_behaviour = identify::Behaviour::new(identify::Config::new(
                         "/ipfs/id/1.0.0".to_string(),
@@ -43,11 +46,13 @@ impl NestriP2P {
                     ));
                     let ping_behaviour = ping::Behaviour::default();
                     let stream_behaviour = libp2p_stream::Behaviour::default();
+                    let autonatv2_behaviour = libp2p::autonat::v2::client::Behaviour::default();
 
                     Ok(NestriBehaviour {
                         identify: identify_behaviour,
                         ping: ping_behaviour,
                         stream: stream_behaviour,
+                        autonatv2: autonatv2_behaviour,
                     })
                 })?
                 .build(),
