@@ -160,7 +160,7 @@ main() {
             exit 1
         }
         # Update SSHD config with the specified port
-        sed -i "s/^#Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
+        sed -i -E "s/^#?Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
             log "Error: Failed to update SSH port configuration."
             exit 1
         }
