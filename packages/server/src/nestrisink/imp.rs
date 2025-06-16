@@ -1,68 +1,84 @@
-use crate::messages::{
-    AnswerType, JoinerType, MessageAnswer, MessageBase, MessageICE, MessageJoin, MessageSDP,
-    decode_message_as, encode_message,
-};
+use crate::messages::{MessageBase, MessageICE, MessageRaw, MessageSDP};
+use crate::p2p::p2p::NestriConnection;
+use crate::p2p::p2p_protocol_stream::NestriStreamProtocol;
 use crate::proto::proto::proto_input::InputType::{
     KeyDown, KeyUp, MouseKeyDown, MouseKeyUp, MouseMove, MouseMoveAbs, MouseWheel,
 };
 use crate::proto::proto::{ProtoInput, ProtoMessageInput};
-use crate::websocket::NestriWebSocket;
+use atomic_refcell::AtomicRefCell;
 use glib::subclass::prelude::*;
 use gst::glib;
 use gst::prelude::*;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription, gst_sdp};
 use gstrswebrtc::signaller::{Signallable, SignallableImpl};
+use parking_lot::RwLock as PLRwLock;
 use prost::Message;
-use std::collections::HashSet;
 use std::sync::{Arc, LazyLock};
-use std::sync::{Mutex, RwLock};
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 pub struct Signaller {
-    nestri_ws: RwLock<Option<Arc<NestriWebSocket>>>,
-    pipeline: RwLock<Option<Arc<gst::Pipeline>>>,
-    data_channel: RwLock<Option<gst_webrtc::WebRTCDataChannel>>,
+    stream_room: PLRwLock<Option<String>>,
+    stream_protocol: PLRwLock<Option<Arc<NestriStreamProtocol>>>,
+    wayland_src: PLRwLock<Option<Arc<gst::Element>>>,
+    data_channel: AtomicRefCell<Option<gst_webrtc::WebRTCDataChannel>>,
 }
 impl Default for Signaller {
     fn default() -> Self {
         Self {
-            nestri_ws: RwLock::new(None),
-            pipeline: RwLock::new(None),
-            data_channel: RwLock::new(None),
+            stream_room: PLRwLock::new(None),
+            stream_protocol: PLRwLock::new(None),
+            wayland_src: PLRwLock::new(None),
+            data_channel: AtomicRefCell::new(None),
         }
     }
 }
 impl Signaller {
-    pub fn set_nestri_ws(&self, nestri_ws: Arc<NestriWebSocket>) {
-        *self.nestri_ws.write().unwrap() = Some(nestri_ws);
+    pub async fn set_nestri_connection(
+        &self,
+        nestri_conn: NestriConnection,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let stream_protocol = NestriStreamProtocol::new(nestri_conn).await?;
+        *self.stream_protocol.write() = Some(Arc::new(stream_protocol));
+        Ok(())
     }
 
-    pub fn set_pipeline(&self, pipeline: Arc<gst::Pipeline>) {
-        *self.pipeline.write().unwrap() = Some(pipeline);
+    pub fn set_stream_room(&self, room: String) {
+        *self.stream_room.write() = Some(room);
     }
 
-    pub fn get_pipeline(&self) -> Option<Arc<gst::Pipeline>> {
-        self.pipeline.read().unwrap().clone()
+    fn get_stream_protocol(&self) -> Option<Arc<NestriStreamProtocol>> {
+        self.stream_protocol.read().clone()
+    }
+
+    pub fn set_wayland_src(&self, wayland_src: Arc<gst::Element>) {
+        *self.wayland_src.write() = Some(wayland_src);
+    }
+
+    pub fn get_wayland_src(&self) -> Option<Arc<gst::Element>> {
+        self.wayland_src.read().clone()
     }
 
     pub fn set_data_channel(&self, data_channel: gst_webrtc::WebRTCDataChannel) {
-        *self.data_channel.write().unwrap() = Some(data_channel);
+        match self.data_channel.try_borrow_mut() {
+            Ok(mut dc) => *dc = Some(data_channel),
+            Err(_) => gst::warning!(
+                gst::CAT_DEFAULT,
+                "Failed to set data channel - already borrowed"
+            ),
+        }
     }
 
     /// Helper method to clean things up
     fn register_callbacks(&self) {
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .unwrap()
-                .clone()
-                .expect("NestriWebSocket not set")
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
         };
         {
             let self_obj = self.obj().clone();
-            let _ = nestri_ws.register_callback("sdp", move |data| {
-                if let Ok(message) = decode_message_as::<MessageSDP>(data) {
+            stream_protocol.register_callback("answer", move |data| {
+                if let Ok(message) = serde_json::from_slice::<MessageSDP>(&data) {
                     let sdp =
                         gst_sdp::SDPMessage::parse_buffer(message.sdp.sdp.as_bytes()).unwrap();
                     let answer = WebRTCSessionDescription::new(WebRTCSDPType::Answer, sdp);
@@ -77,12 +93,11 @@ impl Signaller {
         }
         {
             let self_obj = self.obj().clone();
-            let _ = nestri_ws.register_callback("ice", move |data| {
-                if let Ok(message) = decode_message_as::<MessageICE>(data) {
+            stream_protocol.register_callback("ice-candidate", move |data| {
+                if let Ok(message) = serde_json::from_slice::<MessageICE>(&data) {
                     let candidate = message.candidate;
                     let sdp_m_line_index = candidate.sdp_mline_index.unwrap_or(0) as u32;
                     let sdp_mid = candidate.sdp_mid;
-
                     self_obj.emit_by_name::<()>(
                         "handle-ice",
                         &[
@@ -99,29 +114,28 @@ impl Signaller {
         }
         {
             let self_obj = self.obj().clone();
-            let _ = nestri_ws.register_callback("answer", move |data| {
-                if let Ok(answer) = decode_message_as::<MessageAnswer>(data) {
-                    gst::info!(gst::CAT_DEFAULT, "Received answer: {:?}", answer);
-                    match answer.answer_type {
-                        AnswerType::AnswerOK => {
-                            gst::info!(gst::CAT_DEFAULT, "Received OK answer");
-                            // Send our SDP offer
-                            self_obj.emit_by_name::<()>(
-                                "session-requested",
-                                &[
-                                    &"unique-session-id",
-                                    &"consumer-identifier",
-                                    &None::<WebRTCSessionDescription>,
-                                ],
-                            );
-                        }
-                        AnswerType::AnswerInUse => {
-                            gst::error!(gst::CAT_DEFAULT, "Room is in use by another node");
-                        }
-                        AnswerType::AnswerOffline => {
-                            gst::warning!(gst::CAT_DEFAULT, "Room is offline");
-                        }
+            stream_protocol.register_callback("push-stream-ok", move |data| {
+                if let Ok(answer) = serde_json::from_slice::<MessageRaw>(&data) {
+                    // Decode room name string
+                    if let Some(room_name) = answer.data.as_str() {
+                        gst::info!(
+                            gst::CAT_DEFAULT,
+                            "Received OK answer for room: {}",
+                            room_name
+                        );
+                    } else {
+                        gst::error!(gst::CAT_DEFAULT, "Failed to decode room name from answer");
                     }
+
+                    // Send our SDP offer
+                    self_obj.emit_by_name::<()>(
+                        "session-requested",
+                        &[
+                            &"unique-session-id",
+                            &"consumer-identifier",
+                            &None::<WebRTCSessionDescription>,
+                        ],
+                    );
                 } else {
                     gst::error!(gst::CAT_DEFAULT, "Failed to decode answer");
                 }
@@ -145,16 +159,17 @@ impl Signaller {
                                 &"nestri-data-channel",
                                 &gst::Structure::builder("config")
                                     .field("ordered", &true)
-                                    .field("max-retransmits", &0u32)
+                                    .field("max-retransmits", &2u32)
                                     .field("priority", "high")
+                                    .field("protocol", "raw")
                                     .build(),
                             ],
                         ),
                     );
                     if let Some(data_channel) = data_channel {
                         gst::info!(gst::CAT_DEFAULT, "Data channel created");
-                        if let Some(pipeline) = signaller.imp().get_pipeline() {
-                            setup_data_channel(&data_channel, &pipeline);
+                        if let Some(wayland_src) = signaller.imp().get_wayland_src() {
+                            setup_data_channel(&data_channel, &*wayland_src);
                             signaller.imp().set_data_channel(data_channel);
                         } else {
                             gst::error!(gst::CAT_DEFAULT, "Wayland display source not set");
@@ -171,90 +186,32 @@ impl SignallableImpl for Signaller {
     fn start(&self) {
         gst::info!(gst::CAT_DEFAULT, "Signaller started");
 
-        // Get WebSocket connection
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .unwrap()
-                .clone()
-                .expect("NestriWebSocket not set")
-        };
-
         // Register message callbacks
         self.register_callbacks();
 
         // Subscribe to reconnection notifications
-        let reconnected_notify = nestri_ws.subscribe_reconnected();
+        // TODO: Re-implement reconnection handling
 
-        // Clone necessary references
-        let self_clone = self.obj().clone();
-        let nestri_ws_clone = nestri_ws.clone();
+        let Some(stream_room) = self.stream_room.read().clone() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream room not set");
+            return;
+        };
 
-        // Spawn a task to handle actions upon reconnection
-        tokio::spawn(async move {
-            loop {
-                // Wait for a reconnection notification
-                reconnected_notify.notified().await;
-
-                println!("Reconnected to relay, re-negotiating...");
-                gst::warning!(gst::CAT_DEFAULT, "Reconnected to relay, re-negotiating...");
-
-                // Emit "session-ended" first to make sure the element is cleaned up
-                self_clone.emit_by_name::<bool>("session-ended", &[&"unique-session-id"]);
-
-                // Send a new join message
-                let join_msg = MessageJoin {
-                    base: MessageBase {
-                        payload_type: "join".to_string(),
-                        latency: None,
-                    },
-                    joiner_type: JoinerType::JoinerNode,
-                };
-                if let Ok(encoded) = encode_message(&join_msg) {
-                    if let Err(e) = nestri_ws_clone.send_message(encoded) {
-                        gst::error!(
-                            gst::CAT_DEFAULT,
-                            "Failed to send join message after reconnection: {:?}",
-                            e
-                        );
-                    }
-                } else {
-                    gst::error!(
-                        gst::CAT_DEFAULT,
-                        "Failed to encode join message after reconnection"
-                    );
-                }
-
-                // If we need to interact with GStreamer or GLib, schedule it on the main thread
-                let self_clone_for_main = self_clone.clone();
-                glib::MainContext::default().invoke(move || {
-                    // Emit the "session-requested" signal
-                    self_clone_for_main.emit_by_name::<()>(
-                        "session-requested",
-                        &[
-                            &"unique-session-id",
-                            &"consumer-identifier",
-                            &None::<WebRTCSessionDescription>,
-                        ],
-                    );
-                });
-            }
-        });
-
-        let join_msg = MessageJoin {
+        let push_msg = MessageRaw {
             base: MessageBase {
-                payload_type: "join".to_string(),
+                payload_type: "push-stream-room".to_string(),
                 latency: None,
             },
-            joiner_type: JoinerType::JoinerNode,
+            data: serde_json::Value::from(stream_room),
         };
-        if let Ok(encoded) = encode_message(&join_msg) {
-            if let Err(e) = nestri_ws.send_message(encoded) {
-                eprintln!("Failed to send join message: {:?}", e);
-                gst::error!(gst::CAT_DEFAULT, "Failed to send join message: {:?}", e);
-            }
-        } else {
-            gst::error!(gst::CAT_DEFAULT, "Failed to encode join message");
+
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
+        };
+
+        if let Err(e) = stream_protocol.send_message(&push_msg) {
+            tracing::error!("Failed to send push stream room message: {:?}", e);
         }
     }
 
@@ -263,27 +220,21 @@ impl SignallableImpl for Signaller {
     }
 
     fn send_sdp(&self, _session_id: &str, sdp: &WebRTCSessionDescription) {
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .unwrap()
-                .clone()
-                .expect("NestriWebSocket not set")
-        };
         let sdp_message = MessageSDP {
             base: MessageBase {
-                payload_type: "sdp".to_string(),
+                payload_type: "offer".to_string(),
                 latency: None,
             },
             sdp: RTCSessionDescription::offer(sdp.sdp().as_text().unwrap()).unwrap(),
         };
-        if let Ok(encoded) = encode_message(&sdp_message) {
-            if let Err(e) = nestri_ws.send_message(encoded) {
-                eprintln!("Failed to send SDP message: {:?}", e);
-                gst::error!(gst::CAT_DEFAULT, "Failed to send SDP message: {:?}", e);
-            }
-        } else {
-            gst::error!(gst::CAT_DEFAULT, "Failed to encode SDP message");
+
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
+        };
+
+        if let Err(e) = stream_protocol.send_message(&sdp_message) {
+            tracing::error!("Failed to send SDP message: {:?}", e);
         }
     }
 
@@ -294,13 +245,6 @@ impl SignallableImpl for Signaller {
         sdp_m_line_index: u32,
         sdp_mid: Option<String>,
     ) {
-        let nestri_ws = {
-            self.nestri_ws
-                .read()
-                .unwrap()
-                .clone()
-                .expect("NestriWebSocket not set")
-        };
         let candidate_init = RTCIceCandidateInit {
             candidate: candidate.to_string(),
             sdp_mid,
@@ -309,18 +253,19 @@ impl SignallableImpl for Signaller {
         };
         let ice_message = MessageICE {
             base: MessageBase {
-                payload_type: "ice".to_string(),
+                payload_type: "ice-candidate".to_string(),
                 latency: None,
             },
             candidate: candidate_init,
         };
-        if let Ok(encoded) = encode_message(&ice_message) {
-            if let Err(e) = nestri_ws.send_message(encoded) {
-                eprintln!("Failed to send ICE message: {:?}", e);
-                gst::error!(gst::CAT_DEFAULT, "Failed to send ICE message: {:?}", e);
-            }
-        } else {
-            gst::error!(gst::CAT_DEFAULT, "Failed to encode ICE message");
+
+        let Some(stream_protocol) = self.get_stream_protocol() else {
+            gst::error!(gst::CAT_DEFAULT, "Stream protocol not set");
+            return;
+        };
+
+        if let Err(e) = stream_protocol.send_message(&ice_message) {
+            tracing::error!("Failed to send ICE candidate message: {:?}", e);
         }
     }
 
@@ -358,11 +303,8 @@ impl ObjectImpl for Signaller {
     }
 }
 
-fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &gst::Pipeline) {
-    let pipeline = pipeline.clone();
-    // A shared state to track currently pressed keys
-    let pressed_keys = Arc::new(Mutex::new(HashSet::new()));
-    let pressed_buttons = Arc::new(Mutex::new(HashSet::new()));
+fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, wayland_src: &gst::Element) {
+    let wayland_src = wayland_src.clone();
 
     data_channel.connect_on_message_data(move |_data_channel, data| {
         if let Some(data) = data {
@@ -370,29 +312,23 @@ fn setup_data_channel(data_channel: &gst_webrtc::WebRTCDataChannel, pipeline: &g
                 Ok(message_input) => {
                     if let Some(input_msg) = message_input.data {
                         // Process the input message and create an event
-                        if let Some(event) =
-                            handle_input_message(input_msg, &pressed_keys, &pressed_buttons)
-                        {
-                            // Send the event to pipeline, result bool is ignored
-                            let _ = pipeline.send_event(event);
+                        if let Some(event) = handle_input_message(input_msg) {
+                            // Send the event to wayland source, result bool is ignored
+                            let _ = wayland_src.send_event(event);
                         }
                     } else {
-                        eprintln!("Failed to parse InputMessage");
+                        tracing::error!("Failed to parse InputMessage");
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to decode MessageInput: {:?}", e);
+                    tracing::error!("Failed to decode MessageInput: {:?}", e);
                 }
             }
         }
     });
 }
 
-fn handle_input_message(
-    input_msg: ProtoInput,
-    pressed_keys: &Arc<Mutex<HashSet<i32>>>,
-    pressed_buttons: &Arc<Mutex<HashSet<i32>>>,
-) -> Option<gst::Event> {
+fn handle_input_message(input_msg: ProtoInput) -> Option<gst::Event> {
     if let Some(input_type) = input_msg.input_type {
         match input_type {
             MouseMove(data) => {
@@ -412,13 +348,6 @@ fn handle_input_message(
                 Some(gst::event::CustomUpstream::new(structure))
             }
             KeyDown(data) => {
-                let mut keys = pressed_keys.lock().unwrap();
-                // If the key is already pressed, return to prevent key lockup
-                if keys.contains(&data.key) {
-                    return None;
-                }
-                keys.insert(data.key);
-
                 let structure = gst::Structure::builder("KeyboardKey")
                     .field("key", data.key as u32)
                     .field("pressed", true)
@@ -427,10 +356,6 @@ fn handle_input_message(
                 Some(gst::event::CustomUpstream::new(structure))
             }
             KeyUp(data) => {
-                let mut keys = pressed_keys.lock().unwrap();
-                // Remove the key from the pressed state when released
-                keys.remove(&data.key);
-
                 let structure = gst::Structure::builder("KeyboardKey")
                     .field("key", data.key as u32)
                     .field("pressed", false)
@@ -447,13 +372,6 @@ fn handle_input_message(
                 Some(gst::event::CustomUpstream::new(structure))
             }
             MouseKeyDown(data) => {
-                let mut buttons = pressed_buttons.lock().unwrap();
-                // If the button is already pressed, return to prevent button lockup
-                if buttons.contains(&data.key) {
-                    return None;
-                }
-                buttons.insert(data.key);
-
                 let structure = gst::Structure::builder("MouseButton")
                     .field("button", data.key as u32)
                     .field("pressed", true)
@@ -462,10 +380,6 @@ fn handle_input_message(
                 Some(gst::event::CustomUpstream::new(structure))
             }
             MouseKeyUp(data) => {
-                let mut buttons = pressed_buttons.lock().unwrap();
-                // Remove the button from the pressed state when released
-                buttons.remove(&data.key);
-
                 let structure = gst::Structure::builder("MouseButton")
                     .field("button", data.key as u32)
                     .field("pressed", false)

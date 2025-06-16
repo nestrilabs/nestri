@@ -84,7 +84,7 @@ pub fn get_gpus() -> Vec<GPUInfo> {
 
 fn parse_pci_device(line: &str) -> Option<(String, String, String, String)> {
     let re = Regex::new(
-        r#"^(?P<pci_addr>\S+)\s+"[^\[]*\[(?P<class_id>[0-9a-f]{4})\].*?"\s+"[^\[]*\[(?P<vendor_id>[0-9a-f]{4})\].*?"\s+"(?P<device_name>[^"]+?)""#,
+        r#"^(?P<pci_addr>\S+)\s+"[^\[]*\[(?P<class_id>[0-9a-f]{4})\].*?"\s+"[^"]*?\[(?P<vendor_id>[0-9a-f]{4})\][^"]*?"\s+"(?P<device_name>[^"]+?)""#,
     ).unwrap();
 
     let caps = re.captures(line)?;
@@ -160,4 +160,12 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
             gpu.card_path.eq_ignore_ascii_case(path) || gpu.render_path.eq_ignore_ascii_case(path)
         })
         .cloned()
+}
+
+pub fn get_gpu_by_index(gpus: &[GPUInfo], index: i32) -> Option<GPUInfo> {
+    if index < 0 || index as usize >= gpus.len() {
+        None
+    } else {
+        Some(gpus[index as usize].clone())
+    }
 }

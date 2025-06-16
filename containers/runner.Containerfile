@@ -85,8 +85,8 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
-# Clone repository with proper directory structure
-RUN git clone -b dev-dmabuf https://github.com/games-on-whales/gst-wayland-display.git
+# Clone repository
+RUN git clone -b dev-dmabuf https://github.com/DatCaptainHorse/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -132,9 +132,11 @@ RUN sed -i \
 # Core system components
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --needed --noconfirm \
-        vulkan-intel lib32-vulkan-intel vpl-gpu-rt mesa \
-        steam steam-native-runtime \
-        sudo xorg-xwayland seatd libinput labwc wlr-randr mangohud \
+        vulkan-intel lib32-vulkan-intel vpl-gpu-rt \
+        vulkan-radeon lib32-vulkan-radeon \
+        mesa \
+        steam steam-native-runtime gtk3 lib32-gtk3 \
+        sudo xorg-xwayland seatd libinput gamescope mangohud \
         libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \
@@ -144,6 +146,9 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         gst-plugins-bad gst-plugin-pipewire \
         gst-plugin-webrtchttp gst-plugin-rswebrtc gst-plugin-rsrtp \
         gst-plugin-va gst-plugin-qsv && \
+    # lib32 GStreamer stack to fix some games with videos
+    pacman -Sy --needed --noconfirm \
+        lib32-gstreamer lib32-gst-plugins-base lib32-gst-plugins-good && \
     # Cleanup
     paccache -rk1 && \
     rm -rf /usr/share/{info,man,doc}/*
@@ -163,8 +168,7 @@ ENV USER="nestri" \
     USER_PWD="nestri1234" \
     XDG_RUNTIME_DIR=/run/user/1000 \
     HOME=/home/nestri \
-    NVIDIA_DRIVER_CAPABILITIES=all \
-    NVIDIA_VISIBLE_DEVICES=all
+    NVIDIA_DRIVER_CAPABILITIES=all
 
 RUN mkdir -p /home/${USER} && \
     groupadd -g ${GID} ${USER} && \
@@ -184,6 +188,30 @@ RUN mkdir -p /run/dbus && \
         -e 's/{[[:space:]]*name = node\/suspend-node\.lua,[[:space:]]*type = script\/lua[[:space:]]*provides = hooks\.node\.suspend[[:space:]]*}[[:space:]]*//g' \
         -e '/wants = \[/{s/hooks\.node\.suspend\s*//; s/,\s*\]/]/}' \
         /usr/share/wireplumber/wireplumber.conf
+
+### PipeWire Latency Optimizations (1-5ms instead of 20ms) ###
+RUN mkdir -p /etc/pipewire/pipewire.conf.d && \
+    echo "[audio]\
+    \n  default.clock.rate = 48000\
+    \n  default.clock.quantum = 128\
+    \n  default.clock.min-quantum = 128\
+    \n  default.clock.max-quantum = 256" > /etc/pipewire/pipewire.conf.d/low-latency.conf && \
+    mkdir -p /etc/wireplumber/main.lua.d && \
+    echo 'table.insert(default_nodes.rules, {\
+    \n  matches = { { { "node.name", "matches", ".*" } } },\
+    \n  apply_properties = {\
+    \n    ["audio.format"] = "S16LE",\
+    \n    ["audio.rate"] = 48000,\
+    \n    ["audio.channels"] = 2,\
+    \n    ["api.alsa.period-size"] = 128,\
+    \n    ["api.alsa.headroom"] = 0,\
+    \n    ["session.suspend-timeout-seconds"] = 0\
+    \n  }\
+    \n})' > /etc/wireplumber/main.lua.d/50-low-latency.lua && \
+    echo "default-fragments = 2\
+    \ndefault-fragment-size-msec = 2" >> /etc/pulse/daemon.conf && \
+    echo "load-module module-loopback latency_msec=1" >> /etc/pipewire/pipewire.conf.d/loopback.conf
+
 
 ### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/

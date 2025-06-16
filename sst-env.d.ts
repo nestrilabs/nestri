@@ -19,10 +19,6 @@ declare module "sst" {
       "type": "sst.aws.Auth"
       "url": string
     }
-    "AuthFingerprintKey": {
-      "type": "random.index/randomString.RandomString"
-      "value": string
-    }
     "Bus": {
       "arn": string
       "name": string
@@ -39,10 +35,6 @@ declare module "sst" {
       "type": "sst.aws.Aurora"
       "username": string
     }
-    "DatabaseMigrator": {
-      "name": string
-      "type": "sst.aws.Function"
-    }
     "DiscordClientID": {
       "type": "sst.sst.Secret"
       "value": string
@@ -50,6 +42,10 @@ declare module "sst" {
     "DiscordClientSecret": {
       "type": "sst.sst.Secret"
       "value": string
+    }
+    "Dlq": {
+      "type": "sst.aws.Queue"
+      "url": string
     }
     "Email": {
       "configSet": string
@@ -64,14 +60,46 @@ declare module "sst" {
       "type": "sst.sst.Secret"
       "value": string
     }
+    "NestriFamilyMonthly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriFamilyYearly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriFreeMonthly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriProMonthly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "NestriProYearly": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
     "PolarSecret": {
       "type": "sst.sst.Secret"
       "value": string
     }
-    "Steam": {
-      "service": string
-      "type": "sst.aws.Service"
+    "PolarWebhookSecret": {
+      "type": "sst.sst.Secret"
+      "value": string
+    }
+    "Realtime": {
+      "authorizer": string
+      "endpoint": string
+      "type": "sst.aws.Realtime"
+    }
+    "RetryQueue": {
+      "type": "sst.aws.Queue"
       "url": string
+    }
+    "SteamApiKey": {
+      "type": "sst.sst.Secret"
+      "value": string
     }
     "Storage": {
       "name": string
@@ -95,10 +123,6 @@ declare module "sst" {
       "service": string
       "type": "sst.aws.Service"
       "url": string
-    }
-    "ZeroPermissions": {
-      "name": string
-      "type": "sst.aws.Function"
     }
   }
 }

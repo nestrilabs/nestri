@@ -16,8 +16,8 @@ export default component$(() => {
     <div class="w-screen relative">
       <HeroSection client:load>
         <div class="sm:w-full flex gap-3 justify-center pt-4 sm:flex-row flex-col w-auto items-center">
-          <Link href="/auth/login" prefetch={false} class="flex ring-2 ring-primary-500 font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
-            Get early access
+          <Link href="https://discord.gg/6um5K6jrYj" prefetch={false} class="flex ring-2 ring-primary-500 font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+            Join our Discord
           </Link>
           <Link href="/links/github" prefetch={false} class="sm:flex text-sm sm:text-base hidden font-bricolage items-center gap-2 rounded-full font-semibold text-gray-900/70 dark:text-gray-100/70 bg-white dark:bg-black px-5 py-4 ring-2 ring-gray-300 dark:ring-gray-700 transition-all hover:scale-105 active:scale-95 sm:px-6" >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" class="h-5 w-5 fill-content3-light"><path fill-rule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clip-rule="evenodd"></path><path fill-rule="evenodd" d="M6.194 12.753a.75.75 0 001.06.053L16.5 4.44v2.81a.75.75 0 001.5 0v-4.5a.75.75 0 00-.75-.75h-4.5a.75.75 0 000 1.5h2.553l-9.056 8.194a.75.75 0 00-.053 1.06z" clip-rule="evenodd"></path></svg>
@@ -570,8 +570,8 @@ export default component$(() => {
       </section>
       <Footer client:load>
         <div class="w-full flex justify-center flex-col items-center gap-3">
-          <Link href="/auth/login" prefetch={false} class="ring-2 ring-primary-500 flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
-            Get early access
+          <Link href="https://discord.gg/6um5K6jrYj" prefetch={false} class="ring-2 ring-primary-500 flex font-bricolage text-sm sm:text-base rounded-full bg-primary-500 px-5 py-4 font-semibold text-white transition-all hover:scale-105 active:scale-95 sm:px-6" >
+            Join our Discord
           </Link>
           <div class="mt-6 flex w-full items-center justify-center gap-2 text-xs sm:text-sm font-medium text-neutral-600 dark:text-neutral-400">
             <span class="hover:text-primary-500 transition-colors duration-200">

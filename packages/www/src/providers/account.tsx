@@ -9,7 +9,7 @@ function init() {
   const [store, setStore] = makePersisted(
     createStore({
       account: "",
-      team: "",
+      steam: "",
     })
   );
 
@@ -33,20 +33,12 @@ export function useStorage() {
 }
 
 import { createEffect } from "solid-js";
-import { useOpenAuth } from "@openauthjs/solid"
-import { Team } from "@nestri/core/team/index";
+import { useOpenAuth } from "@openauthjs/solid";
+import { Account } from "@nestri/core/account/index";
 import { createInitializedContext } from "../common/context";
 
 type Storage = {
-  accounts: Record<string, {
-    id: string
-    email: string
-    avatarUrl?: string
-    discriminator: number
-    name: string;
-    polarCustomerID: string;
-    teams: Team.Info[];
-  }>
+  accounts: Record<string, Account.Info>
 }
 
 export const { use: useAccount, provider: AccountProvider } = createInitializedContext("AccountContext", () => {

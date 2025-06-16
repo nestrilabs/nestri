@@ -4,7 +4,6 @@ import solidPlugin from "vite-plugin-solid";
 import { macaronVitePlugin } from "@macaron-css/vite";
 
 export default defineConfig({
-    //@ts-expect-error
     plugins: [macaronVitePlugin(), solidPlugin()],
     server: {
         port: 3000,

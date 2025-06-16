@@ -3,10 +3,9 @@ import { api } from "./api";
 import { auth } from "./auth";
 import { zero } from "./zero";
 import { domain } from "./dns";
-import { steam } from "./steam";
 
 new sst.aws.StaticSite("Web", {
-    path: "./packages/www",
+    path: "packages/www",
     build: {
         output: "./dist",
         command: "bun run build",
@@ -20,6 +19,5 @@ new sst.aws.StaticSite("Web", {
         VITE_STAGE: $app.stage,
         VITE_AUTH_URL: auth.url,
         VITE_ZERO_URL: zero.url,
-        VITE_STEAM_URL: steam.url,
     },
 })

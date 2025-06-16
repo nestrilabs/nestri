@@ -2,10 +2,12 @@
 set -euo pipefail
 
 export XDG_RUNTIME_DIR=/run/user/${UID}/
-export WAYLAND_DISPLAY=wayland-0
-export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_TYPE=x11
 export DISPLAY=:0
 export $(dbus-launch)
 
-# Our preferred prefix
-export WINEPREFIX=/home/${USER}/.nestripfx/
+# Causes some setups to break
+export PROTON_NO_FSYNC=1
+
+# Sleeker Mangohud preset :)
+export MANGOHUD_CONFIG=preset=2

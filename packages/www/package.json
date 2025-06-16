@@ -1,6 +1,7 @@
 {
   "name": "@nestri/www",
   "type": "module",
+  "private": true,
   "scripts": {
     "start": "vite",
     "dev": "vite",
@@ -12,7 +13,7 @@
     "@macaron-css/vite": "1.5.1",
     "@types/bun": "latest",
     "@types/qrcode": "^1.5.5",
-    "vite": "5.4.12",
+    "vite": "6.0.15",
     "vite-plugin-solid": "^2.11.2"
   },
   "peerDependencies": {
@@ -30,15 +31,17 @@
     "@nestri/zero": "*",
     "@openauthjs/openauth": "*",
     "@openauthjs/solid": "0.0.0-20250311201457",
-    "@rocicorp/zero": "*",
+    "@rocicorp/zero": "0.20.2025051800",
     "@solid-primitives/event-listener": "^2.4.0",
     "@solid-primitives/storage": "^4.3.1",
     "@solidjs/router": "^0.15.3",
     "body-scroll-lock-upgrade": "^1.1.0",
     "eventsource": "^3.0.5",
+    "fast-average-color": "9.5.0",
     "focus-trap": "^7.6.4",
     "hono": "^4.7.4",
     "modern-normalize": "^3.0.1",
+    "motion": "^12.6.2",
     "qrcode": "^1.5.4",
     "solid-js": "^1.9.5",
     "valibot": "^1.0.0-rc.3",

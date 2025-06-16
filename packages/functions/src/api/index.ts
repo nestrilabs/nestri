@@ -1,18 +1,23 @@
 import "zod-openapi/extend";
 import { Hono } from "hono";
-import { auth } from "./auth";
-import { TeamApi } from "./team";
+import { GameApi } from "./game";
+import { SteamApi } from "./steam";
+import { auth } from "./utils/auth";
+import { FriendApi } from "./friend";
 import { logger } from "hono/logger";
 import { AccountApi } from "./account";
 import { openAPISpecs } from "hono-openapi";
+import { patchLogger } from "../utils/patch-logger";
 import { HTTPException } from "hono/http-exception";
 import { handle, streamHandle } from "hono/aws-lambda";
 import { ErrorCodes, VisibleError } from "@nestri/core/error";
 
+patchLogger();
 
 export const app = new Hono();
 app
-    .use(logger(), async (c, next) => {
+    .use(logger())
+    .use(async (c, next) => {
         c.header("Cache-Control", "no-store");
         return next();
     })
@@ -20,10 +25,11 @@ app
 
 const routes = app
     .get("/", (c) => c.text("Hello World!"))
-    .route("/team", TeamApi.route)
+    .route("/games", GameApi.route)
+    .route("/steam", SteamApi.route)
+    .route("/friends", FriendApi.route)
     .route("/account", AccountApi.route)
     .onError((error, c) => {
-        console.warn(error);
         if (error instanceof VisibleError) {
             console.error("api error:", error);
             // @ts-expect-error
@@ -38,7 +44,7 @@ const routes = app
                     code: ErrorCodes.Validation.INVALID_PARAMETER,
                     message: "Invalid request",
                 },
-                400,
+                error.status,
             );
         }
         console.error("unhandled error:", error);
@@ -51,7 +57,6 @@ const routes = app
             500,
         );
     });
-
 
 app.get(
     "/doc",
@@ -71,19 +76,21 @@ app.get(
                     },
                     TeamID: {
                         type: "apiKey",
-                        description: "The team ID to use for this query",
+                        description: "The steam ID to use for this query",
                         in: "header",
-                        name: "x-nestri-team"
+                        name: "x-nestri-steam"
                     },
                 },
             },
             security: [{ Bearer: [], TeamID: [] }],
             servers: [
                 { description: "Production", url: "https://api.nestri.io" },
+                { description: "Sandbox", url: "https://api.dev.nestri.io" },
             ],
         },
     }),
 );
 
 export type Routes = typeof routes;
-export const handler = process.env.SST_DEV ? handle(app) : streamHandle(app);
+
+export const handler = process.env.SST_LIVE ? handle(app) : streamHandle(app);

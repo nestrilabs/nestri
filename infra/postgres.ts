@@ -1,16 +1,12 @@
 import { vpc } from "./vpc";
-import { isPermanentStage } from "./stage";
 
-// TODO: Add a dev db to use, this will help with running zero locally... and testing it
 export const postgres = new sst.aws.Aurora("Database", {
   vpc,
   engine: "postgres",
-  scaling: isPermanentStage
-    ? undefined
-    : {
-      min: "0 ACU",
-      max: "1 ACU",
-    },
+  scaling: {
+    min: "0 ACU",
+    max: "1 ACU",
+  },
   transform: {
     clusterParameterGroup: {
       parameters: [
@@ -43,26 +39,26 @@ export const postgres = new sst.aws.Aurora("Database", {
 new sst.x.DevCommand("Studio", {
   link: [postgres],
   dev: {
-    command: "bun db studio",
+    command: "bun db:dev studio",
     directory: "packages/core",
     autostart: true,
   },
 });
 
-const migrator = new sst.aws.Function("DatabaseMigrator", {
-  handler: "packages/functions/src/migrator.handler",
-  link: [postgres],
-  copyFiles: [
-    {
-      from: "packages/core/migrations",
-      to: "./migrations",
-    },
-  ],
-});
+// const migrator = new sst.aws.Function("DatabaseMigrator", {
+//   handler: "packages/functions/src/migrator.handler",
+//   link: [postgres],
+//   copyFiles: [
+//     {
+//       from: "packages/core/migrations",
+//       to: "./migrations",
+//     },
+//   ],
+// });
 
-if (!$dev) {
-  new aws.lambda.Invocation("DatabaseMigratorInvocation", {
-    input: Date.now().toString(),
-    functionName: migrator.name,
-  });
-}
+// if (!$dev) {
+//   new aws.lambda.Invocation("DatabaseMigratorInvocation", {
+//     input: Date.now().toString(),
+//     functionName: migrator.name,
+//   });
+// }

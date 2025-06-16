@@ -1,25 +1,30 @@
 {
   "name": "@nestri/functions",
+  "module": "index.ts",
   "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/steamcommunity": "^3.43.8"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
   "exports": {
     "./*": "./src/*.ts"
   },
-  "devDependencies": {
-    "@aws-sdk/client-ecs": "^3.738.0",
-    "@aws-sdk/client-sqs": "^3.734.0",
-    "@cloudflare/workers-types": "^4.20241224.0",
-    "@nestri/core": "*",
-    "@types/bun": "latest",
-    "valibot": "^1.0.0-beta.9"
-  },
-  "peerDependencies": {
-    "typescript": "^5.0.0"
-  },
   "dependencies": {
-    "@openauthjs/openauth": "*",
-    "hono": "^4.6.15",
-    "hono-openapi": "^0.3.1",
-    "partysocket": "1.0.3",
-    "postgres": "^3.4.5"
+    "@actor-core/bun": "^0.8.0",
+    "@actor-core/file-system": "^0.8.0",
+    "@aws-sdk/client-lambda": "^3.821.0",
+    "@aws-sdk/client-s3": "^3.806.0",
+    "@aws-sdk/client-sqs": "^3.806.0",
+    "@nestri/core": "workspace:",
+    "actor-core": "^0.8.0",
+    "hono": "^4.7.8",
+    "hono-openapi": "^0.4.8",
+    "steam-session": "*",
+    "steamcommunity": "^3.48.6",
+    "steamid": "^2.1.0"
   }
 }

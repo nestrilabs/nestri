@@ -1,92 +1,130 @@
-import { z } from "zod";
-import { eq } from "./drizzle";
-import { VisibleError } from "./error";
+import { Log } from "./utils";
 import { createContext } from "./context";
-import { UserFlags, userTable } from "./user/user.sql";
-import { useTransaction } from "./drizzle/transaction";
+import { ErrorCodes, VisibleError } from "./error";
 
-export const PublicActor = z.object({
-  type: z.literal("public"),
-  properties: z.object({}),
-});
-export type PublicActor = z.infer<typeof PublicActor>;
+export namespace Actor {
 
-export const UserActor = z.object({
-  type: z.literal("user"),
-  properties: z.object({
-    userID: z.string(),
-    email: z.string().nonempty(),
-  }),
-});
-export type UserActor = z.infer<typeof UserActor>;
-
-export const MemberActor = z.object({
-  type: z.literal("member"),
-  properties: z.object({
-    memberID: z.string(),
-    teamID: z.string(),
-  }),
-});
-export type MemberActor = z.infer<typeof MemberActor>;
-
-export const SystemActor = z.object({
-  type: z.literal("system"),
-  properties: z.object({
-    teamID: z.string(),
-  }),
-});
-export type SystemActor = z.infer<typeof SystemActor>;
-
-export const Actor = z.discriminatedUnion("type", [
-  MemberActor,
-  UserActor,
-  PublicActor,
-  SystemActor,
-]);
-export type Actor = z.infer<typeof Actor>;
-
-const ActorContext = createContext<Actor>("actor");
-
-export const useActor = ActorContext.use;
-export const withActor = ActorContext.with;
-
-export function useUserID() {
-  const actor = ActorContext.use();
-  if (actor.type === "user") return actor.properties.userID;
-  throw new VisibleError(
-    "unauthorized",
-    `You don't have permission to access this resource`,
-  );
-}
-
-export function assertActor<T extends Actor["type"]>(type: T) {
-  const actor = useActor();
-  if (actor.type !== type) {
-    throw new Error(`Expected actor type ${type}, got ${actor.type}`);
+  export interface User {
+    type: "user";
+    properties: {
+      userID: string;
+      email: string;
+    };
+  }
+  
+  export interface Steam {
+    type: "steam";
+    properties: {
+      steamID: string;
+    };
   }
 
-  return actor as Extract<Actor, { type: T }>;
-}
+  export interface Machine {
+    type: "machine";
+    properties: {
+      machineID: string;
+      fingerprint: string;
+    };
+  }
 
-export function useTeam() {
-  const actor = useActor();
-  if ("teamID" in actor.properties) return actor.properties.teamID;
-  throw new Error(`Expected actor to have teamID`);
-}
+  export interface Token {
+    type: "member";
+    properties: {
+      userID: string;
+      steamID: string;
+    };
+  }
 
-export async function assertUserFlag(flag: keyof UserFlags) {
-  return useTransaction((tx) =>
-    tx
-      .select({ flags: userTable.flags })
-      .from(userTable)
-      .where(eq(userTable.id, useUserID()))
-      .then((rows) => {
-        const flags = rows[0]?.flags;
-        if (!flags)
-          throw new VisibleError(
-            "user.flags",
-            "Actor does not have " + flag + " flag",
-          );
-      }),
-  );
+  export interface Public {
+    type: "public";
+    properties: {};
+  }
+
+  export type Info = User | Public | Token | Machine | Steam;
+
+  export const Context = createContext<Info>();
+
+  export function userID() {
+    const actor = Context.use();
+    if ("userID" in actor.properties) return actor.properties.userID;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+
+  export function steamID() {
+    const actor = Context.use();
+    if ("steamID" in actor.properties) return actor.properties.steamID;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+
+  export function user() {
+    const actor = Context.use();
+    if (actor.type == "user") return actor.properties;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+
+  export function teamID() {
+    const actor = Context.use();
+    if ("teamID" in actor.properties) return actor.properties.teamID;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+
+  export function fingerprint() {
+    const actor = Context.use();
+    if ("fingerprint" in actor.properties) return actor.properties.fingerprint;
+    throw new VisibleError(
+      "authentication",
+      ErrorCodes.Authentication.UNAUTHORIZED,
+      `You don't have permission to access this resource.`,
+    );
+  }
+
+  export function use() {
+    try {
+      return Context.use();
+    } catch {
+      return { type: "public", properties: {} } as Public;
+    }
+  }
+
+  export function assert<T extends Info["type"]>(type: T) {
+    const actor = use();
+    if (actor.type !== type)
+      throw new VisibleError(
+        "authentication",
+        ErrorCodes.Authentication.UNAUTHORIZED,
+        `Actor is not "${type}"`,
+      );
+    return actor as Extract<Info, { type: T }>;
+  }
+
+  export function provide<
+    T extends Info["type"],
+    Next extends (...args: any) => any,
+  >(type: T, properties: Extract<Info, { type: T }>["properties"], fn: Next) {
+    return Context.provide({ type, properties } as any, () =>
+      Log.provide(
+        {
+          actor: type,
+          ...properties,
+        },
+        fn,
+      ),
+    );
+  }
 }

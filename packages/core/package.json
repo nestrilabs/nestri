@@ -4,6 +4,7 @@
     "sideEffects": false,
     "type": "module",
     "scripts": {
+        "db:dev": "drizzle-kit",
         "typecheck": "tsc --noEmit",
         "db": "sst shell drizzle-kit",
         "db:exec": "sst shell ../scripts/src/psql.sh",
@@ -14,25 +15,35 @@
     },
     "devDependencies": {
         "@tsconfig/node20": "^20.1.4",
+        "@types/pngjs": "^6.0.5",
+        "@types/sanitize-html": "^2.16.0",
+        "@types/xml2js": "^0.4.14",
         "aws-iot-device-sdk-v2": "^1.21.1",
         "aws4fetch": "^1.0.20",
-        "loops": "^3.4.1",
         "mqtt": "^5.10.3",
-        "remeda": "^2.19.0",
+        "remeda": "^2.21.2",
         "ulid": "^2.3.0",
-        "uuid": "^11.0.3",
         "zod": "^3.24.1",
         "zod-openapi": "^4.2.2"
     },
     "dependencies": {
-        "@aws-sdk/client-rds-data": "^3.758.0",
+        "@aws-sdk/client-iot-data-plane": "^3.758.0",
         "@aws-sdk/client-sesv2": "^3.753.0",
-        "@instantdb/admin": "^0.17.7",
         "@openauthjs/openauth": "*",
         "@openauthjs/openevent": "^0.0.27",
         "@polar-sh/sdk": "^0.26.1",
         "drizzle-kit": "^0.30.5",
         "drizzle-orm": "^0.40.0",
-        "postgres": "^3.4.5"
+        "drizzle-zod": "^0.7.1",
+        "fast-average-color": "^9.5.0",
+        "lru-cache": "^11.1.0",
+        "p-limit": "^6.2.0",
+        "pixelmatch": "^7.1.0",
+        "pngjs": "^7.0.0",
+        "postgres": "^3.4.5",
+        "sanitize-html": "^2.16.0",
+        "sharp": "^0.34.1",
+        "steam-session": "*",
+        "xml2js": "^0.6.2"
     }
 }
