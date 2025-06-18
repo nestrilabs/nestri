@@ -17,8 +17,8 @@ self.addEventListener('fetch', (event) => {
 
     // Only intercept our image requests
     const url = new URL(req.url);
-    if (import.meta.env.VITE_CDN_URL !== url.origin) return;
-    
+    if (import.meta.env.VITE_CDN_URL !== url.origin || url.pathname.includes("/public")) return;
+
     event.respondWith(handleImageRequest(req));
 });
 

@@ -16,7 +16,3 @@ export const cdn = new sst.aws.Router("CDNRouter", {
         dns: sst.cloudflare.dns()
     }
 });
-
-export const outputs = {
-    cdn: cdn.url
-}

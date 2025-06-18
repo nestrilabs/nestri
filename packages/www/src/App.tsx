@@ -82,7 +82,7 @@ export const App: Component = () => {
             : "light",
     );
 
-    const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
+    const darkMode = window.matchMedia("(prefers-color-scheme: dark)"); 
     const setColorScheme = (e: MediaQueryListEvent) => {
         setTheme(e.matches ? "dark" : "light");
     };
@@ -94,26 +94,26 @@ export const App: Component = () => {
     const storage = useStorage();
 
     return (
-        <OpenAuthProvider
-            issuer={import.meta.env.VITE_AUTH_URL}
-            clientID="web"
-        >
+        // <OpenAuthProvider
+        //     issuer={import.meta.env.VITE_AUTH_URL}
+        //     clientID="web"
+        // >
             <Root class={theme() === "light" ? lightClass : darkClass}>
                 <Router>
                     <Route
                         path="*"
                         component={(props) => (
-                            <AccountProvider
-                                loadingUI={
-                                    <FullScreen>
-                                        <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
-                                    </FullScreen>
-                                }>
-                                <ZeroProvider>
-                                    {/* props.children */}
-                                    {props.children}
-                                </ZeroProvider>
-                            </AccountProvider>
+                            // <AccountProvider
+                            //     loadingUI={
+                            //         <FullScreen>
+                            //             <Text weight='semibold' spacing='xs' size="3xl" font="heading" >Confirming your identity&hellip;</Text>
+                            //         </FullScreen>
+                            //     }>
+                            //     <ZeroProvider>
+                            props.children
+                            //         {props.children}
+                            //     </ZeroProvider>
+                            // </AccountProvider>
                         )}
                     >
                         <Route path=":steamID">{SteamRoute}</Route>
@@ -145,6 +145,6 @@ export const App: Component = () => {
                     </Route>
                 </Router>
             </Root>
-        </OpenAuthProvider>
+        // </OpenAuthProvider>
     )
 }
