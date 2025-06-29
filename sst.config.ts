@@ -12,7 +12,7 @@ export default $config({
           profile:
             input.stage === "production" ? "nestri-production" : "nestri-dev",
         },
-        cloudflare: "5.49.0",
+        cloudflare: "6.2.0",
         random: "4.17.0",
         command: "1.0.2",
       },

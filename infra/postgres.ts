@@ -1,39 +1,42 @@
 import { vpc } from "./vpc";
+import { isPermanentStage } from "./stage";
 
-export const postgres = new sst.aws.Aurora("Database", {
-  vpc,
-  engine: "postgres",
-  scaling: {
-    min: "0 ACU",
-    max: "1 ACU",
-  },
-  transform: {
-    clusterParameterGroup: {
-      parameters: [
-        {
-          name: "rds.logical_replication",
-          value: "1",
-          applyMethod: "pending-reboot",
-        },
-        {
-          name: "max_slot_wal_keep_size",
-          value: "10240",
-          applyMethod: "pending-reboot",
-        },
-        {
-          name: "rds.force_ssl",
-          value: "0",
-          applyMethod: "pending-reboot",
-        },
-        {
-          name: "max_connections",
-          value: "1000",
-          applyMethod: "pending-reboot",
-        },
-      ],
+export const postgres = !isPermanentStage
+  ? sst.aws.Aurora.get("Database", "nestri-dev-databasecluster-vmeeabek")
+  : new sst.aws.Aurora("Database", {
+    vpc,
+    engine: "postgres",
+    scaling: {
+      min: "0 ACU",
+      max: "1 ACU",
     },
-  },
-});
+    transform: {
+      clusterParameterGroup: {
+        parameters: [
+          {
+            name: "rds.logical_replication",
+            value: "1",
+            applyMethod: "pending-reboot",
+          },
+          {
+            name: "max_slot_wal_keep_size",
+            value: "10240",
+            applyMethod: "pending-reboot",
+          },
+          {
+            name: "rds.force_ssl",
+            value: "0",
+            applyMethod: "pending-reboot",
+          },
+          {
+            name: "max_connections",
+            value: "1000",
+            applyMethod: "pending-reboot",
+          },
+        ],
+      },
+    },
+  });
 
 
 new sst.x.DevCommand("Studio", {
