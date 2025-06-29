@@ -1,7 +1,7 @@
 use crate::args::encoding_args::RateControl;
-use crate::gpu::{self, GPUInfo, get_gpu_by_card_path, get_gpus_by_vendor};
+use crate::gpu::{GPUInfo, get_gpu_by_card_path, get_gpus_by_vendor, get_nvidia_gpu_by_cuda_id};
 use clap::ValueEnum;
-use gst::prelude::*;
+use gstreamer::prelude::*;
 use std::error::Error;
 use std::str::FromStr;
 
@@ -107,7 +107,7 @@ impl EncoderType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct VideoEncoderInfo {
     pub name: String,
     pub codec: VideoCodec,
@@ -146,9 +146,9 @@ impl VideoEncoderInfo {
         self.parameters.push((key.into(), value.into()));
     }
 
-    pub fn apply_parameters(&self, element: &gst::Element, verbose: bool) {
+    pub fn apply_parameters(&self, element: &gstreamer::Element, verbose: bool) {
         for (key, value) in &self.parameters {
-            if element.has_property(key) {
+            if element.has_property(key, None) {
                 if verbose {
                     tracing::debug!("Setting property {} to {}", key, value);
                 }
@@ -191,7 +191,7 @@ where
     F: FnMut(&str) -> Option<(String, String)>,
 {
     let mut encoder_optz = encoder.clone();
-    let element = match gst::ElementFactory::make(&encoder_optz.name).build() {
+    let element = match gstreamer::ElementFactory::make(&encoder_optz.name).build() {
         Ok(e) => e,
         Err(_) => return encoder_optz, // Return original if element creation fails
     };
@@ -329,16 +329,15 @@ pub fn encoder_low_latency_params(
     encoder_optz
 }
 
-pub fn get_compatible_encoders() -> Vec<VideoEncoderInfo> {
+pub fn get_compatible_encoders(gpus: &Vec<GPUInfo>) -> Vec<VideoEncoderInfo> {
     let mut encoders = Vec::new();
-    let registry = gst::Registry::get();
-    let gpus = gpu::get_gpus();
+    let registry = gstreamer::Registry::get();
 
     for plugin in registry.plugins() {
         for feature in registry.features_by_plugin(plugin.plugin_name().as_str()) {
             let encoder_name = feature.name();
 
-            let factory = match gst::ElementFactory::find(encoder_name.as_str()) {
+            let factory = match gstreamer::ElementFactory::find(encoder_name.as_str()) {
                 Some(f) => f,
                 None => continue,
             };
@@ -376,9 +375,9 @@ pub fn get_compatible_encoders() -> Vec<VideoEncoderInfo> {
                     match api {
                         EncoderAPI::QSV | EncoderAPI::VAAPI => {
                             // Safe property access with panic protection, gstreamer-rs is fun
-                            let path = if element.has_property("device-path") {
+                            let path = if element.has_property("device-path", None) {
                                 Some(element.property::<String>("device-path"))
-                            } else if element.has_property("device") {
+                            } else if element.has_property("device", None) {
                                 Some(element.property::<String>("device"))
                             } else {
                                 None
@@ -386,13 +385,11 @@ pub fn get_compatible_encoders() -> Vec<VideoEncoderInfo> {
 
                             path.and_then(|p| get_gpu_by_card_path(&gpus, &p))
                         }
-                        EncoderAPI::NVENC if element.has_property("cuda-device-id") => {
+                        EncoderAPI::NVENC if element.has_property("cuda-device-id", None) => {
                             let cuda_id = element.property::<u32>("cuda-device-id");
-                            get_gpus_by_vendor(&gpus, "nvidia")
-                                .get(cuda_id as usize)
-                                .cloned()
+                            get_nvidia_gpu_by_cuda_id(&gpus, cuda_id as usize)
                         }
-                        EncoderAPI::AMF if element.has_property("device") => {
+                        EncoderAPI::AMF if element.has_property("device", None) => {
                             let device_id = element.property::<u32>("device");
                             get_gpus_by_vendor(&gpus, "amd")
                                 .get(device_id as usize)
@@ -539,4 +536,141 @@ pub fn get_best_compatible_encoder(
     } else {
         Err("No compatible encoder found".into())
     }
+}
+
+/// Returns the best compatible encoder that also passes test_encoder
+pub fn get_best_working_encoder(
+    encoders: &Vec<VideoEncoderInfo>,
+    codec: &Codec,
+    encoder_type: &EncoderType,
+    dma_buf: bool,
+) -> Result<VideoEncoderInfo, Box<dyn Error>> {
+    let mut candidates = get_encoders_by_videocodec(
+        encoders,
+        match codec {
+            Codec::Video(c) => c,
+            Codec::Audio(_) => {
+                return Err("Audio codec not supported for video encoder selection".into());
+            }
+        },
+    );
+    candidates = get_encoders_by_type(&candidates, encoder_type);
+    let mut tried = Vec::new();
+    while !candidates.is_empty() {
+        let best = get_best_compatible_encoder(&candidates, codec, encoder_type)?;
+        tracing::info!("Testing encoder: {}", best.name,);
+        if test_encoder(&best, dma_buf).is_ok() {
+            return Ok(best);
+        } else {
+            // Remove this encoder and try next best
+            candidates.retain(|e| e != &best);
+            tried.push(best.name.clone());
+        }
+    }
+    Err(format!("No working encoder found (tried: {:?})", tried).into())
+}
+
+/// Test if a pipeline with the given encoder can be created and set to Playing
+pub fn test_encoder(encoder: &VideoEncoderInfo, dma_buf: bool) -> Result<(), Box<dyn Error>> {
+    let src = gstreamer::ElementFactory::make("waylanddisplaysrc").build()?;
+    if let Some(gpu_info) = &encoder.gpu_info {
+        src.set_property_from_str("render-node", gpu_info.render_path());
+    }
+    let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+    let caps = gstreamer::Caps::from_str(&format!(
+        "{},width=1280,height=720,framerate=30/1{}",
+        if dma_buf {
+            "video/x-raw(memory:DMABuf)"
+        } else {
+            "video/x-raw"
+        },
+        if dma_buf { "" } else { ",format=RGBx" }
+    ))?;
+    caps_filter.set_property("caps", &caps);
+
+    let enc = gstreamer::ElementFactory::make(&encoder.name).build()?;
+    let sink = gstreamer::ElementFactory::make("fakesink").build()?;
+    // Apply encoder parameters
+    encoder.apply_parameters(&enc, false);
+
+    // Create pipeline and link elements
+    let pipeline = gstreamer::Pipeline::new();
+
+    if dma_buf && encoder.encoder_api == EncoderAPI::NVENC {
+        // GL upload element
+        let glupload = gstreamer::ElementFactory::make("glupload").build()?;
+        // GL color convert element
+        let glconvert = gstreamer::ElementFactory::make("glcolorconvert").build()?;
+        // GL color convert caps
+        let gl_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+        let gl_caps = gstreamer::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
+        gl_caps_filter.set_property("caps", &gl_caps);
+        // CUDA upload element
+        let cudaupload = gstreamer::ElementFactory::make("cudaupload").build()?;
+
+        pipeline.add_many(&[
+            &src,
+            &caps_filter,
+            &glupload,
+            &glconvert,
+            &gl_caps_filter,
+            &cudaupload,
+            &enc,
+            &sink,
+        ])?;
+        gstreamer::Element::link_many(&[
+            &src,
+            &caps_filter,
+            &glupload,
+            &glconvert,
+            &gl_caps_filter,
+            &cudaupload,
+            &enc,
+            &sink,
+        ])?;
+    } else {
+        let vapostproc = gstreamer::ElementFactory::make("vapostproc").build()?;
+        // VA caps filter
+        let va_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+        let va_caps = gstreamer::Caps::from_str("video/x-raw(memory:VAMemory),format=NV12")?;
+        va_caps_filter.set_property("caps", &va_caps);
+
+        pipeline.add_many(&[
+            &src,
+            &caps_filter,
+            &vapostproc,
+            &va_caps_filter,
+            &enc,
+            &sink,
+        ])?;
+        gstreamer::Element::link_many(&[
+            &src,
+            &caps_filter,
+            &vapostproc,
+            &va_caps_filter,
+            &enc,
+            &sink,
+        ])?;
+    }
+
+    let bus = pipeline.bus().ok_or("Pipeline has no bus")?;
+    let _ = pipeline.set_state(gstreamer::State::Playing);
+    for msg in bus.iter_timed(gstreamer::ClockTime::from_seconds(2)) {
+        match msg.view() {
+            gstreamer::MessageView::Error(err) => {
+                let err_msg = format!("Pipeline error: {}", err.error());
+                tracing::error!("Pipeline error, encoder test failed: {}", err_msg);
+                let _ = pipeline.set_state(gstreamer::State::Null);
+                return Err(err_msg.into());
+            }
+            gstreamer::MessageView::Eos(_) => {
+                tracing::info!("Pipeline EOS received");
+                let _ = pipeline.set_state(gstreamer::State::Null);
+                return Err("Pipeline EOS received, encoder test failed".into());
+            }
+            _ => {}
+        }
+    }
+    let _ = pipeline.set_state(gstreamer::State::Null);
+    Ok(())
 }

@@ -19,10 +19,7 @@ impl DeviceArgs {
                 .get_one::<String>("gpu-name")
                 .unwrap_or(&"".to_string())
                 .clone(),
-            gpu_index: matches
-                .get_one::<i32>("gpu-index")
-                .unwrap_or(&-1)
-                .clone(),
+            gpu_index: matches.get_one::<i32>("gpu-index").unwrap_or(&-1).clone(),
             gpu_card_path: matches
                 .get_one::<String>("gpu-card-path")
                 .unwrap_or(&"".to_string())

@@ -1,9 +1,10 @@
 use crate::p2p::p2p::NestriConnection;
 use crate::p2p::p2p_safestream::SafeStream;
+use dashmap::DashMap;
 use libp2p::StreamProtocol;
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::time::{self, Duration};
 
 // Cloneable callback type
 pub type CallbackInner = dyn Fn(Vec<u8>) + Send + Sync + 'static;
@@ -33,9 +34,11 @@ impl From<Box<CallbackInner>> for Callback {
 
 /// NestriStreamProtocol manages the stream protocol for Nestri connections.
 pub struct NestriStreamProtocol {
-    tx: mpsc::Sender<Vec<u8>>,
+    tx: Option<mpsc::Sender<Vec<u8>>>,
     safe_stream: Arc<SafeStream>,
-    callbacks: Arc<RwLock<HashMap<String, Callback>>>,
+    callbacks: Arc<DashMap<String, Callback>>,
+    read_handle: Option<tokio::task::JoinHandle<()>>,
+    write_handle: Option<tokio::task::JoinHandle<()>>,
 }
 impl NestriStreamProtocol {
     const NESTRI_PROTOCOL_STREAM_PUSH: StreamProtocol =
@@ -56,19 +59,33 @@ impl NestriStreamProtocol {
             }
         };
 
-        let (tx, rx) = mpsc::channel(1000);
-
-        let sp = NestriStreamProtocol {
-            tx,
+        let mut sp = NestriStreamProtocol {
+            tx: None,
             safe_stream: Arc::new(SafeStream::new(push_stream)),
-            callbacks: Arc::new(RwLock::new(HashMap::new())),
+            callbacks: Arc::new(DashMap::new()),
+            read_handle: None,
+            write_handle: None,
         };
 
-        // Spawn the loops
-        sp.spawn_read_loop();
-        sp.spawn_write_loop(rx);
+        // Use restart method to initialize the read and write loops
+        sp.restart()?;
 
         Ok(sp)
+    }
+
+    pub fn restart(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        // Return if tx and handles are already initialized
+        if self.tx.is_some() && self.read_handle.is_some() && self.write_handle.is_some() {
+            tracing::warn!("NestriStreamProtocol is already running, restart skipped");
+            return Ok(());
+        }
+
+        let (tx, rx) = mpsc::channel(1000);
+        self.tx = Some(tx);
+        self.read_handle = Some(self.spawn_read_loop());
+        self.write_handle = Some(self.spawn_write_loop(rx));
+
+        Ok(())
     }
 
     fn spawn_read_loop(&self) -> tokio::task::JoinHandle<()> {
@@ -89,14 +106,22 @@ impl NestriStreamProtocol {
                 match serde_json::from_slice::<crate::messages::MessageBase>(&data) {
                     Ok(base_message) => {
                         let response_type = base_message.payload_type;
-                        let callback = {
-                            let callbacks_lock = callbacks.read().unwrap();
-                            callbacks_lock.get(&response_type).cloned()
-                        };
 
-                        if let Some(callback) = callback {
-                            // Call the registered callback with the raw data
-                            callback.call(data);
+                        // With DashMap, we don't need explicit locking
+                        // we just get the callback directly if it exists
+                        if let Some(callback) = callbacks.get(&response_type) {
+                            // Execute the callback
+                            if let Err(e) =
+                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                    callback.call(data.clone())
+                                }))
+                            {
+                                tracing::error!(
+                                    "Callback for response type '{}' panicked: {:?}",
+                                    response_type,
+                                    e
+                                );
+                            }
                         } else {
                             tracing::warn!(
                                 "No callback registered for response type: {}",
@@ -108,6 +133,9 @@ impl NestriStreamProtocol {
                         tracing::error!("Failed to decode message: {}", e);
                     }
                 }
+
+                // Add a small sleep to reduce CPU usage
+                time::sleep(Duration::from_micros(100)).await;
             }
         })
     }
@@ -117,14 +145,20 @@ impl NestriStreamProtocol {
         tokio::spawn(async move {
             loop {
                 // Wait for a message from the channel
-                if let Some(tx_data) = rx.recv().await {
-                    if let Err(e) = safe_stream.send_raw(&tx_data).await {
-                        tracing::error!("Error sending data: {:?}", e);
+                match rx.recv().await {
+                    Some(tx_data) => {
+                        if let Err(e) = safe_stream.send_raw(&tx_data).await {
+                            tracing::error!("Error sending data: {:?}", e);
+                        }
                     }
-                } else {
-                    tracing::info!("Receiver closed, exiting write loop");
-                    break;
+                    None => {
+                        tracing::info!("Receiver closed, exiting write loop");
+                        break;
+                    }
                 }
+
+                // Add a small sleep to reduce CPU usage
+                time::sleep(Duration::from_micros(100)).await;
             }
         })
     }
@@ -134,16 +168,25 @@ impl NestriStreamProtocol {
         message: &M,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let json_data = serde_json::to_vec(message)?;
-        self.tx.try_send(json_data)?;
+        let Some(tx) = &self.tx else {
+            return Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::NotConnected,
+                if self.read_handle.is_none() && self.write_handle.is_none() {
+                    "NestriStreamProtocol has been shutdown"
+                } else {
+                    "NestriStreamProtocol is not properly initialized"
+                },
+            )));
+        };
+        tx.try_send(json_data)?;
         Ok(())
     }
 
-    /// Register a callback for a specific response type
     pub fn register_callback<F>(&self, response_type: &str, callback: F)
     where
         F: Fn(Vec<u8>) + Send + Sync + 'static,
     {
-        let mut callbacks_lock = self.callbacks.write().unwrap();
-        callbacks_lock.insert(response_type.to_string(), Callback::new(callback));
+        self.callbacks
+            .insert(response_type.to_string(), Callback::new(callback));
     }
 }
