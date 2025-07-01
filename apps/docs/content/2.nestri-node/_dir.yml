@@ -1,2 +1,3 @@
-title: 'Nestri Node'
-icon: heroicons-outline:bookmark-alt
+title: Nestri Node
+navigation.redirect: /nestri-node/what-is-nestri-node
+icon: lucide:box

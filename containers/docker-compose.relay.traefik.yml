@@ -1,0 +1,52 @@
+services:
+  traefik:
+    image: "traefik:v2.3"
+    restart: always
+    container_name: "traefik"
+    networks:
+      - traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.network=traefik"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=web-secure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web-secure.address=:443"
+      - "--certificatesresolvers.default.acme.tlschallenge=true"
+      - "--certificatesresolvers.default.acme.email=foo@example.com" # Your email for tls challenge
+      - "--certificatesresolvers.default.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "./letsencrypt:/letsencrypt" # Your letsencrypt folder for certificate persistence
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    restart:
+      unless-stopped
+  relay:
+    #image: ghcr.io/nestrilabs/nestri/relay:nightly # Offical relay image
+    image: ghcr.io/datcaptainhorse/nestri-relay:latest # Most current relay image
+    container_name: relay
+    environment:
+      - AUTO_ADD_LOCAL_IP=false # Use with WEBRTC_NAT_IPS
+      #- WEBRTC_NAT_IPS=1.2.3.4 # Add the LAN IP of your container here if connections fail
+      - VERBOSE=true
+      - DEBUG=true
+    ports:
+      - "8088:8088/udp"
+    networks:
+      - traefik
+    restart:
+      unless-stopped
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.relay.rule=Host(`relay.example.com`) # Your domain for tls challenge
+      - traefik.http.routers.relay.tls=true
+      - traefik.http.routers.relay.tls.certresolver=default
+      - traefik.http.routers.relay.entrypoints=web-secure
+      - traefik.http.services.relay.loadbalancer.server.port=8088
+networks:
+  traefik:
+    external: true

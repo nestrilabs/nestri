@@ -3,7 +3,7 @@
 
 
   <div class="py-8">
-    <h2 class="text-3xl lg:text-4xl font-bold mb-12 text-gray-900">
+    <h2 class="text-3xl lg:text-4xl font-bold mb-12 text-gray-900 dark:text-white">
       Contributors made <span class="text-orange-500">Nestri</span>
     </h2>
     <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-8 gap-4 sm:gap-5 lg:gap-6">
@@ -22,7 +22,7 @@
           }"
         >
           <UTooltip class="w-full text-orange-500" :text="contributor.login">
-            <NuxtImg
+            <img
               :src="contributor.avatar_url"
               provider="ipx"
               densities="x1 x2"
@@ -33,7 +33,7 @@
               class="rounded-xl w-full h-full transition lg:hover:scale-110"
             />
           </UTooltip>
-          <span class="inline-block rounded-t px-1 bg-gray-950 text-white absolute -bottom-2 right-0 font-medium text-sm">
+          <span class="inline-block rounded-t px-1 bg-gray-950 dark:bg-white text-white dark:text-gray-950 absolute -bottom-2 right-0 font-medium text-sm">
             <span class="font-light text-xs text-gray-400">#</span>{{ index + 1 }}
           </span>
 
