@@ -1,11 +1,6 @@
-<p align="center">
-    <a href="https://nestri.io">
-        <img src="apps/docs/public/README.png" />
-    </a>
-</p>
+# nestri
 
-<h1 align="center">nestri</h1>
-<p align="center"><i>Open-source cloud gaming platform</i></p>
+Opensource and selfhostable cloud gaming platform
 
-</h1>
-</div>
+> TIP
+> TODO: Finish up on this README
