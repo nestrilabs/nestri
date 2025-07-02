@@ -236,7 +236,6 @@ increment_retry() {
 # Restarts the chain
 restart_chain() {
     log "Restarting nestri-server and compositor..."
-    RETRY_COUNT=0
     start_nestri_server
 }
 
