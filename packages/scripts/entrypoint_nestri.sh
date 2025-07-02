@@ -203,7 +203,7 @@ start_compositor() {
                         log "Warning: No enabled outputs detected. Skipping wlr-randr resolution patch."
                         return
                     fi
-                    WAYLAND_DISPLAY="$COMPOSITOR_SOCKET" wlr-randr --output "$OUTPUT_NAME" --custom-mode "$WIDTH"x"$HEIGHT"
+                    WAYLAND_DISPLAY=wayland-0 wlr-randr --output "$OUTPUT_NAME" --custom-mode "$WIDTH"x"$HEIGHT"
                     log "Patched resolution with wlr-randr."
                 fi
                 return
