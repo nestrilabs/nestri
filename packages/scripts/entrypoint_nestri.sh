@@ -89,10 +89,12 @@ start_steam_namespaceless_patcher() {
                     }
 
                     # Pad the temporary file to match original size
-                    truncate -s "$original_size" "$temp_entrypoint" 2>/dev/null || {
-                        log "Warning: Failed to pad $temp_entrypoint to $original_size bytes"
-                        continue
-                    }
+                    if (( $(stat -c %s "$temp_entrypoint") < original_size )); then
+                        truncate -s "$original_size" "$temp_entrypoint" 2>/dev/null || {
+                            log "Warning: Failed to pad $temp_entrypoint to $original_size bytes"
+                            continue
+                        }
+                    fi
 
                     # Copy padded file to Steam's entrypoint, if contents differ
                     if ! cmp -s "$temp_entrypoint" "$steam_entrypoint"; then
@@ -195,7 +197,8 @@ start_compositor() {
                 log "Compositor socket ready ($COMPOSITOR_SOCKET)."
                 # Patch resolution with wlr-randr for non-gamescope compositors
                 if ! $is_gamescope; then
-                    local OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
+                    local OUTPUT_NAME
+                    OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
                     if [ -z "$OUTPUT_NAME" ]; then
                         log "Warning: No enabled outputs detected. Skipping wlr-randr resolution patch."
                         return

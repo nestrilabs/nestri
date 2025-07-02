@@ -189,7 +189,9 @@ configure_ssh() {
         echo "ChallengeResponseAuthentication no"
         echo "UsePAM no"
         echo "PubkeyAuthentication yes"
-    } >> /etc/ssh/sshd_config
+    } | while read -r line; do
+        grep -qF "$line" /etc/ssh/sshd_config || echo "$line" >> /etc/ssh/sshd_config
+    done
 
     # Start SSH server
     log "Starting SSH server on port ${SSH_ENABLE_PORT}"
