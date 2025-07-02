@@ -151,7 +151,7 @@ start_compositor() {
         NESTRI_LAUNCH_CMD="steam-native -tenfoot -cef-force-gpu"
     fi
     if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
-        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE}"
+        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
 
     # Start Steam patcher only if Steam command is present
@@ -239,18 +239,19 @@ restart_chain() {
 
 # Cleans up processes
 cleanup() {
+    local exit_code=$?
     log "Terminating processes..."
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
     kill_if_running "${APP_PID:-}" "application"
     kill_if_running "${PATCHER_PID:-}" "steam-patcher"
     rm -f "/tmp/_v2-entry-point.padded" 2>/dev/null
-    exit 0
+    exit $exit_code
 }
 
 # Monitor processes for unexpected exits
 main_loop() {
-    trap cleanup SIGINT SIGTERM
+    trap cleanup SIGINT SIGTERM EXIT
 
     while true; do
         sleep 1

@@ -13,9 +13,9 @@ log() {
 # Ensures user directory ownership
 chown_user_directory() {
     local user_group="${USER}:${GID}"
-    if ! chown -R -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
-        echo "Warning: Failed to change ownership of ${HOME} to ${user_group}" >&2
-        return 0
+    if ! chown -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
+        echo "Error: Failed to change ownership of ${HOME} to ${user_group}" >&2
+        return 1
     fi
     return 0
 }
@@ -184,7 +184,7 @@ configure_ssh() {
     # Configure secure SSH settings
     {
         echo "PasswordAuthentication no"
-        echo "PermitRootLogin prohibit-password"
+        echo "PermitRootLogin no"
         echo "ChallengeResponseAuthentication no"
         echo "UsePAM no"
         echo "PubkeyAuthentication yes"
