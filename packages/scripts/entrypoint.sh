@@ -169,11 +169,12 @@ configure_ssh() {
         return 1
     }
 
-    # Create .ssh directory and authorized_keys file
-    mkdir -p /root/.ssh
-    echo "${SSH_ALLOWED_KEY}" > /root/.ssh/authorized_keys
-    chmod 700 /root/.ssh
-    chmod 600 /root/.ssh/authorized_keys
+    # Create .ssh directory and authorized_keys file for nestri user
+    mkdir -p /home/nestri/.ssh
+    echo "${SSH_ALLOWED_KEY}" > /home/nestri/.ssh/authorized_keys
+    chmod 700 /home/nestri/.ssh
+    chmod 600 /home/nestri/.ssh/authorized_keys
+    chown -R nestri:nestri /home/nestri/.ssh
 
     # Update SSHD config
     sed -i -E "s/^#?Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
