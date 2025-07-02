@@ -1,5 +1,4 @@
 #!/bin/bash
-set -euo pipefail
 
 log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -50,6 +49,70 @@ kill_if_running() {
     fi
 }
 
+# Starts up Steam namespace-less live-patcher
+start_steam_namespaceless_patcher() {
+    kill_if_running "${PATCHER_PID:-}" "steam-patcher"
+
+    local entrypoints=(
+        "${HOME}/.local/share/Steam/steamrt64/steam-runtime-steamrt/_v2-entry-point"
+        "${HOME}/.local/share/Steam/steamapps/common/SteamLinuxRuntime_soldier/_v2-entry-point"
+        "${HOME}/.local/share/Steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point"
+        # < Add more entrypoints here if needed >
+    )
+    local custom_entrypoint="/etc/nestri/_v2-entry-point"
+    local temp_entrypoint="/tmp/_v2-entry-point.padded"
+
+    if [[ ! -f "$custom_entrypoint" ]]; then
+        log "Error: Custom _v2-entry-point not found at $custom_entrypoint"
+        exit 1
+    fi
+
+    log "Starting Steam _v2-entry-point patcher..."
+    (
+        while true; do
+            for i in "${!entrypoints[@]}"; do
+                local steam_entrypoint="${entrypoints[$i]}"
+
+                if [[ -f "$steam_entrypoint" ]]; then
+                    # Get original file size
+                    local original_size
+                    original_size=$(stat -c %s "$steam_entrypoint" 2>/dev/null)
+                    if [[ -z "$original_size" ]] || [[ "$original_size" -eq 0 ]]; then
+                        log "Warning: Could not determine size of $steam_entrypoint, retrying..."
+                        continue
+                    fi
+
+                    # Copy custom entrypoint to temp location
+                    cp "$custom_entrypoint" "$temp_entrypoint" 2>/dev/null || {
+                        log "Warning: Failed to copy custom entrypoint to $temp_entrypoint"
+                        continue
+                    }
+
+                    # Pad the temporary file to match original size
+                    if (( $(stat -c %s "$temp_entrypoint") < original_size )); then
+                        truncate -s "$original_size" "$temp_entrypoint" 2>/dev/null || {
+                            log "Warning: Failed to pad $temp_entrypoint to $original_size bytes"
+                            continue
+                        }
+                    fi
+
+                    # Copy padded file to Steam's entrypoint, if contents differ
+                    if ! cmp -s "$temp_entrypoint" "$steam_entrypoint"; then
+                        cp "$temp_entrypoint" "$steam_entrypoint" 2>/dev/null || {
+                            log "Warning: Failed to patch $steam_entrypoint"
+                        }
+                    fi
+                fi
+            done
+
+            # Sleep for 1s
+            sleep 1
+        done
+    ) &
+    PATCHER_PID=$!
+    log "Steam _v2-entry-point patcher started (PID: $PATCHER_PID)"
+}
+
 # Starts nestri-server
 start_nestri_server() {
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
@@ -71,33 +134,93 @@ start_nestri_server() {
     done
 
     log "Error: Wayland display 'wayland-1' not available."
+    
+    # Workaround for gstreamer being bit slow at times
+    log "Clearing gstreamer cache.."
+    rm -rf "${HOME}/.cache/gstreamer-1.0" 2>/dev/null || true
+
     increment_retry "nestri-server"
     restart_chain
 }
 
-# Starts compositor (gamescope) with Steam
+# Starts compositor with optional application
 start_compositor() {
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
+    kill_if_running "${APP_PID:-}" "application"
 
-    log "Starting compositor with Steam..."
-    rm -rf /tmp/.X11-unix && mkdir -p /tmp/.X11-unix && chown nestri:nestri /tmp/.X11-unix
-    WAYLAND_DISPLAY=wayland-1 gamescope --backend wayland -g -f -e --rt --mangoapp -W "${WIDTH}" -H "${HEIGHT}" -- steam-native -tenfoot -cef-force-gpu &
-    COMPOSITOR_PID=$!
+    # Set default values only if variables are unset (not empty)
+    if [[ -z "${NESTRI_LAUNCH_CMD+x}" ]]; then
+        NESTRI_LAUNCH_CMD="steam-native -tenfoot -cef-force-gpu"
+    fi
+    if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
+        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
+    fi
 
-    log "Waiting for compositor to initialize..."
-    COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
-    for ((i=1; i<=15; i++)); do
-        if [[ -e "$COMPOSITOR_SOCKET" ]]; then
-            log "Compositor initialized, gamescope-0 ready."
-            sleep 2
-            return
+    # Start Steam patcher only if Steam command is present
+    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
+        start_steam_namespaceless_patcher
+    fi
+
+    # Launch compositor if configured
+    if [[ -n "${NESTRI_LAUNCH_COMPOSITOR}" ]]; then
+        local compositor_cmd="$NESTRI_LAUNCH_COMPOSITOR"
+        local is_gamescope=false
+
+        # Check if this is a gamescope command
+        if [[ "$compositor_cmd" == *"gamescope"* ]]; then
+            is_gamescope=true
+            # Append application command for gamescope if needed
+            if [[ -n "$NESTRI_LAUNCH_CMD" ]] && [[ "$compositor_cmd" != *" -- "* ]]; then
+                # If steam in launch command, enable gamescope integration via -e
+                if [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
+                    compositor_cmd+=" -e"
+                fi
+                compositor_cmd+=" -- $NESTRI_LAUNCH_CMD"
+            fi
         fi
-        sleep 1
-    done
 
-    log "Error: Compositor did not initialize."
-    increment_retry "compositor"
-    start_compositor
+        log "Starting compositor: $compositor_cmd"
+        WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$compositor_cmd" &
+        COMPOSITOR_PID=$!
+
+        # Wait for appropriate socket based on compositor type
+        if $is_gamescope; then
+            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
+            log "Waiting for gamescope socket..."
+        else
+            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/wayland-0"
+            log "Waiting for wayland-0 socket..."
+        fi
+
+        for ((i=1; i<=15; i++)); do
+            if [[ -e "$COMPOSITOR_SOCKET" ]]; then
+                log "Compositor socket ready ($COMPOSITOR_SOCKET)."
+                # Patch resolution with wlr-randr for non-gamescope compositors
+                if ! $is_gamescope; then
+                    local OUTPUT_NAME
+                    OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
+                    if [ -z "$OUTPUT_NAME" ]; then
+                        log "Warning: No enabled outputs detected. Skipping wlr-randr resolution patch."
+                        return
+                    fi
+                    WAYLAND_DISPLAY=wayland-0 wlr-randr --output "$OUTPUT_NAME" --custom-mode "$WIDTH"x"$HEIGHT"
+                    log "Patched resolution with wlr-randr."
+                fi
+                return
+            fi
+            sleep 1
+        done
+        log "Warning: Compositor socket not found after 15 seconds ($COMPOSITOR_SOCKET)."
+    else
+        # Launch standalone application if no compositor
+        if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
+            log "Starting application: $NESTRI_LAUNCH_CMD"
+            WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
+            APP_PID=$!
+        else
+            log "No compositor or application configured."
+        fi
+    fi
 }
 
 # Increments retry counter
@@ -113,21 +236,24 @@ increment_retry() {
 # Restarts the chain
 restart_chain() {
     log "Restarting nestri-server and compositor..."
-    RETRY_COUNT=0
     start_nestri_server
 }
 
 # Cleans up processes
 cleanup() {
+    local exit_code=$?
     log "Terminating processes..."
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
-    exit 0
+    kill_if_running "${APP_PID:-}" "application"
+    kill_if_running "${PATCHER_PID:-}" "steam-patcher"
+    rm -f "/tmp/_v2-entry-point.padded" 2>/dev/null
+    exit $exit_code
 }
 
 # Monitor processes for unexpected exits
 main_loop() {
-    trap cleanup SIGINT SIGTERM
+    trap cleanup SIGINT SIGTERM EXIT
 
     while true; do
         sleep 1
@@ -141,6 +267,16 @@ main_loop() {
             log "compositor died."
             increment_retry "compositor"
             start_compositor
+        # Check application
+        elif [[ -n "${APP_PID:-}" ]] && ! kill -0 "${APP_PID}" 2>/dev/null; then
+            log "application died."
+            increment_retry "application"
+            start_compositor
+        # Check patcher
+        elif [[ -n "${PATCHER_PID:-}" ]] && ! kill -0 "${PATCHER_PID}" 2>/dev/null; then
+            log "steam-patcher died."
+            increment_retry "steam-patcher"
+            start_steam_namespaceless_patcher
         fi
     done
 }
