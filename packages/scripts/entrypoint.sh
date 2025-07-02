@@ -14,8 +14,8 @@ log() {
 chown_user_directory() {
     local user_group="${USER}:${GID}"
     if ! chown -R -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
-        echo "Error: Failed to change ownership of ${HOME} to ${user_group}" >&2
-        return 1
+        echo "Warning: Failed to change ownership of ${HOME} to ${user_group}" >&2
+        return 0
     fi
     return 0
 }
@@ -150,27 +150,71 @@ log_gpu_info() {
     done
 }
 
+configure_ssh() {
+    # Return early if SSH not enabled
+    if [ -z "${SSH_ENABLE_PORT+x}" ] || [ "${SSH_ENABLE_PORT:-0}" -eq 0 ]; then
+        return 0
+    fi
+
+    # Check if we have required key
+    if [ -z "${SSH_ALLOWED_KEY+x}" ] || [ -z "${SSH_ALLOWED_KEY}" ]; then
+        return 0
+    fi
+
+    log "Configuring SSH server on port ${SSH_ENABLE_PORT} with public key authentication"
+
+    # Ensure SSH host keys exist
+    ssh-keygen -A 2>/dev/null || {
+        log "Error: Failed to generate SSH host keys"
+        return 1
+    }
+
+    # Create .ssh directory and authorized_keys file
+    mkdir -p /root/.ssh
+    echo "${SSH_ALLOWED_KEY}" > /root/.ssh/authorized_keys
+    chmod 700 /root/.ssh
+    chmod 600 /root/.ssh/authorized_keys
+
+    # Update SSHD config
+    sed -i -E "s/^#?Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
+        log "Error: Failed to update SSH port configuration"
+        return 1
+    }
+
+    # Configure secure SSH settings
+    {
+        echo "PasswordAuthentication no"
+        echo "PermitRootLogin prohibit-password"
+        echo "ChallengeResponseAuthentication no"
+        echo "UsePAM no"
+        echo "PubkeyAuthentication yes"
+    } >> /etc/ssh/sshd_config
+
+    # Start SSH server
+    log "Starting SSH server on port ${SSH_ENABLE_PORT}"
+    /usr/sbin/sshd -D -p "${SSH_ENABLE_PORT}" &
+    SSH_PID=$!
+
+    # Verify the process started
+    if ! ps -p $SSH_PID > /dev/null 2>&1; then
+        log "Error: SSH server failed to start"
+        return 1
+    fi
+
+    log "SSH server started with PID ${SSH_PID}"
+    return 0
+}
+
 main() {
-    # Configure and start SSH if enabled
-    if [ "${SSH_ENABLE_PORT:-0}" -ne 0 ]; then
-        log "Configuring SSH server to listen on port ${SSH_ENABLE_PORT}"
-        # Ensure SSH host keys exist
-        ssh-keygen -A 2>/dev/null || {
-            log "Error: Failed to generate SSH host keys."
+    # Configure SSH
+    if [ -n "${SSH_ENABLE_PORT+x}" ] && [ "${SSH_ENABLE_PORT:-0}" -ne 0 ] && \
+       [ -n "${SSH_ALLOWED_KEY+x}" ] && [ -n "${SSH_ALLOWED_KEY}" ]; then
+        if ! configure_ssh; then
+            log "Error: SSH configuration failed with given variables - exiting"
             exit 1
-        }
-        # Update SSHD config with the specified port
-        sed -i -E "s/^#?Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
-            log "Error: Failed to update SSH port configuration."
-            exit 1
-        }
-        # Start SSH server in background
-        log "Starting SSH server on port ${SSH_ENABLE_PORT}..."
-        /usr/sbin/sshd -D -p "${SSH_ENABLE_PORT}" &
-        SSH_PID=$!
-        log "SSH server started with PID ${SSH_PID}"
+        fi
     else
-        log "SSH_ENABLE_PORT set to 0, skipping SSH setup.."
+        log "SSH not configured (missing SSH_ENABLE_PORT or SSH_ALLOWED_KEY)"
     fi
 
     # Wait for required sockets

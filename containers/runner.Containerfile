@@ -136,7 +136,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         vulkan-radeon lib32-vulkan-radeon \
         mesa \
         steam steam-native-runtime proton-cachyos gtk3 lib32-gtk3 \
-        sudo xorg-xwayland seatd libinput gamescope mangohud \
+        sudo xorg-xwayland seatd libinput gamescope mangohud wlr-randr \
         libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib \
@@ -154,10 +154,6 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     paccache -rk1 && \
     rm -rf /usr/share/{info,man,doc}/*
 
-### SSH Configuration ###
-RUN echo "PermitRootLogin no" >> /etc/ssh/sshd_config && \
-    echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
-
 ### User Configuration ###
 ENV USER="nestri" \
     UID=1000 \
@@ -165,7 +161,6 @@ ENV USER="nestri" \
     USER_PWD="nestri1234" \
     XDG_RUNTIME_DIR=/run/user/1000 \
     HOME=/home/nestri \
-    SSH_ENABLE_PORT=0 \
     NVIDIA_DRIVER_CAPABILITIES=all
 
 RUN mkdir -p /home/${USER} && \

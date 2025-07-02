@@ -141,33 +141,83 @@ start_nestri_server() {
     restart_chain
 }
 
-# Starts compositor (gamescope) with Steam
+# Starts compositor with optional application
 start_compositor() {
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
+    kill_if_running "${APP_PID:-}" "application"
 
-    # Start patcher before proper Steam
-    start_steam_namespaceless_patcher
+    # Set default values only if variables are unset (not empty)
+    if [[ -z "${NESTRI_LAUNCH_CMD+x}" ]]; then
+        NESTRI_LAUNCH_CMD="steam-native -tenfoot -cef-force-gpu"
+    fi
+    if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
+        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE}"
+    fi
 
-    # Clear old X11 sockets
-    rm -rf /tmp/.X11-unix && mkdir -p /tmp/.X11-unix && chown nestri:nestri /tmp/.X11-unix
-    log "Starting compositor with Steam..."
-    WAYLAND_DISPLAY=wayland-1 gamescope --backend wayland --force-grab-cursor -g -f -e --rt --mangoapp -W "${WIDTH}" -H "${HEIGHT}" -r "${FRAMERATE}" -- steam-native -tenfoot -cef-force-gpu &
-    COMPOSITOR_PID=$!
+    # Start Steam patcher only if Steam command is present
+    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
+        start_steam_namespaceless_patcher
+    fi
 
-    log "Waiting for compositor to initialize..."
-    COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
-    for ((i=1; i<=15; i++)); do
-        if [[ -e "$COMPOSITOR_SOCKET" ]]; then
-            log "Compositor initialized, gamescope-0 ready."
-            sleep 1
-            return
+    # Launch compositor if configured
+    if [[ -n "${NESTRI_LAUNCH_COMPOSITOR}" ]]; then
+        local compositor_cmd="$NESTRI_LAUNCH_COMPOSITOR"
+        local is_gamescope=false
+
+        # Check if this is a gamescope command
+        if [[ "$compositor_cmd" == *"gamescope"* ]]; then
+            is_gamescope=true
+            # Append application command for gamescope if needed
+            if [[ -n "$NESTRI_LAUNCH_CMD" ]] && [[ "$compositor_cmd" != *" -- "* ]]; then
+                # If steam in launch command, enable gamescope integration via -e
+                if [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
+                    compositor_cmd+=" -e"
+                fi
+                compositor_cmd+=" -- $NESTRI_LAUNCH_CMD"
+            fi
         fi
-        sleep 1
-    done
 
-    log "Error: Compositor did not initialize."
-    increment_retry "compositor"
-    start_compositor
+        log "Starting compositor: $compositor_cmd"
+        WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$compositor_cmd" &
+        COMPOSITOR_PID=$!
+
+        # Wait for appropriate socket based on compositor type
+        if $is_gamescope; then
+            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
+            log "Waiting for gamescope socket..."
+        else
+            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/wayland-0"
+            log "Waiting for wayland-0 socket..."
+        fi
+
+        for ((i=1; i<=15; i++)); do
+            if [[ -e "$COMPOSITOR_SOCKET" ]]; then
+                log "Compositor socket ready ($COMPOSITOR_SOCKET)."
+                # Patch resolution with wlr-randr for non-gamescope compositors
+                if ! $is_gamescope; then
+                    local OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
+                    if [ -z "$OUTPUT_NAME" ]; then
+                        log "Warning: No enabled outputs detected. Skipping wlr-randr resolution patch."
+                        return
+                    fi
+                    WAYLAND_DISPLAY="$COMPOSITOR_SOCKET" wlr-randr --output "$OUTPUT_NAME" --custom-mode "$WIDTH"x"$HEIGHT"
+                    log "Patched resolution with wlr-randr."
+                fi
+                return
+            fi
+            sleep 1
+        done
+        log "Warning: Compositor socket not found after 15 seconds ($COMPOSITOR_SOCKET)."
+    else
+        # Launch standalone application if no compositor
+        if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
+            log "Starting application: $NESTRI_LAUNCH_CMD"
+            WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
+            APP_PID=$!
+        else
+            log "No compositor or application configured."
+        fi
+    fi
 }
 
 # Increments retry counter
@@ -192,6 +242,7 @@ cleanup() {
     log "Terminating processes..."
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
+    kill_if_running "${APP_PID:-}" "application"
     kill_if_running "${PATCHER_PID:-}" "steam-patcher"
     rm -f "/tmp/_v2-entry-point.padded" 2>/dev/null
     exit 0
@@ -212,6 +263,11 @@ main_loop() {
         elif [[ -n "${COMPOSITOR_PID:-}" ]] && ! kill -0 "${COMPOSITOR_PID}" 2>/dev/null; then
             log "compositor died."
             increment_retry "compositor"
+            start_compositor
+        # Check application
+        elif [[ -n "${APP_PID:-}" ]] && ! kill -0 "${APP_PID}" 2>/dev/null; then
+            log "application died."
+            increment_retry "application"
             start_compositor
         # Check patcher
         elif [[ -n "${PATCHER_PID:-}" ]] && ! kill -0 "${PATCHER_PID}" 2>/dev/null; then
