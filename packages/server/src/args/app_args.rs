@@ -55,7 +55,11 @@ impl AppArgs {
         tracing::info!("AppArgs:");
         tracing::info!("> verbose: {}", self.verbose);
         tracing::info!("> debug: {}", self.debug);
-        tracing::info!("> resolution: '{}x{}'", self.resolution.0, self.resolution.1);
+        tracing::info!(
+            "> resolution: '{}x{}'",
+            self.resolution.0,
+            self.resolution.1
+        );
         tracing::info!("> framerate: {}", self.framerate);
         tracing::info!("> relay_url: '{}'", self.relay_url);
         tracing::info!("> room: '{}'", self.room);

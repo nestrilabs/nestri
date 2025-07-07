@@ -1,7 +1,7 @@
 use crate::args::encoding_args::AudioCaptureMethod;
 use crate::enc_helper::{AudioCodec, EncoderType, VideoCodec};
-use clap::{Arg, Command, value_parser};
 use clap::builder::{BoolishValueParser, NonEmptyStringValueParser};
+use clap::{Arg, Command, value_parser};
 
 pub mod app_args;
 pub mod device_args;
@@ -89,7 +89,7 @@ impl Args {
                     .env("GPU_INDEX")
                     .help("GPU to use by index")
                     .value_parser(value_parser!(i32).range(-1..))
-                    .default_value("-1")
+                    .default_value("-1"),
             )
             .arg(
                 Arg::new("gpu-card-path")
@@ -160,7 +160,7 @@ impl Args {
                     .env("AUDIO_CAPTURE_METHOD")
                     .help("Audio capture method")
                     .value_parser(value_parser!(AudioCaptureMethod))
-                    .default_value("pipewire"),
+                    .default_value("pulseaudio"),
             )
             .arg(
                 Arg::new("audio-codec")

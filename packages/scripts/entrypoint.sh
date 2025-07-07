@@ -13,7 +13,7 @@ log() {
 # Ensures user directory ownership
 chown_user_directory() {
     local user_group="${USER}:${GID}"
-    if ! chown -R -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
+    if ! chown -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
         echo "Error: Failed to change ownership of ${HOME} to ${user_group}" >&2
         return 1
     fi
@@ -34,6 +34,12 @@ wait_for_socket() {
     done
     log "Error: $name socket did not appear after ${TIMEOUT_SECONDS}s."
     return 1
+}
+
+# Prepares environment for namespace-less applications (like Steam)
+setup_namespaceless() {
+    rm -f /run/systemd/container || true
+    mkdir -p /run/pressure-vessel || true
 }
 
 # Ensures cache directory exists
@@ -103,8 +109,10 @@ get_nvidia_installer() {
 install_nvidia_driver() {
     local filename="$1"
     log "Installing NVIDIA driver components from $filename..."
-    sudo ./"$filename" \
+    bash ./"$filename" \
         --silent \
+        --skip-depmod \
+        --skip-module-unload \
         --no-kernel-module \
         --install-compat32-libs \
         --no-nouveau-check \
@@ -116,18 +124,102 @@ install_nvidia_driver() {
         log "Error: NVIDIA driver installation failed."
         return 1
     }
+
+    # Install CUDA package
+    log "Checking if CUDA is already installed"
+    if ! pacman -Q cuda &>/dev/null; then
+        log "Installing CUDA package"
+        pacman -S --noconfirm cuda --assume-installed opencl-nvidia
+    else
+        log "CUDA package is already installed, skipping"
+    fi
+
     log "NVIDIA driver installation completed."
     return 0
 }
 
-function log_gpu_info {
+log_gpu_info() {
+    if ! declare -p vendor_devices &>/dev/null; then
+        log "Warning: vendor_devices array is not defined"
+        return
+    fi
+
     log "Detected GPUs:"
     for vendor in "${!vendor_devices[@]}"; do
         log "> $vendor: ${vendor_devices[$vendor]}"
     done
 }
 
+configure_ssh() {
+    # Return early if SSH not enabled
+    if [ -z "${SSH_ENABLE_PORT+x}" ] || [ "${SSH_ENABLE_PORT:-0}" -eq 0 ]; then
+        return 0
+    fi
+
+    # Check if we have required key
+    if [ -z "${SSH_ALLOWED_KEY+x}" ] || [ -z "${SSH_ALLOWED_KEY}" ]; then
+        return 0
+    fi
+
+    log "Configuring SSH server on port ${SSH_ENABLE_PORT} with public key authentication"
+
+    # Ensure SSH host keys exist
+    ssh-keygen -A 2>/dev/null || {
+        log "Error: Failed to generate SSH host keys"
+        return 1
+    }
+
+    # Create .ssh directory and authorized_keys file for nestri user
+    mkdir -p /home/nestri/.ssh
+    echo "${SSH_ALLOWED_KEY}" > /home/nestri/.ssh/authorized_keys
+    chmod 700 /home/nestri/.ssh
+    chmod 600 /home/nestri/.ssh/authorized_keys
+    chown -R nestri:nestri /home/nestri/.ssh
+
+    # Update SSHD config
+    sed -i -E "s/^#?Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
+        log "Error: Failed to update SSH port configuration"
+        return 1
+    }
+
+    # Configure secure SSH settings
+    {
+        echo "PasswordAuthentication no"
+        echo "PermitRootLogin no"
+        echo "ChallengeResponseAuthentication no"
+        echo "UsePAM no"
+        echo "PubkeyAuthentication yes"
+    } | while read -r line; do
+        grep -qF "$line" /etc/ssh/sshd_config || echo "$line" >> /etc/ssh/sshd_config
+    done
+
+    # Start SSH server
+    log "Starting SSH server on port ${SSH_ENABLE_PORT}"
+    /usr/sbin/sshd -D -p "${SSH_ENABLE_PORT}" &
+    SSH_PID=$!
+
+    # Verify the process started
+    if ! ps -p $SSH_PID > /dev/null 2>&1; then
+        log "Error: SSH server failed to start"
+        return 1
+    fi
+
+    log "SSH server started with PID ${SSH_PID}"
+    return 0
+}
+
 main() {
+    # Configure SSH
+    if [ -n "${SSH_ENABLE_PORT+x}" ] && [ "${SSH_ENABLE_PORT:-0}" -ne 0 ] && \
+       [ -n "${SSH_ALLOWED_KEY+x}" ] && [ -n "${SSH_ALLOWED_KEY}" ]; then
+        if ! configure_ssh; then
+            log "Error: SSH configuration failed with given variables - exiting"
+            exit 1
+        fi
+    else
+        log "SSH not configured (missing SSH_ENABLE_PORT or SSH_ALLOWED_KEY)"
+    fi
+
     # Wait for required sockets
     wait_for_socket "/run/dbus/system_bus_socket" "DBus" || exit 1
     wait_for_socket "/run/user/${UID}/pipewire-0" "PipeWire" || exit 1
@@ -214,6 +306,10 @@ main() {
     # Handle user directory permissions
     log "Ensuring user directory permissions..."
     chown_user_directory || exit 1
+
+    # Setup namespaceless env
+    log "Applying namespace-less configuration"
+    setup_namespaceless
 
     # Switch to nestri user
     log "Switching to nestri user for application startup..."

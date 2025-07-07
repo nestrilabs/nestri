@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Clone repository
-RUN git clone -b dev-dmabuf https://github.com/DatCaptainHorse/gst-wayland-display.git
+RUN git clone --depth 1 -b "dev-dmabuf" https://github.com/DatCaptainHorse/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -135,11 +135,12 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         vulkan-intel lib32-vulkan-intel vpl-gpu-rt \
         vulkan-radeon lib32-vulkan-radeon \
         mesa \
-        steam steam-native-runtime gtk3 lib32-gtk3 \
-        sudo xorg-xwayland seatd libinput gamescope mangohud \
+        steam steam-native-runtime proton-cachyos gtk3 lib32-gtk3 \
+        sudo xorg-xwayland seatd libinput gamescope mangohud wlr-randr \
         libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
-        noto-fonts-cjk supervisor jq chwd lshw pacman-contrib && \
+        noto-fonts-cjk supervisor jq chwd lshw pacman-contrib \
+        openssh && \
     # GStreamer stack
     pacman -Sy --needed --noconfirm \
         gstreamer gst-plugins-base gst-plugins-good \
@@ -152,14 +153,6 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     # Cleanup
     paccache -rk1 && \
     rm -rf /usr/share/{info,man,doc}/*
-
-### Application Installation ###
-ARG LUDUSAVI_VERSION="0.28.0"
-RUN curl -fsSL -o ludusavi.tar.gz \
-        "https://github.com/mtkennerly/ludusavi/releases/download/v${LUDUSAVI_VERSION}/ludusavi-v${LUDUSAVI_VERSION}-linux.tar.gz" && \
-    tar -xzvf ludusavi.tar.gz && \
-    mv ludusavi /usr/bin/ && \
-    rm ludusavi.tar.gz
 
 ### User Configuration ###
 ENV USER="nestri" \

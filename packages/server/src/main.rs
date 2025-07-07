@@ -8,24 +8,24 @@ mod p2p;
 mod proto;
 
 use crate::args::encoding_args;
-use crate::enc_helper::EncoderType;
-use crate::gpu::GPUVendor;
+use crate::enc_helper::{EncoderAPI, EncoderType};
+use crate::gpu::{GPUInfo, GPUVendor};
 use crate::nestrisink::NestriSignaller;
 use crate::p2p::p2p::NestriP2P;
-use futures_util::StreamExt;
-use gst::prelude::*;
+use gstreamer::prelude::*;
 use gstrswebrtc::signaller::Signallable;
 use gstrswebrtc::webrtcsink::BaseWebRTCSink;
 use std::error::Error;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio_stream::StreamExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::LevelFilter;
 
 // Handles gathering GPU information and selecting the most suitable GPU
-fn handle_gpus(args: &args::Args) -> Result<gpu::GPUInfo, Box<dyn Error>> {
+fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
     tracing::info!("Gathering GPU information..");
-    let gpus = gpu::get_gpus();
+    let mut gpus = gpu::get_gpus();
     if gpus.is_empty() {
         return Err("No GPUs found".into());
     }
@@ -40,10 +40,11 @@ fn handle_gpus(args: &args::Args) -> Result<gpu::GPUInfo, Box<dyn Error>> {
         );
     }
 
-    // Based on available arguments, pick a GPU
-    let gpu;
+    // Additional GPU filtering
     if !args.device.gpu_card_path.is_empty() {
-        gpu = gpu::get_gpu_by_card_path(&gpus, &args.device.gpu_card_path);
+        if let Some(gpu) = gpu::get_gpu_by_card_path(&gpus, &args.device.gpu_card_path) {
+            return Ok(Vec::from([gpu]));
+        }
     } else {
         // Run all filters that are not empty
         let mut filtered_gpus = gpus.clone();
@@ -55,35 +56,43 @@ fn handle_gpus(args: &args::Args) -> Result<gpu::GPUInfo, Box<dyn Error>> {
         }
         if args.device.gpu_index > -1 {
             // get single GPU by index
-            gpu = gpu::get_gpu_by_index(&filtered_gpus, args.device.gpu_index).or_else(|| {
-                tracing::warn!("GPU index {} is out of range", args.device.gpu_index);
-                None
-            });
+            let gpu_index = args.device.gpu_index as usize;
+            if gpu_index >= filtered_gpus.len() {
+                return Err(format!(
+                    "GPU index {} is out of bounds for available GPUs (0-{})",
+                    gpu_index,
+                    filtered_gpus.len() - 1
+                )
+                .into());
+            }
+            gpus = Vec::from([filtered_gpus[gpu_index].clone()]);
         } else {
-            // get first GPU
-            gpu = filtered_gpus
+            // Filter out unknown vendor GPUs
+            gpus = filtered_gpus
                 .into_iter()
-                .find(|g| *g.vendor() != GPUVendor::UNKNOWN);
+                .filter(|gpu| *gpu.vendor() != GPUVendor::UNKNOWN)
+                .collect();
         }
     }
-    if gpu.is_none() {
+    if gpus.is_empty() {
         return Err(format!(
-            "No GPU found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
+            "No GPU(s) found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
             args.device.gpu_vendor,
             args.device.gpu_name,
             args.device.gpu_index,
             args.device.gpu_card_path
         ).into());
     }
-    let gpu = gpu.unwrap();
-    tracing::info!("Selected GPU: '{}'", gpu.device_name());
-    Ok(gpu)
+    Ok(gpus)
 }
 
 // Handles picking video encoder
-fn handle_encoder_video(args: &args::Args) -> Result<enc_helper::VideoEncoderInfo, Box<dyn Error>> {
+fn handle_encoder_video(
+    args: &args::Args,
+    gpus: &Vec<GPUInfo>,
+) -> Result<enc_helper::VideoEncoderInfo, Box<dyn Error>> {
     tracing::info!("Getting compatible video encoders..");
-    let video_encoders = enc_helper::get_compatible_encoders();
+    let video_encoders = enc_helper::get_compatible_encoders(gpus);
     if video_encoders.is_empty() {
         return Err("No compatible video encoders found".into());
     }
@@ -107,10 +116,11 @@ fn handle_encoder_video(args: &args::Args) -> Result<enc_helper::VideoEncoderInf
         video_encoder =
             enc_helper::get_encoder_by_name(&video_encoders, &args.encoding.video.encoder)?;
     } else {
-        video_encoder = enc_helper::get_best_compatible_encoder(
+        video_encoder = enc_helper::get_best_working_encoder(
             &video_encoders,
             &args.encoding.video.codec,
             &args.encoding.video.encoder_type,
+            args.app.dma_buf,
         )?;
     }
     tracing::info!("Selected video encoder: '{}'", video_encoder.name);
@@ -191,17 +201,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let nestri_p2p = Arc::new(NestriP2P::new().await?);
     let p2p_conn = nestri_p2p.connect(relay_url).await?;
 
-    gst::init()?;
-    gstrswebrtc::plugin_register_static()?;
-
-    // Handle GPU selection
-    let gpu = match handle_gpus(&args) {
-        Ok(gpu) => gpu,
-        Err(e) => {
-            tracing::error!("Failed to find a suitable GPU: {}", e);
-            return Err(e);
-        }
-    };
+    gstreamer::init()?;
+    let _ = gstrswebrtc::plugin_register_static(); // Might be already registered, so we'll pass..
 
     if args.app.dma_buf {
         if args.encoding.video.encoder_type != EncoderType::HARDWARE {
@@ -214,8 +215,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    // Handle GPU selection
+    let gpus = match handle_gpus(&args) {
+        Ok(gpu) => gpu,
+        Err(e) => {
+            tracing::error!("Failed to find a suitable GPU: {}", e);
+            return Err(e);
+        }
+    };
+
     // Handle video encoder selection
-    let mut video_encoder_info = match handle_encoder_video(&args) {
+    let mut video_encoder_info = match handle_encoder_video(&args, &gpus) {
         Ok(encoder) => encoder,
         Err(e) => {
             tracing::error!("Failed to find a suitable video encoder: {}", e);
@@ -231,33 +241,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /*** PIPELINE CREATION ***/
     // Create the pipeline
-    let pipeline = Arc::new(gst::Pipeline::new());
+    let pipeline = Arc::new(gstreamer::Pipeline::new());
 
     /* Audio */
     // Audio Source Element
     let audio_source = match args.encoding.audio.capture_method {
         encoding_args::AudioCaptureMethod::PULSEAUDIO => {
-            gst::ElementFactory::make("pulsesrc").build()?
+            gstreamer::ElementFactory::make("pulsesrc").build()?
         }
         encoding_args::AudioCaptureMethod::PIPEWIRE => {
-            gst::ElementFactory::make("pipewiresrc").build()?
+            gstreamer::ElementFactory::make("pipewiresrc").build()?
         }
-        encoding_args::AudioCaptureMethod::ALSA => gst::ElementFactory::make("alsasrc").build()?,
+        encoding_args::AudioCaptureMethod::ALSA => {
+            gstreamer::ElementFactory::make("alsasrc").build()?
+        }
     };
 
     // Audio Converter Element
-    let audio_converter = gst::ElementFactory::make("audioconvert").build()?;
+    let audio_converter = gstreamer::ElementFactory::make("audioconvert").build()?;
 
     // Audio Rate Element
-    let audio_rate = gst::ElementFactory::make("audiorate").build()?;
+    let audio_rate = gstreamer::ElementFactory::make("audiorate").build()?;
 
     // Required to fix gstreamer opus issue, where quality sounds off (due to wrong sample rate)
-    let audio_capsfilter = gst::ElementFactory::make("capsfilter").build()?;
-    let audio_caps = gst::Caps::from_str("audio/x-raw,rate=48000,channels=2").unwrap();
+    let audio_capsfilter = gstreamer::ElementFactory::make("capsfilter").build()?;
+    let audio_caps = gstreamer::Caps::from_str("audio/x-raw,rate=48000,channels=2").unwrap();
     audio_capsfilter.set_property("caps", &audio_caps);
 
     // Audio Encoder Element
-    let audio_encoder = gst::ElementFactory::make(audio_encoder.as_str()).build()?;
+    let audio_encoder = gstreamer::ElementFactory::make(audio_encoder.as_str()).build()?;
     audio_encoder.set_property(
         "bitrate",
         &match &args.encoding.audio.rate_control {
@@ -267,18 +279,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
     );
     // If has "frame-size" (opus), set to 10 for lower latency (below 10 seems to be too low?)
-    if audio_encoder.has_property("frame-size") {
+    if audio_encoder.has_property("frame-size", None) {
         audio_encoder.set_property_from_str("frame-size", "10");
+    }
+
+    // Audio parse Element
+    let mut audio_parser = None;
+    if audio_encoder.name() == "opusenc" {
+        // Opus encoder requires a parser
+        audio_parser = Some(gstreamer::ElementFactory::make("opusparse").build()?);
     }
 
     /* Video */
     // Video Source Element
-    let video_source = Arc::new(gst::ElementFactory::make("waylanddisplaysrc").build()?);
-    video_source.set_property_from_str("render-node", gpu.render_path());
+    let video_source = Arc::new(gstreamer::ElementFactory::make("waylanddisplaysrc").build()?);
+    if let Some(gpu_info) = &video_encoder_info.gpu_info {
+        video_source.set_property_from_str("render-node", gpu_info.render_path());
+    }
 
     // Caps Filter Element (resolution, fps)
-    let caps_filter = gst::ElementFactory::make("capsfilter").build()?;
-    let caps = gst::Caps::from_str(&format!(
+    let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+    let caps = gstreamer::Caps::from_str(&format!(
         "{},width={},height={},framerate={}/1{}",
         if args.app.dma_buf {
             "video/x-raw(memory:DMABuf)"
@@ -292,37 +313,70 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ))?;
     caps_filter.set_property("caps", &caps);
 
-    // GL Upload element
-    let glupload = gst::ElementFactory::make("glupload").build()?;
+    // GL and CUDA elements (NVIDIA only..)
+    let mut glupload = None;
+    let mut glconvert = None;
+    let mut gl_caps_filter = None;
+    let mut cudaupload = None;
+    if args.app.dma_buf && video_encoder_info.encoder_api == EncoderAPI::NVENC {
+        // GL upload element
+        glupload = Some(gstreamer::ElementFactory::make("glupload").build()?);
+        // GL color convert element
+        glconvert = Some(gstreamer::ElementFactory::make("glcolorconvert").build()?);
+        // GL color convert caps
+        let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+        let gl_caps = gstreamer::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
+        caps_filter.set_property("caps", &gl_caps);
+        gl_caps_filter = Some(caps_filter);
+        // CUDA upload element
+        cudaupload = Some(gstreamer::ElementFactory::make("cudaupload").build()?);
+    }
 
-    // GL color convert element
-    let glcolorconvert = gst::ElementFactory::make("glcolorconvert").build()?;
-
-    // GL upload caps filter
-    let gl_caps_filter = gst::ElementFactory::make("capsfilter").build()?;
-    let gl_caps = gst::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
-    gl_caps_filter.set_property("caps", &gl_caps);
-
-    // GL download element (needed only for DMA-BUF outside NVIDIA GPUs)
-    let gl_download = gst::ElementFactory::make("gldownload").build()?;
+    // vapostproc for VA compatible encoders
+    let mut vapostproc = None;
+    let mut va_caps_filter = None;
+    if video_encoder_info.encoder_api == EncoderAPI::VAAPI
+        || video_encoder_info.encoder_api == EncoderAPI::QSV
+    {
+        vapostproc = Some(gstreamer::ElementFactory::make("vapostproc").build()?);
+        // VA caps filter
+        let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+        let va_caps = gstreamer::Caps::from_str("video/x-raw(memory:VAMemory),format=NV12")?;
+        caps_filter.set_property("caps", &va_caps);
+        va_caps_filter = Some(caps_filter);
+    }
 
     // Video Converter Element
-    let video_converter = gst::ElementFactory::make("videoconvert").build()?;
+    let mut video_converter = None;
+    if !args.app.dma_buf {
+        video_converter = Some(gstreamer::ElementFactory::make("videoconvert").build()?);
+    }
 
     // Video Encoder Element
-    let video_encoder = gst::ElementFactory::make(video_encoder_info.name.as_str()).build()?;
+    let video_encoder =
+        gstreamer::ElementFactory::make(video_encoder_info.name.as_str()).build()?;
     video_encoder_info.apply_parameters(&video_encoder, args.app.verbose);
 
-    // Video parser Element, required for GStreamer 1.26 as it broke some things..
+    // Video parser Element
     let video_parser;
-    if video_encoder_info.codec == enc_helper::VideoCodec::H264 {
-        video_parser = Some(
-            gst::ElementFactory::make("h264parse")
-                .property("config-interval", -1i32)
-                .build()?,
-        );
-    } else {
-        video_parser = None;
+    match video_encoder_info.codec {
+        enc_helper::VideoCodec::H264 => {
+            video_parser = Some(
+                gstreamer::ElementFactory::make("h264parse")
+                    .property("config-interval", -1i32)
+                    .build()?,
+            );
+        }
+        enc_helper::VideoCodec::H265 => {
+            video_parser = Some(
+                gstreamer::ElementFactory::make("h265parse")
+                    .property("config-interval", -1i32)
+                    .build()?,
+            );
+        }
+        _ => {
+            video_parser = None;
+        }
     }
 
     /* Output */
@@ -335,24 +389,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     webrtcsink.set_property("do-retransmission", false);
 
     /* Queues */
-    let video_queue = gst::ElementFactory::make("queue2")
+    let video_queue = gstreamer::ElementFactory::make("queue2")
         .property("max-size-buffers", 3u32)
         .property("max-size-time", 0u64)
         .property("max-size-bytes", 0u32)
         .build()?;
 
-    let audio_queue = gst::ElementFactory::make("queue2")
+    let audio_queue = gstreamer::ElementFactory::make("queue2")
         .property("max-size-buffers", 3u32)
         .property("max-size-time", 0u64)
         .property("max-size-bytes", 0u32)
         .build()?;
 
     /* Clock Sync */
-    let video_clocksync = gst::ElementFactory::make("clocksync")
+    let video_clocksync = gstreamer::ElementFactory::make("clocksync")
         .property("sync-to-first", true)
         .build()?;
 
-    let audio_clocksync = gst::ElementFactory::make("clocksync")
+    let audio_clocksync = gstreamer::ElementFactory::make("clocksync")
         .property("sync-to-first", true)
         .build()?;
 
@@ -360,7 +414,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     pipeline.add_many(&[
         webrtcsink.upcast_ref(),
         &video_encoder,
-        &video_converter,
         &caps_filter,
         &video_queue,
         &video_clocksync,
@@ -374,21 +427,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_source,
     ])?;
 
+    if let Some(video_converter) = &video_converter {
+        pipeline.add(video_converter)?;
+    }
+
+    if let Some(parser) = &audio_parser {
+        pipeline.add(parser)?;
+    }
+
     if let Some(parser) = &video_parser {
         pipeline.add(parser)?;
     }
 
-    // If DMA-BUF is enabled, add glupload, color conversion and caps filter
+    // If DMA-BUF..
     if args.app.dma_buf {
-        if *gpu.vendor() == GPUVendor::NVIDIA {
-            pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter])?;
+        // VA-API / QSV pipeline
+        if let (Some(vapostproc), Some(va_caps_filter)) = (&vapostproc, &va_caps_filter) {
+            pipeline.add_many(&[vapostproc, va_caps_filter])?;
         } else {
-            pipeline.add_many(&[&glupload, &glcolorconvert, &gl_caps_filter, &gl_download])?;
+            // NVENC pipeline
+            if let (Some(glupload), Some(glconvert), Some(gl_caps_filter), Some(cudaupload)) =
+                (&glupload, &glconvert, &gl_caps_filter, &cudaupload)
+            {
+                pipeline.add_many(&[glupload, glconvert, gl_caps_filter, cudaupload])?;
+            }
         }
     }
 
     // Link main audio branch
-    gst::Element::link_many(&[
+    gstreamer::Element::link_many(&[
         &audio_source,
         &audio_converter,
         &audio_rate,
@@ -396,51 +463,62 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_queue,
         &audio_clocksync,
         &audio_encoder,
-        webrtcsink.upcast_ref(),
     ])?;
 
-    // With DMA-BUF, also link glupload and it's caps
+    // Link audio parser to audio encoder if present, otherwise just webrtcsink
+    if let Some(parser) = &audio_parser {
+        gstreamer::Element::link_many(&[&audio_encoder, parser, webrtcsink.upcast_ref()])?;
+    } else {
+        gstreamer::Element::link_many(&[&audio_encoder, webrtcsink.upcast_ref()])?;
+    }
+
+    // With DMA-BUF..
     if args.app.dma_buf {
-        if *gpu.vendor() == GPUVendor::NVIDIA {
-            gst::Element::link_many(&[
+        // VA-API / QSV pipeline
+        if let (Some(vapostproc), Some(va_caps_filter)) = (&vapostproc, &va_caps_filter) {
+            gstreamer::Element::link_many(&[
                 &video_source,
                 &caps_filter,
                 &video_queue,
                 &video_clocksync,
-                &glupload,
-                &glcolorconvert,
-                &gl_caps_filter,
+                &vapostproc,
+                &va_caps_filter,
                 &video_encoder,
             ])?;
         } else {
-            gst::Element::link_many(&[
-                &video_source,
-                &caps_filter,
-                &video_queue,
-                &video_clocksync,
-                &glupload,
-                &glcolorconvert,
-                &gl_caps_filter,
-                &gl_download,
-                &video_encoder,
-            ])?;
+            // NVENC pipeline
+            if let (Some(glupload), Some(glconvert), Some(gl_caps_filter), Some(cudaupload)) =
+                (&glupload, &glconvert, &gl_caps_filter, &cudaupload)
+            {
+                gstreamer::Element::link_many(&[
+                    &video_source,
+                    &caps_filter,
+                    &video_queue,
+                    &video_clocksync,
+                    &glupload,
+                    &glconvert,
+                    &gl_caps_filter,
+                    &cudaupload,
+                    &video_encoder,
+                ])?;
+            }
         }
     } else {
-        gst::Element::link_many(&[
+        gstreamer::Element::link_many(&[
             &video_source,
             &caps_filter,
             &video_queue,
             &video_clocksync,
-            &video_converter,
+            &video_converter.unwrap(),
             &video_encoder,
         ])?;
     }
 
     // Link video parser if present with webrtcsink, otherwise just link webrtc sink
     if let Some(parser) = &video_parser {
-        gst::Element::link_many(&[&video_encoder, parser, webrtcsink.upcast_ref()])?;
+        gstreamer::Element::link_many(&[&video_encoder, parser, webrtcsink.upcast_ref()])?;
     } else {
-        gst::Element::link_many(&[&video_encoder, webrtcsink.upcast_ref()])?;
+        gstreamer::Element::link_many(&[&video_encoder, webrtcsink.upcast_ref()])?;
     }
 
     // Set QOS
@@ -468,14 +546,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
+    // Clean up
+    tracing::info!("Exiting gracefully..");
+
     Ok(())
 }
 
-async fn run_pipeline(pipeline: Arc<gst::Pipeline>) -> Result<(), Box<dyn Error>> {
+async fn run_pipeline(pipeline: Arc<gstreamer::Pipeline>) -> Result<(), Box<dyn Error>> {
     let bus = { pipeline.bus().ok_or("Pipeline has no bus")? };
 
     {
-        if let Err(e) = pipeline.set_state(gst::State::Playing) {
+        if let Err(e) = pipeline.set_state(gstreamer::State::Playing) {
             tracing::error!("Failed to start pipeline: {}", e);
             return Err("Failed to start pipeline".into());
         }
@@ -495,24 +576,24 @@ async fn run_pipeline(pipeline: Arc<gst::Pipeline>) -> Result<(), Box<dyn Error>
     }
 
     {
-        pipeline.set_state(gst::State::Null)?;
+        pipeline.set_state(gstreamer::State::Null)?;
     }
 
     Ok(())
 }
 
-async fn listen_for_gst_messages(bus: gst::Bus) -> Result<(), Box<dyn Error>> {
+async fn listen_for_gst_messages(bus: gstreamer::Bus) -> Result<(), Box<dyn Error>> {
     let bus_stream = bus.stream();
 
     tokio::pin!(bus_stream);
 
     while let Some(msg) = bus_stream.next().await {
         match msg.view() {
-            gst::MessageView::Eos(_) => {
+            gstreamer::MessageView::Eos(_) => {
                 tracing::info!("Received EOS");
                 break;
             }
-            gst::MessageView::Error(err) => {
+            gstreamer::MessageView::Error(err) => {
                 let err_msg = format!(
                     "Error from {:?}: {:?}",
                     err.src().map(|s| s.path_string()),

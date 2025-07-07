@@ -1,6 +1,6 @@
 use crate::p2p::p2p::NestriConnection;
-use gst::glib;
-use gst::subclass::prelude::*;
+use gstreamer::glib;
+use gstreamer::subclass::prelude::*;
 use gstrswebrtc::signaller::Signallable;
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ impl NestriSignaller {
     pub async fn new(
         room: String,
         nestri_conn: NestriConnection,
-        wayland_src: Arc<gst::Element>,
+        wayland_src: Arc<gstreamer::Element>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let obj: Self = glib::Object::new();
         obj.imp().set_stream_room(room);
