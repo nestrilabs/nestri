@@ -11,20 +11,18 @@
   "engines": {
     "node": ">=18"
   },
-  "packageManager": "bun@1.2.4",
+  "packageManager": "bun@1.2.18",
   "private": true,
   "scripts": {
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "sso": "aws sso login --sso-session=nestri --no-browser --use-device-code"
   },
   "overrides": {
-    "@openauthjs/openauth": "0.4.3",
-    "steam-session": "1.9.3"
+    "@openauthjs/openauth": "0.4.3"
   },
   "patchedDependencies": {
     "@macaron-css/solid@1.5.3": "patches/@macaron-css%2Fsolid@1.5.3.patch",
-    "drizzle-orm@0.36.1": "patches/drizzle-orm@0.36.1.patch",
-    "steam-session@1.9.3": "patches/steam-session@1.9.3.patch"
+    "drizzle-orm@0.36.1": "patches/drizzle-orm@0.36.1.patch"
   },
   "trustedDependencies": [
     "core-js-pure",

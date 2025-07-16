@@ -1,6 +1,7 @@
-# nestri
-
-Opensource and selfhostable cloud gaming platform
-
-> TIP
-> TODO: Finish up on this README
+<p align="center">
+    <a href="https://nestri.io">
+        <picture>
+            <source srcset="packages/www/public/" />
+        </picture>
+    </a>
+</p>
