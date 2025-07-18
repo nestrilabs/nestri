@@ -1,6 +1,18 @@
-# nestri
-
-Opensource and selfhostable cloud gaming platform
-
-> TIP
-> TODO: Finish up on this README
+<p align="center">
+  <a href="https://nestri.io">
+    <picture>
+      <source srcset="packages/web/public/logo.white.svg" type="image/svg" media="(prefers-color-scheme: dark)">
+      <source srcset="packages/web/public/logo.black.svg" type="image/svg" media="(prefers-color-scheme: light)">
+      <img src="packages/web/public/logo.black.svg" alt="Nestri logo">
+    </picture>
+  </a>
+</p>
+<p align="center">Deploy and stream games or apps in the cloud. Use our GPU or bring your own.</p>
+<p align="center">
+  <a href="https://discord.com/invite/Y6etn3qKZ3"><img alt="Discord" src="https://img.shields.io/discord/1080111004698021909?style=flat-square&label=discord" /></a>
+  <a href="https://github.com/nestrilabs/nestri/blob/main/LICENSE"><img alt="Nestri License" src="https://img.shields.io/github/license/nestriness/nestri?style=flat-square" /></a>
+  <a href="https://github.com/nestrilabs/nestri/actions/workflows/runner.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/nestrilabs/nestri/runner.yml?style=flat-square&branch=main" /></a>
+ <!-- <a href="https://nestri.io" style="text-decoration: none;">
+    <img src="https://img.shields.io/badge/Start%20Playing%20Now-For%20$1/hour-brightgreen?style=flat-square" alt="Umami Demo" />
+  </a>  -->
+</p>
