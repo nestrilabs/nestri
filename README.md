@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://nestri.io">
     <picture>
-      <source srcset="packages/web/public/logo.white.svg" type="image/svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/web/public/logo.black.svg" type="image/svg" media="(prefers-color-scheme: light)">
+      <source srcset="packages/web/public/logo.white.svg" media="(prefers-color-scheme: dark)">
+      <source srcset="packages/web/public/logo.black.svg" media="(prefers-color-scheme: light)">
       <img src="packages/web/public/logo.black.svg" alt="Nestri logo">
     </picture>
   </a>
@@ -15,4 +15,4 @@
  <!-- <a href="https://nestri.io" style="text-decoration: none;">
     <img src="https://img.shields.io/badge/Start%20Playing%20Now-For%20$1/hour-brightgreen?style=flat-square" alt="Umami Demo" />
   </a>  -->
-</p>
+</p>  
