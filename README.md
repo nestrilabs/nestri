@@ -5,6 +5,7 @@
         </picture>
     </a>
 </p>
+<p>
   <a href="https://nestri.io">
     <picture>
       <source srcset="packages/web/public/logo.white.svg" media="(prefers-color-scheme: dark)">
