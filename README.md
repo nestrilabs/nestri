@@ -1,12 +1,10 @@
 <p align="center">
-<<<<<<< HEAD
     <a href="https://nestri.io">
         <picture>
             <source srcset="packages/www/public/" />
         </picture>
     </a>
 </p>
-=======
   <a href="https://nestri.io">
     <picture>
       <source srcset="packages/web/public/logo.white.svg" media="(prefers-color-scheme: dark)">
@@ -29,4 +27,3 @@
 <!-- TODO: Add a link to install for self-hosters -->
 <!-- TODO: Add a CTA for hosted option -->
 <!-- TODO: Add feature imagery like Lobechat -->
->>>>>>> main
