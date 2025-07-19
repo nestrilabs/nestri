@@ -1,0 +1,41 @@
+---
+import "@fontsource/geist-sans/400.css";
+import "@fontsource/geist-sans/500.css";
+import "@fontsource/geist-sans/600.css";
+import "@fontsource/geist-sans/700.css";
+import "@fontsource/geist-sans/800.css";
+import "@fontsource/geist-sans/900.css";
+---
+
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/png" href="/favicon.png"/>
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Nestri</title>
+	</head>
+  <body>
+    <slot />
+	</body>
+</html>
+<style>
+  *,*:before,*:after {
+    box-sizing: border-box;
+  }
+
+	html,
+  body {
+    padding:0;
+		margin: 0;
+		width: 100%;
+		height: 100%;
+		color: #fff;
+		text-rendering: optimizeLegibility;
+		text-size-adjust: 100%;
+		-webkit-font-smoothing: antialiased;
+		background-color: #000;
+		font-family: "Geist Sans", sans-serif;
+	}
+</style>
+

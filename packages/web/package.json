@@ -11,6 +11,7 @@
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.0",
     "@astrojs/solid-js": "^5.1.0",
+    "@fontsource/geist-sans": "^5.2.5",
     "astro": "^5.11.2"
   }
 }
