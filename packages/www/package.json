@@ -13,7 +13,7 @@
     "@macaron-css/vite": "1.5.1",
     "@types/bun": "latest",
     "@types/qrcode": "^1.5.5",
-    "vite": "6.0.15",
+    "vite": "6.1.6",
     "vite-plugin-solid": "^2.11.2"
   },
   "peerDependencies": {
