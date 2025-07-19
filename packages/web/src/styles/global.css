@@ -311,6 +311,6 @@
   --color-background-100: var(--color-background-100);
   --color-background-200: var(--color-background-200);
 
-  --font-family-sans: "Geist Sans", sans-serif;
-  --font-family-mono: "Geist Mono Variable", monospace;
+  --font-sans: "Geist Sans", sans-serif;
+  --font-mono: "Geist Mono Variable", monospace;
 }
