@@ -1,1 +1,0 @@
-export const storage = new sst.aws.Bucket("Storage");
