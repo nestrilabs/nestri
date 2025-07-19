@@ -11,7 +11,10 @@
   "dependencies": {
     "@astrojs/cloudflare": "^12.6.0",
     "@astrojs/solid-js": "^5.1.0",
+    "@fontsource-variable/geist-mono": "^5.2.6",
     "@fontsource/geist-sans": "^5.2.5",
-    "astro": "^5.11.2"
+    "@tailwindcss/vite": "^4.1.11",
+    "astro": "^5.11.2",
+    "tailwindcss": "^4.1.11"
   }
 }

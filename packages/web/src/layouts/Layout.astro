@@ -1,40 +1,64 @@
 ---
+import '../styles/global.css';
 import "@fontsource/geist-sans/400.css";
 import "@fontsource/geist-sans/500.css";
 import "@fontsource/geist-sans/600.css";
 import "@fontsource/geist-sans/700.css";
 import "@fontsource/geist-sans/800.css";
 import "@fontsource/geist-sans/900.css";
+import '@fontsource-variable/geist-mono';
 ---
 
-<html lang="en">
+<!doctype html>
+<html class="dark" lang="en">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" type="image/png" href="/favicon.png"/>
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="hsl(0 0% 98%);"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="hsl(0 0% 4%);"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/favicon-16x16.png"
+    />
 		<meta name="viewport" content="width=device-width" />
 		<meta name="generator" content={Astro.generator} />
 		<title>Nestri</title>
 	</head>
-  <body>
+  <body class="bg-background-200 text-gray-1000" >
+    <noscript>You need to enable JavaScript to see this website.</noscript>
     <slot />
 	</body>
 </html>
+
 <style>
   *,*:before,*:after {
     box-sizing: border-box;
   }
-
 	html,
   body {
     padding:0;
 		margin: 0;
 		width: 100%;
 		height: 100%;
-		color: #fff;
 		text-rendering: optimizeLegibility;
 		text-size-adjust: 100%;
 		-webkit-font-smoothing: antialiased;
-		background-color: #000;
 		font-family: "Geist Sans", sans-serif;
 	}
 </style>
