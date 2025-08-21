@@ -1,28 +1,20 @@
-FROM docker.io/oven/bun:1-alpine AS base
+FROM docker.io/node:24-alpine AS base
+
+FROM base AS build
 WORKDIR /usr/src/app
+COPY package.json ./
+COPY patches ./patches
+COPY packages/input ./packages/input
+COPY packages/play-standalone ./packages/play-standalone
+RUN cd packages/play-standalone && npm install && npm run build
 
-FROM base AS install
-RUN mkdir -p /tmp/dev
-COPY package.json bun.lock /tmp/dev/
-COPY patches/*.patch /tmp/dev/patches/
-RUN cd /tmp/dev && bun install --frozen-lockfile
-RUN mkdir -p /tmp/prod
-COPY package.json bun.lock /tmp/prod/
-COPY patches/*.patch /tmp/prod/patches/
-RUN cd /tmp/prod && bun install --production --frozen-lockfile
+FROM base AS runner
+WORKDIR /www
+COPY --from=build /usr/src/app/packages/play-standalone/dist ./dist
+COPY --from=build /usr/src/app/node_modules ./node_modules
 
-FROM base AS prerelease
-COPY --from=install /tmp/dev/node_modules node_modules
-COPY ./packages/play-standalone .
+RUN apk add --no-cache tini
 
-ENV NODE_ENV=production
-RUN bun run build
-
-FROM base AS release
-COPY --from=install /tmp/prod/node_modules node_modules
-COPY --from=prerelease /usr/src/app/index.ts .
-COPY --from=prerelease /usr/src/app/package.json .
-
-USER bun
-EXPOSE 3000/tcp
-ENTRYPOINT [ "bun", "run", "index.ts" ]
+EXPOSE 3000
+WORKDIR /www
+ENTRYPOINT ["/sbin/tini", "--", "node", "./dist/server/entry.mjs"]

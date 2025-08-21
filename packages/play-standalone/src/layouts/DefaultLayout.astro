@@ -1,23 +1,9 @@
----
-export const prerender = false;
----
-
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
   <meta name="viewport" content="width=device-width"/>
   <meta name="generator" content={Astro.generator}/>
-  <link
-    rel="preload"
-    href="/fonts/BasementGrotesque-Black.woff2"
-    as="font"
-  />
-  <link
-    rel="preload"
-    href="/fonts/BasementGrotesque-Black.woff"
-    as="font"
-  />
   <title>Nestri Standalone Play</title>
 </head>
 <body>
@@ -26,6 +12,14 @@ export const prerender = false;
 </html>
 
 <style>
+  @font-face {
+    font-family: "Basement Grotesque";
+    src: url("/fonts/BasementGrotesque-Black.woff") format('woff');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+
   * {
     font-family: "Basement Grotesque", sans-serif;
   }
