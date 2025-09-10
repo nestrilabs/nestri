@@ -1,0 +1,4 @@
+.astro/
+.idea/
+dist/
+node_modules/

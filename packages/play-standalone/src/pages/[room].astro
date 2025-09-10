@@ -1,16 +1,36 @@
 ---
 import DefaultLayout from "../layouts/DefaultLayout.astro";
 const { room } = Astro.params;
+
+// Passing of environment variables to the client side
+// gotta love node and it's ecosystem..
+const envs_map: Map<string, string | undefined> = new Map();
+import { PEER_URL, getSecret } from "astro:env/server";
+if (PEER_URL) {
+	envs_map.set("PEER_URL", getSecret("PEER_URL"));
+}
+
+let envs: string = "";
+if (envs_map.size > 0) {
+	envs = JSON.stringify(Array.from(envs_map.entries()));
+}
 ---
 
 <DefaultLayout>
 	<h1 id="offlineText" class="offline">Offline</h1>
 	<h1 id="loadingText" class="loading">Warming up the GPU...</h1>
 	<canvas id="playCanvas" class="playCanvas" data-room={room}></canvas>
+	<div id="ENVS" data-envs={envs}></div>
 </DefaultLayout>
 
 <script>
 	import { Mouse, Keyboard, WebRTCStream } from "@nestri/input";
+	const ENVS = document.getElementById("ENVS")!.dataset.envs as string;
+	let ENVS_MAP: Map<string, string | undefined> | null = null;
+	if (ENVS && ENVS.length > 0) {
+		ENVS_MAP = new Map(JSON.parse(ENVS));
+		console.debug("ENVS_MAP:", ENVS_MAP);
+	}
 
 	// Elements
 	const canvas = document.getElementById("playCanvas")! as HTMLCanvasElement;
@@ -28,8 +48,10 @@ const { room } = Astro.params;
 	// Get query parameter "peerURL" from the URL
 	let peerURL = new URLSearchParams(window.location.search).get("peerURL");
 	if (!peerURL || peerURL.length <= 0) {
-		peerURL = "/dnsaddr/relay.dathorse.com/p2p/12D3KooWPK4v5wKYNYx9oXWjqLM8Xix6nm13o91j1Feqq98fLBsw";
+		peerURL = (ENVS_MAP && ENVS_MAP.get("PEER_URL")) ?? "/dnsaddr/relay.dathorse.com/p2p/12D3KooWPK4v5wKYNYx9oXWjqLM8Xix6nm13o91j1Feqq98fLBsw";
 	}
+
+	console.debug("Using Peer URL:", peerURL);
 
 	// Stream
 	const stream = new WebRTCStream(peerURL, room, async (mediaStream) => {
