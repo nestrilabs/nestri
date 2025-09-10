@@ -1,10 +1,13 @@
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
-use libp2p::{
-    Multiaddr, PeerId, Swarm, identify, noise, ping,
-    swarm::{NetworkBehaviour, SwarmEvent},
-    tcp, yamux,
-};
+use libp2p::{Multiaddr, PeerId, Swarm, swarm::{NetworkBehaviour, SwarmEvent}, identity};
+use libp2p_identify as identify;
+use libp2p_noise as noise;
+use libp2p_ping as ping;
+use libp2p_tcp as tcp;
+use libp2p_yamux as yamux;
+use libp2p_autonat as autonat;
+use libp2p_stream as stream;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -12,15 +15,28 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct NestriConnection {
     pub peer_id: PeerId,
-    pub control: libp2p_stream::Control,
+    pub control: stream::Control,
 }
 
 #[derive(NetworkBehaviour)]
 struct NestriBehaviour {
     identify: identify::Behaviour,
     ping: ping::Behaviour,
-    stream: libp2p_stream::Behaviour,
-    autonatv2: libp2p::autonat::v2::client::Behaviour,
+    stream: stream::Behaviour,
+    autonatv2: autonat::v2::client::Behaviour,
+}
+impl NestriBehaviour {
+    fn new(key: identity::PublicKey) -> Self {
+        Self {
+            identify: identify::Behaviour::new(identify::Config::new(
+                "/ipfs/id/1.0.0".to_string(),
+                key
+            )),
+            ping: ping::Behaviour::default(),
+            stream: stream::Behaviour::default(),
+            autonatv2: autonat::v2::client::Behaviour::default(),
+        }
+    }
 }
 
 pub struct NestriP2P {
@@ -39,34 +55,13 @@ impl NestriP2P {
                 .with_dns()?
                 .with_websocket(noise::Config::new, yamux::Config::default)
                 .await?
-                .with_behaviour(|key| {
-                    let identify_behaviour = identify::Behaviour::new(identify::Config::new(
-                        "/ipfs/id/1.0.0".to_string(),
-                        key.public(),
-                    ));
-                    let ping_behaviour = ping::Behaviour::default();
-                    let stream_behaviour = libp2p_stream::Behaviour::default();
-                    let autonatv2_behaviour = libp2p::autonat::v2::client::Behaviour::default();
-
-                    Ok(NestriBehaviour {
-                        identify: identify_behaviour,
-                        ping: ping_behaviour,
-                        stream: stream_behaviour,
-                        autonatv2: autonatv2_behaviour,
-                    })
-                })?
+                .with_behaviour(|key| NestriBehaviour::new(key.public()))?
                 .build(),
         ));
 
         // Spawn the swarm event loop
         let swarm_clone = swarm.clone();
         tokio::spawn(swarm_loop(swarm_clone));
-
-        {
-            let mut swarm_lock = swarm.lock().await;
-            swarm_lock.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?; // IPv4 - TCP Raw
-            swarm_lock.listen_on("/ip6/::/tcp/0".parse()?)?; // IPv6 - TCP Raw
-        }
 
         Ok(NestriP2P { swarm })
     }
@@ -95,6 +90,48 @@ async fn swarm_loop(swarm: Arc<Mutex<Swarm<NestriBehaviour>>>) {
             swarm_lock.select_next_some().await
         };
         match event {
+            /* Ping Events */
+            SwarmEvent::Behaviour(NestriBehaviourEvent::Ping(ping::Event {
+                peer, connection, result
+            })) => {
+                if let Ok(latency) = result {
+                    tracing::debug!(
+                        "Ping event - peer: {}, connection: {:?}, latency: {} us",
+                        peer,
+                        connection,
+                        latency.as_micros()
+                    );
+                } else if let Err(err) = result {
+                    tracing::warn!(
+                        "Ping event - peer: {}, connection: {:?}, error: {:?}",
+                        peer,
+                        connection,
+                        err
+                    );
+                }
+            }
+            /* Autonat (v2) Events */
+            SwarmEvent::Behaviour(NestriBehaviourEvent::Autonatv2(autonat::v2::client::Event {
+                server, tested_addr, bytes_sent, result
+            })) => {
+                if let Ok(()) = result {
+                    tracing::debug!(
+                        "AutonatV2 event - test server '{}' verified address '{}' with {} bytes sent",
+                        server,
+                        tested_addr,
+                        bytes_sent
+                    );
+                } else if let Err(err) = result {
+                    tracing::warn!(
+                        "AutonatV2 event - test server '{}' failed to verify address '{}' with {} bytes sent: {:?}",
+                        server,
+                        tested_addr,
+                        bytes_sent,
+                        err
+                    );
+                }
+            }
+            /* Swarm Events */
             SwarmEvent::NewListenAddr { address, .. } => {
                 tracing::info!("Listening on: '{}'", address);
             }
@@ -129,6 +166,13 @@ async fn swarm_loop(swarm: Arc<Mutex<Swarm<NestriBehaviour>>>) {
                 } else {
                     tracing::error!("Failed to connect: {}", error);
                 }
+            }
+            SwarmEvent::ExternalAddrConfirmed { address } => {
+                tracing::info!("Confirmed external address: {}", address);
+            }
+            /* Unhandled Events */
+            SwarmEvent::Behaviour(event) => {
+                tracing::warn!("Unhandled Behaviour event: {:?}", event);
             }
             _ => {}
         }

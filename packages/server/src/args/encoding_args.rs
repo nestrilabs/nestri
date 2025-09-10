@@ -93,6 +93,7 @@ impl EncodingOptionsBase {
 pub struct VideoEncodingOptions {
     pub base: EncodingOptionsBase,
     pub encoder_type: EncoderType,
+    pub bit_depth: u32,
 }
 impl VideoEncodingOptions {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
@@ -132,6 +133,10 @@ impl VideoEncodingOptions {
                 .get_one::<EncoderType>("video-encoder-type")
                 .unwrap_or(&EncoderType::HARDWARE)
                 .clone(),
+            bit_depth: matches
+                .get_one::<u32>("video-bit-depth")
+                .unwrap_or(&8)
+                .clone(),
         }
     }
 
@@ -139,6 +144,7 @@ impl VideoEncodingOptions {
         tracing::info!("Video Encoding Options:");
         self.base.debug_print();
         tracing::info!("> Encoder Type: {}", self.encoder_type.as_str());
+        tracing::info!("> Bit Depth: {}", self.bit_depth);
     }
 }
 impl Deref for VideoEncodingOptions {

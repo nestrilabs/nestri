@@ -148,7 +148,7 @@ impl VideoEncoderInfo {
 
     pub fn apply_parameters(&self, element: &gstreamer::Element, verbose: bool) {
         for (key, value) in &self.parameters {
-            if element.has_property(key, None) {
+            if element.has_property(key) {
                 if verbose {
                     tracing::debug!("Setting property {} to {}", key, value);
                 }
@@ -273,7 +273,7 @@ pub fn encoder_gop_params(encoder: &VideoEncoderInfo, gop_size: u32) -> VideoEnc
 
 pub fn encoder_low_latency_params(
     encoder: &VideoEncoderInfo,
-    rate_control: &RateControl,
+    _rate_control: &RateControl,
     framerate: u32,
 ) -> VideoEncoderInfo {
     // 2 second GOP size, maybe lower to 1 second for fast recovery, if needed?
@@ -375,9 +375,9 @@ pub fn get_compatible_encoders(gpus: &Vec<GPUInfo>) -> Vec<VideoEncoderInfo> {
                     match api {
                         EncoderAPI::QSV | EncoderAPI::VAAPI => {
                             // Safe property access with panic protection, gstreamer-rs is fun
-                            let path = if element.has_property("device-path", None) {
+                            let path = if element.has_property("device-path") {
                                 Some(element.property::<String>("device-path"))
-                            } else if element.has_property("device", None) {
+                            } else if element.has_property("device") {
                                 Some(element.property::<String>("device"))
                             } else {
                                 None
@@ -385,11 +385,11 @@ pub fn get_compatible_encoders(gpus: &Vec<GPUInfo>) -> Vec<VideoEncoderInfo> {
 
                             path.and_then(|p| get_gpu_by_card_path(&gpus, &p))
                         }
-                        EncoderAPI::NVENC if element.has_property("cuda-device-id", None) => {
+                        EncoderAPI::NVENC if element.has_property("cuda-device-id") => {
                             let cuda_id = element.property::<u32>("cuda-device-id");
                             get_nvidia_gpu_by_cuda_id(&gpus, cuda_id as usize)
                         }
-                        EncoderAPI::AMF if element.has_property("device", None) => {
+                        EncoderAPI::AMF if element.has_property("device") => {
                             let device_id = element.property::<u32>("device");
                             get_gpus_by_vendor(&gpus, "amd")
                                 .get(device_id as usize)

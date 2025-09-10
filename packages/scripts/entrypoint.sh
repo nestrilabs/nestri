@@ -1,20 +1,25 @@
 #!/bin/bash
 set -euo pipefail
 
+# Common helpers as requirement
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    log "Error: Common script not found at /etc/nestri/common.sh"
+    exit 1
+fi
+
 # Configuration
-CACHE_DIR="/home/nestri/.cache/nvidia"
+CACHE_DIR="${NESTRI_HOME}/.cache/nestri"
 NVIDIA_INSTALLER_DIR="/tmp"
 TIMEOUT_SECONDS=10
-
-log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
-}
+ENTCMD_PREFIX=""
 
 # Ensures user directory ownership
 chown_user_directory() {
-    local user_group="${USER}:${GID}"
-    if ! chown -h --no-preserve-root "$user_group" "${HOME}" 2>/dev/null; then
-        echo "Error: Failed to change ownership of ${HOME} to ${user_group}" >&2
+    local user_group="${NESTRI_USER}"
+    if ! $ENTCMD_PREFIX chown "$user_group" "${NESTRI_HOME}" 2>/dev/null; then
+        echo "Error: Failed to change ownership of ${NESTRI_HOME} to ${user_group}" >&2
         return 1
     fi
     return 0
@@ -38,8 +43,8 @@ wait_for_socket() {
 
 # Prepares environment for namespace-less applications (like Steam)
 setup_namespaceless() {
-    rm -f /run/systemd/container || true
-    mkdir -p /run/pressure-vessel || true
+    $ENTCMD_PREFIX rm -f /run/systemd/container || true
+    $ENTCMD_PREFIX mkdir -p /run/pressure-vessel || true
 }
 
 # Ensures cache directory exists
@@ -49,7 +54,7 @@ setup_cache() {
         log "Warning: Failed to create cache directory, continuing without cache."
         return 1
     }
-    chown nestri:nestri "$CACHE_DIR" 2>/dev/null || {
+    $ENTCMD_PREFIX chown "${NESTRI_USER}" "$CACHE_DIR" 2>/dev/null || {
         log "Warning: Failed to set cache directory ownership, continuing..."
     }
 }
@@ -94,7 +99,7 @@ get_nvidia_installer() {
 
         # Cache the downloaded file
         cp "$tmp_file" "$cached_file" 2>/dev/null && \
-            chown nestri:nestri "$cached_file" 2>/dev/null || \
+            chown "${NESTRI_USER}" "$cached_file" 2>/dev/null || \
             log "Warning: Failed to cache NVIDIA driver, continuing..."
     fi
 
@@ -109,7 +114,7 @@ get_nvidia_installer() {
 install_nvidia_driver() {
     local filename="$1"
     log "Installing NVIDIA driver components from $filename..."
-    bash ./"$filename" \
+    $ENTCMD_PREFIX bash ./"$filename" \
         --silent \
         --skip-depmod \
         --skip-module-unload \
@@ -125,17 +130,22 @@ install_nvidia_driver() {
         return 1
     }
 
-    # Install CUDA package
-    log "Checking if CUDA is already installed"
-    if ! pacman -Q cuda &>/dev/null; then
-        log "Installing CUDA package"
-        pacman -S --noconfirm cuda --assume-installed opencl-nvidia
-    else
-        log "CUDA package is already installed, skipping"
-    fi
-
     log "NVIDIA driver installation completed."
     return 0
+}
+
+log_container_info() {
+    if ! declare -p container_runtime &>/dev/null; then
+        log "Warning: container_runtime is not defined"
+        return
+    fi
+
+    if [[ "$container_runtime" != "none" ]]; then
+        log "Detected container:"
+        log "> $container_runtime"
+    else
+        log "No container runtime detected"
+    fi
 }
 
 log_gpu_info() {
@@ -164,23 +174,17 @@ configure_ssh() {
     log "Configuring SSH server on port ${SSH_ENABLE_PORT} with public key authentication"
 
     # Ensure SSH host keys exist
-    ssh-keygen -A 2>/dev/null || {
+    $ENTCMD_PREFIX ssh-keygen -A 2>/dev/null || {
         log "Error: Failed to generate SSH host keys"
         return 1
     }
 
     # Create .ssh directory and authorized_keys file for nestri user
-    mkdir -p /home/nestri/.ssh
-    echo "${SSH_ALLOWED_KEY}" > /home/nestri/.ssh/authorized_keys
-    chmod 700 /home/nestri/.ssh
-    chmod 600 /home/nestri/.ssh/authorized_keys
-    chown -R nestri:nestri /home/nestri/.ssh
-
-    # Update SSHD config
-    sed -i -E "s/^#?Port .*/Port ${SSH_ENABLE_PORT}/" /etc/ssh/sshd_config || {
-        log "Error: Failed to update SSH port configuration"
-        return 1
-    }
+    mkdir -p "${NESTRI_HOME}/.ssh"
+    echo "${SSH_ALLOWED_KEY}" > "${NESTRI_HOME}/.ssh/authorized_keys"
+    chmod 700 "${NESTRI_HOME}/.ssh"
+    chmod 600 "${NESTRI_HOME}/.ssh/authorized_keys"
+    chown -R "${NESTRI_USER}" "${NESTRI_HOME}/.ssh"
 
     # Configure secure SSH settings
     {
@@ -190,12 +194,12 @@ configure_ssh() {
         echo "UsePAM no"
         echo "PubkeyAuthentication yes"
     } | while read -r line; do
-        grep -qF "$line" /etc/ssh/sshd_config || echo "$line" >> /etc/ssh/sshd_config
+        grep -qF "$line" /etc/ssh/sshd_config || $ENTCMD_PREFIX echo "$line" >> /etc/ssh/sshd_config
     done
 
     # Start SSH server
     log "Starting SSH server on port ${SSH_ENABLE_PORT}"
-    /usr/sbin/sshd -D -p "${SSH_ENABLE_PORT}" &
+    $ENTCMD_PREFIX /usr/sbin/sshd -D -p "${SSH_ENABLE_PORT}" &
     SSH_PID=$!
 
     # Verify the process started
@@ -209,6 +213,20 @@ configure_ssh() {
 }
 
 main() {
+    # Wait for required sockets
+    wait_for_socket "${NESTRI_XDG_RUNTIME_DIR}/dbus-1" "DBus" || exit 1
+    wait_for_socket "${NESTRI_XDG_RUNTIME_DIR}/pipewire-0" "PipeWire" || exit 1
+
+    # Start by getting the container we are running under
+    get_container_info || {
+        log "Warning: Failed to detect container information."
+    }
+    log_container_info
+
+    if [[ "$container_runtime" != "apptainer" ]]; then
+        ENTCMD_PREFIX="sudo -E"
+    fi
+
     # Configure SSH
     if [ -n "${SSH_ENABLE_PORT+x}" ] && [ "${SSH_ENABLE_PORT:-0}" -ne 0 ] && \
        [ -n "${SSH_ALLOWED_KEY+x}" ] && [ -n "${SSH_ALLOWED_KEY}" ]; then
@@ -220,17 +238,7 @@ main() {
         log "SSH not configured (missing SSH_ENABLE_PORT or SSH_ALLOWED_KEY)"
     fi
 
-    # Wait for required sockets
-    wait_for_socket "/run/dbus/system_bus_socket" "DBus" || exit 1
-    wait_for_socket "/run/user/${UID}/pipewire-0" "PipeWire" || exit 1
-
-    # Load GPU helpers and detect GPU
-    log "Detecting GPU vendor..."
-    if [[ ! -f /etc/nestri/gpu_helpers.sh ]]; then
-        log "Error: GPU helpers script not found at /etc/nestri/gpu_helpers.sh."
-        exit 1
-    fi
-    source /etc/nestri/gpu_helpers.sh
+    # Get and detect GPU(s)
     get_gpu_info || {
         log "Error: Failed to detect GPU information."
         exit 1
@@ -307,17 +315,23 @@ main() {
     log "Ensuring user directory permissions..."
     chown_user_directory || exit 1
 
-    # Setup namespaceless env
-    log "Applying namespace-less configuration"
-    setup_namespaceless
+    # Setup namespaceless env for non-sane container engines
+    if [[ "$container_runtime" != "podman" ]]; then
+        log "Applying namespace-less configuration"
+        setup_namespaceless
+    fi
 
-    # Switch to nestri user
-    log "Switching to nestri user for application startup..."
-    if [[ ! -x /etc/nestri/entrypoint_nestri.sh ]]; then
-        log "Error: Entry point script /etc/nestri/entrypoint_nestri.sh not found or not executable."
+    # Switch to nestri runner entrypoint
+    log "Switching to application startup entrypoint..."
+    if [[ ! -f /etc/nestri/entrypoint_nestri.sh ]]; then
+        log "Error: Application entrypoint script /etc/nestri/entrypoint_nestri.sh not found"
         exit 1
     fi
-    exec sudo -E -u nestri /etc/nestri/entrypoint_nestri.sh
+    if [[ "$container_runtime" == "apptainer" ]]; then
+        exec /etc/nestri/entrypoint_nestri.sh
+    else
+        exec sudo -E -u ${NESTRI_USER} /etc/nestri/entrypoint_nestri.sh
+    fi
 }
 
 # Trap signals for clean exit

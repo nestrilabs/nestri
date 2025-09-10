@@ -155,6 +155,14 @@ impl Args {
                     .default_value("hardware"),
             )
             .arg(
+                Arg::new("video-bit-depth")
+                    .long("video-bit-depth")
+                    .env("VIDEO_BIT_DEPTH")
+                    .help("Video bit depth (8 or 10), functions only with DMA-BUF")
+                    .value_parser(value_parser!(u32).range(8..=10))
+                    .default_value("8"),
+            )
+            .arg(
                 Arg::new("audio-capture-method")
                     .long("audio-capture-method")
                     .env("AUDIO_CAPTURE_METHOD")

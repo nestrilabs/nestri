@@ -1,9 +1,6 @@
 use byteorder::{BigEndian, ByteOrder};
 use libp2p::futures::io::{ReadHalf, WriteHalf};
 use libp2p::futures::{AsyncReadExt, AsyncWriteExt};
-use prost::Message;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -20,37 +17,6 @@ impl SafeStream {
             stream_read: Arc::new(Mutex::new(read)),
             stream_write: Arc::new(Mutex::new(write)),
         }
-    }
-
-    pub async fn send_json<T: Serialize>(
-        &self,
-        data: &T,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let json_data = serde_json::to_vec(data)?;
-        tracing::info!("Sending JSON");
-        let e = self.send_with_length_prefix(&json_data).await;
-        tracing::info!("Sent JSON");
-        e
-    }
-
-    pub async fn receive_json<T: DeserializeOwned>(&self) -> Result<T, Box<dyn std::error::Error>> {
-        let data = self.receive_with_length_prefix().await?;
-        let msg = serde_json::from_slice(&data)?;
-        Ok(msg)
-    }
-
-    pub async fn send_proto<M: Message>(&self, msg: &M) -> Result<(), Box<dyn std::error::Error>> {
-        let mut proto_data = Vec::new();
-        msg.encode(&mut proto_data)?;
-        self.send_with_length_prefix(&proto_data).await
-    }
-
-    pub async fn receive_proto<M: Message + Default>(
-        &self,
-    ) -> Result<M, Box<dyn std::error::Error>> {
-        let data = self.receive_with_length_prefix().await?;
-        let msg = M::decode(&*data)?;
-        Ok(msg)
     }
 
     pub async fn send_raw(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {

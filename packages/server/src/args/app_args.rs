@@ -15,6 +15,7 @@ pub struct AppArgs {
     pub room: String,
 
     /// Experimental DMA-BUF support
+    /// TODO: Move to video encoding flags
     pub dma_buf: bool,
 }
 impl AppArgs {

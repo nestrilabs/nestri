@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Clone repository
-RUN git clone --depth 1 -b "dev-dmabuf" https://github.com/DatCaptainHorse/gst-wayland-display.git
+RUN git clone --depth 1 -b "stable" https://github.com/games-on-whales/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -121,58 +121,49 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #******************************************************************************
 FROM base AS runtime
 
-### System Configuration ###
-RUN sed -i \
-    -e '/#\[multilib\]/,/#Include = \/etc\/pacman.d\/mirrorlist/ s/#//' \
-    -e "s/#Color/Color/" /etc/pacman.conf && \
-    pacman --noconfirm -Sy archlinux-keyring && \
-    dirmngr </dev/null > /dev/null 2>&1
-
 ### Package Installation ###
 # Core system components
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --needed --noconfirm \
         vulkan-intel lib32-vulkan-intel vpl-gpu-rt \
         vulkan-radeon lib32-vulkan-radeon \
-        mesa \
-        steam steam-native-runtime proton-cachyos gtk3 lib32-gtk3 \
+        mesa steam-native-runtime proton-cachyos lib32-mesa \
+        steam gtk3 lib32-gtk3 \
         sudo xorg-xwayland seatd libinput gamescope mangohud wlr-randr \
         libssh2 curl wget \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq chwd lshw pacman-contrib \
-        openssh && \
+        hwdata openssh \
     # GStreamer stack
-    pacman -Sy --needed --noconfirm \
         gstreamer gst-plugins-base gst-plugins-good \
         gst-plugins-bad gst-plugin-pipewire \
         gst-plugin-webrtchttp gst-plugin-rswebrtc gst-plugin-rsrtp \
-        gst-plugin-va gst-plugin-qsv && \
+        gst-plugin-va gst-plugin-qsv \
     # lib32 GStreamer stack to fix some games with videos
-    pacman -Sy --needed --noconfirm \
         lib32-gstreamer lib32-gst-plugins-base lib32-gst-plugins-good && \
     # Cleanup
     paccache -rk1 && \
     rm -rf /usr/share/{info,man,doc}/*
 
 ### User Configuration ###
-ENV USER="nestri" \
-    UID=1000 \
-    GID=1000 \
-    USER_PWD="nestri1234" \
-    XDG_RUNTIME_DIR=/run/user/1000 \
-    HOME=/home/nestri \
+ENV NESTRI_USER="nestri" \
+    NESTRI_UID=1000 \
+    NESTRI_GID=1000 \
+    NESTRI_USER_PWD="nestri1234" \
+    NESTRI_LANG=en_US.UTF-8 \
+    NESTRI_XDG_RUNTIME_DIR=/run/user/1000 \
+    NESTRI_HOME=/home/nestri \
     NVIDIA_DRIVER_CAPABILITIES=all
 
-RUN mkdir -p /home/${USER} && \
-    groupadd -g ${GID} ${USER} && \
-    useradd -d /home/${USER} -u ${UID} -g ${GID} -s /bin/bash ${USER} && \
-    chown -R ${USER}:${USER} /home/${USER} && \
-    echo "${USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
-    echo "${USER}:${USER_PWD}" | chpasswd && \
-    mkdir -p /run/user/${UID} && \
-    chown ${USER}:${USER} /run/user/${UID} && \
-    usermod -aG input,video,render,seat root && \
-    usermod -aG input,video,render,seat ${USER}
+RUN mkdir -p /home/${NESTRI_USER} && \
+    groupadd -g ${NESTRI_GID} ${NESTRI_USER} && \
+    useradd -d /home/${NESTRI_USER} -u ${NESTRI_UID} -g ${NESTRI_GID} -s /bin/bash ${NESTRI_USER} && \
+    chown -R ${NESTRI_USER}:${NESTRI_USER} /home/${NESTRI_USER} && \
+    echo "${NESTRI_USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    echo "${NESTRI_USER}:${NESTRI_USER_PWD}" | chpasswd && \
+    mkdir -p ${NESTRI_XDG_RUNTIME_DIR} && \
+    chown ${NESTRI_USER} ${NESTRI_XDG_RUNTIME_DIR} && \
+    usermod -aG input,video,render,seat ${NESTRI_USER}
 
 ### System Services Configuration ###
 RUN mkdir -p /run/dbus && \
@@ -189,18 +180,27 @@ RUN mkdir -p /etc/pipewire/pipewire.conf.d && \
     \n  default.clock.quantum = 128\
     \n  default.clock.min-quantum = 128\
     \n  default.clock.max-quantum = 256" > /etc/pipewire/pipewire.conf.d/low-latency.conf && \
-    mkdir -p /etc/wireplumber/main.lua.d && \
-    echo 'table.insert(default_nodes.rules, {\
-    \n  matches = { { { "node.name", "matches", ".*" } } },\
-    \n  apply_properties = {\
-    \n    ["audio.format"] = "S16LE",\
-    \n    ["audio.rate"] = 48000,\
-    \n    ["audio.channels"] = 2,\
-    \n    ["api.alsa.period-size"] = 128,\
-    \n    ["api.alsa.headroom"] = 0,\
-    \n    ["session.suspend-timeout-seconds"] = 0\
-    \n  }\
-    \n})' > /etc/wireplumber/main.lua.d/50-low-latency.lua && \
+    mkdir -p /etc/wireplumber/wireplumber.conf.d && \
+    echo '{\
+    \n"wireplumber.rules": [\
+    \n    {\
+    \n      "matches": [\
+    \n        {\
+    \n          "node.name": "matches",\
+    \n          "value": ".*"\
+    \n        }\
+    \n      ],\
+    \n      "apply_properties": {\
+    \n        "audio.format": "S16LE",\
+    \n        "audio.rate": 48000,\
+    \n        "audio.channels": 2,\
+    \n        "api.alsa.period-size": 128,\
+    \n        "api.alsa.headroom": 0,\
+    \n        "session.suspend-timeout-seconds": 0\
+    \n      }\
+    \n    }\
+    \n  ]\
+    \n}' > /etc/wireplumber/wireplumber.conf.d/nestri-low-latency.conf && \
     echo "default-fragments = 2\
     \ndefault-fragment-size-msec = 2" >> /etc/pulse/daemon.conf && \
     echo "load-module module-loopback latency_msec=1" >> /etc/pipewire/pipewire.conf.d/loopback.conf
@@ -215,6 +215,8 @@ RUN which nestri-server && ls -la /usr/lib/ | grep 'gstwaylanddisplay'
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
 RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
-    locale-gen
+    LANG=en_US.UTF-8 locale-gen
 
+# Root for most container engines, apptainer uses nestri user but it works for some reason *shrug*
+USER root
 ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]

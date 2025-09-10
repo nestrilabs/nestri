@@ -25,19 +25,12 @@ use tracing_subscriber::filter::LevelFilter;
 // Handles gathering GPU information and selecting the most suitable GPU
 fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
     tracing::info!("Gathering GPU information..");
-    let mut gpus = gpu::get_gpus();
+    let mut gpus = gpu::get_gpus()?;
     if gpus.is_empty() {
         return Err("No GPUs found".into());
     }
     for (i, gpu) in gpus.iter().enumerate() {
-        tracing::info!(
-            "> [GPU:{}]  Vendor: '{}', Card Path: '{}', Render Path: '{}', Device Name: '{}'",
-            i,
-            gpu.vendor_string(),
-            gpu.card_path(),
-            gpu.render_path(),
-            gpu.device_name()
-        );
+        tracing::info!("> [GPU:{}] {}", i, gpu);
     }
 
     // Additional GPU filtering
@@ -197,10 +190,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Get relay URL from arguments
     let relay_url = args.app.relay_url.trim();
 
-    // Initialize libp2p (logically the sink should handle the connection to be independent)
-    let nestri_p2p = Arc::new(NestriP2P::new().await?);
-    let p2p_conn = nestri_p2p.connect(relay_url).await?;
-
     gstreamer::init()?;
     let _ = gstrswebrtc::plugin_register_static(); // Might be already registered, so we'll pass..
 
@@ -238,6 +227,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Handle audio encoder selection
     let audio_encoder = handle_encoder_audio(&args);
+
+    // Initialize libp2p (logically the sink should handle the connection to be independent)
+    let nestri_p2p = Arc::new(NestriP2P::new().await?);
+    let p2p_conn = nestri_p2p.connect(relay_url).await?;
 
     /*** PIPELINE CREATION ***/
     // Create the pipeline
@@ -279,7 +272,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
     );
     // If has "frame-size" (opus), set to 10 for lower latency (below 10 seems to be too low?)
-    if audio_encoder.has_property("frame-size", None) {
+    if audio_encoder.has_property("frame-size") {
         audio_encoder.set_property_from_str("frame-size", "10");
     }
 
@@ -313,6 +306,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ))?;
     caps_filter.set_property("caps", &caps);
 
+    // Get bit-depth and choose approriate format (NV12 or P010_10LE)
+    let video_format = if args.encoding.video.bit_depth == 10 {
+        "P010_10LE"
+    } else {
+        "NV12"
+    };
+
     // GL and CUDA elements (NVIDIA only..)
     let mut glupload = None;
     let mut glconvert = None;
@@ -325,7 +325,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         glconvert = Some(gstreamer::ElementFactory::make("glcolorconvert").build()?);
         // GL color convert caps
         let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-        let gl_caps = gstreamer::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
+        let gl_caps = gstreamer::Caps::from_str(
+            format!("video/x-raw(memory:GLMemory),format={video_format}").as_str(),
+        )?;
         caps_filter.set_property("caps", &gl_caps);
         gl_caps_filter = Some(caps_filter);
         // CUDA upload element
@@ -341,7 +343,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         vapostproc = Some(gstreamer::ElementFactory::make("vapostproc").build()?);
         // VA caps filter
         let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-        let va_caps = gstreamer::Caps::from_str("video/x-raw(memory:VAMemory),format=NV12")?;
+        let va_caps = gstreamer::Caps::from_str(
+            format!("video/x-raw(memory:VAMemory),format={video_format}").as_str(),
+        )?;
         caps_filter.set_property("caps", &va_caps);
         va_caps_filter = Some(caps_filter);
     }

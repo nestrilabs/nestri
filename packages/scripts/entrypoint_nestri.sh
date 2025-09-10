@@ -1,8 +1,12 @@
 #!/bin/bash
 
-log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1"
-}
+# Common helpers as requirement
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    log "Error: Common script not found at /etc/nestri/common.sh"
+    exit 1
+fi
 
 # Parses resolution string
 parse_resolution() {
@@ -21,17 +25,6 @@ parse_resolution() {
     export WIDTH="$width"
     export HEIGHT="$height"
     return 0
-}
-
-# Loads environment variables
-load_envs() {
-    if [[ -f /etc/nestri/envs.sh ]]; then
-        log "Sourcing environment variables from envs.sh..."
-        source /etc/nestri/envs.sh
-    else
-        log "Error: envs.sh not found at /etc/nestri/envs.sh"
-        exit 1
-    fi
 }
 
 # Configuration
@@ -125,15 +118,15 @@ start_nestri_server() {
     WAYLAND_SOCKET="${XDG_RUNTIME_DIR}/wayland-1"
     for ((i=1; i<=15; i++)); do
         if [[ -e "$WAYLAND_SOCKET" ]]; then
-            log "Wayland display 'wayland-1' ready."
-            sleep 3
+            log "Wayland display 'wayland-1' ready"
+            sleep 5
             start_compositor
             return
         fi
         sleep 1
     done
 
-    log "Error: Wayland display 'wayland-1' not available."
+    log "Error: Wayland display 'wayland-1' not available"
     
     # Workaround for gstreamer being bit slow at times
     log "Clearing gstreamer cache.."
@@ -156,8 +149,8 @@ start_compositor() {
         NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
 
-    # Start Steam patcher only if Steam command is present
-    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
+    # Start Steam patcher only if Steam command is present and running under non-sane container engines
+    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]] && [[ "$container_runtime" != "podman" ]]; then
         start_steam_namespaceless_patcher
     fi
 
@@ -200,17 +193,23 @@ start_compositor() {
                     local OUTPUT_NAME
                     OUTPUT_NAME=$(WAYLAND_DISPLAY=wayland-0 wlr-randr --json | jq -r '.[] | select(.enabled == true) | .name' | head -n 1)
                     if [ -z "$OUTPUT_NAME" ]; then
-                        log "Warning: No enabled outputs detected. Skipping wlr-randr resolution patch."
+                        log "Warning: No enabled outputs detected. Skipping wlr-randr resolution patch"
                         return
                     fi
                     WAYLAND_DISPLAY=wayland-0 wlr-randr --output "$OUTPUT_NAME" --custom-mode "$WIDTH"x"$HEIGHT"
-                    log "Patched resolution with wlr-randr."
+                    log "Patched resolution with wlr-randr"
+
+                    if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
+                        log "Starting application: $NESTRI_LAUNCH_CMD"
+                        WAYLAND_DISPLAY=wayland-0 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
+                        APP_PID=$!
+                    fi
                 fi
                 return
             fi
             sleep 1
         done
-        log "Warning: Compositor socket not found after 15 seconds ($COMPOSITOR_SOCKET)."
+        log "Warning: Compositor socket not found after 15 seconds ($COMPOSITOR_SOCKET)"
     else
         # Launch standalone application if no compositor
         if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
@@ -218,7 +217,7 @@ start_compositor() {
             WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
             APP_PID=$!
         else
-            log "No compositor or application configured."
+            log "No compositor or application configured"
         fi
     fi
 }
@@ -228,7 +227,7 @@ increment_retry() {
     local component="$1"
     ((RETRY_COUNT++))
     if [[ "$RETRY_COUNT" -ge "$MAX_RETRIES" ]]; then
-        log "Error: Max retries reached for $component."
+        log "Error: Max retries reached for $component"
         exit 1
     fi
 }
@@ -259,22 +258,22 @@ main_loop() {
         sleep 1
         # Check nestri-server
         if [[ -n "${NESTRI_PID:-}" ]] && ! kill -0 "${NESTRI_PID}" 2>/dev/null; then
-            log "nestri-server died."
+            log "nestri-server died"
             increment_retry "nestri-server"
             restart_chain
         # Check compositor
         elif [[ -n "${COMPOSITOR_PID:-}" ]] && ! kill -0 "${COMPOSITOR_PID}" 2>/dev/null; then
-            log "compositor died."
+            log "compositor died"
             increment_retry "compositor"
             start_compositor
         # Check application
         elif [[ -n "${APP_PID:-}" ]] && ! kill -0 "${APP_PID}" 2>/dev/null; then
-            log "application died."
+            log "application died"
             increment_retry "application"
             start_compositor
         # Check patcher
         elif [[ -n "${PATCHER_PID:-}" ]] && ! kill -0 "${PATCHER_PID}" 2>/dev/null; then
-            log "steam-patcher died."
+            log "steam-patcher died"
             increment_retry "steam-patcher"
             start_steam_namespaceless_patcher
         fi
@@ -282,8 +281,13 @@ main_loop() {
 }
 
 main() {
-    load_envs
     parse_resolution "${RESOLUTION:-1920x1080}" || exit 1
+    get_container_info || {
+        log "Warning: Failed to detect container information."
+    }
+    # Make sure we have DBus
+    export $(dbus-launch)
+
     restart_chain
     main_loop
 }
