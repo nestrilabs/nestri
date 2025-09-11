@@ -1,5 +1,6 @@
 #!/bin/bash
 
+export USER=${NESTRI_USER}
 export LANG=${NESTRI_LANG}
 export HOME=${NESTRI_HOME}
 export XDG_RUNTIME_DIR=${NESTRI_XDG_RUNTIME_DIR}

@@ -146,10 +146,11 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     rm -rf /usr/share/{info,man,doc}/*
 
 ### User Configuration ###
+ARG NESTRI_USER_PWD=""
 ENV NESTRI_USER="nestri" \
     NESTRI_UID=1000 \
     NESTRI_GID=1000 \
-    NESTRI_USER_PWD="nestri1234" \
+    NESTRI_USER_PWD="${NESTRI_USER_PWD:-$(openssl rand -base64 12)}" \
     NESTRI_LANG=en_US.UTF-8 \
     NESTRI_XDG_RUNTIME_DIR=/run/user/1000 \
     NESTRI_HOME=/home/nestri \

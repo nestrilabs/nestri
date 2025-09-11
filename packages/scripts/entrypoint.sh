@@ -5,7 +5,7 @@ set -euo pipefail
 if [[ -f /etc/nestri/common.sh ]]; then
     source /etc/nestri/common.sh
 else
-    log "Error: Common script not found at /etc/nestri/common.sh"
+    echo "Error: Common script not found at /etc/nestri/common.sh" >&2
     exit 1
 fi
 

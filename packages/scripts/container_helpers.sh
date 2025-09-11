@@ -25,10 +25,10 @@ function get_container_info {
         # Try to get additional info from .containerenv
         if [[ -f "/run/.containerenv" ]]; then
             if grep -q "name=" "/run/.containerenv" 2>/dev/null; then
-                container_info["name"]=$(grep "name=" "/run/.containerenv" | cut -d'=' -f2- | tr -d '"')
+                container_info["name"]=$(grep "^name=" "/run/.containerenv" | sed 's/^name=//' | tr -d '"' | xargs)
             fi
             if grep -q "image=" "/run/.containerenv" 2>/dev/null; then
-                container_info["image"]=$(grep "image=" "/run/.containerenv" | cut -d'=' -f2- | tr -d '"')
+                container_info["image"]=$(grep "^image=" "/run/.containerenv" | sed 's/^image=//' | tr -d '"' | xargs)
             fi
         fi
         return

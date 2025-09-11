@@ -4,7 +4,7 @@
 if [[ -f /etc/nestri/common.sh ]]; then
     source /etc/nestri/common.sh
 else
-    log "Error: Common script not found at /etc/nestri/common.sh"
+    echo "Error: Common script not found at /etc/nestri/common.sh" >&2
     exit 1
 fi
 
@@ -150,7 +150,7 @@ start_compositor() {
     fi
 
     # Start Steam patcher only if Steam command is present and running under non-sane container engines
-    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]] && [[ "$container_runtime" != "podman" ]]; then
+    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]] && [[ "${container_runtime:-}" != "podman" ]]; then
         start_steam_namespaceless_patcher
     fi
 
@@ -285,8 +285,11 @@ main() {
     get_container_info || {
         log "Warning: Failed to detect container information."
     }
-    # Make sure we have DBus
-    export $(dbus-launch)
+
+    # Ensure DBus session env exists
+    if command -v dbus-launch >/dev/null 2>&1 && [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
+        eval "$(dbus-launch)"
+    fi
 
     restart_chain
     main_loop
