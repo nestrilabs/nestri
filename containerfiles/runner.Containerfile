@@ -150,7 +150,6 @@ ARG NESTRI_USER_PWD=""
 ENV NESTRI_USER="nestri" \
     NESTRI_UID=1000 \
     NESTRI_GID=1000 \
-    NESTRI_USER_PWD="${NESTRI_USER_PWD:-$(openssl rand -base64 12)}" \
     NESTRI_LANG=en_US.UTF-8 \
     NESTRI_XDG_RUNTIME_DIR=/run/user/1000 \
     NESTRI_HOME=/home/nestri \
@@ -161,6 +160,8 @@ RUN mkdir -p /home/${NESTRI_USER} && \
     useradd -d /home/${NESTRI_USER} -u ${NESTRI_UID} -g ${NESTRI_GID} -s /bin/bash ${NESTRI_USER} && \
     chown -R ${NESTRI_USER}:${NESTRI_USER} /home/${NESTRI_USER} && \
     echo "${NESTRI_USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
+    NESTRI_USER_PWD="${NESTRI_USER_PWD:-$(openssl rand -base64 12)}" && \
+    echo "Setting password for ${NESTRI_USER} as: ${NESTRI_USER_PWD}" && \
     echo "${NESTRI_USER}:${NESTRI_USER_PWD}" | chpasswd && \
     mkdir -p ${NESTRI_XDG_RUNTIME_DIR} && \
     chown ${NESTRI_USER} ${NESTRI_XDG_RUNTIME_DIR} && \
