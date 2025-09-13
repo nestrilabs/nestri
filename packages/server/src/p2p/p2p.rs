@@ -1,13 +1,16 @@
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
-use libp2p::{Multiaddr, PeerId, Swarm, swarm::{NetworkBehaviour, SwarmEvent}, identity};
+use libp2p::{
+    Multiaddr, PeerId, Swarm, identity,
+    swarm::{NetworkBehaviour, SwarmEvent},
+};
+use libp2p_autonat as autonat;
 use libp2p_identify as identify;
 use libp2p_noise as noise;
 use libp2p_ping as ping;
+use libp2p_stream as stream;
 use libp2p_tcp as tcp;
 use libp2p_yamux as yamux;
-use libp2p_autonat as autonat;
-use libp2p_stream as stream;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -30,7 +33,7 @@ impl NestriBehaviour {
         Self {
             identify: identify::Behaviour::new(identify::Config::new(
                 "/ipfs/id/1.0.0".to_string(),
-                key
+                key,
             )),
             ping: ping::Behaviour::default(),
             stream: stream::Behaviour::default(),
@@ -92,7 +95,9 @@ async fn swarm_loop(swarm: Arc<Mutex<Swarm<NestriBehaviour>>>) {
         match event {
             /* Ping Events */
             SwarmEvent::Behaviour(NestriBehaviourEvent::Ping(ping::Event {
-                peer, connection, result
+                peer,
+                connection,
+                result,
             })) => {
                 if let Ok(latency) = result {
                     tracing::debug!(
@@ -111,9 +116,14 @@ async fn swarm_loop(swarm: Arc<Mutex<Swarm<NestriBehaviour>>>) {
                 }
             }
             /* Autonat (v2) Events */
-            SwarmEvent::Behaviour(NestriBehaviourEvent::Autonatv2(autonat::v2::client::Event {
-                server, tested_addr, bytes_sent, result
-            })) => {
+            SwarmEvent::Behaviour(NestriBehaviourEvent::Autonatv2(
+                autonat::v2::client::Event {
+                    server,
+                    tested_addr,
+                    bytes_sent,
+                    result,
+                },
+            )) => {
                 if let Ok(()) = result {
                     tracing::debug!(
                         "AutonatV2 event - test server '{}' verified address '{}' with {} bytes sent",

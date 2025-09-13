@@ -9,7 +9,7 @@ use atomic_refcell::AtomicRefCell;
 use glib::subclass::prelude::*;
 use gstreamer::glib;
 use gstreamer::prelude::*;
-use gstreamer_webrtc::{gst_sdp, WebRTCSDPType, WebRTCSessionDescription};
+use gstreamer_webrtc::{WebRTCSDPType, WebRTCSessionDescription, gst_sdp};
 use gstrswebrtc::signaller::{Signallable, SignallableImpl};
 use parking_lot::RwLock as PLRwLock;
 use prost::Message;

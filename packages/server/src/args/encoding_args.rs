@@ -64,14 +64,14 @@ pub struct EncodingOptionsBase {
     /// Codec (e.g. "h264", "opus" etc.)
     pub codec: Codec,
     /// Overridable encoder (e.g. "vah264lpenc", "opusenc" etc.)
-    pub encoder: String,
+    pub encoder: Option<String>,
     /// Rate control method (e.g. "cqp", "vbr", "cbr")
     pub rate_control: RateControl,
 }
 impl EncodingOptionsBase {
     pub fn debug_print(&self) {
         tracing::info!("> Codec: '{}'", self.codec.as_str());
-        tracing::info!("> Encoder: '{}'", self.encoder);
+        tracing::info!("> Encoder: '{}'", self.encoder.as_deref().unwrap_or("auto"));
         match &self.rate_control {
             RateControl::CQP(cqp) => {
                 tracing::info!("> Rate Control: CQP");
@@ -106,9 +106,9 @@ impl VideoEncodingOptions {
                         .clone(),
                 ),
                 encoder: matches
-                    .get_one::<String>("video-encoder")
-                    .unwrap_or(&"".to_string())
-                    .clone(),
+                    .get_one::<Option<String>>("video-encoder")
+                    .cloned()
+                    .unwrap_or(None),
                 rate_control: match matches
                     .get_one::<RateControlMethod>("video-rate-control")
                     .unwrap_or(&RateControlMethod::CBR)
@@ -135,8 +135,8 @@ impl VideoEncodingOptions {
                 .clone(),
             bit_depth: matches
                 .get_one::<u32>("video-bit-depth")
-                .unwrap_or(&8)
-                .clone(),
+                .copied()
+                .unwrap_or(8),
         }
     }
 
@@ -198,9 +198,9 @@ impl AudioEncodingOptions {
                         .clone(),
                 ),
                 encoder: matches
-                    .get_one::<String>("audio-encoder")
-                    .unwrap_or(&"".to_string())
-                    .clone(),
+                    .get_one::<Option<String>>("audio-encoder")
+                    .cloned()
+                    .unwrap_or(None),
                 rate_control: match matches
                     .get_one::<RateControlMethod>("audio-rate-control")
                     .unwrap_or(&RateControlMethod::CBR)

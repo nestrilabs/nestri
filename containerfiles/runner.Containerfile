@@ -86,7 +86,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good libinput
 
 # Clone repository
-RUN git clone --depth 1 -b "stable" https://github.com/games-on-whales/gst-wayland-display.git
+RUN git clone --depth 1 --rev "dfeebb19b48f32207469e166a3955f5d65b5e6c6" https://github.com/games-on-whales/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -155,17 +155,16 @@ ENV NESTRI_USER="nestri" \
     NESTRI_HOME=/home/nestri \
     NVIDIA_DRIVER_CAPABILITIES=all
 
-RUN mkdir -p /home/${NESTRI_USER} && \
-    groupadd -g ${NESTRI_GID} ${NESTRI_USER} && \
-    useradd -d /home/${NESTRI_USER} -u ${NESTRI_UID} -g ${NESTRI_GID} -s /bin/bash ${NESTRI_USER} && \
-    chown -R ${NESTRI_USER}:${NESTRI_USER} /home/${NESTRI_USER} && \
+RUN mkdir -p "/home/${NESTRI_USER}" && \
+    groupadd -g "${NESTRI_GID}" "${NESTRI_USER}" && \
+    useradd -d "/home/${NESTRI_USER}" -u "${NESTRI_UID}" -g "${NESTRI_GID}" -s /bin/bash "${NESTRI_USER}" && \
     echo "${NESTRI_USER} ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers && \
     NESTRI_USER_PWD="${NESTRI_USER_PWD:-$(openssl rand -base64 12)}" && \
     echo "Setting password for ${NESTRI_USER} as: ${NESTRI_USER_PWD}" && \
     echo "${NESTRI_USER}:${NESTRI_USER_PWD}" | chpasswd && \
-    mkdir -p ${NESTRI_XDG_RUNTIME_DIR} && \
-    chown ${NESTRI_USER} ${NESTRI_XDG_RUNTIME_DIR} && \
-    usermod -aG input,video,render,seat ${NESTRI_USER}
+    mkdir -p "${NESTRI_XDG_RUNTIME_DIR}" && \
+    chown "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_XDG_RUNTIME_DIR}" && \
+    usermod -aG input,video,render,seat "${NESTRI_USER}"
 
 ### System Services Configuration ###
 RUN mkdir -p /run/dbus && \
@@ -175,38 +174,17 @@ RUN mkdir -p /run/dbus && \
         -e '/wants = \[/{s/hooks\.node\.suspend\s*//; s/,\s*\]/]/}' \
         /usr/share/wireplumber/wireplumber.conf
 
-### PipeWire Latency Optimizations (1-5ms instead of 20ms) ###
+### Audio Systems Configs - Latency optimizations + Loopback ###
 RUN mkdir -p /etc/pipewire/pipewire.conf.d && \
-    echo "[audio]\
-    \n  default.clock.rate = 48000\
-    \n  default.clock.quantum = 128\
-    \n  default.clock.min-quantum = 128\
-    \n  default.clock.max-quantum = 256" > /etc/pipewire/pipewire.conf.d/low-latency.conf && \
-    mkdir -p /etc/wireplumber/wireplumber.conf.d && \
-    echo '{\
-    \n"wireplumber.rules": [\
-    \n    {\
-    \n      "matches": [\
-    \n        {\
-    \n          "node.name": "matches",\
-    \n          "value": ".*"\
-    \n        }\
-    \n      ],\
-    \n      "apply_properties": {\
-    \n        "audio.format": "S16LE",\
-    \n        "audio.rate": 48000,\
-    \n        "audio.channels": 2,\
-    \n        "api.alsa.period-size": 128,\
-    \n        "api.alsa.headroom": 0,\
-    \n        "session.suspend-timeout-seconds": 0\
-    \n      }\
-    \n    }\
-    \n  ]\
-    \n}' > /etc/wireplumber/wireplumber.conf.d/nestri-low-latency.conf && \
-    echo "default-fragments = 2\
-    \ndefault-fragment-size-msec = 2" >> /etc/pulse/daemon.conf && \
-    echo "load-module module-loopback latency_msec=1" >> /etc/pipewire/pipewire.conf.d/loopback.conf
+    mkdir -p /etc/wireplumber/wireplumber.conf.d
 
+COPY packages/configs/wireplumber.conf.d/* /etc/wireplumber/wireplumber.conf.d/
+COPY packages/configs/pipewire.conf.d/* /etc/pipewire/pipewire.conf.d/
+
+## Steam Configs - Proton (CachyOS flavor) ##
+RUN mkdir -p "${NESTRI_HOME}/.local/share/Steam/config"
+
+COPY packages/configs/steam/config.vdf "${NESTRI_HOME}/.local/share/Steam/config/"
 
 ### Artifacts and Verification ###
 COPY --from=nestri-server-cached-builder /artifacts/nestri-server /usr/bin/
@@ -217,8 +195,10 @@ RUN which nestri-server && ls -la /usr/lib/ | grep 'gstwaylanddisplay'
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
 RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
+    chown -R "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}" && \
+    sed -i 's/^#\(en_US\.UTF-8\)/\1/' /etc/locale.gen && \
     LANG=en_US.UTF-8 locale-gen
 
-# Root for most container engines, apptainer uses nestri user but it works for some reason *shrug*
+# Root for most container engines, nestri-user compatible for apptainer without fakeroot
 USER root
 ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]

@@ -390,7 +390,10 @@ pub fn get_compatible_encoders(gpus: &Vec<GPUInfo>) -> Vec<VideoEncoderInfo> {
                             get_nvidia_gpu_by_cuda_id(&gpus, cuda_id as usize)
                         }
                         EncoderAPI::AMF if element.has_property("device") => {
-                            let device_id = element.property::<u32>("device");
+                            let device_id = match element.property_value("device").get::<u32>() {
+                                Ok(v) => v as usize,
+                                Err(_) => return None,
+                            };
                             get_gpus_by_vendor(&gpus, "amd")
                                 .get(device_id as usize)
                                 .cloned()

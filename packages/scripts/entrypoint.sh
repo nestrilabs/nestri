@@ -17,8 +17,7 @@ ENTCMD_PREFIX=""
 
 # Ensures user directory ownership
 chown_user_directory() {
-    local user_group="${NESTRI_USER}"
-    if ! $ENTCMD_PREFIX chown "$user_group" "${NESTRI_HOME}" 2>/dev/null; then
+    if ! $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}" 2>/dev/null; then
         echo "Error: Failed to change ownership of ${NESTRI_HOME} to ${user_group}" >&2
         return 1
     fi
@@ -54,7 +53,7 @@ setup_cache() {
         log "Warning: Failed to create cache directory, continuing without cache."
         return 1
     }
-    $ENTCMD_PREFIX chown "${NESTRI_USER}" "$CACHE_DIR" 2>/dev/null || {
+    $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "$CACHE_DIR" 2>/dev/null || {
         log "Warning: Failed to set cache directory ownership, continuing..."
     }
 }
@@ -99,7 +98,7 @@ get_nvidia_installer() {
 
         # Cache the downloaded file
         cp "$tmp_file" "$cached_file" 2>/dev/null && \
-            chown "${NESTRI_USER}" "$cached_file" 2>/dev/null || \
+            $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "$cached_file" 2>/dev/null || \
             log "Warning: Failed to cache NVIDIA driver, continuing..."
     fi
 
@@ -125,6 +124,9 @@ install_nvidia_driver() {
         --no-systemd \
         --no-rpms \
         --no-backup \
+        --no-distro-scripts \
+        --no-libglx-indirect \
+        --no-install-libglvnd \
         --no-check-for-alternate-installs || {
         log "Error: NVIDIA driver installation failed."
         return 1
@@ -140,9 +142,9 @@ log_container_info() {
         return
     fi
 
-    if [[ "$container_runtime" != "none" ]]; then
+    if [[ "${container_runtime:-none}" != "none" ]]; then
         log "Detected container:"
-        log "> $container_runtime"
+        log "> ${container_runtime}"
     else
         log "No container runtime detected"
     fi
@@ -184,7 +186,7 @@ configure_ssh() {
     echo "${SSH_ALLOWED_KEY}" > "${NESTRI_HOME}/.ssh/authorized_keys"
     chmod 700 "${NESTRI_HOME}/.ssh"
     chmod 600 "${NESTRI_HOME}/.ssh/authorized_keys"
-    chown -R "${NESTRI_USER}" "${NESTRI_HOME}/.ssh"
+    chown -R "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}/.ssh"
 
     # Configure secure SSH settings
     {
@@ -315,7 +317,7 @@ main() {
     log "Ensuring user directory permissions..."
     chown_user_directory || exit 1
 
-    # Setup namespaceless env for non-sane container engines
+    # Setup namespaceless env if needed for container runtime
     if [[ "$container_runtime" != "podman" ]]; then
         log "Applying namespace-less configuration"
         setup_namespaceless
@@ -330,7 +332,7 @@ main() {
     if [[ "$container_runtime" == "apptainer" ]]; then
         exec /etc/nestri/entrypoint_nestri.sh
     else
-        exec sudo -E -u ${NESTRI_USER} /etc/nestri/entrypoint_nestri.sh
+        exec sudo -E -u "${NESTRI_USER}" /etc/nestri/entrypoint_nestri.sh
     fi
 }
 

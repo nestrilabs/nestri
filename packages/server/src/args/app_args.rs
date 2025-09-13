@@ -1,8 +1,6 @@
 pub struct AppArgs {
     /// Verbose output mode
     pub verbose: bool,
-    /// Enable additional debug information and features, may affect performance
-    pub debug: bool,
 
     /// Virtual display resolution
     pub resolution: (u32, u32),
@@ -22,7 +20,6 @@ impl AppArgs {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
         Self {
             verbose: matches.get_one::<bool>("verbose").unwrap_or(&false).clone(),
-            debug: matches.get_one::<bool>("debug").unwrap_or(&false).clone(),
             resolution: {
                 let res = matches
                     .get_one::<String>("resolution")
@@ -55,7 +52,6 @@ impl AppArgs {
     pub fn debug_print(&self) {
         tracing::info!("AppArgs:");
         tracing::info!("> verbose: {}", self.verbose);
-        tracing::info!("> debug: {}", self.debug);
         tracing::info!(
             "> resolution: '{}x{}'",
             self.resolution.0,

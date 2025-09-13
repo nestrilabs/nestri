@@ -30,6 +30,7 @@ parse_resolution() {
 # Configuration
 MAX_RETRIES=3
 RETRY_COUNT=0
+WAYLAND_READY_DELAY=3
 
 # Kills process if running
 kill_if_running() {
@@ -119,7 +120,7 @@ start_nestri_server() {
     for ((i=1; i<=15; i++)); do
         if [[ -e "$WAYLAND_SOCKET" ]]; then
             log "Wayland display 'wayland-1' ready"
-            sleep 5
+            sleep "${WAYLAND_READY_DELAY:-3}"
             start_compositor
             return
         fi
@@ -149,7 +150,7 @@ start_compositor() {
         NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
 
-    # Start Steam patcher only if Steam command is present and running under non-sane container engines
+    # Start Steam patcher only if Steam command is present and if needed for container runtime
     if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]] && [[ "${container_runtime:-}" != "podman" ]]; then
         start_steam_namespaceless_patcher
     fi

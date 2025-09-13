@@ -1,5 +1,6 @@
 use crate::args::encoding_args::AudioCaptureMethod;
 use crate::enc_helper::{AudioCodec, EncoderType, VideoCodec};
+use clap::builder::TypedValueParser;
 use clap::builder::{BoolishValueParser, NonEmptyStringValueParser};
 use clap::{Arg, Command, value_parser};
 
@@ -22,15 +23,6 @@ impl Args {
                     .long("verbose")
                     .env("VERBOSE")
                     .help("Enable verbose output")
-                    .value_parser(BoolishValueParser::new())
-                    .default_value("false"),
-            )
-            .arg(
-                Arg::new("debug")
-                    .short('d')
-                    .long("debug")
-                    .env("DEBUG")
-                    .help("Enable additional debugging features")
                     .value_parser(BoolishValueParser::new())
                     .default_value("false"),
             )
@@ -88,8 +80,8 @@ impl Args {
                     .long("gpu-index")
                     .env("GPU_INDEX")
                     .help("GPU to use by index")
-                    .value_parser(value_parser!(i32).range(-1..))
-                    .default_value("-1"),
+                    .value_parser(value_parser!(u32).range(0..))
+                    .required(false),
             )
             .arg(
                 Arg::new("gpu-card-path")
@@ -158,8 +150,11 @@ impl Args {
                 Arg::new("video-bit-depth")
                     .long("video-bit-depth")
                     .env("VIDEO_BIT_DEPTH")
-                    .help("Video bit depth (8 or 10), functions only with DMA-BUF")
-                    .value_parser(value_parser!(u32).range(8..=10))
+                    .help("Video bit depth (8 or 10), only with DMA-BUF and non-H264 codec")
+                    .value_parser(
+                        clap::builder::PossibleValuesParser::new(["8", "10"])
+                            .map(|s| s.parse::<u32>().unwrap()),
+                    )
                     .default_value("8"),
             )
             .arg(
@@ -168,7 +163,7 @@ impl Args {
                     .env("AUDIO_CAPTURE_METHOD")
                     .help("Audio capture method")
                     .value_parser(value_parser!(AudioCaptureMethod))
-                    .default_value("pulseaudio"),
+                    .default_value("pipewire"),
             )
             .arg(
                 Arg::new("audio-codec")

@@ -83,13 +83,13 @@ impl std::fmt::Display for GPUInfo {
 pub fn get_gpus() -> Result<Vec<GPUInfo>, Box<dyn Error>> {
     // Use "/sys/class/drm/card{}" to find all GPU devices
     let mut gpus = Vec::new();
+    let re = regex::Regex::new(r"^card(\d+)$")?;
     for entry in fs::read_dir("/sys/class/drm")? {
         let entry = entry?;
         let file_name = entry.file_name();
         let file_name_str = file_name.to_string_lossy();
 
         // We are only interested in entries that match "cardN", and getting the minor number
-        let re = regex::Regex::new(r"^card(\d+)$")?;
         let caps = match re.captures(&file_name_str) {
             Some(caps) => caps,
             None => continue,
@@ -234,7 +234,11 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
 
 pub fn get_nvidia_gpu_by_cuda_id(gpus: &[GPUInfo], cuda_device_id: usize) -> Option<GPUInfo> {
     // Check if nvidia-smi is available
-    if std::process::Command::new("nvidia-smi").arg("--help").output().is_err() {
+    if std::process::Command::new("nvidia-smi")
+        .arg("--help")
+        .output()
+        .is_err()
+    {
         tracing::warn!("nvidia-smi is not available");
         return None;
     }

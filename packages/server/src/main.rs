@@ -34,22 +34,22 @@ fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
     }
 
     // Additional GPU filtering
-    if !args.device.gpu_card_path.is_empty() {
-        if let Some(gpu) = gpu::get_gpu_by_card_path(&gpus, &args.device.gpu_card_path) {
+    if let Some(gpu_card_path) = &args.device.gpu_card_path {
+        if let Some(gpu) = gpu::get_gpu_by_card_path(&gpus, gpu_card_path.as_str()) {
             return Ok(Vec::from([gpu]));
         }
     } else {
         // Run all filters that are not empty
         let mut filtered_gpus = gpus.clone();
-        if !args.device.gpu_vendor.is_empty() {
-            filtered_gpus = gpu::get_gpus_by_vendor(&filtered_gpus, &args.device.gpu_vendor);
+        if let Some(gpu_vendor) = &args.device.gpu_vendor {
+            filtered_gpus = gpu::get_gpus_by_vendor(&filtered_gpus, gpu_vendor.as_str());
         }
-        if !args.device.gpu_name.is_empty() {
-            filtered_gpus = gpu::get_gpus_by_device_name(&filtered_gpus, &args.device.gpu_name);
+        if let Some(gpu_name) = &args.device.gpu_name {
+            filtered_gpus = gpu::get_gpus_by_device_name(&filtered_gpus, gpu_name.as_str());
         }
-        if args.device.gpu_index > -1 {
+        if let Some(gpu_index) = &args.device.gpu_index {
             // get single GPU by index
-            let gpu_index = args.device.gpu_index as usize;
+            let gpu_index = *gpu_index as usize;
             if gpu_index >= filtered_gpus.len() {
                 return Err(format!(
                     "GPU index {} is out of bounds for available GPUs (0-{})",
@@ -70,10 +70,10 @@ fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
     if gpus.is_empty() {
         return Err(format!(
             "No GPU(s) found with the specified parameters: vendor='{}', name='{}', index='{}', card_path='{}'",
-            args.device.gpu_vendor,
-            args.device.gpu_name,
-            args.device.gpu_index,
-            args.device.gpu_card_path
+            args.device.gpu_vendor.as_deref().unwrap_or("auto"),
+            args.device.gpu_name.as_deref().unwrap_or("auto"),
+            args.device.gpu_index.map_or("auto".to_string(), |i| i.to_string()),
+            args.device.gpu_card_path.as_deref().unwrap_or("auto")
         ).into());
     }
     Ok(gpus)
@@ -105,9 +105,8 @@ fn handle_encoder_video(
     }
     // Pick most suitable video encoder based on given arguments
     let video_encoder;
-    if !args.encoding.video.encoder.is_empty() {
-        video_encoder =
-            enc_helper::get_encoder_by_name(&video_encoders, &args.encoding.video.encoder)?;
+    if let Some(wanted_encoder) = &args.encoding.video.encoder {
+        video_encoder = enc_helper::get_encoder_by_name(&video_encoders, wanted_encoder.as_str())?;
     } else {
         video_encoder = enc_helper::get_best_working_encoder(
             &video_encoders,
@@ -157,10 +156,10 @@ fn handle_encoder_video_settings(
 // Handles picking audio encoder
 // TODO: Expand enc_helper with audio types, for now just opus
 fn handle_encoder_audio(args: &args::Args) -> String {
-    let audio_encoder = if args.encoding.audio.encoder.is_empty() {
+    let audio_encoder = if args.encoding.audio.encoder.is_none() {
         "opusenc".to_string()
     } else {
-        args.encoding.audio.encoder.clone()
+        args.encoding.audio.encoder.as_ref().unwrap().clone()
     };
     tracing::info!("Selected audio encoder: '{}'", audio_encoder);
     audio_encoder
@@ -243,7 +242,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             gstreamer::ElementFactory::make("pulsesrc").build()?
         }
         encoding_args::AudioCaptureMethod::PIPEWIRE => {
-            gstreamer::ElementFactory::make("pipewiresrc").build()?
+            let pw_element = gstreamer::ElementFactory::make("pipewiresrc").build()?;
+            pw_element.set_property("use-bufferpool", &false); // false for audio
+            pw_element
         }
         encoding_args::AudioCaptureMethod::ALSA => {
             gstreamer::ElementFactory::make("alsasrc").build()?
@@ -307,7 +308,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     caps_filter.set_property("caps", &caps);
 
     // Get bit-depth and choose approriate format (NV12 or P010_10LE)
-    let video_format = if args.encoding.video.bit_depth == 10 {
+    // Only allowed if non-H264 codec is used as it doesn't support 10-bit video
+    let video_format = if args.encoding.video.bit_depth == 10
+        && video_encoder_info.codec != enc_helper::VideoCodec::H264
+    {
         "P010_10LE"
     } else {
         "NV12"
