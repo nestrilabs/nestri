@@ -12,21 +12,17 @@ impl DeviceArgs {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
         Self {
             gpu_vendor: matches
-                .get_one::<Option<String>>("gpu-vendor")
-                .cloned()
-                .unwrap_or(None),
+                .get_one::<String>("gpu-vendor")
+                .cloned(),
             gpu_name: matches
-                .get_one::<Option<String>>("gpu-name")
-                .cloned()
-                .unwrap_or(None),
+                .get_one::<String>("gpu-name")
+                .cloned(),
             gpu_index: matches
-                .get_one::<Option<u32>>("gpu-index")
-                .cloned()
-                .unwrap_or(None),
+                .get_one::<u32>("gpu-index")
+                .cloned(),
             gpu_card_path: matches
-                .get_one::<Option<String>>("gpu-card-path")
-                .cloned()
-                .unwrap_or(None),
+                .get_one::<String>("gpu-card-path")
+                .cloned(),
         }
     }
 

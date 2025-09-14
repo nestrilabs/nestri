@@ -18,7 +18,7 @@ ENTCMD_PREFIX=""
 # Ensures user directory ownership
 chown_user_directory() {
     if ! $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}" 2>/dev/null; then
-        echo "Error: Failed to change ownership of ${NESTRI_HOME} to ${user_group}" >&2
+        echo "Error: Failed to change ownership of ${NESTRI_HOME} to ${NESTRI_USER}:${NESTRI_USER}" >&2
         return 1
     fi
     return 0
@@ -196,7 +196,9 @@ configure_ssh() {
         echo "UsePAM no"
         echo "PubkeyAuthentication yes"
     } | while read -r line; do
-        grep -qF "$line" /etc/ssh/sshd_config || $ENTCMD_PREFIX echo "$line" >> /etc/ssh/sshd_config
+        if ! grep -qF "$line" /etc/ssh/sshd_config; then
+            printf '%s\n' "$line" | $ENTCMD_PREFIX tee -a /etc/ssh/sshd_config >/dev/null
+        fi
     done
 
     # Start SSH server

@@ -15,6 +15,8 @@ function detect_container_runtime {
         # General check for containerization signs
         if grep -qE "docker|lxc|kubepods|containerd" "/proc/1/cgroup" 2>/dev/null; then
             echo "unknown"
+        else
+            echo "none"
         fi
     fi
 }
@@ -51,7 +53,7 @@ function collect_container_info {
 
 function get_container_info {
     container_runtime=$(detect_container_runtime)
-    if [[ "$container_runtime" != "none" ]]; then
+    if [[ "${container_runtime}" != "none" ]]; then
         collect_container_info "$container_runtime"
     fi
 }

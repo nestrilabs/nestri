@@ -198,9 +198,8 @@ impl AudioEncodingOptions {
                         .clone(),
                 ),
                 encoder: matches
-                    .get_one::<Option<String>>("audio-encoder")
-                    .cloned()
-                    .unwrap_or(None),
+                    .get_one::<String>("audio-encoder")
+                    .cloned(),
                 rate_control: match matches
                     .get_one::<RateControlMethod>("audio-rate-control")
                     .unwrap_or(&RateControlMethod::CBR)

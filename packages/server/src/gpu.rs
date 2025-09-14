@@ -19,6 +19,21 @@ impl From<u16> for GPUVendor {
         }
     }
 }
+impl From<&str> for GPUVendor {
+    fn from(value: &str) -> Self {
+        match value.to_lowercase().as_str() {
+            "intel" => GPUVendor::INTEL,
+            "nvidia" => GPUVendor::NVIDIA,
+            "amd" => GPUVendor::AMD,
+            _ => GPUVendor::UNKNOWN,
+        }
+    }
+}
+impl From<String> for GPUVendor {
+    fn from(value: String) -> Self {
+        GPUVendor::from(value.as_str())
+    }
+}
 impl GPUVendor {
     pub fn as_str(&self) -> &str {
         match self {
@@ -208,10 +223,9 @@ fn get_dri_device_path(pci_addr: &str) -> Option<(String, String)> {
     None
 }
 
-pub fn get_gpus_by_vendor(gpus: &[GPUInfo], vendor: &str) -> Vec<GPUInfo> {
-    let target = vendor.to_lowercase();
+pub fn get_gpus_by_vendor(gpus: &[GPUInfo], vendor: GPUVendor) -> Vec<GPUInfo> {
     gpus.iter()
-        .filter(|gpu| gpu.vendor().as_str().to_lowercase() == target)
+        .filter(|gpu| *gpu.vendor() == vendor)
         .cloned()
         .collect()
 }
@@ -229,50 +243,6 @@ pub fn get_gpu_by_card_path(gpus: &[GPUInfo], path: &str) -> Option<GPUInfo> {
         .find(|gpu| {
             gpu.card_path.eq_ignore_ascii_case(path) || gpu.render_path.eq_ignore_ascii_case(path)
         })
-        .cloned()
-}
-
-pub fn get_nvidia_gpu_by_cuda_id(gpus: &[GPUInfo], cuda_device_id: usize) -> Option<GPUInfo> {
-    // Check if nvidia-smi is available
-    if std::process::Command::new("nvidia-smi")
-        .arg("--help")
-        .output()
-        .is_err()
-    {
-        tracing::warn!("nvidia-smi is not available");
-        return None;
-    }
-
-    // Run nvidia-smi to get information about the CUDA device
-    let output = std::process::Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=pci.bus_id",
-            "--format=csv,noheader",
-            "-i",
-            &cuda_device_id.to_string(),
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    // Parse the output to get the PCI bus ID
-    let pci_bus_id = str::from_utf8(&output.stdout).ok()?.trim().to_uppercase(); // nvidia-smi returns uppercase PCI IDs
-
-    // Convert from 00000000:05:00.0 to 05:00.0 if needed
-    let pci_bus_id = if pci_bus_id.starts_with("00000000:") {
-        pci_bus_id[9..].to_string() // Skip the domain part
-    } else if pci_bus_id.starts_with("0000:") {
-        pci_bus_id[5..].to_string() // Alternate check for older nvidia-smi versions
-    } else {
-        pci_bus_id
-    };
-
-    // Find the GPU with the matching PCI bus ID
-    gpus.iter()
-        .find(|gpu| gpu.vendor == GPUVendor::NVIDIA && gpu.pci_bus_id.to_uppercase() == pci_bus_id)
         .cloned()
 }
 

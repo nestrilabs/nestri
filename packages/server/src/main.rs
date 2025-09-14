@@ -42,7 +42,8 @@ fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
         // Run all filters that are not empty
         let mut filtered_gpus = gpus.clone();
         if let Some(gpu_vendor) = &args.device.gpu_vendor {
-            filtered_gpus = gpu::get_gpus_by_vendor(&filtered_gpus, gpu_vendor.as_str());
+            filtered_gpus =
+                gpu::get_gpus_by_vendor(&filtered_gpus, GPUVendor::from(gpu_vendor.clone()));
         }
         if let Some(gpu_name) = &args.device.gpu_name {
             filtered_gpus = gpu::get_gpus_by_device_name(&filtered_gpus, gpu_name.as_str());

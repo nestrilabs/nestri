@@ -1,5 +1,5 @@
 use crate::args::encoding_args::RateControl;
-use crate::gpu::{GPUInfo, get_gpu_by_card_path, get_gpus_by_vendor, get_nvidia_gpu_by_cuda_id};
+use crate::gpu::{GPUInfo, GPUVendor, get_gpu_by_card_path, get_gpus_by_vendor};
 use clap::ValueEnum;
 use gstreamer::prelude::*;
 use std::error::Error;
@@ -385,18 +385,46 @@ pub fn get_compatible_encoders(gpus: &Vec<GPUInfo>) -> Vec<VideoEncoderInfo> {
 
                             path.and_then(|p| get_gpu_by_card_path(&gpus, &p))
                         }
-                        EncoderAPI::NVENC if element.has_property("cuda-device-id") => {
-                            let cuda_id = element.property::<u32>("cuda-device-id");
-                            get_nvidia_gpu_by_cuda_id(&gpus, cuda_id as usize)
+                        EncoderAPI::NVENC => {
+                            if encoder_name.contains("device") {
+                                // Parse by element name's index (i.e. "nvh264device{N}enc")
+                                let re = regex::Regex::new(r"device(\d+)").unwrap();
+                                if let Some(caps) = re.captures(encoder_name.as_str()) {
+                                    if let Some(m) = caps.get(1) {
+                                        if let Ok(id) = m.as_str().parse::<usize>() {
+                                            return get_gpus_by_vendor(&gpus, GPUVendor::NVIDIA)
+                                                .get(id)
+                                                .cloned();
+                                        }
+                                    }
+                                }
+                                None
+                            } else if element.has_property("cuda-device-id") {
+                                let device_id =
+                                    match element.property_value("cuda-device-id").get::<i32>() {
+                                        Ok(v) if v >= 0 => Some(v as usize),
+                                        _ => None,
+                                    };
+
+                                // We'll just treat cuda-device-id as an index
+                                device_id.and_then(|id| {
+                                    get_gpus_by_vendor(&gpus, GPUVendor::NVIDIA)
+                                        .get(id)
+                                        .cloned()
+                                })
+                            } else {
+                                None
+                            }
                         }
                         EncoderAPI::AMF if element.has_property("device") => {
                             let device_id = match element.property_value("device").get::<u32>() {
-                                Ok(v) => v as usize,
-                                Err(_) => return None,
+                                Ok(v) => Some(v as usize),
+                                Err(_) => None,
                             };
-                            get_gpus_by_vendor(&gpus, "amd")
-                                .get(device_id as usize)
-                                .cloned()
+
+                            device_id.and_then(|id| {
+                                get_gpus_by_vendor(&gpus, GPUVendor::AMD).get(id).cloned()
+                            })
                         }
                         _ => None,
                     }
