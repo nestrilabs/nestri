@@ -35,9 +35,14 @@ fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
 
     // Additional GPU filtering
     if let Some(gpu_card_path) = &args.device.gpu_card_path {
-        if let Some(gpu) = gpu::get_gpu_by_card_path(&gpus, gpu_card_path.as_str()) {
-            return Ok(Vec::from([gpu]));
-        }
+        return match gpu::get_gpu_by_card_path(&gpus, gpu_card_path.as_str()) {
+            Some(gpu) => Ok(Vec::from([gpu])),
+            None => Err(format!(
+                "No GPU found with the specified card path: '{}'",
+                gpu_card_path
+            )
+            .into()),
+        };
     } else {
         // Run all filters that are not empty
         let mut filtered_gpus = gpus.clone();

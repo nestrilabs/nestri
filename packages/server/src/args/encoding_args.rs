@@ -105,10 +105,7 @@ impl VideoEncodingOptions {
                         .unwrap_or(&VideoCodec::H264)
                         .clone(),
                 ),
-                encoder: matches
-                    .get_one::<Option<String>>("video-encoder")
-                    .cloned()
-                    .unwrap_or(None),
+                encoder: matches.get_one::<String>("video-encoder").cloned(),
                 rate_control: match matches
                     .get_one::<RateControlMethod>("video-rate-control")
                     .unwrap_or(&RateControlMethod::CBR)
@@ -197,9 +194,7 @@ impl AudioEncodingOptions {
                         .unwrap_or(&AudioCodec::OPUS)
                         .clone(),
                 ),
-                encoder: matches
-                    .get_one::<String>("audio-encoder")
-                    .cloned(),
+                encoder: matches.get_one::<String>("audio-encoder").cloned(),
                 rate_control: match matches
                     .get_one::<RateControlMethod>("audio-rate-control")
                     .unwrap_or(&RateControlMethod::CBR)
