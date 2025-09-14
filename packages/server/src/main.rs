@@ -60,7 +60,7 @@ fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
                 return Err(format!(
                     "GPU index {} is out of bounds for available GPUs (0-{})",
                     gpu_index,
-                    filtered_gpus.len() - 1
+                    filtered_gpus.len().saturating_sub(1)
                 )
                 .into());
             }
@@ -162,11 +162,12 @@ fn handle_encoder_video_settings(
 // Handles picking audio encoder
 // TODO: Expand enc_helper with audio types, for now just opus
 fn handle_encoder_audio(args: &args::Args) -> String {
-    let audio_encoder = if args.encoding.audio.encoder.is_none() {
-        "opusenc".to_string()
-    } else {
-        args.encoding.audio.encoder.as_ref().unwrap().clone()
-    };
+    let audio_encoder = args
+        .encoding
+        .audio
+        .encoder
+        .clone()
+        .unwrap_or_else(|| "opusenc".to_string());
     tracing::info!("Selected audio encoder: '{}'", audio_encoder);
     audio_encoder
 }
@@ -313,9 +314,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     ))?;
     caps_filter.set_property("caps", &caps);
 
-    // Get bit-depth and choose approriate format (NV12 or P010_10LE)
-    // Only allowed if non-H264 codec is used as it doesn't support 10-bit video
+    // Get bit-depth and choose appropriate format (NV12 or P010_10LE)
+    // H.264 does not support above 8-bit. Also we require DMA-BUF.
     let video_format = if args.encoding.video.bit_depth == 10
+        && args.app.dma_buf
         && video_encoder_info.codec != enc_helper::VideoCodec::H264
     {
         "P010_10LE"
