@@ -68,31 +68,27 @@ jobs:
                 cache-to: type=gha,scope=runner-base,mode=max
             -
               name: Build runner-builder image
-              uses: docker/build-push-action@v6
-              with:
-                file: containerfiles/runner-builder.Containerfile
-                context: ./
-                push: false
-                load: true
-                tags: runner-builder:latest
-                build-args: |
-                  RUNNER_BASE_TAG=latest
-                cache-from: type=gha,scope=runner-builder,mode=max
-                cache-to: type=gha,scope=runner-builder,mode=max
+              run: |
+                docker buildx build \
+                --file containerfiles/runner-builder.Containerfile \
+                --build-arg RUNNER_BASE_TAG=runner-base:latest \
+                --cache-from type=gha,scope=runner-builder \
+                --cache-to type=gha,scope=runner-builder,mode=max \
+                --load \
+                --tag runner-builder:latest \
+                ./
             -
               name: Build runner image
-              uses: docker/build-push-action@v6
-              with:
-                file: containerfiles/runner.Containerfile
-                context: ./
-                push: false
-                load: true
-                tags: nestri:runner
-                build-args: |
-                  RUNNER_BASE_IMAGE=runner-base:latest
-                  RUNNER_BUILDER_IMAGE=runner-builder:latest
-                cache-from: type=gha,scope=runner,mode=max
-                cache-to: type=gha,scope=runner,mode=max
+              run: |
+                docker buildx build \
+                  --file containerfiles/runner.Containerfile \
+                  --build-arg RUNNER_BASE_IMAGE=runner-base:latest \
+                  --build-arg RUNNER_BUILDER_IMAGE=runner-builder:latest \
+                  --cache-from type=gha,scope=runner \
+                  --cache-to type=gha,scope=runner,mode=max \
+                  --load \
+                  --tag nestri:runner \
+                  ./
 
     build-and-push-docker:
         name: Build and push images
@@ -138,7 +134,7 @@ jobs:
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
               with:
-                swap-size-gb: 20
+                swap-size-gb: 10
             - 
               name: Build and push runner-base image
               uses: docker/build-push-action@v6
@@ -161,7 +157,7 @@ jobs:
                 push: true
                 tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-builder:latest${{ matrix.variant.suffix }}
                 build-args: |
-                  RUNNER_BASE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-base:latest${{ matrix.variant.suffix }}
+                  RUNNER_BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-base:latest${{ matrix.variant.suffix }}
                 cache-from: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
                 cache-to: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
             -

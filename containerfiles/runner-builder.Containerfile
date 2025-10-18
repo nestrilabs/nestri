@@ -1,10 +1,10 @@
 # Container build arguments #
-ARG RUNNER_BASE_TAG=latest
+ARG RUNNER_BASE_IMAGE=runner-base:latest
 
 #**************#
 # builder base #
 #**************#
-FROM runner-base:${RUNNER_BASE_TAG} AS base-builder
+FROM ${RUNNER_BASE_IMAGE} AS base-builder
 
 ENV ARTIFACTS=/artifacts
 RUN mkdir -p "${ARTIFACTS}"
