@@ -163,6 +163,9 @@ if (envs_map.size > 0) {
   })
 
 	const lockPlay = async function () {
+    if (document.fullscreenElement)
+      return;
+
 		await canvas.requestFullscreen();
     if (!isMobile())
       await canvas.requestPointerLock();

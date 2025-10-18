@@ -356,7 +356,7 @@ fn setup_data_channel(
     wayland_src: &gstreamer::Element,
 ) {
     let wayland_src = wayland_src.clone();
-    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1024);
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
     // Spawn async processor
     tokio::spawn(async move {

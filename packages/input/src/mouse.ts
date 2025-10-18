@@ -24,7 +24,7 @@ export class Mouse {
   protected canvas: HTMLCanvasElement;
   protected connected!: boolean;
 
-  private sendInterval = 16 // 60fps
+  private sendInterval = 10 // 100 updates per second
 
   // Store references to event listeners
   private readonly mousemoveListener: (e: MouseEvent) => void;

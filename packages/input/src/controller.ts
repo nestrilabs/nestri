@@ -93,7 +93,7 @@ export class Controller {
     this.wrtc.sendBinary(toBinary(ProtoMessageInputSchema, message));
 
     // Listen to feedback rumble events from server
-    this.wrtc.addDataChannelCallback(this.rumbleCallback);
+    this.wrtc.addDataChannelCallback(this.rumbleCallback.bind(this));
 
     this.run();
   }
@@ -426,7 +426,7 @@ export class Controller {
   public dispose() {
     this.stop();
     // Remove callback
-    this.wrtc.removeDataChannelCallback(this.rumbleCallback);
+    this.wrtc.removeDataChannelCallback(this.rumbleCallback.bind(this));
     // Gamepad disconnected
     const detachMsg = create(ProtoInputSchema, {
       $typeName: "proto.ProtoInput",

@@ -30,7 +30,7 @@ export class WebRTCStream {
   private _roomName: string | undefined = undefined;
   private _isConnected: boolean = false;
   private _dataChannelCallbacks: Array<(data: any) => void> = [];
-  currentFrameRate: number = 60;
+  currentFrameRate: number = 100;
 
   constructor(
     serverURL: string,
