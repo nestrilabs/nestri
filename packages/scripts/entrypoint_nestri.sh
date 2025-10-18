@@ -116,7 +116,7 @@ start_compositor() {
 
     # If PRELOAD_SHIM_arch's are set and exist, set LD_PRELOAD for 32/64-bit apps
     local do_ld_preload=false
-    if [[ -n "$PRELOAD_SHIM_64" ]] || [[ -n "$PRELOAD_SHIM_32" ]]; then
+    if [[ -f "$PRELOAD_SHIM_64" ]] || [[ -f "$PRELOAD_SHIM_32" ]]; then
         do_ld_preload=true
         log "Using LD_PRELOAD shim(s)"
     fi
