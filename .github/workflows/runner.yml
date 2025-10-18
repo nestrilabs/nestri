@@ -48,6 +48,8 @@ jobs:
             - 
               name: Setup Docker Buildx
               uses: docker/setup-buildx-action@v3
+              with:
+                driver: docker
             - 
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
@@ -60,12 +62,10 @@ jobs:
                 file: containerfiles/runner-base.Containerfile
                 context: ./
                 push: false
-                outputs: type=docker
+                load: true
                 tags: runner-base:latest
                 build-args: |
                   BASE_IMAGE=${{ env.BASE_IMAGE }}
-                cache-from: type=gha,scope=runner-base,mode=max
-                cache-to: type=gha,scope=runner-base,mode=max
             -
               name: Build runner-builder image
               uses: docker/build-push-action@v6
@@ -73,12 +73,10 @@ jobs:
                 file: containerfiles/runner-builder.Containerfile
                 context: ./
                 push: false
-                outputs: type=docker
+                load: true
                 tags: runner-builder:latest
                 build-args: |
                   RUNNER_BASE_IMAGE=runner-base:latest
-                cache-from: type=gha,scope=runner-builder,mode=max
-                cache-to: type=gha,scope=runner-builder,mode=max
             -
               name: Build runner image
               uses: docker/build-push-action@v6
@@ -86,13 +84,11 @@ jobs:
                 file: containerfiles/runner.Containerfile
                 context: ./
                 push: false
-                outputs: type=docker
+                load: true
                 tags: nestri:runner
                 build-args: |
                   RUNNER_BASE_IMAGE=runner-base:latest
                   RUNNER_BUILDER_IMAGE=runner-builder:latest
-                cache-from: type=gha,scope=runner,mode=max
-                cache-to: type=gha,scope=runner,mode=max
 
     build-and-push-docker:
         name: Build and push images
