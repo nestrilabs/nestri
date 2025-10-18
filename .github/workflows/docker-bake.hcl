@@ -1,3 +1,7 @@
+variable "BASE_IMAGE" {
+  default = "docker.io/cachyos/cachyos:latest"
+}
+
 group "default" {
   targets = ["runner"]
 }
@@ -22,7 +26,9 @@ target "runner-builder" {
   cache-from = ["type=gha,scope=runner-builder-pr"]
   cache-to = ["type=gha,scope=runner-builder-pr,mode=max"]
   tags = ["runner-builder:latest"]
-  depends_on = ["runner-base"]
+  contexts = {
+    runner-base = "target:runner-base"
+  }
 }
 
 target "runner" {
@@ -35,5 +41,8 @@ target "runner" {
   cache-from = ["type=gha,scope=runner-pr"]
   cache-to = ["type=gha,scope=runner-pr,mode=max"]
   tags = ["nestri-runner"]
-  depends_on = ["runner-builder"]
+  contexts = {
+    runner-base    = "target:runner-base"
+    runner-builder = "target:runner-builder"
+  }
 }
