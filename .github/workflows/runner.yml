@@ -51,7 +51,7 @@ jobs:
               uses: docker/bake-action@v6
               with:
                 files: |
-                  ./docker-bake.hcl
+                  ./.github/workflows/docker-bake.hcl
                 targets: runner-base runner-builder runner
                 push: false
                 load: true
