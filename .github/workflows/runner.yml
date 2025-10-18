@@ -1,6 +1,6 @@
 #Tabs not spaces, you moron :)
 
-name: Build nestri:runner
+name: Build nestri-runner
 
 on:
     pull_request:
@@ -85,7 +85,7 @@ jobs:
                 context: ./
                 push: false
                 load: true
-                tags: nestri:runner
+                tags: nestri-runner
                 build-args: |
                   RUNNER_BASE_IMAGE=runner-base:latest
                   RUNNER_BUILDER_IMAGE=runner-builder:latest

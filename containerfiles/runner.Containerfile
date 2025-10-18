@@ -1,11 +1,13 @@
 # Container build arguments #
 ARG RUNNER_BASE_IMAGE=runner-base:latest
+ARG RUNNER_BUILDER_IMAGE=runner-builder:latest
 
 #*********************#
 # Final Runtime Stage #
 #*********************#
 FROM ${RUNNER_BASE_IMAGE} AS runtime
-ARG RUNNER_BUILDER_IMAGE=runner-builder:latest
+FROM ${RUNNER_BUILDER_IMAGE} AS builder
+FROM runtime
 
 ### Package Installation ###
 # Core system components
@@ -72,13 +74,13 @@ RUN mkdir -p "${NESTRI_HOME}/.local/share/Steam/config"
 COPY packages/configs/steam/config.vdf "${NESTRI_HOME}/.local/share/Steam/config/"
 
 ### Artifacts from Builder ###
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/bin/nestri-server /usr/bin/
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/bin/bwrap /usr/bin/
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/lib/ /usr/lib/
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/lib32/ /usr/lib32/
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/lib64/ /usr/lib64/
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/include/ /usr/include/
-COPY --from=${RUNNER_BUILDER_IMAGE} /artifacts/bin/vimputti-manager /usr/bin/
+COPY --from=builder /artifacts/bin/nestri-server /usr/bin/
+COPY --from=builder /artifacts/bin/bwrap /usr/bin/
+COPY --from=builder /artifacts/lib/ /usr/lib/
+COPY --from=builder /artifacts/lib32/ /usr/lib32/
+COPY --from=builder /artifacts/lib64/ /usr/lib64/
+COPY --from=builder /artifacts/include/ /usr/include/
+COPY --from=builder /artifacts/bin/vimputti-manager /usr/bin/
 
 ### Scripts and Final Configuration ###
 COPY packages/scripts/ /etc/nestri/
