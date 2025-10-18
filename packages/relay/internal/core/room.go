@@ -57,15 +57,15 @@ func (r *Relay) DeleteRoomIfEmpty(room *shared.Room) {
 
 // GetRemoteRoomByName returns room from mesh by name
 func (r *Relay) GetRemoteRoomByName(roomName string) *shared.RoomInfo {
-	for _, room := range r.MeshRooms.Copy() {
+	for _, room := range r.Rooms.Copy() {
 		if room.Name == roomName && room.OwnerID != r.ID {
 			// Make sure connection is alive
 			if r.Host.Network().Connectedness(room.OwnerID) == network.Connected {
 				return &room
-			} else {
-				slog.Debug("Removing stale peer, owns a room without connection", "room", roomName, "peer", room.OwnerID)
-				r.onPeerDisconnected(room.OwnerID)
 			}
+
+			slog.Debug("Removing stale peer, owns a room without connection", "room", roomName, "peer", room.OwnerID)
+			r.onPeerDisconnected(room.OwnerID)
 		}
 	}
 	return nil

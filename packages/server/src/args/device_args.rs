@@ -11,18 +11,10 @@ pub struct DeviceArgs {
 impl DeviceArgs {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
         Self {
-            gpu_vendor: matches
-                .get_one::<String>("gpu-vendor")
-                .cloned(),
-            gpu_name: matches
-                .get_one::<String>("gpu-name")
-                .cloned(),
-            gpu_index: matches
-                .get_one::<u32>("gpu-index")
-                .cloned(),
-            gpu_card_path: matches
-                .get_one::<String>("gpu-card-path")
-                .cloned(),
+            gpu_vendor: matches.get_one::<String>("gpu-vendor").cloned(),
+            gpu_name: matches.get_one::<String>("gpu-name").cloned(),
+            gpu_index: matches.get_one::<u32>("gpu-index").cloned(),
+            gpu_card_path: matches.get_one::<String>("gpu-card-path").cloned(),
         }
     }
 

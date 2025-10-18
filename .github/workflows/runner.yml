@@ -5,7 +5,7 @@ name: Build nestri:runner
 on:
     pull_request:
         paths:
-            - "containerfiles/runner.Containerfile"
+            - "containerfiles/runner*.Containerfile"
             - "packages/scripts/**"
             - "packages/server/**"
             - ".github/workflows/runner.yml"
@@ -14,7 +14,7 @@ on:
     push:
         branches: [dev, production]
         paths:
-            - "containerfiles/runner.Containerfile"
+            - "containerfiles/runner*.Containerfile"
             - ".github/workflows/runner.yml"
             - "packages/scripts/**"
             - "packages/server/**"
@@ -26,7 +26,6 @@ on:
 env:
     REGISTRY: ghcr.io
     IMAGE_NAME: nestrilabs/nestri
-    BASE_TAG_PREFIX: runner
     BASE_IMAGE: docker.io/cachyos/cachyos:latest
 
 # This makes our release ci quit prematurely
@@ -36,7 +35,7 @@ env:
 
 jobs:
     build-docker-pr:
-        name: Build image on PR
+        name: Build images on PR
         runs-on: ubuntu-latest
         permissions:
             contents: read
@@ -55,7 +54,33 @@ jobs:
               with:
                 swap-size-gb: 20
             - 
-              name: Build Docker image
+              name: Build runner-base image
+              uses: docker/build-push-action@v6
+              with:
+                file: containerfiles/runner-base.Containerfile
+                context: ./
+                push: false
+                load: true
+                tags: runner-base:latest
+                build-args: |
+                  BASE_IMAGE=${{ env.BASE_IMAGE }}
+                cache-from: type=gha,scope=runner-base,mode=max
+                cache-to: type=gha,scope=runner-base,mode=max
+            -
+              name: Build runner-builder image
+              uses: docker/build-push-action@v6
+              with:
+                file: containerfiles/runner-builder.Containerfile
+                context: ./
+                push: false
+                load: true
+                tags: runner-builder:latest
+                build-args: |
+                  RUNNER_BASE_TAG=latest
+                cache-from: type=gha,scope=runner-builder,mode=max
+                cache-to: type=gha,scope=runner-builder,mode=max
+            -
+              name: Build runner image
               uses: docker/build-push-action@v6
               with:
                 file: containerfiles/runner.Containerfile
@@ -63,16 +88,25 @@ jobs:
                 push: false
                 load: true
                 tags: nestri:runner
-                cache-from: type=gha,mode=max
-                cache-to: type=gha,mode=max
+                build-args: |
+                  RUNNER_BASE_IMAGE=runner-base:latest
+                  RUNNER_BUILDER_IMAGE=runner-builder:latest
+                cache-from: type=gha,scope=runner,mode=max
+                cache-to: type=gha,scope=runner,mode=max
 
     build-and-push-docker:
-        name: Build and push image
+        name: Build and push images
         if: ${{ github.ref == 'refs/heads/production' || github.ref == 'refs/heads/dev' }}
         runs-on: ubuntu-latest
         permissions:
             contents: read
             packages: write
+        strategy:
+            matrix:
+                variant:
+                    - { suffix: "", base: "docker.io/cachyos/cachyos:latest" }
+                    - { suffix: "-v3", base: "docker.io/cachyos/cachyos-v3:latest" }
+                    - { suffix: "-v4", base: "docker.io/cachyos/cachyos-v4:latest" }
         steps:
             -
               name: Checkout repo
@@ -85,21 +119,19 @@ jobs:
                 username: ${{ github.actor }}
                 password: ${{ github.token }}
             - 
-              name: Extract Container metadata
-              id: meta
+              name: Extract runner metadata
+              id: meta-runner
               uses: docker/metadata-action@v5
               with:
-                images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ env.BASE_TAG_PREFIX }}
-                #
-                #tag on release, and a nightly build for 'dev'
+                images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner
                 tags: |
-                  type=raw,value=nightly,enable={{is_default_branch}}
-                  type=raw,value={{branch}}
-                  type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'production') }}
-                  type=semver,pattern={{version}}
-                  type=semver,pattern={{major}}.{{minor}}
-                  type=semver,pattern={{major}}
-            - 
+                  type=raw,value=nightly${{ matrix.variant.suffix }},enable={{is_default_branch}}
+                  type=raw,value={{branch}}${{ matrix.variant.suffix }}
+                  type=raw,value=latest${{ matrix.variant.suffix }},enable=${{ github.ref == format('refs/heads/{0}', 'production') }}
+                  type=semver,pattern={{version}}${{ matrix.variant.suffix }}
+                  type=semver,pattern={{major}}.{{minor}}${{ matrix.variant.suffix }}
+                  type=semver,pattern={{major}}${{ matrix.variant.suffix }}
+            -
               name: Setup Docker Buildx
               uses: docker/setup-buildx-action@v3
             - 
@@ -108,14 +140,43 @@ jobs:
               with:
                 swap-size-gb: 20
             - 
-              name: Build Docker image
+              name: Build runner-base image
               uses: docker/build-push-action@v6
               with:
-                file:  containerfiles/runner.Containerfile
+                file: containerfiles/runner-base.Containerfile
+                context: ./
+                push: false
+                load: true
+                tags: runner-base:latest${{ matrix.variant.suffix }}
+                build-args: |
+                  BASE_IMAGE=${{ matrix.variant.base }}
+                cache-from: type=gha,scope=runner-base${{ matrix.variant.suffix }},mode=max
+                cache-to: type=gha,scope=runner-base${{ matrix.variant.suffix }},mode=max
+                pull: ${{ github.event_name == 'schedule' }}
+            -
+              name: Build runner-builder image
+              uses: docker/build-push-action@v6
+              with:
+                file: containerfiles/runner-builder.Containerfile
+                context: ./
+                push: false
+                load: true
+                tags: runner-builder:latest${{ matrix.variant.suffix }}
+                build-args: |
+                  RUNNER_BASE_TAG=latest${{ matrix.variant.suffix }}
+                cache-from: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
+                cache-to: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
+            -
+              name: Build and push runner image
+              uses: docker/build-push-action@v6
+              with:
+                file: containerfiles/runner.Containerfile
                 context: ./
                 push: true
-                tags: ${{ steps.meta.outputs.tags }}
-                labels: ${{ steps.meta.outputs.labels }}
-                cache-from: type=gha,mode=max
-                cache-to: type=gha,mode=max
-                pull: ${{ github.event_name == 'schedule' }} # Pull base image for scheduled builds
+                tags: ${{ steps.meta-runner.outputs.tags }}
+                labels: ${{ steps.meta-runner.outputs.labels }}
+                build-args: |
+                  RUNNER_BASE_IMAGE=runner-base:latest${{ matrix.variant.suffix }}
+                  RUNNER_BUILDER_IMAGE=runner-builder:latest${{ matrix.variant.suffix }}
+                cache-from: type=gha,scope=runner${{ matrix.variant.suffix }},mode=max
+                cache-to: type=gha,scope=runner${{ matrix.variant.suffix }},mode=max

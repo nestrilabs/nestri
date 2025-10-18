@@ -32,7 +32,7 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Start relay
-	err := core.InitRelay(mainCtx, mainStopper)
+	relay, err := core.InitRelay(mainCtx, mainStopper)
 	if err != nil {
 		slog.Error("Failed to initialize relay", "err", err)
 		mainStopper()
@@ -41,5 +41,10 @@ func main() {
 
 	// Wait for exit signal
 	<-mainCtx.Done()
-	slog.Info("Shutting down gracefully by signal...")
+	slog.Info("Shutting down gracefully by signal..")
+
+	defaultFile := common.GetFlags().PersistDir + "/peerstore.json"
+	if err = relay.SaveToFile(defaultFile); err != nil {
+		slog.Error("Failed to save peer store", "err", err)
+	}
 }

@@ -112,11 +112,25 @@ pub fn get_gpus() -> Result<Vec<GPUInfo>, Box<dyn Error>> {
         let minor = &caps[1];
 
         // Read vendor and device ID
-        let vendor_str = fs::read_to_string(format!("/sys/class/drm/card{}/device/vendor", minor))?;
+        let vendor_str = fs::read_to_string(format!("/sys/class/drm/card{}/device/vendor", minor));
+        let vendor_str = match vendor_str {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::warn!("Failed to read vendor for card{}: {}", minor, e);
+                continue;
+            }
+        };
         let vendor_str = vendor_str.trim_start_matches("0x").trim_end_matches('\n');
         let vendor = u16::from_str_radix(vendor_str, 16)?;
 
-        let device_str = fs::read_to_string(format!("/sys/class/drm/card{}/device/device", minor))?;
+        let device_str = fs::read_to_string(format!("/sys/class/drm/card{}/device/device", minor));
+        let device_str = match device_str {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!("Failed to read device for card{}: {}", minor, e);
+                continue;
+            }
+        };
         let device_str = device_str.trim_start_matches("0x").trim_end_matches('\n');
 
         // Look up in hwdata PCI database
@@ -129,7 +143,15 @@ pub fn get_gpus() -> Result<Vec<GPUInfo>, Box<dyn Error>> {
         };
 
         // Read PCI bus ID
-        let pci_bus_id = fs::read_to_string(format!("/sys/class/drm/card{}/device/uevent", minor))?;
+        let pci_bus_id = fs::read_to_string(format!("/sys/class/drm/card{}/device/uevent", minor));
+        let pci_bus_id = match pci_bus_id {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Failed to read PCI bus ID for card{}: {}", minor, e);
+                continue;
+            }
+        };
+        // Extract PCI_SLOT_NAME from uevent content
         let pci_bus_id = pci_bus_id
             .lines()
             .find_map(|line| {
@@ -191,7 +213,6 @@ fn parse_pci_ids(pci_data: &str, vendor_id: &str, device_id: &str) -> Option<Str
 
 fn get_dri_device_path(pci_addr: &str) -> Option<(String, String)> {
     let entries = fs::read_dir("/sys/bus/pci/devices").ok()?;
-
     for entry in entries.flatten() {
         if !entry.path().to_string_lossy().contains(&pci_addr) {
             continue;

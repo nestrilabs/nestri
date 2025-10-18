@@ -9,27 +9,23 @@ import {
   ProtoInputSchema,
   ProtoKeyDownSchema,
   ProtoKeyUpSchema,
-  ProtoMouseMoveSchema
 } from "./proto/types_pb";
 import {create, toBinary} from "@bufbuild/protobuf";
 
 interface Props {
   webrtc: WebRTCStream;
-  canvas: HTMLCanvasElement;
 }
 
 export class Keyboard {
   protected wrtc: WebRTCStream;
-  protected canvas: HTMLCanvasElement;
   protected connected!: boolean;
 
   // Store references to event listeners
   private readonly keydownListener: (e: KeyboardEvent) => void;
   private readonly keyupListener: (e: KeyboardEvent) => void;
 
-  constructor({webrtc, canvas}: Props) {
+  constructor({webrtc}: Props) {
     this.wrtc = webrtc;
-    this.canvas = canvas;
     this.keydownListener = this.createKeyboardListener((e: any) => create(ProtoInputSchema, {
       $typeName: "proto.ProtoInput",
       inputType: {
@@ -54,23 +50,12 @@ export class Keyboard {
   }
 
   private run() {
-    //calls all the other functions
-    if (!document.pointerLockElement) {
-      if (this.connected) {
-        this.stop()
-      }
-      return;
-    }
+    if (this.connected)
+      this.stop()
 
-    if (document.pointerLockElement == this.canvas) {
-      this.connected = true
-      document.addEventListener("keydown", this.keydownListener, {passive: false});
-      document.addEventListener("keyup", this.keyupListener, {passive: false});
-    } else {
-      if (this.connected) {
-        this.stop()
-      }
-    }
+    this.connected = true
+    document.addEventListener("keydown", this.keydownListener, {passive: false});
+    document.addEventListener("keyup", this.keyupListener, {passive: false});
   }
 
   private stop() {
@@ -120,7 +105,6 @@ export class Keyboard {
   }
 
   public dispose() {
-    document.exitPointerLock();
     this.stop();
     this.connected = false;
   }

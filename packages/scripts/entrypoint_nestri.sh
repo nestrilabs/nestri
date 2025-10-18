@@ -31,6 +31,9 @@ parse_resolution() {
 MAX_RETRIES=3
 RETRY_COUNT=0
 WAYLAND_READY_DELAY=3
+ENTCMD_PREFIX=""
+PRELOAD_SHIM_64=/usr/lib64/libvimputti_shim_64.so
+PRELOAD_SHIM_32=/usr/lib32/libvimputti_shim_32.so
 
 # Kills process if running
 kill_if_running() {
@@ -43,83 +46,40 @@ kill_if_running() {
     fi
 }
 
-# Starts up Steam namespace-less live-patcher
-start_steam_namespaceless_patcher() {
-    kill_if_running "${PATCHER_PID:-}" "steam-patcher"
-
-    local entrypoints=(
-        "${HOME}/.local/share/Steam/steamrt64/steam-runtime-steamrt/_v2-entry-point"
-        "${HOME}/.local/share/Steam/steamapps/common/SteamLinuxRuntime_soldier/_v2-entry-point"
-        "${HOME}/.local/share/Steam/steamapps/common/SteamLinuxRuntime_sniper/_v2-entry-point"
-        # < Add more entrypoints here if needed >
-    )
-    local custom_entrypoint="/etc/nestri/_v2-entry-point"
-    local temp_entrypoint="/tmp/_v2-entry-point.padded"
-
-    if [[ ! -f "$custom_entrypoint" ]]; then
-        log "Error: Custom _v2-entry-point not found at $custom_entrypoint"
-        exit 1
-    fi
-
-    log "Starting Steam _v2-entry-point patcher..."
-    (
-        while true; do
-            for i in "${!entrypoints[@]}"; do
-                local steam_entrypoint="${entrypoints[$i]}"
-
-                if [[ -f "$steam_entrypoint" ]]; then
-                    # Get original file size
-                    local original_size
-                    original_size=$(stat -c %s "$steam_entrypoint" 2>/dev/null)
-                    if [[ -z "$original_size" ]] || [[ "$original_size" -eq 0 ]]; then
-                        log "Warning: Could not determine size of $steam_entrypoint, retrying..."
-                        continue
-                    fi
-
-                    # Copy custom entrypoint to temp location
-                    cp "$custom_entrypoint" "$temp_entrypoint" 2>/dev/null || {
-                        log "Warning: Failed to copy custom entrypoint to $temp_entrypoint"
-                        continue
-                    }
-
-                    # Pad the temporary file to match original size
-                    if (( $(stat -c %s "$temp_entrypoint") < original_size )); then
-                        truncate -s "$original_size" "$temp_entrypoint" 2>/dev/null || {
-                            log "Warning: Failed to pad $temp_entrypoint to $original_size bytes"
-                            continue
-                        }
-                    fi
-
-                    # Copy padded file to Steam's entrypoint, if contents differ
-                    if ! cmp -s "$temp_entrypoint" "$steam_entrypoint"; then
-                        cp "$temp_entrypoint" "$steam_entrypoint" 2>/dev/null || {
-                            log "Warning: Failed to patch $steam_entrypoint"
-                        }
-                    fi
-                fi
-            done
-
-            # Sleep for 1s
-            sleep 1
-        done
-    ) &
-    PATCHER_PID=$!
-    log "Steam _v2-entry-point patcher started (PID: $PATCHER_PID)"
-}
-
 # Starts nestri-server
 start_nestri_server() {
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
 
-    log "Starting nestri-server..."
-    nestri-server $NESTRI_PARAMS &
-    NESTRI_PID=$!
-
-    log "Waiting for Wayland display 'wayland-1'..."
     WAYLAND_SOCKET="${XDG_RUNTIME_DIR}/wayland-1"
+
+    # Make sure to remove old socket if exists (along with .lock file)
+    if [[ -e "$WAYLAND_SOCKET" ]]; then
+        log "Removing stale Wayland socket $WAYLAND_SOCKET"
+        rm -f "$WAYLAND_SOCKET" 2>/dev/null || {
+            log "Error: Failed to remove stale Wayland socket $WAYLAND_SOCKET"
+            exit 1
+        }
+        # Ignore error if .lock file doesn't exist
+        rm -f "${WAYLAND_SOCKET}.lock" 2>/dev/null || true
+    fi
+
+    # Start nestri-server
+    log "Starting nestri-server.."
+    # Try with realtime scheduling first (chrt -f 80), if fails, launch normally
+    if $ENTCMD_PREFIX chrt -f 80 true 2>/dev/null; then
+        $ENTCMD_PREFIX chrt -f 80 nestri-server $NESTRI_PARAMS &
+        NESTRI_PID=$!
+        log "Started nestri-server with realtime scheduling"
+    else
+        $ENTCMD_PREFIX nestri-server $NESTRI_PARAMS &
+        NESTRI_PID=$!
+        log "Started nestri-server"
+    fi
+
+    log "Waiting for Wayland display $WAYLAND_SOCKET.."
     for ((i=1; i<=15; i++)); do
         if [[ -e "$WAYLAND_SOCKET" ]]; then
-            log "Wayland display 'wayland-1' ready"
+            log "Wayland display $WAYLAND_SOCKET ready"
             sleep "${WAYLAND_READY_DELAY:-3}"
             start_compositor
             return
@@ -127,12 +87,7 @@ start_nestri_server() {
         sleep 1
     done
 
-    log "Error: Wayland display 'wayland-1' not available"
-    
-    # Workaround for gstreamer being bit slow at times
-    log "Clearing gstreamer cache.."
-    rm -rf "${HOME}/.cache/gstreamer-1.0" 2>/dev/null || true
-
+    log "Error: Wayland display $WAYLAND_SOCKET not available"
     increment_retry "nestri-server"
     restart_chain
 }
@@ -144,15 +99,10 @@ start_compositor() {
 
     # Set default values only if variables are unset (not empty)
     if [[ -z "${NESTRI_LAUNCH_CMD+x}" ]]; then
-        NESTRI_LAUNCH_CMD="steam-native -tenfoot -cef-force-gpu"
+        NESTRI_LAUNCH_CMD="dbus-launch steam-native -tenfoot -cef-force-gpu"
     fi
     if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
         NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
-    fi
-
-    # Start Steam patcher only if Steam command is present and if needed for container runtime
-    if [[ -n "${NESTRI_LAUNCH_CMD}" ]] && [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]] && [[ "${container_runtime:-}" != "podman" ]]; then
-        start_steam_namespaceless_patcher
     fi
 
     # Launch compositor if configured
@@ -163,32 +113,58 @@ start_compositor() {
         # Check if this is a gamescope command
         if [[ "$compositor_cmd" == *"gamescope"* ]]; then
             is_gamescope=true
-            # Append application command for gamescope if needed
             if [[ -n "$NESTRI_LAUNCH_CMD" ]] && [[ "$compositor_cmd" != *" -- "* ]]; then
                 # If steam in launch command, enable gamescope integration via -e
                 if [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
                     compositor_cmd+=" -e"
                 fi
-                compositor_cmd+=" -- $NESTRI_LAUNCH_CMD"
+                # If PRELOAD_SHIM_arch's are set and exist, set LD_PRELOAD for 32/64-bit apps
+                if [[ -n "$PRELOAD_SHIM_64" ]] || [[ -n "$PRELOAD_SHIM_32" ]]; then
+                    local ld_preload=""
+                    if [[ -f "$PRELOAD_SHIM_64" ]]; then
+                        ld_preload="$PRELOAD_SHIM_64"
+                    fi
+                    if [[ -f "$PRELOAD_SHIM_32" ]]; then
+                        if [[ -n "$ld_preload" ]]; then
+                            ld_preload+=":"
+                        fi
+                        ld_preload+="$PRELOAD_SHIM_32"
+                    fi
+                    log "Using LD_PRELOAD shim(s): $ld_preload"
+                    export LD_PRELOAD="$ld_preload"
+                    compositor_cmd+=" -- bash -c \"LD_PRELOAD=$ld_preload $NESTRI_LAUNCH_CMD\""
+                else
+                  compositor_cmd+=" -- bash -c \"$NESTRI_LAUNCH_CMD\""
+                fi
             fi
+        fi
+
+        # Get appropriate socket based on compositor type
+        if $is_gamescope; then
+            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
+        else
+            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/wayland-0"
+        fi
+
+        # Clean up old socket if exists
+        if [[ -e "$COMPOSITOR_SOCKET" ]]; then
+            log "Removing stale compositor socket $COMPOSITOR_SOCKET"
+            rm -f "$COMPOSITOR_SOCKET" 2>/dev/null || {
+                log "Error: Failed to remove stale compositor socket $COMPOSITOR_SOCKET"
+                exit 1
+            }
+            # Ignore error if .lock file doesn't exist
+            rm -f "${COMPOSITOR_SOCKET}.lock" 2>/dev/null || true
         fi
 
         log "Starting compositor: $compositor_cmd"
         WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$compositor_cmd" &
         COMPOSITOR_PID=$!
 
-        # Wait for appropriate socket based on compositor type
-        if $is_gamescope; then
-            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/gamescope-0"
-            log "Waiting for gamescope socket..."
-        else
-            COMPOSITOR_SOCKET="${XDG_RUNTIME_DIR}/wayland-0"
-            log "Waiting for wayland-0 socket..."
-        fi
-
+        log "Waiting for compositor socket $COMPOSITOR_SOCKET.."
         for ((i=1; i<=15; i++)); do
             if [[ -e "$COMPOSITOR_SOCKET" ]]; then
-                log "Compositor socket ready ($COMPOSITOR_SOCKET)."
+                log "Compositor socket ready $COMPOSITOR_SOCKET"
                 # Patch resolution with wlr-randr for non-gamescope compositors
                 if ! $is_gamescope; then
                     local OUTPUT_NAME
@@ -205,6 +181,8 @@ start_compositor() {
                         WAYLAND_DISPLAY=wayland-0 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
                         APP_PID=$!
                     fi
+                else
+                    log "Gamescope detected, skipping wlr-randr resolution patch"
                 fi
                 return
             fi
@@ -246,8 +224,6 @@ cleanup() {
     kill_if_running "${NESTRI_PID:-}" "nestri-server"
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
     kill_if_running "${APP_PID:-}" "application"
-    kill_if_running "${PATCHER_PID:-}" "steam-patcher"
-    rm -f "/tmp/_v2-entry-point.padded" 2>/dev/null
     exit $exit_code
 }
 
@@ -272,11 +248,6 @@ main_loop() {
             log "application died"
             increment_retry "application"
             start_compositor
-        # Check patcher
-        elif [[ -n "${PATCHER_PID:-}" ]] && ! kill -0 "${PATCHER_PID}" 2>/dev/null; then
-            log "steam-patcher died"
-            increment_retry "steam-patcher"
-            start_steam_namespaceless_patcher
         fi
     done
 }
@@ -287,9 +258,8 @@ main() {
         log "Warning: Failed to detect container information."
     }
 
-    # Ensure DBus session env exists
-    if command -v dbus-launch >/dev/null 2>&1 && [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]]; then
-        eval "$(dbus-launch)"
+    if [[ "$container_runtime" != "apptainer" ]]; then
+        ENTCMD_PREFIX="sudo -E -u ${NESTRI_USER}"
     fi
 
     restart_chain

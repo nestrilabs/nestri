@@ -11,6 +11,6 @@
   "dependencies": {
     "@astrojs/node": "^9.4.2",
     "@nestri/input": "*",
-    "astro": "5.13.2"
+    "astro": "5.14.5"
   }
 }

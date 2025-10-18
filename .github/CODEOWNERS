@@ -3,13 +3,13 @@
 /apps/ @victorpahuus @AquaWolf
 /packages/ui/ @wanjohiryan @victorpahuus @AquaWolf
 
-/protobuf/ @AquaWolf
+/protobufs/ @AquaWolf @DatCaptainHorse
 
 /infra/ @wanjohiryan
 /packages/core/ @wanjohiryan
 /packages/functions/ @wanjohiryan
 
-/containers/ @DatCaptainHorse
+/containerfiles/ @DatCaptainHorse
 /packages/server/ @DatCaptainHorse
 /packages/relay/ @DatCaptainHorse
 /packages/scripts/ @DatCaptainHorse

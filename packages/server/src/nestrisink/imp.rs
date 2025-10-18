@@ -1,3 +1,4 @@
+use crate::input::controller::ControllerManager;
 use crate::messages::{MessageBase, MessageICE, MessageRaw, MessageSDP};
 use crate::p2p::p2p::NestriConnection;
 use crate::p2p::p2p_protocol_stream::NestriStreamProtocol;
@@ -5,7 +6,7 @@ use crate::proto::proto::proto_input::InputType::{
     KeyDown, KeyUp, MouseKeyDown, MouseKeyUp, MouseMove, MouseMoveAbs, MouseWheel,
 };
 use crate::proto::proto::{ProtoInput, ProtoMessageInput};
-use atomic_refcell::AtomicRefCell;
+use anyhow::Result;
 use glib::subclass::prelude::*;
 use gstreamer::glib;
 use gstreamer::prelude::*;
@@ -14,6 +15,7 @@ use gstrswebrtc::signaller::{Signallable, SignallableImpl};
 use parking_lot::RwLock as PLRwLock;
 use prost::Message;
 use std::sync::{Arc, LazyLock};
+use tokio::sync::{Mutex, mpsc};
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
@@ -21,7 +23,9 @@ pub struct Signaller {
     stream_room: PLRwLock<Option<String>>,
     stream_protocol: PLRwLock<Option<Arc<NestriStreamProtocol>>>,
     wayland_src: PLRwLock<Option<Arc<gstreamer::Element>>>,
-    data_channel: AtomicRefCell<Option<gstreamer_webrtc::WebRTCDataChannel>>,
+    data_channel: PLRwLock<Option<Arc<gstreamer_webrtc::WebRTCDataChannel>>>,
+    controller_manager: PLRwLock<Option<Arc<ControllerManager>>>,
+    rumble_rx: Mutex<Option<mpsc::Receiver<(u32, u16, u16, u16)>>>,
 }
 impl Default for Signaller {
     fn default() -> Self {
@@ -29,15 +33,14 @@ impl Default for Signaller {
             stream_room: PLRwLock::new(None),
             stream_protocol: PLRwLock::new(None),
             wayland_src: PLRwLock::new(None),
-            data_channel: AtomicRefCell::new(None),
+            data_channel: PLRwLock::new(None),
+            controller_manager: PLRwLock::new(None),
+            rumble_rx: Mutex::new(None),
         }
     }
 }
 impl Signaller {
-    pub async fn set_nestri_connection(
-        &self,
-        nestri_conn: NestriConnection,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn set_nestri_connection(&self, nestri_conn: NestriConnection) -> Result<()> {
         let stream_protocol = NestriStreamProtocol::new(nestri_conn).await?;
         *self.stream_protocol.write() = Some(Arc::new(stream_protocol));
         Ok(())
@@ -59,14 +62,29 @@ impl Signaller {
         self.wayland_src.read().clone()
     }
 
+    pub fn set_controller_manager(&self, controller_manager: Arc<ControllerManager>) {
+        *self.controller_manager.write() = Some(controller_manager);
+    }
+
+    pub fn get_controller_manager(&self) -> Option<Arc<ControllerManager>> {
+        self.controller_manager.read().clone()
+    }
+
+    pub async fn set_rumble_rx(&self, rumble_rx: mpsc::Receiver<(u32, u16, u16, u16)>) {
+        *self.rumble_rx.lock().await = Some(rumble_rx);
+    }
+
+    // Change getter to take ownership:
+    pub async fn take_rumble_rx(&self) -> Option<mpsc::Receiver<(u32, u16, u16, u16)>> {
+        self.rumble_rx.lock().await.take()
+    }
+
     pub fn set_data_channel(&self, data_channel: gstreamer_webrtc::WebRTCDataChannel) {
-        match self.data_channel.try_borrow_mut() {
-            Ok(mut dc) => *dc = Some(data_channel),
-            Err(_) => gstreamer::warning!(
-                gstreamer::CAT_DEFAULT,
-                "Failed to set data channel - already borrowed"
-            ),
-        }
+        *self.data_channel.write() = Some(Arc::new(data_channel));
+    }
+
+    pub fn get_data_channel(&self) -> Option<Arc<gstreamer_webrtc::WebRTCDataChannel>> {
+        self.data_channel.read().clone()
     }
 
     /// Helper method to clean things up
@@ -82,12 +100,12 @@ impl Signaller {
                     let sdp =
                         gst_sdp::SDPMessage::parse_buffer(message.sdp.sdp.as_bytes()).unwrap();
                     let answer = WebRTCSessionDescription::new(WebRTCSDPType::Answer, sdp);
-                    self_obj.emit_by_name::<()>(
+                    Ok(self_obj.emit_by_name::<()>(
                         "session-description",
                         &[&"unique-session-id", &answer],
-                    );
+                    ))
                 } else {
-                    gstreamer::error!(gstreamer::CAT_DEFAULT, "Failed to decode SDP message");
+                    anyhow::bail!("Failed to decode SDP message");
                 }
             });
         }
@@ -98,7 +116,7 @@ impl Signaller {
                     let candidate = message.candidate;
                     let sdp_m_line_index = candidate.sdp_mline_index.unwrap_or(0) as u32;
                     let sdp_mid = candidate.sdp_mid;
-                    self_obj.emit_by_name::<()>(
+                    Ok(self_obj.emit_by_name::<()>(
                         "handle-ice",
                         &[
                             &"unique-session-id",
@@ -106,9 +124,9 @@ impl Signaller {
                             &sdp_mid,
                             &candidate.candidate,
                         ],
-                    );
+                    ))
                 } else {
-                    gstreamer::error!(gstreamer::CAT_DEFAULT, "Failed to decode ICE message");
+                    anyhow::bail!("Failed to decode ICE message");
                 }
             });
         }
@@ -131,16 +149,16 @@ impl Signaller {
                     }
 
                     // Send our SDP offer
-                    self_obj.emit_by_name::<()>(
+                    Ok(self_obj.emit_by_name::<()>(
                         "session-requested",
                         &[
                             &"unique-session-id",
                             &"consumer-identifier",
                             &None::<WebRTCSessionDescription>,
                         ],
-                    );
+                    ))
                 } else {
-                    gstreamer::error!(gstreamer::CAT_DEFAULT, "Failed to decode answer");
+                    anyhow::bail!("Failed to decode answer");
                 }
             });
         }
@@ -173,8 +191,25 @@ impl Signaller {
                         if let Some(data_channel) = data_channel {
                             gstreamer::info!(gstreamer::CAT_DEFAULT, "Data channel created");
                             if let Some(wayland_src) = signaller.imp().get_wayland_src() {
-                                setup_data_channel(&data_channel, &*wayland_src);
-                                signaller.imp().set_data_channel(data_channel);
+                                signaller.imp().set_data_channel(data_channel.clone());
+
+                                let signaller = signaller.clone();
+                                let data_channel = Arc::new(data_channel);
+                                let wayland_src = wayland_src.clone();
+
+                                // Spawn async task to take the receiver and set up
+                                tokio::spawn(async move {
+                                    let rumble_rx = signaller.imp().take_rumble_rx().await;
+                                    let controller_manager =
+                                        signaller.imp().get_controller_manager();
+
+                                    setup_data_channel(
+                                        controller_manager,
+                                        rumble_rx,
+                                        data_channel,
+                                        &wayland_src,
+                                    );
+                                });
                             } else {
                                 gstreamer::error!(
                                     gstreamer::CAT_DEFAULT,
@@ -315,29 +350,81 @@ impl ObjectImpl for Signaller {
 }
 
 fn setup_data_channel(
-    data_channel: &gstreamer_webrtc::WebRTCDataChannel,
+    controller_manager: Option<Arc<ControllerManager>>,
+    rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16)>>, // (slot, strong, weak, duration_ms)
+    data_channel: Arc<gstreamer_webrtc::WebRTCDataChannel>,
     wayland_src: &gstreamer::Element,
 ) {
     let wayland_src = wayland_src.clone();
+    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
 
-    data_channel.connect_on_message_data(move |_data_channel, data| {
-        if let Some(data) = data {
-            match ProtoMessageInput::decode(data.to_vec().as_slice()) {
+    // Spawn async processor
+    tokio::spawn(async move {
+        while let Some(data) = rx.recv().await {
+            match ProtoMessageInput::decode(data.as_slice()) {
                 Ok(message_input) => {
-                    if let Some(input_msg) = message_input.data {
-                        // Process the input message and create an event
-                        if let Some(event) = handle_input_message(input_msg) {
-                            // Send the event to wayland source, result bool is ignored
-                            let _ = wayland_src.send_event(event);
+                    if let Some(message_base) = message_input.message_base {
+                        if message_base.payload_type == "input" {
+                            if let Some(input_data) = message_input.data {
+                                if let Some(event) = handle_input_message(input_data) {
+                                    // Send the event to wayland source, result bool is ignored
+                                    let _ = wayland_src.send_event(event);
+                                }
+                            }
+                        } else if message_base.payload_type == "controllerInput" {
+                            if let Some(controller_manager) = &controller_manager {
+                                if let Some(input_data) = message_input.data {
+                                    let _ = controller_manager.send_command(input_data).await;
+                                }
+                            }
                         }
-                    } else {
-                        tracing::error!("Failed to parse InputMessage");
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Failed to decode MessageInput: {:?}", e);
+                    tracing::error!("Failed to decode input message: {:?}", e);
                 }
             }
+        }
+    });
+
+    // Spawn rumble sender
+    if let Some(mut rumble_rx) = rumble_rx {
+        let data_channel_clone = data_channel.clone();
+        tokio::spawn(async move {
+            while let Some((slot, strong, weak, duration_ms)) = rumble_rx.recv().await {
+                let rumble_msg = ProtoMessageInput {
+                    message_base: Some(crate::proto::proto::ProtoMessageBase {
+                        payload_type: "controllerInput".to_string(),
+                        latency: None,
+                    }),
+                    data: Some(ProtoInput {
+                        input_type: Some(
+                            crate::proto::proto::proto_input::InputType::ControllerRumble(
+                                crate::proto::proto::ProtoControllerRumble {
+                                    r#type: "ControllerRumble".to_string(),
+                                    slot: slot as i32,
+                                    low_frequency: weak as i32,
+                                    high_frequency: strong as i32,
+                                    duration: duration_ms as i32,
+                                },
+                            ),
+                        ),
+                    }),
+                };
+
+                let data = rumble_msg.encode_to_vec();
+                let bytes = glib::Bytes::from_owned(data);
+
+                if let Err(e) = data_channel_clone.send_data_full(Some(&bytes)) {
+                    tracing::warn!("Failed to send rumble data: {}", e);
+                }
+            }
+        });
+    }
+
+    data_channel.connect_on_message_data(move |_data_channel, data| {
+        if let Some(data) = data {
+            let _ = tx.send(data.to_vec());
         }
     });
 }
@@ -401,6 +488,7 @@ fn handle_input_message(input_msg: ProtoInput) -> Option<gstreamer::Event> {
 
                 Some(gstreamer::event::CustomUpstream::new(structure))
             }
+            _ => None,
         }
     } else {
         None

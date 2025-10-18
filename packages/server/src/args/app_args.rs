@@ -12,9 +12,12 @@ pub struct AppArgs {
     /// Nestri room name/identifier
     pub room: String,
 
-    /// Experimental DMA-BUF support
+    /// vimputti socket path
+    pub vimputti_path: Option<String>,
+
+    /// Experimental zero-copy pipeline support
     /// TODO: Move to video encoding flags
-    pub dma_buf: bool,
+    pub zero_copy: bool,
 }
 impl AppArgs {
     pub fn from_matches(matches: &clap::ArgMatches) -> Self {
@@ -45,7 +48,13 @@ impl AppArgs {
                 .get_one::<String>("room")
                 .unwrap_or(&rand::random::<u32>().to_string())
                 .clone(),
-            dma_buf: matches.get_one::<bool>("dma-buf").unwrap_or(&false).clone(),
+            vimputti_path: matches
+                .get_one::<String>("vimputti-path")
+                .map(|s| s.clone()),
+            zero_copy: matches
+                .get_one::<bool>("zero-copy")
+                .unwrap_or(&false)
+                .clone(),
         }
     }
 
@@ -60,6 +69,10 @@ impl AppArgs {
         tracing::info!("> framerate: {}", self.framerate);
         tracing::info!("> relay_url: '{}'", self.relay_url);
         tracing::info!("> room: '{}'", self.room);
-        tracing::info!("> dma_buf: {}", self.dma_buf);
+        tracing::info!(
+            "> vimputti_path: '{}'",
+            self.vimputti_path.as_ref().map_or("None", |s| s.as_str())
+        );
+        tracing::info!("> zero_copy: {}", self.zero_copy);
     }
 }

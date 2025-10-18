@@ -4,6 +4,8 @@ option go_package = "relay/internal/proto";
 
 package proto;
 
+/* Mouse messages */
+
 // MouseMove message
 message ProtoMouseMove {
   string type = 1; // Fixed value "MouseMove"
@@ -37,6 +39,8 @@ message ProtoMouseKeyUp {
   int32 key = 2;
 }
 
+/* Keyboard messages */
+
 // KeyDown message
 message ProtoKeyDown {
   string type = 1; // Fixed value "KeyDown"
@@ -49,6 +53,63 @@ message ProtoKeyUp {
   int32 key = 2;
 }
 
+/* Controller messages */
+
+// ControllerAttach message
+message ProtoControllerAttach {
+  string type = 1; // Fixed value "ControllerAttach"
+  string id = 2; // One of the following enums: "ps", "xbox" or "switch"
+  int32 slot = 3; // Slot number (0-3)
+}
+
+// ControllerDetach message
+message ProtoControllerDetach {
+  string type = 1; // Fixed value "ControllerDetach"
+  int32 slot = 2; // Slot number (0-3)
+}
+
+// ControllerButton message
+message ProtoControllerButton {
+  string type = 1; // Fixed value "ControllerButtons"
+  int32 slot = 2; // Slot number (0-3)
+  int32 button = 3; // Button code (linux input event code)
+  bool pressed = 4; // true if pressed, false if released
+}
+
+// ControllerTriggers message
+message ProtoControllerTrigger {
+  string type = 1; // Fixed value "ControllerTriggers"
+  int32 slot = 2; // Slot number (0-3)
+  int32 trigger = 3; // Trigger number (0 for left, 1 for right)
+  int32 value = 4; // trigger value (-32768 to 32767)
+}
+
+// ControllerSticks message
+message ProtoControllerStick {
+  string type = 1; // Fixed value "ControllerStick"
+  int32 slot = 2; // Slot number (0-3)
+  int32 stick = 3; // Stick number (0 for left, 1 for right)
+  int32 x = 4; // X axis value (-32768 to 32767)
+  int32 y = 5; // Y axis value (-32768 to 32767)
+}
+
+// ControllerAxis message
+message ProtoControllerAxis {
+  string type = 1; // Fixed value "ControllerAxis"
+  int32 slot = 2; // Slot number (0-3)
+  int32 axis = 3; // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
+  int32 value = 4; // axis value (-1 to 1)
+}
+
+// ControllerRumble message
+message ProtoControllerRumble {
+  string type = 1; // Fixed value "ControllerRumble"
+  int32 slot = 2; // Slot number (0-3)
+  int32 low_frequency = 3; // Low frequency rumble (0-65535)
+  int32 high_frequency = 4; // High frequency rumble (0-65535)
+  int32 duration = 5; // Duration in milliseconds
+}
+
 // Union of all Input types
 message ProtoInput {
   oneof input_type {
@@ -59,5 +120,12 @@ message ProtoInput {
     ProtoMouseKeyUp mouse_key_up = 5;
     ProtoKeyDown key_down = 6;
     ProtoKeyUp key_up = 7;
+    ProtoControllerAttach controller_attach = 8;
+    ProtoControllerDetach controller_detach = 9;
+    ProtoControllerButton controller_button = 10;
+    ProtoControllerTrigger controller_trigger = 11;
+    ProtoControllerStick controller_stick = 12;
+    ProtoControllerAxis controller_axis = 13;
+    ProtoControllerRumble controller_rumble = 14;
   }
 }

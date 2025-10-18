@@ -452,7 +452,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 		data, err := safeBRW.Receive()
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, network.ErrReset) {
-				slog.Debug("Stream push connection closed by peer", "peer", stream.Conn().RemotePeer())
+				slog.Debug("Stream push connection closed by peer", "peer", stream.Conn().RemotePeer(), "error", err)
 				return
 			}
 
@@ -567,6 +567,19 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				})
 				room.DataChannel.RegisterOnClose(func() {
 					slog.Debug("DataChannel closed for pushed stream", "room", room.Name)
+				})
+				room.DataChannel.RegisterMessageCallback("input", func(data []byte) {
+					if room.DataChannel != nil {
+						// Pass to servedConns DataChannels
+						sp.servedConns.Range(func(peerID peer.ID, conn *StreamConnection) bool {
+							if conn.ndc != nil {
+								if err = conn.ndc.SendBinary(data); err != nil {
+									slog.Error("Failed to forward input message from pushed stream to viewer", "room", room.Name, "peer", peerID, "err", err)
+								}
+							}
+							return true // Continue iteration
+						})
+					}
 				})
 
 				// Set the DataChannel in the incomingConns map

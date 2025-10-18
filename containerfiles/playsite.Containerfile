@@ -3,7 +3,6 @@ FROM docker.io/node:24-alpine AS base
 FROM base AS build
 WORKDIR /usr/src/app
 COPY package.json ./
-COPY patches ./patches
 COPY packages/input ./packages/input
 COPY packages/play-standalone ./packages/play-standalone
 RUN cd packages/play-standalone && npm install && npm run build

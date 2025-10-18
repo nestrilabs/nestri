@@ -24,13 +24,12 @@ export class Mouse {
   protected canvas: HTMLCanvasElement;
   protected connected!: boolean;
 
-  // Store references to event listeners
-  private sendInterval = 16 //60fps
+  private sendInterval = 16 // 60fps
 
+  // Store references to event listeners
   private readonly mousemoveListener: (e: MouseEvent) => void;
   private movementX: number = 0;
   private movementY: number = 0;
-  private isProcessing: boolean = false;
 
   private readonly mousedownListener: (e: MouseEvent) => void;
   private readonly mouseupListener: (e: MouseEvent) => void;
@@ -40,7 +39,7 @@ export class Mouse {
     this.wrtc = webrtc;
     this.canvas = canvas;
 
-    this.sendInterval = 1000 / webrtc.currentFrameRate
+    this.sendInterval = 1000 / webrtc.currentFrameRate;
 
     this.mousemoveListener = (e: MouseEvent) => {
       e.preventDefault();
@@ -75,8 +74,8 @@ export class Mouse {
         case: "mouseWheel",
         value: create(ProtoMouseWheelSchema, {
           type: "MouseWheel",
-          x: e.deltaX,
-          y: e.deltaY
+          x: Math.round(e.deltaX),
+          y: Math.round(e.deltaY),
         }),
       }
     }));
@@ -135,8 +134,8 @@ export class Mouse {
         case: "mouseMove",
         value: create(ProtoMouseMoveSchema, {
           type: "MouseMove",
-          x: this.movementX,
-          y: this.movementY,
+          x: Math.round(this.movementX),
+          y: Math.round(this.movementY),
         }),
       },
     });

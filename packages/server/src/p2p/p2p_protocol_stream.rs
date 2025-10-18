@@ -1,23 +1,23 @@
 use crate::p2p::p2p::NestriConnection;
 use crate::p2p::p2p_safestream::SafeStream;
+use anyhow::Result;
 use dashmap::DashMap;
 use libp2p::StreamProtocol;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::time::{self, Duration};
 
 // Cloneable callback type
-pub type CallbackInner = dyn Fn(Vec<u8>) + Send + Sync + 'static;
+pub type CallbackInner = dyn Fn(Vec<u8>) -> Result<()> + Send + Sync + 'static;
 pub struct Callback(Arc<CallbackInner>);
 impl Callback {
     pub fn new<F>(f: F) -> Self
     where
-        F: Fn(Vec<u8>) + Send + Sync + 'static,
+        F: Fn(Vec<u8>) -> Result<()> + Send + Sync + 'static,
     {
         Callback(Arc::new(f))
     }
 
-    pub fn call(&self, data: Vec<u8>) {
+    pub fn call(&self, data: Vec<u8>) -> Result<()> {
         self.0(data)
     }
 }
@@ -44,9 +44,7 @@ impl NestriStreamProtocol {
     const NESTRI_PROTOCOL_STREAM_PUSH: StreamProtocol =
         StreamProtocol::new("/nestri-relay/stream-push/1.0.0");
 
-    pub async fn new(
-        nestri_connection: NestriConnection,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(nestri_connection: NestriConnection) -> Result<Self> {
         let mut nestri_connection = nestri_connection.clone();
         let push_stream = match nestri_connection
             .control
@@ -55,7 +53,10 @@ impl NestriStreamProtocol {
         {
             Ok(stream) => stream,
             Err(e) => {
-                return Err(Box::new(e));
+                return Err(anyhow::Error::msg(format!(
+                    "Failed to open push stream: {}",
+                    e
+                )));
             }
         };
 
@@ -73,7 +74,7 @@ impl NestriStreamProtocol {
         Ok(sp)
     }
 
-    pub fn restart(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn restart(&mut self) -> Result<()> {
         // Return if tx and handles are already initialized
         if self.tx.is_some() && self.read_handle.is_some() && self.write_handle.is_some() {
             tracing::warn!("NestriStreamProtocol is already running, restart skipped");
@@ -111,13 +112,9 @@ impl NestriStreamProtocol {
                         // we just get the callback directly if it exists
                         if let Some(callback) = callbacks.get(&response_type) {
                             // Execute the callback
-                            if let Err(e) =
-                                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                    callback.call(data.clone())
-                                }))
-                            {
+                            if let Err(e) = callback.call(data.clone()) {
                                 tracing::error!(
-                                    "Callback for response type '{}' panicked: {:?}",
+                                    "Callback for response type '{}' errored: {:?}",
                                     response_type,
                                     e
                                 );
@@ -133,9 +130,6 @@ impl NestriStreamProtocol {
                         tracing::error!("Failed to decode message: {}", e);
                     }
                 }
-
-                // Add a small sleep to reduce CPU usage
-                time::sleep(Duration::from_micros(100)).await;
             }
         })
     }
@@ -156,27 +150,20 @@ impl NestriStreamProtocol {
                         break;
                     }
                 }
-
-                // Add a small sleep to reduce CPU usage
-                time::sleep(Duration::from_micros(100)).await;
             }
         })
     }
 
-    pub fn send_message<M: serde::Serialize>(
-        &self,
-        message: &M,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_message<M: serde::Serialize>(&self, message: &M) -> Result<()> {
         let json_data = serde_json::to_vec(message)?;
         let Some(tx) = &self.tx else {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::NotConnected,
+            return Err(anyhow::Error::msg(
                 if self.read_handle.is_none() && self.write_handle.is_none() {
                     "NestriStreamProtocol has been shutdown"
                 } else {
                     "NestriStreamProtocol is not properly initialized"
                 },
-            )));
+            ));
         };
         tx.try_send(json_data)?;
         Ok(())
@@ -184,7 +171,7 @@ impl NestriStreamProtocol {
 
     pub fn register_callback<F>(&self, response_type: &str, callback: F)
     where
-        F: Fn(Vec<u8>) + Send + Sync + 'static,
+        F: Fn(Vec<u8>) -> Result<()> + Send + Sync + 'static,
     {
         self.callbacks
             .insert(response_type.to_string(), Callback::new(callback));

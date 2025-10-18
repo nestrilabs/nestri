@@ -24,6 +24,8 @@ type Flags struct {
 	AutoAddLocalIP bool   // Automatically add local IP to NAT 1 to 1 IPs
 	NAT11IP        string // WebRTC NAT 1 to 1 IP - allows specifying IP of relay if behind NAT
 	PersistDir     string // Directory to save persistent data to
+	Metrics        bool   // Enable metrics endpoint
+	MetricsPort    int    // Port for metrics endpoint
 }
 
 func (flags *Flags) DebugLog() {
@@ -39,6 +41,8 @@ func (flags *Flags) DebugLog() {
 		"autoAddLocalIP", flags.AutoAddLocalIP,
 		"webrtcNAT11IPs", flags.NAT11IP,
 		"persistDir", flags.PersistDir,
+		"metrics", flags.Metrics,
+		"metricsPort", flags.MetricsPort,
 	)
 }
 
@@ -79,12 +83,14 @@ func InitFlags() {
 	flag.IntVar(&globalFlags.WebRTCUDPStart, "webrtcUDPStart", getEnvAsInt("WEBRTC_UDP_START", 0), "WebRTC UDP port range start")
 	flag.IntVar(&globalFlags.WebRTCUDPEnd, "webrtcUDPEnd", getEnvAsInt("WEBRTC_UDP_END", 0), "WebRTC UDP port range end")
 	flag.StringVar(&globalFlags.STUNServer, "stunServer", getEnvAsString("STUN_SERVER", "stun.l.google.com:19302"), "WebRTC STUN server")
-	flag.IntVar(&globalFlags.UDPMuxPort, "webrtcUDPMux", getEnvAsInt("WEBRTC_UDP_MUX", 8088), "WebRTC UDP mux port")
-	flag.BoolVar(&globalFlags.AutoAddLocalIP, "autoAddLocalIP", getEnvAsBool("AUTO_ADD_LOCAL_IP", true), "Automatically add local IP to NAT 1 to 1 IPs")
+	flag.IntVar(&globalFlags.UDPMuxPort, "webrtcUDPMux", getEnvAsInt("WEBRTC_UDP_MUX", 9099), "WebRTC UDP mux port")
+	flag.BoolVar(&globalFlags.AutoAddLocalIP, "autoAddLocalIP", getEnvAsBool("AUTO_ADD_LOCAL_IP", false), "Automatically add local IP to NAT 1 to 1 IPs")
 	// String with comma separated IPs
 	nat11IP := ""
 	flag.StringVar(&nat11IP, "webrtcNAT11IP", getEnvAsString("WEBRTC_NAT_IP", ""), "WebRTC NAT 1 to 1 IP")
 	flag.StringVar(&globalFlags.PersistDir, "persistDir", getEnvAsString("PERSIST_DIR", "./persist-data"), "Directory to save persistent data to")
+	flag.BoolVar(&globalFlags.Metrics, "metrics", getEnvAsBool("METRICS", false), "Enable metrics endpoint")
+	flag.IntVar(&globalFlags.MetricsPort, "metricsPort", getEnvAsInt("METRICS_PORT", 3030), "Port for metrics endpoint")
 	// Parse flags
 	flag.Parse()
 

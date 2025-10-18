@@ -22,7 +22,7 @@ type networkNotifier struct {
 
 // Connected is called when a connection is established
 func (n *networkNotifier) Connected(net network.Network, conn network.Conn) {
-	if n.relay == nil {
+	if n.relay != nil {
 		n.relay.onPeerConnected(conn.RemotePeer())
 	}
 }
@@ -75,8 +75,8 @@ func (r *Relay) setupPubSub(ctx context.Context) error {
 
 // --- Connection Management ---
 
-// connectToRelay is internal method to connect to a relay peer using multiaddresses
-func (r *Relay) connectToRelay(ctx context.Context, peerInfo *peer.AddrInfo) error {
+// connectToPeer is internal method to connect to a peer using multiaddresses
+func (r *Relay) connectToPeer(ctx context.Context, peerInfo *peer.AddrInfo) error {
 	if peerInfo.ID == r.ID {
 		return errors.New("cannot connect to self")
 	}
@@ -94,19 +94,14 @@ func (r *Relay) connectToRelay(ctx context.Context, peerInfo *peer.AddrInfo) err
 	return nil
 }
 
-// ConnectToRelay connects to another relay by its multiaddress.
-func (r *Relay) ConnectToRelay(ctx context.Context, addr string) error {
-	ma, err := multiaddr.NewMultiaddr(addr)
-	if err != nil {
-		return fmt.Errorf("invalid multiaddress: %w", err)
-	}
-
-	peerInfo, err := peer.AddrInfoFromP2pAddr(ma)
+// ConnectToPeer connects to another peer by its multiaddress.
+func (r *Relay) ConnectToPeer(ctx context.Context, addr multiaddr.Multiaddr) error {
+	peerInfo, err := peer.AddrInfoFromP2pAddr(addr)
 	if err != nil {
 		return fmt.Errorf("failed to extract peer info: %w", err)
 	}
 
-	return r.connectToRelay(ctx, peerInfo)
+	return r.connectToPeer(ctx, peerInfo)
 }
 
 // printConnectInstructions logs the multiaddresses for connecting to this relay.

@@ -46,7 +46,7 @@ func (r *Relay) publishRelayMetrics(ctx context.Context) error {
 	// Check all peer latencies
 	r.checkAllPeerLatencies(ctx)
 
-	data, err := json.Marshal(r.RelayInfo)
+	data, err := json.Marshal(r.PeerInfo)
 	if err != nil {
 		return fmt.Errorf("failed to marshal relay status: %w", err)
 	}
@@ -109,8 +109,8 @@ func (r *Relay) measureLatencyToPeer(ctx context.Context, peerID peer.ID) {
 		if result.Error != nil {
 			slog.Warn("Latency check failed, removing peer from local peers map", "peer", peerID, "err", result.Error)
 			// Remove from MeshPeers if ping failed
-			if r.LocalMeshPeers.Has(peerID) {
-				r.LocalMeshPeers.Delete(peerID)
+			if r.Peers.Has(peerID) {
+				r.Peers.Delete(peerID)
 			}
 			return
 		}
@@ -123,6 +123,6 @@ func (r *Relay) measureLatencyToPeer(ctx context.Context, peerID peer.ID) {
 			latency = 1 * time.Microsecond
 		}
 
-		r.RelayInfo.MeshLatencies.Set(peerID.String(), latency)
+		r.PeerInfo.Latencies.Set(peerID, latency)
 	}
 }

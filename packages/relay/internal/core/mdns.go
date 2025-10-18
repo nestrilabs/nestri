@@ -19,7 +19,7 @@ type discoveryNotifee struct {
 
 func (d *discoveryNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	if d.relay != nil {
-		if err := d.relay.connectToRelay(context.Background(), &pi); err != nil {
+		if err := d.relay.connectToPeer(context.Background(), &pi); err != nil {
 			slog.Error("failed to connect to discovered relay", "peer", pi.ID, "error", err)
 		}
 	}

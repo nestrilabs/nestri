@@ -59,6 +59,14 @@ impl Args {
                     .help("Nestri room name/identifier"),
             )
             .arg(
+                Arg::new("vimputti-path")
+                    .long("vimputti-path")
+                    .env("VIMPUTTI_PATH")
+                    .help("Path to vimputti socket")
+                    .value_parser(NonEmptyStringValueParser::new())
+                    .default_value("/tmp/vimputti-0"),
+            )
+            .arg(
                 Arg::new("gpu-vendor")
                     .short('g')
                     .long("gpu-vendor")
@@ -204,10 +212,10 @@ impl Args {
                     .default_value("192"),
             )
             .arg(
-                Arg::new("dma-buf")
-                    .long("dma-buf")
-                    .env("DMA_BUF")
-                    .help("Use DMA-BUF for pipeline")
+                Arg::new("zero-copy")
+                    .long("zero-copy")
+                    .env("ZERO_COPY")
+                    .help("Use zero-copy pipeline")
                     .value_parser(BoolishValueParser::new())
                     .default_value("false"),
             )

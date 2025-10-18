@@ -276,8 +276,8 @@ pub fn encoder_low_latency_params(
     _rate_control: &RateControl,
     framerate: u32,
 ) -> VideoEncoderInfo {
-    // 2 second GOP size, maybe lower to 1 second for fast recovery, if needed?
-    let mut encoder_optz = encoder_gop_params(encoder, framerate * 2);
+    // 1 second keyframe interval for fast recovery, is this too taxing?
+    let mut encoder_optz = encoder_gop_params(encoder, framerate);
 
     match encoder_optz.encoder_api {
         EncoderAPI::QSV => {
@@ -291,6 +291,7 @@ pub fn encoder_low_latency_params(
             encoder_optz.set_parameter("multi-pass", "disabled");
             encoder_optz.set_parameter("preset", "p1");
             encoder_optz.set_parameter("tune", "ultra-low-latency");
+            encoder_optz.set_parameter("zerolatency", "true");
         }
         EncoderAPI::AMF => {
             encoder_optz.set_parameter("preset", "speed");
@@ -400,11 +401,21 @@ pub fn get_compatible_encoders(gpus: &Vec<GPUInfo>) -> Vec<VideoEncoderInfo> {
                                 }
                                 None
                             } else if element.has_property("cuda-device-id") {
-                                let device_id =
-                                    match element.property_value("cuda-device-id").get::<i32>() {
-                                        Ok(v) if v >= 0 => Some(v as usize),
-                                        _ => None,
-                                    };
+                                let device_id = match element
+                                    .property_value("cuda-device-id")
+                                    .get::<i32>()
+                                {
+                                    Ok(v) if v >= 0 => Some(v as usize),
+                                    _ => {
+                                        // If only one NVIDIA GPU, default to 0
+                                        // fixes "Type: 'Hardware', Device: 'CPU'" issue
+                                        if get_gpus_by_vendor(&gpus, GPUVendor::NVIDIA).len() == 1 {
+                                            Some(0)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                };
 
                                 // We'll just treat cuda-device-id as an index
                                 device_id.and_then(|id| {
@@ -574,7 +585,7 @@ pub fn get_best_working_encoder(
     encoders: &Vec<VideoEncoderInfo>,
     codec: &Codec,
     encoder_type: &EncoderType,
-    dma_buf: bool,
+    zero_copy: bool,
 ) -> Result<VideoEncoderInfo, Box<dyn Error>> {
     let mut candidates = get_encoders_by_videocodec(
         encoders,
@@ -590,7 +601,7 @@ pub fn get_best_working_encoder(
     while !candidates.is_empty() {
         let best = get_best_compatible_encoder(&candidates, codec, encoder_type)?;
         tracing::info!("Testing encoder: {}", best.name,);
-        if test_encoder(&best, dma_buf).is_ok() {
+        if test_encoder(&best, zero_copy).is_ok() {
             return Ok(best);
         } else {
             // Remove this encoder and try next best
@@ -602,7 +613,7 @@ pub fn get_best_working_encoder(
 }
 
 /// Test if a pipeline with the given encoder can be created and set to Playing
-pub fn test_encoder(encoder: &VideoEncoderInfo, dma_buf: bool) -> Result<(), Box<dyn Error>> {
+pub fn test_encoder(encoder: &VideoEncoderInfo, zero_copy: bool) -> Result<(), Box<dyn Error>> {
     let src = gstreamer::ElementFactory::make("waylanddisplaysrc").build()?;
     if let Some(gpu_info) = &encoder.gpu_info {
         src.set_property_from_str("render-node", gpu_info.render_path());
@@ -610,12 +621,16 @@ pub fn test_encoder(encoder: &VideoEncoderInfo, dma_buf: bool) -> Result<(), Box
     let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
     let caps = gstreamer::Caps::from_str(&format!(
         "{},width=1280,height=720,framerate=30/1{}",
-        if dma_buf {
-            "video/x-raw(memory:DMABuf)"
+        if zero_copy {
+            if encoder.encoder_api == EncoderAPI::NVENC {
+                "video/x-raw(memory:CUDAMemory)"
+            } else {
+                "video/x-raw(memory:DMABuf)"
+            }
         } else {
             "video/x-raw"
         },
-        if dma_buf { "" } else { ",format=RGBx" }
+        if zero_copy { "" } else { ",format=RGBx" }
     ))?;
     caps_filter.set_property("caps", &caps);
 
@@ -627,66 +642,47 @@ pub fn test_encoder(encoder: &VideoEncoderInfo, dma_buf: bool) -> Result<(), Box
     // Create pipeline and link elements
     let pipeline = gstreamer::Pipeline::new();
 
-    if dma_buf && encoder.encoder_api == EncoderAPI::NVENC {
-        // GL upload element
-        let glupload = gstreamer::ElementFactory::make("glupload").build()?;
-        // GL color convert element
-        let glconvert = gstreamer::ElementFactory::make("glcolorconvert").build()?;
-        // GL color convert caps
-        let gl_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-        let gl_caps = gstreamer::Caps::from_str("video/x-raw(memory:GLMemory),format=NV12")?;
-        gl_caps_filter.set_property("caps", &gl_caps);
-        // CUDA upload element
-        let cudaupload = gstreamer::ElementFactory::make("cudaupload").build()?;
+    if zero_copy {
+        if encoder.encoder_api == EncoderAPI::NVENC {
+            // NVENC zero-copy path
+            pipeline.add_many(&[&src, &caps_filter, &enc, &sink])?;
+            gstreamer::Element::link_many(&[&src, &caps_filter, &enc, &sink])?;
+        } else {
+            // VA-API/QSV zero-copy path
+            let vapostproc = gstreamer::ElementFactory::make("vapostproc").build()?;
+            let va_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
+            let va_caps = gstreamer::Caps::from_str("video/x-raw(memory:VAMemory),format=NV12")?;
+            va_caps_filter.set_property("caps", &va_caps);
 
-        pipeline.add_many(&[
-            &src,
-            &caps_filter,
-            &glupload,
-            &glconvert,
-            &gl_caps_filter,
-            &cudaupload,
-            &enc,
-            &sink,
-        ])?;
-        gstreamer::Element::link_many(&[
-            &src,
-            &caps_filter,
-            &glupload,
-            &glconvert,
-            &gl_caps_filter,
-            &cudaupload,
-            &enc,
-            &sink,
-        ])?;
+            pipeline.add_many(&[
+                &src,
+                &caps_filter,
+                &vapostproc,
+                &va_caps_filter,
+                &enc,
+                &sink,
+            ])?;
+            gstreamer::Element::link_many(&[
+                &src,
+                &caps_filter,
+                &vapostproc,
+                &va_caps_filter,
+                &enc,
+                &sink,
+            ])?;
+        }
     } else {
-        let vapostproc = gstreamer::ElementFactory::make("vapostproc").build()?;
-        // VA caps filter
-        let va_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-        let va_caps = gstreamer::Caps::from_str("video/x-raw(memory:VAMemory),format=NV12")?;
-        va_caps_filter.set_property("caps", &va_caps);
-
-        pipeline.add_many(&[
-            &src,
-            &caps_filter,
-            &vapostproc,
-            &va_caps_filter,
-            &enc,
-            &sink,
-        ])?;
-        gstreamer::Element::link_many(&[
-            &src,
-            &caps_filter,
-            &vapostproc,
-            &va_caps_filter,
-            &enc,
-            &sink,
-        ])?;
+        // Non-zero-copy path for all encoders - needs videoconvert
+        let videoconvert = gstreamer::ElementFactory::make("videoconvert").build()?;
+        pipeline.add_many(&[&src, &caps_filter, &videoconvert, &enc, &sink])?;
+        gstreamer::Element::link_many(&[&src, &caps_filter, &videoconvert, &enc, &sink])?;
     }
 
     let bus = pipeline.bus().ok_or("Pipeline has no bus")?;
-    let _ = pipeline.set_state(gstreamer::State::Playing);
-    for msg in bus.iter_timed(gstreamer::ClockTime::from_seconds(2)) {
+    pipeline.set_state(gstreamer::State::Playing)?;
+
+    // Wait for either error or async-done (state change complete)
+    for msg in bus.iter_timed(gstreamer::ClockTime::from_seconds(10)) {
         match msg.view() {
             gstreamer::MessageView::Error(err) => {
                 let err_msg = format!("Pipeline error: {}", err.error());
@@ -694,14 +690,17 @@ pub fn test_encoder(encoder: &VideoEncoderInfo, dma_buf: bool) -> Result<(), Box
                 let _ = pipeline.set_state(gstreamer::State::Null);
                 return Err(err_msg.into());
             }
-            gstreamer::MessageView::Eos(_) => {
-                tracing::info!("Pipeline EOS received");
+            gstreamer::MessageView::AsyncDone(_) => {
+                // Pipeline successfully reached PLAYING state
+                tracing::debug!("Pipeline reached PLAYING state successfully");
                 let _ = pipeline.set_state(gstreamer::State::Null);
-                return Err("Pipeline EOS received, encoder test failed".into());
+                return Ok(());
             }
             _ => {}
         }
     }
+
+    // If we got here, timeout occurred without reaching PLAYING or error
     let _ = pipeline.set_state(gstreamer::State::Null);
-    Ok(())
+    Err("Encoder test timed out".into())
 }

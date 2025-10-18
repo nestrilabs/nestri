@@ -24,13 +24,18 @@ if (envs_map.size > 0) {
 </DefaultLayout>
 
 <script>
-	import { Mouse, Keyboard, WebRTCStream } from "@nestri/input";
+	import { Mouse, Keyboard, Controller, WebRTCStream } from "@nestri/input";
 	const ENVS = document.getElementById("ENVS")!.dataset.envs as string;
 	let ENVS_MAP: Map<string, string | undefined> | null = null;
 	if (ENVS && ENVS.length > 0) {
 		ENVS_MAP = new Map(JSON.parse(ENVS));
 		console.debug("ENVS_MAP:", ENVS_MAP);
 	}
+
+  // Method which returns true if mobile device
+  const isMobile = () => {
+    return /Mobi|Android/i.test(navigator.userAgent);
+  };
 
 	// Elements
 	const canvas = document.getElementById("playCanvas")! as HTMLCanvasElement;
@@ -82,17 +87,38 @@ if (envs_map.size > 0) {
 	// Input
 	let nestriMouse: Mouse | null = null;
 	let nestriKeyboard: Keyboard | null = null;
+  let nestriControllers: Controller[] = [];
+
+  window.addEventListener("gamepadconnected", (e) => {
+    // Ignore gamepads with id including "nestri"
+    console.log("Gamepad connected:", e.gamepad);
+    if (e.gamepad.id.toLowerCase().includes("nestri"))
+      return;
+
+    const controller = new Controller({
+      webrtc: stream,
+      e: e,
+    });
+    nestriControllers.push(controller);
+  });
+  window.addEventListener("gamepaddisconnected", (e) => {
+    console.log("Gamepad disconnected:", e.gamepad);
+    if (e.gamepad.id.toLowerCase().includes("nestri"))
+      return;
+
+    let disconnected = nestriControllers.find((c) => c.getSlot() === e.gamepad.index);
+    if (disconnected) {
+      disconnected.dispose();
+      nestriControllers = nestriControllers.filter((c) => c !== disconnected);
+    }
+  });
 
 	document.addEventListener("pointerlockchange", () => {
 		if (document.pointerLockElement === canvas) {
-			if (nestriMouse || nestriKeyboard)
+			if (nestriMouse)
 				return;
 
 			nestriMouse = new Mouse({
-				canvas: canvas,
-				webrtc: stream,
-			});
-			nestriKeyboard = new Keyboard({
 				canvas: canvas,
 				webrtc: stream,
 			});
@@ -101,32 +127,50 @@ if (envs_map.size > 0) {
 				nestriMouse.dispose();
 				nestriMouse = null;
 			}
-			if (nestriKeyboard) {
-				nestriKeyboard.dispose();
-				nestriKeyboard = null;
-			}
 		}
 	});
 
+  document.addEventListener("fullscreenchange", () => {
+    if (document.fullscreenElement) {
+      if (nestriKeyboard)
+        return;
+
+      nestriKeyboard = new Keyboard({
+        webrtc: stream,
+      });
+      if (nestriControllers.length > 0) {
+        nestriControllers.forEach((c) => c.run());
+      }
+
+      if ("keyboard" in navigator && "lock" in (navigator.keyboard as any)) {
+        const keys = [
+          "AltLeft", "AltRight", "Tab", "Escape",
+          "ContextMenu", "MetaLeft", "MetaRight"
+        ];
+
+        try {
+          (navigator.keyboard as any).lock(keys).then(() => {
+            console.log("Keyboard lock acquired");
+          })
+        } catch (e) {
+          console.warn("Keyboard lock failed:", e);
+        }
+      }
+    } else {
+      if (nestriKeyboard) {
+        nestriKeyboard.dispose();
+        nestriKeyboard = null;
+      }
+      if (nestriControllers.length > 0) {
+        nestriControllers.forEach((c) => c.stop());
+      }
+    }
+  })
+
 	const lockPlay = async function () {
 		await canvas.requestFullscreen();
-		await canvas.requestPointerLock();
-
-		if (document.fullscreenElement !== null) {
-			if ("keyboard" in navigator && "lock" in (navigator.keyboard as any)) {
-				const keys = [
-					"AltLeft", "AltRight", "Tab", "Escape",
-					"ContextMenu", "MetaLeft", "MetaRight"
-				];
-
-				try {
-					await (navigator.keyboard as any).lock(keys);
-					console.log("Keyboard lock acquired");
-				} catch (e) {
-					console.warn("Keyboard lock failed:", e);
-				}
-			}
-		}
+    if (!isMobile())
+      await canvas.requestPointerLock();
 	};
 
 	canvas.addEventListener("click", lockPlay);

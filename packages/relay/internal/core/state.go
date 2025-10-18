@@ -72,8 +72,8 @@ func (r *Relay) handleRelayMetricsMessages(ctx context.Context, sub *pubsub.Subs
 				continue
 			}
 
-			var info RelayInfo
-			if err := json.Unmarshal(msg.Data, &info); err != nil {
+			var info PeerInfo
+			if err = json.Unmarshal(msg.Data, &info); err != nil {
 				slog.Error("Failed to unmarshal relay status", "from", msg.GetFrom(), "data_len", len(msg.Data), "err", err)
 				continue
 			}
@@ -89,7 +89,7 @@ func (r *Relay) handleRelayMetricsMessages(ctx context.Context, sub *pubsub.Subs
 // --- State Check Functions ---
 // hasConnectedPeer checks if peer is in map and has a valid connection
 func (r *Relay) hasConnectedPeer(peerID peer.ID) bool {
-	if _, ok := r.LocalMeshPeers.Get(peerID); !ok {
+	if _, ok := r.Peers.Get(peerID); !ok {
 		return false
 	}
 	if r.Host.Network().Connectedness(peerID) != network.Connected {
@@ -102,14 +102,14 @@ func (r *Relay) hasConnectedPeer(peerID peer.ID) bool {
 // --- State Change Functions ---
 
 // onPeerStatus updates the status of a peer based on received metrics, adding local perspective
-func (r *Relay) onPeerStatus(recvInfo RelayInfo) {
-	r.LocalMeshPeers.Set(recvInfo.ID, &recvInfo)
+func (r *Relay) onPeerStatus(recvInfo PeerInfo) {
+	r.Peers.Set(recvInfo.ID, &recvInfo)
 }
 
 // onPeerConnected is called when a new peer connects to the relay
 func (r *Relay) onPeerConnected(peerID peer.ID) {
 	// Add to local peer map
-	r.LocalMeshPeers.Set(peerID, &RelayInfo{
+	r.Peers.Set(peerID, &PeerInfo{
 		ID: peerID,
 	})
 
@@ -131,16 +131,12 @@ func (r *Relay) onPeerConnected(peerID peer.ID) {
 func (r *Relay) onPeerDisconnected(peerID peer.ID) {
 	slog.Info("Mesh peer disconnected, deleting from local peer map", "peer", peerID)
 	// Remove peer from local mesh peers
-	if r.LocalMeshPeers.Has(peerID) {
-		r.LocalMeshPeers.Delete(peerID)
+	if r.Peers.Has(peerID) {
+		r.Peers.Delete(peerID)
 	}
 	// Remove any rooms associated with this peer
-	if r.MeshRooms.Has(peerID.String()) {
-		r.MeshRooms.Delete(peerID.String())
-	}
-	// Remove any latencies associated with this peer
-	if r.LocalMeshPeers.Has(peerID) {
-		r.LocalMeshPeers.Delete(peerID)
+	if r.Rooms.Has(peerID.String()) {
+		r.Rooms.Delete(peerID.String())
 	}
 
 	// TODO: If any rooms were routed through this peer, handle that case
@@ -155,7 +151,7 @@ func (r *Relay) updateMeshRoomStates(peerID peer.ID, states []shared.RoomInfo) {
 		}
 
 		// If previously did not exist, but does now, request a connection if participants exist for our room
-		existed := r.MeshRooms.Has(state.ID.String())
+		existed := r.Rooms.Has(state.ID.String())
 		if !existed {
 			// Request connection to this peer if we have participants in our local room
 			if room, ok := r.LocalRooms.Get(state.ID); ok {
@@ -168,6 +164,6 @@ func (r *Relay) updateMeshRoomStates(peerID peer.ID, states []shared.RoomInfo) {
 			}
 		}
 
-		r.MeshRooms.Set(state.ID.String(), state)
+		r.Rooms.Set(state.ID.String(), state)
 	}
 }

@@ -21,6 +21,13 @@ chown_user_directory() {
         echo "Error: Failed to change ownership of ${NESTRI_HOME} to ${NESTRI_USER}:${NESTRI_USER}" >&2
         return 1
     fi
+    # Also apply to .cache separately
+    if [[ -d "${NESTRI_HOME}/.cache" ]]; then
+        if ! $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}/.cache" 2>/dev/null; then
+            echo "Error: Failed to change ownership of ${NESTRI_HOME}/.cache to ${NESTRI_USER}:${NESTRI_USER}" >&2
+            return 1
+        fi
+    fi
     return 0
 }
 
@@ -48,13 +55,13 @@ setup_namespaceless() {
 
 # Ensures cache directory exists
 setup_cache() {
-    log "Setting up NVIDIA driver cache directory at $CACHE_DIR..."
+    log "Setting up cache directory at $CACHE_DIR..."
     mkdir -p "$CACHE_DIR" || {
-        log "Warning: Failed to create cache directory, continuing without cache."
+        log "Warning: Failed to create cache directory, continuing.."
         return 1
     }
     $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "$CACHE_DIR" 2>/dev/null || {
-        log "Warning: Failed to set cache directory ownership, continuing..."
+        log "Warning: Failed to set cache directory ownership, continuing.."
     }
 }
 
@@ -223,13 +230,16 @@ main() {
 
     # Start by getting the container we are running under
     get_container_info || {
-        log "Warning: Failed to detect container information."
+        log "Warning: Failed to detect container information"
     }
     log_container_info
 
     if [[ "$container_runtime" != "apptainer" ]]; then
         ENTCMD_PREFIX="sudo -E"
     fi
+
+    # Setup cache now
+    setup_cache
 
     # Configure SSH
     if [ -n "${SSH_ENABLE_PORT+x}" ] && [ "${SSH_ENABLE_PORT:-0}" -ne 0 ] && \
@@ -244,14 +254,14 @@ main() {
 
     # Get and detect GPU(s)
     get_gpu_info || {
-        log "Error: Failed to detect GPU information."
+        log "Error: Failed to detect GPU information"
         exit 1
     }
     log_gpu_info
 
     # Handle NVIDIA GPU
     if [[ -n "${vendor_devices[nvidia]:-}" ]]; then
-        log "NVIDIA GPU(s) detected, applying driver fix..."
+        log "NVIDIA GPU(s) detected, applying driver fix.."
 
         # Determine NVIDIA driver version
         local nvidia_driver_version=""
@@ -265,16 +275,15 @@ main() {
             log "Error: Failed to determine NVIDIA driver version."
             # Check for other GPU vendors before exiting
             if [[ -n "${vendor_devices[amd]:-}" || -n "${vendor_devices[intel]:-}" ]]; then
-                log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver."
+                log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver"
             else
-                log "No other GPUs detected, exiting due to NVIDIA driver version failure."
+                log "No other GPUs detected, exiting due to NVIDIA driver version failure"
                 exit 1
             fi
         else
             log "Detected NVIDIA driver version: $nvidia_driver_version"
 
-            # Set up cache and get installer
-            setup_cache
+            # Get installer
             local arch=$(uname -m)
             local filename="NVIDIA-Linux-${arch}-${nvidia_driver_version}.run"
             cd "$NVIDIA_INSTALLER_DIR" || {
@@ -284,9 +293,9 @@ main() {
             get_nvidia_installer "$nvidia_driver_version" "$arch" || {
                 # Check for other GPU vendors before exiting
                 if [[ -n "${vendor_devices[amd]:-}" || -n "${vendor_devices[intel]:-}" ]]; then
-                    log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver."
+                    log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver"
                 else
-                    log "No other GPUs detected, exiting due to NVIDIA installer failure."
+                    log "No other GPUs detected, exiting due to NVIDIA installer failure"
                     exit 1
                 fi
             }
@@ -295,9 +304,9 @@ main() {
             install_nvidia_driver "$filename" || {
                 # Check for other GPU vendors before exiting
                 if [[ -n "${vendor_devices[amd]:-}" || -n "${vendor_devices[intel]:-}" ]]; then
-                    log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver."
+                    log "Other GPUs (AMD or Intel) detected, continuing without NVIDIA driver"
                 else
-                    log "No other GPUs detected, exiting due to NVIDIA driver installation failure."
+                    log "No other GPUs detected, exiting due to NVIDIA driver installation failure"
                     exit 1
                 fi
             }
@@ -305,14 +314,14 @@ main() {
     fi
 
     # Make sure gamescope has CAP_SYS_NICE capabilities if available
-    log "Checking for CAP_SYS_NICE availability..."
+    log "Checking for CAP_SYS_NICE availability.."
     if capsh --print | grep -q "Current:.*cap_sys_nice"; then
-        log "Giving gamescope compositor CAP_SYS_NICE permissions..."
+        log "Giving gamescope compositor CAP_SYS_NICE permissions.."
         setcap 'CAP_SYS_NICE+eip' /usr/bin/gamescope 2>/dev/null || {
-            log "Warning: Failed to set CAP_SYS_NICE on gamescope, continuing without it..."
+            log "Warning: Failed to set CAP_SYS_NICE on gamescope, continuing without it.."
         }
     else
-        log "Skipping CAP_SYS_NICE for gamescope, capability not available..."
+        log "Skipping CAP_SYS_NICE for gamescope, capability not available"
     fi
 
     # Handle user directory permissions
@@ -323,6 +332,19 @@ main() {
     if [[ "$container_runtime" != "podman" ]]; then
         log "Applying namespace-less configuration"
         setup_namespaceless
+    fi
+
+    # Make sure /run/udev/ directory exists with /run/udev/control, needed for virtual controller support
+    if [[ ! -d "/run/udev" || ! -e "/run/udev/control" ]]; then
+        log "Creating /run/udev directory and control file..."
+        $ENTCMD_PREFIX mkdir -p /run/udev || {
+            log "Error: Failed to create /run/udev directory"
+            exit 1
+        }
+        $ENTCMD_PREFIX touch /run/udev/control || {
+            log "Error: Failed to create /run/udev/control file"
+            exit 1
+        }
     fi
 
     # Switch to nestri runner entrypoint
@@ -339,6 +361,6 @@ main() {
 }
 
 # Trap signals for clean exit
-trap 'log "Received termination signal, exiting..."; exit 1' SIGINT SIGTERM
+trap 'log "Received termination signal, exiting.."; exit 0' SIGINT SIGTERM
 
 main

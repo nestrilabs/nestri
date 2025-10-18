@@ -1,3 +1,4 @@
+use anyhow::Result;
 use byteorder::{BigEndian, ByteOrder};
 use libp2p::futures::io::{ReadHalf, WriteHalf};
 use libp2p::futures::{AsyncReadExt, AsyncWriteExt};
@@ -19,17 +20,17 @@ impl SafeStream {
         }
     }
 
-    pub async fn send_raw(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn send_raw(&self, data: &[u8]) -> Result<()> {
         self.send_with_length_prefix(data).await
     }
 
-    pub async fn receive_raw(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub async fn receive_raw(&self) -> Result<Vec<u8>> {
         self.receive_with_length_prefix().await
     }
 
-    async fn send_with_length_prefix(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+    async fn send_with_length_prefix(&self, data: &[u8]) -> Result<()> {
         if data.len() > MAX_SIZE {
-            return Err("Data exceeds maximum size".into());
+            anyhow::bail!("Data exceeds maximum size");
         }
 
         let mut buffer = Vec::with_capacity(4 + data.len());
@@ -42,7 +43,7 @@ impl SafeStream {
         Ok(())
     }
 
-    async fn receive_with_length_prefix(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    async fn receive_with_length_prefix(&self) -> Result<Vec<u8>> {
         let mut stream_read = self.stream_read.lock().await;
 
         // Read length prefix + data in one syscall
@@ -51,7 +52,7 @@ impl SafeStream {
         let length = BigEndian::read_u32(&length_prefix) as usize;
 
         if length > MAX_SIZE {
-            return Err("Data exceeds maximum size".into());
+            anyhow::bail!("Received data exceeds maximum size");
         }
 
         let mut buffer = vec![0u8; length];

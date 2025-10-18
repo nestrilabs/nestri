@@ -10,7 +10,7 @@
                                 {
                                         "0"
                                         {
-                                                "name"          "proton-cachyos"
+                                                "name"          "proton_experimental"
                                                 "config"                ""
                                                 "priority"              "75"
                                         }

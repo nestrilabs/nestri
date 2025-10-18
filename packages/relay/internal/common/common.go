@@ -30,27 +30,10 @@ func InitWebRTCAPI() error {
 		return fmt.Errorf("failed to register extensions: %w", err)
 	}
 
-	// Default codecs cover most of our needs
+	// Default codecs cover our needs
 	err = mediaEngine.RegisterDefaultCodecs()
 	if err != nil {
 		return err
-	}
-
-	// Add H.265 for special cases
-	videoRTCPFeedback := []webrtc.RTCPFeedback{{"goog-remb", ""}, {"ccm", "fir"}, {"nack", ""}, {"nack", "pli"}}
-	for _, codec := range []webrtc.RTPCodecParameters{
-		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH265, ClockRate: 90000, RTCPFeedback: videoRTCPFeedback},
-			PayloadType:        48,
-		},
-		{
-			RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeRTX, ClockRate: 90000, SDPFmtpLine: "apt=48"},
-			PayloadType:        49,
-		},
-	} {
-		if err = mediaEngine.RegisterCodec(codec, webrtc.RTPCodecTypeVideo); err != nil {
-			return err
-		}
 	}
 
 	// Interceptor registry
@@ -98,7 +81,8 @@ func InitWebRTCAPI() error {
 		slog.Info("Using WebRTC UDP Port Range", "start", flags.WebRTCUDPStart, "end", flags.WebRTCUDPEnd)
 	}
 
-	settingEngine.SetIncludeLoopbackCandidate(true) // Just in case
+	// Improves speed when sending offers to browsers (https://github.com/pion/webrtc/issues/3174)
+	settingEngine.SetIncludeLoopbackCandidate(true)
 
 	// Create a new API object with our customized settings
 	globalWebRTCAPI = webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine), webrtc.WithSettingEngine(settingEngine), webrtc.WithInterceptorRegistry(interceptorRegistry))

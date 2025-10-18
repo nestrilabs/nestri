@@ -5,6 +5,7 @@ import {
   SafeStream,
 } from "./messages";
 import { webSockets } from "@libp2p/websockets";
+import { webTransport } from "@libp2p/webtransport";
 import { createLibp2p, Libp2p } from "libp2p";
 import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
@@ -12,9 +13,6 @@ import { identify } from "@libp2p/identify";
 import { multiaddr } from "@multiformats/multiaddr";
 import { Connection } from "@libp2p/interface";
 import { ping } from "@libp2p/ping";
-
-//FIXME: Sometimes the room will wait to say offline, then appear to be online after retrying :D
-// This works for me, with my trashy internet, does it work for you as well?
 
 const NESTRI_PROTOCOL_STREAM_REQUEST = "/nestri-relay/stream-request/1.0.0";
 
@@ -30,7 +28,8 @@ export class WebRTCStream {
   private _connectionTimer: NodeJS.Timeout | NodeJS.Timer | undefined = undefined;
   private _serverURL: string | undefined = undefined;
   private _roomName: string | undefined = undefined;
-  private _isConnected: boolean = false; // Add flag to track connection state
+  private _isConnected: boolean = false;
+  private _dataChannelCallbacks: Map<string, (data: any) => void> = new Map();
   currentFrameRate: number = 60;
 
   constructor(
@@ -59,7 +58,7 @@ export class WebRTCStream {
     console.log("Setting up libp2p");
 
     this._p2p = await createLibp2p({
-      transports: [webSockets()],
+      transports: [webSockets(), webTransport()],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
       connectionGater: {
@@ -219,7 +218,8 @@ export class WebRTCStream {
   }
 
   private _checkConnectionState() {
-    if (!this._pc) return;
+    if (!this._pc || !this._p2p || !this._p2pConn)
+      return;
 
     console.debug("Checking connection state:", {
       connectionState: this._pc.connectionState,
@@ -267,9 +267,10 @@ export class WebRTCStream {
       this._pc.connectionState === "closed" ||
       this._pc.iceConnectionState === "failed"
     ) {
-      console.log("Connection failed or closed, attempting reconnect");
-      this._isConnected = false; // Reset connected state
-      this._handleConnectionFailure();
+      console.log("PeerConnection failed or closed");
+      this._dataChannelCallbacks = new Map();
+      //this._isConnected = false; // Reset connected state
+      //this._handleConnectionFailure();
     }
   }
 
@@ -329,15 +330,31 @@ export class WebRTCStream {
     }
   }
 
+  public registerDataChannelCallback(label: string, callback: (data: any) => void) {
+    this._dataChannelCallbacks.set(label, callback);
+  }
+
+  public unregisterDataChannelCallback(label: string) {
+    this._dataChannelCallbacks.delete(label);
+  }
+
   private _setupDataChannelEvents() {
     if (!this._dataChannel) return;
 
     this._dataChannel.onclose = () => console.log("sendChannel has closed");
     this._dataChannel.onopen = () => console.log("sendChannel has opened");
-    this._dataChannel.onmessage = (e) =>
-      console.log(
-        `Message from DataChannel '${this._dataChannel?.label}' payload '${e.data}'`,
-      );
+    this._dataChannel.onmessage = (event => {
+      // Parse as ProtoBuf message
+      const data = event.data;
+      // Call registered callback if exists
+      this._dataChannelCallbacks.forEach((callback, label) => {
+        try {
+          callback(data);
+        } catch (err) {
+          console.error(`Error in data channel callback for label ${label}:`, err);
+        }
+      });
+    });
   }
 
   private _gatherFrameRate() {

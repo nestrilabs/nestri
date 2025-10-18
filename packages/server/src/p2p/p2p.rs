@@ -1,3 +1,4 @@
+use anyhow::Result;
 use libp2p::futures::StreamExt;
 use libp2p::multiaddr::Protocol;
 use libp2p::{
@@ -11,7 +12,6 @@ use libp2p_ping as ping;
 use libp2p_stream as stream;
 use libp2p_tcp as tcp;
 use libp2p_yamux as yamux;
-use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -46,7 +46,7 @@ pub struct NestriP2P {
     swarm: Arc<Mutex<Swarm<NestriBehaviour>>>,
 }
 impl NestriP2P {
-    pub async fn new() -> Result<Self, Box<dyn Error>> {
+    pub async fn new() -> Result<Self> {
         let swarm = Arc::new(Mutex::new(
             libp2p::SwarmBuilder::with_new_identity()
                 .with_tokio()
@@ -69,14 +69,16 @@ impl NestriP2P {
         Ok(NestriP2P { swarm })
     }
 
-    pub async fn connect(&self, conn_url: &str) -> Result<NestriConnection, Box<dyn Error>> {
+    pub async fn connect(&self, conn_url: &str) -> Result<NestriConnection> {
         let conn_addr: Multiaddr = conn_url.parse()?;
 
         let mut swarm_lock = self.swarm.lock().await;
         swarm_lock.dial(conn_addr.clone())?;
 
         let Some(Protocol::P2p(peer_id)) = conn_addr.clone().iter().last() else {
-            return Err("Invalid connection URL: missing peer ID".into());
+            return Err(anyhow::Error::msg(
+                "Invalid multiaddr: missing /p2p/<peer_id>",
+            ));
         };
 
         Ok(NestriConnection {
@@ -88,10 +90,7 @@ impl NestriP2P {
 
 async fn swarm_loop(swarm: Arc<Mutex<Swarm<NestriBehaviour>>>) {
     loop {
-        let event = {
-            let mut swarm_lock = swarm.lock().await;
-            swarm_lock.select_next_some().await
-        };
+        let event = swarm.lock().await.select_next_some().await;
         match event {
             /* Ping Events */
             SwarmEvent::Behaviour(NestriBehaviourEvent::Ping(ping::Event {

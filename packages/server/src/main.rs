@@ -1,6 +1,7 @@
 mod args;
 mod enc_helper;
 mod gpu;
+mod input;
 mod latency;
 mod messages;
 mod nestrisink;
@@ -10,6 +11,7 @@ mod proto;
 use crate::args::encoding_args;
 use crate::enc_helper::{EncoderAPI, EncoderType};
 use crate::gpu::{GPUInfo, GPUVendor};
+use crate::input::controller::ControllerManager;
 use crate::nestrisink::NestriSignaller;
 use crate::p2p::p2p::NestriP2P;
 use gstreamer::prelude::*;
@@ -118,7 +120,7 @@ fn handle_encoder_video(
             &video_encoders,
             &args.encoding.video.codec,
             &args.encoding.video.encoder_type,
-            args.app.dma_buf,
+            args.app.zero_copy,
         )?;
     }
     tracing::info!("Selected video encoder: '{}'", video_encoder.name);
@@ -174,9 +176,6 @@ fn handle_encoder_audio(args: &args::Args) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // Parse command line arguments
-    let mut args = args::Args::new();
-
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
@@ -184,6 +183,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .from_env()?,
         )
         .init();
+
+    // Parse command line arguments
+    let mut args = args::Args::new();
 
     if args.app.verbose {
         args.debug_print();
@@ -199,13 +201,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     gstreamer::init()?;
     let _ = gstrswebrtc::plugin_register_static(); // Might be already registered, so we'll pass..
 
-    if args.app.dma_buf {
+    if args.app.zero_copy {
         if args.encoding.video.encoder_type != EncoderType::HARDWARE {
-            tracing::warn!("DMA-BUF is only supported with hardware encoders, disabling DMA-BUF..");
-            args.app.dma_buf = false;
+            tracing::warn!(
+                "zero-copy is only supported with hardware encoders, disabling zero-copy.."
+            );
+            args.app.zero_copy = false;
         } else {
             tracing::warn!(
-                "DMA-BUF is experimental, it may or may not improve performance, or even work at all."
+                "zero-copy is experimental, it may or may not improve performance, or even work at all."
             );
         }
     }
@@ -238,6 +242,28 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let nestri_p2p = Arc::new(NestriP2P::new().await?);
     let p2p_conn = nestri_p2p.connect(relay_url).await?;
 
+    // Get vimputti manager connection if available
+    let vpath = match args.app.vimputti_path {
+        Some(ref path) => path.clone(),
+        None => "/tmp/vimputti-0".to_string(),
+    };
+    let vimputti_client = match vimputti::VimputtiClient::connect(vpath).await {
+        Ok(client) => {
+            tracing::info!("Connected to vimputti manager");
+            Some(Arc::new(client))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to connect to vimputti manager: {}", e);
+            None
+        }
+    };
+    let (controller_manager, rumble_rx) = if let Some(vclient) = vimputti_client {
+        let (controller_manager, rumble_rx) = ControllerManager::new(vclient)?;
+        (Some(Arc::new(controller_manager)), Some(rumble_rx))
+    } else {
+        (None, None)
+    };
+
     /*** PIPELINE CREATION ***/
     // Create the pipeline
     let pipeline = Arc::new(gstreamer::Pipeline::new());
@@ -266,7 +292,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Required to fix gstreamer opus issue, where quality sounds off (due to wrong sample rate)
     let audio_capsfilter = gstreamer::ElementFactory::make("capsfilter").build()?;
-    let audio_caps = gstreamer::Caps::from_str("audio/x-raw,rate=48000,channels=2").unwrap();
+    let audio_caps = gstreamer::Caps::from_str("audio/x-raw,rate=48000,channels=2")?;
     audio_capsfilter.set_property("caps", &audio_caps);
 
     // Audio Encoder Element
@@ -302,49 +328,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
     let caps = gstreamer::Caps::from_str(&format!(
         "{},width={},height={},framerate={}/1{}",
-        if args.app.dma_buf {
-            "video/x-raw(memory:DMABuf)"
+        if args.app.zero_copy {
+            if video_encoder_info.encoder_api == EncoderAPI::NVENC {
+                "video/x-raw(memory:CUDAMemory)"
+            } else {
+                "video/x-raw(memory:DMABuf)"
+            }
         } else {
             "video/x-raw"
         },
         args.app.resolution.0,
         args.app.resolution.1,
         args.app.framerate,
-        if args.app.dma_buf { "" } else { ",format=RGBx" }
+        if args.app.zero_copy {
+            ""
+        } else {
+            ",format=RGBx"
+        }
     ))?;
     caps_filter.set_property("caps", &caps);
 
     // Get bit-depth and choose appropriate format (NV12 or P010_10LE)
     // H.264 does not support above 8-bit. Also we require DMA-BUF.
     let video_format = if args.encoding.video.bit_depth == 10
-        && args.app.dma_buf
+        && args.app.zero_copy
         && video_encoder_info.codec != enc_helper::VideoCodec::H264
     {
         "P010_10LE"
     } else {
         "NV12"
     };
-
-    // GL and CUDA elements (NVIDIA only..)
-    let mut glupload = None;
-    let mut glconvert = None;
-    let mut gl_caps_filter = None;
-    let mut cudaupload = None;
-    if args.app.dma_buf && video_encoder_info.encoder_api == EncoderAPI::NVENC {
-        // GL upload element
-        glupload = Some(gstreamer::ElementFactory::make("glupload").build()?);
-        // GL color convert element
-        glconvert = Some(gstreamer::ElementFactory::make("glcolorconvert").build()?);
-        // GL color convert caps
-        let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-        let gl_caps = gstreamer::Caps::from_str(
-            format!("video/x-raw(memory:GLMemory),format={video_format}").as_str(),
-        )?;
-        caps_filter.set_property("caps", &gl_caps);
-        gl_caps_filter = Some(caps_filter);
-        // CUDA upload element
-        cudaupload = Some(gstreamer::ElementFactory::make("cudaupload").build()?);
-    }
 
     // vapostproc for VA compatible encoders
     let mut vapostproc = None;
@@ -364,7 +377,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Video Converter Element
     let mut video_converter = None;
-    if !args.app.dma_buf {
+    if !args.app.zero_copy {
         video_converter = Some(gstreamer::ElementFactory::make("videoconvert").build()?);
     }
 
@@ -397,24 +410,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     /* Output */
     // WebRTC sink Element
-    let signaller =
-        NestriSignaller::new(args.app.room, p2p_conn.clone(), video_source.clone()).await?;
+    let signaller = NestriSignaller::new(
+        args.app.room,
+        p2p_conn.clone(),
+        video_source.clone(),
+        controller_manager,
+        rumble_rx,
+    )
+    .await?;
     let webrtcsink = BaseWebRTCSink::with_signaller(Signallable::from(signaller.clone()));
     webrtcsink.set_property_from_str("stun-server", "stun://stun.l.google.com:19302");
     webrtcsink.set_property_from_str("congestion-control", "disabled");
     webrtcsink.set_property("do-retransmission", false);
 
     /* Queues */
-    let video_queue = gstreamer::ElementFactory::make("queue2")
-        .property("max-size-buffers", 3u32)
-        .property("max-size-time", 0u64)
-        .property("max-size-bytes", 0u32)
+    let video_source_queue = gstreamer::ElementFactory::make("queue")
+        .property("max-size-buffers", 5u32)
         .build()?;
 
-    let audio_queue = gstreamer::ElementFactory::make("queue2")
-        .property("max-size-buffers", 3u32)
-        .property("max-size-time", 0u64)
-        .property("max-size-bytes", 0u32)
+    let audio_source_queue = gstreamer::ElementFactory::make("queue")
+        .property("max-size-buffers", 5u32)
+        .build()?;
+
+    let video_queue = gstreamer::ElementFactory::make("queue")
+        .property("max-size-buffers", 5u32)
+        .build()?;
+
+    let audio_queue = gstreamer::ElementFactory::make("queue")
+        .property("max-size-buffers", 5u32)
         .build()?;
 
     /* Clock Sync */
@@ -433,6 +456,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &caps_filter,
         &video_queue,
         &video_clocksync,
+        &video_source_queue,
         &video_source,
         &audio_encoder,
         &audio_capsfilter,
@@ -440,6 +464,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_clocksync,
         &audio_rate,
         &audio_converter,
+        &audio_source_queue,
         &audio_source,
     ])?;
 
@@ -455,24 +480,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         pipeline.add(parser)?;
     }
 
-    // If DMA-BUF..
-    if args.app.dma_buf {
+    // If zero-copy..
+    if args.app.zero_copy {
         // VA-API / QSV pipeline
         if let (Some(vapostproc), Some(va_caps_filter)) = (&vapostproc, &va_caps_filter) {
             pipeline.add_many(&[vapostproc, va_caps_filter])?;
-        } else {
-            // NVENC pipeline
-            if let (Some(glupload), Some(glconvert), Some(gl_caps_filter), Some(cudaupload)) =
-                (&glupload, &glconvert, &gl_caps_filter, &cudaupload)
-            {
-                pipeline.add_many(&[glupload, glconvert, gl_caps_filter, cudaupload])?;
-            }
         }
     }
 
     // Link main audio branch
     gstreamer::Element::link_many(&[
         &audio_source,
+        &audio_source_queue,
         &audio_converter,
         &audio_rate,
         &audio_capsfilter,
@@ -488,12 +507,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         gstreamer::Element::link_many(&[&audio_encoder, webrtcsink.upcast_ref()])?;
     }
 
-    // With DMA-BUF..
-    if args.app.dma_buf {
+    // With zero-copy..
+    if args.app.zero_copy {
         // VA-API / QSV pipeline
         if let (Some(vapostproc), Some(va_caps_filter)) = (&vapostproc, &va_caps_filter) {
             gstreamer::Element::link_many(&[
                 &video_source,
+                &video_source_queue,
                 &caps_filter,
                 &video_queue,
                 &video_clocksync,
@@ -501,27 +521,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &va_caps_filter,
                 &video_encoder,
             ])?;
-        } else {
+        } else if video_encoder_info.encoder_api == EncoderAPI::NVENC {
             // NVENC pipeline
-            if let (Some(glupload), Some(glconvert), Some(gl_caps_filter), Some(cudaupload)) =
-                (&glupload, &glconvert, &gl_caps_filter, &cudaupload)
-            {
-                gstreamer::Element::link_many(&[
-                    &video_source,
-                    &caps_filter,
-                    &video_queue,
-                    &video_clocksync,
-                    &glupload,
-                    &glconvert,
-                    &gl_caps_filter,
-                    &cudaupload,
-                    &video_encoder,
-                ])?;
-            }
+            gstreamer::Element::link_many(&[
+                &video_source,
+                &video_source_queue,
+                &caps_filter,
+                &video_encoder,
+            ])?;
         }
     } else {
         gstreamer::Element::link_many(&[
             &video_source,
+            &video_source_queue,
             &caps_filter,
             &video_queue,
             &video_clocksync,
@@ -537,8 +549,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         gstreamer::Element::link_many(&[&video_encoder, webrtcsink.upcast_ref()])?;
     }
 
-    // Set QOS
-    video_encoder.set_property("qos", true);
+    // Make sure QOS is disabled to avoid latency
+    video_encoder.set_property("qos", false);
 
     // Optimize latency of pipeline
     video_source
