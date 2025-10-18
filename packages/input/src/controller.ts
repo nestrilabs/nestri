@@ -475,22 +475,24 @@ export class Controller {
 
         // Trigger actual rumble
         // Need to remap from 0-65535 to 0.0-1.0 ranges
+        const clampedLowFreq = Math.max(0, Math.min(65535, rumbleMsg.lowFrequency));
         const rumbleLowFreq = this.remapFromTo(
-          rumbleMsg.lowFrequency,
+          clampedLowFreq,
           0,
           65535,
           0.0,
           1.0,
         );
+        const clampedHighFreq = Math.max(0, Math.min(65535, rumbleMsg.highFrequency));
         const rumbleHighFreq = this.remapFromTo(
-          rumbleMsg.highFrequency,
+          clampedHighFreq,
           0,
           65535,
           0.0,
           1.0,
         );
-        // If duration is too high, cap to 5000, some games are weird
-        const rumbleDuration = rumbleMsg.duration >= 5000 ? 5000 : rumbleMsg.duration;
+        // Cap to valid range (max 5000)
+        const rumbleDuration = Math.max(0, Math.min(5000, rumbleMsg.duration));
         if (this.gamepad.vibrationActuator) {
           this.gamepad.vibrationActuator.playEffect("dual-rumble", {
             startDelay: 0,
