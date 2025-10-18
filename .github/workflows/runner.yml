@@ -45,8 +45,6 @@ jobs:
             - 
               name: Setup Docker Buildx
               uses: docker/setup-buildx-action@v3
-              with:
-                driver: docker
             -
               name: Set Swap Space
               uses: pierotofy/set-swap-space@master
