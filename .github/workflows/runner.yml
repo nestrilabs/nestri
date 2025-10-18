@@ -140,34 +140,30 @@ jobs:
               with:
                 swap-size-gb: 20
             - 
-              name: Build runner-base image
+              name: Build and push runner-base image
               uses: docker/build-push-action@v6
               with:
                 file: containerfiles/runner-base.Containerfile
                 context: ./
-                push: false
-                load: true
-                tags: runner-base:latest${{ matrix.variant.suffix }}
+                push: true
+                tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-base:latest${{ matrix.variant.suffix }}
                 build-args: |
                   BASE_IMAGE=${{ matrix.variant.base }}
                 cache-from: type=gha,scope=runner-base${{ matrix.variant.suffix }},mode=max
                 cache-to: type=gha,scope=runner-base${{ matrix.variant.suffix }},mode=max
                 pull: ${{ github.event_name == 'schedule' }}
-                outputs: type=docker
             -
-              name: Build runner-builder image
+              name: Build and push runner-builder image
               uses: docker/build-push-action@v6
               with:
                 file: containerfiles/runner-builder.Containerfile
                 context: ./
-                push: false
-                load: true
-                tags: runner-builder:latest${{ matrix.variant.suffix }}
+                push: true
+                tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-builder:latest${{ matrix.variant.suffix }}
                 build-args: |
-                  RUNNER_BASE_TAG=latest${{ matrix.variant.suffix }}
+                  RUNNER_BASE_TAG=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-base:latest${{ matrix.variant.suffix }}
                 cache-from: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
                 cache-to: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
-                outputs: type=docker
             -
               name: Build and push runner image
               uses: docker/build-push-action@v6
@@ -178,7 +174,7 @@ jobs:
                 tags: ${{ steps.meta-runner.outputs.tags }}
                 labels: ${{ steps.meta-runner.outputs.labels }}
                 build-args: |
-                  RUNNER_BASE_IMAGE=runner-base:latest${{ matrix.variant.suffix }}
-                  RUNNER_BUILDER_IMAGE=runner-builder:latest${{ matrix.variant.suffix }}
+                  RUNNER_BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-base:latest${{ matrix.variant.suffix }}
+                  RUNNER_BUILDER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-builder:latest${{ matrix.variant.suffix }}
                 cache-from: type=gha,scope=runner${{ matrix.variant.suffix }},mode=max
                 cache-to: type=gha,scope=runner${{ matrix.variant.suffix }},mode=max
