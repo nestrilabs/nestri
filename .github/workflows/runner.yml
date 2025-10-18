@@ -153,6 +153,7 @@ jobs:
                 cache-from: type=gha,scope=runner-base${{ matrix.variant.suffix }},mode=max
                 cache-to: type=gha,scope=runner-base${{ matrix.variant.suffix }},mode=max
                 pull: ${{ github.event_name == 'schedule' }}
+                outputs: type=docker
             -
               name: Build runner-builder image
               uses: docker/build-push-action@v6
@@ -166,6 +167,7 @@ jobs:
                   RUNNER_BASE_TAG=latest${{ matrix.variant.suffix }}
                 cache-from: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
                 cache-to: type=gha,scope=runner-builder${{ matrix.variant.suffix }},mode=max
+                outputs: type=docker
             -
               name: Build and push runner image
               uses: docker/build-push-action@v6

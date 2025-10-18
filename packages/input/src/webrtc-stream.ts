@@ -29,7 +29,7 @@ export class WebRTCStream {
   private _serverURL: string | undefined = undefined;
   private _roomName: string | undefined = undefined;
   private _isConnected: boolean = false;
-  private _dataChannelCallbacks: Map<string, (data: any) => void> = new Map();
+  private _dataChannelCallbacks: Array<(data: any) => void> = [];
   currentFrameRate: number = 60;
 
   constructor(
@@ -268,7 +268,6 @@ export class WebRTCStream {
       this._pc.iceConnectionState === "failed"
     ) {
       console.log("PeerConnection failed or closed");
-      this._dataChannelCallbacks = new Map();
       //this._isConnected = false; // Reset connected state
       //this._handleConnectionFailure();
     }
@@ -319,6 +318,7 @@ export class WebRTCStream {
         console.error("Error closing data channel:", err);
       }
       this._dataChannel = undefined;
+      this._dataChannelCallbacks = [];
     }
     this._isConnected = false; // Reset connected state during cleanup
   }
@@ -330,12 +330,12 @@ export class WebRTCStream {
     }
   }
 
-  public registerDataChannelCallback(label: string, callback: (data: any) => void) {
-    this._dataChannelCallbacks.set(label, callback);
+  public addDataChannelCallback(callback: (data: any) => void) {
+    this._dataChannelCallbacks.push(callback);
   }
 
-  public unregisterDataChannelCallback(label: string) {
-    this._dataChannelCallbacks.delete(label);
+  public removeDataChannelCallback(callback: (data: any) => void) {
+    this._dataChannelCallbacks = this._dataChannelCallbacks.filter(cb => cb !== callback);
   }
 
   private _setupDataChannelEvents() {
@@ -347,11 +347,11 @@ export class WebRTCStream {
       // Parse as ProtoBuf message
       const data = event.data;
       // Call registered callback if exists
-      this._dataChannelCallbacks.forEach((callback, label) => {
+      this._dataChannelCallbacks.forEach((callback) => {
         try {
           callback(data);
         } catch (err) {
-          console.error(`Error in data channel callback for label ${label}:`, err);
+          console.error("Error in data channel callback:", err);
         }
       });
     });

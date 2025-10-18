@@ -13,7 +13,6 @@ import {
   ProtoControllerTriggerSchema,
   ProtoControllerAxisSchema,
   ProtoControllerStickSchema,
-  ProtoControllerRumbleSchema,
   ProtoControllerRumble,
 } from "./proto/types_pb";
 import { create, toBinary, fromBinary } from "@bufbuild/protobuf";
@@ -38,7 +37,7 @@ interface GamepadState {
 export class Controller {
   protected wrtc: WebRTCStream;
   protected slot: number;
-  protected connected!: boolean;
+  protected connected: boolean = false;
   protected gamepad: Gamepad | null = null;
   protected lastState: GamepadState = {
     buttonState: new Map<number, boolean>(),
@@ -94,50 +93,7 @@ export class Controller {
     this.wrtc.sendBinary(toBinary(ProtoMessageInputSchema, message));
 
     // Listen to feedback rumble events from server
-    this.wrtc.registerDataChannelCallback("input", (data: ArrayBuffer) => {
-      try {
-        // First decode the wrapper message
-        const uint8Data = new Uint8Array(data);
-        const messageWrapper = fromBinary(ProtoMessageInputSchema, uint8Data);
-
-        // Check if it contains controller rumble data
-        if (messageWrapper.data?.inputType?.case === "controllerRumble") {
-          const rumbleMsg = messageWrapper.data.inputType.value as ProtoControllerRumble;
-
-          // Check if aimed at this controller slot
-          if (rumbleMsg.slot !== this.slot) return;
-
-          // Trigger actual rumble
-          // Need to remap from 0-65535 to 0.0-1.0 ranges
-          const rumbleLowFreq = this.remapFromTo(
-            rumbleMsg.lowFrequency,
-            0,
-            65535,
-            0.0,
-            1.0,
-          );
-          const rumbleHighFreq = this.remapFromTo(
-            rumbleMsg.highFrequency,
-            0,
-            65535,
-            0.0,
-            1.0,
-          );
-          // If duration is too high, cap to 5000, some games are weird
-          const rumbleDuration = rumbleMsg.duration >= 5000 ? 5000 : rumbleMsg.duration;
-          if (this.gamepad.vibrationActuator) {
-            this.gamepad.vibrationActuator.playEffect("dual-rumble", {
-              startDelay: 0,
-              duration: rumbleDuration,
-              weakMagnitude: rumbleLowFreq,
-              strongMagnitude: rumbleHighFreq,
-            }).catch(console.error);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to decode rumble message:", error);
-      }
-    });
+    this.wrtc.addDataChannelCallback(this.rumbleCallback);
 
     this.run();
   }
@@ -204,6 +160,13 @@ export class Controller {
           if (index === 6 || index === 7) return;
           // If state differs, send
           if (button.pressed !== this.lastState.buttonState.get(index)) {
+            const linuxCode = this.controllerButtonToVirtualKeyCode(index);
+            if (linuxCode === undefined) {
+              // Skip unmapped button index
+              this.lastState.buttonState.set(index, button.pressed);
+              return;
+            }
+
             const buttonProto = create(ProtoInputSchema, {
               $typeName: "proto.ProtoInput",
               inputType: {
@@ -211,7 +174,7 @@ export class Controller {
                 value: create(ProtoControllerButtonSchema, {
                   type: "ControllerButton",
                   slot: this.slot,
-                  button: this.controllerButtonToVirtualKeyCode(index),
+                  button: linuxCode,
                   pressed: button.pressed,
                 }),
               },
@@ -235,7 +198,7 @@ export class Controller {
         /* Trigger handling */
         // map trigger value from 0.0 to 1.0 to -32768 to 32767
         const leftTrigger = Math.round(
-          this.remapFromTo(gamepad.buttons[6]?.value, 0, 1, -32768, 32767),
+          this.remapFromTo(gamepad.buttons[6]?.value ?? 0, 0, 1, -32768, 32767),
         );
         // If state differs, send
         if (leftTrigger !== this.lastState.leftTrigger) {
@@ -265,7 +228,7 @@ export class Controller {
           );
         }
         const rightTrigger = Math.round(
-          this.remapFromTo(gamepad.buttons[7]?.value, 0, 1, -32768, 32767),
+          this.remapFromTo(gamepad.buttons[7]?.value ?? 0, 0, 1, -32768, 32767),
         );
         // If state differs, send
         if (rightTrigger !== this.lastState.rightTrigger) {
@@ -355,8 +318,8 @@ export class Controller {
 
         /* Stick handling */
         // stick values need to be mapped from -1.0 to 1.0 to -32768 to 32767
-        const leftX = this.remapFromTo(gamepad.axes[0], -1, 1, -32768, 32767);
-        const leftY = this.remapFromTo(gamepad.axes[1], -1, 1, -32768, 32767);
+        const leftX = this.remapFromTo(gamepad.axes[0] ?? 0, -1, 1, -32768, 32767);
+        const leftY = this.remapFromTo(gamepad.axes[1] ?? 0, -1, 1, -32768, 32767);
         // Apply deadzone
         const sendLeftX =
           Math.abs(leftX) > this.stickDeadzone ? Math.round(leftX) : 0;
@@ -395,8 +358,8 @@ export class Controller {
           this.wrtc.sendBinary(toBinary(ProtoMessageInputSchema, stickMessage));
         }
 
-        const rightX = this.remapFromTo(gamepad.axes[2], -1, 1, -32768, 32767);
-        const rightY = this.remapFromTo(gamepad.axes[3], -1, 1, -32768, 32767);
+        const rightX = this.remapFromTo(gamepad.axes[2] ?? 0, -1, 1, -32768, 32767);
+        const rightY = this.remapFromTo(gamepad.axes[3] ?? 0, -1, 1, -32768, 32767);
         // Apply deadzone
         const sendRightX =
           Math.abs(rightX) > this.stickDeadzone ? Math.round(rightX) : 0;
@@ -462,6 +425,8 @@ export class Controller {
 
   public dispose() {
     this.stop();
+    // Remove callback
+    this.wrtc.removeDataChannelCallback(this.rumbleCallback);
     // Gamepad disconnected
     const detachMsg = create(ProtoInputSchema, {
       $typeName: "proto.ProtoInput",
@@ -486,5 +451,52 @@ export class Controller {
 
   private controllerButtonToVirtualKeyCode(code: number) {
     return controllerButtonToLinuxEventCode[code] || undefined;
+  }
+
+  private rumbleCallback(data: ArrayBuffer) {
+    // If not connected, ignore
+    if (!this.connected) return;
+    try {
+      // First decode the wrapper message
+      const uint8Data = new Uint8Array(data);
+      const messageWrapper = fromBinary(ProtoMessageInputSchema, uint8Data);
+
+      // Check if it contains controller rumble data
+      if (messageWrapper.data?.inputType?.case === "controllerRumble") {
+        const rumbleMsg = messageWrapper.data.inputType.value as ProtoControllerRumble;
+
+        // Check if aimed at this controller slot
+        if (rumbleMsg.slot !== this.slot) return;
+
+        // Trigger actual rumble
+        // Need to remap from 0-65535 to 0.0-1.0 ranges
+        const rumbleLowFreq = this.remapFromTo(
+          rumbleMsg.lowFrequency,
+          0,
+          65535,
+          0.0,
+          1.0,
+        );
+        const rumbleHighFreq = this.remapFromTo(
+          rumbleMsg.highFrequency,
+          0,
+          65535,
+          0.0,
+          1.0,
+        );
+        // If duration is too high, cap to 5000, some games are weird
+        const rumbleDuration = rumbleMsg.duration >= 5000 ? 5000 : rumbleMsg.duration;
+        if (this.gamepad.vibrationActuator) {
+          this.gamepad.vibrationActuator.playEffect("dual-rumble", {
+            startDelay: 0,
+            duration: rumbleDuration,
+            weakMagnitude: rumbleLowFreq,
+            strongMagnitude: rumbleHighFreq,
+          }).catch(console.error);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to decode rumble message:", error);
+    }
   }
 }

@@ -107,7 +107,14 @@ async fn command_loop(
                                     let _ = rumble_tx.try_send((slot, strong, weak, duration_ms));
                                 })
                                 .await
-                                .unwrap();
+                                .map_err(|e| {
+                                    tracing::warn!(
+                                        "Failed to register rumble callback for slot {}: {}",
+                                        slot,
+                                        e
+                                    );
+                                })
+                                .ok();
 
                             controllers.insert(data.slot as u32, controller);
                             tracing::info!("Controller {} attached to slot {}", data.id, data.slot);

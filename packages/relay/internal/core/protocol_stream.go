@@ -40,15 +40,15 @@ type StreamConnection struct {
 // StreamProtocol deals with meshed stream forwarding
 type StreamProtocol struct {
 	relay          *Relay
-	servedConns    *common.SafeMap[peer.ID, *StreamConnection] // peer ID -> StreamConnection (for served streams)
-	incomingConns  *common.SafeMap[string, *StreamConnection]  // room name -> StreamConnection (for incoming pushed streams)
-	requestedConns *common.SafeMap[string, *StreamConnection]  // room name -> StreamConnection (for requested streams from other relays)
+	servedConns    *common.SafeMap[string, *common.SafeMap[peer.ID, *StreamConnection]] // room name -> (peer ID -> StreamConnection) (for served streams)
+	incomingConns  *common.SafeMap[string, *StreamConnection]                           // room name -> StreamConnection (for incoming pushed streams)
+	requestedConns *common.SafeMap[string, *StreamConnection]                           // room name -> StreamConnection (for requested streams from other relays)
 }
 
 func NewStreamProtocol(relay *Relay) *StreamProtocol {
 	protocol := &StreamProtocol{
 		relay:          relay,
-		servedConns:    common.NewSafeMap[peer.ID, *StreamConnection](),
+		servedConns:    common.NewSafeMap[string, *common.SafeMap[peer.ID, *StreamConnection]](),
 		incomingConns:  common.NewSafeMap[string, *StreamConnection](),
 		requestedConns: common.NewSafeMap[string, *StreamConnection](),
 	}
@@ -66,6 +66,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 	brw := bufio.NewReadWriter(bufio.NewReader(stream), bufio.NewWriter(stream))
 	safeBRW := common.NewSafeBufioRW(brw)
 
+	var currentRoomName string // Track the current room for this stream
 	iceHolder := make([]webrtc.ICECandidateInit, 0)
 	for {
 		data, err := safeBRW.Receive()
@@ -101,7 +102,9 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				continue
 			}
 
+			currentRoomName = roomName // Store the room name
 			slog.Info("Received stream request for room", "room", roomName)
+
 			room := sp.relay.GetRoomByName(roomName)
 			if room == nil || !room.IsOnline() || room.OwnerID != sp.relay.ID {
 				// TODO: Allow forward requests to other relays from here?
@@ -126,8 +129,12 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 			pc, err := common.CreatePeerConnection(func() {
 				slog.Info("PeerConnection closed for requested stream", "room", roomName)
 				// Cleanup the stream connection
-				if ok := sp.servedConns.Has(stream.Conn().RemotePeer()); ok {
-					sp.servedConns.Delete(stream.Conn().RemotePeer())
+				if roomMap, ok := sp.servedConns.Get(roomName); ok {
+					roomMap.Delete(stream.Conn().RemotePeer())
+					// If the room map is empty, delete it
+					if roomMap.Len() == 0 {
+						sp.servedConns.Delete(roomName)
+					}
 				}
 			})
 			if err != nil {
@@ -204,7 +211,12 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 			}
 
 			// Store the connection
-			sp.servedConns.Set(stream.Conn().RemotePeer(), &StreamConnection{
+			roomMap, ok := sp.servedConns.Get(roomName)
+			if !ok {
+				roomMap = common.NewSafeMap[peer.ID, *StreamConnection]()
+				sp.servedConns.Set(roomName, roomMap)
+			}
+			roomMap.Set(stream.Conn().RemotePeer(), &StreamConnection{
 				pc:  pc,
 				ndc: ndc,
 			})
@@ -216,17 +228,25 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				slog.Error("Failed to unmarshal ICE message", "err", err)
 				continue
 			}
-			if conn, ok := sp.servedConns.Get(stream.Conn().RemotePeer()); ok && conn.pc.RemoteDescription() != nil {
-				if err := conn.pc.AddICECandidate(iceMsg.Candidate); err != nil {
-					slog.Error("Failed to add ICE candidate", "err", err)
-				}
-				for _, heldIce := range iceHolder {
-					if err := conn.pc.AddICECandidate(heldIce); err != nil {
-						slog.Error("Failed to add held ICE candidate", "err", err)
+			// Use currentRoomName to get the connection from nested map
+			if len(currentRoomName) > 0 {
+				if roomMap, ok := sp.servedConns.Get(currentRoomName); ok {
+					if conn, ok := roomMap.Get(stream.Conn().RemotePeer()); ok && conn.pc.RemoteDescription() != nil {
+						if err := conn.pc.AddICECandidate(iceMsg.Candidate); err != nil {
+							slog.Error("Failed to add ICE candidate", "err", err)
+						}
+						for _, heldIce := range iceHolder {
+							if err := conn.pc.AddICECandidate(heldIce); err != nil {
+								slog.Error("Failed to add held ICE candidate", "err", err)
+							}
+						}
+						// Clear the held candidates
+						iceHolder = make([]webrtc.ICECandidateInit, 0)
+					} else {
+						// Hold the candidate until remote description is set
+						iceHolder = append(iceHolder, iceMsg.Candidate)
 					}
 				}
-				// Clear the held candidates
-				iceHolder = make([]webrtc.ICECandidateInit, 0)
 			} else {
 				// Hold the candidate until remote description is set
 				iceHolder = append(iceHolder, iceMsg.Candidate)
@@ -237,12 +257,19 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				slog.Error("Failed to unmarshal answer from signaling message", "err", err)
 				continue
 			}
-			if conn, ok := sp.servedConns.Get(stream.Conn().RemotePeer()); ok {
-				if err := conn.pc.SetRemoteDescription(answerMsg.SDP); err != nil {
-					slog.Error("Failed to set remote description for answer", "err", err)
-					continue
+			// Use currentRoomName to get the connection from nested map
+			if len(currentRoomName) > 0 {
+				if roomMap, ok := sp.servedConns.Get(currentRoomName); ok {
+					if conn, ok := roomMap.Get(stream.Conn().RemotePeer()); ok {
+						if err := conn.pc.SetRemoteDescription(answerMsg.SDP); err != nil {
+							slog.Error("Failed to set remote description for answer", "err", err)
+							continue
+						}
+						slog.Debug("Set remote description for answer")
+					} else {
+						slog.Warn("Received answer without active PeerConnection")
+					}
 				}
-				slog.Debug("Set remote description for answer")
 			} else {
 				slog.Warn("Received answer without active PeerConnection")
 			}
@@ -570,15 +597,17 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				})
 				room.DataChannel.RegisterMessageCallback("input", func(data []byte) {
 					if room.DataChannel != nil {
-						// Pass to servedConns DataChannels
-						sp.servedConns.Range(func(peerID peer.ID, conn *StreamConnection) bool {
-							if conn.ndc != nil {
-								if err = conn.ndc.SendBinary(data); err != nil {
-									slog.Error("Failed to forward input message from pushed stream to viewer", "room", room.Name, "peer", peerID, "err", err)
+						// Pass to servedConns DataChannels for this specific room
+						if roomMap, ok := sp.servedConns.Get(room.Name); ok {
+							roomMap.Range(func(peerID peer.ID, conn *StreamConnection) bool {
+								if conn.ndc != nil {
+									if err = conn.ndc.SendBinary(data); err != nil {
+										slog.Error("Failed to forward input message from pushed stream to viewer", "room", room.Name, "peer", peerID, "err", err)
+									}
 								}
-							}
-							return true // Continue iteration
-						})
+								return true // Continue iteration
+							})
+						}
 					}
 				})
 
@@ -700,7 +729,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 func (sp *StreamProtocol) RequestStream(ctx context.Context, room *shared.Room, peerID peer.ID) error {
 	stream, err := sp.relay.Host.NewStream(ctx, peerID, protocolStreamRequest)
 	if err != nil {
-		return fmt.Errorf("failed to create stream request: %w", err)
+		return fmt.Errorf("failed to create stream: %w", err)
 	}
 
 	return sp.requestStream(stream, room)

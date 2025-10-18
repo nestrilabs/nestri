@@ -138,9 +138,8 @@ if (envs_map.size > 0) {
       nestriKeyboard = new Keyboard({
         webrtc: stream,
       });
-      if (nestriControllers.length > 0) {
-        nestriControllers.forEach((c) => c.run());
-      }
+
+      nestriControllers.forEach((c) => c.run());
 
       if ("keyboard" in navigator && "lock" in (navigator.keyboard as any)) {
         const keys = [
@@ -148,22 +147,18 @@ if (envs_map.size > 0) {
           "ContextMenu", "MetaLeft", "MetaRight"
         ];
 
-        try {
-          (navigator.keyboard as any).lock(keys).then(() => {
-            console.log("Keyboard lock acquired");
-          })
-        } catch (e) {
-          console.warn("Keyboard lock failed:", e);
-        }
+        (navigator.keyboard as any).lock(keys).then(() => {
+          console.log("Keyboard lock acquired");
+        }).catch((err: any) => {
+          console.error("Failed to acquire keyboard lock:", err);
+        });
       }
     } else {
       if (nestriKeyboard) {
         nestriKeyboard.dispose();
         nestriKeyboard = null;
       }
-      if (nestriControllers.length > 0) {
-        nestriControllers.forEach((c) => c.stop());
-      }
+      nestriControllers.forEach((c) => c.stop());
     }
   })
 

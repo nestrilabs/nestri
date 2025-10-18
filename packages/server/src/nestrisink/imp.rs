@@ -97,8 +97,8 @@ impl Signaller {
             let self_obj = self.obj().clone();
             stream_protocol.register_callback("answer", move |data| {
                 if let Ok(message) = serde_json::from_slice::<MessageSDP>(&data) {
-                    let sdp =
-                        gst_sdp::SDPMessage::parse_buffer(message.sdp.sdp.as_bytes()).unwrap();
+                    let sdp = gst_sdp::SDPMessage::parse_buffer(message.sdp.sdp.as_bytes())
+                        .map_err(|e| anyhow::anyhow!("Invalid SDP in 'answer': {e:?}"))?;
                     let answer = WebRTCSessionDescription::new(WebRTCSDPType::Answer, sdp);
                     Ok(self_obj.emit_by_name::<()>(
                         "session-description",
@@ -356,7 +356,7 @@ fn setup_data_channel(
     wayland_src: &gstreamer::Element,
 ) {
     let wayland_src = wayland_src.clone();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(1024);
 
     // Spawn async processor
     tokio::spawn(async move {
