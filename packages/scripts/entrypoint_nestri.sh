@@ -63,6 +63,15 @@ start_nestri_server() {
         rm -f "${WAYLAND_SOCKET}.lock" 2>/dev/null || true
     fi
 
+    # Also if gstreamer cache exists, remove it to avoid previous errors from persisting
+    local gst_cache="${NESTRI_HOME}/.cache/gstreamer-1.0/"
+    if [[ -d "$gst_cache" ]]; then
+        log "Removing gstreamer cache at $gst_cache"
+        rm -rf "${gst_cache}" 2>/dev/null || {
+            log "Warning: Failed to remove gstreamer cache at $gst_cache"
+        }
+    fi
+
     # Start nestri-server
     log "Starting nestri-server.."
     # Try with realtime scheduling first (chrt -f 80), if fails, launch normally

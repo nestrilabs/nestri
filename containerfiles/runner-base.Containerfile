@@ -19,4 +19,4 @@ RUN rustup default stable
 
 # Install cargo-chef with proper caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    cargo install -j $(nproc) cargo-chef cargo-c --locked
+    cargo install -j $(nproc) cargo-chef --locked

@@ -54,6 +54,7 @@ export class Controller {
   protected stickDeadzone: number = 2048; // 2048 / 32768 = ~0.06 (6% of stick range)
 
   private updateInterval = 10.0; // 100 updates per second
+  private _dcRumbleHandler: ((data: ArrayBuffer) => void) | null = null;
 
   constructor({ webrtc, e }: Props) {
     this.wrtc = webrtc;
@@ -93,7 +94,8 @@ export class Controller {
     this.wrtc.sendBinary(toBinary(ProtoMessageInputSchema, message));
 
     // Listen to feedback rumble events from server
-    this.wrtc.addDataChannelCallback(this.rumbleCallback.bind(this));
+    this._dcRumbleHandler = (data: any) => this.rumbleCallback(data as ArrayBuffer);
+    this.wrtc.addDataChannelCallback(this._dcRumbleHandler);
 
     this.run();
   }
@@ -426,7 +428,10 @@ export class Controller {
   public dispose() {
     this.stop();
     // Remove callback
-    this.wrtc.removeDataChannelCallback(this.rumbleCallback.bind(this));
+    if (this._dcRumbleHandler !== null) {
+      this.wrtc.removeDataChannelCallback(this._dcRumbleHandler);
+      this._dcRumbleHandler = null;
+    }
     // Gamepad disconnected
     const detachMsg = create(ProtoInputSchema, {
       $typeName: "proto.ProtoInput",

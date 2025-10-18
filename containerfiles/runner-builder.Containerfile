@@ -105,7 +105,25 @@ WORKDIR /builder
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
     libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good \
-    gst-plugins-bad libinput cuda nvidia-utils --assume-installed opencl-nvidia
+    gst-plugins-bad libinput wget
+
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    cargo install cargo-c
+
+# Grab cudart from NVIDIA..
+RUN wget https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-13.0.96-archive.tar.xz -O cuda_cudart.tar.xz && \
+    mkdir cuda_cudart && tar -xvf cuda_cudart.tar.xz -C cuda_cudart --strip-components=1 && \
+    cp cuda_cudart/lib/libcudart.so cuda_cudart/lib/libcudart.so.* /usr/lib/ && \
+    rm -r cuda_cudart && \
+    rm cuda_cudart.tar.xz
+
+# Grab cuda lib from NVIDIA (it's in driver package of all things..)
+RUN wget https://developer.download.nvidia.com/compute/cuda/redist/nvidia_driver/linux-x86_64/nvidia_driver-linux-x86_64-580.95.05-archive.tar.xz -O nvidia_driver.tar.xz && \
+    mkdir nvidia_driver && tar -xvf nvidia_driver.tar.xz -C nvidia_driver --strip-components=1 && \
+    cp nvidia_driver/lib/libcuda.so.* /usr/lib/libcuda.so && \
+    ln -s /usr/lib/libcuda.so /usr/lib/libcuda.so.1 && \
+    rm -r nvidia_driver && \
+    rm nvidia_driver.tar.xz
 
 # Clone repository
 RUN git clone --depth 1 --rev "afa853fa03e8403c83bbb3bc0cf39147ad46c266" https://github.com/games-on-whales/gst-wayland-display.git
@@ -178,5 +196,5 @@ COPY --from=gst-wayland-cached-builder /artifacts/include/ /artifacts/include/
 COPY --from=vimputti-manager-cached-builder /artifacts/vimputti-manager /artifacts/bin/
 COPY --from=vimputti-manager-cached-builder /artifacts/libvimputti_shim_64.so /artifacts/lib64/
 COPY --from=vimputti-manager-cached-builder /artifacts/libvimputti_shim_32.so /artifacts/lib32/
-COPY --from=gst-wayland-deps /usr/lib/libcuda.so.1 /artifacts/lib/
+COPY --from=gst-wayland-deps /usr/lib/libcuda.so /usr/lib/libcuda.so.* /artifacts/lib/
 COPY --from=bubblewrap-builder /artifacts/bin/bwrap /artifacts/bin/
