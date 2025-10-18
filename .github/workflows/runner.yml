@@ -66,6 +66,8 @@ jobs:
                 tags: runner-base:latest
                 build-args: |
                   BASE_IMAGE=${{ env.BASE_IMAGE }}
+                cache-from: type=gha,scope=runner-base-pr
+                cache-to: type=gha,scope=runner-base-pr,mode=max
             -
               name: Build runner-builder image
               uses: docker/build-push-action@v6
@@ -77,6 +79,8 @@ jobs:
                 tags: runner-builder:latest
                 build-args: |
                   RUNNER_BASE_IMAGE=runner-base:latest
+                cache-from: type=gha,scope=runner-builder-pr
+                cache-to: type=gha,scope=runner-builder-pr,mode=max
             -
               name: Build runner image
               uses: docker/build-push-action@v6
@@ -89,6 +93,8 @@ jobs:
                 build-args: |
                   RUNNER_BASE_IMAGE=runner-base:latest
                   RUNNER_BUILDER_IMAGE=runner-builder:latest
+                cache-from: type=gha,scope=runner-pr
+                cache-to: type=gha,scope=runner-pr,mode=max
 
     build-and-push-docker:
         name: Build and push images
