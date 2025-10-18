@@ -9,6 +9,27 @@ FROM ${RUNNER_BASE_IMAGE} AS base-builder
 ENV ARTIFACTS=/artifacts
 RUN mkdir -p "${ARTIFACTS}"
 
+# Environment setup for Rust and Cargo
+ENV CARGO_HOME=/usr/local/cargo \
+    PATH="${CARGO_HOME}/bin:${PATH}"
+
+# Install build essentials and caching tools
+RUN --mount=type=cache,target=/var/cache/pacman/pkg \
+    pacman -Sy --noconfirm rustup git base-devel mold \
+    meson pkgconf cmake git gcc make
+
+# Override various linker with symlink so mold is forcefully used (ld, ld.lld, lld)
+RUN ln -sf /usr/bin/mold /usr/bin/ld && \
+    ln -sf /usr/bin/mold /usr/bin/ld.lld && \
+    ln -sf /usr/bin/mold /usr/bin/lld
+
+# Install latest Rust using rustup
+RUN rustup default stable
+
+# Install cargo-chef with proper caching
+RUN --mount=type=cache,target=${CARGO_HOME}/registry \
+    cargo install -j $(nproc) cargo-chef --locked
+
 #*******************************#
 # vimputti manager build stages #
 #*******************************#
@@ -17,7 +38,7 @@ WORKDIR /builder
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -Sy --noconfirm meson pkgconf cmake git gcc make lib32-gcc-libs
+    pacman -Sy --noconfirm lib32-gcc-libs
 
 # Clone repository
 RUN git clone --depth 1 --rev "9e8bfd0217eeab011c5afc368d3ea67a4c239e81" https://github.com/DatCaptainHorse/vimputti.git
@@ -62,8 +83,7 @@ WORKDIR /builder
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
-    gstreamer gst-plugins-base gst-plugins-good gst-plugin-rswebrtc
+    pacman -Sy --noconfirm gst-plugins-good gst-plugin-rswebrtc
 
 #--------------------------------------------------------------------
 FROM nestri-server-deps AS nestri-server-planner
@@ -103,23 +123,22 @@ WORKDIR /builder
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -Sy --noconfirm meson pkgconf cmake git gcc make \
-    libxkbcommon wayland gstreamer gst-plugins-base gst-plugins-good \
-    gst-plugins-bad libinput wget
+    pacman -Sy --noconfirm libxkbcommon wayland \
+    gst-plugins-good gst-plugins-bad libinput
 
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo install cargo-c
 
 # Grab cudart from NVIDIA..
 RUN wget https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-13.0.96-archive.tar.xz -O cuda_cudart.tar.xz && \
-    mkdir cuda_cudart && tar -xvf cuda_cudart.tar.xz -C cuda_cudart --strip-components=1 && \
+    mkdir cuda_cudart && tar -xf cuda_cudart.tar.xz -C cuda_cudart --strip-components=1 && \
     cp cuda_cudart/lib/libcudart.so cuda_cudart/lib/libcudart.so.* /usr/lib/ && \
     rm -r cuda_cudart && \
     rm cuda_cudart.tar.xz
 
 # Grab cuda lib from NVIDIA (it's in driver package of all things..)
 RUN wget https://developer.download.nvidia.com/compute/cuda/redist/nvidia_driver/linux-x86_64/nvidia_driver-linux-x86_64-580.95.05-archive.tar.xz -O nvidia_driver.tar.xz && \
-    mkdir nvidia_driver && tar -xvf nvidia_driver.tar.xz -C nvidia_driver --strip-components=1 && \
+    mkdir nvidia_driver && tar -xf nvidia_driver.tar.xz -C nvidia_driver --strip-components=1 && \
     cp nvidia_driver/lib/libcuda.so.* /usr/lib/libcuda.so && \
     ln -s /usr/lib/libcuda.so /usr/lib/libcuda.so.1 && \
     rm -r nvidia_driver && \
@@ -164,8 +183,7 @@ WORKDIR /builder
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -Sy --noconfirm git meson pkgconf cmake git gcc make \
-    libtool libcap libselinux
+    pacman -Sy --noconfirm libtool libcap libselinux
 
 # Copy patch file from host
 COPY packages/patches/bubblewrap/ /builder/patches/
@@ -194,7 +212,7 @@ COPY --from=nestri-server-cached-builder /artifacts/nestri-server /artifacts/bin
 COPY --from=gst-wayland-cached-builder /artifacts/lib/ /artifacts/lib/
 COPY --from=gst-wayland-cached-builder /artifacts/include/ /artifacts/include/
 COPY --from=vimputti-manager-cached-builder /artifacts/vimputti-manager /artifacts/bin/
-COPY --from=vimputti-manager-cached-builder /artifacts/libvimputti_shim_64.so /artifacts/lib64/
-COPY --from=vimputti-manager-cached-builder /artifacts/libvimputti_shim_32.so /artifacts/lib32/
+COPY --from=vimputti-manager-cached-builder /artifacts/libvimputti_shim_64.so /artifacts/lib64/libvimputti_shim.so
+COPY --from=vimputti-manager-cached-builder /artifacts/libvimputti_shim_32.so /artifacts/lib32/libvimputti_shim.so
 COPY --from=gst-wayland-deps /usr/lib/libcuda.so /usr/lib/libcuda.so.* /artifacts/lib/
 COPY --from=bubblewrap-builder /artifacts/bin/bwrap /artifacts/bin/

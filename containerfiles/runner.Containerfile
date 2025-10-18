@@ -16,14 +16,13 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
         vulkan-intel lib32-vulkan-intel vpl-gpu-rt \
         vulkan-radeon lib32-vulkan-radeon \
         mesa lib32-mesa \
-        steam steam-native-runtime gtk3 \
+        steam gtk3 lib32-gtk3 \
         sudo xorg-xwayland seatd libinput gamescope mangohud wlr-randr \
-        libssh2 curl wget libevdev libc++abi \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
-        noto-fonts-cjk supervisor jq chwd lshw pacman-contrib \
+        noto-fonts-cjk supervisor jq pacman-contrib \
         hwdata openssh \
     # GStreamer stack
-        gstreamer gst-plugins-base gst-plugins-good \
+        gst-plugins-good \
         gst-plugins-bad gst-plugin-pipewire \
         gst-plugin-webrtchttp gst-plugin-rswebrtc gst-plugin-rsrtp \
         gst-plugin-va gst-plugin-qsv && \
@@ -79,7 +78,6 @@ COPY --from=builder /artifacts/bin/bwrap /usr/bin/
 COPY --from=builder /artifacts/lib/ /usr/lib/
 COPY --from=builder /artifacts/lib32/ /usr/lib32/
 COPY --from=builder /artifacts/lib64/ /usr/lib64/
-COPY --from=builder /artifacts/include/ /usr/include/
 COPY --from=builder /artifacts/bin/vimputti-manager /usr/bin/
 
 ### Scripts and Final Configuration ###

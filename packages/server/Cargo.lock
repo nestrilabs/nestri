@@ -5078,9 +5078,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vimputti"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd46129d83a466ea2f4e8d8259ddc89b9426e8c2c68bb04d4fba4b517d13c5fb"
+checksum = "4a5839a89185ccec572f746ccc02e37702cc6c0b62a6aa0d9bcd6e5921edba12"
 dependencies = [
  "anyhow",
  "libc",

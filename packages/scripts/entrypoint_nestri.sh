@@ -32,8 +32,8 @@ MAX_RETRIES=3
 RETRY_COUNT=0
 WAYLAND_READY_DELAY=3
 ENTCMD_PREFIX=""
-PRELOAD_SHIM_64=/usr/lib64/libvimputti_shim_64.so
-PRELOAD_SHIM_32=/usr/lib32/libvimputti_shim_32.so
+PRELOAD_SHIM_64=/usr/lib64/libvimputti_shim.so
+PRELOAD_SHIM_32=/usr/lib32/libvimputti_shim.so
 
 # Kills process if running
 kill_if_running() {
@@ -108,25 +108,17 @@ start_compositor() {
 
     # Set default values only if variables are unset (not empty)
     if [[ -z "${NESTRI_LAUNCH_CMD+x}" ]]; then
-        NESTRI_LAUNCH_CMD="dbus-launch steam-native -tenfoot -cef-force-gpu"
+        NESTRI_LAUNCH_CMD="dbus-launch steam -tenfoot -cef-force-gpu"
     fi
     if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
         NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
 
     # If PRELOAD_SHIM_arch's are set and exist, set LD_PRELOAD for 32/64-bit apps
-    local ld_preload=""
+    local do_ld_preload=false
     if [[ -n "$PRELOAD_SHIM_64" ]] || [[ -n "$PRELOAD_SHIM_32" ]]; then
-        if [[ -f "$PRELOAD_SHIM_64" ]]; then
-            ld_preload="$PRELOAD_SHIM_64"
-        fi
-        if [[ -f "$PRELOAD_SHIM_32" ]]; then
-            if [[ -n "$ld_preload" ]]; then
-                ld_preload+=":"
-            fi
-            ld_preload+="$PRELOAD_SHIM_32"
-        fi
-        log "Using LD_PRELOAD shim(s): $ld_preload"
+        do_ld_preload=true
+        log "Using LD_PRELOAD shim(s)"
     fi
 
     # Launch compositor if configured
@@ -142,11 +134,11 @@ start_compositor() {
                 if [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
                     compositor_cmd+=" -e"
                 fi
-                # If ld_preload is set, add it to the launch command
-                if [[ -n "$ld_preload" ]]; then
-                    compositor_cmd+=" -- bash -c \"LD_PRELOAD=$ld_preload $NESTRI_LAUNCH_CMD\""
+                # If ld_preload is true, add env with LD_PRELOAD
+                if $do_ld_preload; then
+                    compositor_cmd+=" -- env LD_PRELOAD='/usr/\$LIB/libvimputti_shim.so' bash -c $(printf %q "$NESTRI_LAUNCH_CMD")"
                 else
-                    compositor_cmd+=" -- bash -c \"$NESTRI_LAUNCH_CMD\""
+                    compositor_cmd+=" -- bash -c $(printf %q "$NESTRI_LAUNCH_CMD")"
                 fi
             fi
         fi
@@ -173,9 +165,9 @@ start_compositor() {
         WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$compositor_cmd" &
         COMPOSITOR_PID=$!
 
-        # If ld_preload is set, export as LD_PRELOAD
-        if [[ -n "$ld_preload" ]]; then
-            export LD_PRELOAD="$ld_preload"
+        # If ld_preload is true, export LD_PRELOAD
+        if $do_ld_preload; then
+            export LD_PRELOAD='/usr/$LIB/libvimputti_shim.so'
         fi
 
         log "Waiting for compositor socket $COMPOSITOR_SOCKET.."
