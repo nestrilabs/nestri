@@ -42,59 +42,19 @@ jobs:
             packages: write
         if: ${{ github.event_name == 'pull_request' }}
         steps:
-            -
-              name: Checkout repo
-              uses: actions/checkout@v4
             - 
               name: Setup Docker Buildx
               uses: docker/setup-buildx-action@v3
               with:
                 driver: docker
-            - 
-              name: Set Swap Space
-              uses: pierotofy/set-swap-space@master
+            - name: Build images using bake
+              uses: docker/bake-action@v6
               with:
-                swap-size-gb: 20
-            - 
-              name: Build runner-base image
-              uses: docker/build-push-action@v6
-              with:
-                file: containerfiles/runner-base.Containerfile
-                context: ./
+                files: |
+                  ./docker-bake.hcl
+                targets: runner-base runner-builder runner
                 push: false
                 load: true
-                tags: runner-base:latest
-                build-args: |
-                  BASE_IMAGE=${{ env.BASE_IMAGE }}
-                cache-from: type=gha,scope=runner-base-pr
-                cache-to: type=gha,scope=runner-base-pr,mode=max
-            -
-              name: Build runner-builder image
-              uses: docker/build-push-action@v6
-              with:
-                file: containerfiles/runner-builder.Containerfile
-                context: ./
-                push: false
-                load: true
-                tags: runner-builder:latest
-                build-args: |
-                  RUNNER_BASE_IMAGE=runner-base:latest
-                cache-from: type=gha,scope=runner-builder-pr
-                cache-to: type=gha,scope=runner-builder-pr,mode=max
-            -
-              name: Build runner image
-              uses: docker/build-push-action@v6
-              with:
-                file: containerfiles/runner.Containerfile
-                context: ./
-                push: false
-                load: true
-                tags: nestri-runner
-                build-args: |
-                  RUNNER_BASE_IMAGE=runner-base:latest
-                  RUNNER_BUILDER_IMAGE=runner-builder:latest
-                cache-from: type=gha,scope=runner-pr
-                cache-to: type=gha,scope=runner-pr,mode=max
 
     build-and-push-docker:
         name: Build and push images
