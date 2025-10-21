@@ -106,7 +106,7 @@ if (envs_map.size > 0) {
     if (e.gamepad.id.toLowerCase().includes("nestri"))
       return;
 
-    let disconnected = nestriControllers.find((c) => c.getSlot() === e.gamepad.index);
+    let disconnected = nestriControllers.find((c) => c.getLocalSlot() === e.gamepad.index);
     if (disconnected) {
       disconnected.dispose();
       nestriControllers = nestriControllers.filter((c) => c !== disconnected);

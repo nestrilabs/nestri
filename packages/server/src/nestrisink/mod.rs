@@ -19,6 +19,7 @@ impl NestriSignaller {
         wayland_src: Arc<gstreamer::Element>,
         controller_manager: Option<Arc<ControllerManager>>,
         rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16)>>,
+        attach_rx: Option<mpsc::Receiver<crate::proto::proto::ProtoControllerAttach>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let obj: Self = glib::Object::new();
         obj.imp().set_stream_room(room);
@@ -29,6 +30,9 @@ impl NestriSignaller {
         }
         if let Some(rumble_rx) = rumble_rx {
             obj.imp().set_rumble_rx(rumble_rx).await;
+        }
+        if let Some(attach_rx) = attach_rx {
+            obj.imp().set_attach_rx(attach_rx).await;
         }
         Ok(obj)
     }

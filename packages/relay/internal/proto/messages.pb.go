@@ -73,28 +73,50 @@ func (x *ProtoMessageBase) GetLatency() *ProtoLatencyTracker {
 	return nil
 }
 
-type ProtoMessageInput struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	MessageBase   *ProtoMessageBase      `protobuf:"bytes,1,opt,name=message_base,json=messageBase,proto3" json:"message_base,omitempty"`
-	Data          *ProtoInput            `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+type ProtoMessage struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	MessageBase *ProtoMessageBase      `protobuf:"bytes,1,opt,name=message_base,json=messageBase,proto3" json:"message_base,omitempty"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*ProtoMessage_MouseMove
+	//	*ProtoMessage_MouseMoveAbs
+	//	*ProtoMessage_MouseWheel
+	//	*ProtoMessage_MouseKeyDown
+	//	*ProtoMessage_MouseKeyUp
+	//	*ProtoMessage_KeyDown
+	//	*ProtoMessage_KeyUp
+	//	*ProtoMessage_ControllerAttach
+	//	*ProtoMessage_ControllerDetach
+	//	*ProtoMessage_ControllerButton
+	//	*ProtoMessage_ControllerTrigger
+	//	*ProtoMessage_ControllerStick
+	//	*ProtoMessage_ControllerAxis
+	//	*ProtoMessage_ControllerRumble
+	//	*ProtoMessage_Ice
+	//	*ProtoMessage_Sdp
+	//	*ProtoMessage_Raw
+	//	*ProtoMessage_ClientRequestRoomStream
+	//	*ProtoMessage_ClientDisconnected
+	//	*ProtoMessage_ServerPushStream
+	Payload       isProtoMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *ProtoMessageInput) Reset() {
-	*x = ProtoMessageInput{}
+func (x *ProtoMessage) Reset() {
+	*x = ProtoMessage{}
 	mi := &file_messages_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ProtoMessageInput) String() string {
+func (x *ProtoMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ProtoMessageInput) ProtoMessage() {}
+func (*ProtoMessage) ProtoMessage() {}
 
-func (x *ProtoMessageInput) ProtoReflect() protoreflect.Message {
+func (x *ProtoMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_messages_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -106,24 +128,330 @@ func (x *ProtoMessageInput) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ProtoMessageInput.ProtoReflect.Descriptor instead.
-func (*ProtoMessageInput) Descriptor() ([]byte, []int) {
+// Deprecated: Use ProtoMessage.ProtoReflect.Descriptor instead.
+func (*ProtoMessage) Descriptor() ([]byte, []int) {
 	return file_messages_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ProtoMessageInput) GetMessageBase() *ProtoMessageBase {
+func (x *ProtoMessage) GetMessageBase() *ProtoMessageBase {
 	if x != nil {
 		return x.MessageBase
 	}
 	return nil
 }
 
-func (x *ProtoMessageInput) GetData() *ProtoInput {
+func (x *ProtoMessage) GetPayload() isProtoMessage_Payload {
 	if x != nil {
-		return x.Data
+		return x.Payload
 	}
 	return nil
 }
+
+func (x *ProtoMessage) GetMouseMove() *ProtoMouseMove {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_MouseMove); ok {
+			return x.MouseMove
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetMouseMoveAbs() *ProtoMouseMoveAbs {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_MouseMoveAbs); ok {
+			return x.MouseMoveAbs
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetMouseWheel() *ProtoMouseWheel {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_MouseWheel); ok {
+			return x.MouseWheel
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetMouseKeyDown() *ProtoMouseKeyDown {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_MouseKeyDown); ok {
+			return x.MouseKeyDown
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetMouseKeyUp() *ProtoMouseKeyUp {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_MouseKeyUp); ok {
+			return x.MouseKeyUp
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetKeyDown() *ProtoKeyDown {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_KeyDown); ok {
+			return x.KeyDown
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetKeyUp() *ProtoKeyUp {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_KeyUp); ok {
+			return x.KeyUp
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerAttach() *ProtoControllerAttach {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerAttach); ok {
+			return x.ControllerAttach
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerDetach() *ProtoControllerDetach {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerDetach); ok {
+			return x.ControllerDetach
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerButton() *ProtoControllerButton {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerButton); ok {
+			return x.ControllerButton
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerTrigger() *ProtoControllerTrigger {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerTrigger); ok {
+			return x.ControllerTrigger
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerStick() *ProtoControllerStick {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerStick); ok {
+			return x.ControllerStick
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerAxis() *ProtoControllerAxis {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerAxis); ok {
+			return x.ControllerAxis
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerRumble() *ProtoControllerRumble {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerRumble); ok {
+			return x.ControllerRumble
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetIce() *ProtoICE {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_Ice); ok {
+			return x.Ice
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetSdp() *ProtoSDP {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_Sdp); ok {
+			return x.Sdp
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetRaw() *ProtoRaw {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_Raw); ok {
+			return x.Raw
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetClientRequestRoomStream() *ProtoClientRequestRoomStream {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ClientRequestRoomStream); ok {
+			return x.ClientRequestRoomStream
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetClientDisconnected() *ProtoClientDisconnected {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ClientDisconnected); ok {
+			return x.ClientDisconnected
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetServerPushStream() *ProtoServerPushStream {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ServerPushStream); ok {
+			return x.ServerPushStream
+		}
+	}
+	return nil
+}
+
+type isProtoMessage_Payload interface {
+	isProtoMessage_Payload()
+}
+
+type ProtoMessage_MouseMove struct {
+	// Input types
+	MouseMove *ProtoMouseMove `protobuf:"bytes,2,opt,name=mouse_move,json=mouseMove,proto3,oneof"`
+}
+
+type ProtoMessage_MouseMoveAbs struct {
+	MouseMoveAbs *ProtoMouseMoveAbs `protobuf:"bytes,3,opt,name=mouse_move_abs,json=mouseMoveAbs,proto3,oneof"`
+}
+
+type ProtoMessage_MouseWheel struct {
+	MouseWheel *ProtoMouseWheel `protobuf:"bytes,4,opt,name=mouse_wheel,json=mouseWheel,proto3,oneof"`
+}
+
+type ProtoMessage_MouseKeyDown struct {
+	MouseKeyDown *ProtoMouseKeyDown `protobuf:"bytes,5,opt,name=mouse_key_down,json=mouseKeyDown,proto3,oneof"`
+}
+
+type ProtoMessage_MouseKeyUp struct {
+	MouseKeyUp *ProtoMouseKeyUp `protobuf:"bytes,6,opt,name=mouse_key_up,json=mouseKeyUp,proto3,oneof"`
+}
+
+type ProtoMessage_KeyDown struct {
+	KeyDown *ProtoKeyDown `protobuf:"bytes,7,opt,name=key_down,json=keyDown,proto3,oneof"`
+}
+
+type ProtoMessage_KeyUp struct {
+	KeyUp *ProtoKeyUp `protobuf:"bytes,8,opt,name=key_up,json=keyUp,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerAttach struct {
+	ControllerAttach *ProtoControllerAttach `protobuf:"bytes,9,opt,name=controller_attach,json=controllerAttach,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerDetach struct {
+	ControllerDetach *ProtoControllerDetach `protobuf:"bytes,10,opt,name=controller_detach,json=controllerDetach,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerButton struct {
+	ControllerButton *ProtoControllerButton `protobuf:"bytes,11,opt,name=controller_button,json=controllerButton,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerTrigger struct {
+	ControllerTrigger *ProtoControllerTrigger `protobuf:"bytes,12,opt,name=controller_trigger,json=controllerTrigger,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerStick struct {
+	ControllerStick *ProtoControllerStick `protobuf:"bytes,13,opt,name=controller_stick,json=controllerStick,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerAxis struct {
+	ControllerAxis *ProtoControllerAxis `protobuf:"bytes,14,opt,name=controller_axis,json=controllerAxis,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerRumble struct {
+	ControllerRumble *ProtoControllerRumble `protobuf:"bytes,15,opt,name=controller_rumble,json=controllerRumble,proto3,oneof"`
+}
+
+type ProtoMessage_Ice struct {
+	// Signaling types
+	Ice *ProtoICE `protobuf:"bytes,20,opt,name=ice,proto3,oneof"`
+}
+
+type ProtoMessage_Sdp struct {
+	Sdp *ProtoSDP `protobuf:"bytes,21,opt,name=sdp,proto3,oneof"`
+}
+
+type ProtoMessage_Raw struct {
+	Raw *ProtoRaw `protobuf:"bytes,22,opt,name=raw,proto3,oneof"`
+}
+
+type ProtoMessage_ClientRequestRoomStream struct {
+	ClientRequestRoomStream *ProtoClientRequestRoomStream `protobuf:"bytes,23,opt,name=client_request_room_stream,json=clientRequestRoomStream,proto3,oneof"`
+}
+
+type ProtoMessage_ClientDisconnected struct {
+	ClientDisconnected *ProtoClientDisconnected `protobuf:"bytes,24,opt,name=client_disconnected,json=clientDisconnected,proto3,oneof"`
+}
+
+type ProtoMessage_ServerPushStream struct {
+	ServerPushStream *ProtoServerPushStream `protobuf:"bytes,25,opt,name=server_push_stream,json=serverPushStream,proto3,oneof"`
+}
+
+func (*ProtoMessage_MouseMove) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_MouseMoveAbs) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_MouseWheel) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_MouseKeyDown) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_MouseKeyUp) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_KeyDown) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_KeyUp) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerAttach) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerDetach) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerButton) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerTrigger) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerStick) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerAxis) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerRumble) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_Ice) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_Sdp) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_Raw) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ClientRequestRoomStream) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ClientDisconnected) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ServerPushStream) isProtoMessage_Payload() {}
 
 var File_messages_proto protoreflect.FileDescriptor
 
@@ -132,10 +460,35 @@ const file_messages_proto_rawDesc = "" +
 	"\x0emessages.proto\x12\x05proto\x1a\vtypes.proto\x1a\x15latency_tracker.proto\"k\n" +
 	"\x10ProtoMessageBase\x12!\n" +
 	"\fpayload_type\x18\x01 \x01(\tR\vpayloadType\x124\n" +
-	"\alatency\x18\x02 \x01(\v2\x1a.proto.ProtoLatencyTrackerR\alatency\"v\n" +
-	"\x11ProtoMessageInput\x12:\n" +
-	"\fmessage_base\x18\x01 \x01(\v2\x17.proto.ProtoMessageBaseR\vmessageBase\x12%\n" +
-	"\x04data\x18\x02 \x01(\v2\x11.proto.ProtoInputR\x04dataB\x16Z\x14relay/internal/protob\x06proto3"
+	"\alatency\x18\x02 \x01(\v2\x1a.proto.ProtoLatencyTrackerR\alatency\"\xef\n" +
+	"\n" +
+	"\fProtoMessage\x12:\n" +
+	"\fmessage_base\x18\x01 \x01(\v2\x17.proto.ProtoMessageBaseR\vmessageBase\x126\n" +
+	"\n" +
+	"mouse_move\x18\x02 \x01(\v2\x15.proto.ProtoMouseMoveH\x00R\tmouseMove\x12@\n" +
+	"\x0emouse_move_abs\x18\x03 \x01(\v2\x18.proto.ProtoMouseMoveAbsH\x00R\fmouseMoveAbs\x129\n" +
+	"\vmouse_wheel\x18\x04 \x01(\v2\x16.proto.ProtoMouseWheelH\x00R\n" +
+	"mouseWheel\x12@\n" +
+	"\x0emouse_key_down\x18\x05 \x01(\v2\x18.proto.ProtoMouseKeyDownH\x00R\fmouseKeyDown\x12:\n" +
+	"\fmouse_key_up\x18\x06 \x01(\v2\x16.proto.ProtoMouseKeyUpH\x00R\n" +
+	"mouseKeyUp\x120\n" +
+	"\bkey_down\x18\a \x01(\v2\x13.proto.ProtoKeyDownH\x00R\akeyDown\x12*\n" +
+	"\x06key_up\x18\b \x01(\v2\x11.proto.ProtoKeyUpH\x00R\x05keyUp\x12K\n" +
+	"\x11controller_attach\x18\t \x01(\v2\x1c.proto.ProtoControllerAttachH\x00R\x10controllerAttach\x12K\n" +
+	"\x11controller_detach\x18\n" +
+	" \x01(\v2\x1c.proto.ProtoControllerDetachH\x00R\x10controllerDetach\x12K\n" +
+	"\x11controller_button\x18\v \x01(\v2\x1c.proto.ProtoControllerButtonH\x00R\x10controllerButton\x12N\n" +
+	"\x12controller_trigger\x18\f \x01(\v2\x1d.proto.ProtoControllerTriggerH\x00R\x11controllerTrigger\x12H\n" +
+	"\x10controller_stick\x18\r \x01(\v2\x1b.proto.ProtoControllerStickH\x00R\x0fcontrollerStick\x12E\n" +
+	"\x0fcontroller_axis\x18\x0e \x01(\v2\x1a.proto.ProtoControllerAxisH\x00R\x0econtrollerAxis\x12K\n" +
+	"\x11controller_rumble\x18\x0f \x01(\v2\x1c.proto.ProtoControllerRumbleH\x00R\x10controllerRumble\x12#\n" +
+	"\x03ice\x18\x14 \x01(\v2\x0f.proto.ProtoICEH\x00R\x03ice\x12#\n" +
+	"\x03sdp\x18\x15 \x01(\v2\x0f.proto.ProtoSDPH\x00R\x03sdp\x12#\n" +
+	"\x03raw\x18\x16 \x01(\v2\x0f.proto.ProtoRawH\x00R\x03raw\x12b\n" +
+	"\x1aclient_request_room_stream\x18\x17 \x01(\v2#.proto.ProtoClientRequestRoomStreamH\x00R\x17clientRequestRoomStream\x12Q\n" +
+	"\x13client_disconnected\x18\x18 \x01(\v2\x1e.proto.ProtoClientDisconnectedH\x00R\x12clientDisconnected\x12L\n" +
+	"\x12server_push_stream\x18\x19 \x01(\v2\x1c.proto.ProtoServerPushStreamH\x00R\x10serverPushStreamB\t\n" +
+	"\apayloadB\x16Z\x14relay/internal/protob\x06proto3"
 
 var (
 	file_messages_proto_rawDescOnce sync.Once
@@ -151,20 +504,58 @@ func file_messages_proto_rawDescGZIP() []byte {
 
 var file_messages_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_messages_proto_goTypes = []any{
-	(*ProtoMessageBase)(nil),    // 0: proto.ProtoMessageBase
-	(*ProtoMessageInput)(nil),   // 1: proto.ProtoMessageInput
-	(*ProtoLatencyTracker)(nil), // 2: proto.ProtoLatencyTracker
-	(*ProtoInput)(nil),          // 3: proto.ProtoInput
+	(*ProtoMessageBase)(nil),             // 0: proto.ProtoMessageBase
+	(*ProtoMessage)(nil),                 // 1: proto.ProtoMessage
+	(*ProtoLatencyTracker)(nil),          // 2: proto.ProtoLatencyTracker
+	(*ProtoMouseMove)(nil),               // 3: proto.ProtoMouseMove
+	(*ProtoMouseMoveAbs)(nil),            // 4: proto.ProtoMouseMoveAbs
+	(*ProtoMouseWheel)(nil),              // 5: proto.ProtoMouseWheel
+	(*ProtoMouseKeyDown)(nil),            // 6: proto.ProtoMouseKeyDown
+	(*ProtoMouseKeyUp)(nil),              // 7: proto.ProtoMouseKeyUp
+	(*ProtoKeyDown)(nil),                 // 8: proto.ProtoKeyDown
+	(*ProtoKeyUp)(nil),                   // 9: proto.ProtoKeyUp
+	(*ProtoControllerAttach)(nil),        // 10: proto.ProtoControllerAttach
+	(*ProtoControllerDetach)(nil),        // 11: proto.ProtoControllerDetach
+	(*ProtoControllerButton)(nil),        // 12: proto.ProtoControllerButton
+	(*ProtoControllerTrigger)(nil),       // 13: proto.ProtoControllerTrigger
+	(*ProtoControllerStick)(nil),         // 14: proto.ProtoControllerStick
+	(*ProtoControllerAxis)(nil),          // 15: proto.ProtoControllerAxis
+	(*ProtoControllerRumble)(nil),        // 16: proto.ProtoControllerRumble
+	(*ProtoICE)(nil),                     // 17: proto.ProtoICE
+	(*ProtoSDP)(nil),                     // 18: proto.ProtoSDP
+	(*ProtoRaw)(nil),                     // 19: proto.ProtoRaw
+	(*ProtoClientRequestRoomStream)(nil), // 20: proto.ProtoClientRequestRoomStream
+	(*ProtoClientDisconnected)(nil),      // 21: proto.ProtoClientDisconnected
+	(*ProtoServerPushStream)(nil),        // 22: proto.ProtoServerPushStream
 }
 var file_messages_proto_depIdxs = []int32{
-	2, // 0: proto.ProtoMessageBase.latency:type_name -> proto.ProtoLatencyTracker
-	0, // 1: proto.ProtoMessageInput.message_base:type_name -> proto.ProtoMessageBase
-	3, // 2: proto.ProtoMessageInput.data:type_name -> proto.ProtoInput
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	2,  // 0: proto.ProtoMessageBase.latency:type_name -> proto.ProtoLatencyTracker
+	0,  // 1: proto.ProtoMessage.message_base:type_name -> proto.ProtoMessageBase
+	3,  // 2: proto.ProtoMessage.mouse_move:type_name -> proto.ProtoMouseMove
+	4,  // 3: proto.ProtoMessage.mouse_move_abs:type_name -> proto.ProtoMouseMoveAbs
+	5,  // 4: proto.ProtoMessage.mouse_wheel:type_name -> proto.ProtoMouseWheel
+	6,  // 5: proto.ProtoMessage.mouse_key_down:type_name -> proto.ProtoMouseKeyDown
+	7,  // 6: proto.ProtoMessage.mouse_key_up:type_name -> proto.ProtoMouseKeyUp
+	8,  // 7: proto.ProtoMessage.key_down:type_name -> proto.ProtoKeyDown
+	9,  // 8: proto.ProtoMessage.key_up:type_name -> proto.ProtoKeyUp
+	10, // 9: proto.ProtoMessage.controller_attach:type_name -> proto.ProtoControllerAttach
+	11, // 10: proto.ProtoMessage.controller_detach:type_name -> proto.ProtoControllerDetach
+	12, // 11: proto.ProtoMessage.controller_button:type_name -> proto.ProtoControllerButton
+	13, // 12: proto.ProtoMessage.controller_trigger:type_name -> proto.ProtoControllerTrigger
+	14, // 13: proto.ProtoMessage.controller_stick:type_name -> proto.ProtoControllerStick
+	15, // 14: proto.ProtoMessage.controller_axis:type_name -> proto.ProtoControllerAxis
+	16, // 15: proto.ProtoMessage.controller_rumble:type_name -> proto.ProtoControllerRumble
+	17, // 16: proto.ProtoMessage.ice:type_name -> proto.ProtoICE
+	18, // 17: proto.ProtoMessage.sdp:type_name -> proto.ProtoSDP
+	19, // 18: proto.ProtoMessage.raw:type_name -> proto.ProtoRaw
+	20, // 19: proto.ProtoMessage.client_request_room_stream:type_name -> proto.ProtoClientRequestRoomStream
+	21, // 20: proto.ProtoMessage.client_disconnected:type_name -> proto.ProtoClientDisconnected
+	22, // 21: proto.ProtoMessage.server_push_stream:type_name -> proto.ProtoServerPushStream
+	22, // [22:22] is the sub-list for method output_type
+	22, // [22:22] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_messages_proto_init() }
@@ -174,6 +565,28 @@ func file_messages_proto_init() {
 	}
 	file_types_proto_init()
 	file_latency_tracker_proto_init()
+	file_messages_proto_msgTypes[1].OneofWrappers = []any{
+		(*ProtoMessage_MouseMove)(nil),
+		(*ProtoMessage_MouseMoveAbs)(nil),
+		(*ProtoMessage_MouseWheel)(nil),
+		(*ProtoMessage_MouseKeyDown)(nil),
+		(*ProtoMessage_MouseKeyUp)(nil),
+		(*ProtoMessage_KeyDown)(nil),
+		(*ProtoMessage_KeyUp)(nil),
+		(*ProtoMessage_ControllerAttach)(nil),
+		(*ProtoMessage_ControllerDetach)(nil),
+		(*ProtoMessage_ControllerButton)(nil),
+		(*ProtoMessage_ControllerTrigger)(nil),
+		(*ProtoMessage_ControllerStick)(nil),
+		(*ProtoMessage_ControllerAxis)(nil),
+		(*ProtoMessage_ControllerRumble)(nil),
+		(*ProtoMessage_Ice)(nil),
+		(*ProtoMessage_Sdp)(nil),
+		(*ProtoMessage_Raw)(nil),
+		(*ProtoMessage_ClientRequestRoomStream)(nil),
+		(*ProtoMessage_ClientDisconnected)(nil),
+		(*ProtoMessage_ServerPushStream)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

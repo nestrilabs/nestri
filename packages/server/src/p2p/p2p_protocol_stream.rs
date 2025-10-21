@@ -3,21 +3,22 @@ use crate::p2p::p2p_safestream::SafeStream;
 use anyhow::Result;
 use dashmap::DashMap;
 use libp2p::StreamProtocol;
+use prost::Message;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 // Cloneable callback type
-pub type CallbackInner = dyn Fn(Vec<u8>) -> Result<()> + Send + Sync + 'static;
+pub type CallbackInner = dyn Fn(crate::proto::proto::ProtoMessage) -> Result<()> + Send + Sync + 'static;
 pub struct Callback(Arc<CallbackInner>);
 impl Callback {
     pub fn new<F>(f: F) -> Self
     where
-        F: Fn(Vec<u8>) -> Result<()> + Send + Sync + 'static,
+        F: Fn(crate::proto::proto::ProtoMessage) -> Result<()> + Send + Sync + 'static,
     {
         Callback(Arc::new(f))
     }
 
-    pub fn call(&self, data: Vec<u8>) -> Result<()> {
+    pub fn call(&self, data: crate::proto::proto::ProtoMessage) -> Result<()> {
         self.0(data)
     }
 }
@@ -104,26 +105,31 @@ impl NestriStreamProtocol {
                     }
                 };
 
-                match serde_json::from_slice::<crate::messages::MessageBase>(&data) {
-                    Ok(base_message) => {
-                        let response_type = base_message.payload_type;
+                match crate::proto::proto::ProtoMessage::decode(data.as_slice()) {
+                    Ok(message) => {
+                        if let Some(base_message) = &message.message_base {
+                            let response_type = &base_message.payload_type;
+                            let response_type = response_type.clone();
 
-                        // With DashMap, we don't need explicit locking
-                        // we just get the callback directly if it exists
-                        if let Some(callback) = callbacks.get(&response_type) {
-                            // Execute the callback
-                            if let Err(e) = callback.call(data.clone()) {
-                                tracing::error!(
-                                    "Callback for response type '{}' errored: {:?}",
-                                    response_type,
-                                    e
+                            // With DashMap, we don't need explicit locking
+                            // we just get the callback directly if it exists
+                            if let Some(callback) = callbacks.get(&response_type) {
+                                // Execute the callback
+                                if let Err(e) = callback.call(message) {
+                                    tracing::error!(
+                                        "Callback for response type '{}' errored: {:?}",
+                                        response_type,
+                                        e
+                                    );
+                                }
+                            } else {
+                                tracing::warn!(
+                                    "No callback registered for response type: {}",
+                                    response_type
                                 );
                             }
                         } else {
-                            tracing::warn!(
-                                "No callback registered for response type: {}",
-                                response_type
-                            );
+                            tracing::error!("No base message in decoded protobuf message",);
                         }
                     }
                     Err(e) => {
@@ -154,8 +160,9 @@ impl NestriStreamProtocol {
         })
     }
 
-    pub fn send_message<M: serde::Serialize>(&self, message: &M) -> Result<()> {
-        let json_data = serde_json::to_vec(message)?;
+    pub fn send_message(&self, message: &crate::proto::proto::ProtoMessage) -> Result<()> {
+        let mut buf = Vec::new();
+        message.encode(&mut buf)?;
         let Some(tx) = &self.tx else {
             return Err(anyhow::Error::msg(
                 if self.read_handle.is_none() && self.write_handle.is_none() {
@@ -165,13 +172,13 @@ impl NestriStreamProtocol {
                 },
             ));
         };
-        tx.try_send(json_data)?;
+        tx.try_send(buf)?;
         Ok(())
     }
 
     pub fn register_callback<F>(&self, response_type: &str, callback: F)
     where
-        F: Fn(Vec<u8>) -> Result<()> + Send + Sync + 'static,
+        F: Fn(crate::proto::proto::ProtoMessage) -> Result<()> + Send + Sync + 'static,
     {
         self.callbacks
             .insert(response_type.to_string(), Callback::new(callback));

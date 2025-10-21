@@ -31,16 +31,18 @@ func NewNestriDataChannel(dc *webrtc.DataChannel) *NestriDataChannel {
 		}
 
 		// Decode message
-		var base gen.ProtoMessageInput
+		var base gen.ProtoMessage
 		if err := proto.Unmarshal(msg.Data, &base); err != nil {
 			slog.Error("failed to decode binary DataChannel message", "err", err)
 			return
 		}
 
-		// Handle message type callback
-		if callback, ok := ndc.callbacks["input"]; ok {
-			go callback(msg.Data)
-		} // We don't care about unhandled messages
+		// Route based on PayloadType
+		if base.MessageBase != nil && len(base.MessageBase.PayloadType) > 0 {
+			if callback, ok := ndc.callbacks[base.MessageBase.PayloadType]; ok {
+				go callback(msg.Data)
+			}
+		}
 	})
 
 	return ndc

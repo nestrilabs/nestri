@@ -1,11 +1,9 @@
 use anyhow::Result;
-use byteorder::{BigEndian, ByteOrder};
 use libp2p::futures::io::{ReadHalf, WriteHalf};
 use libp2p::futures::{AsyncReadExt, AsyncWriteExt};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-
-const MAX_SIZE: usize = 1024 * 1024; // 1MB
+use unsigned_varint::{decode, encode};
 
 pub struct SafeStream {
     stream_read: Arc<Mutex<ReadHalf<libp2p::Stream>>>,
@@ -29,34 +27,52 @@ impl SafeStream {
     }
 
     async fn send_with_length_prefix(&self, data: &[u8]) -> Result<()> {
-        if data.len() > MAX_SIZE {
-            anyhow::bail!("Data exceeds maximum size");
-        }
-
-        let mut buffer = Vec::with_capacity(4 + data.len());
-        buffer.extend_from_slice(&(data.len() as u32).to_be_bytes()); // Length prefix
-        buffer.extend_from_slice(data); // Payload
-
         let mut stream_write = self.stream_write.lock().await;
-        stream_write.write_all(&buffer).await?; // Single write
+
+        // Encode length as varint
+        let mut length_buf = encode::usize_buffer();
+        let length_bytes = encode::usize(data.len(), &mut length_buf);
+
+        // Write varint length prefix
+        stream_write.write_all(length_bytes).await?;
+
+        // Write payload
+        stream_write.write_all(data).await?;
         stream_write.flush().await?;
+
         Ok(())
     }
 
     async fn receive_with_length_prefix(&self) -> Result<Vec<u8>> {
         let mut stream_read = self.stream_read.lock().await;
 
-        // Read length prefix + data in one syscall
-        let mut length_prefix = [0u8; 4];
-        stream_read.read_exact(&mut length_prefix).await?;
-        let length = BigEndian::read_u32(&length_prefix) as usize;
+        // Read varint length prefix (up to 10 bytes for u64)
+        let mut length_buf = Vec::new();
+        let mut temp_byte = [0u8; 1];
 
-        if length > MAX_SIZE {
-            anyhow::bail!("Received data exceeds maximum size");
+        loop {
+            stream_read.read_exact(&mut temp_byte).await?;
+            length_buf.push(temp_byte[0]);
+
+            // Check if this is the last byte (MSB = 0)
+            if temp_byte[0] & 0x80 == 0 {
+                break;
+            }
+
+            // Protect against malicious infinite varints
+            if length_buf.len() > 10 {
+                anyhow::bail!("Invalid varint encoding");
+            }
         }
 
+        // Decode the varint
+        let (length, _) = decode::usize(&length_buf)
+            .map_err(|e| anyhow::anyhow!("Failed to decode varint: {}", e))?;
+
+        // Read payload
         let mut buffer = vec![0u8; length];
         stream_read.read_exact(&mut buffer).await?;
+
         Ok(buffer)
     }
 }

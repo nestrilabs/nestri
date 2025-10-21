@@ -3,7 +3,6 @@ mod enc_helper;
 mod gpu;
 mod input;
 mod latency;
-mod messages;
 mod nestrisink;
 mod p2p;
 mod proto;
@@ -257,11 +256,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             None
         }
     };
-    let (controller_manager, rumble_rx) = if let Some(vclient) = vimputti_client {
-        let (controller_manager, rumble_rx) = ControllerManager::new(vclient)?;
-        (Some(Arc::new(controller_manager)), Some(rumble_rx))
+    let (controller_manager, rumble_rx, attach_rx) = if let Some(vclient) = vimputti_client {
+        let (controller_manager, rumble_rx, attach_rx) = ControllerManager::new(vclient)?;
+        (
+            Some(Arc::new(controller_manager)),
+            Some(rumble_rx),
+            Some(attach_rx),
+        )
     } else {
-        (None, None)
+        (None, None, None)
     };
 
     /*** PIPELINE CREATION ***/
@@ -416,6 +419,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         video_source.clone(),
         controller_manager,
         rumble_rx,
+        attach_rx,
     )
     .await?;
     let webrtcsink = BaseWebRTCSink::with_signaller(Signallable::from(signaller.clone()));
@@ -550,7 +554,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // Make sure QOS is disabled to avoid latency
-    video_encoder.set_property("qos", false);
+    video_encoder.set_property("qos", true);
 
     // Optimize latency of pipeline
     video_source

@@ -1,9 +1,3 @@
-import {
-  NewMessageRaw,
-  NewMessageSDP,
-  NewMessageICE,
-  SafeStream,
-} from "./messages";
 import { webSockets } from "@libp2p/websockets";
 import { webTransport } from "@libp2p/webtransport";
 import { createLibp2p, Libp2p } from "libp2p";
@@ -13,19 +7,32 @@ import { identify } from "@libp2p/identify";
 import { multiaddr } from "@multiformats/multiaddr";
 import { Connection } from "@libp2p/interface";
 import { ping } from "@libp2p/ping";
+import { createMessage } from "./utils";
+import { create } from "@bufbuild/protobuf";
+import {
+  ProtoClientRequestRoomStream,
+  ProtoClientRequestRoomStreamSchema,
+  ProtoICE,
+  ProtoICESchema, ProtoRaw,
+  ProtoSDP,
+  ProtoSDPSchema
+} from "./proto/types_pb";
+import { P2PMessageStream } from "./streamwrapper";
 
 const NESTRI_PROTOCOL_STREAM_REQUEST = "/nestri-relay/stream-request/1.0.0";
 
 export class WebRTCStream {
   private _p2p: Libp2p | undefined = undefined;
   private _p2pConn: Connection | undefined = undefined;
-  private _p2pSafeStream: SafeStream | undefined = undefined;
+  private _msgStream: P2PMessageStream | undefined = undefined;
   private _pc: RTCPeerConnection | undefined = undefined;
   private _audioTrack: MediaStreamTrack | undefined = undefined;
   private _videoTrack: MediaStreamTrack | undefined = undefined;
   private _dataChannel: RTCDataChannel | undefined = undefined;
-  private _onConnected: ((stream: MediaStream | null) => void) | undefined = undefined;
-  private _connectionTimer: NodeJS.Timeout | NodeJS.Timer | undefined = undefined;
+  private _onConnected: ((stream: MediaStream | null) => void) | undefined =
+    undefined;
+  private _connectionTimer: NodeJS.Timeout | NodeJS.Timer | undefined =
+    undefined;
   private _serverURL: string | undefined = undefined;
   private _roomName: string | undefined = undefined;
   private _isConnected: boolean = false;
@@ -89,14 +96,20 @@ export class WebRTCStream {
         .newStream(NESTRI_PROTOCOL_STREAM_REQUEST)
         .catch(console.error);
       if (stream) {
-        this._p2pSafeStream = new SafeStream(stream);
+        this._msgStream = new P2PMessageStream(stream);
         console.log("Stream opened with peer");
 
         let iceHolder: RTCIceCandidateInit[] = [];
-        this._p2pSafeStream.registerCallback("ice-candidate", (data) => {
+        this._msgStream.on("ice-candidate", (data: ProtoICE) => {
+          const cand: RTCIceCandidateInit = {
+            candidate: data.candidate.candidate,
+            sdpMLineIndex: data.candidate.sdpMLineIndex,
+            sdpMid: data.candidate.sdpMid,
+            usernameFragment: data.candidate.usernameFragment,
+          };
           if (this._pc) {
             if (this._pc.remoteDescription) {
-              this._pc.addIceCandidate(data.candidate).catch((err) => {
+              this._pc.addIceCandidate(cand).catch((err) => {
                 console.error("Error adding ICE candidate:", err);
               });
               // Add held candidates
@@ -107,43 +120,68 @@ export class WebRTCStream {
               });
               iceHolder = [];
             } else {
-              iceHolder.push(data.candidate);
+              iceHolder.push(cand);
             }
           } else {
-            iceHolder.push(data.candidate);
+            iceHolder.push(cand);
           }
         });
 
-        this._p2pSafeStream.registerCallback("offer", async (data) => {
+        this._msgStream.on("session-assigned", (data: ProtoClientRequestRoomStream) => {
+          const sessionId = data.sessionId;
+          localStorage.setItem("nestri-session-id", sessionId);
+          console.log("Session ID assigned:", sessionId, "for room:", data.roomName);
+        });
+
+        this._msgStream.on("offer", async (data: ProtoSDP) => {
           if (!this._pc) {
             // Setup peer connection now
             this._setupPeerConnection();
           }
-          await this._pc!.setRemoteDescription(data.sdp);
+          await this._pc!.setRemoteDescription({
+            sdp: data.sdp.sdp,
+            type: data.sdp.type as RTCSdpType,
+          });
           // Create our answer
           const answer = await this._pc!.createAnswer();
           // Force stereo in Chromium browsers
           answer.sdp = this.forceOpusStereo(answer.sdp!);
           await this._pc!.setLocalDescription(answer);
           // Send answer back
-          const answerMsg = NewMessageSDP("answer", answer);
-          await this._p2pSafeStream?.writeMessage(answerMsg);
+          const answerMsg = createMessage(
+            create(ProtoSDPSchema, {
+              sdp: answer,
+            }),
+            "answer",
+          );
+          await this._msgStream?.write(answerMsg);
         });
 
-        this._p2pSafeStream.registerCallback("request-stream-offline", (data) => {
-          console.warn("Stream is offline for room:", data.roomName);
+        this._msgStream.on("request-stream-offline", (msg: ProtoRaw) => {
+          console.warn("Stream is offline for room:", msg.data);
           this._onConnected?.(null);
         });
 
+        const clientId = localStorage.getItem("nestri-session-id");
+        if (clientId) {
+          console.debug("Using existing session ID:", clientId);
+        }
+
         // Send stream request
-        // marshal room name into json
-        const request = NewMessageRaw(
+        const requestMsg = createMessage(
+          create(ProtoClientRequestRoomStreamSchema, {
+            roomName: roomName,
+            sessionId: clientId,
+          }),
           "request-stream-room",
-          roomName,
         );
-        await this._p2pSafeStream.writeMessage(request);
+        await this._msgStream.write(requestMsg);
       }
     }
+  }
+
+  public getSessionID(): string {
+    return localStorage.getItem("nestri-session-id") || "";
   }
 
   // Forces opus to stereo in Chromium browsers, because of course
@@ -200,11 +238,16 @@ export class WebRTCStream {
 
     this._pc.onicecandidate = (e) => {
       if (e.candidate) {
-        const iceMsg = NewMessageICE("ice-candidate", e.candidate);
-        if (this._p2pSafeStream) {
-          this._p2pSafeStream.writeMessage(iceMsg).catch((err) =>
-            console.error("Error sending ICE candidate:", err),
-          );
+        const iceMsg = createMessage(
+          create(ProtoICESchema, {
+            candidate: e.candidate,
+          }),
+          "ice-candidate",
+        );
+        if (this._msgStream) {
+          this._msgStream
+            .write(iceMsg)
+            .catch((err) => console.error("Error sending ICE candidate:", err));
         } else {
           console.warn("P2P stream not established, cannot send ICE candidate");
         }
@@ -218,8 +261,7 @@ export class WebRTCStream {
   }
 
   private _checkConnectionState() {
-    if (!this._pc || !this._p2p || !this._p2pConn)
-      return;
+    if (!this._pc || !this._p2p || !this._p2pConn) return;
 
     console.debug("Checking connection state:", {
       connectionState: this._pc.connectionState,
@@ -286,7 +328,9 @@ export class WebRTCStream {
 
     // Attempt to reconnect only if not already connected
     if (!this._isConnected && this._serverURL && this._roomName) {
-      this._setup(this._serverURL, this._roomName).catch((err) => console.error("Reconnection failed:", err));
+      this._setup(this._serverURL, this._roomName).catch((err) =>
+        console.error("Reconnection failed:", err),
+      );
     }
   }
 
@@ -335,7 +379,9 @@ export class WebRTCStream {
   }
 
   public removeDataChannelCallback(callback: (data: any) => void) {
-    this._dataChannelCallbacks = this._dataChannelCallbacks.filter(cb => cb !== callback);
+    this._dataChannelCallbacks = this._dataChannelCallbacks.filter(
+      (cb) => cb !== callback,
+    );
   }
 
   private _setupDataChannelEvents() {
@@ -343,7 +389,7 @@ export class WebRTCStream {
 
     this._dataChannel.onclose = () => console.log("sendChannel has closed");
     this._dataChannel.onopen = () => console.log("sendChannel has opened");
-    this._dataChannel.onmessage = (event => {
+    this._dataChannel.onmessage = (event) => {
       // Parse as ProtoBuf message
       const data = event.data;
       // Call registered callback if exists
@@ -354,7 +400,7 @@ export class WebRTCStream {
           console.error("Error in data channel callback:", err);
         }
       });
-    });
+    };
   }
 
   private _gatherFrameRate() {

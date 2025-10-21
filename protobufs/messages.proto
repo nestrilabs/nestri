@@ -12,7 +12,31 @@ message ProtoMessageBase {
   ProtoLatencyTracker latency = 2;
 }
 
-message ProtoMessageInput {
-    ProtoMessageBase message_base = 1;
-    ProtoInput data = 2;
+message ProtoMessage {
+  ProtoMessageBase message_base = 1;
+  oneof payload {
+    // Input types
+    ProtoMouseMove mouse_move = 2;
+    ProtoMouseMoveAbs mouse_move_abs = 3;
+    ProtoMouseWheel mouse_wheel = 4;
+    ProtoMouseKeyDown mouse_key_down = 5;
+    ProtoMouseKeyUp mouse_key_up = 6;
+    ProtoKeyDown key_down = 7;
+    ProtoKeyUp key_up = 8;
+    ProtoControllerAttach controller_attach = 9;
+    ProtoControllerDetach controller_detach = 10;
+    ProtoControllerButton controller_button = 11;
+    ProtoControllerTrigger controller_trigger = 12;
+    ProtoControllerStick controller_stick = 13;
+    ProtoControllerAxis controller_axis = 14;
+    ProtoControllerRumble controller_rumble = 15;
+
+    // Signaling types
+    ProtoICE ice = 20;
+    ProtoSDP sdp = 21;
+    ProtoRaw raw = 22;
+    ProtoClientRequestRoomStream client_request_room_stream = 23;
+    ProtoClientDisconnected client_disconnected = 24;
+    ProtoServerPushStream server_push_stream = 25;
+  }
 }

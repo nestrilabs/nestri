@@ -24,9 +24,8 @@ const (
 // MouseMove message
 type ProtoMouseMove struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "MouseMove"
-	X             int32                  `protobuf:"varint,2,opt,name=x,proto3" json:"x,omitempty"`
-	Y             int32                  `protobuf:"varint,3,opt,name=y,proto3" json:"y,omitempty"`
+	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
+	Y             int32                  `protobuf:"varint,2,opt,name=y,proto3" json:"y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -61,13 +60,6 @@ func (*ProtoMouseMove) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *ProtoMouseMove) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoMouseMove) GetX() int32 {
 	if x != nil {
 		return x.X
@@ -85,9 +77,8 @@ func (x *ProtoMouseMove) GetY() int32 {
 // MouseMoveAbs message
 type ProtoMouseMoveAbs struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "MouseMoveAbs"
-	X             int32                  `protobuf:"varint,2,opt,name=x,proto3" json:"x,omitempty"`
-	Y             int32                  `protobuf:"varint,3,opt,name=y,proto3" json:"y,omitempty"`
+	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
+	Y             int32                  `protobuf:"varint,2,opt,name=y,proto3" json:"y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -122,13 +113,6 @@ func (*ProtoMouseMoveAbs) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ProtoMouseMoveAbs) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoMouseMoveAbs) GetX() int32 {
 	if x != nil {
 		return x.X
@@ -146,9 +130,8 @@ func (x *ProtoMouseMoveAbs) GetY() int32 {
 // MouseWheel message
 type ProtoMouseWheel struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "MouseWheel"
-	X             int32                  `protobuf:"varint,2,opt,name=x,proto3" json:"x,omitempty"`
-	Y             int32                  `protobuf:"varint,3,opt,name=y,proto3" json:"y,omitempty"`
+	X             int32                  `protobuf:"varint,1,opt,name=x,proto3" json:"x,omitempty"`
+	Y             int32                  `protobuf:"varint,2,opt,name=y,proto3" json:"y,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -183,13 +166,6 @@ func (*ProtoMouseWheel) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ProtoMouseWheel) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoMouseWheel) GetX() int32 {
 	if x != nil {
 		return x.X
@@ -207,8 +183,7 @@ func (x *ProtoMouseWheel) GetY() int32 {
 // MouseKeyDown message
 type ProtoMouseKeyDown struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "MouseKeyDown"
-	Key           int32                  `protobuf:"varint,2,opt,name=key,proto3" json:"key,omitempty"`
+	Key           int32                  `protobuf:"varint,1,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -243,13 +218,6 @@ func (*ProtoMouseKeyDown) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ProtoMouseKeyDown) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoMouseKeyDown) GetKey() int32 {
 	if x != nil {
 		return x.Key
@@ -260,8 +228,7 @@ func (x *ProtoMouseKeyDown) GetKey() int32 {
 // MouseKeyUp message
 type ProtoMouseKeyUp struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "MouseKeyUp"
-	Key           int32                  `protobuf:"varint,2,opt,name=key,proto3" json:"key,omitempty"`
+	Key           int32                  `protobuf:"varint,1,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -296,13 +263,6 @@ func (*ProtoMouseKeyUp) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *ProtoMouseKeyUp) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoMouseKeyUp) GetKey() int32 {
 	if x != nil {
 		return x.Key
@@ -313,8 +273,7 @@ func (x *ProtoMouseKeyUp) GetKey() int32 {
 // KeyDown message
 type ProtoKeyDown struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "KeyDown"
-	Key           int32                  `protobuf:"varint,2,opt,name=key,proto3" json:"key,omitempty"`
+	Key           int32                  `protobuf:"varint,1,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -349,13 +308,6 @@ func (*ProtoKeyDown) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ProtoKeyDown) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoKeyDown) GetKey() int32 {
 	if x != nil {
 		return x.Key
@@ -366,8 +318,7 @@ func (x *ProtoKeyDown) GetKey() int32 {
 // KeyUp message
 type ProtoKeyUp struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"` // Fixed value "KeyUp"
-	Key           int32                  `protobuf:"varint,2,opt,name=key,proto3" json:"key,omitempty"`
+	Key           int32                  `protobuf:"varint,1,opt,name=key,proto3" json:"key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -402,13 +353,6 @@ func (*ProtoKeyUp) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *ProtoKeyUp) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoKeyUp) GetKey() int32 {
 	if x != nil {
 		return x.Key
@@ -419,9 +363,9 @@ func (x *ProtoKeyUp) GetKey() int32 {
 // ControllerAttach message
 type ProtoControllerAttach struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`  // Fixed value "ControllerAttach"
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`      // One of the following enums: "ps", "xbox" or "switch"
-	Slot          int32                  `protobuf:"varint,3,opt,name=slot,proto3" json:"slot,omitempty"` // Slot number (0-3)
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                // One of the following enums: "ps", "xbox" or "switch"
+	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`                           // Slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session ID of the client attaching the controller
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -456,13 +400,6 @@ func (*ProtoControllerAttach) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *ProtoControllerAttach) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerAttach) GetId() string {
 	if x != nil {
 		return x.Id
@@ -477,11 +414,17 @@ func (x *ProtoControllerAttach) GetSlot() int32 {
 	return 0
 }
 
+func (x *ProtoControllerAttach) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
 // ControllerDetach message
 type ProtoControllerDetach struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`  // Fixed value "ControllerDetach"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"` // Slot number (0-3)
+	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"` // Slot number (0-3)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -516,13 +459,6 @@ func (*ProtoControllerDetach) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ProtoControllerDetach) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerDetach) GetSlot() int32 {
 	if x != nil {
 		return x.Slot
@@ -533,10 +469,9 @@ func (x *ProtoControllerDetach) GetSlot() int32 {
 // ControllerButton message
 type ProtoControllerButton struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`        // Fixed value "ControllerButtons"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`       // Slot number (0-3)
-	Button        int32                  `protobuf:"varint,3,opt,name=button,proto3" json:"button,omitempty"`   // Button code (linux input event code)
-	Pressed       bool                   `protobuf:"varint,4,opt,name=pressed,proto3" json:"pressed,omitempty"` // true if pressed, false if released
+	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`       // Slot number (0-3)
+	Button        int32                  `protobuf:"varint,2,opt,name=button,proto3" json:"button,omitempty"`   // Button code (linux input event code)
+	Pressed       bool                   `protobuf:"varint,3,opt,name=pressed,proto3" json:"pressed,omitempty"` // true if pressed, false if released
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -571,13 +506,6 @@ func (*ProtoControllerButton) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *ProtoControllerButton) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerButton) GetSlot() int32 {
 	if x != nil {
 		return x.Slot
@@ -602,10 +530,9 @@ func (x *ProtoControllerButton) GetPressed() bool {
 // ControllerTriggers message
 type ProtoControllerTrigger struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`        // Fixed value "ControllerTriggers"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`       // Slot number (0-3)
-	Trigger       int32                  `protobuf:"varint,3,opt,name=trigger,proto3" json:"trigger,omitempty"` // Trigger number (0 for left, 1 for right)
-	Value         int32                  `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`     // trigger value (-32768 to 32767)
+	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`       // Slot number (0-3)
+	Trigger       int32                  `protobuf:"varint,2,opt,name=trigger,proto3" json:"trigger,omitempty"` // Trigger number (0 for left, 1 for right)
+	Value         int32                  `protobuf:"varint,3,opt,name=value,proto3" json:"value,omitempty"`     // trigger value (-32768 to 32767)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -640,13 +567,6 @@ func (*ProtoControllerTrigger) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *ProtoControllerTrigger) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerTrigger) GetSlot() int32 {
 	if x != nil {
 		return x.Slot
@@ -671,11 +591,10 @@ func (x *ProtoControllerTrigger) GetValue() int32 {
 // ControllerSticks message
 type ProtoControllerStick struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`    // Fixed value "ControllerStick"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`   // Slot number (0-3)
-	Stick         int32                  `protobuf:"varint,3,opt,name=stick,proto3" json:"stick,omitempty"` // Stick number (0 for left, 1 for right)
-	X             int32                  `protobuf:"varint,4,opt,name=x,proto3" json:"x,omitempty"`         // X axis value (-32768 to 32767)
-	Y             int32                  `protobuf:"varint,5,opt,name=y,proto3" json:"y,omitempty"`         // Y axis value (-32768 to 32767)
+	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`   // Slot number (0-3)
+	Stick         int32                  `protobuf:"varint,2,opt,name=stick,proto3" json:"stick,omitempty"` // Stick number (0 for left, 1 for right)
+	X             int32                  `protobuf:"varint,3,opt,name=x,proto3" json:"x,omitempty"`         // X axis value (-32768 to 32767)
+	Y             int32                  `protobuf:"varint,4,opt,name=y,proto3" json:"y,omitempty"`         // Y axis value (-32768 to 32767)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -710,13 +629,6 @@ func (*ProtoControllerStick) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ProtoControllerStick) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerStick) GetSlot() int32 {
 	if x != nil {
 		return x.Slot
@@ -748,10 +660,9 @@ func (x *ProtoControllerStick) GetY() int32 {
 // ControllerAxis message
 type ProtoControllerAxis struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`    // Fixed value "ControllerAxis"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`   // Slot number (0-3)
-	Axis          int32                  `protobuf:"varint,3,opt,name=axis,proto3" json:"axis,omitempty"`   // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-	Value         int32                  `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"` // axis value (-1 to 1)
+	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`   // Slot number (0-3)
+	Axis          int32                  `protobuf:"varint,2,opt,name=axis,proto3" json:"axis,omitempty"`   // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
+	Value         int32                  `protobuf:"varint,3,opt,name=value,proto3" json:"value,omitempty"` // axis value (-1 to 1)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -786,13 +697,6 @@ func (*ProtoControllerAxis) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *ProtoControllerAxis) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerAxis) GetSlot() int32 {
 	if x != nil {
 		return x.Slot
@@ -817,11 +721,10 @@ func (x *ProtoControllerAxis) GetValue() int32 {
 // ControllerRumble message
 type ProtoControllerRumble struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Type          string                 `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`                                         // Fixed value "ControllerRumble"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`                                        // Slot number (0-3)
-	LowFrequency  int32                  `protobuf:"varint,3,opt,name=low_frequency,json=lowFrequency,proto3" json:"low_frequency,omitempty"`    // Low frequency rumble (0-65535)
-	HighFrequency int32                  `protobuf:"varint,4,opt,name=high_frequency,json=highFrequency,proto3" json:"high_frequency,omitempty"` // High frequency rumble (0-65535)
-	Duration      int32                  `protobuf:"varint,5,opt,name=duration,proto3" json:"duration,omitempty"`                                // Duration in milliseconds
+	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`                                        // Slot number (0-3)
+	LowFrequency  int32                  `protobuf:"varint,2,opt,name=low_frequency,json=lowFrequency,proto3" json:"low_frequency,omitempty"`    // Low frequency rumble (0-65535)
+	HighFrequency int32                  `protobuf:"varint,3,opt,name=high_frequency,json=highFrequency,proto3" json:"high_frequency,omitempty"` // High frequency rumble (0-65535)
+	Duration      int32                  `protobuf:"varint,4,opt,name=duration,proto3" json:"duration,omitempty"`                                // Duration in milliseconds
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -856,13 +759,6 @@ func (*ProtoControllerRumble) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *ProtoControllerRumble) GetType() string {
-	if x != nil {
-		return x.Type
-	}
-	return ""
-}
-
 func (x *ProtoControllerRumble) GetSlot() int32 {
 	if x != nil {
 		return x.Slot
@@ -891,44 +787,30 @@ func (x *ProtoControllerRumble) GetDuration() int32 {
 	return 0
 }
 
-// Union of all Input types
-type ProtoInput struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to InputType:
-	//
-	//	*ProtoInput_MouseMove
-	//	*ProtoInput_MouseMoveAbs
-	//	*ProtoInput_MouseWheel
-	//	*ProtoInput_MouseKeyDown
-	//	*ProtoInput_MouseKeyUp
-	//	*ProtoInput_KeyDown
-	//	*ProtoInput_KeyUp
-	//	*ProtoInput_ControllerAttach
-	//	*ProtoInput_ControllerDetach
-	//	*ProtoInput_ControllerButton
-	//	*ProtoInput_ControllerTrigger
-	//	*ProtoInput_ControllerStick
-	//	*ProtoInput_ControllerAxis
-	//	*ProtoInput_ControllerRumble
-	InputType     isProtoInput_InputType `protobuf_oneof:"input_type"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type RTCIceCandidateInit struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Candidate        string                 `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	SdpMLineIndex    *uint32                `protobuf:"varint,2,opt,name=sdpMLineIndex,proto3,oneof" json:"sdpMLineIndex,omitempty"`
+	SdpMid           *string                `protobuf:"bytes,3,opt,name=sdpMid,proto3,oneof" json:"sdpMid,omitempty"`
+	UsernameFragment *string                `protobuf:"bytes,4,opt,name=usernameFragment,proto3,oneof" json:"usernameFragment,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
-func (x *ProtoInput) Reset() {
-	*x = ProtoInput{}
+func (x *RTCIceCandidateInit) Reset() {
+	*x = RTCIceCandidateInit{}
 	mi := &file_types_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ProtoInput) String() string {
+func (x *RTCIceCandidateInit) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ProtoInput) ProtoMessage() {}
+func (*RTCIceCandidateInit) ProtoMessage() {}
 
-func (x *ProtoInput) ProtoReflect() protoreflect.Message {
+func (x *RTCIceCandidateInit) ProtoReflect() protoreflect.Message {
 	mi := &file_types_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -940,318 +822,456 @@ func (x *ProtoInput) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ProtoInput.ProtoReflect.Descriptor instead.
-func (*ProtoInput) Descriptor() ([]byte, []int) {
+// Deprecated: Use RTCIceCandidateInit.ProtoReflect.Descriptor instead.
+func (*RTCIceCandidateInit) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *ProtoInput) GetInputType() isProtoInput_InputType {
+func (x *RTCIceCandidateInit) GetCandidate() string {
 	if x != nil {
-		return x.InputType
+		return x.Candidate
 	}
-	return nil
+	return ""
 }
 
-func (x *ProtoInput) GetMouseMove() *ProtoMouseMove {
+func (x *RTCIceCandidateInit) GetSdpMLineIndex() uint32 {
+	if x != nil && x.SdpMLineIndex != nil {
+		return *x.SdpMLineIndex
+	}
+	return 0
+}
+
+func (x *RTCIceCandidateInit) GetSdpMid() string {
+	if x != nil && x.SdpMid != nil {
+		return *x.SdpMid
+	}
+	return ""
+}
+
+func (x *RTCIceCandidateInit) GetUsernameFragment() string {
+	if x != nil && x.UsernameFragment != nil {
+		return *x.UsernameFragment
+	}
+	return ""
+}
+
+type RTCSessionDescriptionInit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Sdp           string                 `protobuf:"bytes,1,opt,name=sdp,proto3" json:"sdp,omitempty"`
+	Type          string                 `protobuf:"bytes,2,opt,name=type,proto3" json:"type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RTCSessionDescriptionInit) Reset() {
+	*x = RTCSessionDescriptionInit{}
+	mi := &file_types_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RTCSessionDescriptionInit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RTCSessionDescriptionInit) ProtoMessage() {}
+
+func (x *RTCSessionDescriptionInit) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[15]
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_MouseMove); ok {
-			return x.MouseMove
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
 		}
+		return ms
 	}
-	return nil
+	return mi.MessageOf(x)
 }
 
-func (x *ProtoInput) GetMouseMoveAbs() *ProtoMouseMoveAbs {
+// Deprecated: Use RTCSessionDescriptionInit.ProtoReflect.Descriptor instead.
+func (*RTCSessionDescriptionInit) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RTCSessionDescriptionInit) GetSdp() string {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_MouseMoveAbs); ok {
-			return x.MouseMoveAbs
-		}
+		return x.Sdp
 	}
-	return nil
+	return ""
 }
 
-func (x *ProtoInput) GetMouseWheel() *ProtoMouseWheel {
+func (x *RTCSessionDescriptionInit) GetType() string {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_MouseWheel); ok {
-			return x.MouseWheel
-		}
+		return x.Type
 	}
-	return nil
+	return ""
 }
 
-func (x *ProtoInput) GetMouseKeyDown() *ProtoMouseKeyDown {
+// ProtoICE message
+type ProtoICE struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Candidate     *RTCIceCandidateInit   `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProtoICE) Reset() {
+	*x = ProtoICE{}
+	mi := &file_types_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtoICE) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtoICE) ProtoMessage() {}
+
+func (x *ProtoICE) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[16]
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_MouseKeyDown); ok {
-			return x.MouseKeyDown
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
 		}
+		return ms
 	}
-	return nil
+	return mi.MessageOf(x)
 }
 
-func (x *ProtoInput) GetMouseKeyUp() *ProtoMouseKeyUp {
+// Deprecated: Use ProtoICE.ProtoReflect.Descriptor instead.
+func (*ProtoICE) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ProtoICE) GetCandidate() *RTCIceCandidateInit {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_MouseKeyUp); ok {
-			return x.MouseKeyUp
-		}
+		return x.Candidate
 	}
 	return nil
 }
 
-func (x *ProtoInput) GetKeyDown() *ProtoKeyDown {
+// ProtoSDP message
+type ProtoSDP struct {
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Sdp           *RTCSessionDescriptionInit `protobuf:"bytes,1,opt,name=sdp,proto3" json:"sdp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProtoSDP) Reset() {
+	*x = ProtoSDP{}
+	mi := &file_types_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtoSDP) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtoSDP) ProtoMessage() {}
+
+func (x *ProtoSDP) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[17]
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_KeyDown); ok {
-			return x.KeyDown
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
 		}
+		return ms
 	}
-	return nil
+	return mi.MessageOf(x)
 }
 
-func (x *ProtoInput) GetKeyUp() *ProtoKeyUp {
+// Deprecated: Use ProtoSDP.ProtoReflect.Descriptor instead.
+func (*ProtoSDP) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ProtoSDP) GetSdp() *RTCSessionDescriptionInit {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_KeyUp); ok {
-			return x.KeyUp
-		}
+		return x.Sdp
 	}
 	return nil
 }
 
-func (x *ProtoInput) GetControllerAttach() *ProtoControllerAttach {
+// ProtoRaw message
+type ProtoRaw struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Data          string                 `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProtoRaw) Reset() {
+	*x = ProtoRaw{}
+	mi := &file_types_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtoRaw) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtoRaw) ProtoMessage() {}
+
+func (x *ProtoRaw) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[18]
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerAttach); ok {
-			return x.ControllerAttach
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
 		}
+		return ms
 	}
-	return nil
+	return mi.MessageOf(x)
 }
 
-func (x *ProtoInput) GetControllerDetach() *ProtoControllerDetach {
+// Deprecated: Use ProtoRaw.ProtoReflect.Descriptor instead.
+func (*ProtoRaw) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ProtoRaw) GetData() string {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerDetach); ok {
-			return x.ControllerDetach
-		}
+		return x.Data
 	}
-	return nil
+	return ""
 }
 
-func (x *ProtoInput) GetControllerButton() *ProtoControllerButton {
+// ProtoClientRequestRoomStream message
+type ProtoClientRequestRoomStream struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomName      string                 `protobuf:"bytes,1,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProtoClientRequestRoomStream) Reset() {
+	*x = ProtoClientRequestRoomStream{}
+	mi := &file_types_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtoClientRequestRoomStream) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtoClientRequestRoomStream) ProtoMessage() {}
+
+func (x *ProtoClientRequestRoomStream) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[19]
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerButton); ok {
-			return x.ControllerButton
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
 		}
+		return ms
 	}
-	return nil
+	return mi.MessageOf(x)
 }
 
-func (x *ProtoInput) GetControllerTrigger() *ProtoControllerTrigger {
+// Deprecated: Use ProtoClientRequestRoomStream.ProtoReflect.Descriptor instead.
+func (*ProtoClientRequestRoomStream) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ProtoClientRequestRoomStream) GetRoomName() string {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerTrigger); ok {
-			return x.ControllerTrigger
-		}
+		return x.RoomName
 	}
-	return nil
+	return ""
 }
 
-func (x *ProtoInput) GetControllerStick() *ProtoControllerStick {
+func (x *ProtoClientRequestRoomStream) GetSessionId() string {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerStick); ok {
-			return x.ControllerStick
-		}
+		return x.SessionId
 	}
-	return nil
+	return ""
 }
 
-func (x *ProtoInput) GetControllerAxis() *ProtoControllerAxis {
+// ProtoClientDisconnected message
+type ProtoClientDisconnected struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	SessionId       string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	ControllerSlots []int32                `protobuf:"varint,2,rep,packed,name=controller_slots,json=controllerSlots,proto3" json:"controller_slots,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ProtoClientDisconnected) Reset() {
+	*x = ProtoClientDisconnected{}
+	mi := &file_types_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtoClientDisconnected) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtoClientDisconnected) ProtoMessage() {}
+
+func (x *ProtoClientDisconnected) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[20]
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerAxis); ok {
-			return x.ControllerAxis
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
 		}
+		return ms
 	}
-	return nil
+	return mi.MessageOf(x)
 }
 
-func (x *ProtoInput) GetControllerRumble() *ProtoControllerRumble {
+// Deprecated: Use ProtoClientDisconnected.ProtoReflect.Descriptor instead.
+func (*ProtoClientDisconnected) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ProtoClientDisconnected) GetSessionId() string {
 	if x != nil {
-		if x, ok := x.InputType.(*ProtoInput_ControllerRumble); ok {
-			return x.ControllerRumble
-		}
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ProtoClientDisconnected) GetControllerSlots() []int32 {
+	if x != nil {
+		return x.ControllerSlots
 	}
 	return nil
 }
 
-type isProtoInput_InputType interface {
-	isProtoInput_InputType()
+// ProtoServerPushStream message
+type ProtoServerPushStream struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RoomName      string                 `protobuf:"bytes,1,opt,name=room_name,json=roomName,proto3" json:"room_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-type ProtoInput_MouseMove struct {
-	MouseMove *ProtoMouseMove `protobuf:"bytes,1,opt,name=mouse_move,json=mouseMove,proto3,oneof"`
+func (x *ProtoServerPushStream) Reset() {
+	*x = ProtoServerPushStream{}
+	mi := &file_types_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
 }
 
-type ProtoInput_MouseMoveAbs struct {
-	MouseMoveAbs *ProtoMouseMoveAbs `protobuf:"bytes,2,opt,name=mouse_move_abs,json=mouseMoveAbs,proto3,oneof"`
+func (x *ProtoServerPushStream) String() string {
+	return protoimpl.X.MessageStringOf(x)
 }
 
-type ProtoInput_MouseWheel struct {
-	MouseWheel *ProtoMouseWheel `protobuf:"bytes,3,opt,name=mouse_wheel,json=mouseWheel,proto3,oneof"`
+func (*ProtoServerPushStream) ProtoMessage() {}
+
+func (x *ProtoServerPushStream) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
 }
 
-type ProtoInput_MouseKeyDown struct {
-	MouseKeyDown *ProtoMouseKeyDown `protobuf:"bytes,4,opt,name=mouse_key_down,json=mouseKeyDown,proto3,oneof"`
+// Deprecated: Use ProtoServerPushStream.ProtoReflect.Descriptor instead.
+func (*ProtoServerPushStream) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{21}
 }
 
-type ProtoInput_MouseKeyUp struct {
-	MouseKeyUp *ProtoMouseKeyUp `protobuf:"bytes,5,opt,name=mouse_key_up,json=mouseKeyUp,proto3,oneof"`
+func (x *ProtoServerPushStream) GetRoomName() string {
+	if x != nil {
+		return x.RoomName
+	}
+	return ""
 }
-
-type ProtoInput_KeyDown struct {
-	KeyDown *ProtoKeyDown `protobuf:"bytes,6,opt,name=key_down,json=keyDown,proto3,oneof"`
-}
-
-type ProtoInput_KeyUp struct {
-	KeyUp *ProtoKeyUp `protobuf:"bytes,7,opt,name=key_up,json=keyUp,proto3,oneof"`
-}
-
-type ProtoInput_ControllerAttach struct {
-	ControllerAttach *ProtoControllerAttach `protobuf:"bytes,8,opt,name=controller_attach,json=controllerAttach,proto3,oneof"`
-}
-
-type ProtoInput_ControllerDetach struct {
-	ControllerDetach *ProtoControllerDetach `protobuf:"bytes,9,opt,name=controller_detach,json=controllerDetach,proto3,oneof"`
-}
-
-type ProtoInput_ControllerButton struct {
-	ControllerButton *ProtoControllerButton `protobuf:"bytes,10,opt,name=controller_button,json=controllerButton,proto3,oneof"`
-}
-
-type ProtoInput_ControllerTrigger struct {
-	ControllerTrigger *ProtoControllerTrigger `protobuf:"bytes,11,opt,name=controller_trigger,json=controllerTrigger,proto3,oneof"`
-}
-
-type ProtoInput_ControllerStick struct {
-	ControllerStick *ProtoControllerStick `protobuf:"bytes,12,opt,name=controller_stick,json=controllerStick,proto3,oneof"`
-}
-
-type ProtoInput_ControllerAxis struct {
-	ControllerAxis *ProtoControllerAxis `protobuf:"bytes,13,opt,name=controller_axis,json=controllerAxis,proto3,oneof"`
-}
-
-type ProtoInput_ControllerRumble struct {
-	ControllerRumble *ProtoControllerRumble `protobuf:"bytes,14,opt,name=controller_rumble,json=controllerRumble,proto3,oneof"`
-}
-
-func (*ProtoInput_MouseMove) isProtoInput_InputType() {}
-
-func (*ProtoInput_MouseMoveAbs) isProtoInput_InputType() {}
-
-func (*ProtoInput_MouseWheel) isProtoInput_InputType() {}
-
-func (*ProtoInput_MouseKeyDown) isProtoInput_InputType() {}
-
-func (*ProtoInput_MouseKeyUp) isProtoInput_InputType() {}
-
-func (*ProtoInput_KeyDown) isProtoInput_InputType() {}
-
-func (*ProtoInput_KeyUp) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerAttach) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerDetach) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerButton) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerTrigger) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerStick) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerAxis) isProtoInput_InputType() {}
-
-func (*ProtoInput_ControllerRumble) isProtoInput_InputType() {}
 
 var File_types_proto protoreflect.FileDescriptor
 
 const file_types_proto_rawDesc = "" +
 	"\n" +
-	"\vtypes.proto\x12\x05proto\"@\n" +
-	"\x0eProtoMouseMove\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\f\n" +
-	"\x01x\x18\x02 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x03 \x01(\x05R\x01y\"C\n" +
-	"\x11ProtoMouseMoveAbs\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\f\n" +
-	"\x01x\x18\x02 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x03 \x01(\x05R\x01y\"A\n" +
-	"\x0fProtoMouseWheel\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\f\n" +
-	"\x01x\x18\x02 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x03 \x01(\x05R\x01y\"9\n" +
-	"\x11ProtoMouseKeyDown\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\x05R\x03key\"7\n" +
-	"\x0fProtoMouseKeyUp\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\x05R\x03key\"4\n" +
-	"\fProtoKeyDown\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\x05R\x03key\"2\n" +
+	"\vtypes.proto\x12\x05proto\",\n" +
+	"\x0eProtoMouseMove\x12\f\n" +
+	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\"/\n" +
+	"\x11ProtoMouseMoveAbs\x12\f\n" +
+	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\"-\n" +
+	"\x0fProtoMouseWheel\x12\f\n" +
+	"\x01x\x18\x01 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x02 \x01(\x05R\x01y\"%\n" +
+	"\x11ProtoMouseKeyDown\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\"#\n" +
+	"\x0fProtoMouseKeyUp\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\" \n" +
+	"\fProtoKeyDown\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\"\x1e\n" +
 	"\n" +
-	"ProtoKeyUp\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x10\n" +
-	"\x03key\x18\x02 \x01(\x05R\x03key\"O\n" +
-	"\x15ProtoControllerAttach\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x0e\n" +
-	"\x02id\x18\x02 \x01(\tR\x02id\x12\x12\n" +
-	"\x04slot\x18\x03 \x01(\x05R\x04slot\"?\n" +
+	"ProtoKeyUp\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\"Z\n" +
+	"\x15ProtoControllerAttach\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\"+\n" +
 	"\x15ProtoControllerDetach\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\"q\n" +
+	"\x04slot\x18\x01 \x01(\x05R\x04slot\"]\n" +
 	"\x15ProtoControllerButton\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12\x16\n" +
-	"\x06button\x18\x03 \x01(\x05R\x06button\x12\x18\n" +
-	"\apressed\x18\x04 \x01(\bR\apressed\"p\n" +
+	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x16\n" +
+	"\x06button\x18\x02 \x01(\x05R\x06button\x12\x18\n" +
+	"\apressed\x18\x03 \x01(\bR\apressed\"\\\n" +
 	"\x16ProtoControllerTrigger\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12\x18\n" +
-	"\atrigger\x18\x03 \x01(\x05R\atrigger\x12\x14\n" +
-	"\x05value\x18\x04 \x01(\x05R\x05value\"p\n" +
+	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x18\n" +
+	"\atrigger\x18\x02 \x01(\x05R\atrigger\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\x05R\x05value\"\\\n" +
 	"\x14ProtoControllerStick\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12\x14\n" +
-	"\x05stick\x18\x03 \x01(\x05R\x05stick\x12\f\n" +
-	"\x01x\x18\x04 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x05 \x01(\x05R\x01y\"g\n" +
+	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x14\n" +
+	"\x05stick\x18\x02 \x01(\x05R\x05stick\x12\f\n" +
+	"\x01x\x18\x03 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x04 \x01(\x05R\x01y\"S\n" +
 	"\x13ProtoControllerAxis\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12\x12\n" +
-	"\x04axis\x18\x03 \x01(\x05R\x04axis\x12\x14\n" +
-	"\x05value\x18\x04 \x01(\x05R\x05value\"\xa7\x01\n" +
+	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x12\n" +
+	"\x04axis\x18\x02 \x01(\x05R\x04axis\x12\x14\n" +
+	"\x05value\x18\x03 \x01(\x05R\x05value\"\x93\x01\n" +
 	"\x15ProtoControllerRumble\x12\x12\n" +
-	"\x04type\x18\x01 \x01(\tR\x04type\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12#\n" +
-	"\rlow_frequency\x18\x03 \x01(\x05R\flowFrequency\x12%\n" +
-	"\x0ehigh_frequency\x18\x04 \x01(\x05R\rhighFrequency\x12\x1a\n" +
-	"\bduration\x18\x05 \x01(\x05R\bduration\"\xc0\a\n" +
+	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12#\n" +
+	"\rlow_frequency\x18\x02 \x01(\x05R\flowFrequency\x12%\n" +
+	"\x0ehigh_frequency\x18\x03 \x01(\x05R\rhighFrequency\x12\x1a\n" +
+	"\bduration\x18\x04 \x01(\x05R\bduration\"\xde\x01\n" +
+	"\x13RTCIceCandidateInit\x12\x1c\n" +
+	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12)\n" +
+	"\rsdpMLineIndex\x18\x02 \x01(\rH\x00R\rsdpMLineIndex\x88\x01\x01\x12\x1b\n" +
+	"\x06sdpMid\x18\x03 \x01(\tH\x01R\x06sdpMid\x88\x01\x01\x12/\n" +
+	"\x10usernameFragment\x18\x04 \x01(\tH\x02R\x10usernameFragment\x88\x01\x01B\x10\n" +
+	"\x0e_sdpMLineIndexB\t\n" +
+	"\a_sdpMidB\x13\n" +
+	"\x11_usernameFragment\"A\n" +
+	"\x19RTCSessionDescriptionInit\x12\x10\n" +
+	"\x03sdp\x18\x01 \x01(\tR\x03sdp\x12\x12\n" +
+	"\x04type\x18\x02 \x01(\tR\x04type\"D\n" +
+	"\bProtoICE\x128\n" +
+	"\tcandidate\x18\x01 \x01(\v2\x1a.proto.RTCIceCandidateInitR\tcandidate\">\n" +
+	"\bProtoSDP\x122\n" +
+	"\x03sdp\x18\x01 \x01(\v2 .proto.RTCSessionDescriptionInitR\x03sdp\"\x1e\n" +
+	"\bProtoRaw\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\tR\x04data\"Z\n" +
+	"\x1cProtoClientRequestRoomStream\x12\x1b\n" +
+	"\troom_name\x18\x01 \x01(\tR\broomName\x12\x1d\n" +
 	"\n" +
-	"ProtoInput\x126\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"c\n" +
+	"\x17ProtoClientDisconnected\x12\x1d\n" +
 	"\n" +
-	"mouse_move\x18\x01 \x01(\v2\x15.proto.ProtoMouseMoveH\x00R\tmouseMove\x12@\n" +
-	"\x0emouse_move_abs\x18\x02 \x01(\v2\x18.proto.ProtoMouseMoveAbsH\x00R\fmouseMoveAbs\x129\n" +
-	"\vmouse_wheel\x18\x03 \x01(\v2\x16.proto.ProtoMouseWheelH\x00R\n" +
-	"mouseWheel\x12@\n" +
-	"\x0emouse_key_down\x18\x04 \x01(\v2\x18.proto.ProtoMouseKeyDownH\x00R\fmouseKeyDown\x12:\n" +
-	"\fmouse_key_up\x18\x05 \x01(\v2\x16.proto.ProtoMouseKeyUpH\x00R\n" +
-	"mouseKeyUp\x120\n" +
-	"\bkey_down\x18\x06 \x01(\v2\x13.proto.ProtoKeyDownH\x00R\akeyDown\x12*\n" +
-	"\x06key_up\x18\a \x01(\v2\x11.proto.ProtoKeyUpH\x00R\x05keyUp\x12K\n" +
-	"\x11controller_attach\x18\b \x01(\v2\x1c.proto.ProtoControllerAttachH\x00R\x10controllerAttach\x12K\n" +
-	"\x11controller_detach\x18\t \x01(\v2\x1c.proto.ProtoControllerDetachH\x00R\x10controllerDetach\x12K\n" +
-	"\x11controller_button\x18\n" +
-	" \x01(\v2\x1c.proto.ProtoControllerButtonH\x00R\x10controllerButton\x12N\n" +
-	"\x12controller_trigger\x18\v \x01(\v2\x1d.proto.ProtoControllerTriggerH\x00R\x11controllerTrigger\x12H\n" +
-	"\x10controller_stick\x18\f \x01(\v2\x1b.proto.ProtoControllerStickH\x00R\x0fcontrollerStick\x12E\n" +
-	"\x0fcontroller_axis\x18\r \x01(\v2\x1a.proto.ProtoControllerAxisH\x00R\x0econtrollerAxis\x12K\n" +
-	"\x11controller_rumble\x18\x0e \x01(\v2\x1c.proto.ProtoControllerRumbleH\x00R\x10controllerRumbleB\f\n" +
-	"\n" +
-	"input_typeB\x16Z\x14relay/internal/protob\x06proto3"
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12)\n" +
+	"\x10controller_slots\x18\x02 \x03(\x05R\x0fcontrollerSlots\"4\n" +
+	"\x15ProtoServerPushStream\x12\x1b\n" +
+	"\troom_name\x18\x01 \x01(\tR\broomNameB\x16Z\x14relay/internal/protob\x06proto3"
 
 var (
 	file_types_proto_rawDescOnce sync.Once
@@ -1265,44 +1285,39 @@ func file_types_proto_rawDescGZIP() []byte {
 	return file_types_proto_rawDescData
 }
 
-var file_types_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_types_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_types_proto_goTypes = []any{
-	(*ProtoMouseMove)(nil),         // 0: proto.ProtoMouseMove
-	(*ProtoMouseMoveAbs)(nil),      // 1: proto.ProtoMouseMoveAbs
-	(*ProtoMouseWheel)(nil),        // 2: proto.ProtoMouseWheel
-	(*ProtoMouseKeyDown)(nil),      // 3: proto.ProtoMouseKeyDown
-	(*ProtoMouseKeyUp)(nil),        // 4: proto.ProtoMouseKeyUp
-	(*ProtoKeyDown)(nil),           // 5: proto.ProtoKeyDown
-	(*ProtoKeyUp)(nil),             // 6: proto.ProtoKeyUp
-	(*ProtoControllerAttach)(nil),  // 7: proto.ProtoControllerAttach
-	(*ProtoControllerDetach)(nil),  // 8: proto.ProtoControllerDetach
-	(*ProtoControllerButton)(nil),  // 9: proto.ProtoControllerButton
-	(*ProtoControllerTrigger)(nil), // 10: proto.ProtoControllerTrigger
-	(*ProtoControllerStick)(nil),   // 11: proto.ProtoControllerStick
-	(*ProtoControllerAxis)(nil),    // 12: proto.ProtoControllerAxis
-	(*ProtoControllerRumble)(nil),  // 13: proto.ProtoControllerRumble
-	(*ProtoInput)(nil),             // 14: proto.ProtoInput
+	(*ProtoMouseMove)(nil),               // 0: proto.ProtoMouseMove
+	(*ProtoMouseMoveAbs)(nil),            // 1: proto.ProtoMouseMoveAbs
+	(*ProtoMouseWheel)(nil),              // 2: proto.ProtoMouseWheel
+	(*ProtoMouseKeyDown)(nil),            // 3: proto.ProtoMouseKeyDown
+	(*ProtoMouseKeyUp)(nil),              // 4: proto.ProtoMouseKeyUp
+	(*ProtoKeyDown)(nil),                 // 5: proto.ProtoKeyDown
+	(*ProtoKeyUp)(nil),                   // 6: proto.ProtoKeyUp
+	(*ProtoControllerAttach)(nil),        // 7: proto.ProtoControllerAttach
+	(*ProtoControllerDetach)(nil),        // 8: proto.ProtoControllerDetach
+	(*ProtoControllerButton)(nil),        // 9: proto.ProtoControllerButton
+	(*ProtoControllerTrigger)(nil),       // 10: proto.ProtoControllerTrigger
+	(*ProtoControllerStick)(nil),         // 11: proto.ProtoControllerStick
+	(*ProtoControllerAxis)(nil),          // 12: proto.ProtoControllerAxis
+	(*ProtoControllerRumble)(nil),        // 13: proto.ProtoControllerRumble
+	(*RTCIceCandidateInit)(nil),          // 14: proto.RTCIceCandidateInit
+	(*RTCSessionDescriptionInit)(nil),    // 15: proto.RTCSessionDescriptionInit
+	(*ProtoICE)(nil),                     // 16: proto.ProtoICE
+	(*ProtoSDP)(nil),                     // 17: proto.ProtoSDP
+	(*ProtoRaw)(nil),                     // 18: proto.ProtoRaw
+	(*ProtoClientRequestRoomStream)(nil), // 19: proto.ProtoClientRequestRoomStream
+	(*ProtoClientDisconnected)(nil),      // 20: proto.ProtoClientDisconnected
+	(*ProtoServerPushStream)(nil),        // 21: proto.ProtoServerPushStream
 }
 var file_types_proto_depIdxs = []int32{
-	0,  // 0: proto.ProtoInput.mouse_move:type_name -> proto.ProtoMouseMove
-	1,  // 1: proto.ProtoInput.mouse_move_abs:type_name -> proto.ProtoMouseMoveAbs
-	2,  // 2: proto.ProtoInput.mouse_wheel:type_name -> proto.ProtoMouseWheel
-	3,  // 3: proto.ProtoInput.mouse_key_down:type_name -> proto.ProtoMouseKeyDown
-	4,  // 4: proto.ProtoInput.mouse_key_up:type_name -> proto.ProtoMouseKeyUp
-	5,  // 5: proto.ProtoInput.key_down:type_name -> proto.ProtoKeyDown
-	6,  // 6: proto.ProtoInput.key_up:type_name -> proto.ProtoKeyUp
-	7,  // 7: proto.ProtoInput.controller_attach:type_name -> proto.ProtoControllerAttach
-	8,  // 8: proto.ProtoInput.controller_detach:type_name -> proto.ProtoControllerDetach
-	9,  // 9: proto.ProtoInput.controller_button:type_name -> proto.ProtoControllerButton
-	10, // 10: proto.ProtoInput.controller_trigger:type_name -> proto.ProtoControllerTrigger
-	11, // 11: proto.ProtoInput.controller_stick:type_name -> proto.ProtoControllerStick
-	12, // 12: proto.ProtoInput.controller_axis:type_name -> proto.ProtoControllerAxis
-	13, // 13: proto.ProtoInput.controller_rumble:type_name -> proto.ProtoControllerRumble
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	14, // 0: proto.ProtoICE.candidate:type_name -> proto.RTCIceCandidateInit
+	15, // 1: proto.ProtoSDP.sdp:type_name -> proto.RTCSessionDescriptionInit
+	2,  // [2:2] is the sub-list for method output_type
+	2,  // [2:2] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_types_proto_init() }
@@ -1310,29 +1325,14 @@ func file_types_proto_init() {
 	if File_types_proto != nil {
 		return
 	}
-	file_types_proto_msgTypes[14].OneofWrappers = []any{
-		(*ProtoInput_MouseMove)(nil),
-		(*ProtoInput_MouseMoveAbs)(nil),
-		(*ProtoInput_MouseWheel)(nil),
-		(*ProtoInput_MouseKeyDown)(nil),
-		(*ProtoInput_MouseKeyUp)(nil),
-		(*ProtoInput_KeyDown)(nil),
-		(*ProtoInput_KeyUp)(nil),
-		(*ProtoInput_ControllerAttach)(nil),
-		(*ProtoInput_ControllerDetach)(nil),
-		(*ProtoInput_ControllerButton)(nil),
-		(*ProtoInput_ControllerTrigger)(nil),
-		(*ProtoInput_ControllerStick)(nil),
-		(*ProtoInput_ControllerAxis)(nil),
-		(*ProtoInput_ControllerRumble)(nil),
-	}
+	file_types_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_types_proto_rawDesc), len(file_types_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

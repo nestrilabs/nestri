@@ -8,124 +8,137 @@ package proto;
 
 // MouseMove message
 message ProtoMouseMove {
-  string type = 1; // Fixed value "MouseMove"
-  int32 x = 2;
-  int32 y = 3;
+  int32 x = 1;
+  int32 y = 2;
 }
 
 // MouseMoveAbs message
 message ProtoMouseMoveAbs {
-  string type = 1; // Fixed value "MouseMoveAbs"
-  int32 x = 2;
-  int32 y = 3;
+  int32 x = 1;
+  int32 y = 2;
 }
 
 // MouseWheel message
 message ProtoMouseWheel {
-  string type = 1; // Fixed value "MouseWheel"
-  int32 x = 2;
-  int32 y = 3;
+  int32 x = 1;
+  int32 y = 2;
 }
 
 // MouseKeyDown message
 message ProtoMouseKeyDown {
-  string type = 1; // Fixed value "MouseKeyDown"
-  int32 key = 2;
+  int32 key = 1;
 }
 
 // MouseKeyUp message
 message ProtoMouseKeyUp {
-  string type = 1; // Fixed value "MouseKeyUp"
-  int32 key = 2;
+  int32 key = 1;
 }
 
 /* Keyboard messages */
 
 // KeyDown message
 message ProtoKeyDown {
-  string type = 1; // Fixed value "KeyDown"
-  int32 key = 2;
+  int32 key = 1;
 }
 
 // KeyUp message
 message ProtoKeyUp {
-  string type = 1; // Fixed value "KeyUp"
-  int32 key = 2;
+  int32 key = 1;
 }
 
 /* Controller messages */
 
 // ControllerAttach message
 message ProtoControllerAttach {
-  string type = 1; // Fixed value "ControllerAttach"
-  string id = 2; // One of the following enums: "ps", "xbox" or "switch"
-  int32 slot = 3; // Slot number (0-3)
+  string id = 1; // One of the following enums: "ps", "xbox" or "switch"
+  int32 slot = 2; // Slot number (0-3)
+  string session_id = 3; // Session ID of the client attaching the controller
 }
 
 // ControllerDetach message
 message ProtoControllerDetach {
-  string type = 1; // Fixed value "ControllerDetach"
-  int32 slot = 2; // Slot number (0-3)
+  int32 slot = 1; // Slot number (0-3)
 }
 
 // ControllerButton message
 message ProtoControllerButton {
-  string type = 1; // Fixed value "ControllerButtons"
-  int32 slot = 2; // Slot number (0-3)
-  int32 button = 3; // Button code (linux input event code)
-  bool pressed = 4; // true if pressed, false if released
+  int32 slot = 1; // Slot number (0-3)
+  int32 button = 2; // Button code (linux input event code)
+  bool pressed = 3; // true if pressed, false if released
 }
 
 // ControllerTriggers message
 message ProtoControllerTrigger {
-  string type = 1; // Fixed value "ControllerTriggers"
-  int32 slot = 2; // Slot number (0-3)
-  int32 trigger = 3; // Trigger number (0 for left, 1 for right)
-  int32 value = 4; // trigger value (-32768 to 32767)
+  int32 slot = 1; // Slot number (0-3)
+  int32 trigger = 2; // Trigger number (0 for left, 1 for right)
+  int32 value = 3; // trigger value (-32768 to 32767)
 }
 
 // ControllerSticks message
 message ProtoControllerStick {
-  string type = 1; // Fixed value "ControllerStick"
-  int32 slot = 2; // Slot number (0-3)
-  int32 stick = 3; // Stick number (0 for left, 1 for right)
-  int32 x = 4; // X axis value (-32768 to 32767)
-  int32 y = 5; // Y axis value (-32768 to 32767)
+  int32 slot = 1; // Slot number (0-3)
+  int32 stick = 2; // Stick number (0 for left, 1 for right)
+  int32 x = 3; // X axis value (-32768 to 32767)
+  int32 y = 4; // Y axis value (-32768 to 32767)
 }
 
 // ControllerAxis message
 message ProtoControllerAxis {
-  string type = 1; // Fixed value "ControllerAxis"
-  int32 slot = 2; // Slot number (0-3)
-  int32 axis = 3; // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-  int32 value = 4; // axis value (-1 to 1)
+  int32 slot = 1; // Slot number (0-3)
+  int32 axis = 2; // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
+  int32 value = 3; // axis value (-1 to 1)
 }
 
 // ControllerRumble message
 message ProtoControllerRumble {
-  string type = 1; // Fixed value "ControllerRumble"
-  int32 slot = 2; // Slot number (0-3)
-  int32 low_frequency = 3; // Low frequency rumble (0-65535)
-  int32 high_frequency = 4; // High frequency rumble (0-65535)
-  int32 duration = 5; // Duration in milliseconds
+  int32 slot = 1; // Slot number (0-3)
+  int32 low_frequency = 2; // Low frequency rumble (0-65535)
+  int32 high_frequency = 3; // High frequency rumble (0-65535)
+  int32 duration = 4; // Duration in milliseconds
 }
 
-// Union of all Input types
-message ProtoInput {
-  oneof input_type {
-    ProtoMouseMove mouse_move = 1;
-    ProtoMouseMoveAbs mouse_move_abs = 2;
-    ProtoMouseWheel mouse_wheel = 3;
-    ProtoMouseKeyDown mouse_key_down = 4;
-    ProtoMouseKeyUp mouse_key_up = 5;
-    ProtoKeyDown key_down = 6;
-    ProtoKeyUp key_up = 7;
-    ProtoControllerAttach controller_attach = 8;
-    ProtoControllerDetach controller_detach = 9;
-    ProtoControllerButton controller_button = 10;
-    ProtoControllerTrigger controller_trigger = 11;
-    ProtoControllerStick controller_stick = 12;
-    ProtoControllerAxis controller_axis = 13;
-    ProtoControllerRumble controller_rumble = 14;
-  }
+/* WebRTC + signaling */
+
+message RTCIceCandidateInit {
+  string candidate = 1;
+  optional uint32 sdpMLineIndex = 2;
+  optional string sdpMid = 3;
+  optional string usernameFragment = 4;
+}
+
+message RTCSessionDescriptionInit {
+  string sdp = 1;
+  string type = 2;
+}
+
+// ProtoICE message
+message ProtoICE {
+  RTCIceCandidateInit candidate = 1;
+}
+
+// ProtoSDP message
+message ProtoSDP {
+  RTCSessionDescriptionInit sdp = 1;
+}
+
+// ProtoRaw message
+message ProtoRaw {
+  string data = 1;
+}
+
+// ProtoClientRequestRoomStream message
+message ProtoClientRequestRoomStream {
+  string room_name = 1;
+  string session_id = 2;
+}
+
+// ProtoClientDisconnected message
+message ProtoClientDisconnected {
+  string session_id = 1;
+  repeated int32 controller_slots = 2;
+}
+
+// ProtoServerPushStream message
+message ProtoServerPushStream {
+  string room_name = 1;
 }

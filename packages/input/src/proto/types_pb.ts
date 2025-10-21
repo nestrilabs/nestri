@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file types.proto.
  */
 export const file_types: GenFile = /*@__PURE__*/
-  fileDesc("Cgt0eXBlcy5wcm90bxIFcHJvdG8iNAoOUHJvdG9Nb3VzZU1vdmUSDAoEdHlwZRgBIAEoCRIJCgF4GAIgASgFEgkKAXkYAyABKAUiNwoRUHJvdG9Nb3VzZU1vdmVBYnMSDAoEdHlwZRgBIAEoCRIJCgF4GAIgASgFEgkKAXkYAyABKAUiNQoPUHJvdG9Nb3VzZVdoZWVsEgwKBHR5cGUYASABKAkSCQoBeBgCIAEoBRIJCgF5GAMgASgFIi4KEVByb3RvTW91c2VLZXlEb3duEgwKBHR5cGUYASABKAkSCwoDa2V5GAIgASgFIiwKD1Byb3RvTW91c2VLZXlVcBIMCgR0eXBlGAEgASgJEgsKA2tleRgCIAEoBSIpCgxQcm90b0tleURvd24SDAoEdHlwZRgBIAEoCRILCgNrZXkYAiABKAUiJwoKUHJvdG9LZXlVcBIMCgR0eXBlGAEgASgJEgsKA2tleRgCIAEoBSI/ChVQcm90b0NvbnRyb2xsZXJBdHRhY2gSDAoEdHlwZRgBIAEoCRIKCgJpZBgCIAEoCRIMCgRzbG90GAMgASgFIjMKFVByb3RvQ29udHJvbGxlckRldGFjaBIMCgR0eXBlGAEgASgJEgwKBHNsb3QYAiABKAUiVAoVUHJvdG9Db250cm9sbGVyQnV0dG9uEgwKBHR5cGUYASABKAkSDAoEc2xvdBgCIAEoBRIOCgZidXR0b24YAyABKAUSDwoHcHJlc3NlZBgEIAEoCCJUChZQcm90b0NvbnRyb2xsZXJUcmlnZ2VyEgwKBHR5cGUYASABKAkSDAoEc2xvdBgCIAEoBRIPCgd0cmlnZ2VyGAMgASgFEg0KBXZhbHVlGAQgASgFIlcKFFByb3RvQ29udHJvbGxlclN0aWNrEgwKBHR5cGUYASABKAkSDAoEc2xvdBgCIAEoBRINCgVzdGljaxgDIAEoBRIJCgF4GAQgASgFEgkKAXkYBSABKAUiTgoTUHJvdG9Db250cm9sbGVyQXhpcxIMCgR0eXBlGAEgASgJEgwKBHNsb3QYAiABKAUSDAoEYXhpcxgDIAEoBRINCgV2YWx1ZRgEIAEoBSJ0ChVQcm90b0NvbnRyb2xsZXJSdW1ibGUSDAoEdHlwZRgBIAEoCRIMCgRzbG90GAIgASgFEhUKDWxvd19mcmVxdWVuY3kYAyABKAUSFgoOaGlnaF9mcmVxdWVuY3kYBCABKAUSEAoIZHVyYXRpb24YBSABKAUi9QUKClByb3RvSW5wdXQSKwoKbW91c2VfbW92ZRgBIAEoCzIVLnByb3RvLlByb3RvTW91c2VNb3ZlSAASMgoObW91c2VfbW92ZV9hYnMYAiABKAsyGC5wcm90by5Qcm90b01vdXNlTW92ZUFic0gAEi0KC21vdXNlX3doZWVsGAMgASgLMhYucHJvdG8uUHJvdG9Nb3VzZVdoZWVsSAASMgoObW91c2Vfa2V5X2Rvd24YBCABKAsyGC5wcm90by5Qcm90b01vdXNlS2V5RG93bkgAEi4KDG1vdXNlX2tleV91cBgFIAEoCzIWLnByb3RvLlByb3RvTW91c2VLZXlVcEgAEicKCGtleV9kb3duGAYgASgLMhMucHJvdG8uUHJvdG9LZXlEb3duSAASIwoGa2V5X3VwGAcgASgLMhEucHJvdG8uUHJvdG9LZXlVcEgAEjkKEWNvbnRyb2xsZXJfYXR0YWNoGAggASgLMhwucHJvdG8uUHJvdG9Db250cm9sbGVyQXR0YWNoSAASOQoRY29udHJvbGxlcl9kZXRhY2gYCSABKAsyHC5wcm90by5Qcm90b0NvbnRyb2xsZXJEZXRhY2hIABI5ChFjb250cm9sbGVyX2J1dHRvbhgKIAEoCzIcLnByb3RvLlByb3RvQ29udHJvbGxlckJ1dHRvbkgAEjsKEmNvbnRyb2xsZXJfdHJpZ2dlchgLIAEoCzIdLnByb3RvLlByb3RvQ29udHJvbGxlclRyaWdnZXJIABI3ChBjb250cm9sbGVyX3N0aWNrGAwgASgLMhsucHJvdG8uUHJvdG9Db250cm9sbGVyU3RpY2tIABI1Cg9jb250cm9sbGVyX2F4aXMYDSABKAsyGi5wcm90by5Qcm90b0NvbnRyb2xsZXJBeGlzSAASOQoRY29udHJvbGxlcl9ydW1ibGUYDiABKAsyHC5wcm90by5Qcm90b0NvbnRyb2xsZXJSdW1ibGVIAEIMCgppbnB1dF90eXBlQhZaFHJlbGF5L2ludGVybmFsL3Byb3RvYgZwcm90bzM");
+  fileDesc("Cgt0eXBlcy5wcm90bxIFcHJvdG8iJgoOUHJvdG9Nb3VzZU1vdmUSCQoBeBgBIAEoBRIJCgF5GAIgASgFIikKEVByb3RvTW91c2VNb3ZlQWJzEgkKAXgYASABKAUSCQoBeRgCIAEoBSInCg9Qcm90b01vdXNlV2hlZWwSCQoBeBgBIAEoBRIJCgF5GAIgASgFIiAKEVByb3RvTW91c2VLZXlEb3duEgsKA2tleRgBIAEoBSIeCg9Qcm90b01vdXNlS2V5VXASCwoDa2V5GAEgASgFIhsKDFByb3RvS2V5RG93bhILCgNrZXkYASABKAUiGQoKUHJvdG9LZXlVcBILCgNrZXkYASABKAUiRQoVUHJvdG9Db250cm9sbGVyQXR0YWNoEgoKAmlkGAEgASgJEgwKBHNsb3QYAiABKAUSEgoKc2Vzc2lvbl9pZBgDIAEoCSIlChVQcm90b0NvbnRyb2xsZXJEZXRhY2gSDAoEc2xvdBgBIAEoBSJGChVQcm90b0NvbnRyb2xsZXJCdXR0b24SDAoEc2xvdBgBIAEoBRIOCgZidXR0b24YAiABKAUSDwoHcHJlc3NlZBgDIAEoCCJGChZQcm90b0NvbnRyb2xsZXJUcmlnZ2VyEgwKBHNsb3QYASABKAUSDwoHdHJpZ2dlchgCIAEoBRINCgV2YWx1ZRgDIAEoBSJJChRQcm90b0NvbnRyb2xsZXJTdGljaxIMCgRzbG90GAEgASgFEg0KBXN0aWNrGAIgASgFEgkKAXgYAyABKAUSCQoBeRgEIAEoBSJAChNQcm90b0NvbnRyb2xsZXJBeGlzEgwKBHNsb3QYASABKAUSDAoEYXhpcxgCIAEoBRINCgV2YWx1ZRgDIAEoBSJmChVQcm90b0NvbnRyb2xsZXJSdW1ibGUSDAoEc2xvdBgBIAEoBRIVCg1sb3dfZnJlcXVlbmN5GAIgASgFEhYKDmhpZ2hfZnJlcXVlbmN5GAMgASgFEhAKCGR1cmF0aW9uGAQgASgFIqoBChNSVENJY2VDYW5kaWRhdGVJbml0EhEKCWNhbmRpZGF0ZRgBIAEoCRIaCg1zZHBNTGluZUluZGV4GAIgASgNSACIAQESEwoGc2RwTWlkGAMgASgJSAGIAQESHQoQdXNlcm5hbWVGcmFnbWVudBgEIAEoCUgCiAEBQhAKDl9zZHBNTGluZUluZGV4QgkKB19zZHBNaWRCEwoRX3VzZXJuYW1lRnJhZ21lbnQiNgoZUlRDU2Vzc2lvbkRlc2NyaXB0aW9uSW5pdBILCgNzZHAYASABKAkSDAoEdHlwZRgCIAEoCSI5CghQcm90b0lDRRItCgljYW5kaWRhdGUYASABKAsyGi5wcm90by5SVENJY2VDYW5kaWRhdGVJbml0IjkKCFByb3RvU0RQEi0KA3NkcBgBIAEoCzIgLnByb3RvLlJUQ1Nlc3Npb25EZXNjcmlwdGlvbkluaXQiGAoIUHJvdG9SYXcSDAoEZGF0YRgBIAEoCSJFChxQcm90b0NsaWVudFJlcXVlc3RSb29tU3RyZWFtEhEKCXJvb21fbmFtZRgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJIkcKF1Byb3RvQ2xpZW50RGlzY29ubmVjdGVkEhIKCnNlc3Npb25faWQYASABKAkSGAoQY29udHJvbGxlcl9zbG90cxgCIAMoBSIqChVQcm90b1NlcnZlclB1c2hTdHJlYW0SEQoJcm9vbV9uYW1lGAEgASgJQhZaFHJlbGF5L2ludGVybmFsL3Byb3RvYgZwcm90bzM");
 
 /**
  * MouseMove message
@@ -19,19 +19,12 @@ export const file_types: GenFile = /*@__PURE__*/
  */
 export type ProtoMouseMove = Message<"proto.ProtoMouseMove"> & {
   /**
-   * Fixed value "MouseMove"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 x = 2;
+   * @generated from field: int32 x = 1;
    */
   x: number;
 
   /**
-   * @generated from field: int32 y = 3;
+   * @generated from field: int32 y = 2;
    */
   y: number;
 };
@@ -50,19 +43,12 @@ export const ProtoMouseMoveSchema: GenMessage<ProtoMouseMove> = /*@__PURE__*/
  */
 export type ProtoMouseMoveAbs = Message<"proto.ProtoMouseMoveAbs"> & {
   /**
-   * Fixed value "MouseMoveAbs"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 x = 2;
+   * @generated from field: int32 x = 1;
    */
   x: number;
 
   /**
-   * @generated from field: int32 y = 3;
+   * @generated from field: int32 y = 2;
    */
   y: number;
 };
@@ -81,19 +67,12 @@ export const ProtoMouseMoveAbsSchema: GenMessage<ProtoMouseMoveAbs> = /*@__PURE_
  */
 export type ProtoMouseWheel = Message<"proto.ProtoMouseWheel"> & {
   /**
-   * Fixed value "MouseWheel"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 x = 2;
+   * @generated from field: int32 x = 1;
    */
   x: number;
 
   /**
-   * @generated from field: int32 y = 3;
+   * @generated from field: int32 y = 2;
    */
   y: number;
 };
@@ -112,14 +91,7 @@ export const ProtoMouseWheelSchema: GenMessage<ProtoMouseWheel> = /*@__PURE__*/
  */
 export type ProtoMouseKeyDown = Message<"proto.ProtoMouseKeyDown"> & {
   /**
-   * Fixed value "MouseKeyDown"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 key = 2;
+   * @generated from field: int32 key = 1;
    */
   key: number;
 };
@@ -138,14 +110,7 @@ export const ProtoMouseKeyDownSchema: GenMessage<ProtoMouseKeyDown> = /*@__PURE_
  */
 export type ProtoMouseKeyUp = Message<"proto.ProtoMouseKeyUp"> & {
   /**
-   * Fixed value "MouseKeyUp"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 key = 2;
+   * @generated from field: int32 key = 1;
    */
   key: number;
 };
@@ -164,14 +129,7 @@ export const ProtoMouseKeyUpSchema: GenMessage<ProtoMouseKeyUp> = /*@__PURE__*/
  */
 export type ProtoKeyDown = Message<"proto.ProtoKeyDown"> & {
   /**
-   * Fixed value "KeyDown"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 key = 2;
+   * @generated from field: int32 key = 1;
    */
   key: number;
 };
@@ -190,14 +148,7 @@ export const ProtoKeyDownSchema: GenMessage<ProtoKeyDown> = /*@__PURE__*/
  */
 export type ProtoKeyUp = Message<"proto.ProtoKeyUp"> & {
   /**
-   * Fixed value "KeyUp"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
-   * @generated from field: int32 key = 2;
+   * @generated from field: int32 key = 1;
    */
   key: number;
 };
@@ -216,25 +167,25 @@ export const ProtoKeyUpSchema: GenMessage<ProtoKeyUp> = /*@__PURE__*/
  */
 export type ProtoControllerAttach = Message<"proto.ProtoControllerAttach"> & {
   /**
-   * Fixed value "ControllerAttach"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * One of the following enums: "ps", "xbox" or "switch"
    *
-   * @generated from field: string id = 2;
+   * @generated from field: string id = 1;
    */
   id: string;
 
   /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 3;
+   * @generated from field: int32 slot = 2;
    */
   slot: number;
+
+  /**
+   * Session ID of the client attaching the controller
+   *
+   * @generated from field: string session_id = 3;
+   */
+  sessionId: string;
 };
 
 /**
@@ -251,16 +202,9 @@ export const ProtoControllerAttachSchema: GenMessage<ProtoControllerAttach> = /*
  */
 export type ProtoControllerDetach = Message<"proto.ProtoControllerDetach"> & {
   /**
-   * Fixed value "ControllerDetach"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 2;
+   * @generated from field: int32 slot = 1;
    */
   slot: number;
 };
@@ -279,30 +223,23 @@ export const ProtoControllerDetachSchema: GenMessage<ProtoControllerDetach> = /*
  */
 export type ProtoControllerButton = Message<"proto.ProtoControllerButton"> & {
   /**
-   * Fixed value "ControllerButtons"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 2;
+   * @generated from field: int32 slot = 1;
    */
   slot: number;
 
   /**
    * Button code (linux input event code)
    *
-   * @generated from field: int32 button = 3;
+   * @generated from field: int32 button = 2;
    */
   button: number;
 
   /**
    * true if pressed, false if released
    *
-   * @generated from field: bool pressed = 4;
+   * @generated from field: bool pressed = 3;
    */
   pressed: boolean;
 };
@@ -321,30 +258,23 @@ export const ProtoControllerButtonSchema: GenMessage<ProtoControllerButton> = /*
  */
 export type ProtoControllerTrigger = Message<"proto.ProtoControllerTrigger"> & {
   /**
-   * Fixed value "ControllerTriggers"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 2;
+   * @generated from field: int32 slot = 1;
    */
   slot: number;
 
   /**
    * Trigger number (0 for left, 1 for right)
    *
-   * @generated from field: int32 trigger = 3;
+   * @generated from field: int32 trigger = 2;
    */
   trigger: number;
 
   /**
    * trigger value (-32768 to 32767)
    *
-   * @generated from field: int32 value = 4;
+   * @generated from field: int32 value = 3;
    */
   value: number;
 };
@@ -363,37 +293,30 @@ export const ProtoControllerTriggerSchema: GenMessage<ProtoControllerTrigger> = 
  */
 export type ProtoControllerStick = Message<"proto.ProtoControllerStick"> & {
   /**
-   * Fixed value "ControllerStick"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 2;
+   * @generated from field: int32 slot = 1;
    */
   slot: number;
 
   /**
    * Stick number (0 for left, 1 for right)
    *
-   * @generated from field: int32 stick = 3;
+   * @generated from field: int32 stick = 2;
    */
   stick: number;
 
   /**
    * X axis value (-32768 to 32767)
    *
-   * @generated from field: int32 x = 4;
+   * @generated from field: int32 x = 3;
    */
   x: number;
 
   /**
    * Y axis value (-32768 to 32767)
    *
-   * @generated from field: int32 y = 5;
+   * @generated from field: int32 y = 4;
    */
   y: number;
 };
@@ -412,30 +335,23 @@ export const ProtoControllerStickSchema: GenMessage<ProtoControllerStick> = /*@_
  */
 export type ProtoControllerAxis = Message<"proto.ProtoControllerAxis"> & {
   /**
-   * Fixed value "ControllerAxis"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 2;
+   * @generated from field: int32 slot = 1;
    */
   slot: number;
 
   /**
    * Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
    *
-   * @generated from field: int32 axis = 3;
+   * @generated from field: int32 axis = 2;
    */
   axis: number;
 
   /**
    * axis value (-1 to 1)
    *
-   * @generated from field: int32 value = 4;
+   * @generated from field: int32 value = 3;
    */
   value: number;
 };
@@ -454,37 +370,30 @@ export const ProtoControllerAxisSchema: GenMessage<ProtoControllerAxis> = /*@__P
  */
 export type ProtoControllerRumble = Message<"proto.ProtoControllerRumble"> & {
   /**
-   * Fixed value "ControllerRumble"
-   *
-   * @generated from field: string type = 1;
-   */
-  type: string;
-
-  /**
    * Slot number (0-3)
    *
-   * @generated from field: int32 slot = 2;
+   * @generated from field: int32 slot = 1;
    */
   slot: number;
 
   /**
    * Low frequency rumble (0-65535)
    *
-   * @generated from field: int32 low_frequency = 3;
+   * @generated from field: int32 low_frequency = 2;
    */
   lowFrequency: number;
 
   /**
    * High frequency rumble (0-65535)
    *
-   * @generated from field: int32 high_frequency = 4;
+   * @generated from field: int32 high_frequency = 3;
    */
   highFrequency: number;
 
   /**
    * Duration in milliseconds
    *
-   * @generated from field: int32 duration = 5;
+   * @generated from field: int32 duration = 4;
    */
   duration: number;
 };
@@ -497,105 +406,180 @@ export const ProtoControllerRumbleSchema: GenMessage<ProtoControllerRumble> = /*
   messageDesc(file_types, 13);
 
 /**
- * Union of all Input types
- *
- * @generated from message proto.ProtoInput
+ * @generated from message proto.RTCIceCandidateInit
  */
-export type ProtoInput = Message<"proto.ProtoInput"> & {
+export type RTCIceCandidateInit = Message<"proto.RTCIceCandidateInit"> & {
   /**
-   * @generated from oneof proto.ProtoInput.input_type
+   * @generated from field: string candidate = 1;
    */
-  inputType: {
-    /**
-     * @generated from field: proto.ProtoMouseMove mouse_move = 1;
-     */
-    value: ProtoMouseMove;
-    case: "mouseMove";
-  } | {
-    /**
-     * @generated from field: proto.ProtoMouseMoveAbs mouse_move_abs = 2;
-     */
-    value: ProtoMouseMoveAbs;
-    case: "mouseMoveAbs";
-  } | {
-    /**
-     * @generated from field: proto.ProtoMouseWheel mouse_wheel = 3;
-     */
-    value: ProtoMouseWheel;
-    case: "mouseWheel";
-  } | {
-    /**
-     * @generated from field: proto.ProtoMouseKeyDown mouse_key_down = 4;
-     */
-    value: ProtoMouseKeyDown;
-    case: "mouseKeyDown";
-  } | {
-    /**
-     * @generated from field: proto.ProtoMouseKeyUp mouse_key_up = 5;
-     */
-    value: ProtoMouseKeyUp;
-    case: "mouseKeyUp";
-  } | {
-    /**
-     * @generated from field: proto.ProtoKeyDown key_down = 6;
-     */
-    value: ProtoKeyDown;
-    case: "keyDown";
-  } | {
-    /**
-     * @generated from field: proto.ProtoKeyUp key_up = 7;
-     */
-    value: ProtoKeyUp;
-    case: "keyUp";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerAttach controller_attach = 8;
-     */
-    value: ProtoControllerAttach;
-    case: "controllerAttach";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerDetach controller_detach = 9;
-     */
-    value: ProtoControllerDetach;
-    case: "controllerDetach";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerButton controller_button = 10;
-     */
-    value: ProtoControllerButton;
-    case: "controllerButton";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerTrigger controller_trigger = 11;
-     */
-    value: ProtoControllerTrigger;
-    case: "controllerTrigger";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerStick controller_stick = 12;
-     */
-    value: ProtoControllerStick;
-    case: "controllerStick";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerAxis controller_axis = 13;
-     */
-    value: ProtoControllerAxis;
-    case: "controllerAxis";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerRumble controller_rumble = 14;
-     */
-    value: ProtoControllerRumble;
-    case: "controllerRumble";
-  } | { case: undefined; value?: undefined };
+  candidate: string;
+
+  /**
+   * @generated from field: optional uint32 sdpMLineIndex = 2;
+   */
+  sdpMLineIndex?: number;
+
+  /**
+   * @generated from field: optional string sdpMid = 3;
+   */
+  sdpMid?: string;
+
+  /**
+   * @generated from field: optional string usernameFragment = 4;
+   */
+  usernameFragment?: string;
 };
 
 /**
- * Describes the message proto.ProtoInput.
- * Use `create(ProtoInputSchema)` to create a new message.
+ * Describes the message proto.RTCIceCandidateInit.
+ * Use `create(RTCIceCandidateInitSchema)` to create a new message.
  */
-export const ProtoInputSchema: GenMessage<ProtoInput> = /*@__PURE__*/
+export const RTCIceCandidateInitSchema: GenMessage<RTCIceCandidateInit> = /*@__PURE__*/
   messageDesc(file_types, 14);
+
+/**
+ * @generated from message proto.RTCSessionDescriptionInit
+ */
+export type RTCSessionDescriptionInit = Message<"proto.RTCSessionDescriptionInit"> & {
+  /**
+   * @generated from field: string sdp = 1;
+   */
+  sdp: string;
+
+  /**
+   * @generated from field: string type = 2;
+   */
+  type: string;
+};
+
+/**
+ * Describes the message proto.RTCSessionDescriptionInit.
+ * Use `create(RTCSessionDescriptionInitSchema)` to create a new message.
+ */
+export const RTCSessionDescriptionInitSchema: GenMessage<RTCSessionDescriptionInit> = /*@__PURE__*/
+  messageDesc(file_types, 15);
+
+/**
+ * ProtoICE message
+ *
+ * @generated from message proto.ProtoICE
+ */
+export type ProtoICE = Message<"proto.ProtoICE"> & {
+  /**
+   * @generated from field: proto.RTCIceCandidateInit candidate = 1;
+   */
+  candidate?: RTCIceCandidateInit;
+};
+
+/**
+ * Describes the message proto.ProtoICE.
+ * Use `create(ProtoICESchema)` to create a new message.
+ */
+export const ProtoICESchema: GenMessage<ProtoICE> = /*@__PURE__*/
+  messageDesc(file_types, 16);
+
+/**
+ * ProtoSDP message
+ *
+ * @generated from message proto.ProtoSDP
+ */
+export type ProtoSDP = Message<"proto.ProtoSDP"> & {
+  /**
+   * @generated from field: proto.RTCSessionDescriptionInit sdp = 1;
+   */
+  sdp?: RTCSessionDescriptionInit;
+};
+
+/**
+ * Describes the message proto.ProtoSDP.
+ * Use `create(ProtoSDPSchema)` to create a new message.
+ */
+export const ProtoSDPSchema: GenMessage<ProtoSDP> = /*@__PURE__*/
+  messageDesc(file_types, 17);
+
+/**
+ * ProtoRaw message
+ *
+ * @generated from message proto.ProtoRaw
+ */
+export type ProtoRaw = Message<"proto.ProtoRaw"> & {
+  /**
+   * @generated from field: string data = 1;
+   */
+  data: string;
+};
+
+/**
+ * Describes the message proto.ProtoRaw.
+ * Use `create(ProtoRawSchema)` to create a new message.
+ */
+export const ProtoRawSchema: GenMessage<ProtoRaw> = /*@__PURE__*/
+  messageDesc(file_types, 18);
+
+/**
+ * ProtoClientRequestRoomStream message
+ *
+ * @generated from message proto.ProtoClientRequestRoomStream
+ */
+export type ProtoClientRequestRoomStream = Message<"proto.ProtoClientRequestRoomStream"> & {
+  /**
+   * @generated from field: string room_name = 1;
+   */
+  roomName: string;
+
+  /**
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+};
+
+/**
+ * Describes the message proto.ProtoClientRequestRoomStream.
+ * Use `create(ProtoClientRequestRoomStreamSchema)` to create a new message.
+ */
+export const ProtoClientRequestRoomStreamSchema: GenMessage<ProtoClientRequestRoomStream> = /*@__PURE__*/
+  messageDesc(file_types, 19);
+
+/**
+ * ProtoClientDisconnected message
+ *
+ * @generated from message proto.ProtoClientDisconnected
+ */
+export type ProtoClientDisconnected = Message<"proto.ProtoClientDisconnected"> & {
+  /**
+   * @generated from field: string session_id = 1;
+   */
+  sessionId: string;
+
+  /**
+   * @generated from field: repeated int32 controller_slots = 2;
+   */
+  controllerSlots: number[];
+};
+
+/**
+ * Describes the message proto.ProtoClientDisconnected.
+ * Use `create(ProtoClientDisconnectedSchema)` to create a new message.
+ */
+export const ProtoClientDisconnectedSchema: GenMessage<ProtoClientDisconnected> = /*@__PURE__*/
+  messageDesc(file_types, 20);
+
+/**
+ * ProtoServerPushStream message
+ *
+ * @generated from message proto.ProtoServerPushStream
+ */
+export type ProtoServerPushStream = Message<"proto.ProtoServerPushStream"> & {
+  /**
+   * @generated from field: string room_name = 1;
+   */
+  roomName: string;
+};
+
+/**
+ * Describes the message proto.ProtoServerPushStream.
+ * Use `create(ProtoServerPushStreamSchema)` to create a new message.
+ */
+export const ProtoServerPushStreamSchema: GenMessage<ProtoServerPushStream> = /*@__PURE__*/
+  messageDesc(file_types, 21);
 

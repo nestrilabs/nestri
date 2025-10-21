@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { ProtoInput } from "./types_pb";
+import type { ProtoClientDisconnected, ProtoClientRequestRoomStream, ProtoControllerAttach, ProtoControllerAxis, ProtoControllerButton, ProtoControllerDetach, ProtoControllerRumble, ProtoControllerStick, ProtoControllerTrigger, ProtoICE, ProtoKeyDown, ProtoKeyUp, ProtoMouseKeyDown, ProtoMouseKeyUp, ProtoMouseMove, ProtoMouseMoveAbs, ProtoMouseWheel, ProtoRaw, ProtoSDP, ProtoServerPushStream } from "./types_pb";
 import { file_types } from "./types_pb";
 import type { ProtoLatencyTracker } from "./latency_tracker_pb";
 import { file_latency_tracker } from "./latency_tracker_pb";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file messages.proto.
  */
 export const file_messages: GenFile = /*@__PURE__*/
-  fileDesc("Cg5tZXNzYWdlcy5wcm90bxIFcHJvdG8iVQoQUHJvdG9NZXNzYWdlQmFzZRIUCgxwYXlsb2FkX3R5cGUYASABKAkSKwoHbGF0ZW5jeRgCIAEoCzIaLnByb3RvLlByb3RvTGF0ZW5jeVRyYWNrZXIiYwoRUHJvdG9NZXNzYWdlSW5wdXQSLQoMbWVzc2FnZV9iYXNlGAEgASgLMhcucHJvdG8uUHJvdG9NZXNzYWdlQmFzZRIfCgRkYXRhGAIgASgLMhEucHJvdG8uUHJvdG9JbnB1dEIWWhRyZWxheS9pbnRlcm5hbC9wcm90b2IGcHJvdG8z", [file_types, file_latency_tracker]);
+  fileDesc("Cg5tZXNzYWdlcy5wcm90bxIFcHJvdG8iVQoQUHJvdG9NZXNzYWdlQmFzZRIUCgxwYXlsb2FkX3R5cGUYASABKAkSKwoHbGF0ZW5jeRgCIAEoCzIaLnByb3RvLlByb3RvTGF0ZW5jeVRyYWNrZXIiyQgKDFByb3RvTWVzc2FnZRItCgxtZXNzYWdlX2Jhc2UYASABKAsyFy5wcm90by5Qcm90b01lc3NhZ2VCYXNlEisKCm1vdXNlX21vdmUYAiABKAsyFS5wcm90by5Qcm90b01vdXNlTW92ZUgAEjIKDm1vdXNlX21vdmVfYWJzGAMgASgLMhgucHJvdG8uUHJvdG9Nb3VzZU1vdmVBYnNIABItCgttb3VzZV93aGVlbBgEIAEoCzIWLnByb3RvLlByb3RvTW91c2VXaGVlbEgAEjIKDm1vdXNlX2tleV9kb3duGAUgASgLMhgucHJvdG8uUHJvdG9Nb3VzZUtleURvd25IABIuCgxtb3VzZV9rZXlfdXAYBiABKAsyFi5wcm90by5Qcm90b01vdXNlS2V5VXBIABInCghrZXlfZG93bhgHIAEoCzITLnByb3RvLlByb3RvS2V5RG93bkgAEiMKBmtleV91cBgIIAEoCzIRLnByb3RvLlByb3RvS2V5VXBIABI5ChFjb250cm9sbGVyX2F0dGFjaBgJIAEoCzIcLnByb3RvLlByb3RvQ29udHJvbGxlckF0dGFjaEgAEjkKEWNvbnRyb2xsZXJfZGV0YWNoGAogASgLMhwucHJvdG8uUHJvdG9Db250cm9sbGVyRGV0YWNoSAASOQoRY29udHJvbGxlcl9idXR0b24YCyABKAsyHC5wcm90by5Qcm90b0NvbnRyb2xsZXJCdXR0b25IABI7ChJjb250cm9sbGVyX3RyaWdnZXIYDCABKAsyHS5wcm90by5Qcm90b0NvbnRyb2xsZXJUcmlnZ2VySAASNwoQY29udHJvbGxlcl9zdGljaxgNIAEoCzIbLnByb3RvLlByb3RvQ29udHJvbGxlclN0aWNrSAASNQoPY29udHJvbGxlcl9heGlzGA4gASgLMhoucHJvdG8uUHJvdG9Db250cm9sbGVyQXhpc0gAEjkKEWNvbnRyb2xsZXJfcnVtYmxlGA8gASgLMhwucHJvdG8uUHJvdG9Db250cm9sbGVyUnVtYmxlSAASHgoDaWNlGBQgASgLMg8ucHJvdG8uUHJvdG9JQ0VIABIeCgNzZHAYFSABKAsyDy5wcm90by5Qcm90b1NEUEgAEh4KA3JhdxgWIAEoCzIPLnByb3RvLlByb3RvUmF3SAASSQoaY2xpZW50X3JlcXVlc3Rfcm9vbV9zdHJlYW0YFyABKAsyIy5wcm90by5Qcm90b0NsaWVudFJlcXVlc3RSb29tU3RyZWFtSAASPQoTY2xpZW50X2Rpc2Nvbm5lY3RlZBgYIAEoCzIeLnByb3RvLlByb3RvQ2xpZW50RGlzY29ubmVjdGVkSAASOgoSc2VydmVyX3B1c2hfc3RyZWFtGBkgASgLMhwucHJvdG8uUHJvdG9TZXJ2ZXJQdXNoU3RyZWFtSABCCQoHcGF5bG9hZEIWWhRyZWxheS9pbnRlcm5hbC9wcm90b2IGcHJvdG8z", [file_types, file_latency_tracker]);
 
 /**
  * @generated from message proto.ProtoMessageBase
@@ -39,24 +39,148 @@ export const ProtoMessageBaseSchema: GenMessage<ProtoMessageBase> = /*@__PURE__*
   messageDesc(file_messages, 0);
 
 /**
- * @generated from message proto.ProtoMessageInput
+ * @generated from message proto.ProtoMessage
  */
-export type ProtoMessageInput = Message<"proto.ProtoMessageInput"> & {
+export type ProtoMessage = Message<"proto.ProtoMessage"> & {
   /**
    * @generated from field: proto.ProtoMessageBase message_base = 1;
    */
   messageBase?: ProtoMessageBase;
 
   /**
-   * @generated from field: proto.ProtoInput data = 2;
+   * @generated from oneof proto.ProtoMessage.payload
    */
-  data?: ProtoInput;
+  payload: {
+    /**
+     * Input types
+     *
+     * @generated from field: proto.ProtoMouseMove mouse_move = 2;
+     */
+    value: ProtoMouseMove;
+    case: "mouseMove";
+  } | {
+    /**
+     * @generated from field: proto.ProtoMouseMoveAbs mouse_move_abs = 3;
+     */
+    value: ProtoMouseMoveAbs;
+    case: "mouseMoveAbs";
+  } | {
+    /**
+     * @generated from field: proto.ProtoMouseWheel mouse_wheel = 4;
+     */
+    value: ProtoMouseWheel;
+    case: "mouseWheel";
+  } | {
+    /**
+     * @generated from field: proto.ProtoMouseKeyDown mouse_key_down = 5;
+     */
+    value: ProtoMouseKeyDown;
+    case: "mouseKeyDown";
+  } | {
+    /**
+     * @generated from field: proto.ProtoMouseKeyUp mouse_key_up = 6;
+     */
+    value: ProtoMouseKeyUp;
+    case: "mouseKeyUp";
+  } | {
+    /**
+     * @generated from field: proto.ProtoKeyDown key_down = 7;
+     */
+    value: ProtoKeyDown;
+    case: "keyDown";
+  } | {
+    /**
+     * @generated from field: proto.ProtoKeyUp key_up = 8;
+     */
+    value: ProtoKeyUp;
+    case: "keyUp";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerAttach controller_attach = 9;
+     */
+    value: ProtoControllerAttach;
+    case: "controllerAttach";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerDetach controller_detach = 10;
+     */
+    value: ProtoControllerDetach;
+    case: "controllerDetach";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerButton controller_button = 11;
+     */
+    value: ProtoControllerButton;
+    case: "controllerButton";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerTrigger controller_trigger = 12;
+     */
+    value: ProtoControllerTrigger;
+    case: "controllerTrigger";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerStick controller_stick = 13;
+     */
+    value: ProtoControllerStick;
+    case: "controllerStick";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerAxis controller_axis = 14;
+     */
+    value: ProtoControllerAxis;
+    case: "controllerAxis";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerRumble controller_rumble = 15;
+     */
+    value: ProtoControllerRumble;
+    case: "controllerRumble";
+  } | {
+    /**
+     * Signaling types
+     *
+     * @generated from field: proto.ProtoICE ice = 20;
+     */
+    value: ProtoICE;
+    case: "ice";
+  } | {
+    /**
+     * @generated from field: proto.ProtoSDP sdp = 21;
+     */
+    value: ProtoSDP;
+    case: "sdp";
+  } | {
+    /**
+     * @generated from field: proto.ProtoRaw raw = 22;
+     */
+    value: ProtoRaw;
+    case: "raw";
+  } | {
+    /**
+     * @generated from field: proto.ProtoClientRequestRoomStream client_request_room_stream = 23;
+     */
+    value: ProtoClientRequestRoomStream;
+    case: "clientRequestRoomStream";
+  } | {
+    /**
+     * @generated from field: proto.ProtoClientDisconnected client_disconnected = 24;
+     */
+    value: ProtoClientDisconnected;
+    case: "clientDisconnected";
+  } | {
+    /**
+     * @generated from field: proto.ProtoServerPushStream server_push_stream = 25;
+     */
+    value: ProtoServerPushStream;
+    case: "serverPushStream";
+  } | { case: undefined; value?: undefined };
 };
 
 /**
- * Describes the message proto.ProtoMessageInput.
- * Use `create(ProtoMessageInputSchema)` to create a new message.
+ * Describes the message proto.ProtoMessage.
+ * Use `create(ProtoMessageSchema)` to create a new message.
  */
-export const ProtoMessageInputSchema: GenMessage<ProtoMessageInput> = /*@__PURE__*/
+export const ProtoMessageSchema: GenMessage<ProtoMessage> = /*@__PURE__*/
   messageDesc(file_messages, 1);
 

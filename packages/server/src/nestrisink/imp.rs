@@ -1,11 +1,11 @@
 use crate::input::controller::ControllerManager;
-use crate::messages::{MessageBase, MessageICE, MessageRaw, MessageSDP};
 use crate::p2p::p2p::NestriConnection;
 use crate::p2p::p2p_protocol_stream::NestriStreamProtocol;
-use crate::proto::proto::proto_input::InputType::{
-    KeyDown, KeyUp, MouseKeyDown, MouseKeyUp, MouseMove, MouseMoveAbs, MouseWheel,
+use crate::proto::proto::proto_message::Payload;
+use crate::proto::proto::{
+    ProtoControllerAttach, ProtoControllerRumble, ProtoIce, ProtoMessage, ProtoSdp,
+    ProtoServerPushStream, RtcIceCandidateInit, RtcSessionDescriptionInit,
 };
-use crate::proto::proto::{ProtoInput, ProtoMessageInput};
 use anyhow::Result;
 use glib::subclass::prelude::*;
 use gstreamer::glib;
@@ -16,8 +16,6 @@ use parking_lot::RwLock as PLRwLock;
 use prost::Message;
 use std::sync::{Arc, LazyLock};
 use tokio::sync::{Mutex, mpsc};
-use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
-use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 
 pub struct Signaller {
     stream_room: PLRwLock<Option<String>>,
@@ -26,6 +24,7 @@ pub struct Signaller {
     data_channel: PLRwLock<Option<Arc<gstreamer_webrtc::WebRTCDataChannel>>>,
     controller_manager: PLRwLock<Option<Arc<ControllerManager>>>,
     rumble_rx: Mutex<Option<mpsc::Receiver<(u32, u16, u16, u16)>>>,
+    attach_rx: Mutex<Option<mpsc::Receiver<ProtoControllerAttach>>>,
 }
 impl Default for Signaller {
     fn default() -> Self {
@@ -36,6 +35,7 @@ impl Default for Signaller {
             data_channel: PLRwLock::new(None),
             controller_manager: PLRwLock::new(None),
             rumble_rx: Mutex::new(None),
+            attach_rx: Mutex::new(None),
         }
     }
 }
@@ -74,9 +74,21 @@ impl Signaller {
         *self.rumble_rx.lock().await = Some(rumble_rx);
     }
 
-    // Change getter to take ownership:
     pub async fn take_rumble_rx(&self) -> Option<mpsc::Receiver<(u32, u16, u16, u16)>> {
         self.rumble_rx.lock().await.take()
+    }
+
+    pub async fn set_attach_rx(
+        &self,
+        attach_rx: mpsc::Receiver<crate::proto::proto::ProtoControllerAttach>,
+    ) {
+        *self.attach_rx.lock().await = Some(attach_rx);
+    }
+
+    pub async fn take_attach_rx(
+        &self,
+    ) -> Option<mpsc::Receiver<crate::proto::proto::ProtoControllerAttach>> {
+        self.attach_rx.lock().await.take()
     }
 
     pub fn set_data_channel(&self, data_channel: gstreamer_webrtc::WebRTCDataChannel) {
@@ -95,68 +107,85 @@ impl Signaller {
         };
         {
             let self_obj = self.obj().clone();
-            stream_protocol.register_callback("answer", move |data| {
-                if let Ok(message) = serde_json::from_slice::<MessageSDP>(&data) {
-                    let sdp = gst_sdp::SDPMessage::parse_buffer(message.sdp.sdp.as_bytes())
-                        .map_err(|e| anyhow::anyhow!("Invalid SDP in 'answer': {e:?}"))?;
-                    let answer = WebRTCSessionDescription::new(WebRTCSDPType::Answer, sdp);
-                    Ok(self_obj.emit_by_name::<()>(
-                        "session-description",
-                        &[&"unique-session-id", &answer],
-                    ))
+            stream_protocol.register_callback("answer", move |msg| {
+                if let Some(payload) = msg.payload {
+                    match payload {
+                        Payload::Sdp(sdp) => {
+                            if let Some(sdp) = sdp.sdp {
+                                let sdp = gst_sdp::SDPMessage::parse_buffer(sdp.sdp.as_bytes())
+                                    .map_err(|e| {
+                                        anyhow::anyhow!("Invalid SDP in 'answer': {e:?}")
+                                    })?;
+                                let answer =
+                                    WebRTCSessionDescription::new(WebRTCSDPType::Answer, sdp);
+                                return Ok(self_obj.emit_by_name::<()>(
+                                    "session-description",
+                                    &[&"unique-session-id", &answer],
+                                ));
+                            }
+                        }
+                        _ => {
+                            tracing::warn!("Unexpected payload type for answer");
+                            return Ok(());
+                        }
+                    }
                 } else {
-                    anyhow::bail!("Failed to decode SDP message");
+                    anyhow::bail!("Failed to decode answer message");
                 }
+                Ok(())
             });
         }
         {
             let self_obj = self.obj().clone();
-            stream_protocol.register_callback("ice-candidate", move |data| {
-                if let Ok(message) = serde_json::from_slice::<MessageICE>(&data) {
-                    let candidate = message.candidate;
-                    let sdp_m_line_index = candidate.sdp_mline_index.unwrap_or(0) as u32;
-                    let sdp_mid = candidate.sdp_mid;
-                    Ok(self_obj.emit_by_name::<()>(
-                        "handle-ice",
-                        &[
-                            &"unique-session-id",
-                            &sdp_m_line_index,
-                            &sdp_mid,
-                            &candidate.candidate,
-                        ],
-                    ))
+            stream_protocol.register_callback("ice-candidate", move |msg| {
+                if let Some(payload) = msg.payload {
+                    match payload {
+                        Payload::Ice(ice) => {
+                            if let Some(candidate) = ice.candidate {
+                                let sdp_m_line_index = candidate.sdp_m_line_index.unwrap_or(0);
+                                return Ok(self_obj.emit_by_name::<()>(
+                                    "handle-ice",
+                                    &[
+                                        &"unique-session-id",
+                                        &sdp_m_line_index,
+                                        &candidate.sdp_mid,
+                                        &candidate.candidate,
+                                    ],
+                                ));
+                            }
+                        }
+                        _ => {
+                            tracing::warn!("Unexpected payload type for ice-candidate");
+                            return Ok(());
+                        }
+                    }
                 } else {
                     anyhow::bail!("Failed to decode ICE message");
                 }
+                Ok(())
             });
         }
         {
             let self_obj = self.obj().clone();
-            stream_protocol.register_callback("push-stream-ok", move |data| {
-                if let Ok(answer) = serde_json::from_slice::<MessageRaw>(&data) {
-                    // Decode room name string
-                    if let Some(room_name) = answer.data.as_str() {
-                        gstreamer::info!(
-                            gstreamer::CAT_DEFAULT,
-                            "Received OK answer for room: {}",
-                            room_name
-                        );
-                    } else {
-                        gstreamer::error!(
-                            gstreamer::CAT_DEFAULT,
-                            "Failed to decode room name from answer"
-                        );
-                    }
-
-                    // Send our SDP offer
-                    Ok(self_obj.emit_by_name::<()>(
-                        "session-requested",
-                        &[
-                            &"unique-session-id",
-                            &"consumer-identifier",
-                            &None::<WebRTCSessionDescription>,
-                        ],
-                    ))
+            stream_protocol.register_callback("push-stream-ok", move |msg| {
+                if let Some(payload) = msg.payload {
+                    return match payload {
+                        Payload::ServerPushStream(_res) => {
+                            // Send our SDP offer
+                            Ok(self_obj.emit_by_name::<()>(
+                                "session-requested",
+                                &[
+                                    &"unique-session-id",
+                                    &"consumer-identifier",
+                                    &None::<WebRTCSessionDescription>,
+                                ],
+                            ))
+                        }
+                        _ => {
+                            tracing::warn!("Unexpected payload type for push-stream-ok");
+                            Ok(())
+                        }
+                    };
                 } else {
                     anyhow::bail!("Failed to decode answer");
                 }
@@ -200,12 +229,14 @@ impl Signaller {
                                 // Spawn async task to take the receiver and set up
                                 tokio::spawn(async move {
                                     let rumble_rx = signaller.imp().take_rumble_rx().await;
+                                    let attach_rx = signaller.imp().take_attach_rx().await;
                                     let controller_manager =
                                         signaller.imp().get_controller_manager();
 
                                     setup_data_channel(
                                         controller_manager,
                                         rumble_rx,
+                                        attach_rx,
                                         data_channel,
                                         &wayland_src,
                                     );
@@ -243,19 +274,18 @@ impl SignallableImpl for Signaller {
             return;
         };
 
-        let push_msg = MessageRaw {
-            base: MessageBase {
-                payload_type: "push-stream-room".to_string(),
-                latency: None,
-            },
-            data: serde_json::Value::from(stream_room),
-        };
-
         let Some(stream_protocol) = self.get_stream_protocol() else {
             gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
 
+        let push_msg = crate::proto::create_message(
+            Payload::ServerPushStream(ProtoServerPushStream {
+                room_name: stream_room,
+            }),
+            "push-stream-room",
+            None,
+        );
         if let Err(e) = stream_protocol.send_message(&push_msg) {
             tracing::error!("Failed to send push stream room message: {:?}", e);
         }
@@ -266,20 +296,22 @@ impl SignallableImpl for Signaller {
     }
 
     fn send_sdp(&self, _session_id: &str, sdp: &WebRTCSessionDescription) {
-        let sdp_message = MessageSDP {
-            base: MessageBase {
-                payload_type: "offer".to_string(),
-                latency: None,
-            },
-            sdp: RTCSessionDescription::offer(sdp.sdp().as_text().unwrap()).unwrap(),
-        };
-
         let Some(stream_protocol) = self.get_stream_protocol() else {
             gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
 
-        if let Err(e) = stream_protocol.send_message(&sdp_message) {
+        let sdp_msg = crate::proto::create_message(
+            Payload::Sdp(ProtoSdp {
+                sdp: Some(RtcSessionDescriptionInit {
+                    sdp: sdp.sdp().as_text().unwrap(),
+                    r#type: "offer".to_string(),
+                }),
+            }),
+            "offer",
+            None,
+        );
+        if let Err(e) = stream_protocol.send_message(&sdp_msg) {
             tracing::error!("Failed to send SDP message: {:?}", e);
         }
     }
@@ -291,26 +323,25 @@ impl SignallableImpl for Signaller {
         sdp_m_line_index: u32,
         sdp_mid: Option<String>,
     ) {
-        let candidate_init = RTCIceCandidateInit {
-            candidate: candidate.to_string(),
-            sdp_mid,
-            sdp_mline_index: Some(sdp_m_line_index as u16),
-            ..Default::default()
-        };
-        let ice_message = MessageICE {
-            base: MessageBase {
-                payload_type: "ice-candidate".to_string(),
-                latency: None,
-            },
-            candidate: candidate_init,
-        };
-
         let Some(stream_protocol) = self.get_stream_protocol() else {
             gstreamer::error!(gstreamer::CAT_DEFAULT, "Stream protocol not set");
             return;
         };
 
-        if let Err(e) = stream_protocol.send_message(&ice_message) {
+        let candidate_init = RtcIceCandidateInit {
+            candidate: candidate.to_string(),
+            sdp_mid,
+            sdp_m_line_index: Some(sdp_m_line_index),
+            ..Default::default() //username_fragment: Some(session_id.to_string()), TODO: required?
+        };
+        let ice_msg = crate::proto::create_message(
+            Payload::Ice(ProtoIce {
+                candidate: Some(candidate_init),
+            }),
+            "ice-candidate",
+            None,
+        );
+        if let Err(e) = stream_protocol.send_message(&ice_msg) {
             tracing::error!("Failed to send ICE candidate message: {:?}", e);
         }
     }
@@ -352,6 +383,7 @@ impl ObjectImpl for Signaller {
 fn setup_data_channel(
     controller_manager: Option<Arc<ControllerManager>>,
     rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16)>>, // (slot, strong, weak, duration_ms)
+    attach_rx: Option<mpsc::Receiver<ProtoControllerAttach>>,
     data_channel: Arc<gstreamer_webrtc::WebRTCDataChannel>,
     wayland_src: &gstreamer::Element,
 ) {
@@ -361,11 +393,11 @@ fn setup_data_channel(
     // Spawn async processor
     tokio::spawn(async move {
         while let Some(data) = rx.recv().await {
-            match ProtoMessageInput::decode(data.as_slice()) {
-                Ok(message_input) => {
-                    if let Some(message_base) = message_input.message_base {
+            match ProtoMessage::decode(data.as_slice()) {
+                Ok(msg_wrapper) => {
+                    if let Some(message_base) = msg_wrapper.message_base {
                         if message_base.payload_type == "input" {
-                            if let Some(input_data) = message_input.data {
+                            if let Some(input_data) = msg_wrapper.payload {
                                 if let Some(event) = handle_input_message(input_data) {
                                     // Send the event to wayland source, result bool is ignored
                                     let _ = wayland_src.send_event(event);
@@ -373,7 +405,7 @@ fn setup_data_channel(
                             }
                         } else if message_base.payload_type == "controllerInput" {
                             if let Some(controller_manager) = &controller_manager {
-                                if let Some(input_data) = message_input.data {
+                                if let Some(input_data) = msg_wrapper.payload {
                                     let _ = controller_manager.send_command(input_data).await;
                                 }
                             }
@@ -392,31 +424,43 @@ fn setup_data_channel(
         let data_channel_clone = data_channel.clone();
         tokio::spawn(async move {
             while let Some((slot, strong, weak, duration_ms)) = rumble_rx.recv().await {
-                let rumble_msg = ProtoMessageInput {
-                    message_base: Some(crate::proto::proto::ProtoMessageBase {
-                        payload_type: "controllerInput".to_string(),
-                        latency: None,
+                let rumble_msg = crate::proto::create_message(
+                    Payload::ControllerRumble(ProtoControllerRumble {
+                        slot: slot as i32,
+                        low_frequency: weak as i32,
+                        high_frequency: strong as i32,
+                        duration: duration_ms as i32,
                     }),
-                    data: Some(ProtoInput {
-                        input_type: Some(
-                            crate::proto::proto::proto_input::InputType::ControllerRumble(
-                                crate::proto::proto::ProtoControllerRumble {
-                                    r#type: "ControllerRumble".to_string(),
-                                    slot: slot as i32,
-                                    low_frequency: weak as i32,
-                                    high_frequency: strong as i32,
-                                    duration: duration_ms as i32,
-                                },
-                            ),
-                        ),
-                    }),
-                };
+                    "controllerInput",
+                    None,
+                );
 
                 let data = rumble_msg.encode_to_vec();
                 let bytes = glib::Bytes::from_owned(data);
 
                 if let Err(e) = data_channel_clone.send_data_full(Some(&bytes)) {
                     tracing::warn!("Failed to send rumble data: {}", e);
+                }
+            }
+        });
+    }
+
+    // Spawn attach sender
+    if let Some(mut attach_rx) = attach_rx {
+        let data_channel_clone = data_channel.clone();
+        tokio::spawn(async move {
+            while let Some(attach_msg) = attach_rx.recv().await {
+                let proto_msg = crate::proto::create_message(
+                    Payload::ControllerAttach(attach_msg),
+                    "controllerInput",
+                    None,
+                );
+
+                let data = proto_msg.encode_to_vec();
+                let bytes = glib::Bytes::from_owned(data);
+
+                if let Err(e) = data_channel_clone.send_data_full(Some(&bytes)) {
+                    tracing::warn!("Failed to send controller attach data: {}", e);
                 }
             }
         });
@@ -429,68 +473,64 @@ fn setup_data_channel(
     });
 }
 
-fn handle_input_message(input_msg: ProtoInput) -> Option<gstreamer::Event> {
-    if let Some(input_type) = input_msg.input_type {
-        match input_type {
-            MouseMove(data) => {
-                let structure = gstreamer::Structure::builder("MouseMoveRelative")
-                    .field("pointer_x", data.x as f64)
-                    .field("pointer_y", data.y as f64)
-                    .build();
+fn handle_input_message(payload: Payload) -> Option<gstreamer::Event> {
+    match payload {
+        Payload::MouseMove(data) => {
+            let structure = gstreamer::Structure::builder("MouseMoveRelative")
+                .field("pointer_x", data.x as f64)
+                .field("pointer_y", data.y as f64)
+                .build();
 
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            MouseMoveAbs(data) => {
-                let structure = gstreamer::Structure::builder("MouseMoveAbsolute")
-                    .field("pointer_x", data.x as f64)
-                    .field("pointer_y", data.y as f64)
-                    .build();
-
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            KeyDown(data) => {
-                let structure = gstreamer::Structure::builder("KeyboardKey")
-                    .field("key", data.key as u32)
-                    .field("pressed", true)
-                    .build();
-
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            KeyUp(data) => {
-                let structure = gstreamer::Structure::builder("KeyboardKey")
-                    .field("key", data.key as u32)
-                    .field("pressed", false)
-                    .build();
-
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            MouseWheel(data) => {
-                let structure = gstreamer::Structure::builder("MouseAxis")
-                    .field("x", data.x as f64)
-                    .field("y", data.y as f64)
-                    .build();
-
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            MouseKeyDown(data) => {
-                let structure = gstreamer::Structure::builder("MouseButton")
-                    .field("button", data.key as u32)
-                    .field("pressed", true)
-                    .build();
-
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            MouseKeyUp(data) => {
-                let structure = gstreamer::Structure::builder("MouseButton")
-                    .field("button", data.key as u32)
-                    .field("pressed", false)
-                    .build();
-
-                Some(gstreamer::event::CustomUpstream::new(structure))
-            }
-            _ => None,
+            Some(gstreamer::event::CustomUpstream::new(structure))
         }
-    } else {
-        None
+        Payload::MouseMoveAbs(data) => {
+            let structure = gstreamer::Structure::builder("MouseMoveAbsolute")
+                .field("pointer_x", data.x as f64)
+                .field("pointer_y", data.y as f64)
+                .build();
+
+            Some(gstreamer::event::CustomUpstream::new(structure))
+        }
+        Payload::KeyDown(data) => {
+            let structure = gstreamer::Structure::builder("KeyboardKey")
+                .field("key", data.key as u32)
+                .field("pressed", true)
+                .build();
+
+            Some(gstreamer::event::CustomUpstream::new(structure))
+        }
+        Payload::KeyUp(data) => {
+            let structure = gstreamer::Structure::builder("KeyboardKey")
+                .field("key", data.key as u32)
+                .field("pressed", false)
+                .build();
+
+            Some(gstreamer::event::CustomUpstream::new(structure))
+        }
+        Payload::MouseWheel(data) => {
+            let structure = gstreamer::Structure::builder("MouseAxis")
+                .field("x", data.x as f64)
+                .field("y", data.y as f64)
+                .build();
+
+            Some(gstreamer::event::CustomUpstream::new(structure))
+        }
+        Payload::MouseKeyDown(data) => {
+            let structure = gstreamer::Structure::builder("MouseButton")
+                .field("button", data.key as u32)
+                .field("pressed", true)
+                .build();
+
+            Some(gstreamer::event::CustomUpstream::new(structure))
+        }
+        Payload::MouseKeyUp(data) => {
+            let structure = gstreamer::Structure::builder("MouseButton")
+                .field("button", data.key as u32)
+                .field("pressed", false)
+                .build();
+
+            Some(gstreamer::event::CustomUpstream::new(structure))
+        }
+        _ => None,
     }
 }

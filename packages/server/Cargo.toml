@@ -40,3 +40,4 @@ libp2p-tcp = { version = "0.44", features = ["tokio"] }
 libp2p-websocket = "0.45"
 dashmap = "6.1"
 anyhow = "1.0"
+unsigned-varint = "0.8"
