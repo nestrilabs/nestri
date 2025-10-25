@@ -47,7 +47,7 @@ impl ControllerInput {
 pub struct ControllerManager {
     vimputti_client: Arc<vimputti::client::VimputtiClient>,
     cmd_tx: mpsc::Sender<Payload>,
-    rumble_tx: mpsc::Sender<(u32, u16, u16, u16)>, // (slot, strong, weak, duration_ms)
+    rumble_tx: mpsc::Sender<(u32, u16, u16, u16, String)>, // (slot, strong, weak, duration_ms, session_id)
     attach_tx: mpsc::Sender<ProtoControllerAttach>,
 }
 impl ControllerManager {
@@ -55,7 +55,7 @@ impl ControllerManager {
         vimputti_client: Arc<vimputti::client::VimputtiClient>,
     ) -> Result<(
         Self,
-        mpsc::Receiver<(u32, u16, u16, u16)>,
+        mpsc::Receiver<(u32, u16, u16, u16, String)>,
         mpsc::Receiver<ProtoControllerAttach>,
     )> {
         let (cmd_tx, cmd_rx) = mpsc::channel(512);
@@ -88,12 +88,12 @@ impl ControllerManager {
 struct ControllerSlot {
     controller: ControllerInput,
     session_id: String,
-    last_activity: std::time::Instant,
+    session_slot: u32,
 }
 
-// Returns first free controller slot from 0-7
+// Returns first free controller slot from 0-16
 fn get_free_slot(controllers: &HashMap<u32, ControllerSlot>) -> Option<u32> {
-    for slot in 0..8 {
+    for slot in 0..17 {
         if !controllers.contains_key(&slot) {
             return Some(slot);
         }
@@ -104,7 +104,7 @@ fn get_free_slot(controllers: &HashMap<u32, ControllerSlot>) -> Option<u32> {
 async fn command_loop(
     mut cmd_rx: mpsc::Receiver<Payload>,
     vimputti_client: Arc<vimputti::client::VimputtiClient>,
-    rumble_tx: mpsc::Sender<(u32, u16, u16, u16)>,
+    rumble_tx: mpsc::Sender<(u32, u16, u16, u16, String)>,
     attach_tx: mpsc::Sender<ProtoControllerAttach>,
 ) {
     let mut controllers: HashMap<u32, ControllerSlot> = HashMap::new();
@@ -112,13 +112,15 @@ async fn command_loop(
         match payload {
             Payload::ControllerAttach(data) => {
                 let session_id = data.session_id.clone();
+                let session_slot = data.session_slot.clone();
 
                 // Check if this session already has a slot (reconnection)
                 let existing_slot = controllers
                     .iter()
-                    .find(|(_, slot)| slot.session_id == session_id && !session_id.is_empty())
+                    .find(|(_, slot)| {
+                        slot.session_id == session_id && slot.session_slot == session_slot as u32
+                    })
                     .map(|(slot_num, _)| *slot_num);
-
                 let slot = existing_slot.or_else(|| get_free_slot(&controllers));
 
                 if let Some(slot) = slot {
@@ -131,7 +133,7 @@ async fn command_loop(
                         controller
                             .device_mut()
                             .on_rumble(move |strong, weak, duration_ms| {
-                                let _ = rumble_tx.try_send((slot, strong, weak, duration_ms));
+                                let _ = rumble_tx.try_send((slot, strong, weak, duration_ms, data.session_id.clone()));
                             })
                             .await
                             .map_err(|e| {
@@ -146,7 +148,7 @@ async fn command_loop(
                         // Return to attach_tx what slot was assigned
                         let attach_info = ProtoControllerAttach {
                             id: data.id.clone(),
-                            slot: slot as i32,
+                            session_slot: slot as i32,
                             session_id: session_id.clone(),
                         };
 
@@ -157,7 +159,7 @@ async fn command_loop(
                                     ControllerSlot {
                                         controller,
                                         session_id: session_id.clone(),
-                                        last_activity: std::time::Instant::now(),
+                                        session_slot: session_slot.clone() as u32,
                                     },
                                 );
                                 tracing::info!(
@@ -185,25 +187,25 @@ async fn command_loop(
                 }
             }
             Payload::ControllerDetach(data) => {
-                if controllers.remove(&(data.slot as u32)).is_some() {
-                    tracing::info!("Controller detached from slot {}", data.slot);
+                if controllers.remove(&(data.session_slot as u32)).is_some() {
+                    tracing::info!("Controller detached from slot {}", data.session_slot);
                 } else {
-                    tracing::warn!("No controller found in slot {} to detach", data.slot);
+                    tracing::warn!("No controller found in slot {} to detach", data.session_slot);
                 }
             }
             Payload::ControllerButton(data) => {
-                if let Some(controller) = controllers.get(&(data.slot as u32)) {
+                if let Some(controller) = controllers.get(&(data.session_slot as u32)) {
                     if let Some(button) = vimputti::Button::from_ev_code(data.button as u16) {
                         let device = controller.controller.device();
                         device.button(button, data.pressed);
                         device.sync();
                     }
                 } else {
-                    tracing::warn!("Controller slot {} not found for button event", data.slot);
+                    tracing::warn!("Controller slot {} not found for button event", data.session_slot);
                 }
             }
             Payload::ControllerStick(data) => {
-                if let Some(controller) = controllers.get(&(data.slot as u32)) {
+                if let Some(controller) = controllers.get(&(data.session_slot as u32)) {
                     let device = controller.controller.device();
                     if data.stick == 0 {
                         // Left stick
@@ -218,11 +220,11 @@ async fn command_loop(
                     }
                     device.sync();
                 } else {
-                    tracing::warn!("Controller slot {} not found for stick event", data.slot);
+                    tracing::warn!("Controller slot {} not found for stick event", data.session_slot);
                 }
             }
             Payload::ControllerTrigger(data) => {
-                if let Some(controller) = controllers.get(&(data.slot as u32)) {
+                if let Some(controller) = controllers.get(&(data.session_slot as u32)) {
                     let device = controller.controller.device();
                     if data.trigger == 0 {
                         // Left trigger
@@ -233,11 +235,11 @@ async fn command_loop(
                     }
                     device.sync();
                 } else {
-                    tracing::warn!("Controller slot {} not found for trigger event", data.slot);
+                    tracing::warn!("Controller slot {} not found for trigger event", data.session_slot);
                 }
             }
             Payload::ControllerAxis(data) => {
-                if let Some(controller) = controllers.get(&(data.slot as u32)) {
+                if let Some(controller) = controllers.get(&(data.session_slot as u32)) {
                     let device = controller.controller.device();
                     if data.axis == 0 {
                         // dpad x

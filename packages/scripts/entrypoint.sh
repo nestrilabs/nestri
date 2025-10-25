@@ -15,13 +15,13 @@ NVIDIA_INSTALLER_DIR="/tmp"
 TIMEOUT_SECONDS=10
 ENTCMD_PREFIX=""
 
-# Ensures user directory ownership
-chown_user_directory() {
+# Ensures user ownership across directories
+handle_user_permissions() {
     if ! $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}" 2>/dev/null; then
         echo "Error: Failed to change ownership of ${NESTRI_HOME} to ${NESTRI_USER}:${NESTRI_USER}" >&2
         return 1
     fi
-    # Also apply to .cache separately
+    # Also apply to .cache
     if [[ -d "${NESTRI_HOME}/.cache" ]]; then
         if ! $ENTCMD_PREFIX chown "${NESTRI_USER}:${NESTRI_USER}" "${NESTRI_HOME}/.cache" 2>/dev/null; then
             echo "Error: Failed to change ownership of ${NESTRI_HOME}/.cache to ${NESTRI_USER}:${NESTRI_USER}" >&2
@@ -324,9 +324,23 @@ main() {
         log "Skipping CAP_SYS_NICE for gamescope, capability not available"
     fi
 
-    # Handle user directory permissions
-    log "Ensuring user directory permissions..."
-    chown_user_directory || exit 1
+    # Make sure /tmp/.X11-unix exists..
+    if [[ ! -d "/tmp/.X11-unix" ]]; then
+        log "Creating /tmp/.X11-unix directory.."
+        $ENTCMD_PREFIX mkdir -p /tmp/.X11-unix || {
+            log "Error: Failed to create /tmp/.X11-unix directory"
+            exit 1
+        }
+        # Set required perms..
+        $ENTCMD_PREFIX chmod 1777 /tmp/.X11-unix || {
+            log "Error: Failed to chmod /tmp/.X11-unix to 1777"
+            exit 1
+        }
+    fi
+
+    # Handle user permissions
+    log "Ensuring user permissions..."
+    handle_user_permissions || exit 1
 
     # Setup namespaceless env if needed for container runtime
     if [[ "$container_runtime" != "podman" ]]; then
@@ -336,7 +350,7 @@ main() {
 
     # Make sure /run/udev/ directory exists with /run/udev/control, needed for virtual controller support
     if [[ ! -d "/run/udev" || ! -e "/run/udev/control" ]]; then
-        log "Creating /run/udev directory and control file..."
+        log "Creating /run/udev directory and control file.."
         $ENTCMD_PREFIX mkdir -p /run/udev || {
             log "Error: Failed to create /run/udev directory"
             exit 1

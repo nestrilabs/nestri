@@ -363,9 +363,9 @@ func (x *ProtoKeyUp) GetKey() int32 {
 // ControllerAttach message
 type ProtoControllerAttach struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                // One of the following enums: "ps", "xbox" or "switch"
-	Slot          int32                  `protobuf:"varint,2,opt,name=slot,proto3" json:"slot,omitempty"`                           // Slot number (0-3)
-	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // Session ID of the client attaching the controller
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                       // One of the following enums: "ps", "xbox" or "switch"
+	SessionSlot   int32                  `protobuf:"varint,2,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -407,9 +407,9 @@ func (x *ProtoControllerAttach) GetId() string {
 	return ""
 }
 
-func (x *ProtoControllerAttach) GetSlot() int32 {
+func (x *ProtoControllerAttach) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
 }
@@ -424,7 +424,8 @@ func (x *ProtoControllerAttach) GetSessionId() string {
 // ControllerDetach message
 type ProtoControllerDetach struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"` // Slot number (0-3)
+	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -459,19 +460,27 @@ func (*ProtoControllerDetach) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *ProtoControllerDetach) GetSlot() int32 {
+func (x *ProtoControllerDetach) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
+}
+
+func (x *ProtoControllerDetach) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 // ControllerButton message
 type ProtoControllerButton struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`       // Slot number (0-3)
-	Button        int32                  `protobuf:"varint,2,opt,name=button,proto3" json:"button,omitempty"`   // Button code (linux input event code)
-	Pressed       bool                   `protobuf:"varint,3,opt,name=pressed,proto3" json:"pressed,omitempty"` // true if pressed, false if released
+	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
+	Button        int32                  `protobuf:"varint,3,opt,name=button,proto3" json:"button,omitempty"`                              // Button code (linux input event code)
+	Pressed       bool                   `protobuf:"varint,4,opt,name=pressed,proto3" json:"pressed,omitempty"`                            // true if pressed, false if released
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -506,11 +515,18 @@ func (*ProtoControllerButton) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *ProtoControllerButton) GetSlot() int32 {
+func (x *ProtoControllerButton) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
+}
+
+func (x *ProtoControllerButton) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 func (x *ProtoControllerButton) GetButton() int32 {
@@ -530,9 +546,10 @@ func (x *ProtoControllerButton) GetPressed() bool {
 // ControllerTriggers message
 type ProtoControllerTrigger struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`       // Slot number (0-3)
-	Trigger       int32                  `protobuf:"varint,2,opt,name=trigger,proto3" json:"trigger,omitempty"` // Trigger number (0 for left, 1 for right)
-	Value         int32                  `protobuf:"varint,3,opt,name=value,proto3" json:"value,omitempty"`     // trigger value (-32768 to 32767)
+	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
+	Trigger       int32                  `protobuf:"varint,3,opt,name=trigger,proto3" json:"trigger,omitempty"`                            // Trigger number (0 for left, 1 for right)
+	Value         int32                  `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`                                // trigger value (-32768 to 32767)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -567,11 +584,18 @@ func (*ProtoControllerTrigger) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *ProtoControllerTrigger) GetSlot() int32 {
+func (x *ProtoControllerTrigger) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
+}
+
+func (x *ProtoControllerTrigger) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 func (x *ProtoControllerTrigger) GetTrigger() int32 {
@@ -591,10 +615,11 @@ func (x *ProtoControllerTrigger) GetValue() int32 {
 // ControllerSticks message
 type ProtoControllerStick struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`   // Slot number (0-3)
-	Stick         int32                  `protobuf:"varint,2,opt,name=stick,proto3" json:"stick,omitempty"` // Stick number (0 for left, 1 for right)
-	X             int32                  `protobuf:"varint,3,opt,name=x,proto3" json:"x,omitempty"`         // X axis value (-32768 to 32767)
-	Y             int32                  `protobuf:"varint,4,opt,name=y,proto3" json:"y,omitempty"`         // Y axis value (-32768 to 32767)
+	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
+	Stick         int32                  `protobuf:"varint,3,opt,name=stick,proto3" json:"stick,omitempty"`                                // Stick number (0 for left, 1 for right)
+	X             int32                  `protobuf:"varint,4,opt,name=x,proto3" json:"x,omitempty"`                                        // X axis value (-32768 to 32767)
+	Y             int32                  `protobuf:"varint,5,opt,name=y,proto3" json:"y,omitempty"`                                        // Y axis value (-32768 to 32767)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -629,11 +654,18 @@ func (*ProtoControllerStick) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *ProtoControllerStick) GetSlot() int32 {
+func (x *ProtoControllerStick) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
+}
+
+func (x *ProtoControllerStick) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 func (x *ProtoControllerStick) GetStick() int32 {
@@ -660,9 +692,10 @@ func (x *ProtoControllerStick) GetY() int32 {
 // ControllerAxis message
 type ProtoControllerAxis struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`   // Slot number (0-3)
-	Axis          int32                  `protobuf:"varint,2,opt,name=axis,proto3" json:"axis,omitempty"`   // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-	Value         int32                  `protobuf:"varint,3,opt,name=value,proto3" json:"value,omitempty"` // axis value (-1 to 1)
+	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
+	Axis          int32                  `protobuf:"varint,3,opt,name=axis,proto3" json:"axis,omitempty"`                                  // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
+	Value         int32                  `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`                                // axis value (-1 to 1)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -697,11 +730,18 @@ func (*ProtoControllerAxis) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *ProtoControllerAxis) GetSlot() int32 {
+func (x *ProtoControllerAxis) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
+}
+
+func (x *ProtoControllerAxis) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 func (x *ProtoControllerAxis) GetAxis() int32 {
@@ -721,10 +761,11 @@ func (x *ProtoControllerAxis) GetValue() int32 {
 // ControllerRumble message
 type ProtoControllerRumble struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Slot          int32                  `protobuf:"varint,1,opt,name=slot,proto3" json:"slot,omitempty"`                                        // Slot number (0-3)
-	LowFrequency  int32                  `protobuf:"varint,2,opt,name=low_frequency,json=lowFrequency,proto3" json:"low_frequency,omitempty"`    // Low frequency rumble (0-65535)
-	HighFrequency int32                  `protobuf:"varint,3,opt,name=high_frequency,json=highFrequency,proto3" json:"high_frequency,omitempty"` // High frequency rumble (0-65535)
-	Duration      int32                  `protobuf:"varint,4,opt,name=duration,proto3" json:"duration,omitempty"`                                // Duration in milliseconds
+	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"`       // Session specific slot number (0-3)
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`              // Session ID of the client
+	LowFrequency  int32                  `protobuf:"varint,3,opt,name=low_frequency,json=lowFrequency,proto3" json:"low_frequency,omitempty"`    // Low frequency rumble (0-65535)
+	HighFrequency int32                  `protobuf:"varint,4,opt,name=high_frequency,json=highFrequency,proto3" json:"high_frequency,omitempty"` // High frequency rumble (0-65535)
+	Duration      int32                  `protobuf:"varint,5,opt,name=duration,proto3" json:"duration,omitempty"`                                // Duration in milliseconds
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -759,11 +800,18 @@ func (*ProtoControllerRumble) Descriptor() ([]byte, []int) {
 	return file_types_proto_rawDescGZIP(), []int{13}
 }
 
-func (x *ProtoControllerRumble) GetSlot() int32 {
+func (x *ProtoControllerRumble) GetSessionSlot() int32 {
 	if x != nil {
-		return x.Slot
+		return x.SessionSlot
 	}
 	return 0
+}
+
+func (x *ProtoControllerRumble) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
 }
 
 func (x *ProtoControllerRumble) GetLowFrequency() int32 {
@@ -1215,36 +1263,48 @@ const file_types_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\x05R\x03key\"\x1e\n" +
 	"\n" +
 	"ProtoKeyUp\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\x05R\x03key\"Z\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\"i\n" +
 	"\x15ProtoControllerAttach\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
-	"\x04slot\x18\x02 \x01(\x05R\x04slot\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12!\n" +
+	"\fsession_slot\x18\x02 \x01(\x05R\vsessionSlot\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x03 \x01(\tR\tsessionId\"+\n" +
-	"\x15ProtoControllerDetach\x12\x12\n" +
-	"\x04slot\x18\x01 \x01(\x05R\x04slot\"]\n" +
-	"\x15ProtoControllerButton\x12\x12\n" +
-	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x16\n" +
-	"\x06button\x18\x02 \x01(\x05R\x06button\x12\x18\n" +
-	"\apressed\x18\x03 \x01(\bR\apressed\"\\\n" +
-	"\x16ProtoControllerTrigger\x12\x12\n" +
-	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x18\n" +
-	"\atrigger\x18\x02 \x01(\x05R\atrigger\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\x05R\x05value\"\\\n" +
-	"\x14ProtoControllerStick\x12\x12\n" +
-	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x14\n" +
-	"\x05stick\x18\x02 \x01(\x05R\x05stick\x12\f\n" +
-	"\x01x\x18\x03 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x04 \x01(\x05R\x01y\"S\n" +
-	"\x13ProtoControllerAxis\x12\x12\n" +
-	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12\x12\n" +
-	"\x04axis\x18\x02 \x01(\x05R\x04axis\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\x05R\x05value\"\x93\x01\n" +
-	"\x15ProtoControllerRumble\x12\x12\n" +
-	"\x04slot\x18\x01 \x01(\x05R\x04slot\x12#\n" +
-	"\rlow_frequency\x18\x02 \x01(\x05R\flowFrequency\x12%\n" +
-	"\x0ehigh_frequency\x18\x03 \x01(\x05R\rhighFrequency\x12\x1a\n" +
-	"\bduration\x18\x04 \x01(\x05R\bduration\"\xde\x01\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\"Y\n" +
+	"\x15ProtoControllerDetach\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\x8b\x01\n" +
+	"\x15ProtoControllerButton\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x16\n" +
+	"\x06button\x18\x03 \x01(\x05R\x06button\x12\x18\n" +
+	"\apressed\x18\x04 \x01(\bR\apressed\"\x8a\x01\n" +
+	"\x16ProtoControllerTrigger\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x18\n" +
+	"\atrigger\x18\x03 \x01(\x05R\atrigger\x12\x14\n" +
+	"\x05value\x18\x04 \x01(\x05R\x05value\"\x8a\x01\n" +
+	"\x14ProtoControllerStick\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
+	"\x05stick\x18\x03 \x01(\x05R\x05stick\x12\f\n" +
+	"\x01x\x18\x04 \x01(\x05R\x01x\x12\f\n" +
+	"\x01y\x18\x05 \x01(\x05R\x01y\"\x81\x01\n" +
+	"\x13ProtoControllerAxis\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04axis\x18\x03 \x01(\x05R\x04axis\x12\x14\n" +
+	"\x05value\x18\x04 \x01(\x05R\x05value\"\xc1\x01\n" +
+	"\x15ProtoControllerRumble\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12#\n" +
+	"\rlow_frequency\x18\x03 \x01(\x05R\flowFrequency\x12%\n" +
+	"\x0ehigh_frequency\x18\x04 \x01(\x05R\rhighFrequency\x12\x1a\n" +
+	"\bduration\x18\x05 \x01(\x05R\bduration\"\xde\x01\n" +
 	"\x13RTCIceCandidateInit\x12\x1c\n" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12)\n" +
 	"\rsdpMLineIndex\x18\x02 \x01(\rH\x00R\rsdpMLineIndex\x88\x01\x01\x12\x1b\n" +

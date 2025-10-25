@@ -195,18 +195,18 @@ func (r *Relay) updateMeshRoomStates(peerID peer.ID, states []shared.RoomInfo) {
 		}
 
 		// If previously did not exist, but does now, request a connection if participants exist for our room
-		existed := r.Rooms.Has(state.ID.String())
+		/*existed := r.Rooms.Has(state.ID.String())
 		if !existed {
 			// Request connection to this peer if we have participants in our local room
 			if room, ok := r.LocalRooms.Get(state.ID); ok {
-				if room.Participants.Len() > 0 {
+				if len(room.Participants) > 0 {
 					slog.Debug("Got new remote room state, we locally have participants for, requesting stream", "room_name", room.Name, "peer", peerID)
 					if err := r.StreamProtocol.RequestStream(context.Background(), room, peerID); err != nil {
 						slog.Error("Failed to request stream for new remote room state", "room_name", room.Name, "peer", peerID, "err", err)
 					}
 				}
 			}
-		}
+		}*/
 
 		r.Rooms.Set(state.ID.String(), state)
 	}

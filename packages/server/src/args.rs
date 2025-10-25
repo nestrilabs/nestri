@@ -212,6 +212,14 @@ impl Args {
                     .default_value("192"),
             )
             .arg(
+                Arg::new("software-render")
+                    .long("software-render")
+                    .env("SOFTWARE_RENDER")
+                    .help("Use software rendering for wayland")
+                    .value_parser(BoolishValueParser::new())
+                    .default_value("false"),
+            )
+            .arg(
                 Arg::new("zero-copy")
                     .long("zero-copy")
                     .env("ZERO_COPY")

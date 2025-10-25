@@ -23,7 +23,7 @@ pub struct Signaller {
     wayland_src: PLRwLock<Option<Arc<gstreamer::Element>>>,
     data_channel: PLRwLock<Option<Arc<gstreamer_webrtc::WebRTCDataChannel>>>,
     controller_manager: PLRwLock<Option<Arc<ControllerManager>>>,
-    rumble_rx: Mutex<Option<mpsc::Receiver<(u32, u16, u16, u16)>>>,
+    rumble_rx: Mutex<Option<mpsc::Receiver<(u32, u16, u16, u16, String)>>>,
     attach_rx: Mutex<Option<mpsc::Receiver<ProtoControllerAttach>>>,
 }
 impl Default for Signaller {
@@ -70,11 +70,11 @@ impl Signaller {
         self.controller_manager.read().clone()
     }
 
-    pub async fn set_rumble_rx(&self, rumble_rx: mpsc::Receiver<(u32, u16, u16, u16)>) {
+    pub async fn set_rumble_rx(&self, rumble_rx: mpsc::Receiver<(u32, u16, u16, u16, String)>) {
         *self.rumble_rx.lock().await = Some(rumble_rx);
     }
 
-    pub async fn take_rumble_rx(&self) -> Option<mpsc::Receiver<(u32, u16, u16, u16)>> {
+    pub async fn take_rumble_rx(&self) -> Option<mpsc::Receiver<(u32, u16, u16, u16, String)>> {
         self.rumble_rx.lock().await.take()
     }
 
@@ -382,7 +382,7 @@ impl ObjectImpl for Signaller {
 
 fn setup_data_channel(
     controller_manager: Option<Arc<ControllerManager>>,
-    rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16)>>, // (slot, strong, weak, duration_ms)
+    rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16, String)>>, // (slot, strong, weak, duration_ms, session_id)
     attach_rx: Option<mpsc::Receiver<ProtoControllerAttach>>,
     data_channel: Arc<gstreamer_webrtc::WebRTCDataChannel>,
     wayland_src: &gstreamer::Element,
@@ -423,10 +423,11 @@ fn setup_data_channel(
     if let Some(mut rumble_rx) = rumble_rx {
         let data_channel_clone = data_channel.clone();
         tokio::spawn(async move {
-            while let Some((slot, strong, weak, duration_ms)) = rumble_rx.recv().await {
+            while let Some((slot, strong, weak, duration_ms, session_id)) = rumble_rx.recv().await {
                 let rumble_msg = crate::proto::create_message(
                     Payload::ControllerRumble(ProtoControllerRumble {
-                        slot: slot as i32,
+                        session_slot: slot as i32,
+                        session_id: session_id,
                         low_frequency: weak as i32,
                         high_frequency: strong as i32,
                         duration: duration_ms as i32,

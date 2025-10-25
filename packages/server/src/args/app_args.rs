@@ -15,6 +15,9 @@ pub struct AppArgs {
     /// vimputti socket path
     pub vimputti_path: Option<String>,
 
+    /// Use software rendering for wayland display
+    pub software_render: bool,
+
     /// Experimental zero-copy pipeline support
     /// TODO: Move to video encoding flags
     pub zero_copy: bool,
@@ -51,6 +54,10 @@ impl AppArgs {
             vimputti_path: matches
                 .get_one::<String>("vimputti-path")
                 .map(|s| s.clone()),
+            software_render: matches
+                .get_one::<bool>("software-render")
+                .unwrap_or(&false)
+                .clone(),
             zero_copy: matches
                 .get_one::<bool>("zero-copy")
                 .unwrap_or(&false)
@@ -73,6 +80,7 @@ impl AppArgs {
             "> vimputti_path: '{}'",
             self.vimputti_path.as_ref().map_or("None", |s| s.as_str())
         );
+        tracing::info!("> software_render: {}", self.software_render);
         tracing::info!("> zero_copy: {}", self.zero_copy);
     }
 }

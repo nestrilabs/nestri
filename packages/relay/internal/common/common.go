@@ -26,7 +26,7 @@ func InitWebRTCAPI() error {
 	mediaEngine := &webrtc.MediaEngine{}
 
 	// Register our extensions
-	if err := RegisterExtensions(mediaEngine); err != nil {
+	if err = RegisterExtensions(mediaEngine); err != nil {
 		return fmt.Errorf("failed to register extensions: %w", err)
 	}
 

@@ -18,7 +18,7 @@ impl NestriSignaller {
         nestri_conn: NestriConnection,
         wayland_src: Arc<gstreamer::Element>,
         controller_manager: Option<Arc<ControllerManager>>,
-        rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16)>>,
+        rumble_rx: Option<mpsc::Receiver<(u32, u16, u16, u16, String)>>,
         attach_rx: Option<mpsc::Receiver<crate::proto::proto::ProtoControllerAttach>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let obj: Self = glib::Object::new();

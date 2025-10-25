@@ -51,50 +51,56 @@ message ProtoKeyUp {
 // ControllerAttach message
 message ProtoControllerAttach {
   string id = 1; // One of the following enums: "ps", "xbox" or "switch"
-  int32 slot = 2; // Slot number (0-3)
-  string session_id = 3; // Session ID of the client attaching the controller
+  int32 session_slot = 2; // Session specific slot number (0-3)
+  string session_id = 3; // Session ID of the client
 }
 
 // ControllerDetach message
 message ProtoControllerDetach {
-  int32 slot = 1; // Slot number (0-3)
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
 }
 
 // ControllerButton message
 message ProtoControllerButton {
-  int32 slot = 1; // Slot number (0-3)
-  int32 button = 2; // Button code (linux input event code)
-  bool pressed = 3; // true if pressed, false if released
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
+  int32 button = 3; // Button code (linux input event code)
+  bool pressed = 4; // true if pressed, false if released
 }
 
 // ControllerTriggers message
 message ProtoControllerTrigger {
-  int32 slot = 1; // Slot number (0-3)
-  int32 trigger = 2; // Trigger number (0 for left, 1 for right)
-  int32 value = 3; // trigger value (-32768 to 32767)
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
+  int32 trigger = 3; // Trigger number (0 for left, 1 for right)
+  int32 value = 4; // trigger value (-32768 to 32767)
 }
 
 // ControllerSticks message
 message ProtoControllerStick {
-  int32 slot = 1; // Slot number (0-3)
-  int32 stick = 2; // Stick number (0 for left, 1 for right)
-  int32 x = 3; // X axis value (-32768 to 32767)
-  int32 y = 4; // Y axis value (-32768 to 32767)
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
+  int32 stick = 3; // Stick number (0 for left, 1 for right)
+  int32 x = 4; // X axis value (-32768 to 32767)
+  int32 y = 5; // Y axis value (-32768 to 32767)
 }
 
 // ControllerAxis message
 message ProtoControllerAxis {
-  int32 slot = 1; // Slot number (0-3)
-  int32 axis = 2; // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-  int32 value = 3; // axis value (-1 to 1)
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
+  int32 axis = 3; // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
+  int32 value = 4; // axis value (-1 to 1)
 }
 
 // ControllerRumble message
 message ProtoControllerRumble {
-  int32 slot = 1; // Slot number (0-3)
-  int32 low_frequency = 2; // Low frequency rumble (0-65535)
-  int32 high_frequency = 3; // High frequency rumble (0-65535)
-  int32 duration = 4; // Duration in milliseconds
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
+  int32 low_frequency = 3; // Low frequency rumble (0-65535)
+  int32 high_frequency = 4; // High frequency rumble (0-65535)
+  int32 duration = 5; // Duration in milliseconds
 }
 
 /* WebRTC + signaling */

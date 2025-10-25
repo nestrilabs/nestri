@@ -585,7 +585,6 @@ pub fn get_best_working_encoder(
     encoders: &Vec<VideoEncoderInfo>,
     codec: &Codec,
     encoder_type: &EncoderType,
-    zero_copy: bool,
 ) -> Result<VideoEncoderInfo, Box<dyn Error>> {
     let mut candidates = get_encoders_by_videocodec(
         encoders,
@@ -601,7 +600,7 @@ pub fn get_best_working_encoder(
     while !candidates.is_empty() {
         let best = get_best_compatible_encoder(&candidates, codec, encoder_type)?;
         tracing::info!("Testing encoder: {}", best.name,);
-        if test_encoder(&best, zero_copy).is_ok() {
+        if test_encoder(&best).is_ok() {
             return Ok(best);
         } else {
             // Remove this encoder and try next best
@@ -613,25 +612,10 @@ pub fn get_best_working_encoder(
 }
 
 /// Test if a pipeline with the given encoder can be created and set to Playing
-pub fn test_encoder(encoder: &VideoEncoderInfo, zero_copy: bool) -> Result<(), Box<dyn Error>> {
-    let src = gstreamer::ElementFactory::make("waylanddisplaysrc").build()?;
-    if let Some(gpu_info) = &encoder.gpu_info {
-        src.set_property_from_str("render-node", gpu_info.render_path());
-    }
+pub fn test_encoder(encoder: &VideoEncoderInfo) -> Result<(), Box<dyn Error>> {
+    let src = gstreamer::ElementFactory::make("videotestsrc").build()?;
     let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-    let caps = gstreamer::Caps::from_str(&format!(
-        "{},width=1280,height=720,framerate=30/1{}",
-        if zero_copy {
-            if encoder.encoder_api == EncoderAPI::NVENC {
-                "video/x-raw(memory:CUDAMemory)"
-            } else {
-                "video/x-raw(memory:DMABuf)"
-            }
-        } else {
-            "video/x-raw"
-        },
-        if zero_copy { "" } else { ",format=RGBx" }
-    ))?;
+    let caps = gstreamer::Caps::from_str("video/x-raw,width=1280,height=720,framerate=30/1")?;
     caps_filter.set_property("caps", &caps);
 
     let enc = gstreamer::ElementFactory::make(&encoder.name).build()?;
@@ -642,41 +626,9 @@ pub fn test_encoder(encoder: &VideoEncoderInfo, zero_copy: bool) -> Result<(), B
     // Create pipeline and link elements
     let pipeline = gstreamer::Pipeline::new();
 
-    if zero_copy {
-        if encoder.encoder_api == EncoderAPI::NVENC {
-            // NVENC zero-copy path
-            pipeline.add_many(&[&src, &caps_filter, &enc, &sink])?;
-            gstreamer::Element::link_many(&[&src, &caps_filter, &enc, &sink])?;
-        } else {
-            // VA-API/QSV zero-copy path
-            let vapostproc = gstreamer::ElementFactory::make("vapostproc").build()?;
-            let va_caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
-            let va_caps = gstreamer::Caps::from_str("video/x-raw(memory:VAMemory),format=NV12")?;
-            va_caps_filter.set_property("caps", &va_caps);
-
-            pipeline.add_many(&[
-                &src,
-                &caps_filter,
-                &vapostproc,
-                &va_caps_filter,
-                &enc,
-                &sink,
-            ])?;
-            gstreamer::Element::link_many(&[
-                &src,
-                &caps_filter,
-                &vapostproc,
-                &va_caps_filter,
-                &enc,
-                &sink,
-            ])?;
-        }
-    } else {
-        // Non-zero-copy path for all encoders - needs videoconvert
-        let videoconvert = gstreamer::ElementFactory::make("videoconvert").build()?;
-        pipeline.add_many(&[&src, &caps_filter, &videoconvert, &enc, &sink])?;
-        gstreamer::Element::link_many(&[&src, &caps_filter, &videoconvert, &enc, &sink])?;
-    }
+    let videoconvert = gstreamer::ElementFactory::make("videoconvert").build()?;
+    pipeline.add_many(&[&src, &caps_filter, &videoconvert, &enc, &sink])?;
+    gstreamer::Element::link_many(&[&src, &caps_filter, &videoconvert, &enc, &sink])?;
 
     let bus = pipeline.bus().ok_or("Pipeline has no bus")?;
     pipeline.set_state(gstreamer::State::Playing)?;

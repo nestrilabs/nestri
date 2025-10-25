@@ -24,7 +24,7 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::filter::LevelFilter;
 
 // Handles gathering GPU information and selecting the most suitable GPU
-fn handle_gpus(args: &args::Args) -> Result<Vec<gpu::GPUInfo>, Box<dyn Error>> {
+fn handle_gpus(args: &args::Args) -> Result<Vec<GPUInfo>, Box<dyn Error>> {
     tracing::info!("Gathering GPU information..");
     let mut gpus = gpu::get_gpus()?;
     if gpus.is_empty() {
@@ -119,7 +119,6 @@ fn handle_encoder_video(
             &video_encoders,
             &args.encoding.video.codec,
             &args.encoding.video.encoder_type,
-            args.app.zero_copy,
         )?;
     }
     tracing::info!("Selected video encoder: '{}'", video_encoder.name);
@@ -323,7 +322,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     /* Video */
     // Video Source Element
     let video_source = Arc::new(gstreamer::ElementFactory::make("waylanddisplaysrc").build()?);
-    if let Some(gpu_info) = &video_encoder_info.gpu_info {
+    if args.app.software_render {
+        video_source.set_property_from_str("render-node", "software");
+    } else if let Some(gpu_info) = &video_encoder_info.gpu_info {
         video_source.set_property_from_str("render-node", gpu_info.render_path());
     }
 
@@ -428,20 +429,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
     webrtcsink.set_property("do-retransmission", false);
 
     /* Queues */
-    let video_source_queue = gstreamer::ElementFactory::make("queue")
-        .property("max-size-buffers", 5u32)
-        .build()?;
-
-    let audio_source_queue = gstreamer::ElementFactory::make("queue")
-        .property("max-size-buffers", 5u32)
-        .build()?;
-
     let video_queue = gstreamer::ElementFactory::make("queue")
-        .property("max-size-buffers", 5u32)
+        .property("max-size-buffers", 2u32)
+        .property("max-size-time", 0u64)
+        .property("max-size-bytes", 0u32)
         .build()?;
 
     let audio_queue = gstreamer::ElementFactory::make("queue")
-        .property("max-size-buffers", 5u32)
+        .property("max-size-buffers", 2u32)
+        .property("max-size-time", 0u64)
+        .property("max-size-bytes", 0u32)
         .build()?;
 
     /* Clock Sync */
@@ -460,7 +457,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &caps_filter,
         &video_queue,
         &video_clocksync,
-        &video_source_queue,
         &video_source,
         &audio_encoder,
         &audio_capsfilter,
@@ -468,7 +464,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &audio_clocksync,
         &audio_rate,
         &audio_converter,
-        &audio_source_queue,
         &audio_source,
     ])?;
 
@@ -495,7 +490,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Link main audio branch
     gstreamer::Element::link_many(&[
         &audio_source,
-        &audio_source_queue,
         &audio_converter,
         &audio_rate,
         &audio_capsfilter,
@@ -517,7 +511,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if let (Some(vapostproc), Some(va_caps_filter)) = (&vapostproc, &va_caps_filter) {
             gstreamer::Element::link_many(&[
                 &video_source,
-                &video_source_queue,
                 &caps_filter,
                 &video_queue,
                 &video_clocksync,
@@ -529,7 +522,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // NVENC pipeline
             gstreamer::Element::link_many(&[
                 &video_source,
-                &video_source_queue,
                 &caps_filter,
                 &video_encoder,
             ])?;
@@ -537,7 +529,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         gstreamer::Element::link_many(&[
             &video_source,
-            &video_source_queue,
             &caps_filter,
             &video_queue,
             &video_clocksync,

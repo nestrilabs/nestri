@@ -22,6 +22,7 @@ import { P2PMessageStream } from "./streamwrapper";
 const NESTRI_PROTOCOL_STREAM_REQUEST = "/nestri-relay/stream-request/1.0.0";
 
 export class WebRTCStream {
+  private _sessionId: string | null = null;
   private _p2p: Libp2p | undefined = undefined;
   private _p2pConn: Connection | undefined = undefined;
   private _msgStream: P2PMessageStream | undefined = undefined;
@@ -128,9 +129,9 @@ export class WebRTCStream {
         });
 
         this._msgStream.on("session-assigned", (data: ProtoClientRequestRoomStream) => {
-          const sessionId = data.sessionId;
-          localStorage.setItem("nestri-session-id", sessionId);
-          console.log("Session ID assigned:", sessionId, "for room:", data.roomName);
+          this._sessionId = data.sessionId;
+          localStorage.setItem("nestri-session-id", this._sessionId);
+          console.log("Session ID assigned:", this._sessionId, "for room:", data.roomName);
         });
 
         this._msgStream.on("offer", async (data: ProtoSDP) => {
@@ -162,7 +163,7 @@ export class WebRTCStream {
           this._onConnected?.(null);
         });
 
-        const clientId = localStorage.getItem("nestri-session-id");
+        const clientId = this.getSessionID();
         if (clientId) {
           console.debug("Using existing session ID:", clientId);
         }
@@ -180,8 +181,10 @@ export class WebRTCStream {
     }
   }
 
-  public getSessionID(): string {
-    return localStorage.getItem("nestri-session-id") || "";
+  public getSessionID(): string | null {
+    if (this._sessionId === null)
+      this._sessionId = localStorage.getItem("nestri-session-id");
+    return this._sessionId;
   }
 
   // Forces opus to stereo in Chromium browsers, because of course
@@ -298,7 +301,7 @@ export class WebRTCStream {
                 // @ts-ignore
                 receiver.jitterBufferTarget = receiver.jitterBufferDelayHint = receiver.playoutDelayHint = 0;
               }
-            }, 15);
+            }, 50);
           });
         }
       }

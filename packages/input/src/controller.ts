@@ -32,7 +32,6 @@ interface GamepadState {
 
 export class Controller {
   protected wrtc: WebRTCStream;
-  protected slotMap: Map<number, number> = new Map(); // local slot to server slot
   protected connected: boolean = false;
   protected gamepad: Gamepad | null = null;
   protected lastState: GamepadState = {
@@ -50,6 +49,14 @@ export class Controller {
   protected stickDeadzone: number = 2048; // 2048 / 32768 = ~0.06 (6% of stick range)
 
   private updateInterval = 10.0; // 100 updates per second
+  private isIdle: boolean = true;
+  private lastInputTime: number = Date.now();
+  private idleUpdateInterval: number = 150.0; // ~6-7 updates per second for keep-alive packets
+  private inputDetected: boolean = false;
+  private lastFullStateSend: number = Date.now();
+  private fullStateSendInterval: number = 500.0; // send full state every 0.5 seconds (helps packet loss)
+  private forceFullStateSend: boolean = false;
+
   private _dcHandler: ((data: ArrayBuffer) => void) | null = null;
 
   constructor({ webrtc, e }: Props) {
@@ -79,9 +86,8 @@ export class Controller {
           const attachMsg = messageWrapper.payload.value;
           // Gamepad connected succesfully
           this.gamepad = e.gamepad;
-          this.slotMap.set(e.gamepad.index, attachMsg.slot);
           console.log(
-            `Gamepad connected: ${e.gamepad.id} assigned to slot ${attachMsg.slot} on server, local slot ${e.gamepad.index}`,
+            `Gamepad connected: ${e.gamepad.id}, local slot ${e.gamepad.index}, msg: ${attachMsg.sessionSlot}`,
           );
         }
       } catch (err) {
@@ -93,6 +99,7 @@ export class Controller {
     const attachMsg = createMessage(
       create(ProtoControllerAttachSchema, {
         id: this.vendor_id_to_controller(vendorId, productId),
+        sessionSlot: e.gamepad.index,
         sessionId: this.wrtc.getSessionID(),
       }),
       "controllerInput",
@@ -100,6 +107,10 @@ export class Controller {
     this.wrtc.sendBinary(toBinary(ProtoMessageSchema, attachMsg));
 
     this.run();
+  }
+
+  public getSlot(): number {
+    return this.gamepad.index;
   }
 
   // Maps vendor id and product id to supported controller type
@@ -154,6 +165,13 @@ export class Controller {
   private pollGamepad() {
     // Get updated gamepad state
     const gamepads = navigator.getGamepads();
+
+    // Periodically force send full state to clear stuck inputs
+    if (Date.now() - this.lastFullStateSend > this.fullStateSendInterval) {
+      this.forceFullStateSend = true;
+      this.lastFullStateSend = Date.now();
+    }
+
     if (this.gamepad) {
       if (gamepads[this.gamepad.index]) {
         this.gamepad = gamepads[this.gamepad!.index];
@@ -164,7 +182,7 @@ export class Controller {
           // ignore trigger buttons (6-7) as we handle those as axis
           if (index === 6 || index === 7) return;
           // If state differs, send
-          if (button.pressed !== this.lastState.buttonState.get(index)) {
+          if (button.pressed !== this.lastState.buttonState.get(index) || this.forceFullStateSend) {
             const linuxCode = this.controllerButtonToVirtualKeyCode(index);
             if (linuxCode === undefined) {
               // Skip unmapped button index
@@ -174,13 +192,15 @@ export class Controller {
 
             const buttonMessage = createMessage(
               create(ProtoControllerButtonSchema, {
-                slot: this.getServerSlot(),
+                sessionSlot: this.gamepad.index,
+                sessionId: this.wrtc.getSessionID(),
                 button: linuxCode,
                 pressed: button.pressed,
               }),
               "controllerInput",
             );
             this.wrtc.sendBinary(toBinary(ProtoMessageSchema, buttonMessage));
+            this.inputDetected = true;
             // Store button state
             this.lastState.buttonState.set(index, button.pressed);
           }
@@ -198,16 +218,18 @@ export class Controller {
           ),
         );
         // If state differs, send
-        if (leftTrigger !== this.lastState.leftTrigger) {
+        if (leftTrigger !== this.lastState.leftTrigger || this.forceFullStateSend) {
           const triggerMessage = createMessage(
             create(ProtoControllerTriggerSchema, {
-              slot: this.getServerSlot(),
+              sessionSlot: this.gamepad.index,
+              sessionId: this.wrtc.getSessionID(),
               trigger: 0, // 0 = left, 1 = right
               value: leftTrigger,
             }),
             "controllerInput",
           );
           this.wrtc.sendBinary(toBinary(ProtoMessageSchema, triggerMessage));
+          this.inputDetected = true;
           this.lastState.leftTrigger = leftTrigger;
         }
         const rightTrigger = Math.round(
@@ -220,16 +242,18 @@ export class Controller {
           ),
         );
         // If state differs, send
-        if (rightTrigger !== this.lastState.rightTrigger) {
+        if (rightTrigger !== this.lastState.rightTrigger || this.forceFullStateSend) {
           const triggerMessage = createMessage(
             create(ProtoControllerTriggerSchema, {
-              slot: this.getServerSlot(),
+              sessionSlot: this.gamepad.index,
+              sessionId: this.wrtc.getSessionID(),
               trigger: 1, // 0 = left, 1 = right
               value: rightTrigger,
             }),
             "controllerInput",
           );
           this.wrtc.sendBinary(toBinary(ProtoMessageSchema, triggerMessage));
+          this.inputDetected = true;
           this.lastState.rightTrigger = rightTrigger;
         }
 
@@ -238,32 +262,36 @@ export class Controller {
         const dpadLeft = this.gamepad.buttons[14]?.pressed ? 1 : 0;
         const dpadRight = this.gamepad.buttons[15]?.pressed ? 1 : 0;
         const dpadX = dpadLeft ? -1 : dpadRight ? 1 : 0;
-        if (dpadX !== this.lastState.dpadX) {
+        if (dpadX !== this.lastState.dpadX || this.forceFullStateSend) {
           const dpadMessage = createMessage(
             create(ProtoControllerAxisSchema, {
-              slot: this.getServerSlot(),
+              sessionSlot: this.gamepad.index,
+              sessionId: this.wrtc.getSessionID(),
               axis: 0, // 0 = dpadX, 1 = dpadY
               value: dpadX,
             }),
             "controllerInput",
           );
-          this.lastState.dpadX = dpadX;
           this.wrtc.sendBinary(toBinary(ProtoMessageSchema, dpadMessage));
+          this.inputDetected = true;
+          this.lastState.dpadX = dpadX;
         }
 
         const dpadUp = this.gamepad.buttons[12]?.pressed ? 1 : 0;
         const dpadDown = this.gamepad.buttons[13]?.pressed ? 1 : 0;
         const dpadY = dpadUp ? -1 : dpadDown ? 1 : 0;
-        if (dpadY !== this.lastState.dpadY) {
+        if (dpadY !== this.lastState.dpadY || this.forceFullStateSend) {
           const dpadMessage = createMessage(
             create(ProtoControllerAxisSchema, {
-              slot: this.getServerSlot(),
+              sessionSlot: this.gamepad.index,
+              sessionId: this.wrtc.getSessionID(),
               axis: 1, // 0 = dpadX, 1 = dpadY
               value: dpadY,
             }),
             "controllerInput",
           );
           this.wrtc.sendBinary(toBinary(ProtoMessageSchema, dpadMessage));
+          this.inputDetected = true;
           this.lastState.dpadY = dpadY;
         }
 
@@ -292,10 +320,12 @@ export class Controller {
         // if moves inside deadzone, zero it if not inside deadzone last time
         if (
           sendLeftX !== this.lastState.leftX ||
-          sendLeftY !== this.lastState.leftY
+          sendLeftY !== this.lastState.leftY || this.forceFullStateSend
         ) {
           const stickMessage = createMessage(
             create(ProtoControllerStickSchema, {
+              sessionSlot: this.gamepad.index,
+              sessionId: this.wrtc.getSessionID(),
               stick: 0, // 0 = left, 1 = right
               x: sendLeftX,
               y: sendLeftY,
@@ -303,6 +333,7 @@ export class Controller {
             "controllerInput",
           );
           this.wrtc.sendBinary(toBinary(ProtoMessageSchema, stickMessage));
+          this.inputDetected = true;
           this.lastState.leftX = sendLeftX;
           this.lastState.leftY = sendLeftY;
         }
@@ -328,10 +359,12 @@ export class Controller {
           Math.abs(rightY) > this.stickDeadzone ? Math.round(rightY) : 0;
         if (
           sendRightX !== this.lastState.rightX ||
-          sendRightY !== this.lastState.rightY
+          sendRightY !== this.lastState.rightY || this.forceFullStateSend
         ) {
           const stickMessage = createMessage(
             create(ProtoControllerStickSchema, {
+              sessionSlot: this.gamepad.index,
+              sessionId: this.wrtc.getSessionID(),
               stick: 1, // 0 = left, 1 = right
               x: sendRightX,
               y: sendRightY,
@@ -339,11 +372,14 @@ export class Controller {
             "controllerInput",
           );
           this.wrtc.sendBinary(toBinary(ProtoMessageSchema, stickMessage));
+          this.inputDetected = true;
           this.lastState.rightX = sendRightX;
           this.lastState.rightY = sendRightY;
         }
       }
     }
+
+    this.forceFullStateSend = false;
   }
 
   private loopInterval: any = null;
@@ -352,10 +388,34 @@ export class Controller {
     if (this.connected) this.stop();
 
     this.connected = true;
-    // Poll gamepads in setInterval loop
+    this.isIdle = true;
+    this.lastInputTime = Date.now();
+
     this.loopInterval = setInterval(() => {
-      if (this.connected) this.pollGamepad();
-    }, this.updateInterval);
+      if (this.connected) {
+        this.inputDetected = false; // Reset before poll
+        this.pollGamepad();
+
+        // Switch polling rate based on input
+        if (this.inputDetected) {
+          this.lastInputTime = Date.now();
+          if (this.isIdle) {
+            this.isIdle = false;
+            clearInterval(this.loopInterval);
+            this.loopInterval = setInterval(() => {
+              if (this.connected) this.pollGamepad();
+            }, this.updateInterval);
+          }
+        } else if (!this.isIdle && Date.now() - this.lastInputTime > 200) {
+          // Switch to idle polling after 200ms of no input
+          this.isIdle = true;
+          clearInterval(this.loopInterval);
+          this.loopInterval = setInterval(() => {
+            if (this.connected) this.pollGamepad();
+          }, this.idleUpdateInterval);
+        }
+      }
+    }, this.isIdle ? this.idleUpdateInterval : this.updateInterval);
   }
 
   public stop() {
@@ -364,21 +424,6 @@ export class Controller {
       this.loopInterval = null;
     }
     this.connected = false;
-  }
-
-  public getLocalSlot(): number {
-    if (this.gamepad) {
-      return this.gamepad.index;
-    }
-    return -1;
-  }
-
-  public getServerSlot(): number {
-    if (this.gamepad) {
-      const slot = this.slotMap.get(this.gamepad.index);
-      if (slot !== undefined) return slot;
-    }
-    return -1;
   }
 
   public dispose() {
@@ -391,7 +436,7 @@ export class Controller {
     // Gamepad disconnected
     const detachMsg = createMessage(
       create(ProtoControllerDetachSchema, {
-        slot: this.getServerSlot(),
+        sessionSlot: this.gamepad.index,
       }),
       "controllerInput",
     );
@@ -407,7 +452,9 @@ export class Controller {
     if (!this.connected) return;
 
     // Check if aimed at this controller slot
-    if (rumbleMsg.slot !== this.getServerSlot()) return;
+    if (rumbleMsg.sessionId !== this.wrtc.getSessionID() &&
+        rumbleMsg.sessionSlot !== this.gamepad.index)
+      return;
 
     // Trigger actual rumble
     // Need to remap from 0-65535 to 0.0-1.0 ranges

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"relay/internal/common"
 	"relay/internal/connections"
 	"relay/internal/shared"
@@ -176,7 +177,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 
 				// Create participant for this viewer
 				participant, err := shared.NewParticipant(
-					"", // session ID will be set if this is a client session
+					"",
 					stream.Conn().RemotePeer(),
 				)
 				if err != nil {
@@ -189,101 +190,36 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 					participant.SessionID = session.SessionID
 				}
 
+				// Assign peer connection
 				participant.PeerConnection = pc
 
-				// Create per-participant tracks
-				if room.VideoTrack != nil {
-					participant.VideoTrack, err = webrtc.NewTrackLocalStaticRTP(
-						room.VideoTrack.Codec(),
-						"video-"+participant.ID.String(),
-						"nestri-"+reqMsg.RoomName+"-video",
+				// Add audio/video tracks
+				{
+					localTrack, err := webrtc.NewTrackLocalStaticRTP(
+						room.AudioCodec,
+						"participant-"+participant.ID.String(),
+						"participant-"+participant.ID.String()+"-audio",
 					)
 					if err != nil {
-						slog.Error("Failed to create participant video track", "room", reqMsg.RoomName, "err", err)
-						continue
+						slog.Error("Failed to create track for stream request", "err", err)
+						return
 					}
-
-					rtpSender, err := pc.AddTrack(participant.VideoTrack)
-					if err != nil {
-						slog.Error("Failed to add participant video track", "room", reqMsg.RoomName, "err", err)
-						continue
-					}
-
-					slog.Info("Added video track for participant",
-						"room", reqMsg.RoomName,
-						"participant", participant.ID,
-						"sender_id", fmt.Sprintf("%p", rtpSender))
-
-					// Relay packets from channel to track (VIDEO)
-					go func() {
-						for pkt := range participant.VideoChan {
-							// Use a context with timeout
-							ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-
-							done := make(chan error, 1)
-							go func() {
-								done <- participant.VideoTrack.WriteRTP(pkt)
-							}()
-
-							select {
-							case err := <-done:
-								cancel()
-								if err != nil {
-									if !errors.Is(err, io.ErrClosedPipe) {
-										slog.Debug("Failed to write video", "room", reqMsg.RoomName, "err", err)
-									}
-									return
-								}
-							case <-ctx.Done():
-								cancel()
-								slog.Error("WriteRTP BLOCKED for >100ms!",
-									"participant", participant.ID,
-									"room", reqMsg.RoomName)
-								// Don't return, continue processing
-							}
-						}
-					}()
+					participant.SetTrack(webrtc.RTPCodecTypeAudio, localTrack)
+					slog.Debug("Set audio track for requested stream", "room", room.Name)
 				}
-				if room.AudioTrack != nil {
-					participant.AudioTrack, err = webrtc.NewTrackLocalStaticRTP(
-						room.AudioTrack.Codec(),
-						"audio-"+participant.ID.String(),
-						"nestri-"+reqMsg.RoomName+"-audio",
+				{
+					localTrack, err := webrtc.NewTrackLocalStaticRTP(
+						room.VideoCodec,
+						"participant-"+participant.ID.String(),
+						"participant-"+participant.ID.String()+"-video",
 					)
 					if err != nil {
-						slog.Error("Failed to create participant audio track", "room", reqMsg.RoomName, "err", err)
-						continue
+						slog.Error("Failed to create track for stream request", "err", err)
+						return
 					}
-
-					_, err := pc.AddTrack(participant.AudioTrack)
-					if err != nil {
-						slog.Error("Failed to add participant audio track", "room", reqMsg.RoomName, "err", err)
-						continue
-					}
-
-					// Relay packets from channel to track (AUDIO)
-					go func() {
-						for pkt := range participant.AudioChan {
-							start := time.Now()
-							if err := participant.AudioTrack.WriteRTP(pkt); err != nil {
-								if !errors.Is(err, io.ErrClosedPipe) {
-									slog.Debug("Failed to write audio to participant", "room", reqMsg.RoomName, "err", err)
-								}
-								return
-							}
-							duration := time.Since(start)
-							if duration > 50*time.Millisecond {
-								slog.Warn("Slow audio WriteRTP detected",
-									"duration", duration,
-									"participant", participant.ID,
-									"room", reqMsg.RoomName)
-							}
-						}
-					}()
+					participant.SetTrack(webrtc.RTPCodecTypeVideo, localTrack)
+					slog.Debug("Set video track for requested stream", "room", room.Name)
 				}
-
-				// Add participant to room
-				room.AddParticipant(participant)
 
 				// Cleanup on disconnect
 				cleanupParticipantID := participant.ID
@@ -294,6 +230,9 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 						slog.Info("Participant disconnected from room", "room", reqMsg.RoomName, "participant", cleanupParticipantID)
 						room.RemoveParticipantByID(cleanupParticipantID)
 						participant.Close()
+					} else if state == webrtc.PeerConnectionStateConnected {
+						// Add participant to room when connection is established
+						room.AddParticipant(participant)
 					}
 				})
 
@@ -334,33 +273,33 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 						peerID := stream.Conn().RemotePeer()
 
 						// Check if it's a controller attach with assigned slot
-						if attach := msgWrapper.GetControllerAttach(); attach != nil && attach.Slot >= 0 {
+						if attach := msgWrapper.GetControllerAttach(); attach != nil && attach.SessionSlot >= 0 {
 							if session, ok := sp.relay.ClientSessions.Get(peerID); ok {
 								// Check if slot already tracked
 								hasSlot := false
 								for _, slot := range session.ControllerSlots {
-									if slot == attach.Slot {
+									if slot == attach.SessionSlot {
 										hasSlot = true
 										break
 									}
 								}
 								if !hasSlot {
-									session.ControllerSlots = append(session.ControllerSlots, attach.Slot)
+									session.ControllerSlots = append(session.ControllerSlots, attach.SessionSlot)
 									session.LastActivity = time.Now()
 									slog.Info("Controller slot assigned to client session",
 										"session", session.SessionID,
-										"slot", attach.Slot,
+										"slot", attach.SessionSlot,
 										"total_slots", len(session.ControllerSlots))
 								}
 							}
 						}
 
 						// Check if it's a controller detach
-						if detach := msgWrapper.GetControllerDetach(); detach != nil && detach.Slot >= 0 {
+						if detach := msgWrapper.GetControllerDetach(); detach != nil && detach.SessionSlot >= 0 {
 							if session, ok := sp.relay.ClientSessions.Get(peerID); ok {
 								newSlots := make([]int32, 0, len(session.ControllerSlots))
 								for _, slot := range session.ControllerSlots {
-									if slot != detach.Slot {
+									if slot != detach.SessionSlot {
 										newSlots = append(newSlots, slot)
 									}
 								}
@@ -368,7 +307,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 								session.LastActivity = time.Now()
 								slog.Info("Controller slot removed from client session",
 									"session", session.SessionID,
-									"slot", detach.Slot,
+									"slot", detach.SessionSlot,
 									"remaining_slots", len(session.ControllerSlots))
 							}
 						}
@@ -537,19 +476,25 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, network.ErrReset) {
 				slog.Debug("Stream push connection closed by peer", "peer", stream.Conn().RemotePeer(), "error", err)
+				if room != nil {
+					room.Close()
+					sp.incomingConns.Set(room.Name, nil)
+				}
 				return
 			}
 
 			slog.Error("Failed to receive data for stream push", "err", err)
 			_ = stream.Reset()
-
+			if room != nil {
+				room.Close()
+				sp.incomingConns.Set(room.Name, nil)
+			}
 			return
 		}
 
 		if msgWrapper.MessageBase == nil {
 			slog.Error("No MessageBase in stream push")
-			_ = stream.Reset()
-			return
+			continue
 		}
 
 		switch msgWrapper.MessageBase.PayloadType {
@@ -606,7 +551,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 						slog.Error("Failed to add ICE candidate for pushed stream", "err", err)
 					}
 					for _, heldIce := range iceHolder {
-						if err := conn.pc.AddICECandidate(heldIce); err != nil {
+						if err = conn.pc.AddICECandidate(heldIce); err != nil {
 							slog.Error("Failed to add held ICE candidate for pushed stream", "err", err)
 						}
 					}
@@ -644,6 +589,9 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 					slog.Error("Failed to create PeerConnection for pushed stream", "room", room.Name, "err", err)
 					continue
 				}
+
+				// Assign room peer connection
+				room.PeerConnection = pc
 
 				pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 					// TODO: Is this the best way to handle DataChannel? Should we just use the map directly?
@@ -708,17 +656,6 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				})
 
 				pc.OnTrack(func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-					localTrack, err := webrtc.NewTrackLocalStaticRTP(remoteTrack.Codec().RTPCodecCapability, remoteTrack.Kind().String(), fmt.Sprintf("nestri-%s-%s", room.Name, remoteTrack.Kind().String()))
-					if err != nil {
-						slog.Error("Failed to create local track for pushed stream", "room", room.Name, "track_kind", remoteTrack.Kind().String(), "err", err)
-						return
-					}
-
-					slog.Debug("Received track for pushed stream", "room", room.Name, "track_kind", remoteTrack.Kind().String())
-
-					// Set track for Room
-					room.SetTrack(remoteTrack.Kind(), localTrack)
-
 					// Prepare PlayoutDelayExtension so we don't need to recreate it for each packet
 					playoutExt := &rtp.PlayoutDelayExtension{
 						MinDelay: 0,
@@ -728,6 +665,12 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 					if err != nil {
 						slog.Error("Failed to marshal PlayoutDelayExtension for room", "room", room.Name, "err", err)
 						return
+					}
+
+					if remoteTrack.Kind() == webrtc.RTPCodecTypeAudio {
+						room.AudioCodec = remoteTrack.Codec().RTPCodecCapability
+					} else if remoteTrack.Kind() == webrtc.RTPCodecTypeVideo {
+						room.VideoCodec = remoteTrack.Codec().RTPCodecCapability
 					}
 
 					for {
@@ -741,19 +684,61 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 
 						// Use PlayoutDelayExtension for low latency, if set for this track kind
 						if extID, ok := common.GetExtension(remoteTrack.Kind(), common.ExtensionPlayoutDelay); ok {
-							if err := rtpPacket.SetExtension(extID, playoutPayload); err != nil {
+							if err = rtpPacket.SetExtension(extID, playoutPayload); err != nil {
 								slog.Error("Failed to set PlayoutDelayExtension for room", "room", room.Name, "err", err)
 								continue
 							}
 						}
 
-						room.BroadcastPacket(remoteTrack.Kind(), rtpPacket)
+						// Calculate differences
+						var timeDiff int64
+						var sequenceDiff int
+
+						if remoteTrack.Kind() == webrtc.RTPCodecTypeVideo {
+							timeDiff = int64(rtpPacket.Timestamp) - int64(room.LastVideoTimestamp)
+							if !room.VideoTimestampSet {
+								timeDiff = 0
+								room.VideoTimestampSet = true
+							} else if timeDiff < -(math.MaxUint32 / 10) {
+								timeDiff += math.MaxUint32 + 1
+							}
+
+							sequenceDiff = int(rtpPacket.SequenceNumber) - int(room.LastVideoSequenceNumber)
+							if !room.VideoSequenceSet {
+								sequenceDiff = 0
+								room.VideoSequenceSet = true
+							} else if sequenceDiff < -(math.MaxUint16 / 10) {
+								sequenceDiff += math.MaxUint16 + 1
+							}
+
+							room.LastVideoTimestamp = rtpPacket.Timestamp
+							room.LastVideoSequenceNumber = rtpPacket.SequenceNumber
+						} else { // Audio
+							timeDiff = int64(rtpPacket.Timestamp) - int64(room.LastAudioTimestamp)
+							if !room.AudioTimestampSet {
+								timeDiff = 0
+								room.AudioTimestampSet = true
+							} else if timeDiff < -(math.MaxUint32 / 10) {
+								timeDiff += math.MaxUint32 + 1
+							}
+
+							sequenceDiff = int(rtpPacket.SequenceNumber) - int(room.LastAudioSequenceNumber)
+							if !room.AudioSequenceSet {
+								sequenceDiff = 0
+								room.AudioSequenceSet = true
+							} else if sequenceDiff < -(math.MaxUint16 / 10) {
+								sequenceDiff += math.MaxUint16 + 1
+							}
+
+							room.LastAudioTimestamp = rtpPacket.Timestamp
+							room.LastAudioSequenceNumber = rtpPacket.SequenceNumber
+						}
+
+						// Broadcast with differences
+						room.BroadcastPacketRetimed(remoteTrack.Kind(), rtpPacket, timeDiff, sequenceDiff)
 					}
 
 					slog.Debug("Track closed for room", "room", room.Name, "track_kind", remoteTrack.Kind().String())
-
-					// Cleanup the track from the room
-					room.SetTrack(remoteTrack.Kind(), nil)
 				})
 
 				// Set the remote description

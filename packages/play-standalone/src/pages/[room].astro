@@ -90,11 +90,7 @@ if (envs_map.size > 0) {
   let nestriControllers: Controller[] = [];
 
   window.addEventListener("gamepadconnected", (e) => {
-    // Ignore gamepads with id including "nestri"
     console.log("Gamepad connected:", e.gamepad);
-    if (e.gamepad.id.toLowerCase().includes("nestri"))
-      return;
-
     const controller = new Controller({
       webrtc: stream,
       e: e,
@@ -106,7 +102,7 @@ if (envs_map.size > 0) {
     if (e.gamepad.id.toLowerCase().includes("nestri"))
       return;
 
-    let disconnected = nestriControllers.find((c) => c.getLocalSlot() === e.gamepad.index);
+    let disconnected = nestriControllers.find((c) => c.getSlot() === e.gamepad.index);
     if (disconnected) {
       disconnected.dispose();
       nestriControllers = nestriControllers.filter((c) => c !== disconnected);

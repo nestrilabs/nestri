@@ -84,95 +84,113 @@ pub struct ProtoControllerAttach {
     /// One of the following enums: "ps", "xbox" or "switch"
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="2")]
-    pub slot: i32,
-    /// Session ID of the client attaching the controller
+    pub session_slot: i32,
+    /// Session ID of the client
     #[prost(string, tag="3")]
     pub session_id: ::prost::alloc::string::String,
 }
 /// ControllerDetach message
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoControllerDetach {
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="1")]
-    pub slot: i32,
+    pub session_slot: i32,
+    /// Session ID of the client
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
 }
 /// ControllerButton message
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoControllerButton {
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="1")]
-    pub slot: i32,
+    pub session_slot: i32,
+    /// Session ID of the client
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
     /// Button code (linux input event code)
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag="3")]
     pub button: i32,
     /// true if pressed, false if released
-    #[prost(bool, tag="3")]
+    #[prost(bool, tag="4")]
     pub pressed: bool,
 }
 /// ControllerTriggers message
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoControllerTrigger {
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="1")]
-    pub slot: i32,
+    pub session_slot: i32,
+    /// Session ID of the client
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
     /// Trigger number (0 for left, 1 for right)
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag="3")]
     pub trigger: i32,
     /// trigger value (-32768 to 32767)
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag="4")]
     pub value: i32,
 }
 /// ControllerSticks message
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoControllerStick {
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="1")]
-    pub slot: i32,
+    pub session_slot: i32,
+    /// Session ID of the client
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
     /// Stick number (0 for left, 1 for right)
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag="3")]
     pub stick: i32,
     /// X axis value (-32768 to 32767)
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag="4")]
     pub x: i32,
     /// Y axis value (-32768 to 32767)
-    #[prost(int32, tag="4")]
+    #[prost(int32, tag="5")]
     pub y: i32,
 }
 /// ControllerAxis message
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoControllerAxis {
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="1")]
-    pub slot: i32,
+    pub session_slot: i32,
+    /// Session ID of the client
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
     /// Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag="3")]
     pub axis: i32,
     /// axis value (-1 to 1)
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag="4")]
     pub value: i32,
 }
 /// ControllerRumble message
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProtoControllerRumble {
-    /// Slot number (0-3)
+    /// Session specific slot number (0-3)
     #[prost(int32, tag="1")]
-    pub slot: i32,
+    pub session_slot: i32,
+    /// Session ID of the client
+    #[prost(string, tag="2")]
+    pub session_id: ::prost::alloc::string::String,
     /// Low frequency rumble (0-65535)
-    #[prost(int32, tag="2")]
+    #[prost(int32, tag="3")]
     pub low_frequency: i32,
     /// High frequency rumble (0-65535)
-    #[prost(int32, tag="3")]
+    #[prost(int32, tag="4")]
     pub high_frequency: i32,
     /// Duration in milliseconds
-    #[prost(int32, tag="4")]
+    #[prost(int32, tag="5")]
     pub duration: i32,
 }
 // WebRTC + signaling 

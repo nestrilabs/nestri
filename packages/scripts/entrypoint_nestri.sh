@@ -187,7 +187,7 @@ start_compositor() {
 
                     if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
                         log "Starting application: $NESTRI_LAUNCH_CMD"
-                        WAYLAND_DISPLAY=wayland-0 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
+                        WAYLAND_DISPLAY="$COMPOSITOR_SOCKET" /bin/bash -c "$NESTRI_LAUNCH_CMD" &
                         APP_PID=$!
                     fi
                 else

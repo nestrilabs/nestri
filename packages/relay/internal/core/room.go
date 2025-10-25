@@ -45,7 +45,7 @@ func (r *Relay) DeleteRoomIfEmpty(room *shared.Room) {
 	if room == nil {
 		return
 	}
-	if room.Participants.Len() == 0 && r.LocalRooms.Has(room.ID) {
+	if len(room.Participants) <= 0 && r.LocalRooms.Has(room.ID) {
 		slog.Debug("Deleting empty room without participants", "room", room.Name)
 		r.LocalRooms.Delete(room.ID)
 		err := room.PeerConnection.Close()
