@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv2";
-import type { ProtoClientDisconnected, ProtoClientRequestRoomStream, ProtoControllerAttach, ProtoControllerAxis, ProtoControllerButton, ProtoControllerDetach, ProtoControllerRumble, ProtoControllerStick, ProtoControllerTrigger, ProtoICE, ProtoKeyDown, ProtoKeyUp, ProtoMouseKeyDown, ProtoMouseKeyUp, ProtoMouseMove, ProtoMouseMoveAbs, ProtoMouseWheel, ProtoRaw, ProtoSDP, ProtoServerPushStream } from "./types_pb";
+import type { ProtoClientDisconnected, ProtoClientRequestRoomStream, ProtoControllerAttach, ProtoControllerDetach, ProtoControllerRumble, ProtoControllerStateBatch, ProtoICE, ProtoKeyDown, ProtoKeyUp, ProtoMouseKeyDown, ProtoMouseKeyUp, ProtoMouseMove, ProtoMouseMoveAbs, ProtoMouseWheel, ProtoRaw, ProtoSDP, ProtoServerPushStream } from "./types_pb";
 import { file_types } from "./types_pb";
 import type { ProtoLatencyTracker } from "./latency_tracker_pb";
 import { file_latency_tracker } from "./latency_tracker_pb";
@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file messages.proto.
  */
 export const file_messages: GenFile = /*@__PURE__*/
-  fileDesc("Cg5tZXNzYWdlcy5wcm90bxIFcHJvdG8iVQoQUHJvdG9NZXNzYWdlQmFzZRIUCgxwYXlsb2FkX3R5cGUYASABKAkSKwoHbGF0ZW5jeRgCIAEoCzIaLnByb3RvLlByb3RvTGF0ZW5jeVRyYWNrZXIiyQgKDFByb3RvTWVzc2FnZRItCgxtZXNzYWdlX2Jhc2UYASABKAsyFy5wcm90by5Qcm90b01lc3NhZ2VCYXNlEisKCm1vdXNlX21vdmUYAiABKAsyFS5wcm90by5Qcm90b01vdXNlTW92ZUgAEjIKDm1vdXNlX21vdmVfYWJzGAMgASgLMhgucHJvdG8uUHJvdG9Nb3VzZU1vdmVBYnNIABItCgttb3VzZV93aGVlbBgEIAEoCzIWLnByb3RvLlByb3RvTW91c2VXaGVlbEgAEjIKDm1vdXNlX2tleV9kb3duGAUgASgLMhgucHJvdG8uUHJvdG9Nb3VzZUtleURvd25IABIuCgxtb3VzZV9rZXlfdXAYBiABKAsyFi5wcm90by5Qcm90b01vdXNlS2V5VXBIABInCghrZXlfZG93bhgHIAEoCzITLnByb3RvLlByb3RvS2V5RG93bkgAEiMKBmtleV91cBgIIAEoCzIRLnByb3RvLlByb3RvS2V5VXBIABI5ChFjb250cm9sbGVyX2F0dGFjaBgJIAEoCzIcLnByb3RvLlByb3RvQ29udHJvbGxlckF0dGFjaEgAEjkKEWNvbnRyb2xsZXJfZGV0YWNoGAogASgLMhwucHJvdG8uUHJvdG9Db250cm9sbGVyRGV0YWNoSAASOQoRY29udHJvbGxlcl9idXR0b24YCyABKAsyHC5wcm90by5Qcm90b0NvbnRyb2xsZXJCdXR0b25IABI7ChJjb250cm9sbGVyX3RyaWdnZXIYDCABKAsyHS5wcm90by5Qcm90b0NvbnRyb2xsZXJUcmlnZ2VySAASNwoQY29udHJvbGxlcl9zdGljaxgNIAEoCzIbLnByb3RvLlByb3RvQ29udHJvbGxlclN0aWNrSAASNQoPY29udHJvbGxlcl9heGlzGA4gASgLMhoucHJvdG8uUHJvdG9Db250cm9sbGVyQXhpc0gAEjkKEWNvbnRyb2xsZXJfcnVtYmxlGA8gASgLMhwucHJvdG8uUHJvdG9Db250cm9sbGVyUnVtYmxlSAASHgoDaWNlGBQgASgLMg8ucHJvdG8uUHJvdG9JQ0VIABIeCgNzZHAYFSABKAsyDy5wcm90by5Qcm90b1NEUEgAEh4KA3JhdxgWIAEoCzIPLnByb3RvLlByb3RvUmF3SAASSQoaY2xpZW50X3JlcXVlc3Rfcm9vbV9zdHJlYW0YFyABKAsyIy5wcm90by5Qcm90b0NsaWVudFJlcXVlc3RSb29tU3RyZWFtSAASPQoTY2xpZW50X2Rpc2Nvbm5lY3RlZBgYIAEoCzIeLnByb3RvLlByb3RvQ2xpZW50RGlzY29ubmVjdGVkSAASOgoSc2VydmVyX3B1c2hfc3RyZWFtGBkgASgLMhwucHJvdG8uUHJvdG9TZXJ2ZXJQdXNoU3RyZWFtSABCCQoHcGF5bG9hZEIWWhRyZWxheS9pbnRlcm5hbC9wcm90b2IGcHJvdG8z", [file_types, file_latency_tracker]);
+  fileDesc("Cg5tZXNzYWdlcy5wcm90bxIFcHJvdG8iVQoQUHJvdG9NZXNzYWdlQmFzZRIUCgxwYXlsb2FkX3R5cGUYASABKAkSKwoHbGF0ZW5jeRgCIAEoCzIaLnByb3RvLlByb3RvTGF0ZW5jeVRyYWNrZXIipQcKDFByb3RvTWVzc2FnZRItCgxtZXNzYWdlX2Jhc2UYASABKAsyFy5wcm90by5Qcm90b01lc3NhZ2VCYXNlEisKCm1vdXNlX21vdmUYAiABKAsyFS5wcm90by5Qcm90b01vdXNlTW92ZUgAEjIKDm1vdXNlX21vdmVfYWJzGAMgASgLMhgucHJvdG8uUHJvdG9Nb3VzZU1vdmVBYnNIABItCgttb3VzZV93aGVlbBgEIAEoCzIWLnByb3RvLlByb3RvTW91c2VXaGVlbEgAEjIKDm1vdXNlX2tleV9kb3duGAUgASgLMhgucHJvdG8uUHJvdG9Nb3VzZUtleURvd25IABIuCgxtb3VzZV9rZXlfdXAYBiABKAsyFi5wcm90by5Qcm90b01vdXNlS2V5VXBIABInCghrZXlfZG93bhgHIAEoCzITLnByb3RvLlByb3RvS2V5RG93bkgAEiMKBmtleV91cBgIIAEoCzIRLnByb3RvLlByb3RvS2V5VXBIABI5ChFjb250cm9sbGVyX2F0dGFjaBgJIAEoCzIcLnByb3RvLlByb3RvQ29udHJvbGxlckF0dGFjaEgAEjkKEWNvbnRyb2xsZXJfZGV0YWNoGAogASgLMhwucHJvdG8uUHJvdG9Db250cm9sbGVyRGV0YWNoSAASOQoRY29udHJvbGxlcl9ydW1ibGUYCyABKAsyHC5wcm90by5Qcm90b0NvbnRyb2xsZXJSdW1ibGVIABJCChZjb250cm9sbGVyX3N0YXRlX2JhdGNoGAwgASgLMiAucHJvdG8uUHJvdG9Db250cm9sbGVyU3RhdGVCYXRjaEgAEh4KA2ljZRgUIAEoCzIPLnByb3RvLlByb3RvSUNFSAASHgoDc2RwGBUgASgLMg8ucHJvdG8uUHJvdG9TRFBIABIeCgNyYXcYFiABKAsyDy5wcm90by5Qcm90b1Jhd0gAEkkKGmNsaWVudF9yZXF1ZXN0X3Jvb21fc3RyZWFtGBcgASgLMiMucHJvdG8uUHJvdG9DbGllbnRSZXF1ZXN0Um9vbVN0cmVhbUgAEj0KE2NsaWVudF9kaXNjb25uZWN0ZWQYGCABKAsyHi5wcm90by5Qcm90b0NsaWVudERpc2Nvbm5lY3RlZEgAEjoKEnNlcnZlcl9wdXNoX3N0cmVhbRgZIAEoCzIcLnByb3RvLlByb3RvU2VydmVyUHVzaFN0cmVhbUgAQgkKB3BheWxvYWRCFloUcmVsYXkvaW50ZXJuYWwvcHJvdG9iBnByb3RvMw", [file_types, file_latency_tracker]);
 
 /**
  * @generated from message proto.ProtoMessageBase
@@ -96,6 +96,8 @@ export type ProtoMessage = Message<"proto.ProtoMessage"> & {
     case: "keyUp";
   } | {
     /**
+     * Controller input types
+     *
      * @generated from field: proto.ProtoControllerAttach controller_attach = 9;
      */
     value: ProtoControllerAttach;
@@ -108,34 +110,16 @@ export type ProtoMessage = Message<"proto.ProtoMessage"> & {
     case: "controllerDetach";
   } | {
     /**
-     * @generated from field: proto.ProtoControllerButton controller_button = 11;
-     */
-    value: ProtoControllerButton;
-    case: "controllerButton";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerTrigger controller_trigger = 12;
-     */
-    value: ProtoControllerTrigger;
-    case: "controllerTrigger";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerStick controller_stick = 13;
-     */
-    value: ProtoControllerStick;
-    case: "controllerStick";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerAxis controller_axis = 14;
-     */
-    value: ProtoControllerAxis;
-    case: "controllerAxis";
-  } | {
-    /**
-     * @generated from field: proto.ProtoControllerRumble controller_rumble = 15;
+     * @generated from field: proto.ProtoControllerRumble controller_rumble = 11;
      */
     value: ProtoControllerRumble;
     case: "controllerRumble";
+  } | {
+    /**
+     * @generated from field: proto.ProtoControllerStateBatch controller_state_batch = 12;
+     */
+    value: ProtoControllerStateBatch;
+    case: "controllerStateBatch";
   } | {
     /**
      * Signaling types

@@ -23,13 +23,12 @@ message ProtoMessage {
     ProtoMouseKeyUp mouse_key_up = 6;
     ProtoKeyDown key_down = 7;
     ProtoKeyUp key_up = 8;
+
+    // Controller input types
     ProtoControllerAttach controller_attach = 9;
     ProtoControllerDetach controller_detach = 10;
-    ProtoControllerButton controller_button = 11;
-    ProtoControllerTrigger controller_trigger = 12;
-    ProtoControllerStick controller_stick = 13;
-    ProtoControllerAxis controller_axis = 14;
-    ProtoControllerRumble controller_rumble = 15;
+    ProtoControllerRumble controller_rumble = 11;
+    ProtoControllerStateBatch controller_state_batch = 12;
 
     // Signaling types
     ProtoICE ice = 20;

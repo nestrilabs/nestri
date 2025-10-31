@@ -61,39 +61,6 @@ message ProtoControllerDetach {
   string session_id = 2; // Session ID of the client
 }
 
-// ControllerButton message
-message ProtoControllerButton {
-  int32 session_slot = 1; // Session specific slot number (0-3)
-  string session_id = 2; // Session ID of the client
-  int32 button = 3; // Button code (linux input event code)
-  bool pressed = 4; // true if pressed, false if released
-}
-
-// ControllerTriggers message
-message ProtoControllerTrigger {
-  int32 session_slot = 1; // Session specific slot number (0-3)
-  string session_id = 2; // Session ID of the client
-  int32 trigger = 3; // Trigger number (0 for left, 1 for right)
-  int32 value = 4; // trigger value (-32768 to 32767)
-}
-
-// ControllerSticks message
-message ProtoControllerStick {
-  int32 session_slot = 1; // Session specific slot number (0-3)
-  string session_id = 2; // Session ID of the client
-  int32 stick = 3; // Stick number (0 for left, 1 for right)
-  int32 x = 4; // X axis value (-32768 to 32767)
-  int32 y = 5; // Y axis value (-32768 to 32767)
-}
-
-// ControllerAxis message
-message ProtoControllerAxis {
-  int32 session_slot = 1; // Session specific slot number (0-3)
-  string session_id = 2; // Session ID of the client
-  int32 axis = 3; // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-  int32 value = 4; // axis value (-1 to 1)
-}
-
 // ControllerRumble message
 message ProtoControllerRumble {
   int32 session_slot = 1; // Session specific slot number (0-3)
@@ -101,6 +68,38 @@ message ProtoControllerRumble {
   int32 low_frequency = 3; // Low frequency rumble (0-65535)
   int32 high_frequency = 4; // High frequency rumble (0-65535)
   int32 duration = 5; // Duration in milliseconds
+}
+
+// ControllerStateBatch - single message containing full or partial controller state
+message ProtoControllerStateBatch {
+  int32 session_slot = 1; // Session specific slot number (0-3)
+  string session_id = 2; // Session ID of the client
+
+  enum UpdateType {
+    FULL_STATE = 0;    // Complete controller state
+    DELTA = 1;         // Only changed fields
+  }
+  UpdateType update_type = 3;
+
+  // Sequence number for packet loss detection
+  uint32 sequence = 4;
+
+  // Button state map (Linux event codes)
+  map<int32, bool> button_changed_mask = 5;
+
+  // Analog inputs
+  optional int32 left_stick_x = 6;   // -32768 to 32767
+  optional int32 left_stick_y = 7;   // -32768 to 32767
+  optional int32 right_stick_x = 8;  // -32768 to 32767
+  optional int32 right_stick_y = 9;  // -32768 to 32767
+  optional int32 left_trigger = 10;  // -32768 to 32767
+  optional int32 right_trigger = 11; // -32768 to 32767
+  optional int32 dpad_x = 12;        // -1, 0, or 1
+  optional int32 dpad_y = 13;        // -1, 0, or 1
+
+  // Bitmask indicating which fields have changed
+  // Bit 0: button_changed_mask, Bit 1: left_stick_x, Bit 2: left_stick_y, etc.
+  optional uint32 changed_fields = 14;
 }
 
 /* WebRTC + signaling */

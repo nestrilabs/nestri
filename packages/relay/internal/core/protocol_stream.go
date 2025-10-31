@@ -11,7 +11,6 @@ import (
 	"relay/internal/common"
 	"relay/internal/connections"
 	"relay/internal/shared"
-	"time"
 
 	gen "relay/internal/proto"
 
@@ -111,16 +110,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 					sessionID = ulid.String()
 				}
 
-				session := &ClientSession{
-					PeerID:       stream.Conn().RemotePeer(),
-					SessionID:    sessionID,
-					RoomName:     reqMsg.RoomName,
-					ConnectedAt:  time.Now(),
-					LastActivity: time.Now(),
-				}
-				sp.relay.ClientSessions.Set(stream.Conn().RemotePeer(), session)
-
-				slog.Info("Client session established", "peer", session.PeerID, "session", sessionID, "room", reqMsg.RoomName)
+				slog.Info("Client session requested room stream", "session", sessionID, "room", reqMsg.RoomName)
 
 				// Send session ID back to client
 				sesMsg, err := common.CreateMessage(
@@ -177,17 +167,12 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 
 				// Create participant for this viewer
 				participant, err := shared.NewParticipant(
-					"",
+					sessionID,
 					stream.Conn().RemotePeer(),
 				)
 				if err != nil {
 					slog.Error("Failed to create participant", "room", reqMsg.RoomName, "err", err)
 					continue
-				}
-
-				// If this is a client session, link it
-				if session, ok := sp.relay.ClientSessions.Get(stream.Conn().RemotePeer()); ok {
-					participant.SessionID = session.SessionID
 				}
 
 				// Assign peer connection
@@ -265,57 +250,9 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				// Track controller input separately
 				ndc.RegisterMessageCallback("controllerInput", func(data []byte) {
 					// Parse the message to track controller slots for client sessions
-					var msgWrapper gen.ProtoMessage
-					if err = proto.Unmarshal(data, &msgWrapper); err != nil {
+					var controllerMsgWrapper gen.ProtoMessage
+					if err = proto.Unmarshal(data, &controllerMsgWrapper); err != nil {
 						slog.Error("Failed to unmarshal controller input", "err", err)
-					} else if msgWrapper.Payload != nil {
-						// Get the peer ID for this connection
-						peerID := stream.Conn().RemotePeer()
-
-						// Check if it's a controller attach with assigned slot
-						if attach := msgWrapper.GetControllerAttach(); attach != nil && attach.SessionSlot >= 0 {
-							if session, ok := sp.relay.ClientSessions.Get(peerID); ok {
-								// Check if slot already tracked
-								hasSlot := false
-								for _, slot := range session.ControllerSlots {
-									if slot == attach.SessionSlot {
-										hasSlot = true
-										break
-									}
-								}
-								if !hasSlot {
-									session.ControllerSlots = append(session.ControllerSlots, attach.SessionSlot)
-									session.LastActivity = time.Now()
-									slog.Info("Controller slot assigned to client session",
-										"session", session.SessionID,
-										"slot", attach.SessionSlot,
-										"total_slots", len(session.ControllerSlots))
-								}
-							}
-						}
-
-						// Check if it's a controller detach
-						if detach := msgWrapper.GetControllerDetach(); detach != nil && detach.SessionSlot >= 0 {
-							if session, ok := sp.relay.ClientSessions.Get(peerID); ok {
-								newSlots := make([]int32, 0, len(session.ControllerSlots))
-								for _, slot := range session.ControllerSlots {
-									if slot != detach.SessionSlot {
-										newSlots = append(newSlots, slot)
-									}
-								}
-								session.ControllerSlots = newSlots
-								session.LastActivity = time.Now()
-								slog.Info("Controller slot removed from client session",
-									"session", session.SessionID,
-									"slot", detach.SessionSlot,
-									"remaining_slots", len(session.ControllerSlots))
-							}
-						}
-
-						// Update last activity on any controller input
-						if session, ok := sp.relay.ClientSessions.Get(peerID); ok {
-							session.LastActivity = time.Now()
-						}
 					}
 
 					// Forward to upstream room
@@ -609,7 +546,12 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 							roomMap.Range(func(peerID peer.ID, conn *StreamConnection) bool {
 								if conn.ndc != nil {
 									if err = conn.ndc.SendBinary(data); err != nil {
-										slog.Error("Failed to forward controller input from pushed stream to viewer", "room", room.Name, "peer", peerID, "err", err)
+										if errors.Is(err, io.ErrClosedPipe) {
+											slog.Warn("Failed to forward controller input to viewer, treating as disconnected", "err", err)
+											sp.relay.onPeerDisconnected(peerID)
+										} else {
+											slog.Error("Failed to forward controller input from pushed stream to viewer", "room", room.Name, "peer", peerID, "err", err)
+										}
 									}
 								}
 								return true

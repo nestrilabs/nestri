@@ -87,11 +87,8 @@ type ProtoMessage struct {
 	//	*ProtoMessage_KeyUp
 	//	*ProtoMessage_ControllerAttach
 	//	*ProtoMessage_ControllerDetach
-	//	*ProtoMessage_ControllerButton
-	//	*ProtoMessage_ControllerTrigger
-	//	*ProtoMessage_ControllerStick
-	//	*ProtoMessage_ControllerAxis
 	//	*ProtoMessage_ControllerRumble
+	//	*ProtoMessage_ControllerStateBatch
 	//	*ProtoMessage_Ice
 	//	*ProtoMessage_Sdp
 	//	*ProtoMessage_Raw
@@ -228,46 +225,19 @@ func (x *ProtoMessage) GetControllerDetach() *ProtoControllerDetach {
 	return nil
 }
 
-func (x *ProtoMessage) GetControllerButton() *ProtoControllerButton {
-	if x != nil {
-		if x, ok := x.Payload.(*ProtoMessage_ControllerButton); ok {
-			return x.ControllerButton
-		}
-	}
-	return nil
-}
-
-func (x *ProtoMessage) GetControllerTrigger() *ProtoControllerTrigger {
-	if x != nil {
-		if x, ok := x.Payload.(*ProtoMessage_ControllerTrigger); ok {
-			return x.ControllerTrigger
-		}
-	}
-	return nil
-}
-
-func (x *ProtoMessage) GetControllerStick() *ProtoControllerStick {
-	if x != nil {
-		if x, ok := x.Payload.(*ProtoMessage_ControllerStick); ok {
-			return x.ControllerStick
-		}
-	}
-	return nil
-}
-
-func (x *ProtoMessage) GetControllerAxis() *ProtoControllerAxis {
-	if x != nil {
-		if x, ok := x.Payload.(*ProtoMessage_ControllerAxis); ok {
-			return x.ControllerAxis
-		}
-	}
-	return nil
-}
-
 func (x *ProtoMessage) GetControllerRumble() *ProtoControllerRumble {
 	if x != nil {
 		if x, ok := x.Payload.(*ProtoMessage_ControllerRumble); ok {
 			return x.ControllerRumble
+		}
+	}
+	return nil
+}
+
+func (x *ProtoMessage) GetControllerStateBatch() *ProtoControllerStateBatch {
+	if x != nil {
+		if x, ok := x.Payload.(*ProtoMessage_ControllerStateBatch); ok {
+			return x.ControllerStateBatch
 		}
 	}
 	return nil
@@ -361,6 +331,7 @@ type ProtoMessage_KeyUp struct {
 }
 
 type ProtoMessage_ControllerAttach struct {
+	// Controller input types
 	ControllerAttach *ProtoControllerAttach `protobuf:"bytes,9,opt,name=controller_attach,json=controllerAttach,proto3,oneof"`
 }
 
@@ -368,24 +339,12 @@ type ProtoMessage_ControllerDetach struct {
 	ControllerDetach *ProtoControllerDetach `protobuf:"bytes,10,opt,name=controller_detach,json=controllerDetach,proto3,oneof"`
 }
 
-type ProtoMessage_ControllerButton struct {
-	ControllerButton *ProtoControllerButton `protobuf:"bytes,11,opt,name=controller_button,json=controllerButton,proto3,oneof"`
-}
-
-type ProtoMessage_ControllerTrigger struct {
-	ControllerTrigger *ProtoControllerTrigger `protobuf:"bytes,12,opt,name=controller_trigger,json=controllerTrigger,proto3,oneof"`
-}
-
-type ProtoMessage_ControllerStick struct {
-	ControllerStick *ProtoControllerStick `protobuf:"bytes,13,opt,name=controller_stick,json=controllerStick,proto3,oneof"`
-}
-
-type ProtoMessage_ControllerAxis struct {
-	ControllerAxis *ProtoControllerAxis `protobuf:"bytes,14,opt,name=controller_axis,json=controllerAxis,proto3,oneof"`
-}
-
 type ProtoMessage_ControllerRumble struct {
-	ControllerRumble *ProtoControllerRumble `protobuf:"bytes,15,opt,name=controller_rumble,json=controllerRumble,proto3,oneof"`
+	ControllerRumble *ProtoControllerRumble `protobuf:"bytes,11,opt,name=controller_rumble,json=controllerRumble,proto3,oneof"`
+}
+
+type ProtoMessage_ControllerStateBatch struct {
+	ControllerStateBatch *ProtoControllerStateBatch `protobuf:"bytes,12,opt,name=controller_state_batch,json=controllerStateBatch,proto3,oneof"`
 }
 
 type ProtoMessage_Ice struct {
@@ -431,15 +390,9 @@ func (*ProtoMessage_ControllerAttach) isProtoMessage_Payload() {}
 
 func (*ProtoMessage_ControllerDetach) isProtoMessage_Payload() {}
 
-func (*ProtoMessage_ControllerButton) isProtoMessage_Payload() {}
-
-func (*ProtoMessage_ControllerTrigger) isProtoMessage_Payload() {}
-
-func (*ProtoMessage_ControllerStick) isProtoMessage_Payload() {}
-
-func (*ProtoMessage_ControllerAxis) isProtoMessage_Payload() {}
-
 func (*ProtoMessage_ControllerRumble) isProtoMessage_Payload() {}
+
+func (*ProtoMessage_ControllerStateBatch) isProtoMessage_Payload() {}
 
 func (*ProtoMessage_Ice) isProtoMessage_Payload() {}
 
@@ -460,8 +413,7 @@ const file_messages_proto_rawDesc = "" +
 	"\x0emessages.proto\x12\x05proto\x1a\vtypes.proto\x1a\x15latency_tracker.proto\"k\n" +
 	"\x10ProtoMessageBase\x12!\n" +
 	"\fpayload_type\x18\x01 \x01(\tR\vpayloadType\x124\n" +
-	"\alatency\x18\x02 \x01(\v2\x1a.proto.ProtoLatencyTrackerR\alatency\"\xef\n" +
-	"\n" +
+	"\alatency\x18\x02 \x01(\v2\x1a.proto.ProtoLatencyTrackerR\alatency\"\x9b\t\n" +
 	"\fProtoMessage\x12:\n" +
 	"\fmessage_base\x18\x01 \x01(\v2\x17.proto.ProtoMessageBaseR\vmessageBase\x126\n" +
 	"\n" +
@@ -477,11 +429,8 @@ const file_messages_proto_rawDesc = "" +
 	"\x11controller_attach\x18\t \x01(\v2\x1c.proto.ProtoControllerAttachH\x00R\x10controllerAttach\x12K\n" +
 	"\x11controller_detach\x18\n" +
 	" \x01(\v2\x1c.proto.ProtoControllerDetachH\x00R\x10controllerDetach\x12K\n" +
-	"\x11controller_button\x18\v \x01(\v2\x1c.proto.ProtoControllerButtonH\x00R\x10controllerButton\x12N\n" +
-	"\x12controller_trigger\x18\f \x01(\v2\x1d.proto.ProtoControllerTriggerH\x00R\x11controllerTrigger\x12H\n" +
-	"\x10controller_stick\x18\r \x01(\v2\x1b.proto.ProtoControllerStickH\x00R\x0fcontrollerStick\x12E\n" +
-	"\x0fcontroller_axis\x18\x0e \x01(\v2\x1a.proto.ProtoControllerAxisH\x00R\x0econtrollerAxis\x12K\n" +
-	"\x11controller_rumble\x18\x0f \x01(\v2\x1c.proto.ProtoControllerRumbleH\x00R\x10controllerRumble\x12#\n" +
+	"\x11controller_rumble\x18\v \x01(\v2\x1c.proto.ProtoControllerRumbleH\x00R\x10controllerRumble\x12X\n" +
+	"\x16controller_state_batch\x18\f \x01(\v2 .proto.ProtoControllerStateBatchH\x00R\x14controllerStateBatch\x12#\n" +
 	"\x03ice\x18\x14 \x01(\v2\x0f.proto.ProtoICEH\x00R\x03ice\x12#\n" +
 	"\x03sdp\x18\x15 \x01(\v2\x0f.proto.ProtoSDPH\x00R\x03sdp\x12#\n" +
 	"\x03raw\x18\x16 \x01(\v2\x0f.proto.ProtoRawH\x00R\x03raw\x12b\n" +
@@ -516,17 +465,14 @@ var file_messages_proto_goTypes = []any{
 	(*ProtoKeyUp)(nil),                   // 9: proto.ProtoKeyUp
 	(*ProtoControllerAttach)(nil),        // 10: proto.ProtoControllerAttach
 	(*ProtoControllerDetach)(nil),        // 11: proto.ProtoControllerDetach
-	(*ProtoControllerButton)(nil),        // 12: proto.ProtoControllerButton
-	(*ProtoControllerTrigger)(nil),       // 13: proto.ProtoControllerTrigger
-	(*ProtoControllerStick)(nil),         // 14: proto.ProtoControllerStick
-	(*ProtoControllerAxis)(nil),          // 15: proto.ProtoControllerAxis
-	(*ProtoControllerRumble)(nil),        // 16: proto.ProtoControllerRumble
-	(*ProtoICE)(nil),                     // 17: proto.ProtoICE
-	(*ProtoSDP)(nil),                     // 18: proto.ProtoSDP
-	(*ProtoRaw)(nil),                     // 19: proto.ProtoRaw
-	(*ProtoClientRequestRoomStream)(nil), // 20: proto.ProtoClientRequestRoomStream
-	(*ProtoClientDisconnected)(nil),      // 21: proto.ProtoClientDisconnected
-	(*ProtoServerPushStream)(nil),        // 22: proto.ProtoServerPushStream
+	(*ProtoControllerRumble)(nil),        // 12: proto.ProtoControllerRumble
+	(*ProtoControllerStateBatch)(nil),    // 13: proto.ProtoControllerStateBatch
+	(*ProtoICE)(nil),                     // 14: proto.ProtoICE
+	(*ProtoSDP)(nil),                     // 15: proto.ProtoSDP
+	(*ProtoRaw)(nil),                     // 16: proto.ProtoRaw
+	(*ProtoClientRequestRoomStream)(nil), // 17: proto.ProtoClientRequestRoomStream
+	(*ProtoClientDisconnected)(nil),      // 18: proto.ProtoClientDisconnected
+	(*ProtoServerPushStream)(nil),        // 19: proto.ProtoServerPushStream
 }
 var file_messages_proto_depIdxs = []int32{
 	2,  // 0: proto.ProtoMessageBase.latency:type_name -> proto.ProtoLatencyTracker
@@ -540,22 +486,19 @@ var file_messages_proto_depIdxs = []int32{
 	9,  // 8: proto.ProtoMessage.key_up:type_name -> proto.ProtoKeyUp
 	10, // 9: proto.ProtoMessage.controller_attach:type_name -> proto.ProtoControllerAttach
 	11, // 10: proto.ProtoMessage.controller_detach:type_name -> proto.ProtoControllerDetach
-	12, // 11: proto.ProtoMessage.controller_button:type_name -> proto.ProtoControllerButton
-	13, // 12: proto.ProtoMessage.controller_trigger:type_name -> proto.ProtoControllerTrigger
-	14, // 13: proto.ProtoMessage.controller_stick:type_name -> proto.ProtoControllerStick
-	15, // 14: proto.ProtoMessage.controller_axis:type_name -> proto.ProtoControllerAxis
-	16, // 15: proto.ProtoMessage.controller_rumble:type_name -> proto.ProtoControllerRumble
-	17, // 16: proto.ProtoMessage.ice:type_name -> proto.ProtoICE
-	18, // 17: proto.ProtoMessage.sdp:type_name -> proto.ProtoSDP
-	19, // 18: proto.ProtoMessage.raw:type_name -> proto.ProtoRaw
-	20, // 19: proto.ProtoMessage.client_request_room_stream:type_name -> proto.ProtoClientRequestRoomStream
-	21, // 20: proto.ProtoMessage.client_disconnected:type_name -> proto.ProtoClientDisconnected
-	22, // 21: proto.ProtoMessage.server_push_stream:type_name -> proto.ProtoServerPushStream
-	22, // [22:22] is the sub-list for method output_type
-	22, // [22:22] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	12, // 11: proto.ProtoMessage.controller_rumble:type_name -> proto.ProtoControllerRumble
+	13, // 12: proto.ProtoMessage.controller_state_batch:type_name -> proto.ProtoControllerStateBatch
+	14, // 13: proto.ProtoMessage.ice:type_name -> proto.ProtoICE
+	15, // 14: proto.ProtoMessage.sdp:type_name -> proto.ProtoSDP
+	16, // 15: proto.ProtoMessage.raw:type_name -> proto.ProtoRaw
+	17, // 16: proto.ProtoMessage.client_request_room_stream:type_name -> proto.ProtoClientRequestRoomStream
+	18, // 17: proto.ProtoMessage.client_disconnected:type_name -> proto.ProtoClientDisconnected
+	19, // 18: proto.ProtoMessage.server_push_stream:type_name -> proto.ProtoServerPushStream
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_messages_proto_init() }
@@ -575,11 +518,8 @@ func file_messages_proto_init() {
 		(*ProtoMessage_KeyUp)(nil),
 		(*ProtoMessage_ControllerAttach)(nil),
 		(*ProtoMessage_ControllerDetach)(nil),
-		(*ProtoMessage_ControllerButton)(nil),
-		(*ProtoMessage_ControllerTrigger)(nil),
-		(*ProtoMessage_ControllerStick)(nil),
-		(*ProtoMessage_ControllerAxis)(nil),
 		(*ProtoMessage_ControllerRumble)(nil),
+		(*ProtoMessage_ControllerStateBatch)(nil),
 		(*ProtoMessage_Ice)(nil),
 		(*ProtoMessage_Sdp)(nil),
 		(*ProtoMessage_Raw)(nil),

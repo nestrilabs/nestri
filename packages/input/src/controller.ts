@@ -3,10 +3,8 @@ import { WebRTCStream } from "./webrtc-stream";
 import {
   ProtoControllerAttachSchema,
   ProtoControllerDetachSchema,
-  ProtoControllerButtonSchema,
-  ProtoControllerTriggerSchema,
-  ProtoControllerAxisSchema,
-  ProtoControllerStickSchema,
+  ProtoControllerStateBatchSchema,
+  ProtoControllerStateBatch,
   ProtoControllerRumble,
 } from "./proto/types_pb";
 import { create, toBinary, fromBinary } from "@bufbuild/protobuf";
@@ -19,6 +17,7 @@ interface Props {
 }
 
 interface GamepadState {
+  previousButtonState: Map<number, boolean>;
   buttonState: Map<number, boolean>;
   leftTrigger: number;
   rightTrigger: number;
@@ -30,11 +29,17 @@ interface GamepadState {
   dpadY: number;
 }
 
+enum PollState {
+  IDLE,
+  RUNNING,
+}
+
 export class Controller {
   protected wrtc: WebRTCStream;
   protected connected: boolean = false;
   protected gamepad: Gamepad | null = null;
-  protected lastState: GamepadState = {
+  protected state: GamepadState = {
+    previousButtonState: new Map<number, boolean>(),
     buttonState: new Map<number, boolean>(),
     leftTrigger: 0,
     rightTrigger: 0,
@@ -48,21 +53,33 @@ export class Controller {
   // TODO: As user configurable, set quite low now for decent controllers (not Nintendo ones :P)
   protected stickDeadzone: number = 2048; // 2048 / 32768 = ~0.06 (6% of stick range)
 
-  private updateInterval = 10.0; // 100 updates per second
-  private isIdle: boolean = true;
+  // Polling configuration
+  private readonly FULL_RATE_MS = 10; // 100 UPS
+  private readonly IDLE_THRESHOLD = 100; // ms before considering idle/hands off controller
+  private readonly FULL_INTERVAL= 250; // ms before sending full state occassionally, to verify inputs are synced
+
+  // Polling state
+  private pollingState: PollState = PollState.IDLE;
   private lastInputTime: number = Date.now();
-  private idleUpdateInterval: number = 150.0; // ~6-7 updates per second for keep-alive packets
-  private inputDetected: boolean = false;
-  private lastFullStateSend: number = Date.now();
-  private fullStateSendInterval: number = 500.0; // send full state every 0.5 seconds (helps packet loss)
-  private forceFullStateSend: boolean = false;
+  private lastFullTime: number = Date.now();
+  private pollInterval: any = null;
+
+  // Controller batch vars
+  private sequence: number = 0;
+  private readonly CHANGED_BUTTONS_STATE = 1 << 0;
+  private readonly CHANGED_LEFT_STICK_X = 1 << 1;
+  private readonly CHANGED_LEFT_STICK_Y = 1 << 2;
+  private readonly CHANGED_RIGHT_STICK_X = 1 << 3;
+  private readonly CHANGED_RIGHT_STICK_Y = 1 << 4;
+  private readonly CHANGED_LEFT_TRIGGER = 1 << 5;
+  private readonly CHANGED_RIGHT_TRIGGER = 1 << 6;
+  private readonly CHANGED_DPAD_X = 1 << 7;
+  private readonly CHANGED_DPAD_Y = 1 << 8;
 
   private _dcHandler: ((data: ArrayBuffer) => void) | null = null;
 
   constructor({ webrtc, e }: Props) {
     this.wrtc = webrtc;
-
-    this.updateInterval = 1000 / webrtc.currentFrameRate;
 
     // Get vendor of gamepad from id string (i.e. "... Vendor: 054c Product: 09cc")
     const vendorMatch = e.gamepad.id.match(/Vendor:\s?([0-9a-fA-F]{4})/);
@@ -89,6 +106,7 @@ export class Controller {
           console.log(
             `Gamepad connected: ${e.gamepad.id}, local slot ${e.gamepad.index}, msg: ${attachMsg.sessionSlot}`,
           );
+          this.run();
         }
       } catch (err) {
         console.error("Error decoding datachannel message:", err);
@@ -162,266 +180,283 @@ export class Controller {
     return ((value - fromMin) * (toMax - toMin)) / (fromMax - fromMin) + toMin;
   }
 
-  private pollGamepad() {
-    // Get updated gamepad state
-    const gamepads = navigator.getGamepads();
-
-    // Periodically force send full state to clear stuck inputs
-    if (Date.now() - this.lastFullStateSend > this.fullStateSendInterval) {
-      this.forceFullStateSend = true;
-      this.lastFullStateSend = Date.now();
+  private restartPolling() {
+    // Clear existing interval
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
     }
 
-    if (this.gamepad) {
-      if (gamepads[this.gamepad.index]) {
-        this.gamepad = gamepads[this.gamepad!.index];
-        /* Button handling */
-        this.gamepad.buttons.forEach((button, index) => {
-          // Ignore d-pad buttons (12-15) as we handle those as axis
-          if (index >= 12 && index <= 15) return;
-          // ignore trigger buttons (6-7) as we handle those as axis
-          if (index === 6 || index === 7) return;
-          // If state differs, send
-          if (button.pressed !== this.lastState.buttonState.get(index) || this.forceFullStateSend) {
-            const linuxCode = this.controllerButtonToVirtualKeyCode(index);
-            if (linuxCode === undefined) {
-              // Skip unmapped button index
-              this.lastState.buttonState.set(index, button.pressed);
-              return;
-            }
+    // Restart with active polling
+    this.pollingState = PollState.RUNNING;
+    this.lastInputTime = Date.now();
 
-            const buttonMessage = createMessage(
-              create(ProtoControllerButtonSchema, {
-                sessionSlot: this.gamepad.index,
-                sessionId: this.wrtc.getSessionID(),
-                button: linuxCode,
-                pressed: button.pressed,
-              }),
-              "controllerInput",
-            );
-            this.wrtc.sendBinary(toBinary(ProtoMessageSchema, buttonMessage));
-            this.inputDetected = true;
-            // Store button state
-            this.lastState.buttonState.set(index, button.pressed);
-          }
-        });
+    // Start interval
+    this.pollInterval = setInterval(
+      () => this.pollGamepad(),
+      this.FULL_RATE_MS,
+    );
+  }
 
-        /* Trigger handling */
-        // map trigger value from 0.0 to 1.0 to -32768 to 32767
-        const leftTrigger = Math.round(
-          this.remapFromTo(
-            this.gamepad.buttons[6]?.value ?? 0,
-            0,
-            1,
-            -32768,
-            32767,
-          ),
-        );
-        // If state differs, send
-        if (leftTrigger !== this.lastState.leftTrigger || this.forceFullStateSend) {
-          const triggerMessage = createMessage(
-            create(ProtoControllerTriggerSchema, {
-              sessionSlot: this.gamepad.index,
-              sessionId: this.wrtc.getSessionID(),
-              trigger: 0, // 0 = left, 1 = right
-              value: leftTrigger,
-            }),
-            "controllerInput",
-          );
-          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, triggerMessage));
-          this.inputDetected = true;
-          this.lastState.leftTrigger = leftTrigger;
-        }
-        const rightTrigger = Math.round(
-          this.remapFromTo(
-            this.gamepad.buttons[7]?.value ?? 0,
-            0,
-            1,
-            -32768,
-            32767,
-          ),
-        );
-        // If state differs, send
-        if (rightTrigger !== this.lastState.rightTrigger || this.forceFullStateSend) {
-          const triggerMessage = createMessage(
-            create(ProtoControllerTriggerSchema, {
-              sessionSlot: this.gamepad.index,
-              sessionId: this.wrtc.getSessionID(),
-              trigger: 1, // 0 = left, 1 = right
-              value: rightTrigger,
-            }),
-            "controllerInput",
-          );
-          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, triggerMessage));
-          this.inputDetected = true;
-          this.lastState.rightTrigger = rightTrigger;
-        }
+  private pollGamepad() {
+    if (!this.connected || !this.gamepad) return;
 
-        /* DPad handling */
-        // We send dpad buttons as axis values -1 to 1 for left/up, right/down
-        const dpadLeft = this.gamepad.buttons[14]?.pressed ? 1 : 0;
-        const dpadRight = this.gamepad.buttons[15]?.pressed ? 1 : 0;
-        const dpadX = dpadLeft ? -1 : dpadRight ? 1 : 0;
-        if (dpadX !== this.lastState.dpadX || this.forceFullStateSend) {
-          const dpadMessage = createMessage(
-            create(ProtoControllerAxisSchema, {
-              sessionSlot: this.gamepad.index,
-              sessionId: this.wrtc.getSessionID(),
-              axis: 0, // 0 = dpadX, 1 = dpadY
-              value: dpadX,
-            }),
-            "controllerInput",
-          );
-          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, dpadMessage));
-          this.inputDetected = true;
-          this.lastState.dpadX = dpadX;
-        }
+    const gamepads = navigator.getGamepads();
+    if (!gamepads[this.gamepad.index]) return;
 
-        const dpadUp = this.gamepad.buttons[12]?.pressed ? 1 : 0;
-        const dpadDown = this.gamepad.buttons[13]?.pressed ? 1 : 0;
-        const dpadY = dpadUp ? -1 : dpadDown ? 1 : 0;
-        if (dpadY !== this.lastState.dpadY || this.forceFullStateSend) {
-          const dpadMessage = createMessage(
-            create(ProtoControllerAxisSchema, {
-              sessionSlot: this.gamepad.index,
-              sessionId: this.wrtc.getSessionID(),
-              axis: 1, // 0 = dpadX, 1 = dpadY
-              value: dpadY,
-            }),
-            "controllerInput",
-          );
-          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, dpadMessage));
-          this.inputDetected = true;
-          this.lastState.dpadY = dpadY;
-        }
+    this.gamepad = gamepads[this.gamepad.index];
 
-        /* Stick handling */
-        // stick values need to be mapped from -1.0 to 1.0 to -32768 to 32767
-        const leftX = this.remapFromTo(
-          this.gamepad.axes[0] ?? 0,
-          -1,
-          1,
-          -32768,
-          32767,
-        );
-        const leftY = this.remapFromTo(
-          this.gamepad.axes[1] ?? 0,
-          -1,
-          1,
-          -32768,
-          32767,
-        );
-        // Apply deadzone
-        const sendLeftX =
-          Math.abs(leftX) > this.stickDeadzone ? Math.round(leftX) : 0;
-        const sendLeftY =
-          Math.abs(leftY) > this.stickDeadzone ? Math.round(leftY) : 0;
-        // if outside deadzone, send normally if changed
-        // if moves inside deadzone, zero it if not inside deadzone last time
-        if (
-          sendLeftX !== this.lastState.leftX ||
-          sendLeftY !== this.lastState.leftY || this.forceFullStateSend
-        ) {
-          const stickMessage = createMessage(
-            create(ProtoControllerStickSchema, {
-              sessionSlot: this.gamepad.index,
-              sessionId: this.wrtc.getSessionID(),
-              stick: 0, // 0 = left, 1 = right
-              x: sendLeftX,
-              y: sendLeftY,
-            }),
-            "controllerInput",
-          );
-          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, stickMessage));
-          this.inputDetected = true;
-          this.lastState.leftX = sendLeftX;
-          this.lastState.leftY = sendLeftY;
-        }
+    // Collect state changes
+    const changedFields = this.collectStateChanges();
 
-        const rightX = this.remapFromTo(
-          this.gamepad.axes[2] ?? 0,
-          -1,
-          1,
-          -32768,
-          32767,
-        );
-        const rightY = this.remapFromTo(
-          this.gamepad.axes[3] ?? 0,
-          -1,
-          1,
-          -32768,
-          32767,
-        );
-        // Apply deadzone
-        const sendRightX =
-          Math.abs(rightX) > this.stickDeadzone ? Math.round(rightX) : 0;
-        const sendRightY =
-          Math.abs(rightY) > this.stickDeadzone ? Math.round(rightY) : 0;
-        if (
-          sendRightX !== this.lastState.rightX ||
-          sendRightY !== this.lastState.rightY || this.forceFullStateSend
-        ) {
-          const stickMessage = createMessage(
-            create(ProtoControllerStickSchema, {
-              sessionSlot: this.gamepad.index,
-              sessionId: this.wrtc.getSessionID(),
-              stick: 1, // 0 = left, 1 = right
-              x: sendRightX,
-              y: sendRightY,
-            }),
-            "controllerInput",
-          );
-          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, stickMessage));
-          this.inputDetected = true;
-          this.lastState.rightX = sendRightX;
-          this.lastState.rightY = sendRightY;
-        }
+    // Send batched changes update if there's changes
+    if (changedFields > 0) {
+      let send_type = 1;
+      const timeSinceFull = Date.now() - this.lastFullTime;
+      if (timeSinceFull > this.FULL_INTERVAL) {
+        send_type = 0;
+        this.lastFullTime = Date.now();
+      }
+
+      this.sendBatchedState(changedFields, send_type);
+      this.lastInputTime = Date.now();
+      if (this.pollingState !== PollState.RUNNING) {
+        this.pollingState = PollState.RUNNING;
       }
     }
 
-    this.forceFullStateSend = false;
+    const timeSinceInput = Date.now() - this.lastInputTime;
+    if (timeSinceInput > this.IDLE_THRESHOLD) {
+      // Changing from running to idle..
+      if (this.pollingState === PollState.RUNNING) {
+        // Send full state on idle assumption
+        this.sendBatchedState(0xFF, 0);
+        this.pollingState = PollState.IDLE;
+      }
+    }
+
+    this.state.buttonState.forEach((b, i) =>
+      this.state.previousButtonState.set(i, b),
+    );
   }
 
-  private loopInterval: any = null;
+  private collectStateChanges(): number {
+    let changedFields = 0;
+
+    // Collect analog values
+    const leftTrigger = Math.round(
+      this.remapFromTo(
+        this.gamepad.buttons[6]?.value ?? 0,
+        0,
+        1,
+        -32768,
+        32767,
+      ),
+    );
+    const rightTrigger = Math.round(
+      this.remapFromTo(
+        this.gamepad.buttons[7]?.value ?? 0,
+        0,
+        1,
+        -32768,
+        32767,
+      ),
+    );
+
+    const leftX = this.remapFromTo(
+      this.gamepad.axes[0] ?? 0,
+      -1,
+      1,
+      -32768,
+      32767,
+    );
+    const leftY = this.remapFromTo(
+      this.gamepad.axes[1] ?? 0,
+      -1,
+      1,
+      -32768,
+      32767,
+    );
+    const sendLeftX =
+      Math.abs(leftX) > this.stickDeadzone ? Math.round(leftX) : 0;
+    const sendLeftY =
+      Math.abs(leftY) > this.stickDeadzone ? Math.round(leftY) : 0;
+
+    const rightX = this.remapFromTo(
+      this.gamepad.axes[2] ?? 0,
+      -1,
+      1,
+      -32768,
+      32767,
+    );
+    const rightY = this.remapFromTo(
+      this.gamepad.axes[3] ?? 0,
+      -1,
+      1,
+      -32768,
+      32767,
+    );
+    const sendRightX =
+      Math.abs(rightX) > this.stickDeadzone ? Math.round(rightX) : 0;
+    const sendRightY =
+      Math.abs(rightY) > this.stickDeadzone ? Math.round(rightY) : 0;
+
+    const dpadX =
+      (this.gamepad.buttons[14]?.pressed ? -1 : 0) +
+      (this.gamepad.buttons[15]?.pressed ? 1 : 0);
+    const dpadY =
+      (this.gamepad.buttons[12]?.pressed ? -1 : 0) +
+      (this.gamepad.buttons[13]?.pressed ? 1 : 0);
+
+    // Check what changed
+    for (let i = 0; i < this.gamepad.buttons.length; i++) {
+      if (i >= 6 && i <= 7) continue; // Skip triggers
+      if (i >= 12 && i <= 15) continue; // Skip d-pad
+      if (this.state.buttonState.get(i) !== this.gamepad.buttons[i].pressed) {
+        changedFields |= this.CHANGED_BUTTONS_STATE;
+      }
+      this.state.buttonState.set(i, this.gamepad.buttons[i].pressed);
+    }
+    if (leftTrigger !== this.state.leftTrigger) {
+      changedFields |= this.CHANGED_LEFT_TRIGGER;
+    }
+    this.state.leftTrigger = leftTrigger;
+    if (rightTrigger !== this.state.rightTrigger) {
+      changedFields |= this.CHANGED_RIGHT_TRIGGER;
+    }
+    this.state.rightTrigger = rightTrigger;
+    if (sendLeftX !== this.state.leftX) {
+      changedFields |= this.CHANGED_LEFT_STICK_X;
+    }
+    this.state.leftX = sendLeftX;
+    if (sendLeftY !== this.state.leftY) {
+      changedFields |= this.CHANGED_LEFT_STICK_Y;
+    }
+    this.state.leftY = sendLeftY;
+    if (sendRightX !== this.state.rightX) {
+      changedFields |= this.CHANGED_RIGHT_STICK_X;
+    }
+    this.state.rightX = sendRightX;
+    if (sendRightY !== this.state.rightY) {
+      changedFields |= this.CHANGED_RIGHT_STICK_Y;
+    }
+    this.state.rightY = sendRightY;
+    if (dpadX !== this.state.dpadX) {
+      changedFields |= this.CHANGED_DPAD_X;
+    }
+    this.state.dpadX = dpadX;
+    if (dpadY !== this.state.dpadY) {
+      changedFields |= this.CHANGED_DPAD_Y;
+    }
+    this.state.dpadY = dpadY;
+
+    return changedFields;
+  }
+
+  private sendBatchedState(changedFields: number, updateType: number) {
+    // @ts-ignore
+    let message: ProtoControllerStateBatch = {
+      sessionSlot: this.gamepad.index,
+      sessionId: this.wrtc.getSessionID(),
+      updateType: updateType,
+      sequence: this.sequence++,
+    };
+
+    // For FULL_STATE, include everything
+    if (updateType === 0) {
+      message.changedFields = 0xFF;
+
+      message.buttonChangedMask = Object.fromEntries(
+        Array.from(this.state.buttonState).map(([key, value]) => {
+          return [this.controllerButtonToVirtualKeyCode(key), value];
+        }),
+      );
+      message.leftStickX = this.state.leftX;
+      message.leftStickY = this.state.leftY;
+      message.rightStickX = this.state.rightX;
+      message.rightStickY = this.state.rightY;
+      message.leftTrigger = this.state.leftTrigger;
+      message.rightTrigger = this.state.rightTrigger;
+      message.dpadX = this.state.dpadX;
+      message.dpadY = this.state.dpadY;
+    }
+    // For DELTA, only include changed fields
+    else {
+      message.changedFields = changedFields;
+
+      if (changedFields & this.CHANGED_BUTTONS_STATE) {
+        const currentStateMap = this.state.buttonState;
+        const previousStateMap = this.state.previousButtonState;
+        const allKeys = new Set([
+          // @ts-ignore
+          ...currentStateMap.keys(),
+          // @ts-ignore
+          ...previousStateMap.keys(),
+        ]);
+        message.buttonChangedMask = Object.fromEntries(
+          Array.from(allKeys)
+            .filter((key) => {
+              const newState = currentStateMap.get(key);
+              const oldState = previousStateMap.get(key);
+              return newState !== oldState;
+            })
+            .map((key) => {
+              const newValue = currentStateMap.get(key) ?? false;
+
+              return [this.controllerButtonToVirtualKeyCode(key), newValue];
+            }),
+        );
+      }
+      if (changedFields & this.CHANGED_LEFT_STICK_X) {
+        message.leftStickX = this.state.leftX;
+      }
+      if (changedFields & this.CHANGED_LEFT_STICK_Y) {
+        message.leftStickY = this.state.leftY;
+      }
+      if (changedFields & this.CHANGED_RIGHT_STICK_X) {
+        message.rightStickX = this.state.rightX;
+      }
+      if (changedFields & this.CHANGED_RIGHT_STICK_Y) {
+        message.rightStickY = this.state.rightY;
+      }
+      if (changedFields & this.CHANGED_LEFT_TRIGGER) {
+        message.leftTrigger = this.state.leftTrigger;
+      }
+      if (changedFields & this.CHANGED_RIGHT_TRIGGER) {
+        message.rightTrigger = this.state.rightTrigger;
+      }
+      if (changedFields & this.CHANGED_DPAD_X) {
+        message.dpadX = this.state.dpadX;
+      }
+      if (changedFields & this.CHANGED_DPAD_Y) {
+        message.dpadY = this.state.dpadY;
+      }
+    }
+
+    // Send message
+    const batchMessage = createMessage(
+      create(
+        ProtoControllerStateBatchSchema,
+        message as ProtoControllerStateBatch,
+      ),
+      "controllerInput",
+    );
+    this.wrtc.sendBinary(toBinary(ProtoMessageSchema, batchMessage));
+  }
 
   public run() {
     if (this.connected) this.stop();
 
     this.connected = true;
-    this.isIdle = true;
-    this.lastInputTime = Date.now();
 
-    this.loopInterval = setInterval(() => {
-      if (this.connected) {
-        this.inputDetected = false; // Reset before poll
-        this.pollGamepad();
-
-        // Switch polling rate based on input
-        if (this.inputDetected) {
-          this.lastInputTime = Date.now();
-          if (this.isIdle) {
-            this.isIdle = false;
-            clearInterval(this.loopInterval);
-            this.loopInterval = setInterval(() => {
-              if (this.connected) this.pollGamepad();
-            }, this.updateInterval);
-          }
-        } else if (!this.isIdle && Date.now() - this.lastInputTime > 200) {
-          // Switch to idle polling after 200ms of no input
-          this.isIdle = true;
-          clearInterval(this.loopInterval);
-          this.loopInterval = setInterval(() => {
-            if (this.connected) this.pollGamepad();
-          }, this.idleUpdateInterval);
-        }
-      }
-    }, this.isIdle ? this.idleUpdateInterval : this.updateInterval);
+    // Start with active polling
+    this.restartPolling();
   }
 
   public stop() {
-    if (this.loopInterval) {
-      clearInterval(this.loopInterval);
-      this.loopInterval = null;
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
     }
     this.connected = false;
   }
@@ -443,17 +478,18 @@ export class Controller {
     this.wrtc.sendBinary(toBinary(ProtoMessageSchema, detachMsg));
   }
 
-  private controllerButtonToVirtualKeyCode(code: number) {
+  private controllerButtonToVirtualKeyCode(code: number): number | undefined {
     return controllerButtonToLinuxEventCode[code] || undefined;
   }
 
   private rumbleCallback(rumbleMsg: ProtoControllerRumble) {
-    // If not connected, ignore
-    if (!this.connected) return;
+    if (!this.connected || !this.gamepad) return;
 
-    // Check if aimed at this controller slot
-    if (rumbleMsg.sessionId !== this.wrtc.getSessionID() &&
-        rumbleMsg.sessionSlot !== this.gamepad.index)
+    // Check if this rumble is for us
+    if (
+      rumbleMsg.sessionId !== this.wrtc.getSessionID() &&
+      rumbleMsg.sessionSlot !== this.gamepad.index
+    )
       return;
 
     // Trigger actual rumble

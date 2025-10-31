@@ -10,7 +10,6 @@ import (
 	"os"
 	"relay/internal/common"
 	"relay/internal/shared"
-	"time"
 
 	"github.com/libp2p/go-libp2p"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -38,16 +37,6 @@ var globalRelay *Relay
 
 // -- Structs --
 
-// ClientSession tracks browser client connections
-type ClientSession struct {
-	PeerID          peer.ID
-	SessionID       string
-	RoomName        string
-	ConnectedAt     time.Time
-	LastActivity    time.Time
-	ControllerSlots []int32 // Track which controller slots this client owns
-}
-
 // Relay structure enhanced with metrics and state
 type Relay struct {
 	*PeerInfo
@@ -59,7 +48,6 @@ type Relay struct {
 	// Local
 	LocalRooms           *common.SafeMap[ulid.ULID, *shared.Room]         // room ID -> local Room struct (hosted by this relay)
 	LocalMeshConnections *common.SafeMap[peer.ID, *webrtc.PeerConnection] // peer ID -> PeerConnection (connected to this relay)
-	ClientSessions       *common.SafeMap[peer.ID, *ClientSession]         // peer ID -> ClientSession
 
 	// Protocols
 	ProtocolRegistry
@@ -156,7 +144,6 @@ func NewRelay(ctx context.Context, port int, identityKey crypto.PrivKey) (*Relay
 		PingService:          pingSvc,
 		LocalRooms:           common.NewSafeMap[ulid.ULID, *shared.Room](),
 		LocalMeshConnections: common.NewSafeMap[peer.ID, *webrtc.PeerConnection](),
-		ClientSessions:       common.NewSafeMap[peer.ID, *ClientSession](),
 	}
 
 	// Add network notifier after relay is initialized

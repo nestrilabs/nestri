@@ -21,6 +21,52 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type ProtoControllerStateBatch_UpdateType int32
+
+const (
+	ProtoControllerStateBatch_FULL_STATE ProtoControllerStateBatch_UpdateType = 0 // Complete controller state
+	ProtoControllerStateBatch_DELTA      ProtoControllerStateBatch_UpdateType = 1 // Only changed fields
+)
+
+// Enum value maps for ProtoControllerStateBatch_UpdateType.
+var (
+	ProtoControllerStateBatch_UpdateType_name = map[int32]string{
+		0: "FULL_STATE",
+		1: "DELTA",
+	}
+	ProtoControllerStateBatch_UpdateType_value = map[string]int32{
+		"FULL_STATE": 0,
+		"DELTA":      1,
+	}
+)
+
+func (x ProtoControllerStateBatch_UpdateType) Enum() *ProtoControllerStateBatch_UpdateType {
+	p := new(ProtoControllerStateBatch_UpdateType)
+	*p = x
+	return p
+}
+
+func (x ProtoControllerStateBatch_UpdateType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProtoControllerStateBatch_UpdateType) Descriptor() protoreflect.EnumDescriptor {
+	return file_types_proto_enumTypes[0].Descriptor()
+}
+
+func (ProtoControllerStateBatch_UpdateType) Type() protoreflect.EnumType {
+	return &file_types_proto_enumTypes[0]
+}
+
+func (x ProtoControllerStateBatch_UpdateType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProtoControllerStateBatch_UpdateType.Descriptor instead.
+func (ProtoControllerStateBatch_UpdateType) EnumDescriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{10, 0}
+}
+
 // MouseMove message
 type ProtoMouseMove struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -474,290 +520,6 @@ func (x *ProtoControllerDetach) GetSessionId() string {
 	return ""
 }
 
-// ControllerButton message
-type ProtoControllerButton struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
-	Button        int32                  `protobuf:"varint,3,opt,name=button,proto3" json:"button,omitempty"`                              // Button code (linux input event code)
-	Pressed       bool                   `protobuf:"varint,4,opt,name=pressed,proto3" json:"pressed,omitempty"`                            // true if pressed, false if released
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProtoControllerButton) Reset() {
-	*x = ProtoControllerButton{}
-	mi := &file_types_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProtoControllerButton) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProtoControllerButton) ProtoMessage() {}
-
-func (x *ProtoControllerButton) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProtoControllerButton.ProtoReflect.Descriptor instead.
-func (*ProtoControllerButton) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *ProtoControllerButton) GetSessionSlot() int32 {
-	if x != nil {
-		return x.SessionSlot
-	}
-	return 0
-}
-
-func (x *ProtoControllerButton) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ProtoControllerButton) GetButton() int32 {
-	if x != nil {
-		return x.Button
-	}
-	return 0
-}
-
-func (x *ProtoControllerButton) GetPressed() bool {
-	if x != nil {
-		return x.Pressed
-	}
-	return false
-}
-
-// ControllerTriggers message
-type ProtoControllerTrigger struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
-	Trigger       int32                  `protobuf:"varint,3,opt,name=trigger,proto3" json:"trigger,omitempty"`                            // Trigger number (0 for left, 1 for right)
-	Value         int32                  `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`                                // trigger value (-32768 to 32767)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProtoControllerTrigger) Reset() {
-	*x = ProtoControllerTrigger{}
-	mi := &file_types_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProtoControllerTrigger) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProtoControllerTrigger) ProtoMessage() {}
-
-func (x *ProtoControllerTrigger) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProtoControllerTrigger.ProtoReflect.Descriptor instead.
-func (*ProtoControllerTrigger) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *ProtoControllerTrigger) GetSessionSlot() int32 {
-	if x != nil {
-		return x.SessionSlot
-	}
-	return 0
-}
-
-func (x *ProtoControllerTrigger) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ProtoControllerTrigger) GetTrigger() int32 {
-	if x != nil {
-		return x.Trigger
-	}
-	return 0
-}
-
-func (x *ProtoControllerTrigger) GetValue() int32 {
-	if x != nil {
-		return x.Value
-	}
-	return 0
-}
-
-// ControllerSticks message
-type ProtoControllerStick struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
-	Stick         int32                  `protobuf:"varint,3,opt,name=stick,proto3" json:"stick,omitempty"`                                // Stick number (0 for left, 1 for right)
-	X             int32                  `protobuf:"varint,4,opt,name=x,proto3" json:"x,omitempty"`                                        // X axis value (-32768 to 32767)
-	Y             int32                  `protobuf:"varint,5,opt,name=y,proto3" json:"y,omitempty"`                                        // Y axis value (-32768 to 32767)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProtoControllerStick) Reset() {
-	*x = ProtoControllerStick{}
-	mi := &file_types_proto_msgTypes[11]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProtoControllerStick) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProtoControllerStick) ProtoMessage() {}
-
-func (x *ProtoControllerStick) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[11]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProtoControllerStick.ProtoReflect.Descriptor instead.
-func (*ProtoControllerStick) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{11}
-}
-
-func (x *ProtoControllerStick) GetSessionSlot() int32 {
-	if x != nil {
-		return x.SessionSlot
-	}
-	return 0
-}
-
-func (x *ProtoControllerStick) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ProtoControllerStick) GetStick() int32 {
-	if x != nil {
-		return x.Stick
-	}
-	return 0
-}
-
-func (x *ProtoControllerStick) GetX() int32 {
-	if x != nil {
-		return x.X
-	}
-	return 0
-}
-
-func (x *ProtoControllerStick) GetY() int32 {
-	if x != nil {
-		return x.Y
-	}
-	return 0
-}
-
-// ControllerAxis message
-type ProtoControllerAxis struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SessionSlot   int32                  `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
-	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
-	Axis          int32                  `protobuf:"varint,3,opt,name=axis,proto3" json:"axis,omitempty"`                                  // Axis number (0 for d-pad horizontal, 1 for d-pad vertical)
-	Value         int32                  `protobuf:"varint,4,opt,name=value,proto3" json:"value,omitempty"`                                // axis value (-1 to 1)
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ProtoControllerAxis) Reset() {
-	*x = ProtoControllerAxis{}
-	mi := &file_types_proto_msgTypes[12]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ProtoControllerAxis) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ProtoControllerAxis) ProtoMessage() {}
-
-func (x *ProtoControllerAxis) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[12]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ProtoControllerAxis.ProtoReflect.Descriptor instead.
-func (*ProtoControllerAxis) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{12}
-}
-
-func (x *ProtoControllerAxis) GetSessionSlot() int32 {
-	if x != nil {
-		return x.SessionSlot
-	}
-	return 0
-}
-
-func (x *ProtoControllerAxis) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *ProtoControllerAxis) GetAxis() int32 {
-	if x != nil {
-		return x.Axis
-	}
-	return 0
-}
-
-func (x *ProtoControllerAxis) GetValue() int32 {
-	if x != nil {
-		return x.Value
-	}
-	return 0
-}
-
 // ControllerRumble message
 type ProtoControllerRumble struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -772,7 +534,7 @@ type ProtoControllerRumble struct {
 
 func (x *ProtoControllerRumble) Reset() {
 	*x = ProtoControllerRumble{}
-	mi := &file_types_proto_msgTypes[13]
+	mi := &file_types_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -784,7 +546,7 @@ func (x *ProtoControllerRumble) String() string {
 func (*ProtoControllerRumble) ProtoMessage() {}
 
 func (x *ProtoControllerRumble) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[13]
+	mi := &file_types_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -797,7 +559,7 @@ func (x *ProtoControllerRumble) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoControllerRumble.ProtoReflect.Descriptor instead.
 func (*ProtoControllerRumble) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{13}
+	return file_types_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ProtoControllerRumble) GetSessionSlot() int32 {
@@ -835,6 +597,160 @@ func (x *ProtoControllerRumble) GetDuration() int32 {
 	return 0
 }
 
+// ControllerStateBatch - single message containing full or partial controller state
+type ProtoControllerStateBatch struct {
+	state       protoimpl.MessageState               `protogen:"open.v1"`
+	SessionSlot int32                                `protobuf:"varint,1,opt,name=session_slot,json=sessionSlot,proto3" json:"session_slot,omitempty"` // Session specific slot number (0-3)
+	SessionId   string                               `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`        // Session ID of the client
+	UpdateType  ProtoControllerStateBatch_UpdateType `protobuf:"varint,3,opt,name=update_type,json=updateType,proto3,enum=proto.ProtoControllerStateBatch_UpdateType" json:"update_type,omitempty"`
+	// Sequence number for packet loss detection
+	Sequence uint32 `protobuf:"varint,4,opt,name=sequence,proto3" json:"sequence,omitempty"`
+	// Button state map (Linux event codes)
+	ButtonChangedMask map[int32]bool `protobuf:"bytes,5,rep,name=button_changed_mask,json=buttonChangedMask,proto3" json:"button_changed_mask,omitempty" protobuf_key:"varint,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
+	// Analog inputs
+	LeftStickX   *int32 `protobuf:"varint,6,opt,name=left_stick_x,json=leftStickX,proto3,oneof" json:"left_stick_x,omitempty"`      // -32768 to 32767
+	LeftStickY   *int32 `protobuf:"varint,7,opt,name=left_stick_y,json=leftStickY,proto3,oneof" json:"left_stick_y,omitempty"`      // -32768 to 32767
+	RightStickX  *int32 `protobuf:"varint,8,opt,name=right_stick_x,json=rightStickX,proto3,oneof" json:"right_stick_x,omitempty"`   // -32768 to 32767
+	RightStickY  *int32 `protobuf:"varint,9,opt,name=right_stick_y,json=rightStickY,proto3,oneof" json:"right_stick_y,omitempty"`   // -32768 to 32767
+	LeftTrigger  *int32 `protobuf:"varint,10,opt,name=left_trigger,json=leftTrigger,proto3,oneof" json:"left_trigger,omitempty"`    // -32768 to 32767
+	RightTrigger *int32 `protobuf:"varint,11,opt,name=right_trigger,json=rightTrigger,proto3,oneof" json:"right_trigger,omitempty"` // -32768 to 32767
+	DpadX        *int32 `protobuf:"varint,12,opt,name=dpad_x,json=dpadX,proto3,oneof" json:"dpad_x,omitempty"`                      // -1, 0, or 1
+	DpadY        *int32 `protobuf:"varint,13,opt,name=dpad_y,json=dpadY,proto3,oneof" json:"dpad_y,omitempty"`                      // -1, 0, or 1
+	// Bitmask indicating which fields have changed
+	// Bit 0: button_changed_mask, Bit 1: left_stick_x, Bit 2: left_stick_y, etc.
+	ChangedFields *uint32 `protobuf:"varint,14,opt,name=changed_fields,json=changedFields,proto3,oneof" json:"changed_fields,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProtoControllerStateBatch) Reset() {
+	*x = ProtoControllerStateBatch{}
+	mi := &file_types_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProtoControllerStateBatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProtoControllerStateBatch) ProtoMessage() {}
+
+func (x *ProtoControllerStateBatch) ProtoReflect() protoreflect.Message {
+	mi := &file_types_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProtoControllerStateBatch.ProtoReflect.Descriptor instead.
+func (*ProtoControllerStateBatch) Descriptor() ([]byte, []int) {
+	return file_types_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ProtoControllerStateBatch) GetSessionSlot() int32 {
+	if x != nil {
+		return x.SessionSlot
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ProtoControllerStateBatch) GetUpdateType() ProtoControllerStateBatch_UpdateType {
+	if x != nil {
+		return x.UpdateType
+	}
+	return ProtoControllerStateBatch_FULL_STATE
+}
+
+func (x *ProtoControllerStateBatch) GetSequence() uint32 {
+	if x != nil {
+		return x.Sequence
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetButtonChangedMask() map[int32]bool {
+	if x != nil {
+		return x.ButtonChangedMask
+	}
+	return nil
+}
+
+func (x *ProtoControllerStateBatch) GetLeftStickX() int32 {
+	if x != nil && x.LeftStickX != nil {
+		return *x.LeftStickX
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetLeftStickY() int32 {
+	if x != nil && x.LeftStickY != nil {
+		return *x.LeftStickY
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetRightStickX() int32 {
+	if x != nil && x.RightStickX != nil {
+		return *x.RightStickX
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetRightStickY() int32 {
+	if x != nil && x.RightStickY != nil {
+		return *x.RightStickY
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetLeftTrigger() int32 {
+	if x != nil && x.LeftTrigger != nil {
+		return *x.LeftTrigger
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetRightTrigger() int32 {
+	if x != nil && x.RightTrigger != nil {
+		return *x.RightTrigger
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetDpadX() int32 {
+	if x != nil && x.DpadX != nil {
+		return *x.DpadX
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetDpadY() int32 {
+	if x != nil && x.DpadY != nil {
+		return *x.DpadY
+	}
+	return 0
+}
+
+func (x *ProtoControllerStateBatch) GetChangedFields() uint32 {
+	if x != nil && x.ChangedFields != nil {
+		return *x.ChangedFields
+	}
+	return 0
+}
+
 type RTCIceCandidateInit struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Candidate        string                 `protobuf:"bytes,1,opt,name=candidate,proto3" json:"candidate,omitempty"`
@@ -847,7 +763,7 @@ type RTCIceCandidateInit struct {
 
 func (x *RTCIceCandidateInit) Reset() {
 	*x = RTCIceCandidateInit{}
-	mi := &file_types_proto_msgTypes[14]
+	mi := &file_types_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -859,7 +775,7 @@ func (x *RTCIceCandidateInit) String() string {
 func (*RTCIceCandidateInit) ProtoMessage() {}
 
 func (x *RTCIceCandidateInit) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[14]
+	mi := &file_types_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -872,7 +788,7 @@ func (x *RTCIceCandidateInit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCIceCandidateInit.ProtoReflect.Descriptor instead.
 func (*RTCIceCandidateInit) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{14}
+	return file_types_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RTCIceCandidateInit) GetCandidate() string {
@@ -913,7 +829,7 @@ type RTCSessionDescriptionInit struct {
 
 func (x *RTCSessionDescriptionInit) Reset() {
 	*x = RTCSessionDescriptionInit{}
-	mi := &file_types_proto_msgTypes[15]
+	mi := &file_types_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -925,7 +841,7 @@ func (x *RTCSessionDescriptionInit) String() string {
 func (*RTCSessionDescriptionInit) ProtoMessage() {}
 
 func (x *RTCSessionDescriptionInit) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[15]
+	mi := &file_types_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -938,7 +854,7 @@ func (x *RTCSessionDescriptionInit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RTCSessionDescriptionInit.ProtoReflect.Descriptor instead.
 func (*RTCSessionDescriptionInit) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{15}
+	return file_types_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RTCSessionDescriptionInit) GetSdp() string {
@@ -965,7 +881,7 @@ type ProtoICE struct {
 
 func (x *ProtoICE) Reset() {
 	*x = ProtoICE{}
-	mi := &file_types_proto_msgTypes[16]
+	mi := &file_types_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -977,7 +893,7 @@ func (x *ProtoICE) String() string {
 func (*ProtoICE) ProtoMessage() {}
 
 func (x *ProtoICE) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[16]
+	mi := &file_types_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -990,7 +906,7 @@ func (x *ProtoICE) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoICE.ProtoReflect.Descriptor instead.
 func (*ProtoICE) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{16}
+	return file_types_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ProtoICE) GetCandidate() *RTCIceCandidateInit {
@@ -1010,7 +926,7 @@ type ProtoSDP struct {
 
 func (x *ProtoSDP) Reset() {
 	*x = ProtoSDP{}
-	mi := &file_types_proto_msgTypes[17]
+	mi := &file_types_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1022,7 +938,7 @@ func (x *ProtoSDP) String() string {
 func (*ProtoSDP) ProtoMessage() {}
 
 func (x *ProtoSDP) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[17]
+	mi := &file_types_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1035,7 +951,7 @@ func (x *ProtoSDP) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoSDP.ProtoReflect.Descriptor instead.
 func (*ProtoSDP) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{17}
+	return file_types_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ProtoSDP) GetSdp() *RTCSessionDescriptionInit {
@@ -1055,7 +971,7 @@ type ProtoRaw struct {
 
 func (x *ProtoRaw) Reset() {
 	*x = ProtoRaw{}
-	mi := &file_types_proto_msgTypes[18]
+	mi := &file_types_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1067,7 +983,7 @@ func (x *ProtoRaw) String() string {
 func (*ProtoRaw) ProtoMessage() {}
 
 func (x *ProtoRaw) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[18]
+	mi := &file_types_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1080,7 +996,7 @@ func (x *ProtoRaw) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoRaw.ProtoReflect.Descriptor instead.
 func (*ProtoRaw) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{18}
+	return file_types_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ProtoRaw) GetData() string {
@@ -1101,7 +1017,7 @@ type ProtoClientRequestRoomStream struct {
 
 func (x *ProtoClientRequestRoomStream) Reset() {
 	*x = ProtoClientRequestRoomStream{}
-	mi := &file_types_proto_msgTypes[19]
+	mi := &file_types_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1113,7 +1029,7 @@ func (x *ProtoClientRequestRoomStream) String() string {
 func (*ProtoClientRequestRoomStream) ProtoMessage() {}
 
 func (x *ProtoClientRequestRoomStream) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[19]
+	mi := &file_types_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1126,7 +1042,7 @@ func (x *ProtoClientRequestRoomStream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoClientRequestRoomStream.ProtoReflect.Descriptor instead.
 func (*ProtoClientRequestRoomStream) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{19}
+	return file_types_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ProtoClientRequestRoomStream) GetRoomName() string {
@@ -1154,7 +1070,7 @@ type ProtoClientDisconnected struct {
 
 func (x *ProtoClientDisconnected) Reset() {
 	*x = ProtoClientDisconnected{}
-	mi := &file_types_proto_msgTypes[20]
+	mi := &file_types_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1166,7 +1082,7 @@ func (x *ProtoClientDisconnected) String() string {
 func (*ProtoClientDisconnected) ProtoMessage() {}
 
 func (x *ProtoClientDisconnected) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[20]
+	mi := &file_types_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1179,7 +1095,7 @@ func (x *ProtoClientDisconnected) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoClientDisconnected.ProtoReflect.Descriptor instead.
 func (*ProtoClientDisconnected) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{20}
+	return file_types_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ProtoClientDisconnected) GetSessionId() string {
@@ -1206,7 +1122,7 @@ type ProtoServerPushStream struct {
 
 func (x *ProtoServerPushStream) Reset() {
 	*x = ProtoServerPushStream{}
-	mi := &file_types_proto_msgTypes[21]
+	mi := &file_types_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1218,7 +1134,7 @@ func (x *ProtoServerPushStream) String() string {
 func (*ProtoServerPushStream) ProtoMessage() {}
 
 func (x *ProtoServerPushStream) ProtoReflect() protoreflect.Message {
-	mi := &file_types_proto_msgTypes[21]
+	mi := &file_types_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1231,7 +1147,7 @@ func (x *ProtoServerPushStream) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProtoServerPushStream.ProtoReflect.Descriptor instead.
 func (*ProtoServerPushStream) Descriptor() ([]byte, []int) {
-	return file_types_proto_rawDescGZIP(), []int{21}
+	return file_types_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ProtoServerPushStream) GetRoomName() string {
@@ -1272,39 +1188,51 @@ const file_types_proto_rawDesc = "" +
 	"\x15ProtoControllerDetach\x12!\n" +
 	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\"\x8b\x01\n" +
-	"\x15ProtoControllerButton\x12!\n" +
-	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x16\n" +
-	"\x06button\x18\x03 \x01(\x05R\x06button\x12\x18\n" +
-	"\apressed\x18\x04 \x01(\bR\apressed\"\x8a\x01\n" +
-	"\x16ProtoControllerTrigger\x12!\n" +
-	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x18\n" +
-	"\atrigger\x18\x03 \x01(\x05R\atrigger\x12\x14\n" +
-	"\x05value\x18\x04 \x01(\x05R\x05value\"\x8a\x01\n" +
-	"\x14ProtoControllerStick\x12!\n" +
-	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x14\n" +
-	"\x05stick\x18\x03 \x01(\x05R\x05stick\x12\f\n" +
-	"\x01x\x18\x04 \x01(\x05R\x01x\x12\f\n" +
-	"\x01y\x18\x05 \x01(\x05R\x01y\"\x81\x01\n" +
-	"\x13ProtoControllerAxis\x12!\n" +
-	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
-	"\x04axis\x18\x03 \x01(\x05R\x04axis\x12\x14\n" +
-	"\x05value\x18\x04 \x01(\x05R\x05value\"\xc1\x01\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\xc1\x01\n" +
 	"\x15ProtoControllerRumble\x12!\n" +
 	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12#\n" +
 	"\rlow_frequency\x18\x03 \x01(\x05R\flowFrequency\x12%\n" +
 	"\x0ehigh_frequency\x18\x04 \x01(\x05R\rhighFrequency\x12\x1a\n" +
-	"\bduration\x18\x05 \x01(\x05R\bduration\"\xde\x01\n" +
+	"\bduration\x18\x05 \x01(\x05R\bduration\"\x87\a\n" +
+	"\x19ProtoControllerStateBatch\x12!\n" +
+	"\fsession_slot\x18\x01 \x01(\x05R\vsessionSlot\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12L\n" +
+	"\vupdate_type\x18\x03 \x01(\x0e2+.proto.ProtoControllerStateBatch.UpdateTypeR\n" +
+	"updateType\x12\x1a\n" +
+	"\bsequence\x18\x04 \x01(\rR\bsequence\x12g\n" +
+	"\x13button_changed_mask\x18\x05 \x03(\v27.proto.ProtoControllerStateBatch.ButtonChangedMaskEntryR\x11buttonChangedMask\x12%\n" +
+	"\fleft_stick_x\x18\x06 \x01(\x05H\x00R\n" +
+	"leftStickX\x88\x01\x01\x12%\n" +
+	"\fleft_stick_y\x18\a \x01(\x05H\x01R\n" +
+	"leftStickY\x88\x01\x01\x12'\n" +
+	"\rright_stick_x\x18\b \x01(\x05H\x02R\vrightStickX\x88\x01\x01\x12'\n" +
+	"\rright_stick_y\x18\t \x01(\x05H\x03R\vrightStickY\x88\x01\x01\x12&\n" +
+	"\fleft_trigger\x18\n" +
+	" \x01(\x05H\x04R\vleftTrigger\x88\x01\x01\x12(\n" +
+	"\rright_trigger\x18\v \x01(\x05H\x05R\frightTrigger\x88\x01\x01\x12\x1a\n" +
+	"\x06dpad_x\x18\f \x01(\x05H\x06R\x05dpadX\x88\x01\x01\x12\x1a\n" +
+	"\x06dpad_y\x18\r \x01(\x05H\aR\x05dpadY\x88\x01\x01\x12*\n" +
+	"\x0echanged_fields\x18\x0e \x01(\rH\bR\rchangedFields\x88\x01\x01\x1aD\n" +
+	"\x16ButtonChangedMaskEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\x05R\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\bR\x05value:\x028\x01\"'\n" +
+	"\n" +
+	"UpdateType\x12\x0e\n" +
+	"\n" +
+	"FULL_STATE\x10\x00\x12\t\n" +
+	"\x05DELTA\x10\x01B\x0f\n" +
+	"\r_left_stick_xB\x0f\n" +
+	"\r_left_stick_yB\x10\n" +
+	"\x0e_right_stick_xB\x10\n" +
+	"\x0e_right_stick_yB\x0f\n" +
+	"\r_left_triggerB\x10\n" +
+	"\x0e_right_triggerB\t\n" +
+	"\a_dpad_xB\t\n" +
+	"\a_dpad_yB\x11\n" +
+	"\x0f_changed_fields\"\xde\x01\n" +
 	"\x13RTCIceCandidateInit\x12\x1c\n" +
 	"\tcandidate\x18\x01 \x01(\tR\tcandidate\x12)\n" +
 	"\rsdpMLineIndex\x18\x02 \x01(\rH\x00R\rsdpMLineIndex\x88\x01\x01\x12\x1b\n" +
@@ -1345,39 +1273,41 @@ func file_types_proto_rawDescGZIP() []byte {
 	return file_types_proto_rawDescData
 }
 
-var file_types_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
+var file_types_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_types_proto_msgTypes = make([]protoimpl.MessageInfo, 20)
 var file_types_proto_goTypes = []any{
-	(*ProtoMouseMove)(nil),               // 0: proto.ProtoMouseMove
-	(*ProtoMouseMoveAbs)(nil),            // 1: proto.ProtoMouseMoveAbs
-	(*ProtoMouseWheel)(nil),              // 2: proto.ProtoMouseWheel
-	(*ProtoMouseKeyDown)(nil),            // 3: proto.ProtoMouseKeyDown
-	(*ProtoMouseKeyUp)(nil),              // 4: proto.ProtoMouseKeyUp
-	(*ProtoKeyDown)(nil),                 // 5: proto.ProtoKeyDown
-	(*ProtoKeyUp)(nil),                   // 6: proto.ProtoKeyUp
-	(*ProtoControllerAttach)(nil),        // 7: proto.ProtoControllerAttach
-	(*ProtoControllerDetach)(nil),        // 8: proto.ProtoControllerDetach
-	(*ProtoControllerButton)(nil),        // 9: proto.ProtoControllerButton
-	(*ProtoControllerTrigger)(nil),       // 10: proto.ProtoControllerTrigger
-	(*ProtoControllerStick)(nil),         // 11: proto.ProtoControllerStick
-	(*ProtoControllerAxis)(nil),          // 12: proto.ProtoControllerAxis
-	(*ProtoControllerRumble)(nil),        // 13: proto.ProtoControllerRumble
-	(*RTCIceCandidateInit)(nil),          // 14: proto.RTCIceCandidateInit
-	(*RTCSessionDescriptionInit)(nil),    // 15: proto.RTCSessionDescriptionInit
-	(*ProtoICE)(nil),                     // 16: proto.ProtoICE
-	(*ProtoSDP)(nil),                     // 17: proto.ProtoSDP
-	(*ProtoRaw)(nil),                     // 18: proto.ProtoRaw
-	(*ProtoClientRequestRoomStream)(nil), // 19: proto.ProtoClientRequestRoomStream
-	(*ProtoClientDisconnected)(nil),      // 20: proto.ProtoClientDisconnected
-	(*ProtoServerPushStream)(nil),        // 21: proto.ProtoServerPushStream
+	(ProtoControllerStateBatch_UpdateType)(0), // 0: proto.ProtoControllerStateBatch.UpdateType
+	(*ProtoMouseMove)(nil),                    // 1: proto.ProtoMouseMove
+	(*ProtoMouseMoveAbs)(nil),                 // 2: proto.ProtoMouseMoveAbs
+	(*ProtoMouseWheel)(nil),                   // 3: proto.ProtoMouseWheel
+	(*ProtoMouseKeyDown)(nil),                 // 4: proto.ProtoMouseKeyDown
+	(*ProtoMouseKeyUp)(nil),                   // 5: proto.ProtoMouseKeyUp
+	(*ProtoKeyDown)(nil),                      // 6: proto.ProtoKeyDown
+	(*ProtoKeyUp)(nil),                        // 7: proto.ProtoKeyUp
+	(*ProtoControllerAttach)(nil),             // 8: proto.ProtoControllerAttach
+	(*ProtoControllerDetach)(nil),             // 9: proto.ProtoControllerDetach
+	(*ProtoControllerRumble)(nil),             // 10: proto.ProtoControllerRumble
+	(*ProtoControllerStateBatch)(nil),         // 11: proto.ProtoControllerStateBatch
+	(*RTCIceCandidateInit)(nil),               // 12: proto.RTCIceCandidateInit
+	(*RTCSessionDescriptionInit)(nil),         // 13: proto.RTCSessionDescriptionInit
+	(*ProtoICE)(nil),                          // 14: proto.ProtoICE
+	(*ProtoSDP)(nil),                          // 15: proto.ProtoSDP
+	(*ProtoRaw)(nil),                          // 16: proto.ProtoRaw
+	(*ProtoClientRequestRoomStream)(nil),      // 17: proto.ProtoClientRequestRoomStream
+	(*ProtoClientDisconnected)(nil),           // 18: proto.ProtoClientDisconnected
+	(*ProtoServerPushStream)(nil),             // 19: proto.ProtoServerPushStream
+	nil,                                       // 20: proto.ProtoControllerStateBatch.ButtonChangedMaskEntry
 }
 var file_types_proto_depIdxs = []int32{
-	14, // 0: proto.ProtoICE.candidate:type_name -> proto.RTCIceCandidateInit
-	15, // 1: proto.ProtoSDP.sdp:type_name -> proto.RTCSessionDescriptionInit
-	2,  // [2:2] is the sub-list for method output_type
-	2,  // [2:2] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	0,  // 0: proto.ProtoControllerStateBatch.update_type:type_name -> proto.ProtoControllerStateBatch.UpdateType
+	20, // 1: proto.ProtoControllerStateBatch.button_changed_mask:type_name -> proto.ProtoControllerStateBatch.ButtonChangedMaskEntry
+	12, // 2: proto.ProtoICE.candidate:type_name -> proto.RTCIceCandidateInit
+	13, // 3: proto.ProtoSDP.sdp:type_name -> proto.RTCSessionDescriptionInit
+	4,  // [4:4] is the sub-list for method output_type
+	4,  // [4:4] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_types_proto_init() }
@@ -1385,19 +1315,21 @@ func file_types_proto_init() {
 	if File_types_proto != nil {
 		return
 	}
-	file_types_proto_msgTypes[14].OneofWrappers = []any{}
+	file_types_proto_msgTypes[10].OneofWrappers = []any{}
+	file_types_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_types_proto_rawDesc), len(file_types_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   22,
+			NumEnums:      1,
+			NumMessages:   20,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_types_proto_goTypes,
 		DependencyIndexes: file_types_proto_depIdxs,
+		EnumInfos:         file_types_proto_enumTypes,
 		MessageInfos:      file_types_proto_msgTypes,
 	}.Build()
 	File_types_proto = out.File

@@ -5,13 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"relay/internal/common"
 	"relay/internal/shared"
 	"time"
-
-	gen "relay/internal/proto"
-
-	"google.golang.org/protobuf/proto"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -134,46 +129,6 @@ func (r *Relay) onPeerConnected(peerID peer.ID) {
 
 // onPeerDisconnected marks a peer as disconnected in our status view and removes latency info
 func (r *Relay) onPeerDisconnected(peerID peer.ID) {
-	// Check if this was a client session disconnect
-	if session, ok := r.ClientSessions.Get(peerID); ok {
-		slog.Info("Client session disconnected",
-			"peer", peerID,
-			"session", session.SessionID,
-			"room", session.RoomName,
-			"controller_slots", session.ControllerSlots)
-
-		// Send cleanup message to nestri-server if client had active controllers
-		if len(session.ControllerSlots) > 0 {
-			room := r.GetRoomByName(session.RoomName)
-			if room != nil && room.DataChannel != nil {
-				// Create disconnect notification
-				disconnectMsg, err := common.CreateMessage(&gen.ProtoClientDisconnected{
-					SessionId:       session.SessionID,
-					ControllerSlots: session.ControllerSlots,
-				}, "client-disconnected", nil)
-				if err != nil {
-					slog.Error("Failed to create client disconnect message", "err", err)
-				}
-
-				disMarshal, err := proto.Marshal(disconnectMsg)
-				if err != nil {
-					slog.Error("Failed to marshal client disconnect message", "err", err)
-				} else {
-					if err = room.DataChannel.SendBinary(disMarshal); err != nil {
-						slog.Error("Failed to send client disconnect notification", "err", err)
-					} else {
-						slog.Info("Sent controller cleanup notification to nestri-server",
-							"session", session.SessionID,
-							"slots", session.ControllerSlots)
-					}
-				}
-			}
-		}
-
-		r.ClientSessions.Delete(peerID)
-		return
-	}
-
 	// Relay peer disconnect handling
 	slog.Info("Mesh peer disconnected, deleting from local peer map", "peer", peerID)
 	if r.Peers.Has(peerID) {

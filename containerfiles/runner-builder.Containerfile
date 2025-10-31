@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -Sy --noconfirm lib32-gcc-libs
 
 # Clone repository
-RUN git clone --depth 1 --rev "f2f21561ddcb814d74455311969d3e8934b052c6" https://github.com/DatCaptainHorse/vimputti.git
+RUN git clone --depth 1 --rev "2fde5376b6b9a38cdbd94ccc6a80c9d29a81a417" https://github.com/DatCaptainHorse/vimputti.git
 
 #--------------------------------------------------------------------
 FROM vimputti-manager-deps AS vimputti-manager-planner
