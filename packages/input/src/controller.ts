@@ -56,7 +56,7 @@ export class Controller {
   // Polling configuration
   private readonly FULL_RATE_MS = 10; // 100 UPS
   private readonly IDLE_THRESHOLD = 100; // ms before considering idle/hands off controller
-  private readonly FULL_INTERVAL= 250; // ms before sending full state occassionally, to verify inputs are synced
+  private readonly FULL_INTERVAL = 250; // ms before sending full state occassionally, to verify inputs are synced
 
   // Polling state
   private pollingState: PollState = PollState.IDLE;
@@ -230,7 +230,7 @@ export class Controller {
       // Changing from running to idle..
       if (this.pollingState === PollState.RUNNING) {
         // Send full state on idle assumption
-        this.sendBatchedState(0xFF, 0);
+        this.sendBatchedState(0xff, 0);
         this.pollingState = PollState.IDLE;
       }
     }
@@ -364,12 +364,15 @@ export class Controller {
 
     // For FULL_STATE, include everything
     if (updateType === 0) {
-      message.changedFields = 0xFF;
+      message.changedFields = 0xff;
 
       message.buttonChangedMask = Object.fromEntries(
-        Array.from(this.state.buttonState).map(([key, value]) => {
-          return [this.controllerButtonToVirtualKeyCode(key), value];
-        }),
+        Array.from(this.state.buttonState)
+          .map(
+            ([key, value]) =>
+              [this.controllerButtonToVirtualKeyCode(key), value] as const,
+          )
+          .filter(([code]) => code !== undefined),
       );
       message.leftStickX = this.state.leftX;
       message.leftStickY = this.state.leftY;
@@ -402,9 +405,12 @@ export class Controller {
             })
             .map((key) => {
               const newValue = currentStateMap.get(key) ?? false;
-
-              return [this.controllerButtonToVirtualKeyCode(key), newValue];
-            }),
+              return [
+                this.controllerButtonToVirtualKeyCode(key),
+                newValue,
+              ] as const;
+            })
+            .filter(([code]) => code !== undefined),
         );
       }
       if (changedFields & this.CHANGED_LEFT_STICK_X) {
@@ -468,14 +474,16 @@ export class Controller {
       this.wrtc.removeDataChannelCallback(this._dcHandler);
       this._dcHandler = null;
     }
-    // Gamepad disconnected
-    const detachMsg = createMessage(
-      create(ProtoControllerDetachSchema, {
-        sessionSlot: this.gamepad.index,
-      }),
-      "controllerInput",
-    );
-    this.wrtc.sendBinary(toBinary(ProtoMessageSchema, detachMsg));
+    if (this.gamepad) {
+      // Gamepad disconnected
+      const detachMsg = createMessage(
+        create(ProtoControllerDetachSchema, {
+          sessionSlot: this.gamepad.index,
+        }),
+        "controllerInput",
+      );
+      this.wrtc.sendBinary(toBinary(ProtoMessageSchema, detachMsg));
+    }
   }
 
   private controllerButtonToVirtualKeyCode(code: number): number | undefined {
@@ -487,7 +495,7 @@ export class Controller {
 
     // Check if this rumble is for us
     if (
-      rumbleMsg.sessionId !== this.wrtc.getSessionID() &&
+      rumbleMsg.sessionId !== this.wrtc.getSessionID() ||
       rumbleMsg.sessionSlot !== this.gamepad.index
     )
       return;

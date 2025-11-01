@@ -63,13 +63,13 @@ func (p *Participant) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.Trac
 		p.AudioTrack = track
 		_, err := p.PeerConnection.AddTrack(track)
 		if err != nil {
-			slog.Error("Failed to add Participant audio track", err)
+			slog.Error("Failed to add Participant audio track", "participant", p.ID, "err", err)
 		}
 	case webrtc.RTPCodecTypeVideo:
 		p.VideoTrack = track
 		_, err := p.PeerConnection.AddTrack(track)
 		if err != nil {
-			slog.Error("Failed to add Participant video track", err)
+			slog.Error("Failed to add Participant video track", "participant", p.ID, "err", err)
 		}
 	default:
 		slog.Warn("Unknown track type", "participant", p.ID, "trackType", trackType)
@@ -78,6 +78,9 @@ func (p *Participant) SetTrack(trackType webrtc.RTPCodecType, track *webrtc.Trac
 
 // Close cleans up participant resources
 func (p *Participant) Close() {
+	p.closeOnce.Do(func() {
+		close(p.packetQueue)
+	})
 	if p.DataChannel != nil {
 		err := p.DataChannel.Close()
 		if err != nil {

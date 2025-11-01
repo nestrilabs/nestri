@@ -71,7 +71,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 	safeBRW := common.NewSafeBufioRW(brw)
 
 	var currentRoomName string // Track the current room for this stream
-	iceHolder := make([]webrtc.ICECandidateInit, 0)
+	iceHelper := common.NewICEHelper(nil)
 	for {
 		var msgWrapper gen.ProtoMessage
 		err := safeBRW.ReceiveProto(&msgWrapper)
@@ -177,6 +177,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 
 				// Assign peer connection
 				participant.PeerConnection = pc
+				iceHelper.SetPeerConnection(pc)
 
 				// Add audio/video tracks
 				{
@@ -344,29 +345,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 					SDPMLineIndex:    &smollified,
 					UsernameFragment: iceMsg.Candidate.UsernameFragment,
 				}
-				// Use currentRoomName to get the connection from nested map
-				if len(currentRoomName) > 0 {
-					if roomMap, ok := sp.servedConns.Get(currentRoomName); ok {
-						if conn, ok := roomMap.Get(stream.Conn().RemotePeer()); ok && conn.pc.RemoteDescription() != nil {
-							if err = conn.pc.AddICECandidate(cand); err != nil {
-								slog.Error("Failed to add ICE candidate", "err", err)
-							}
-							for _, heldIce := range iceHolder {
-								if err := conn.pc.AddICECandidate(heldIce); err != nil {
-									slog.Error("Failed to add held ICE candidate", "err", err)
-								}
-							}
-							// Clear the held candidates
-							iceHolder = make([]webrtc.ICECandidateInit, 0)
-						} else {
-							// Hold the candidate until remote description is set
-							iceHolder = append(iceHolder, cand)
-						}
-					}
-				} else {
-					// Hold the candidate until remote description is set
-					iceHolder = append(iceHolder, cand)
-				}
+				iceHelper.AddCandidate(cand)
 			} else {
 				slog.Error("Could not GetIce from ice-candidate")
 			}
@@ -386,6 +365,8 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 								continue
 							}
 							slog.Debug("Set remote description for answer")
+							// Flush held candidates now if missed before (race-condition)
+							iceHelper.FlushHeldCandidates()
 						} else {
 							slog.Warn("Received answer without active PeerConnection")
 						}
@@ -406,7 +387,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 	safeBRW := common.NewSafeBufioRW(brw)
 
 	var room *shared.Room
-	iceHolder := make([]webrtc.ICECandidateInit, 0)
+	iceHelper := common.NewICEHelper(nil)
 	for {
 		var msgWrapper gen.ProtoMessage
 		err := safeBRW.ReceiveProto(&msgWrapper)
@@ -483,21 +464,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 					SDPMLineIndex:    &smollified,
 					UsernameFragment: iceMsg.Candidate.UsernameFragment,
 				}
-				if conn, ok := sp.incomingConns.Get(room.Name); ok && conn.pc.RemoteDescription() != nil {
-					if err = conn.pc.AddICECandidate(cand); err != nil {
-						slog.Error("Failed to add ICE candidate for pushed stream", "err", err)
-					}
-					for _, heldIce := range iceHolder {
-						if err = conn.pc.AddICECandidate(heldIce); err != nil {
-							slog.Error("Failed to add held ICE candidate for pushed stream", "err", err)
-						}
-					}
-					// Clear the held candidates
-					iceHolder = make([]webrtc.ICECandidateInit, 0)
-				} else {
-					// Hold the candidate until remote description is set
-					iceHolder = append(iceHolder, cand)
-				}
+				iceHelper.AddCandidate(cand)
 			} else {
 				slog.Error("Failed to GetIce in pushed stream ice-candidate")
 			}
@@ -529,6 +496,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 
 				// Assign room peer connection
 				room.PeerConnection = pc
+				iceHelper.SetPeerConnection(pc)
 
 				pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 					// TODO: Is this the best way to handle DataChannel? Should we just use the map directly?
@@ -689,6 +657,8 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 					continue
 				}
 				slog.Debug("Set remote description for pushed stream", "room", room.Name)
+				// Flush candidates now if they weren't before (race-condition)
+				iceHelper.FlushHeldCandidates()
 
 				// Create an answer
 				answer, err := pc.CreateAnswer(nil)

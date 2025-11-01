@@ -172,7 +172,7 @@ export class WebRTCStream {
         const requestMsg = createMessage(
           create(ProtoClientRequestRoomStreamSchema, {
             roomName: roomName,
-            sessionId: clientId,
+            sessionId: clientId ?? "",
           }),
           "request-stream-room",
         );
