@@ -123,8 +123,6 @@ export class WebRTCStream {
             } else {
               iceHolder.push(cand);
             }
-          } else {
-            iceHolder.push(cand);
           }
         });
 
@@ -143,6 +141,14 @@ export class WebRTCStream {
             sdp: data.sdp.sdp,
             type: data.sdp.type as RTCSdpType,
           });
+          // Add held candidates
+          iceHolder.forEach((candidate) => {
+            this._pc!.addIceCandidate(candidate).catch((err) => {
+              console.error("Error adding held ICE candidate:", err);
+            });
+          });
+          iceHolder = [];
+
           // Create our answer
           const answer = await this._pc!.createAnswer();
           // Force stereo in Chromium browsers

@@ -271,12 +271,16 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 					}
 
 					candInit := candidate.ToJSON()
-					biggified := uint32(*candInit.SDPMLineIndex)
+					var sdpMLineIndex *uint32
+					if candInit.SDPMLineIndex != nil {
+						idx := uint32(*candInit.SDPMLineIndex)
+						sdpMLineIndex = &idx
+					}
 					iceMsg, err := common.CreateMessage(
 						&gen.ProtoICE{
 							Candidate: &gen.RTCIceCandidateInit{
 								Candidate:     candInit.Candidate,
-								SdpMLineIndex: &biggified,
+								SdpMLineIndex: sdpMLineIndex,
 								SdpMid:        candInit.SDPMid,
 							},
 						},
@@ -338,12 +342,14 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 		case "ice-candidate":
 			iceMsg := msgWrapper.GetIce()
 			if iceMsg != nil {
-				smollified := uint16(*iceMsg.Candidate.SdpMLineIndex)
 				cand := webrtc.ICECandidateInit{
 					Candidate:        iceMsg.Candidate.Candidate,
 					SDPMid:           iceMsg.Candidate.SdpMid,
-					SDPMLineIndex:    &smollified,
 					UsernameFragment: iceMsg.Candidate.UsernameFragment,
+				}
+				if iceMsg.Candidate.SdpMLineIndex != nil {
+					smollified := uint16(*iceMsg.Candidate.SdpMLineIndex)
+					cand.SDPMLineIndex = &smollified
 				}
 				iceHelper.AddCandidate(cand)
 			} else {
