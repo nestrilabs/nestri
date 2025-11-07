@@ -402,7 +402,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				slog.Debug("Stream push connection closed by peer", "peer", stream.Conn().RemotePeer(), "error", err)
 				if room != nil {
 					room.Close()
-					sp.incomingConns.Set(room.Name, nil)
+					sp.incomingConns.Delete(room.Name)
 				}
 				return
 			}
@@ -411,7 +411,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 			_ = stream.Reset()
 			if room != nil {
 				room.Close()
-				sp.incomingConns.Set(room.Name, nil)
+				sp.incomingConns.Delete(room.Name)
 			}
 			return
 		}

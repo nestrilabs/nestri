@@ -72,6 +72,11 @@ RUN mkdir -p "${NESTRI_HOME}/.local/share/Steam/config"
 
 COPY packages/configs/steam/config.vdf "${NESTRI_HOME}/.local/share/Steam/config/"
 
+## MangoHud Config ##
+RUN mkdir -p "${NESTRI_HOME}/.config/MangoHud"
+
+COPY packages/configs/MangoHud/MangoHud.conf "${NESTRI_HOME}/.config/MangoHud/"
+
 ### Artifacts from Builder ###
 COPY --from=builder /artifacts/bin/nestri-server /usr/bin/
 COPY --from=builder /artifacts/bin/bwrap /usr/bin/
