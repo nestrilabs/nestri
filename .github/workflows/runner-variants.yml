@@ -21,7 +21,7 @@ env:
 
 jobs:
   bases:
-    uses: /.github/workflows/runner-bases.yml
+    uses: ./.github/workflows/runner-bases.yml
   build-and-push-variants:
     needs: [ bases ]
     name: Build and push images

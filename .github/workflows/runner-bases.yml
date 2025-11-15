@@ -74,5 +74,5 @@ jobs:
           build-args: |
             RUNNER_BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-base:latest-${{ matrix.variant.suffix }}
             RUNNER_BUILDER_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/runner-builder:latest-${{ matrix.variant.suffix }}
-          cache-from: type=gha,scope=runner-common-{{ matrix.variant.suffix }},mode=max
-          cache-to: type=gha,scope=runner-common-{{ matrix.variant.suffix }},mode=max
+          cache-from: type=gha,scope=runner-common-${{ matrix.variant.suffix }},mode=max
+          cache-to: type=gha,scope=runner-common-${{ matrix.variant.suffix }},mode=max
