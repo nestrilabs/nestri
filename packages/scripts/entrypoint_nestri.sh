@@ -106,10 +106,7 @@ start_compositor() {
     kill_if_running "${COMPOSITOR_PID:-}" "compositor"
     kill_if_running "${APP_PID:-}" "application"
 
-    # Set default values only if variables are unset (not empty)
-    if [[ -z "${NESTRI_LAUNCH_CMD+x}" ]]; then
-        NESTRI_LAUNCH_CMD="dbus-launch steam -tenfoot -cef-force-gpu"
-    fi
+    # Set default compositor if unset
     if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
         NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
@@ -121,6 +118,16 @@ start_compositor() {
         log "Using LD_PRELOAD shim(s)"
     fi
 
+    # Configure launch cmd with dbus if set
+    local launch_cmd=""
+    if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
+        if $do_ld_preload; then
+            launch_cmd="LD_PRELOAD='/usr/\$LIB/libvimputti_shim.so' dbus-launch $NESTRI_LAUNCH_CMD"
+        else
+            launch_cmd="dbus-launch $NESTRI_LAUNCH_CMD"
+        fi
+    fi
+
     # Launch compositor if configured
     if [[ -n "${NESTRI_LAUNCH_COMPOSITOR}" ]]; then
         local compositor_cmd="$NESTRI_LAUNCH_COMPOSITOR"
@@ -129,17 +136,12 @@ start_compositor() {
         # Check if this is a gamescope command
         if [[ "$compositor_cmd" == *"gamescope"* ]]; then
             is_gamescope=true
-            if [[ -n "$NESTRI_LAUNCH_CMD" ]] && [[ "$compositor_cmd" != *" -- "* ]]; then
+            if [[ -n "$launch_cmd" ]] && [[ "$compositor_cmd" != *" -- "* ]]; then
                 # If steam in launch command, enable gamescope integration via -e
-                if [[ "$NESTRI_LAUNCH_CMD" == *"steam"* ]]; then
+                if [[ "$launch_cmd" == *"steam"* ]]; then
                     compositor_cmd+=" -e"
                 fi
-                # If ld_preload is true, add env with LD_PRELOAD
-                if $do_ld_preload; then
-                    compositor_cmd+=" -- env LD_PRELOAD='/usr/\$LIB/libvimputti_shim.so' bash -c $(printf %q "$NESTRI_LAUNCH_CMD")"
-                else
-                    compositor_cmd+=" -- bash -c $(printf %q "$NESTRI_LAUNCH_CMD")"
-                fi
+                compositor_cmd+=" -- bash -c $(printf %q "$launch_cmd")"
             fi
         fi
 
@@ -185,9 +187,9 @@ start_compositor() {
                     WAYLAND_DISPLAY=wayland-0 wlr-randr --output "$OUTPUT_NAME" --custom-mode "$WIDTH"x"$HEIGHT"
                     log "Patched resolution with wlr-randr"
 
-                    if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
-                        log "Starting application: $NESTRI_LAUNCH_CMD"
-                        WAYLAND_DISPLAY="$COMPOSITOR_SOCKET" /bin/bash -c "$NESTRI_LAUNCH_CMD" &
+                    if [[ -n "$launch_cmd" ]]; then
+                        log "Starting application: $launch_cmd"
+                        WAYLAND_DISPLAY="$COMPOSITOR_SOCKET" bash -c "$launch_cmd" &
                         APP_PID=$!
                     fi
                 else
@@ -200,9 +202,9 @@ start_compositor() {
         log "Warning: Compositor socket not found after 15 seconds ($COMPOSITOR_SOCKET)"
     else
         # Launch standalone application if no compositor
-        if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
-            log "Starting application: $NESTRI_LAUNCH_CMD"
-            WAYLAND_DISPLAY=wayland-1 /bin/bash -c "$NESTRI_LAUNCH_CMD" &
+        if [[ -n "$launch_cmd" ]]; then
+            log "Starting standalone application: $launch_cmd"
+            WAYLAND_DISPLAY=wayland-1 bash -c "$launch_cmd" &
             APP_PID=$!
         else
             log "No compositor or application configured"

@@ -2,9 +2,9 @@
 ARG RUNNER_BASE_IMAGE=runner-base:latest
 ARG RUNNER_BUILDER_IMAGE=runner-builder:latest
 
-#*********************#
-# Final Runtime Stage #
-#*********************#
+#**********************#
+# Runtime Common Stage #
+#**********************#
 FROM ${RUNNER_BASE_IMAGE} AS runtime
 FROM ${RUNNER_BUILDER_IMAGE} AS builder
 FROM runtime
@@ -12,11 +12,11 @@ FROM runtime
 ### Package Installation ###
 # Core system components
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -Sy --needed --noconfirm \
+    pacman -S --needed --noconfirm \
         vulkan-intel lib32-vulkan-intel vpl-gpu-rt \
         vulkan-radeon lib32-vulkan-radeon \
         mesa lib32-mesa \
-        steam gtk3 lib32-gtk3 \
+        gtk3 lib32-gtk3 \
         sudo xorg-xwayland seatd libinput gamescope mangohud wlr-randr \
         pipewire pipewire-pulse pipewire-alsa wireplumber \
         noto-fonts-cjk supervisor jq pacman-contrib \
@@ -67,11 +67,6 @@ RUN mkdir -p /etc/pipewire/pipewire.conf.d && \
 COPY packages/configs/wireplumber.conf.d/* /etc/wireplumber/wireplumber.conf.d/
 COPY packages/configs/pipewire.conf.d/* /etc/pipewire/pipewire.conf.d/
 
-## Steam Configs - Proton (Experimental flavor) ##
-RUN mkdir -p "${NESTRI_HOME}/.local/share/Steam/config"
-
-COPY packages/configs/steam/config.vdf "${NESTRI_HOME}/.local/share/Steam/config/"
-
 ## MangoHud Config ##
 RUN mkdir -p "${NESTRI_HOME}/.config/MangoHud"
 
@@ -93,7 +88,3 @@ RUN chmod +x /etc/nestri/{envs.sh,entrypoint*.sh} && \
     setcap cap_net_admin+ep /usr/bin/vimputti-manager && \
     dbus-uuidgen > /etc/machine-id && \
     LANG=en_US.UTF-8 locale-gen
-
-# Root for most container engines, nestri-user compatible for apptainer without fakeroot
-USER root
-ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]

@@ -1,6 +1,5 @@
-#Tabs not spaces, you moron :)
+name: Build Nestri relay
 
-name: Build nestri:relay
 on:
     pull_request:
         paths:

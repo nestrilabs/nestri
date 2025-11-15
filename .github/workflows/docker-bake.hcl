@@ -3,14 +3,14 @@ variable "BASE_IMAGE" {
 }
 
 group "default" {
-  targets = ["runner"]
+  targets = ["runner-base", "runner-builder"]
 }
 
 target "runner-base" {
   dockerfile = "containerfiles/runner-base.Containerfile"
   context    = "."
   args = {
-    BASE_IMAGE = "${BASE_IMAGE}"
+    BASE_IMAGE = BASE_IMAGE
   }
   cache-from = ["type=gha,scope=runner-base-pr"]
   cache-to = ["type=gha,scope=runner-base-pr,mode=max"]
@@ -28,21 +28,5 @@ target "runner-builder" {
   tags = ["runner-builder:latest"]
   contexts = {
     runner-base = "target:runner-base"
-  }
-}
-
-target "runner" {
-  dockerfile = "containerfiles/runner.Containerfile"
-  context    = "."
-  args = {
-    RUNNER_BASE_IMAGE    = "runner-base:latest"
-    RUNNER_BUILDER_IMAGE = "runner-builder:latest"
-  }
-  cache-from = ["type=gha,scope=runner-pr"]
-  cache-to = ["type=gha,scope=runner-pr,mode=max"]
-  tags = ["nestri-runner"]
-  contexts = {
-    runner-base    = "target:runner-base"
-    runner-builder = "target:runner-builder"
   }
 }
