@@ -108,7 +108,7 @@ start_compositor() {
 
     # Set default compositor if unset
     if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
-        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt --mangoapp -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
+        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
 
     # If PRELOAD_SHIM_arch's are set and exist, set LD_PRELOAD for 32/64-bit apps
@@ -120,7 +120,7 @@ start_compositor() {
 
     # Configure launch cmd with dbus if set
     local launch_cmd=""
-    if [[ -n "${NESTRI_LAUNCH_CMD}" ]]; then
+    if [[ -n "${NESTRI_LAUNCH_CMD+x}" ]]; then
         if $do_ld_preload; then
             launch_cmd="LD_PRELOAD='/usr/\$LIB/libvimputti_shim.so' dbus-launch $NESTRI_LAUNCH_CMD"
         else
@@ -137,9 +137,9 @@ start_compositor() {
         if [[ "$compositor_cmd" == *"gamescope"* ]]; then
             is_gamescope=true
             if [[ -n "$launch_cmd" ]] && [[ "$compositor_cmd" != *" -- "* ]]; then
-                # If steam in launch command, enable gamescope integration via -e
+                # If steam in launch command, enable gamescope integration via -e and enable mangohud
                 if [[ "$launch_cmd" == *"steam"* ]]; then
-                    compositor_cmd+=" -e"
+                    compositor_cmd+=" --mangoapp -e"
                 fi
                 compositor_cmd+=" -- bash -c $(printf %q "$launch_cmd")"
             fi

@@ -28,7 +28,7 @@ RUN rustup default stable
 
 # Install cargo-chef with proper caching
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    cargo install -j $(nproc) cargo-chef --locked
+    cargo install cargo-chef --locked
 
 #*******************************#
 # vimputti manager build stages #
@@ -130,7 +130,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo install cargo-c
 
 # Clone repository
-RUN git clone --depth 1 --rev "dadf6bf3a3a49cc07a0e3d644f48233e29449db4" https://github.com/games-on-whales/gst-wayland-display.git
+RUN git clone --depth 1 --rev "e4c70b64dad3cd8bbf5eec011f419386adf737ee" https://github.com/games-on-whales/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -148,7 +148,7 @@ COPY --from=gst-wayland-planner /builder/gst-wayland-display/recipe.json .
 
 # Cache dependencies using cargo-chef
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
-    cargo chef cook --release --recipe-path recipe.json
+    cargo chef cook --release --recipe-path recipe.json --features cuda
 
 
 ENV CARGO_TARGET_DIR=/builder/target
@@ -158,7 +158,7 @@ COPY --from=gst-wayland-planner /builder/gst-wayland-display/ .
 # Build and install directly to artifacts
 RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     --mount=type=cache,target=/builder/target \
-    cargo cinstall --prefix=${ARTIFACTS} --release
+    cargo cinstall --prefix=${ARTIFACTS} --release --features cuda
 
 #*********************************#
 # Patched bubblewrap build stages #
