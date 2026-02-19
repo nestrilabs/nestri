@@ -1,7 +1,11 @@
 import { keyCodeToLinuxEventCode } from "./codes";
 import { WebRTCStream } from "./webrtc-stream";
-import { ProtoKeyDownSchema, ProtoKeyUpSchema } from "./proto/types_pb";
-import { create, toBinary } from "@bufbuild/protobuf";
+import {
+  ProtoKeyDownSchema,
+  ProtoKeyUpSchema,
+  //ProtoClipboardSchema,
+} from "./proto/types_pb";
+import { create, Message, toBinary } from "@bufbuild/protobuf";
 import { createMessage } from "./utils";
 import { ProtoMessageSchema } from "./proto/messages_pb";
 
@@ -13,21 +17,40 @@ export class Keyboard {
   protected wrtc: WebRTCStream;
   protected connected!: boolean;
 
+  private onEscapeCallback?: () => void;
+
   // Store references to event listeners
   private readonly keydownListener: (e: KeyboardEvent) => void;
   private readonly keyupListener: (e: KeyboardEvent) => void;
 
   constructor({ webrtc }: Props) {
     this.wrtc = webrtc;
-    this.keydownListener = this.createKeyboardListener((e: any) =>
-      create(ProtoKeyDownSchema, {
-        key: this.keyToVirtualKeyCode(e.code),
-      }),
+    this.keydownListener = this.createKeyboardListener(
+      async (e: KeyboardEvent) => {
+        let rets = [];
+        if (e.shiftKey && e.code === "Escape" && this.onEscapeCallback !== undefined) {
+          this.onEscapeCallback();
+          return rets;
+        }
+        /*if (e.ctrlKey && e.key === "v" && navigator.clipboard) {
+          rets.push(create(ProtoClipboardSchema, {
+            content: await navigator.clipboard.readText(),
+          }));
+        }*/
+        rets.push(
+          create(ProtoKeyDownSchema, {
+            key: this.keyToVirtualKeyCode(e.code),
+          }),
+        );
+        return rets;
+      },
     );
-    this.keyupListener = this.createKeyboardListener((e: any) =>
-      create(ProtoKeyUpSchema, {
-        key: this.keyToVirtualKeyCode(e.code),
-      }),
+    this.keyupListener = this.createKeyboardListener(
+      async (e: KeyboardEvent) => [
+        create(ProtoKeyUpSchema, {
+          key: this.keyToVirtualKeyCode(e.code),
+        }),
+      ],
     );
     this.run();
   }
@@ -56,16 +79,22 @@ export class Keyboard {
       // Prevent repeated key events from being sent (important for games)
       if ((e as any).repeat) return;
 
-      const data = dataCreator(e as any);
-
-      const message = createMessage(data, "input");
-      this.wrtc.sendBinary(toBinary(ProtoMessageSchema, message));
+      dataCreator(e as any).then((datas: Message[]) => {
+        datas.forEach((data) => {
+          const message = createMessage(data, "input");
+          this.wrtc.sendBinary(toBinary(ProtoMessageSchema, message));
+        });
+      });
     };
   }
 
   public dispose() {
     this.stop();
     this.connected = false;
+  }
+
+  public setOnEscape(cb: () => void) {
+    this.onEscapeCallback = cb;
   }
 
   private keyToVirtualKeyCode(code: string) {

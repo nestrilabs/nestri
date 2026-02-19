@@ -225,7 +225,7 @@ configure_ssh() {
 
 main() {
     # Wait for required sockets
-    wait_for_socket "${NESTRI_XDG_RUNTIME_DIR}/dbus-1" "DBus" || exit 1
+    wait_for_socket "${NESTRI_XDG_RUNTIME_DIR}/bus" "DBus" || exit 1
     wait_for_socket "${NESTRI_XDG_RUNTIME_DIR}/pipewire-0" "PipeWire" || exit 1
 
     # Start by getting the container we are running under

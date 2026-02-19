@@ -8,7 +8,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 // Cloneable callback type
-pub type CallbackInner = dyn Fn(crate::proto::proto::ProtoMessage) -> Result<()> + Send + Sync + 'static;
+pub type CallbackInner =
+    dyn Fn(crate::proto::proto::ProtoMessage) -> Result<()> + Send + Sync + 'static;
 pub struct Callback(Arc<CallbackInner>);
 impl Callback {
     pub fn new<F>(f: F) -> Self

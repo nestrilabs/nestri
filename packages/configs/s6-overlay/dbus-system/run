@@ -1,0 +1,25 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    exit 1
+fi
+
+# remove possibly stale socket
+rm -f "/run/dbus/system_bus_socket"
+
+dbus-daemon --system --address=unix:path="/run/dbus/system_bus_socket" --nofork --nopidfile &
+PROCESS_PID=$!
+
+# wait for socket
+while ! test -S "/run/dbus/system_bus_socket"; do
+  sleep 0.5
+done
+
+# notify
+printf 'ready\n' >&3
+
+# wait till process exits
+wait "${PROCESS_PID}"

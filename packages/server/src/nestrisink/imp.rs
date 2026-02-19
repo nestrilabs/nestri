@@ -398,9 +398,20 @@ fn setup_data_channel(
                     if let Some(message_base) = msg_wrapper.message_base {
                         if message_base.payload_type == "input" {
                             if let Some(input_data) = msg_wrapper.payload {
-                                if let Some(event) = handle_input_message(input_data) {
-                                    // Send the event to wayland source, result bool is ignored
-                                    let _ = wayland_src.send_event(event);
+                                /*if let Payload::Clipboard(data) = &input_data {
+                                    tracing::info!("CLIPBOARD: {:?}", data.content);
+                                    // Make sure Ctrl is unpressed before handling clipboard
+                                    let structure = gstreamer::Structure::builder("SetClipboard")
+                                        .field("content", data.content.clone())
+                                        .build();
+
+                                    let _ = wayland_src.send_event(gstreamer::event::CustomUpstream::new(structure));
+                                } else*/
+                                {
+                                    if let Some(event) = handle_input_message(input_data) {
+                                        // Send the event to wayland source, result bool is ignored
+                                        let _ = wayland_src.send_event(event);
+                                    }
                                 }
                             }
                         } else if message_base.payload_type == "controllerInput" {

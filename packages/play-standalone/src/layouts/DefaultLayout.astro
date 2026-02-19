@@ -20,11 +20,25 @@
     font-display: swap;
   }
 
+  @font-face {
+    font-family: "Geist Mono";
+    src: url("/fonts/GeistMono-VariableFont_wght.ttf");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+  }
+
   * {
     font-family: "Basement Grotesque", sans-serif;
   }
 
+  html, body {
+    width: 100%;
+    height: 100%;
+  }
+
   body {
+    overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;

@@ -1,0 +1,44 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    exit 1
+fi
+
+# check if NESTRI_LAUNCH_COMPOSITOR is unset or empty
+if [[ -z "${NESTRI_LAUNCH_COMPOSITOR:-}" ]]; then
+    # exit with 0 so s6 doesn't think the service failed and try to restart it repeatedly
+    exit 0
+fi
+
+export LD_PRELOAD="/usr/lib64/libvimputti_shim.so:/usr/lib32/libvimputti_shim.so"
+
+# Set socket based on compositor type
+COMPOSITOR_SOCKET="${NESTRI_XDG_RUNTIME_DIR}/wayland-0"
+
+# Check if this is gamescope
+if [[ "${NESTRI_LAUNCH_COMPOSITOR}" == *"gamescope"* ]]; then
+    COMPOSITOR_SOCKET="${NESTRI_XDG_RUNTIME_DIR}/gamescope-0"
+fi
+
+# remove possibly stale socket
+rm -f "${COMPOSITOR_SOCKET}"
+
+# expand internal variables
+FINAL_LAUNCH_COMPOSITOR=$(echo "${NESTRI_LAUNCH_COMPOSITOR}" | envsubst)
+
+WAYLAND_DISPLAY=wayland-1 s6-setuidgid ${NESTRI_USER} $FINAL_LAUNCH_COMPOSITOR &
+PROCESS_PID=$!
+
+# wait for socket
+while ! test -S "${COMPOSITOR_SOCKET}"; do
+  sleep 1
+done
+
+# notify
+printf 'ready\n' >&3
+
+# wait till process exits
+wait "${PROCESS_PID}"

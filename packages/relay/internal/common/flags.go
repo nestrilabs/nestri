@@ -13,19 +13,22 @@ import (
 var globalFlags *Flags
 
 type Flags struct {
-	RegenIdentity  bool   // Remove old identity on startup and regenerate it
-	Verbose        bool   // Log everything to console
-	Debug          bool   // Enable debug mode, implies Verbose
-	EndpointPort   int    // Port for HTTP/S and WS/S endpoint (TCP)
-	WebRTCUDPStart int    // WebRTC UDP port range start - ignored if UDPMuxPort is set
-	WebRTCUDPEnd   int    // WebRTC UDP port range end - ignored if UDPMuxPort is set
-	STUNServer     string // WebRTC STUN server
-	UDPMuxPort     int    // WebRTC UDP mux port - if set, overrides UDP port range
-	AutoAddLocalIP bool   // Automatically add local IP to NAT 1 to 1 IPs
-	NAT11IP        string // WebRTC NAT 1 to 1 IP - allows specifying IP of relay if behind NAT
-	PersistDir     string // Directory to save persistent data to
-	Metrics        bool   // Enable metrics endpoint
-	MetricsPort    int    // Port for metrics endpoint
+	RegenIdentity   bool   // Remove old identity on startup and regenerate it
+	Verbose         bool   // Log everything to console
+	Debug           bool   // Enable debug mode, implies Verbose
+	EndpointPort    int    // Port for HTTP/S and WS/S endpoint (TCP)
+	WebRTCUDPStart  int    // WebRTC UDP port range start - ignored if UDPMuxPort is set
+	WebRTCUDPEnd    int    // WebRTC UDP port range end - ignored if UDPMuxPort is set
+	STUNServer      string // WebRTC STUN server
+	UDPMuxPort      int    // WebRTC UDP mux port - if set, overrides UDP port range
+	AutoAddLocalIP  bool   // Automatically add local IP to NAT 1 to 1 IPs
+	NAT11IP         string // WebRTC NAT 1 to 1 IP - allows specifying IP of relay if behind NAT
+	PersistDir      string // Directory to save persistent data to
+	Metrics         bool   // Enable metrics endpoint
+	MetricsPort     int    // Port for metrics endpoint
+	PlayoutDelayMin int    // UNSTABLE: Minimum playout latency
+	PlayoutDelayMax int    // UNSTABLE: Maximum playout latency
+	FlexFEC         bool   // UNSTABLE: Enable/disable FlexFEC for video streams
 }
 
 func (flags *Flags) DebugLog() {
@@ -43,6 +46,9 @@ func (flags *Flags) DebugLog() {
 		"persistDir", flags.PersistDir,
 		"metrics", flags.Metrics,
 		"metricsPort", flags.MetricsPort,
+		"playoutDelayMin", flags.PlayoutDelayMin,
+		"playoutDelayMax", flags.PlayoutDelayMax,
+		"flexFEC", flags.FlexFEC,
 	)
 }
 
@@ -91,6 +97,9 @@ func InitFlags() {
 	flag.StringVar(&globalFlags.PersistDir, "persistDir", getEnvAsString("PERSIST_DIR", "./persist-data"), "Directory to save persistent data to")
 	flag.BoolVar(&globalFlags.Metrics, "metrics", getEnvAsBool("METRICS", false), "Enable metrics endpoint")
 	flag.IntVar(&globalFlags.MetricsPort, "metricsPort", getEnvAsInt("METRICS_PORT", 3030), "Port for metrics endpoint")
+	flag.IntVar(&globalFlags.PlayoutDelayMin, "playoutDelayMin", getEnvAsInt("PLAYOUTDELAY_MIN", 0), "Minimum playout delay")
+	flag.IntVar(&globalFlags.PlayoutDelayMin, "playoutDelayMax", getEnvAsInt("PLAYOUTDELAY_MAX", 0), "Maximum playout delay")
+	flag.BoolVar(&globalFlags.FlexFEC, "flexFEC", getEnvAsBool("FLEXFEC", true), "Enable FlexFEC for video streams")
 	// Parse flags
 	flag.Parse()
 

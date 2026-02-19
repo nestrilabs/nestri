@@ -23,6 +23,7 @@ message ProtoMessage {
     ProtoMouseKeyUp mouse_key_up = 6;
     ProtoKeyDown key_down = 7;
     ProtoKeyUp key_up = 8;
+    //ProtoClipboard clipboard = 9;
 
     // Controller input types
     ProtoControllerAttach controller_attach = 9;

@@ -15,13 +15,14 @@ ENV CARGO_HOME=/usr/local/cargo \
 
 # Install build essentials and caching tools
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -S --noconfirm rustup git base-devel mold \
+    pacman -S --noconfirm rustup git base-devel \
     meson pkgconf cmake git gcc make
 
-# Override various linker with symlink so mold is forcefully used (ld, ld.lld, lld)
-RUN ln -sf /usr/bin/mold /usr/bin/ld && \
-    ln -sf /usr/bin/mold /usr/bin/ld.lld && \
-    ln -sf /usr/bin/mold /usr/bin/lld
+# Override various linkers with symlink so wild is forcefully used (ld, ld.lld, lld)
+# Removed for time being until Wild is more stable
+#RUN ln -sf /usr/bin/wild /usr/bin/ld && \
+#    ln -sf /usr/bin/wild /usr/bin/ld.lld && \
+#    ln -sf /usr/bin/wild /usr/bin/lld
 
 # Install latest Rust using rustup
 RUN rustup default stable
@@ -41,7 +42,7 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
     pacman -S --noconfirm lib32-gcc-libs
 
 # Clone repository
-RUN git clone --depth 1 --rev "2fde5376b6b9a38cdbd94ccc6a80c9d29a81a417" https://github.com/DatCaptainHorse/vimputti.git
+RUN git clone --depth 1 --rev "cd306e954842082916107f12d3940e1093662033" https://github.com/DatCaptainHorse/vimputti.git
 
 #--------------------------------------------------------------------
 FROM vimputti-manager-deps AS vimputti-manager-planner
@@ -130,7 +131,7 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
     cargo install cargo-c
 
 # Clone repository
-RUN git clone --depth 1 --rev "67b1183997fd7aaf57398e4b01bd64c4d2433c45" https://github.com/games-on-whales/gst-wayland-display.git
+RUN git clone --depth 1 --rev "fd620860f260f051fd731bb9feaac8632cbe3c9e" https://github.com/games-on-whales/gst-wayland-display.git
 
 #--------------------------------------------------------------------
 FROM gst-wayland-deps AS gst-wayland-planner
@@ -168,7 +169,7 @@ WORKDIR /builder
 
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/pacman/pkg \
-    pacman -S --noconfirm libtool libcap libselinux
+    pacman -S --noconfirm libtool libcap
 
 # Copy patch file from host
 COPY packages/patches/bubblewrap/ /builder/patches/

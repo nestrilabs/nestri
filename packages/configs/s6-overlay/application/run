@@ -1,0 +1,25 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    exit 1
+fi
+
+# check if NESTRI_LAUNCH_CMD is unset or empty
+if [[ -z "${NESTRI_LAUNCH_CMD:-}" ]]; then
+    # exit with 0 so s6 doesn't think the service failed and try to restart it repeatedly
+    exit 0
+fi
+
+export LD_PRELOAD="/usr/lib64/libvimputti_shim.so:/usr/lib32/libvimputti_shim.so"
+
+s6-setuidgid ${NESTRI_USER} ${NESTRI_LAUNCH_CMD} &
+PROCESS_PID=$!
+
+# notify
+printf 'ready\n' >&3
+
+# wait till process exits
+wait "${PROCESS_PID}"

@@ -1,0 +1,153 @@
+---
+interface Props {
+  audioCodec?: string;
+  audioBitrate?: number;
+  fps?: number;
+  resolution?: { width: number; height: number };
+  videoCodec?: string;
+  videoBitrate?: number;
+}
+const {
+  audioCodec,
+  audioBitrate,
+  fps,
+  resolution,
+  videoCodec,
+  videoBitrate
+} = Astro.props;
+---
+
+
+<button id="nerdStatsBtnOpen">
+  {"|>"}
+</button>
+
+<div id="nerdStatsBox" class="statsBox">
+  <button id="nerdStatsBtnClose">
+    {"<|"}
+  </button>
+  <span>Nerd Stats</span>
+  <div class="h-line"></div>
+  <div id="audioStatsList" class="statsList">
+    <span>Audio Stream</span>
+    <div class="h-line"></div>
+    <ul>
+      <li>Codec: {audioCodec}</li>
+      <li>Bitrate: {audioBitrate}</li>
+    </ul>
+  </div>
+  <div id="videoStatsList" class="statsList">
+    <span>Video Stream</span>
+    <div class="h-line"></div>
+    <ul>
+      <li>FPS: {fps}</li>
+      <li>WxH: {resolution ? resolution?.width + "x" + resolution?.height : ""}</li>
+      <li>Codec: {videoCodec}</li>
+      <li>Bitrate: {videoBitrate}</li>
+    </ul>
+  </div>
+</div>
+
+
+<script>
+  const openBtn = document.getElementById("nerdStatsBtnOpen")! as HTMLButtonElement;
+  const closeBtn = document.getElementById("nerdStatsBtnClose")! as HTMLButtonElement;
+  const box = document.getElementById("nerdStatsBox")! as HTMLDivElement;
+
+  openBtn.style.display = "flex";
+  box.style.display = "none";
+
+  openBtn.addEventListener("click", () => {
+    openBtn.style.display = "none";
+    box.style.display = "flex";
+  });
+
+  closeBtn.addEventListener("click", () => {
+    openBtn.style.display = "flex";
+    box.style.display = "none";
+  });
+</script>
+
+
+<style>
+  #nerdStatsBtnOpen {
+    font-family: "Geist Mono", sans-serif;
+    font-size: 1em;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    display: flex;
+    color: #d1d1d1;
+    background-color: #fe500f;
+    padding: 0.25rem;
+    transform: translateY(-50%);
+    border: #fe500f 2px solid;
+
+    &:hover {
+      background-color: #cc3f0c;
+    }
+    &:active {
+      background-color: #993009;
+    }
+  }
+
+  .statsBox {
+    font-family: "Geist Mono", sans-serif;
+    font-size: 1em;
+    position: absolute;
+    top: 50%;
+    left: 0;
+    display: none;
+    flex-direction: column;
+    color: #d1d1d1;
+    background-color: #993009;
+    min-width: 10rem;
+    padding: 0.5rem;
+    text-align: center;
+    transform: translateY(-50%);
+    border: #fe500f 2px solid;
+
+    button {
+      font-family: "Geist Mono", sans-serif;
+      font-size: 1em;
+      position: absolute;
+      color: #d1d1d1;
+      background-color: #fe500f;
+      padding: 0.25rem;
+      top: 50%;
+      right: 0;
+      transform: translateY(-50%) translateX(100%);
+      border: #fe500f 2px solid;
+
+      &:hover {
+        background-color: #cc3f0c;
+      }
+      &:active {
+        background-color: #993009;
+      }
+    }
+  }
+
+  .h-line {
+    margin: 0.25rem 0;
+    padding: 0;
+    width: 100%;
+    height: 2px;
+    background-color: #cc3f0c;
+  }
+
+  .statsList {
+    margin: 0.25rem 0 0 0;
+    padding: 0.5rem;
+    border: #cc3f0c 2px solid;
+    background-color: #802808;
+    text-align: center;
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      text-align: left;
+    }
+  }
+</style>

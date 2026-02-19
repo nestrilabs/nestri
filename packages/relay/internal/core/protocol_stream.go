@@ -17,7 +17,6 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/pion/rtp"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -181,7 +180,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				// Add audio/video tracks
 				{
 					localTrack, err := webrtc.NewTrackLocalStaticRTP(
-						room.AudioCodec,
+						room.GetAudioCodec(),
 						"participant-"+participant.ID.String(),
 						"participant-"+participant.ID.String()+"-audio",
 					)
@@ -194,7 +193,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				}
 				{
 					localTrack, err := webrtc.NewTrackLocalStaticRTP(
-						room.VideoCodec,
+						room.GetVideoCodec(),
 						"participant-"+participant.ID.String(),
 						"participant-"+participant.ID.String()+"-video",
 					)
@@ -296,7 +295,7 @@ func (sp *StreamProtocol) handleStreamRequest(stream network.Stream) {
 				})
 
 				// Create offer
-				offer, err := pc.CreateOffer(nil)
+				offer, err := pc.CreateOffer(&webrtc.OfferOptions{OfferAnswerOptions: webrtc.OfferAnswerOptions{ICETricklingSupported: true}})
 				if err != nil {
 					slog.Error("Failed to create offer for requested stream", "room", reqMsg.RoomName, "err", err)
 					continue
@@ -571,21 +570,10 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				})
 
 				pc.OnTrack(func(remoteTrack *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-					// Prepare PlayoutDelayExtension so we don't need to recreate it for each packet
-					playoutExt := &rtp.PlayoutDelayExtension{
-						MinDelay: 0,
-						MaxDelay: 0,
-					}
-					playoutPayload, err := playoutExt.Marshal()
-					if err != nil {
-						slog.Error("Failed to marshal PlayoutDelayExtension for room", "room", room.Name, "err", err)
-						return
-					}
-
 					if remoteTrack.Kind() == webrtc.RTPCodecTypeAudio {
-						room.AudioCodec = remoteTrack.Codec().RTPCodecCapability
+						room.SetAudioCodec(remoteTrack.Codec().RTPCodecCapability)
 					} else if remoteTrack.Kind() == webrtc.RTPCodecTypeVideo {
-						room.VideoCodec = remoteTrack.Codec().RTPCodecCapability
+						room.SetVideoCodec(remoteTrack.Codec().RTPCodecCapability)
 					}
 
 					for {
@@ -595,14 +583,6 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 								slog.Error("Failed to read RTP from remote track for room", "room", room.Name, "err", err)
 							}
 							break
-						}
-
-						// Use PlayoutDelayExtension for low latency, if set for this track kind
-						if extID, ok := common.GetExtension(remoteTrack.Kind(), common.ExtensionPlayoutDelay); ok {
-							if err = rtpPacket.SetExtension(extID, playoutPayload); err != nil {
-								slog.Error("Failed to set PlayoutDelayExtension for room", "room", room.Name, "err", err)
-								continue
-							}
 						}
 
 						// Broadcast
@@ -622,7 +602,7 @@ func (sp *StreamProtocol) handleStreamPush(stream network.Stream) {
 				iceHelper.FlushHeldCandidates()
 
 				// Create an answer
-				answer, err := pc.CreateAnswer(nil)
+				answer, err := pc.CreateAnswer(&webrtc.AnswerOptions{OfferAnswerOptions: webrtc.OfferAnswerOptions{ICETricklingSupported: true}})
 				if err != nil {
 					slog.Error("Failed to create answer for pushed stream", "room", room.Name, "err", err)
 					continue

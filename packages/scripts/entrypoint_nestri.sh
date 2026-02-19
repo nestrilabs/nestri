@@ -74,16 +74,9 @@ start_nestri_server() {
 
     # Start nestri-server
     log "Starting nestri-server.."
-    # Try with realtime scheduling first (chrt -f 80), if fails, launch normally
-    if $ENTCMD_PREFIX chrt -f 80 true 2>/dev/null; then
-        $ENTCMD_PREFIX chrt -f 80 nestri-server $NESTRI_PARAMS &
-        NESTRI_PID=$!
-        log "Started nestri-server with realtime scheduling"
-    else
-        $ENTCMD_PREFIX nestri-server $NESTRI_PARAMS &
-        NESTRI_PID=$!
-        log "Started nestri-server"
-    fi
+    $ENTCMD_PREFIX nestri-server $NESTRI_PARAMS &
+    NESTRI_PID=$!
+    log "Started nestri-server"
 
     log "Waiting for Wayland display $WAYLAND_SOCKET.."
     for ((i=1; i<=15; i++)); do
@@ -108,7 +101,7 @@ start_compositor() {
 
     # Set default compositor if unset
     if [[ -z "${NESTRI_LAUNCH_COMPOSITOR+x}" ]]; then
-        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland -g -f --rt -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
+        NESTRI_LAUNCH_COMPOSITOR="gamescope --backend wayland --force-grab-cursor -g -f --rt -W ${WIDTH} -H ${HEIGHT} -r ${FRAMERATE:-60}"
     fi
 
     # If PRELOAD_SHIM_arch's are set and exist, set LD_PRELOAD for 32/64-bit apps
@@ -118,13 +111,13 @@ start_compositor() {
         log "Using LD_PRELOAD shim(s)"
     fi
 
-    # Configure launch cmd with dbus if set
+    # Configure launch cmd if set
     local launch_cmd=""
     if [[ -n "${NESTRI_LAUNCH_CMD+x}" ]]; then
         if $do_ld_preload; then
-            launch_cmd="LD_PRELOAD='/usr/\$LIB/libvimputti_shim.so' dbus-launch $NESTRI_LAUNCH_CMD"
+            launch_cmd="LD_PRELOAD='/usr/\$LIB/libvimputti_shim.so' $NESTRI_LAUNCH_CMD"
         else
-            launch_cmd="dbus-launch $NESTRI_LAUNCH_CMD"
+            launch_cmd="$NESTRI_LAUNCH_CMD"
         fi
     fi
 

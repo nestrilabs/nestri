@@ -209,19 +209,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     gstreamer::init()?;
     let _ = gstrswebrtc::plugin_register_static(); // Might be already registered, so we'll pass..
 
-    if args.app.zero_copy {
-        if args.encoding.video.encoder_type != EncoderType::HARDWARE {
-            tracing::warn!(
-                "zero-copy is only supported with hardware encoders, disabling zero-copy.."
-            );
-            args.app.zero_copy = false;
-        } else {
-            tracing::warn!(
-                "zero-copy is experimental, it may or may not improve performance, or even work at all."
-            );
-        }
-    }
-
     // Handle GPU selection
     let gpus = match handle_gpus(&args) {
         Ok(gpu) => gpu,
@@ -242,6 +229,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Handle video encoder settings
     video_encoder_info = handle_encoder_video_settings(&args, &video_encoder_info);
+
+    // Deal with zero-copy mismatches
+    if args.app.zero_copy {
+        if video_encoder_info.encoder_type != EncoderType::HARDWARE {
+            tracing::warn!(
+                "zero-copy is only supported with hardware encoders, disabling zero-copy.."
+            );
+            args.app.zero_copy = false;
+        } else {
+            tracing::warn!(
+                "zero-copy is experimental, it may or may not improve performance, or even work at all."
+            );
+        }
+    }
 
     // Handle audio encoder selection
     let audio_encoder = handle_encoder_audio(&args);
@@ -338,6 +339,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         video_source.set_property_from_str("render-node", gpu_info.render_path());
     }
 
+    // videorate to enforce constant framerate during static scenes
+    let video_rate = gstreamer::ElementFactory::make("videorate")
+        .property("drop-only", false) // ensure it duplicates frames, not just drops
+        .property("skip-to-first", true) // helps startup latency sometimes
+        .build()?;
+
     // Caps Filter Element (resolution, fps)
     let caps_filter = gstreamer::ElementFactory::make("capsfilter").build()?;
     let caps = gstreamer::Caps::from_str(&format!(
@@ -417,6 +424,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     .build()?,
             );
         }
+        enc_helper::VideoCodec::AV1 if video_encoder_info.encoder_type == EncoderType::SOFTWARE => {
+            video_parser = Some(gstreamer::ElementFactory::make("av1parse").build()?);
+        }
         _ => {
             video_parser = None;
         }
@@ -461,8 +471,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &video_sink_queue,
         &audio_sink_queue,
         &video_encoder,
-        &caps_filter,
         &video_source_queue,
+        &caps_filter,
+        &video_rate,
         &video_source,
         &audio_encoder,
         &audio_capsfilter,
@@ -524,6 +535,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         if let (Some(vapostproc), Some(va_caps_filter)) = (&vapostproc, &va_caps_filter) {
             gstreamer::Element::link_many(&[
                 &video_source,
+                &video_rate,
                 &caps_filter,
                 &video_source_queue,
                 &vapostproc,
@@ -532,11 +544,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             ])?;
         } else if video_encoder_info.encoder_api == EncoderAPI::NVENC {
             // NVENC pipeline
-            gstreamer::Element::link_many(&[&video_source, &caps_filter, &video_encoder])?;
+            gstreamer::Element::link_many(&[
+                &video_source,
+                &video_rate,
+                &caps_filter,
+                &video_source_queue,
+                &video_encoder,
+            ])?;
         }
     } else {
         gstreamer::Element::link_many(&[
             &video_source,
+            &video_rate,
             &caps_filter,
             &video_source_queue,
             &video_converter.unwrap(),
@@ -559,9 +578,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             webrtcsink.upcast_ref(),
         ])?;
     }
-
-    video_source.set_property("do-timestamp", &false);
-    audio_source.set_property("do-timestamp", &false);
 
     // Optimize latency of pipeline
     pipeline.set_property("latency", &0u64);

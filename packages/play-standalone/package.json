@@ -9,8 +9,8 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/node": "9.5.0",
+    "@astrojs/node": "9.5.1",
     "@nestri/input": "*",
-    "astro": "5.15.1"
+    "astro": "5.16.5"
   }
 }

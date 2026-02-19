@@ -301,7 +301,7 @@ pub fn encoder_low_latency_params(
             }
             "svtav1enc" => {
                 encoder_optz.set_parameter("preset", "11");
-                encoder_optz.set_parameter("parameters-string", "lookahead=0");
+                encoder_optz.set_parameter("parameters-string", "lookahead=0:fast-decode=2");
             }
             "av1enc" => {
                 encoder_optz.set_parameter("usage-profile", "realtime");
@@ -351,7 +351,7 @@ pub fn encoder_high_quality_params(
             }
             "svtav1enc" => {
                 encoder_optz.set_parameter("preset", "8");
-                encoder_optz.set_parameter("parameters-string", "lookahead=3");
+                encoder_optz.set_parameter("parameters-string", "lookahead=0:fast-decode=1");
             }
             "av1enc" => {
                 encoder_optz.set_parameter("usage-profile", "realtime");

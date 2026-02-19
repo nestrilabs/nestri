@@ -3,11 +3,9 @@ WORKDIR /builder
 COPY packages/relay/ /builder/
 RUN go build
 
-FROM docker.io/golang:1.25-alpine
+FROM docker.io/alpine:3.23
 COPY --from=go-build /builder/relay /relay/relay
 WORKDIR /relay
-
-# TODO: Switch running layer to just alpine (doesn't need golang dev stack)
 
 # ENV flags
 ENV REGEN_IDENTITY=false

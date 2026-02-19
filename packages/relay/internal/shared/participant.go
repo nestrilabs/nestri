@@ -3,6 +3,7 @@ package shared
 import (
 	"errors"
 	"fmt"
+	"github.com/pion/rtp"
 	"io"
 	"log/slog"
 	"relay/internal/common"
@@ -104,6 +105,17 @@ func (p *Participant) Close() {
 }
 
 func (p *Participant) packetWriter() {
+	flags := common.GetFlags()
+	playoutExt := &rtp.PlayoutDelayExtension{
+		MinDelay: uint16(flags.PlayoutDelayMin),
+		MaxDelay: uint16(flags.PlayoutDelayMax),
+	}
+	playoutPayload, err := playoutExt.Marshal()
+	if err != nil {
+		slog.Error("Failed to marshal PlayoutDelayExtension for participant", "participant", p.ID, "err", err)
+		return
+	}
+
 	for pkt := range p.packetQueue {
 		var track *webrtc.TrackLocalStaticRTP
 
@@ -112,6 +124,14 @@ func (p *Participant) packetWriter() {
 			track = p.AudioTrack
 		} else {
 			track = p.VideoTrack
+		}
+
+		// Use PlayoutDelayExtension for low latency, if set for this track kind
+		if extID, ok := common.GetExtension(track.Kind(), common.ExtensionPlayoutDelay); ok {
+			if err = pkt.packet.SetExtension(extID, playoutPayload); err != nil {
+				slog.Error("Failed to set PlayoutDelayExtension for participant", "participant", p.ID, "err", err)
+				continue
+			}
 		}
 
 		if track != nil {

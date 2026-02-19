@@ -76,9 +76,15 @@ export class Mouse {
     if (document.pointerLockElement == this.canvas) {
       this.connected = true;
       this.canvas.addEventListener("mousemove", this.mousemoveListener);
-      this.canvas.addEventListener("mousedown", this.mousedownListener);
-      this.canvas.addEventListener("mouseup", this.mouseupListener);
-      this.canvas.addEventListener("wheel", this.mousewheelListener);
+      this.canvas.addEventListener("mousedown", this.mousedownListener, {
+        passive: true,
+      });
+      this.canvas.addEventListener("mouseup", this.mouseupListener, {
+        passive: true,
+      });
+      this.canvas.addEventListener("wheel", this.mousewheelListener, {
+        passive: true,
+      });
     } else {
       if (this.connected) {
         this.stop();
@@ -119,7 +125,6 @@ export class Mouse {
     dataCreator: (e: Event) => any,
   ): (e: Event) => void {
     return (e: Event) => {
-      e.preventDefault();
       e.stopPropagation();
       const data = dataCreator(e as any);
 

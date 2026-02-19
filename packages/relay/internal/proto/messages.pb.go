@@ -327,7 +327,7 @@ type ProtoMessage_KeyDown struct {
 }
 
 type ProtoMessage_KeyUp struct {
-	KeyUp *ProtoKeyUp `protobuf:"bytes,8,opt,name=key_up,json=keyUp,proto3,oneof"`
+	KeyUp *ProtoKeyUp `protobuf:"bytes,8,opt,name=key_up,json=keyUp,proto3,oneof"` //ProtoClipboard clipboard = 9;
 }
 
 type ProtoMessage_ControllerAttach struct {

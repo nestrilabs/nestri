@@ -1,0 +1,27 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    exit 1
+fi
+
+export VIMPUTTI_PATH="${NESTRI_VIMPUTTI_PATH}"
+
+# remove possibly stale socket
+rm -f "/tmp/vimputti-0"
+
+s6-setuidgid ${NESTRI_USER} vimputti-manager &
+PROCESS_PID=$!
+
+# wait for socket
+while ! test -S "/tmp/vimputti-0"; do
+  sleep 1
+done
+
+# notify
+printf 'ready\n' >&3
+
+# wait till process exists
+wait "${PROCESS_PID}"

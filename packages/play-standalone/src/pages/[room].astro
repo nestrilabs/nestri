@@ -1,5 +1,6 @@
 ---
 import DefaultLayout from "../layouts/DefaultLayout.astro";
+import NerdStats from "../components/NerdStats.astro";
 const { room } = Astro.params;
 
 // Passing of environment variables to the client side
@@ -16,12 +17,21 @@ if (envs_map.size > 0) {
 }
 ---
 
+
 <DefaultLayout>
-	<h1 id="offlineText" class="offline">Offline</h1>
-	<h1 id="loadingText" class="loading">Warming up the GPU...</h1>
+  <div id="playOverlay">
+    <button id="playBtn">Start</button>
+    <div id="darkener"></div>
+  </div>
+  <h1 id="offlineText" class="statusText">Offline</h1>
+  <h1 id="loadingText" class="statusText">Loading..</h1>
+  <div id="nerdStats">
+    <NerdStats></NerdStats>
+  </div>
 	<canvas id="playCanvas" class="playCanvas" data-room={room}></canvas>
 	<div id="ENVS" data-envs={envs}></div>
 </DefaultLayout>
+
 
 <script>
 	import { Mouse, Keyboard, Controller, WebRTCStream } from "@nestri/input";
@@ -38,17 +48,17 @@ if (envs_map.size > 0) {
   };
 
 	// Elements
+  const playOverlay = document.getElementById("playOverlay")! as HTMLDivElement;
+  const playBtn = document.getElementById("playBtn")! as HTMLButtonElement;
+  const nerdStats = document.getElementById("nerdStats")! as HTMLDivElement;
 	const canvas = document.getElementById("playCanvas")! as HTMLCanvasElement;
 	const offlineText = document.getElementById("offlineText")! as HTMLHeadingElement;
-	const loadingText = document.getElementById("loadingText")! as HTMLHeadingElement;
+  const loadingText = document.getElementById("loadingText")! as HTMLHeadingElement;
 
 	const room = canvas.dataset.room;
 	if (!room || room.length <= 0) {
 		throw new Error("Room parameter is required");
 	}
-
-	offlineText.style.display = "flex";
-	loadingText.style.display = "none";
 
 	// Get query parameter "peerURL" from the URL
 	let peerURL = new URLSearchParams(window.location.search).get("peerURL");
@@ -58,31 +68,59 @@ if (envs_map.size > 0) {
 
 	console.debug("Using Peer URL:", peerURL);
 
+  loadingText.style.display = "flex";
+
 	// Stream
-	const stream = new WebRTCStream(peerURL, room, async (mediaStream) => {
+	const stream = new WebRTCStream(peerURL, room, (mediaStream) => {
 		if (mediaStream && video.srcObject === null) {
 			video.srcObject = mediaStream;
-			offlineText.style.display = "none";
-			loadingText.style.display = "flex";
-
-			await video.play().catch((e) => {
-				console.error("Failed to play video:", e);
-			});
-
-			canvas.width = video.videoWidth;
-			canvas.height = video.videoHeight;
-			const ctx = canvas.getContext("2d");
-			const renderer = () => {
-				if (ctx && video.srcObject) {
-					ctx.drawImage(video, 0, 0);
-					video.requestVideoFrameCallback(renderer);
-				}
-			};
-			video.requestVideoFrameCallback(renderer);
-			loadingText.style.display = "none";
-		}
+      loadingText.style.display = "none";
+      offlineText.style.display = "none";
+      playOverlay.style.display = "flex";
+		} else if (!mediaStream && video.srcObject === null) {
+      offlineText.style.display = "flex";
+      loadingText.style.display = "none";
+    }
 	});
 	const video = document.createElement("video") as HTMLVideoElement;
+
+  const lockPlay = async function () {
+    if (document.fullscreenElement)
+      return;
+
+    await canvas.requestFullscreen();
+    if (!isMobile())
+      await canvas.requestPointerLock();
+  };
+
+  const streamStart = async function () {
+    playBtn.style.display = "none";
+    loadingText.style.display = "flex";
+    await video.play().catch((e) => {
+      console.error("Failed to play video:", e);
+    });
+
+    canvas.style.display = "flex";
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    const renderer = () => {
+      if (ctx && video.srcObject) {
+        ctx.drawImage(video, 0, 0);
+        video.requestVideoFrameCallback(renderer);
+      }
+    };
+    video.requestVideoFrameCallback(renderer);
+
+    nerdStats.style.display = "flex";
+    loadingText.style.display = "none";
+    playBtn.style.display = "flex"
+
+    playBtn.innerText = "Play";
+    playBtn.removeEventListener("click", streamStart);
+    playBtn.addEventListener("click", lockPlay);
+  };
+  playBtn.addEventListener("click", streamStart);
 
 	// Input
 	let nestriMouse: Mouse | null = null;
@@ -132,6 +170,12 @@ if (envs_map.size > 0) {
         webrtc: stream,
       });
 
+      nestriKeyboard.setOnEscape(async () => {
+        await document.exitFullscreen();
+        if (!isMobile())
+          await document.exitPointerLock();
+      });
+
       nestriControllers.forEach((c) => c.run());
 
       if ("keyboard" in navigator && "lock" in (navigator.keyboard as any)) {
@@ -152,38 +196,77 @@ if (envs_map.size > 0) {
         nestriKeyboard = null;
       }
       nestriControllers.forEach((c) => c.stop());
+
+      playOverlay.style.display = "flex";
+      playBtn.style.display = "flex";
     }
   })
-
-	const lockPlay = async function () {
-    if (document.fullscreenElement)
-      return;
-
-		await canvas.requestFullscreen();
-    if (!isMobile())
-      await canvas.requestPointerLock();
-	};
-
-	canvas.addEventListener("click", lockPlay);
 </script>
 
+
 <style>
+  #nerdStats {
+    display: none;
+  }
+
+  #playOverlay {
+    position: absolute;
+    display: none;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+
+    button {
+      font-size: 1.5em;
+      line-height: 2rem;
+      font-weight: 600;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      display: flex;
+      color: lightgray;
+      background-color: #fe500f;
+      padding: 0.5rem 1rem;
+      transform: translateY(-50%) translateX(-50%);
+      border: none;
+      border-radius: 0.25rem;
+
+      &:hover {
+        background-color: #cc3f0c;
+      }
+      &:active {
+        background-color: #993009;
+      }
+    }
+
+    #darkener {
+      width: 100%;
+      height: auto;
+      margin: 0.5rem;
+      padding: 0;
+      border-radius: 1rem;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+  }
+
 	.playCanvas {
-		width: 100%;
-		height: 100%;
-		max-height: 100vh;
+    display: none;
 		object-fit: contain;
-		aspect-ratio: 16 / 9;
-		margin: 0;
+    width: 100%;
+    height: auto;
+		margin: 0.5rem;
 		padding: 0;
 	}
 
-	.offline, .loading {
+	.statusText {
 		position: absolute;
 		width: 100%;
 		height: 100%;
 		align-items: center;
-		display: flex;
+		display: none;
 		justify-content: center;
 		color: lightgray;
 		font-size: 1.5rem;

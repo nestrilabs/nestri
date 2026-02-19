@@ -131,6 +131,13 @@ func InitWebRTCAPI() error {
 	// Interceptor registry
 	interceptorRegistry := &interceptor.Registry{}
 
+	// FlexFEC
+	if flags.FlexFEC {
+		if err = webrtc.ConfigureFlexFEC03(118, mediaEngine, interceptorRegistry); err != nil {
+			return err
+		}
+	}
+
 	// Register our interceptors..
 	nackGenFactory, err := nack.NewGeneratorInterceptor()
 	if err != nil {
@@ -153,11 +160,11 @@ func InitWebRTCAPI() error {
 	// New in v4, reduces CPU usage and latency when enabled
 	settingEngine.EnableSCTPZeroChecksum(true)
 
-	nat11IP := GetFlags().NAT11IP
+	/*nat11IP := GetFlags().NAT11IP
 	if len(nat11IP) > 0 {
 		settingEngine.SetNAT1To1IPs([]string{nat11IP}, webrtc.ICECandidateTypeHost)
 		slog.Info("Using NAT 1:1 IP for WebRTC", "nat11_ip", nat11IP)
-	}
+	}*/
 
 	muxPort := GetFlags().UDPMuxPort
 	if muxPort > 0 {
@@ -185,6 +192,11 @@ func InitWebRTCAPI() error {
 
 	// Improves speed when sending offers to browsers (https://github.com/pion/webrtc/issues/3174)
 	settingEngine.SetIncludeLoopbackCandidate(true)
+
+	// Enable ICE Renomination for network recovery
+	if err = settingEngine.SetICERenomination(); err != nil {
+		return err
+	}
 
 	// Create a new API object with our customized settings
 	globalWebRTCAPI = webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine), webrtc.WithSettingEngine(settingEngine), webrtc.WithInterceptorRegistry(interceptorRegistry))

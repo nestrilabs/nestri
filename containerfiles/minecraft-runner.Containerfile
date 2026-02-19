@@ -18,7 +18,3 @@ RUN --mount=type=cache,target=/var/cache/pacman/pkg \
 ## FLAVOR/VARIANT LAUNCH COMMAND ##
 ENV NESTRI_LAUNCH_CMD="minecraft-launcher"
 ### END OF FLAVOR/VARIANT CONFIGURATION ###
-
-### REQUIRED DEFAULT ENTRYPOINT FOR FLAVOR/VARIANT ###
-USER root
-ENTRYPOINT ["supervisord", "-c", "/etc/nestri/supervisord.conf"]

@@ -1,0 +1,26 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    exit 1
+fi
+
+# remove possibly stale socket
+rm -rf "${NESTRI_XDG_RUNTIME_DIR}/pulse"
+
+s6-setuidgid ${NESTRI_USER} pipewire-pulse &
+PROCESS_PID=$!
+
+# wait for socket
+while ! test -S "${NESTRI_XDG_RUNTIME_DIR}/pulse/native"; do
+  sleep 0.5
+done
+
+# notify
+printf 'ready\n' >&3
+
+# wait till process exits
+wait "${PROCESS_PID}"
+

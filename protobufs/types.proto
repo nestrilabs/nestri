@@ -46,6 +46,11 @@ message ProtoKeyUp {
   int32 key = 1;
 }
 
+// Clipboard message
+//message ProtoClipboard {
+//  string content = 1; // Clipboard content
+//}
+
 /* Controller messages */
 
 // ControllerAttach message

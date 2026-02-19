@@ -23,12 +23,15 @@ func (r *Relay) GetRoomByID(id ulid.ULID) *shared.Room {
 
 // GetRoomByName retrieves a local Room struct by its name
 func (r *Relay) GetRoomByName(name string) *shared.Room {
-	for _, room := range r.LocalRooms.Copy() {
-		if room.Name == name {
-			return room
-		}
-	}
-	return nil
+	var found *shared.Room
+    r.LocalRooms.Range(func(id ulid.ULID, room *shared.Room) bool {
+        if room.Name == name {
+            found = room
+            return false
+        }
+        return true
+    })
+    return found
 }
 
 // CreateRoom creates a new local Room struct with the given name

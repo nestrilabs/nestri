@@ -1,0 +1,20 @@
+#!/command/with-contenv bash
+set -euo pipefail
+
+if [[ -f /etc/nestri/common.sh ]]; then
+    source /etc/nestri/common.sh
+else
+    exit 1
+fi
+
+s6-setuidgid ${NESTRI_USER} wireplumber &
+PROCESS_PID=$!
+
+# safety sleep for wireplumber
+sleep 0.5
+
+# notify
+printf 'ready\n' >&3
+
+# wait till process exits
+wait "${PROCESS_PID}"

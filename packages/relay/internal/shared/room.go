@@ -19,8 +19,8 @@ var participantPacketPool = sync.Pool{
 }
 
 type participantPacket struct {
-	kind         webrtc.RTPCodecType
-	packet       *rtp.Packet
+	kind   webrtc.RTPCodecType
+	packet *rtp.Packet
 }
 
 type RoomInfo struct {
@@ -31,10 +31,12 @@ type RoomInfo struct {
 
 type Room struct {
 	RoomInfo
-	AudioCodec     webrtc.RTPCodecCapability
-	VideoCodec     webrtc.RTPCodecCapability
 	PeerConnection *webrtc.PeerConnection
 	DataChannel    *connections.NestriDataChannel
+
+	codecMu        sync.RWMutex
+	audioCodec     webrtc.RTPCodecCapability
+	videoCodec     webrtc.RTPCodecCapability
 
 	// Atomic pointer to slice of participant channels
 	participantChannels atomic.Pointer[[]chan<- *participantPacket]
@@ -90,7 +92,6 @@ func (r *Room) Close() {
 	}
 }
 
-// AddParticipant adds a Participant to a Room
 func (r *Room) AddParticipant(participant *Participant) {
 	r.participantsMtx.Lock()
 	defer r.participantsMtx.Unlock()
@@ -108,7 +109,6 @@ func (r *Room) AddParticipant(participant *Participant) {
 	slog.Debug("Added participant", "participant", participant.ID, "room", r.Name)
 }
 
-// RemoveParticipantByID removes a Participant from a Room by participant's ID
 func (r *Room) RemoveParticipantByID(pID ulid.ULID) {
 	r.participantsMtx.Lock()
 	defer r.participantsMtx.Unlock()
@@ -134,7 +134,6 @@ func (r *Room) RemoveParticipantByID(pID ulid.ULID) {
 	slog.Debug("Removed participant", "participant", pID, "room", r.Name)
 }
 
-// IsOnline checks if the room is online
 func (r *Room) IsOnline() bool {
 	return r.PeerConnection != nil
 }
@@ -153,7 +152,7 @@ func (r *Room) BroadcastPacket(kind webrtc.RTPCodecType, pkt *rtp.Packet) {
 		// Get packet struct from pool
 		pp := participantPacketPool.Get().(*participantPacket)
 		pp.kind = kind
-		pp.packet = pkt
+		pp.packet = pkt.Clone()
 
 		select {
 		case ch <- pp:
@@ -164,4 +163,28 @@ func (r *Room) BroadcastPacket(kind webrtc.RTPCodecType, pkt *rtp.Packet) {
 			participantPacketPool.Put(pp)
 		}
 	}
+}
+
+func (r *Room) SetAudioCodec(c webrtc.RTPCodecCapability) {
+	r.codecMu.Lock()
+	defer r.codecMu.Unlock()
+	r.audioCodec = c
+}
+
+func (r *Room) GetAudioCodec() webrtc.RTPCodecCapability {
+	r.codecMu.RLock()
+	defer r.codecMu.RUnlock()
+	return r.audioCodec
+}
+
+func (r *Room) SetVideoCodec(c webrtc.RTPCodecCapability) {
+	r.codecMu.Lock()
+	defer r.codecMu.Unlock()
+	r.videoCodec = c
+}
+
+func (r *Room) GetVideoCodec() webrtc.RTPCodecCapability {
+	r.codecMu.RLock()
+	defer r.codecMu.RUnlock()
+	return r.videoCodec
 }
