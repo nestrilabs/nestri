@@ -17,12 +17,7 @@
 #   initial ─► runner ◄── all build stages
 #
 # Build:
-#   docker buildx build --target runner -t nestri:latest .
-#
-# Recommended .dockerignore:
-#   target/
-#   .git/
-#   *.md
+#   docker buildx build --target runtime -t nestri:latest .
 #
 # =============================================================================
 
@@ -31,7 +26,7 @@
 #                                                                      initial
 #******************************************************************************
 # Minimal updated Arch Linux base. Every other stage inherits from here.
-FROM docker.io/archlinux/archlinux:latest AS initial
+FROM docker.io/archlinux/archlinux:base-20260329.0.507017 AS initial
 
 RUN --mount=type=cache,sharing=locked,target=/var/cache/pacman/pkg \
     pacman -Syu --noconfirm
@@ -356,10 +351,11 @@ RUN --mount=type=cache,target=${CARGO_HOME}/registry \
 #                                                                       runner
 #******************************************************************************
 # The final runtime image – kept as simple as possible.
-FROM initial AS runner
+FROM initial AS runtime
 
 # ---- Enable multilib for 32-bit packages ----
-RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" >> /etc/pacman.conf
+RUN echo -e "\n[multilib]\nInclude = /etc/pacman.d/mirrorlist" \
+    >> /etc/pacman.conf
 
 # ---- Collect and install custom-built .zst packages ----
 COPY --from=mesa-build       /artifacts/*.zst /tmp/pkgs/
