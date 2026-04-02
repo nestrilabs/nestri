@@ -170,7 +170,7 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/pacman/pkg \
         libx11 \
         glu
 
-COPY build/virglrenderer/ /scratch/virglrenderer/
+COPY build/packages/virglrenderer/ /scratch/virglrenderer/
 WORKDIR /scratch/virglrenderer
 
 RUN chown -R builder:builder .
@@ -202,7 +202,7 @@ RUN --mount=type=cache,sharing=locked,target=/var/cache/pacman/pkg \
         libva \
         libxrandr
 
-COPY build/mesa/ /scratch/mesa/
+COPY build/packages/mesa/ /scratch/mesa/
 WORKDIR /scratch/mesa
 
 RUN chown -R builder:builder .
@@ -443,7 +443,7 @@ RUN mkdir -p /run/dbus \
        /usr/share/wireplumber/wireplumber.conf
 
 # ---- Audio & config directories ----
-COPY etc/ /etc/
+COPY build/etc/ /etc/
 
 # ---- Steam config ----
 RUN mkdir -p "${NESTRI_HOME}/.local/share/Steam/config"
