@@ -1,0 +1,13 @@
+[Unit]
+Description=PipeWire cross-domain proxy socket
+PartOf=nestri-pwbridge.service
+After=nestri-user-session.service
+Requires=nestri-user-session.service
+
+[Socket]
+ListenStream=/run/vm-user/pipewire-0
+SocketUser=nestri
+SocketGroup=nestri
+
+[Install]
+WantedBy=microvm.target

@@ -1,0 +1,28 @@
+pkgname=virglrenderer
+pkgver=1.3.0
+pkgrel=1
+pkgdesc='A virtual 3D GPU library, that allows the guest operating system to use the host GPU to accelerate 3D rendering'
+arch=(x86_64)
+url='https://virgil3d.github.io/'
+license=(MIT)
+depends=(libepoxy mesa libva vulkan-icd-loader)
+makedepends=(python meson ninja vulkan-headers python-yaml)
+checkdepends=(check)
+_tag=virglrenderer-$pkgver
+source=(virglrenderer-$pkgver.tar.bz2::https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/$_tag/virglrenderer-$_tag.tar.bz2)
+sha256sums=('47a64189492a754685a430c713ac6700f4b1c3e7b871e87889ddb96e4d65e8ab')
+
+build() {
+  cd virglrenderer-$_tag
+  meson --prefix=/usr --libexecdir=lib/$pkgname build \
+    -Dvideo=true \
+    -Dvenus=true \
+    -Ddrm-renderers=amdgpu-experimental,i915-experimental
+  ninja -C build
+}
+
+package() {
+  cd virglrenderer-$_tag
+  DESTDIR="$pkgdir" ninja -C build install
+  install -D -m644 COPYING "$pkgdir/usr/share/licenses/$pkgname/COPYING"
+}

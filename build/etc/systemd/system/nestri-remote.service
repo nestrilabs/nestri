@@ -1,0 +1,33 @@
+[Unit]
+Description=microVM application runner
+OnFailure=exit.target
+OnSuccess=exit.target
+Wants=sockets.target
+After=sockets.target
+
+[Service]
+Type=exec
+PassEnvironment=MUVM_REMOTE_CONFIG MESA_LOADER_DRIVER_OVERRIDE TERM VK_DRIVER_FILES
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/vm-user/dbus.sock
+Environment=XDG_RUNTIME_DIR=/run/vm-user
+Environment=WAYLAND_DISPLAY=wayland-1
+Environment=XDG_SESSION_TYPE=wayland
+Environment=PULSE_SERVER=unix:/run/vm-user/pulse/native
+Environment=SDL_AUDIO_DRIVER=pipewire
+Environment=MESA_LOADER_DRIVER_OVERRIDE=zink
+Environment=GALLIUM_DRIVER=zink
+Environment=XAUTHORITY=/run/vm-user/xauth
+Environment=MANGOHUD_CONFIGFILE=/etc/nestri/configs/MangoHud/MangoHud.conf
+#Environment=SDL_VIDEODRIVER=wayland
+Environment=PATH=/usr/bin:/usr/sbin:/bin:/sbin
+User=root
+Group=root
+ExecStartPre=+/bin/chown nestri:nestri /run/vm-user
+ExecStart=/opt/bin/muvm-remote
+StandardOutput=tty
+StandardInput=tty
+StandardError=tty
+TTYPath=/dev/hvc0
+
+[Install]
+WantedBy=microvm.target

@@ -1,0 +1,39 @@
+pkgname=libkrun
+pkgver=1.17.3.r0.gvalpackett
+pkgrel=1
+pkgdesc="A dynamic library providing Virtualization-based process isolation capabilities (val/vluqsysxtqrk branch)"
+url='https://github.com/valpackett/libkrun'
+arch=('x86_64')
+license=('Apache-2.0')
+makedepends=('cargo' 'patchelf' 'clang' 'git')
+depends=('glibc' 'gcc-libs' 'libkrunfw' 'pipewire' 'virglrenderer')
+# Format: 'folder_name::git+url#branch=branch_name'
+source=("${pkgname}::git+${url}.git#branch=val/vluqsysxtqrk")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  # Generates a version string based on the latest tag and commit count
+  git describe --long --tags | sed 's/\([^-]*-g\)/r\1/;s/-/./g;s/^v//'
+}
+
+prepare() {
+  cd "$pkgname"
+
+  cargo fetch --locked --target "$(rustc --print host-tuple)"
+}
+
+build() {
+  cd "$pkgname"
+
+  export ZSTD_SYS_USE_PKG_CONFIG=1
+  make BLK=1 NET=1 EFI=0 GPU=1 SND=1 INPUT=1 VERBOSE=1
+}
+
+package() {
+  cd "$pkgname"
+
+  make DESTDIR="$pkgdir" PREFIX=/usr LIBDIR_Linux=lib install
+
+  install -Dm644 LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}

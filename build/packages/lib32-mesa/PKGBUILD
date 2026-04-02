@@ -1,0 +1,412 @@
+pkgbase=lib32-mesa
+pkgname=(
+  lib32-mesa
+  lib32-vulkan-intel
+  lib32-vulkan-nouveau
+  lib32-vulkan-radeon
+  lib32-vulkan-virtio
+  lib32-vulkan-mesa-layers
+  lib32-vulkan-mesa-implicit-layers
+)
+pkgver=26.1.0
+_pkgver=${pkgver/[a-z]/-&}
+pkgrel=1
+epoch=1
+pkgdesc="Open-source OpenGL drivers - 32-bit"
+url="https://gitlab.freedesktop.org/mesa/mesa"
+arch=(x86_64)
+license=("MIT AND BSD-3-Clause AND SGI-B-2.0")
+makedepends=(
+  lib32-clang
+  lib32-directx-headers
+  lib32-expat
+  lib32-gcc-libs
+  lib32-glibc
+  lib32-libdisplay-info
+  lib32-libdrm
+  lib32-libelf
+  lib32-libglvnd
+  lib32-libpng
+  lib32-libva
+  lib32-libx11
+  lib32-libxcb
+  lib32-libxext
+  lib32-libxml2
+  lib32-libxrandr
+  lib32-libxshmfence
+  lib32-libxxf86vm
+  lib32-llvm
+  lib32-llvm-libs
+  lib32-lm_sensors
+  lib32-rust-libs
+  lib32-spirv-llvm-translator
+  lib32-spirv-tools
+  lib32-systemd
+  lib32-vulkan-icd-loader
+  lib32-wayland
+  lib32-xcb-util-keysyms
+  lib32-zlib
+  lib32-zstd
+
+  # shared between mesa and lib32-mesa
+  cbindgen
+  clang
+  cmake
+  elfutils
+  glslang
+  libclc
+  meson
+  python-mako
+  python-packaging
+  python-ply
+  python-pycparser
+  python-yaml
+  rust-bindgen
+  wayland-protocols
+  xorgproto
+)
+options=(
+  # GCC 14 LTO causes segfault in LLVM under si_llvm_optimize_module
+  # https://gitlab.freedesktop.org/mesa/mesa/-/issues/11140
+  #
+  # In general, upstream considers LTO to be broken until explicit notice.
+  !lto
+)
+source=("${pkgname}::git+${url}.git#branch=main")
+
+# Rust crates for NVK, used as Meson subprojects
+declare -A _crates=(
+  bitflags         2.9.1
+  cfg-if           1.0.0
+  equivalent       1.0.1
+  errno            0.3.12
+  hashbrown        0.14.1
+  indexmap         2.2.6
+  libc             0.2.171
+  log              0.4.27
+  once_cell        1.8.0
+  paste            1.0.14
+  pest             2.8.0
+  pest_derive      2.8.0
+  pest_generator   2.8.0
+  pest_meta        2.8.0
+  proc-macro2      1.0.86
+  quote            1.0.35
+  remain           0.2.12
+  roxmltree        0.20.0
+  rustc-hash       2.1.1
+  rustix           1.1.2
+  syn              2.0.87
+  thiserror        2.0.11
+  thiserror-impl   2.0.11
+  ucd-trie         0.1.6
+  unicode-ident    1.0.12
+  windows-link     0.2.0
+  windows-sys      0.61.1
+  zerocopy         0.8.13
+  zerocopy-derive  0.8.13
+)
+
+# Used to generate the above table
+_gencrates() {
+  grep '^source_url' subprojects/*-rs.wrap | \
+    sed -r 's|.*crates/([^/]+)/([0-9.]+)/download|\1 \2|' | \
+    column -t -S 2 | sed 's/^/  /'
+}
+
+for _crate in "${!_crates[@]}"; do
+  _ver="${_crates[$_crate]}"
+  source+=(
+    "$_crate-$_ver.tar.gz::https://crates.io/api/v1/crates/$_crate/$_ver/download"
+  )
+done
+
+# https://docs.mesa3d.org/relnotes.html
+sha256sums=('SKIP')
+
+prepare() {
+  cd lib32-mesa
+
+  local src
+  for src in "${source[@]}"; do
+    src="${src%%::*}"
+    src="${src##*/}"
+    src="${src%.zst}"
+    [[ $src = *.patch ]] || continue
+    echo "Applying patch $src..."
+    patch -Np1 < "../$src"
+  done
+}
+
+build() {
+  local meson_options=(
+    --cross-file lib32
+    -D amdgpu-virtio=true
+    -D intel-virtio-experimental=true
+    -D android-libbacktrace=disabled
+    -D b_ndebug=true
+    -D gallium-drivers=all
+    -D gallium-extra-hud=true
+    -D gallium-mediafoundation=disabled
+    -D gallium-rusticl-enable-drivers=asahi,freedreno,radeonsi
+    -D gallium-rusticl=true
+    -D gles1=disabled
+    -D html-docs=disabled
+    -D intel-rt=disabled
+    -D libunwind=disabled
+    -D microsoft-clc=disabled
+    -D sysprof=false
+    -D valgrind=disabled
+    -D video-codecs=all
+    -D vulkan-drivers=all
+    -D vulkan-layers=device-select,intel-nullhw,overlay,screenshot,anti-lag,vram-report-limit
+    -D vulkan-manifest-per-architecture=false
+  )
+
+  # Build only minimal debug info to reduce size
+  CFLAGS+=" -g1"
+  CXXFLAGS+=" -g1"
+
+  # Inject subproject packages
+  export MESON_PACKAGE_CACHE_DIR="$srcdir"
+
+  arch-meson lib32-mesa build "${meson_options[@]}"
+  meson compile -C build
+}
+
+_pick() {
+  local p="$1" f d; shift
+  for f; do
+    d="$srcdir/$p/${f#$pkgdir/}"
+    mkdir -p "$(dirname "$d")"
+    mv -v "$f" "$d"
+    rmdir -p --ignore-fail-on-non-empty "$(dirname "$f")"
+  done
+}
+
+package_lib32-mesa() {
+  depends=(
+    lib32-expat
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libdrm
+    lib32-libelf
+    lib32-libglvnd
+    lib32-libx11
+    lib32-libxcb
+    lib32-libxext
+    lib32-libxshmfence
+    lib32-libxxf86vm
+    lib32-llvm-libs
+    lib32-lm_sensors
+    lib32-spirv-tools
+    lib32-wayland
+    lib32-zlib
+    lib32-zstd
+
+    mesa
+  )
+  optdepends=("opengl-man-pages: for the OpenGL API man pages")
+  provides=(
+    "lib32-libva-mesa-driver=$epoch:$pkgver-$pkgrel"
+    "lib32-mesa-libgl=$epoch:$pkgver-$pkgrel"
+    lib32-libva-driver
+    lib32-opengl-driver
+  )
+  conflicts=(
+    'lib32-libva-mesa-driver<1:24.2.7-1'
+    'lib32-mesa-libgl<17.0.1-2'
+  )
+  replaces=(
+    'lib32-libva-mesa-driver<1:24.2.7-1'
+    'lib32-mesa-libgl<17.0.1-2'
+  )
+
+  meson install -C build --destdir "$pkgdir" --no-rebuild
+
+  (
+    local libdir=usr/lib32
+
+    cd "$pkgdir"
+
+    _pick vkintel $libdir/libvulkan_intel{,_hasvk}.so
+
+    _pick vknvidia $libdir/libvulkan_nouveau.so
+
+    _pick vkradeon $libdir/libvulkan_radeon.so
+
+    _pick vkvirtio $libdir/libvulkan_virtio.so
+
+    _pick vkdevice $libdir/libVkLayer_MESA_anti_lag.so
+    _pick vkdevice $libdir/libVkLayer_MESA_device_select.so
+
+    _pick vklayer $libdir/libVkLayer_*.so
+
+    rm -rv etc usr/{bin,include,share}
+
+    # indirect rendering
+    ln -sr $libdir/libGLX_{mesa,indirect}.so.0
+  )
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_lib32-vulkan-intel() {
+  pkgdesc="Open-source Vulkan driver for Intel GPUs - 32-bit"
+  depends=(
+    lib32-expat
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libdisplay-info
+    lib32-libdrm
+    lib32-libx11
+    lib32-libxcb
+    lib32-libxshmfence
+    lib32-spirv-tools
+    lib32-systemd
+    lib32-vulkan-icd-loader
+    lib32-vulkan-mesa-implicit-layers
+    lib32-wayland
+    lib32-xcb-util-keysyms
+    lib32-zlib
+    lib32-zstd
+
+    vulkan-intel
+  )
+  optdepends=("lib32-vulkan-mesa-layers: additional vulkan layers")
+  provides=(lib32-vulkan-driver)
+
+  mv vkintel/* "$pkgdir"
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_lib32-vulkan-nouveau() {
+  pkgdesc="Open-source Vulkan driver for Nvidia GPUs - 32-bit"
+  depends=(
+    lib32-expat
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libdisplay-info
+    lib32-libdrm
+    lib32-libx11
+    lib32-libxcb
+    lib32-libxshmfence
+    lib32-spirv-tools
+    lib32-systemd
+    lib32-vulkan-icd-loader
+    lib32-vulkan-mesa-implicit-layers
+    lib32-wayland
+    lib32-xcb-util-keysyms
+    lib32-zlib
+    lib32-zstd
+
+    vulkan-nouveau
+  )
+  optdepends=("lib32-vulkan-mesa-layers: additional vulkan layers")
+  provides=(lib32-vulkan-driver)
+
+  mv vknvidia/* "$pkgdir"
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_lib32-vulkan-radeon() {
+  pkgdesc="Open-source Vulkan driver for AMD GPUs - 32-bit"
+  depends=(
+    lib32-expat
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libdisplay-info
+    lib32-libdrm
+    lib32-libelf
+    lib32-libx11
+    lib32-libxcb
+    lib32-libxshmfence
+    lib32-llvm-libs
+    lib32-spirv-tools
+    lib32-systemd
+    lib32-vulkan-icd-loader
+    lib32-vulkan-mesa-implicit-layers
+    lib32-wayland
+    lib32-xcb-util-keysyms
+    lib32-zlib
+    lib32-zstd
+
+    vulkan-radeon
+  )
+  optdepends=("lib32-vulkan-mesa-layers: additional vulkan layers")
+  provides=(lib32-vulkan-driver)
+  replaces=('lib32-amdvlk<=2025.Q2.1-1')
+
+  mv vkradeon/* "$pkgdir"
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_lib32-vulkan-virtio() {
+  pkgdesc="Open-source Vulkan driver for Virtio-GPU (Venus) - 32-bit"
+  depends=(
+    lib32-expat
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libdisplay-info
+    lib32-libdrm
+    lib32-libx11
+    lib32-libxcb
+    lib32-libxshmfence
+    lib32-systemd
+    lib32-vulkan-icd-loader
+    lib32-vulkan-mesa-implicit-layers
+    lib32-wayland
+    lib32-xcb-util-keysyms
+    lib32-zlib
+    lib32-zstd
+
+    vulkan-virtio
+  )
+  optdepends=("lib32-vulkan-mesa-layers: additional vulkan layers")
+  provides=(lib32-vulkan-driver)
+
+  mv vkvirtio/* "$pkgdir"
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_lib32-vulkan-mesa-layers() {
+  pkgdesc="Mesa's explicit Vulkan layers - 32-bit"
+  depends=(
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libpng
+
+    vulkan-mesa-layers
+  )
+  conflicts=(lib32-vulkan-mesa-layer)
+  replaces=(lib32-vulkan-mesa-layer)
+
+  mv vklayer/* "$pkgdir"
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+package_lib32-vulkan-mesa-implicit-layers() {
+  pkgdesc="Mesa's implicit Vulkan layers - 32-bit"
+  depends=(
+    lib32-gcc-libs
+    lib32-glibc
+    lib32-libdrm
+    lib32-libxcb
+    lib32-wayland
+
+    vulkan-mesa-implicit-layers
+  )
+  conflicts=(lib32-vulkan-mesa-device-select)
+  replaces=(lib32-vulkan-mesa-device-select)
+
+  mv vkdevice/* "$pkgdir"
+
+  install -Dm644 lib32-mesa/docs/license.rst -t "$pkgdir/usr/share/licenses/$pkgname"
+}
+
+# vim:set sw=2 sts=-1 et:

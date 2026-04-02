@@ -1,0 +1,12 @@
+[Unit]
+Description=Make /proc/sys writable for muvm
+DefaultDependencies=no
+Before=systemd-sysctl.service systemd-tmpfiles-setup.service
+After=local-fs-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# umount the ro bind mount; exit 0 so service succeeds
+# even if there's nothing to unmount (defensive)
+ExecStart=/bin/sh -c 'umount /proc/sys 2>/dev/null || true'

@@ -1,0 +1,51 @@
+pkgname=libkrunfw
+_kver=6.12.68
+pkgver=5.2.1
+pkgrel=1
+pkgdesc="A dynamic library bundling the guest payload consumed by libkrun (with 32-bit support)"
+url="https://github.com/containers/libkrunfw"
+arch=('x86_64')
+license=('GPL-2.0-only' 'LGPL-2.1-only')
+depends=('glibc')
+makedepends=('bc' 'python-pyelftools' 'cpio')
+source=("https://github.com/containers/libkrunfw/archive/refs/tags/v$pkgver/$pkgname-$pkgver.tar.gz"
+        "https://cdn.kernel.org/pub/linux/kernel/v${_kver%%.*}.x/linux-${_kver}.tar.xz")
+noextract=("linux-${_kver}.tar.xz")
+options=(!debug)
+sha256sums=('c7eebd7149b15e4d74d2dff9acd3137dc13eedf604adf1df2efa52d9f36fe0bb'
+            'd367c7504bd4da520dd01eb08125d2d0ac088bc8af4cd56d236f2074dd4225b7')
+
+build() {
+  cd "$pkgname-$pkgver"
+
+  mkdir -p tarballs
+  cp -s "$srcdir/linux-${_kver}.tar.xz" tarballs/
+
+  _config="config-libkrunfw_x86_64"
+
+  # Enable IA32 (32-bit) emulation support
+  sed -i 's/# CONFIG_IA32_EMULATION is not set/CONFIG_IA32_EMULATION=y/' "$_config"
+
+  # Enable modify_ldt syscall (needed by many 32-bit apps including Steam)
+  sed -i 's/# CONFIG_MODIFY_LDT_SYSCALL is not set/CONFIG_MODIFY_LDT_SYSCALL=y/' "$_config"
+
+  # Enable 32-bit time compatibility
+  sed -i 's/# CONFIG_COMPAT_32BIT_TIME is not set/CONFIG_COMPAT_32BIT_TIME=y/' "$_config"
+
+  # Enable x32 ABI
+  sed -i 's/# CONFIG_X86_X32_ABI is not set/CONFIG_X86_X32_ABI=y/' "$_config"
+
+  # Increase max CPU count (default 16 is low for gaming)
+  sed -i 's/CONFIG_NR_CPUS=16/CONFIG_NR_CPUS=128/' "$_config"
+
+  make
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+
+  make DESTDIR="$pkgdir" PREFIX=/usr LIBDIR_Linux=lib install
+
+  install -Dm644 LICENSE-GPL-2.0-only "$pkgdir"/usr/share/licenses/$pkgname/LICENSE-GPL-2.0-only
+  install -Dm644 LICENSE-LGPL-2.1-only "$pkgdir"/usr/share/licenses/$pkgname/LICENSE-LGPL-2.1-only
+}

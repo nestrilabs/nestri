@@ -1,0 +1,9 @@
+[Unit]
+Description=D-Bus session bus
+Requires=nestri-session-bus.socket
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/dbus-daemon --session --address=systemd: --nofork --nopidfile --syslog-only
+User=nestri
+Group=nestri

@@ -1,0 +1,13 @@
+[Unit]
+Description=PipeWire PulseAudio compatibility socket
+PartOf=nestri-pipewire-pulse.service
+After=nestri-pwbridge.socket nestri-user-session.service
+Requires=nestri-pwbridge.socket nestri-user-session.service
+
+[Socket]
+ListenStream=/run/vm-user/pulse/native
+SocketUser=nestri
+SocketGroup=nestri
+
+[Install]
+WantedBy=microvm.target

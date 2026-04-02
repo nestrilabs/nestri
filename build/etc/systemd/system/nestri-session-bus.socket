@@ -1,0 +1,13 @@
+[Unit]
+Description=D-Bus session bus socket
+PartOf=nestri-session-bus.service
+After=nestri-user-session.service
+Requires=nestri-user-session.service
+
+[Socket]
+ListenStream=/run/vm-user/dbus.sock
+SocketUser=nestri
+SocketGroup=nestri
+
+[Install]
+WantedBy=microvm.target

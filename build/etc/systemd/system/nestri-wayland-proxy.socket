@@ -1,0 +1,14 @@
+[Unit]
+Description=Wayland cross-domain proxy socket
+PartOf=nestri-wayland-proxy.service
+After=nestri-user-session.service
+Requires=nestri-user-session.service
+
+[Socket]
+ListenStream=/run/vm-user/wayland-1
+SocketUser=nestri
+SocketGroup=nestri
+FileDescriptorName=wayland
+
+[Install]
+WantedBy=microvm.target

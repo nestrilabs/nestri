@@ -1,0 +1,14 @@
+[Unit]
+Description=Configure VM network via muvm
+DefaultDependencies=no
+Before=network.target
+After=systemd-udevd.service
+Wants=microvm.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/bin/muvm-configure-network
+RemainAfterExit=yes
+
+[Install]
+WantedBy=microvm.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Wayland cross-domain proxy
+Requires=nestri-wayland-proxy.socket
+
+[Service]
+Type=exec
+ExecStartPre=+/bin/chmod 0666 /dev/dri/card0 /dev/dri/renderD128
+ExecStart=/usr/bin/wl-cross-domain-proxy --listen-fd
+User=nestri
+Group=nestri
+StandardOutput=file:/tmp/wayland-proxy.log
+StandardError=file:/tmp/wayland-proxy-err.log

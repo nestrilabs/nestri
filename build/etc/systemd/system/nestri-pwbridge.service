@@ -1,0 +1,7 @@
+[Unit]
+Description=PipeWire cross-domain proxy
+Requires=nestri-pwbridge.socket
+
+[Service]
+Type=exec
+ExecStart=/opt/bin/muvm-pwbridge

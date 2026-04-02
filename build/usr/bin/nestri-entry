@@ -1,0 +1,576 @@
+#!/bin/bash
+set -e
+
+# ============================================================
+# nestri-entry
+#
+# Entry point that runs inside the bwrap sandbox.
+# Launched by nestri-runner.sh as the top-level process.
+#
+# Responsibilities:
+#   1. Start PipeWire (sandbox-local audio server)
+#   2. Start GStreamer pipeline (Wayland compositor + encoding + streaming)
+#   3. Launch muvm (microVM that runs the actual games)
+#
+# The GStreamer pipeline IS the Wayland compositor:
+#   - waylanddisplaysrc creates $XDG_RUNTIME_DIR/wayland-1
+#   - VM guest connects via wl-cross-domain-proxy (virtio-gpu)
+#   - Video frames captured as DMA-BUF, encoded, streamed via QUIC
+#   - Audio captured from PipeWire, encoded as Opus, muxed with video
+#
+# Environment variables (set by nestri-runner.sh):
+#   NESTRI_WIDTH        Stream width (default: 1920)
+#   NESTRI_HEIGHT       Stream height (default: 1080)
+#   NESTRI_FPS          Stream framerate (default: 60)
+#   NESTRI_BITRATE      Encoder bitrate in kbps (default: 8000)
+#   NESTRI_RENDER_NODE  GPU render node (default: /dev/dri/renderD128)
+#   NESTRI_BROADCAST    Stream broadcast name (default: live)
+#   NESTRI_GPU          GPU type: amd, intel, nvidia (default: amd)
+#   NESTRI_CODEC        Video codec: h264, h265, av1 (default: h264)
+#   MICROVM_UID         User ID inside sandbox/VM
+#   MICROVM_GID         Group ID inside sandbox/VM
+#
+# muvm-guest binary symlinks (in /opt/bin/):
+#   muvm-remote            — session runner (runs user command)
+#   muvm-configure-network — network setup for VM
+#   muvm-pwbridge          — PipeWire bridge (host ↔ guest audio)
+# ============================================================
+
+# ============================================================
+# Configuration (from environment or defaults)
+# ============================================================
+
+NESTRI_WIDTH="${NESTRI_WIDTH:-1920}"
+NESTRI_HEIGHT="${NESTRI_HEIGHT:-1080}"
+NESTRI_FPS="${NESTRI_FPS:-60}"
+NESTRI_BITRATE="${NESTRI_BITRATE:-8000}"
+NESTRI_RENDER_NODE="${NESTRI_RENDER_NODE:-/dev/dri/renderD128}"
+NESTRI_BROADCAST="${NESTRI_BROADCAST:-live}"
+MICROVM_UID="${MICROVM_UID:-1000}"
+
+# GPU and codec selection
+# GPU options:  amd, intel, nvidia
+# Codec options: h264, h265, av1
+NESTRI_GPU="${NESTRI_GPU:-amd}"
+NESTRI_CODEC="${NESTRI_CODEC:-h264}"
+
+# Setup XDG_RUNTIME_DIR
+mkdir -p "$XDG_RUNTIME_DIR"
+
+# Track background PIDs for cleanup
+PIDS=()
+
+cleanup() {
+    echo "nestri-entry: shutting down..." >&2
+
+    # Kill all tracked background processes
+    for pid in "${PIDS[@]}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill -TERM "$pid" 2>/dev/null
+        fi
+    done
+
+    # Wait briefly for graceful shutdown
+    sleep 0.5
+
+    # Force kill anything still alive
+    for pid in "${PIDS[@]}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            kill -KILL "$pid" 2>/dev/null
+        fi
+    done
+
+    # dbus-launch sets this separately
+    if [ -n "${DBUS_SESSION_BUS_PID:-}" ]; then
+        kill -TERM "$DBUS_SESSION_BUS_PID" 2>/dev/null
+    fi
+
+    exit
+}
+
+trap cleanup EXIT INT TERM
+
+# ============================================================
+# 1. D-Bus Session Bus + PipeWire (sandbox-local audio)
+#
+# WirePlumber requires a D-Bus session bus — it's a hard
+# dependency. PipeWire itself can start without D-Bus, but
+# WirePlumber (the session manager that handles routing,
+# device enumeration, policy) will abort without one.
+#
+# Inside the VM, systemd provides the session bus via
+# nestri-session-bus.service. Here in bwrap, we have no
+# systemd, so we launch dbus-daemon manually.
+#
+# Audio flow:
+#   Game (in VM) → PipeWire (guest) → muvm-pwbridge → PipeWire (here)
+#   PipeWire (here) → pipewiresrc → GStreamer → Opus encode → QUIC
+# ============================================================
+
+# --- D-Bus session bus ---
+echo "nestri-entry: starting dbus session bus..." >&2
+
+# Create dbus directory
+mkdir -p "$XDG_RUNTIME_DIR/dbus"
+
+# Launch a session bus and capture its address
+eval "$(dbus-launch --sh-syntax)"
+
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+    echo "nestri-entry: WARNING — dbus-launch failed, trying manual start..." >&2
+
+    DBUS_SOCKET="$XDG_RUNTIME_DIR/dbus/session-bus"
+    dbus-daemon \
+        --session \
+        --address="unix:path=$DBUS_SOCKET" \
+        --nofork \
+        --print-address \
+        &>/dev/null &
+    DBUS_PID=$!
+    PIDS+=($DBUS_PID)
+
+    # Wait for socket
+    for i in $(seq 1 30); do
+        [ -S "$DBUS_SOCKET" ] && break
+        sleep 0.1
+    done
+
+    if [ -S "$DBUS_SOCKET" ]; then
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=$DBUS_SOCKET"
+        echo "nestri-entry: dbus ready at $DBUS_SOCKET" >&2
+    else
+        echo "nestri-entry: WARNING — dbus-daemon failed to start" >&2
+        echo "nestri-entry: wireplumber will likely fail" >&2
+    fi
+else
+    # dbus-launch succeeded, track its PID for cleanup
+    PIDS+=("${DBUS_SESSION_BUS_PID:-}")
+    echo "nestri-entry: dbus ready (via dbus-launch) PID=${DBUS_SESSION_BUS_PID:-}" >&2
+fi
+
+export DBUS_SESSION_BUS_ADDRESS
+
+# --- PipeWire ---
+echo "nestri-entry: starting pipewire..." >&2
+pipewire &
+PIDS+=($!)
+
+# Wait for PipeWire socket
+for i in $(seq 1 50); do
+    [ -S "$XDG_RUNTIME_DIR/pipewire-0" ] && break
+    sleep 0.1
+done
+
+if [ -S "$XDG_RUNTIME_DIR/pipewire-0" ]; then
+    echo "nestri-entry: pipewire ready" >&2
+
+    # WirePlumber needs both PipeWire AND D-Bus
+    if [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then
+        wireplumber &
+        PIDS+=($!)
+        sleep 0.5
+        echo "nestri-entry: wireplumber ready" >&2
+    else
+        echo "nestri-entry: WARNING — skipping wireplumber (no dbus)" >&2
+        echo "nestri-entry: audio routing may not work correctly" >&2
+    fi
+else
+    echo "nestri-entry: WARNING — pipewire not ready, continuing without audio" >&2
+fi
+
+# Wait for WirePlumber to register the loopback node
+for i in $(seq 1 50); do
+    if pw-cli ls Node 2>/dev/null | grep -q "nestri-source"; then
+        break
+    fi
+    sleep 0.1
+done
+
+if pw-cli ls Node 2>/dev/null | grep -q "nestri-source"; then
+    echo "nestri-entry: wireplumber ready, loopback node available" >&2
+else
+    echo "nestri-entry: WARNING — loopback node not found after 5s" >&2
+fi
+
+# ============================================================
+# 2. GStreamer Pipeline — Encoder Detection & Configuration
+#
+# VAAPI encoders come in two variants:
+#   - vaXenc    — standard encoder
+#   - vaXlpenc  — low-power variant (sometimes the only option)
+#
+# We probe for available encoders and use what's present.
+# ============================================================
+
+# Check if a GStreamer element exists
+gst_element_exists() {
+    gst-inspect-1.0 "$1" &>/dev/null
+}
+
+# Find the best available VAAPI encoder for a codec
+find_vaapi_encoder() {
+    local codec="$1"
+    local standard_enc="va${codec}enc"
+    local lowpower_enc="va${codec}lpenc"
+
+    # Prefer standard encoder, fall back to low-power
+    if gst_element_exists "$standard_enc"; then
+        echo "$standard_enc"
+    elif gst_element_exists "$lowpower_enc"; then
+        echo "$lowpower_enc"
+    else
+        echo ""
+    fi
+}
+
+# ============================================================
+# 2. GStreamer Pipeline — Encoding Configuration
+#
+# GPU-specific encoding paths:
+#
+# NVIDIA (NVENC):
+#   Memory: video/x-raw(memory:CUDAMemory)
+#   H.264:  nvh264enc (p1 preset, ultra-low-latency tune)
+#   H.265:  nvh265enc (p1 preset, ultra-low-latency tune)
+#   AV1:    nvav1enc  (p1 preset, ultra-low-latency tune)
+#
+#   Modern NVENC presets (p1-p7):
+#     p1 = fastest (lowest quality)
+#     p7 = slowest (highest quality)
+#   Tunes: ultra-low-latency, low-latency, high-quality
+#
+#
+# Intel (QSV):
+#   Memory: video/x-raw(memory:DMABuf) → vapostproc → video/x-raw(memory:VAMemory)
+#   H.264:  qsvh264enc
+#   H.265:  qsvh265enc
+#   AV1:    qsvav1enc
+#
+#   target-usage is 7 for all (speed) with low-latency set to true
+#
+#
+# AMD/Intel/.. (VAAPI):
+#   Memory: video/x-raw(memory:DMABuf) → vapostproc → video/x-raw(memory:VAMemory)
+#   H.264:  vah264enc or vah264lpenc (low-power variant)
+#   H.265:  vah265enc or vah265lpenc (low-power variant)
+#   AV1:    vaav1enc or vaav1lpenc (low-power variant)
+#
+#   target-usage: 1 (quality) to 7 (speed)
+#   For streaming, we use 7 (maximum speed/minimum latency)
+#
+# The vapostproc element converts DMA-BUF to VA-API memory and
+# transforms to NV12 format required by the VA-API encoders.
+# ============================================================
+
+# Calculate GOP size (keyframe interval)
+# For low latency, we use 1-2 seconds worth of frames
+GOP_SIZE=$((NESTRI_FPS * 2))
+
+setup_vaapi_encoder() {
+    # AMD/Intel VAAPI path — uses DMA-BUF → VA-API memory
+    # vapostproc handles colorspace conversion to NV12
+    GST_MEM_CAPS="video/x-raw(memory:DMABuf),width=${NESTRI_WIDTH},height=${NESTRI_HEIGHT},framerate=${NESTRI_FPS}/1 ! vapostproc ! video/x-raw(memory:VAMemory),format=NV12"
+
+    case "$NESTRI_CODEC" in
+        av1)
+            VAAPI_ENC=$(find_vaapi_encoder "av1")
+            if [ -z "$VAAPI_ENC" ]; then
+                echo "nestri-entry: FATAL — no VAAPI AV1 encoder found" >&2
+                echo "nestri-entry: tried: vaav1enc, vaav1penc" >&2
+                exit 1
+            fi
+            echo "nestri-entry: using VAAPI encoder: $VAAPI_ENC" >&2
+            GST_ENC="$VAAPI_ENC"
+            GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+            GST_ENC="$GST_ENC key-int-max=${GOP_SIZE}"
+            GST_ENC="$GST_ENC target-usage=7"
+            ;;
+        h265)
+            VAAPI_ENC=$(find_vaapi_encoder "h265")
+            if [ -z "$VAAPI_ENC" ]; then
+                echo "nestri-entry: FATAL — no VAAPI H.265 encoder found" >&2
+                echo "nestri-entry: tried: vah265enc, vah265lpenc" >&2
+                exit 1
+            fi
+            echo "nestri-entry: using VAAPI encoder: $VAAPI_ENC" >&2
+            GST_ENC="$VAAPI_ENC"
+            GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+            GST_ENC="$GST_ENC key-int-max=${GOP_SIZE}"
+            GST_ENC="$GST_ENC target-usage=7"
+            ;;
+        h264|*)
+            VAAPI_ENC=$(find_vaapi_encoder "h264")
+            if [ -z "$VAAPI_ENC" ]; then
+                echo "nestri-entry: FATAL — no VAAPI H.264 encoder found" >&2
+                echo "nestri-entry: tried: vah264enc, vah264lpenc" >&2
+                exit 1
+            fi
+            echo "nestri-entry: using VAAPI encoder: $VAAPI_ENC" >&2
+            GST_ENC="$VAAPI_ENC"
+            GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+            GST_ENC="$GST_ENC key-int-max=${GOP_SIZE}"
+            GST_ENC="$GST_ENC target-usage=7"
+            ;;
+    esac
+}
+
+# Select memory caps and encoder based on GPU type
+case "$NESTRI_GPU" in
+    nvidia)
+        # NVIDIA NVENC path — uses CUDA memory
+        # Modern presets: p1 (fastest) to p7 (highest quality)
+        # Tunes: ultra-low-latency, low-latency, high-quality
+        GST_MEM_CAPS="video/x-raw(memory:CUDAMemory),width=${NESTRI_WIDTH},height=${NESTRI_HEIGHT},framerate=${NESTRI_FPS}/1"
+
+        case "$NESTRI_CODEC" in
+            av1)
+                GST_ENC="nvav1enc"
+                GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+                GST_ENC="$GST_ENC gop-size=${GOP_SIZE}"
+                GST_ENC="$GST_ENC preset=p1"
+                GST_ENC="$GST_ENC tune=ultra-low-latency"
+                GST_ENC="$GST_ENC multi-pass=disabled"
+                GST_ENC="$GST_ENC zerolatency=true"
+                ;;
+            h265)
+                GST_ENC="nvh265enc"
+                GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+                GST_ENC="$GST_ENC gop-size=${GOP_SIZE}"
+                GST_ENC="$GST_ENC preset=p1"
+                GST_ENC="$GST_ENC tune=ultra-low-latency"
+                GST_ENC="$GST_ENC multi-pass=disabled"
+                GST_ENC="$GST_ENC zerolatency=true"
+                ;;
+            h264|*)
+                GST_ENC="nvh264enc"
+                GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+                GST_ENC="$GST_ENC gop-size=${GOP_SIZE}"
+                GST_ENC="$GST_ENC preset=p1"
+                GST_ENC="$GST_ENC tune=ultra-low-latency"
+                GST_ENC="$GST_ENC multi-pass=disabled"
+                GST_ENC="$GST_ENC zerolatency=true"
+                ;;
+        esac
+        ;;
+
+    intel)
+        # Check for QSV element plugin
+        if gst_element_exists "qsv"; then
+            # Intel QSV path — uses DMA-BUF → VA-API memory
+            # vapostproc handles colorspace conversion to NV12
+            GST_MEM_CAPS="video/x-raw(memory:DMABuf),width=${NESTRI_WIDTH},height=${NESTRI_HEIGHT},framerate=${NESTRI_FPS}/1 ! vapostproc ! video/x-raw(memory:VAMemory),format=NV12"
+
+            case "$NESTRI_CODEC" in
+                av1)
+                    GST_ENC="qsvav1enc"
+                    GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+                    GST_ENC="$GST_ENC gop-size=${GOP_SIZE}"
+                    GST_ENC="$GST_ENC target-usage=7"
+                    GST_ENC="$GST_ENC low-latency=true"
+                    ;;
+                h265)
+                    GST_ENC="qsvh265enc"
+                    GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+                    GST_ENC="$GST_ENC gop-size=${GOP_SIZE}"
+                    GST_ENC="$GST_ENC target-usage=7"
+                    GST_ENC="$GST_ENC low-latency=true"
+                    ;;
+                h264|*)
+                    GST_ENC="qsvh264enc"
+                    GST_ENC="$GST_ENC bitrate=${NESTRI_BITRATE}"
+                    GST_ENC="$GST_ENC gop-size=${GOP_SIZE}"
+                    GST_ENC="$GST_ENC target-usage=7"
+                    GST_ENC="$GST_ENC low-latency=true"
+                    ;;
+            esac
+        else
+            # Fallback to VAAPI if no QSV available
+            setup_vaapi_encoder
+        fi
+        ;;
+
+    amd|*)
+        setup_vaapi_encoder
+        ;;
+esac
+
+# ============================================================
+# 2. GStreamer Pipeline — Launch
+#
+# Pipeline structure:
+#
+# Video path:
+#   waylanddisplaysrc (compositor + capture)
+#   → queue (buffer management)
+#   → [GPU-specific caps + encoder]
+#   → [codec parser]
+#
+# Audio path:
+#   pipewiresrc (capture from PipeWire)
+#   → audioconvert/audiorate/audioresample
+#   → opusenc (Opus encoding @ 128kbps)
+#
+# Output:
+#   nestrisink → QUIC/iroh-moq streaming
+#
+# waylanddisplaysrc IS the Wayland compositor:
+#   - Creates socket at $XDG_RUNTIME_DIR/wayland-1
+#   - Captures client buffers as DMA-BUF (zero-copy)
+#   - Input events arrive via nestrisink (bidirectional)
+# ============================================================
+
+echo "nestri-entry: starting gstreamer pipeline..." >&2
+echo "nestri-entry:   resolution: ${NESTRI_WIDTH}x${NESTRI_HEIGHT}@${NESTRI_FPS}fps" >&2
+echo "nestri-entry:   bitrate:    ${NESTRI_BITRATE}kbps" >&2
+echo "nestri-entry:   gop-size:   ${GOP_SIZE} frames" >&2
+echo "nestri-entry:   render:     ${NESTRI_RENDER_NODE}" >&2
+echo "nestri-entry:   gpu:        ${NESTRI_GPU}" >&2
+echo "nestri-entry:   codec:      ${NESTRI_CODEC}" >&2
+echo "nestri-entry:   encoder:    ${GST_ENC%% *}" >&2
+echo "nestri-entry:   broadcast:  ${NESTRI_BROADCAST}" >&2
+
+# Note: GST_MEM_CAPS and GST_ENC are intentionally unquoted
+# to allow bash word splitting for GStreamer's '!' element separators.
+
+gst-launch-1.0 --gst-debug-no-color -e \
+    nestrisink name=sink broadcast="$NESTRI_BROADCAST" \
+    waylanddisplaysrc render-node="$NESTRI_RENDER_NODE" ! \
+    queue max-size-buffers=2 max-size-time=0 max-size-bytes=0 ! \
+    $GST_MEM_CAPS ! \
+    $GST_ENC ! \
+    sink. \
+    pipewiresrc target-object="nestri-source" use-bufferpool=false do-timestamp=true ! \
+    queue max-size-buffers=2 max-size-time=0 max-size-bytes=0 ! \
+    "audio/x-raw,format=S16LE,channels=2,rate=48000" ! \
+    audioconvert ! \
+    audiorate ! \
+    audioresample ! \
+    opusenc bitrate=128000 frame-size=10 ! \
+    sink. \
+    >> /tmp/gstreamer.log 2>&1 &
+
+GST_PID=$!
+PIDS+=($GST_PID)
+
+# Wait for compositor socket
+for i in $(seq 1 100); do
+    [ -S "$XDG_RUNTIME_DIR/wayland-1" ] && break
+    sleep 0.1
+done
+
+if [ ! -S "$XDG_RUNTIME_DIR/wayland-1" ]; then
+    echo "nestri-entry: FATAL — compositor socket not created" >&2
+    echo "nestri-entry: check waylanddisplaysrc plugin and GPU access" >&2
+    exit 1
+fi
+
+echo "nestri-entry: wayland compositor ready at $XDG_RUNTIME_DIR/wayland-1" >&2
+
+# X_DISPLAY_NUM="12"
+
+# X_SOCKET="/tmp/.X11-unix/X$X_DISPLAY_NUM"
+
+# # Launch the XWayland satellite process to handle X11 clients in the VM.
+# xwayland-satellite ":$X_DISPLAY_NUM" >> /tmp/x11.log 2>&1 &
+# PIDS+=($!)
+
+# # Wait for X11 socket
+# for i in $(seq 1 100); do
+#     [ -S "$X_SOCKET" ] && break
+#     sleep 0.1
+# done
+
+# if [ ! -S "$X_SOCKET" ]; then
+#     echo "nestri-entry: FATAL — X11 socket $X_SOCKET not created" >&2
+#     echo "nestri-entry: check xwayland-satellite logs for startup errors" >&2
+#     exit 1
+# fi
+
+# echo "nestri-entry: X11 server ready at $X_SOCKET" >&2
+
+# export DISPLAY=":$X_DISPLAY_NUM"
+# ============================================================
+# DNS Setup
+#
+# passt (muvm's network backend) reads /etc/resolv.conf from
+# the bwrap namespace to get DNS servers for the VM's DHCP.
+# The rootfs may have a stale or symlinked resolv.conf.
+# We overwrite it here with the real DNS from the host.
+#
+# nestri-init also tries to copy /run/nestri/resolv.conf into
+# the VM's /etc/resolv.conf, but that often fails because the
+# VM filesystem may be read-only. Fixing it here in the bwrap
+# layer ensures passt gets the right servers.
+# ============================================================
+
+if [ -f /run/nestri/resolv.conf ]; then
+    # Remove symlink if present, then write directly
+    rm -f /etc/resolv.conf 2>/dev/null || true
+    cp /run/nestri/resolv.conf /etc/resolv.conf 2>/dev/null || {
+        # If /etc is somehow read-only, try writing in-place
+        cat /run/nestri/resolv.conf > /etc/resolv.conf 2>/dev/null || true
+    }
+    echo "nestri-entry: DNS configured:" >&2
+    cat /etc/resolv.conf >&2
+fi
+
+# ============================================================
+# 3. muvm — MicroVM Launch
+#
+# The VM boots from this same filesystem via virtiofs.
+# nestri-init wraps systemd, setting up machine-id, dns, etc.
+#
+# Guest systemd services (started automatically):
+#   nestri-network.service     — muvm-configure-network (networking)
+#   nestri-wayland-proxy.*     — wl-cross-domain-proxy (socket-activated)
+#   nestri-pwbridge.*          — muvm-pwbridge (socket-activated audio)
+#   nestri-session-bus.*       — dbus-daemon (socket-activated)
+#   nestri-remote.service      — muvm-remote (runs user command)
+#
+# Cross-domain Wayland proxy:
+#   The VM guest runs wl-cross-domain-proxy which connects to
+#   the host's wayland-1 socket via virtio-gpu cross-domain context.
+#   This allows the guest gamescope to render to the host compositor.
+#
+# Environment passed to guest:
+#   WAYLAND_DISPLAY=wayland-1   — compositor socket name
+#   XDG_RUNTIME_DIR=/run/vm-user — guest runtime directory
+#   XDG_SESSION_TYPE=wayland    — session type hint
+#   SDL_VIDEODRIVER=wayland     — force SDL wayland backend
+#   SDL_AUDIO_DRIVER=pipewire   — force SDL pipewire audio
+#   NESTRI_*                    — stream configuration
+# ============================================================
+echo "nestri-entry: starting muvm..." >&2
+
+    # -e "SDL_VIDEODRIVER=wayland" \
+    # -e "ELECTRON_OZONE_PLATFORM_HINT=wayland" \
+    # -e "_JAVA_AWT_WM_NONREPARENTING=1" \
+    # -e "QT_QPA_PLATFORM=wayland" \
+
+muvm \
+    --custom-init-cmdline "nestri-init /sbin/init --echo-target=console" \
+    -e "container=muvm" \
+    -e "XDG_SESSION_TYPE=wayland" \
+    -e "XDG_RUNTIME_DIR=/run/vm-user" \
+    -e "SDL_AUDIO_DRIVER=pipewire" \
+    -e "WAYLAND_DISPLAY=wayland-1" \
+    -e "VK_DRIVER_FILES=$VK_DRIVER_FILES" \
+    -e "NESTRI_WIDTH=$NESTRI_WIDTH" \
+    -e "NESTRI_HEIGHT=$NESTRI_HEIGHT" \
+    -e "NESTRI_FPS=$NESTRI_FPS" \
+    -e "MICROVM_UID=$MICROVM_UID" \
+    -e "MICROVM_GID=${MICROVM_GID:-$MICROVM_UID}" \
+    -e "BOOT_TIME_OFFSET=${BOOT_TIME_OFFSET:-}" \
+    -i -t \
+    "$@"
+
+MUVM_EXIT=$?
+
+echo "nestri-entry: muvm exited with code $MUVM_EXIT" >&2
+
+exit $MUVM_EXIT
+# /usr/bin/steam -gamepadui -cef-force-gpu &
+# STEAM_PID=$!
+# PIDS+=($STEAM_PID)
+
+# wait $STEAM_PID

@@ -1,0 +1,13 @@
+[Unit]
+Description=Prepare VM user runtime directory
+DefaultDependencies=no
+Before=nestri-wayland-proxy.socket nestri-pwbridge.socket nestri-session-bus.socket
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'mkdir -p /run/vm-user && chown 1000:1000 /run/vm-user && chmod 700 /run/vm-user'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=microvm.target

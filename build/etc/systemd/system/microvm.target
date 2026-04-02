@@ -1,0 +1,4 @@
+[Unit]
+Description=Nestri microVM system
+AllowIsolate=yes
+Wants=systemd-journald.socket systemd-udevd.service dbus.socket

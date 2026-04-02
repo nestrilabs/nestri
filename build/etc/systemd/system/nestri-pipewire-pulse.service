@@ -1,0 +1,15 @@
+[Unit]
+Description=PipeWire PulseAudio compatibility daemon
+Requires=nestri-pipewire-pulse.socket
+After=nestri-pwbridge.service
+
+[Service]
+Type=exec
+ExecStartPre=/bin/mkdir -p /run/vm-user/pulse
+ExecStart=/usr/bin/pipewire-pulse
+Environment=XDG_RUNTIME_DIR=/run/vm-user
+Environment=PIPEWIRE_RUNTIME_DIR=/run/vm-user
+User=nestri
+Group=nestri
+Restart=on-failure
+RestartSec=1

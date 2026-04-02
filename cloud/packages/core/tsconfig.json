@@ -1,8 +1,0 @@
-{
-    "extends": "@tsconfig/node20/tsconfig.json",
-    "compilerOptions": {
-      "strict": true,
-      "module": "esnext",
-      "moduleResolution": "bundler",
-    }
-  }

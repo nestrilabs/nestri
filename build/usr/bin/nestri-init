@@ -1,0 +1,93 @@
+#!/bin/bash
+set -e
+
+# ============================================================
+# 1. Save files from old /run
+# ============================================================
+_resolv=""
+_localtime=""
+[ -f /run/nestri/resolv.conf ] && _resolv=$(cat /run/nestri/resolv.conf)
+[ -f /run/nestri/localtime ]   && _localtime=$(base64 /run/nestri/localtime 2>/dev/null) || true
+
+# ============================================================
+# 2. Fresh tmpfs on /run
+# ============================================================
+mount -t tmpfs tmpfs /run -o nosuid,nodev,strictatime
+
+# ============================================================
+# 3. Restore saved files
+# ============================================================
+if [ -n "$_resolv" ]; then
+    echo "$_resolv" > /run/resolv.conf
+    echo "$_resolv" > /etc/resolv.conf 2>/dev/null || true
+fi
+if [ -n "$_localtime" ]; then
+    echo "$_localtime" | base64 -d > /run/localtime
+    echo "$_localtime" | base64 -d > /etc/localtime 2>/dev/null || true
+fi
+
+# ============================================================
+# 4. Machine ID
+# ============================================================
+# FIXME(wanjohiryan): Use the same machine-id as the host? For Steam, i believe it does check machine id and stuff like that for SteamGuard
+if [ ! -s /etc/machine-id ]; then
+    head -c 16 /dev/urandom | od -A n -t x1 | tr -d ' \n' > /etc/machine-id
+    echo "" >> /etc/machine-id
+fi
+
+# ============================================================
+# 5. Journald
+# ============================================================
+mkdir -p /run/systemd/journal /run/log/journal
+
+mkdir -p /etc/systemd/system/systemd-journald.service.d
+cat > /etc/systemd/system/systemd-journald.service.d/override.conf << 'EOF'
+[Service]
+RuntimeDirectory=
+LogsDirectory=
+StateDirectory=
+ExecStartPre=/bin/mkdir -p /run/systemd/journal /run/log/journal
+EOF
+
+# ============================================================
+# 6. Hide container FILE markers (ro rootfs)
+#    But DO NOT strip the `container` env var!
+#    systemd needs it for exit.target (clean shutdown).
+# ============================================================
+for marker in /.dockerenv /run/.containerenv; do
+    if [ -e "$marker" ]; then
+        mount --bind /dev/null "$marker" 2>/dev/null || true
+    fi
+done
+
+# ============================================================
+# 8. Isolate X11 socket directory
+# ============================================================
+if [ -d /tmp/.X11-unix ]; then
+    mount -t tmpfs tmpfs /tmp/.X11-unix -o noexec,nosuid,relatime
+fi
+
+# ============================================================
+# 9. Remount /dev/shm as virtiofs with DAX
+#    (required for cross-domain shared memory, DRI3 fences)
+# ============================================================
+umount /dev/shm
+mount -t virtiofs devshm /dev/shm -o noexec,nosuid,dax
+
+# ============================================================
+# 10. Boot time offset
+# ============================================================
+if [ -n "$BOOT_TIME_OFFSET" ]; then
+    if unshare --time true 2>/dev/null; then
+        exec unshare --time -- bash -c '
+            echo "monotonic '"$BOOT_TIME_OFFSET"'" > /proc/self/timens_offsets 2>/dev/null
+            echo "boottime '"$BOOT_TIME_OFFSET"'" >> /proc/self/timens_offsets 2>/dev/null
+            exec "$@"
+        ' -- "$@"
+    fi
+fi
+
+# ============================================================
+# 11. Hand off to systemd
+# ============================================================
+exec "$@"
