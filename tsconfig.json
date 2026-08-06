@@ -1,1 +1,11 @@
-{}
+{
+	// Transpilation config for Bun when run from the repo root. The only JSX
+	// in this repo is hono/jsx (packages/auth); without this, Bun's default
+	// `react/jsx-dev-runtime` lookup fails when tests run from the root.
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"jsxImportSource": "hono/jsx",
+		"types": []
+	},
+	"include": []
+}

@@ -1,40 +1,40 @@
 {
-  "name": "nestri",
-  "devDependencies": {
-    "@cloudflare/workers-types": "4.20240821.1",
-    "@pulumi/pulumi": "^3.134.0",
-    "@tsconfig/node22": "^22.0.1",
-    "@types/aws-lambda": "8.10.147",
-    "prettier": "^3.2.5",
-    "typescript": "^5.4.5"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "packageManager": "bun@1.2.4",
-  "private": true,
-  "scripts": {
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "sso": "aws sso login --sso-session=nestri --no-browser --use-device-code"
-  },
-  "trustedDependencies": [
-    "core-js-pure",
-    "esbuild",
-    "protobufjs",
-    "workerd"
-  ],
-  "workspaces": {
-    "packages": [
-      "apps/*",
-      "packages/*",
-      "cloud/packages/*"
-    ],
-    "catalog": {
-      "@openauthjs/openauth": "0.0.0-20250322224806",
-      "steam-session": "1.9.3"
-    }
-  },
-  "dependencies": {
-    "sst": "^3.17.13"
-  }
+	"name": "nestri",
+	"private": true,
+	"workspaces": {
+		"packages": [
+			"apps/*",
+			"packages/*"
+		],
+		"catalog": {
+			"@cloudflare/workers-types": "^5.20260722.1",
+			"@tsconfig/node22": "^22.0.5",
+			"@types/bun": "latest",
+			"@types/node": "^26.1.1",
+			"hono": "^4.12.31",
+			"typescript": "^7.0.1-rc",
+			"zod": "^4.4.3"
+		}
+	},
+	"type": "module",
+	"scripts": {
+		"dev": "alchemy dev",
+		"test": "test",
+		"deploy:sandbox": "alchemy deploy --stage sandbox --yes",
+		"deploy:production": "alchemy deploy --stage production --yes"
+	},
+	"dependencies": {
+		"@effect/platform-bun": "4.0.0-beta.102",
+		"@effect/platform-node": "4.0.0-beta.102",
+		"@effect/sql-pg": "4.0.0-beta.102",
+		"alchemy": "^2.0.0-beta.67",
+		"effect": "^4.0.0-beta.102"
+	},
+	"devDependencies": {
+		"oxfmt": "^0.61.0",
+		"oxlint": "^1.76.0"
+	},
+	"peerDependencies": {
+		"typescript": "^7.0.1-rc"
+	}
 }

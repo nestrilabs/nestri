@@ -1,1 +1,0 @@
-ALTER TABLE "base_games" ALTER COLUMN "primary_genre" DROP NOT NULL;

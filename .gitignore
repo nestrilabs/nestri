@@ -1,58 +1,34 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# Dependencies
 node_modules
-.pnp
-.pnp.js
 
-# Local env files
-.env
-.env.local
-.env.sst
-.env.development.local
-.env.test.local
-.env.production.local
-
-.idea/
-
-# Testing
-coverage
-
-# Turbo
-.turbo
-
-# Vercel
+# Output
+.output
 .vercel
-
-# Build Outputs
-.next/
-out/
+.netlify
+.wrangler
+.svelte-kit
 build
-dist
 
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Misc
+# OS
 .DS_Store
-*.pem
+Thumbs.db
 
-# sst
-.sst
+# Env
+.env
+.env.*
+!.env.example
+!.env.test
 
-#Bun merging errors, EVERY time :(
-bun.lockb
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
 
-#tests
-id_*
+dist
+.lunora/
+.lunora-cache
+lunora/_generated
 
-#Rust
-target
+# alchemy
+.alchemy
 
-tmp
-.partykit
-
-key_*
+#turbo
+.turbo
