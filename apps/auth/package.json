@@ -1,0 +1,20 @@
+{
+	"name": "auth",
+	"type": "module",
+	"scripts": {
+		"dev": "vite"
+	},
+	"dependencies": {
+		"@nestri/auth": "workspace:",
+		"@nestri/core": "workspace:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@tsconfig/node22": "catalog:",
+		"@types/bun": "catalog:",
+		"@types/node": "catalog:"
+	},
+	"peerDependencies": {
+		"typescript": "catalog:"
+	}
+}

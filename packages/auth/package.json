@@ -1,0 +1,41 @@
+{
+	"name": "@nestri/auth",
+	"version": "0.0.1",
+	"files": [
+		"src"
+	],
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		"./*": {
+			"types": "./src/*.ts",
+			"import": "./src/*.ts"
+		},
+		"./**/*": {
+			"types": "./src/**/*.ts",
+			"import": "./src/**/*.ts"
+		}
+	},
+	"scripts": {
+		"build": "bun run script/build.ts",
+		"test": "bun test"
+	},
+	"dependencies": {
+		"@standard-schema/spec": "1.0.0-beta.3",
+		"aws4fetch": "1.0.20",
+		"jose": "5.9.6"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@tsconfig/node22": "catalog:",
+		"@types/node": "catalog:",
+		"arctic": "2.2.2",
+		"hono": "catalog:",
+		"typescript": "catalog:",
+		"valibot": "1.0.0-beta.15"
+	},
+	"peerDependencies": {
+		"arctic": "^2.2.2",
+		"hono": "catalog:"
+	}
+}

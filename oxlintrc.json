@@ -1,0 +1,29 @@
+{
+	"$schema": "https://raw.githubusercontent.com/oxc-project/oxc/refs/heads/main/npm/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "import", "jsdoc", "node", "promise", "vitest"],
+	"categories": {
+		"correctness": "error",
+		"perf": "error"
+	},
+	"rules": {
+		"no-console": "error",
+		"curly": ["error", "multi-line"],
+		"prefer-const": ["off", { "destructuring": "all" }],
+		"prefer-destructuring": [
+			"error",
+			{
+				"VariableDeclarator": { "array": false, "object": true }
+			}
+		],
+		"unicode-bom": ["error", "never"],
+		"eslint/no-unassigned-vars": "off",
+		"typescript/consistent-indexed-object-style": ["error", "record"],
+		"typescript/ban-ts-comment": ["error", { "ts-expect-error": "allow-with-description" }],
+		"vitest/require-mock-type-parameters": "off",
+		"vitest/prefer-snapshot-hint": "off"
+	},
+	"options": {
+		"typeAware": true,
+		"typeCheck": true
+	}
+}

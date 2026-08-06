@@ -1,0 +1,247 @@
+export default `:root {
+	--color-background-dark: #0e0e11;
+	--color-background-light: #ffffff;
+	--color-primary-dark: #6772e5;
+	--color-primary-light: #6772e5;
+
+	--color-background-success-dark: oklch(0.3 0.04 172);
+	--color-background-success-light: oklch(from var(--color-background-success-dark) 0.83 c h);
+	--color-success-dark: oklch(from var(--color-background-success-dark) 0.92 c h);
+	--color-success-light: oklch(from var(--color-background-success-dark) 0.25 c h);
+
+	--color-background-error-dark: oklch(0.32 0.07 15);
+	--color-background-error-light: oklch(from var(--color-background-error-dark) 0.92 c h);
+	--color-error-dark: oklch(from var(--color-background-error-dark) 0.92 c h);
+	--color-error-light: oklch(from var(--color-background-error-dark) 0.25 c h);
+
+	--border-radius: 0;
+
+	--color-background: var(--color-background-dark);
+	--color-primary: var(--color-primary-dark);
+
+	--color-background-success: var(--color-background-success-dark);
+	--color-success: var(--color-success-dark);
+	--color-background-error: var(--color-background-error-dark);
+	--color-error: var(--color-error-dark);
+
+	@media (prefers-color-scheme: light) {
+		--color-background: var(--color-background-light);
+		--color-primary: var(--color-primary-light);
+
+		--color-background-success: var(--color-background-success-light);
+		--color-success: var(--color-success-light);
+		--color-background-error: var(--color-background-error-light);
+		--color-error: var(--color-error-light);
+	}
+
+	--color-high: oklch(from var(--color-background) clamp(0, calc((l - 0.714) * -1000), 1) 0 0);
+	--color-low: oklch(from var(--color-background) clamp(0, calc((l - 0.714) * 1000), 1) 0 0);
+	--lightness-high: color-mix(in oklch, var(--color-high) 0%, oklch(var(--color-high) 0 0));
+	--lightness-low: color-mix(in oklch, var(--color-low) 0%, oklch(var(--color-low) 0 0));
+	--font-family:
+		ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+		'Noto Color Emoji';
+	--font-scale: 1;
+
+	--font-size-xs: calc(0.75rem * var(--font-scale));
+	--font-size-sm: calc(0.875rem * var(--font-scale));
+	--font-size-md: calc(1rem * var(--font-scale));
+	--font-size-lg: calc(1.125rem * var(--font-scale));
+	--font-size-xl: calc(1.25rem * var(--font-scale));
+	--font-size-2xl: calc(1.5rem * var(--font-scale));
+}
+
+[data-component='root'] {
+	font-family: var(--font-family);
+	background-color: var(--color-background);
+	padding: 1rem;
+	color: white;
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-direction: column;
+	user-select: none;
+	color: var(--color-high);
+}
+
+[data-component='center'] {
+	width: 380px;
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+
+	&[data-size='small'] {
+		width: 300px;
+	}
+}
+
+[data-component='link'] {
+	text-decoration: underline;
+	text-underline-offset: 0.125rem;
+	font-weight: 600;
+}
+
+[data-component='label'] {
+	display: flex;
+	gap: 0.75rem;
+	flex-direction: column;
+	font-size: var(--font-size-xs);
+}
+
+[data-component='logo'] {
+	margin: 0 auto;
+	height: 2.5rem;
+	width: auto;
+	display: none;
+
+	@media (prefers-color-scheme: light) {
+		&[data-mode='light'] {
+			display: block;
+		}
+	}
+
+	@media (prefers-color-scheme: dark) {
+		&[data-mode='dark'] {
+			display: block;
+		}
+	}
+}
+
+[data-component='logo-default'] {
+	margin: 0 auto;
+	height: 2.5rem;
+	width: auto;
+
+	@media (prefers-color-scheme: light) {
+		color: var(--color-high);
+	}
+
+	@media (prefers-color-scheme: dark) {
+		color: var(--color-high);
+	}
+}
+
+[data-component='input'] {
+	width: 100%;
+	height: 2.5rem;
+	padding: 0 1rem;
+	border: 1px solid transparent;
+	--background: oklch(
+		from var(--color-background) calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c
+			h
+	);
+	background: var(--background);
+	border-color: oklch(
+		from var(--color-background)
+			calc(clamp(0.22, l + (-0.12 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.06), 0.88)) c h
+	);
+	border-radius: calc(var(--border-radius) * 0.25rem);
+	font-size: var(--font-size-sm);
+	outline: none;
+
+	&:focus {
+		border-color: oklch(
+			from var(--color-background)
+				calc(clamp(0.3, l + (-0.2 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.1), 0.7)) c h
+		);
+	}
+
+	&:user-invalid:not(:focus) {
+		border-color: oklch(0.4 0.09 7.91);
+	}
+}
+
+[data-component='button'] {
+	height: 2.5rem;
+	cursor: pointer;
+	border: 0;
+	font-weight: 500;
+	font-size: var(--font-size-sm);
+	border-radius: calc(var(--border-radius) * 0.25rem);
+	display: flex;
+	gap: 0.75rem;
+	align-items: center;
+	justify-content: center;
+	background: var(--color-primary);
+	color: oklch(from var(--color-primary) clamp(0, calc((l - 0.714) * -1000), 1) 0 0);
+
+	&[data-color='ghost'] {
+		background: transparent;
+		color: var(--color-high);
+		border: 1px solid
+			oklch(
+				from var(--color-background)
+					calc(clamp(0.22, l + (-0.12 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.06), 0.88)) c h
+			);
+	}
+
+	[data-slot='icon'] {
+		width: 16px;
+		height: 16px;
+
+		svg {
+			width: 100%;
+			height: 100%;
+		}
+	}
+}
+
+[data-component='form'] {
+	max-width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	margin: 0;
+}
+
+[data-component='form-alert'] {
+	height: 2.5rem;
+	display: flex;
+	align-items: center;
+	padding: 0 1rem;
+	border-radius: calc(var(--border-radius) * 0.25rem);
+	background: var(--color-background-error);
+	color: var(--color-error);
+	text-align: left;
+	font-size: 0.75rem;
+	gap: 0.5rem;
+
+	&[data-color='success'] {
+		background: var(--color-background-success);
+		color: var(--color-success);
+
+		[data-slot='icon-success'] {
+			display: block;
+		}
+		[data-slot='icon-danger'] {
+			display: none;
+		}
+	}
+
+	&:has([data-slot='message']:empty) {
+		display: none;
+	}
+
+	[data-slot='icon-success'],
+	[data-slot='icon-danger'] {
+		width: 1rem;
+		height: 1rem;
+	}
+	[data-slot='icon-success'] {
+		display: none;
+	}
+}
+
+[data-component='form-footer'] {
+	display: flex;
+	gap: 1rem;
+	font-size: 0.75rem;
+	align-items: center;
+	justify-content: center;
+
+	&:has(> :nth-child(2)) {
+		justify-content: space-between;
+	}
+}`;
