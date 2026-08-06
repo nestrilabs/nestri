@@ -17,10 +17,10 @@ const Database = Effect.gen(function* () {
 	return yield* Cloudflare.Hyperdrive.Connection('db', {
 		origin: {
 			scheme: 'postgres',
-			host: 'public-nestri-pg-1-atdogthbymao.db.upclouddatabases.com',
-			port: 11569,
+			host: process.env.DATABASE_HOST ?? 'localhost',
+			port: Number(process.env.DATABASE_PORT ?? 5432),
 			database,
-			user: 'upadmin',
+			user: process.env.DATABASE_USER ?? 'postgres',
 			password: Redacted.make(process.env.DATABASE_PASSWORD!)
 		},
 		dev: {
