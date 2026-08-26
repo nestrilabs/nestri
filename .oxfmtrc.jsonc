@@ -1,0 +1,23 @@
+{
+	"$schema": "https://raw.githubusercontent.com/oxc-project/oxc/refs/heads/main/npm/oxfmt/configuration_schema.json",
+	"useTabs": true,
+	"singleQuote": true,
+	"sortImports": true,
+	"sortObjects": true,
+	"trailingComma": "none",
+	"printWidth": 100,
+	"bracketSameLine": true,
+	"embeddedLanguageFormatting": "auto",
+	"sortTailwindcss": true,
+	"overrides": [
+		{
+			"files": ["**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
+			"options": {
+				"svelte": true,
+				"svelte.allowShorthand": true,
+				"svelte.indentScriptAndStyle": true,
+				"svelte.sortOrder": "options-scripts-markup-styles"
+			}
+		}
+	]
+}

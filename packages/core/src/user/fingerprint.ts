@@ -56,6 +56,16 @@ export namespace Fingerprint {
 		}
 	);
 
+	export const fromID = fn(Info.shape.id, async (id) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select()
+				.from(UserFingerprintTable)
+				.where(and(eq(UserFingerprintTable.id, id), isNull(UserFingerprintTable.timeDeleted)))
+				.then((rows) => rows.at(0) ?? null);
+		});
+	});
+
 	export const findByFingerprint = fn(Info.shape.fingerprint, async (fingerprint) => {
 		return Database.use(async (tx) => {
 			return tx

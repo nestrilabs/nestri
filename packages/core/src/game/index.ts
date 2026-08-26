@@ -1,4 +1,4 @@
-import { eq, and, isNull, sql, inArray } from 'drizzle-orm';
+import { eq, and, isNull, sql, inArray, or } from 'drizzle-orm';
 import z from 'zod';
 
 import { Database } from '../db/index.js';
@@ -27,6 +27,10 @@ export namespace Game {
 			name: z.string().meta({
 				description: 'Game title',
 				example: Examples.Game.name
+			}),
+			aliases: z.string().nullable().optional().meta({
+				description: 'Space-separated nicknames ("tf2", "pubg") for search',
+				example: Examples.Game.aliases
 			}),
 			type: z.string().nullable().optional().meta({
 				description: 'Content type (game, dlc, demo, tool)',
@@ -131,6 +135,7 @@ export namespace Game {
 			steamAppId: true,
 			slug: true,
 			name: true,
+			aliases: true,
 			type: true,
 			clientIcon: true,
 			icon: true,
@@ -161,6 +166,7 @@ export namespace Game {
 					steamAppId: input.steamAppId,
 					slug: input.slug,
 					name: input.name,
+					aliases: input.aliases ?? null,
 					type: input.type ?? null,
 					clientIcon: input.clientIcon ?? null,
 					icon: input.icon ?? null,
@@ -215,6 +221,7 @@ export namespace Game {
 			steamAppId: true,
 			slug: true,
 			name: true,
+			aliases: true,
 			type: true,
 			clientIcon: true,
 			icon: true,
@@ -247,6 +254,7 @@ export namespace Game {
 						steamAppId: input.steamAppId,
 						slug: input.slug,
 						name: input.name,
+						aliases: input.aliases ?? null,
 						type: input.type ?? null,
 						clientIcon: input.clientIcon ?? null,
 						icon: input.icon ?? null,
@@ -275,6 +283,7 @@ export namespace Game {
 						set: {
 							slug: input.slug,
 							name: input.name,
+							aliases: input.aliases ?? null,
 							type: input.type ?? null,
 							clientIcon: input.clientIcon ?? null,
 							icon: input.icon ?? null,
@@ -305,11 +314,15 @@ export namespace Game {
 
 	export const searchByName = fn(z.string(), async (query) => {
 		return Database.use(async (tx) => {
+			const pattern = '%' + query + '%';
 			return tx
 				.select()
 				.from(GameTable)
 				.where(
-					and(isNull(GameTable.timeDeleted), sql`${GameTable.name} ILIKE ${'%' + query + '%'}`)
+					and(
+						isNull(GameTable.timeDeleted),
+						or(sql`${GameTable.name} ILIKE ${pattern}`, sql`${GameTable.aliases} ILIKE ${pattern}`)
+					)
 				)
 				.orderBy(GameTable.name)
 				.limit(50);
@@ -361,6 +374,7 @@ export namespace Game {
 			steamAppId: input.steamAppId,
 			slug: input.slug,
 			name: input.name,
+			aliases: input.aliases,
 			type: input.type,
 			clientIcon: input.clientIcon,
 			icon: input.icon,

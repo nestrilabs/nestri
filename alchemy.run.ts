@@ -17,10 +17,10 @@ const Database = Effect.gen(function* () {
 	return yield* Cloudflare.Hyperdrive.Connection('db', {
 		origin: {
 			scheme: 'postgres',
-			host: process.env.DATABASE_HOST ?? 'localhost',
-			port: Number(process.env.DATABASE_PORT ?? 5432),
+			host: 'public-nestri-pg-1-atdogthbymao.db.upclouddatabases.com',
+			port: 11569,
 			database,
-			user: process.env.DATABASE_USER ?? 'postgres',
+			user: 'upadmin',
 			password: Redacted.make(process.env.DATABASE_PASSWORD!)
 		},
 		dev: {
@@ -29,6 +29,7 @@ const Database = Effect.gen(function* () {
 			port: 5432,
 			database: 'nestri',
 			user: 'postgres',
+			sslmode: 'disable',
 			password: Redacted.make('postgres')
 		}
 	});
@@ -52,24 +53,22 @@ export const Auth = Effect.gen(function* () {
 
 export const Api = Effect.gen(function* () {
 	const { stage } = yield* Alchemy.Stack;
-	const isPermanent = ["production", "sandbox", "dev"].includes(stage);
-	const prefix = stage === "production" ? "" : `${stage}.`;
-	const authDomain = ["production", "sandbox"].includes(stage)
+	const isPermanent = ['production', 'sandbox', 'dev'].includes(stage);
+	const prefix = stage === 'production' ? '' : `${stage}.`;
+	const authDomain = ['production', 'sandbox'].includes(stage)
 		? `${prefix}auth.nestri.io`
 		: undefined;
-	return yield* Cloudflare.Worker("api", {
-		main: "apps/api/app/index.ts",
-		compatibility: { flags: ["nodejs_compat"] },
+	return yield* Cloudflare.Worker('api', {
+		main: 'apps/api/app/index.ts',
+		compatibility: { flags: ['nodejs_compat'] },
 		env: {
 			AUTH: Auth,
-			AUTH_ISSUER_URL: authDomain
-				? `https://${authDomain}`
-				: "http://localhost:1337",
+			AUTH_ISSUER_URL: authDomain ? `https://${authDomain}` : 'http://localhost:1337',
 			HYPERDRIVE: Database,
 			STEAM_API_KEY: steamApiKey,
-			ADMIN_SHARED_SECRET: adminSharedSecret,
+			ADMIN_SHARED_SECRET: adminSharedSecret
 		},
-		...(isPermanent ? { observability: { enabled: true } } : {}),
+		...(isPermanent ? { observability: { enabled: true } } : {})
 	});
 });
 
@@ -86,39 +85,39 @@ export default Alchemy.Stack(
 		const auth = yield* Auth;
 		const api = yield* Api;
 
-		if (stage === "production" || stage === "sandbox") {
-			const zone = yield* Cloudflare.Zone.Zone("zone", {
-				name: "nestri.io",
+		if (stage === 'production' || stage === 'sandbox') {
+			const zone = yield* Cloudflare.Zone.Zone('zone', {
+				name: 'nestri.io'
 			}).pipe(adopt(true));
 
-			const prefix = stage === "production" ? "" : `${stage}.`;
+			const prefix = stage === 'production' ? '' : `${stage}.`;
 
-			yield* Cloudflare.DNS.Record("auth-dns", {
+			yield* Cloudflare.DNS.Record('auth-dns', {
 				zoneId: zone.zoneId,
 				name: `${prefix}auth.nestri.io`,
-				type: "AAAA",
-				content: "100::",
-				proxied: true,
+				type: 'AAAA',
+				content: '100::',
+				proxied: true
 			});
 
-			yield* Cloudflare.DNS.Record("api-dns", {
+			yield* Cloudflare.DNS.Record('api-dns', {
 				zoneId: zone.zoneId,
 				name: `${prefix}api.nestri.io`,
-				type: "AAAA",
-				content: "100::",
-				proxied: true,
+				type: 'AAAA',
+				content: '100::',
+				proxied: true
 			});
 
-			yield* Cloudflare.Workers.WorkerRoute("auth-route", {
+			yield* Cloudflare.Workers.WorkerRoute('auth-route', {
 				zoneId: zone.zoneId,
 				pattern: `${prefix}auth.nestri.io/*`,
-				script: auth.workerName,
+				script: auth.workerName
 			});
 
-			yield* Cloudflare.Workers.WorkerRoute("api-route", {
+			yield* Cloudflare.Workers.WorkerRoute('api-route', {
 				zoneId: zone.zoneId,
 				pattern: `${prefix}api.nestri.io/*`,
-				script: api.workerName,
+				script: api.workerName
 			});
 		}
 

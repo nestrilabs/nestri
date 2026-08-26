@@ -16,7 +16,8 @@ export namespace Identifier {
 		game: 'gam',
 		userLibrary: 'ulb',
 		gameDepot: 'gdp',
-		gameDownload: 'gdl'
+		gameDownload: 'gdl',
+		waitlistEntry: 'wle'
 	} as const;
 
 	export function schema(prefix: keyof typeof prefixes) {

@@ -24,6 +24,36 @@ import { adminOnly, ErrorResponses, notPublic, Result, validator } from '../util
  */
 export namespace PairingCodeApi {
 	export const route = new Hono()
+		.get(
+			'/',
+			notPublic,
+			describeRoute({
+				tags: ['PairingCode'],
+				summary: 'List your pairing codes',
+				description: 'Every pairing code the current user has generated, newest first.',
+				responses: {
+					200: {
+						content: {
+							'application/json': {
+								schema: Result(
+									z.array(PairingCode.Info).meta({
+										description: 'All pairing codes for the current user',
+										example: [Examples.PairingCode]
+									})
+								)
+							}
+						},
+						description: 'Pairing codes'
+					},
+					401: ErrorResponses[401],
+					429: ErrorResponses[429]
+				}
+			}),
+			async (c) => {
+				const rows = await PairingCode.listByUser(Actor.userID);
+				return c.json({ data: rows.map((row) => PairingCode.serialize(row)) });
+			}
+		)
 		.post(
 			'/',
 			notPublic,

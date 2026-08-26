@@ -18,22 +18,29 @@ describe('Index', () => {
 
 describe('Auth middleware', () => {
 	test('public access to a protected route returns 401', async () => {
-		const res = await app.request('/games');
+		const res = await app.request('/library');
 		expect(res.status).toBe(401);
 		const body = (await res.json()) as any;
 		expect(body.type).toBe('authentication');
 		expect(body.code).toBe('unauthorized');
 	});
 
+	test('game catalog search is public', async () => {
+		// The search-first TUI browses before it logs in, so the catalog
+		// must not sit behind auth.
+		const res = await app.request('/games');
+		expect(res.status).toBe(200);
+	});
+
 	test('admin token gains access to protected routes', async () => {
-		const res = await app.request('/games', {
+		const res = await app.request('/waitlist', {
 			headers: adminHeaders()
 		});
 		expect(res.status).toBe(200);
 	});
 
 	test('wrong admin token is treated as public → 401', async () => {
-		const res = await app.request('/games', {
+		const res = await app.request('/library', {
 			headers: { 'x-nestri-admin-token': 'wrong-secret' }
 		});
 		expect(res.status).toBe(401);
@@ -46,7 +53,7 @@ describe('Auth middleware', () => {
 		// not make the request a server fault. `verify` reports a malformed or
 		// expired token in `err`, but throws when it cannot reach the auth
 		// service at all, and that throw used to surface as a 500.
-		const res = await app.request('/games', {
+		const res = await app.request('/library', {
 			headers: { authorization: 'Bearer not-a-real-token' }
 		});
 		expect(res.status).toBe(401);
@@ -177,7 +184,13 @@ describe('OpenAPI doc', () => {
 		expect(paths).toContain('/library');
 		expect(paths).toContain('/library/sync');
 		expect(paths).toContain('/steam/link');
+		expect(paths).toContain('/steam/linked');
+		expect(paths).toContain('/steam/unlink');
 		expect(paths).toContain('/user');
+		expect(paths).toContain('/user/email');
+		expect(paths).toContain('/user/devices');
+		expect(paths).toContain('/pairing-code');
+		expect(paths).toContain('/waitlist');
 	});
 
 	test('doc has security schemes defined', async () => {
@@ -340,7 +353,7 @@ describe('Access tokens', () => {
 	test('an unknown access token is unauthenticated, not a server error', async () => {
 		// A `pat_` prefix routes to the database rather than JWT verification.
 		// A miss there must read as "not signed in", the same as a bad JWT.
-		const res = await app.request('/games', {
+		const res = await app.request('/library', {
 			headers: { authorization: 'Bearer pat_nosuchtokenvalue' }
 		});
 		expect(res.status).toBe(401);
@@ -538,5 +551,111 @@ describe('Pairing code routes', () => {
 			body: JSON.stringify({ ttlMinutes: 60 * 24 })
 		});
 		expect(res.status).toBe(400);
+	});
+
+	test('GET /pairing-code requires auth', async () => {
+		const res = await app.request('/pairing-code');
+		expect(res.status).toBe(401);
+	});
+});
+
+describe('Email routes', () => {
+	test('POST /user/email requires auth', async () => {
+		const res = await app.request('/user/email', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ email: 'a@b.com' })
+		});
+		expect(res.status).toBe(401);
+	});
+
+	test('POST /user/email rejects a malformed address', async () => {
+		const res = await app.request('/user/email', {
+			method: 'POST',
+			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			body: JSON.stringify({ email: 'not-an-email' })
+		});
+		expect(res.status).toBe(400);
+		const body = (await res.json()) as any;
+		expect(body.type).toBe('validation');
+	});
+
+	test('POST /user/email/send-code requires auth', async () => {
+		const res = await app.request('/user/email/send-code', { method: 'POST' });
+		expect(res.status).toBe(401);
+	});
+
+	test('POST /user/email/verify requires auth', async () => {
+		const res = await app.request('/user/email/verify', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ code: '123456' })
+		});
+		expect(res.status).toBe(401);
+	});
+
+	test('POST /user/email/verify requires a 6-digit code', async () => {
+		const res = await app.request('/user/email/verify', {
+			method: 'POST',
+			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			body: JSON.stringify({ code: '12' })
+		});
+		expect(res.status).toBe(400);
+	});
+});
+
+describe('Device routes', () => {
+	test('GET /user/devices requires auth', async () => {
+		const res = await app.request('/user/devices');
+		expect(res.status).toBe(401);
+	});
+
+	test('PATCH /user/devices/:id requires auth', async () => {
+		const res = await app.request('/user/devices/ufp_whatever', {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ name: 'MacBook Air' })
+		});
+		expect(res.status).toBe(401);
+	});
+});
+
+describe('Steam account routes', () => {
+	test('GET /steam/linked requires auth', async () => {
+		const res = await app.request('/steam/linked');
+		expect(res.status).toBe(401);
+	});
+
+	test('POST /steam/unlink requires auth', async () => {
+		const res = await app.request('/steam/unlink', { method: 'POST' });
+		expect(res.status).toBe(401);
+	});
+});
+
+describe('Waitlist routes', () => {
+	test('POST /waitlist joins without auth', async () => {
+		const res = await app.request('/waitlist', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ email: 'waitlist@example.com' })
+		});
+		expect(res.status).toBe(201);
+		const body = (await res.json()) as any;
+		expect(body.data.email).toBe('waitlist@example.com');
+		expect(body.data.source).toBe('machines');
+	});
+
+	test('POST /waitlist rejects a malformed email', async () => {
+		const res = await app.request('/waitlist', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ email: 'nope' })
+		});
+		expect(res.status).toBe(400);
+	});
+
+	test('GET /waitlist is admin-only', async () => {
+		const res = await app.request('/waitlist');
+		expect(res.status).toBe(403);
 	});
 });

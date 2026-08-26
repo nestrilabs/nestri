@@ -61,6 +61,7 @@ export namespace Examples {
 		steamAppId: 730,
 		slug: 'counter-strike-2',
 		name: 'Counter-Strike 2',
+		aliases: 'cs2 csgo',
 		type: 'game',
 		clientIcon: '5aad412d01a9b91ba0379f0b35f4eb0b69d9db08',
 		icon: 'f92b09dab91f1d1738f72fe0dd9be18dcc2901f9',
@@ -137,5 +138,12 @@ export namespace Examples {
 		timeStarted: '2026-07-28T12:00:00.000Z',
 		timeCompleted: null,
 		errorMessage: null
+	};
+
+	export const WaitlistEntry = {
+		id: Id('waitlistEntry'),
+		email: 'johndoe@example.com',
+		source: 'machines',
+		timeCreated: '2026-07-28T12:00:00.000Z'
 	};
 }

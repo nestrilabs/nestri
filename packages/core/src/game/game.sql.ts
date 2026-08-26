@@ -12,6 +12,8 @@ export const GameTable = pgTable(
 		slug: text('slug').notNull(),
 		name: text('name').notNull(),
 		type: text('type'),
+		// Space-separated nicknames ("tf2", "pubg") so search can match them.
+		aliases: text('aliases'),
 
 		clientIcon: text('client_icon'),
 		icon: text('icon'),

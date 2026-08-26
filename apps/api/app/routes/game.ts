@@ -16,6 +16,7 @@ import { ErrorResponses, adminOnly, machineOrAdmin, notPublic, Result, validator
 const SyncGameSchema = z.object({
 	steamAppId: z.number().int(),
 	name: z.string(),
+	aliases: z.string().optional(),
 	type: z.string().optional(),
 	clientIcon: z.string().optional(),
 	icon: z.string().optional(),
@@ -62,7 +63,6 @@ const SyncLibrarySchema = z.object({
 
 export namespace GameApi {
 	export const route = new Hono()
-		.use(notPublic)
 		.get(
 			'/',
 			describeRoute({
@@ -150,6 +150,7 @@ export namespace GameApi {
 		)
 		.post(
 			'/sync',
+			notPublic,
 			adminOnly,
 			describeRoute({
 				tags: ['Games'],
@@ -216,6 +217,7 @@ export namespace GameApi {
 							steamAppId: g.steamAppId,
 							slug,
 							name: g.name,
+							aliases: g.aliases ?? null,
 							type: g.type ?? null,
 							clientIcon: g.clientIcon ?? null,
 							icon: g.icon ?? null,
@@ -341,6 +343,7 @@ export namespace GameApi {
 		)
 		.get(
 			'/:id/download-state',
+			notPublic,
 			describeRoute({
 				tags: ['Games'],
 				summary: 'Get download states for a game',
@@ -406,6 +409,7 @@ export namespace GameApi {
 		)
 		.post(
 			'/download-state',
+			notPublic,
 			machineOrAdmin,
 			describeRoute({
 				tags: ['Games'],
@@ -517,6 +521,7 @@ export namespace GameApi {
 		)
 		.post(
 			'/',
+			notPublic,
 			adminOnly,
 			describeRoute({
 				tags: ['Games'],

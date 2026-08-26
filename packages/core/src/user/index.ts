@@ -103,6 +103,23 @@ export namespace User {
 		}
 	);
 
+	export const setEmail = fn(
+		Info.pick({ id: true }).extend({ email: z.email(), emailVerified: z.boolean() }),
+		async (input) => {
+			return Database.use(async (tx) => {
+				const [row] = await tx
+					.update(UserTable)
+					.set({
+						email: input.email,
+						emailVerified: input.emailVerified
+					})
+					.where(eq(UserTable.id, input.id))
+					.returning();
+				return row ? serialize(row) : null;
+			});
+		}
+	);
+
 	export const remove = fn(Info.shape.id, async (id) => {
 		await Database.use(async (tx) => {
 			await tx
