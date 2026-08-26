@@ -1,0 +1,33 @@
+# The Rust half of this monorepo. The JS/TS half is `package.json`.
+#
+# Layout, per the same rule on both sides: split by *what a thing is*, not by
+# what language it is written in.
+#
+#   apps/       deployables — a binary someone runs
+#   crates/     shared Rust — a library another crate depends on
+#   packages/   shared JS/TS
+#
+# Members are added as components move in. An empty list is honest: nothing has
+# landed yet.
+
+[workspace]
+resolver = "3"
+members = []
+
+# One pin per dependency, here. A member never writes a version — that is what
+# stops two crates in one tree from disagreeing about tokio.
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/nestrilabs/nestri"

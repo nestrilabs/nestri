@@ -8,6 +8,10 @@ node_modules
 .svelte-kit
 build
 
+# Rust
+/target
+**/*.rs.bk
+
 # OS
 .DS_Store
 Thumbs.db
