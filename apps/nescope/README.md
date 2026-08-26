@@ -24,7 +24,7 @@ nescope is built on top of [Smithay](https://smithay.org/), the Rust Wayland com
          │ frame capture
          ▼
 ┌─────────────────┐
-│ vkcapture layer │  ← External Vulkan interception
+│   nescapture    │  ← Vulkan layer, inside the game's own process
 └─────────────────┘
 ```
 
@@ -32,15 +32,22 @@ nescope is built on top of [Smithay](https://smithay.org/), the Rust Wayland com
 
 ### Core Components
 
-| Module             | Purpose                                                                          |
-| ------------------ | -------------------------------------------------------------------------------- |
-| `main.rs`          | CLI entry point, event loop, process management                                  |
-| `state.rs`         | `NescopeState` — central compositor state, Wayland globals                       |
-| `handlers.rs`      | Smithay protocol handlers (`CompositorHandler`, `XdgShellHandler`, `XwmHandler`) |
-| `input.rs`         | Programmatic input injection via `calloop::channel`                              |
-| `hdr.rs`           | HDR/color management protocol handlers                                           |
-| `focus.rs`         | Keyboard focus routing for X11 windows                                           |
-| `protocols/mod.rs` | Generated gamescope swapchain bindings                                           |
+| Module               | Purpose                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `main.rs`            | CLI entry point, event loop, process management                                  |
+| `state.rs`           | `NescopeState` — central compositor state, Wayland globals                       |
+| `handlers.rs`        | Smithay protocol handlers (`CompositorHandler`, `XdgShellHandler`)               |
+| `xwm.rs`             | X11 window management                                                            |
+| `focus.rs`           | Keyboard focus routing for X11 windows                                           |
+| `input.rs`           | Input decoding and injection via `calloop::channel`                              |
+| `input_ipc.rs`       | The client side of `neshub`'s input socket                                       |
+| `libinput_backend.rs`| Real input devices, when there are any                                           |
+| `hdr.rs`             | HDR / colour management protocol handlers                                        |
+| `gpu_readback.rs`    | Reading a dmabuf back to the CPU, for screenshots                                |
+| `screenshot_ipc.rs`  | Serving captures to whoever is listening                                         |
+| `screenshot_wire.rs` | The screenshot frame format                                                      |
+| `protocols/`         | Generated gamescope swapchain bindings                                           |
+| `bin/nescope-shot.rs`| Ask a running nescope what is on screen                                          |
 
 ### Design Decisions
 
@@ -50,7 +57,9 @@ nescope is built on top of [Smithay](https://smithay.org/), the Rust Wayland com
 
 3. **Input via Channel**: Input events arrive through a `calloop::channel::Sender<InputEvent>` rather than being decoded from a proxy connection. This allows external code (streaming servers, test harnesses) to inject input.
 
-4. **Process Subreaper**: nescope registers as a subreaper (`PR_SET_CHILD_SUBREAPER`) so orphaned descendants (e.g., Steam launcher → game client) are reparented to it, enabling reliable cleanup.
+4. **Process Subreaper**: nescope registers as a subreaper (`PR_SET_CHILD_SUBREAPER`) so orphaned descendants — a launcher that execs the real client and exits, say — are reparented to it rather than to PID 1, and can be cleaned up reliably.
+
+5. **Two shapes, one binary**: given a command after `--`, nescope launches it and exits when it and its windows are gone. Given none, it comes up as a plain compositor and waits for something to connect. The second is what a real session needs, where the processes that draw are started by something else entirely.
 
 ## Building
 
@@ -61,15 +70,21 @@ cargo build --release
 ## Usage
 
 ```text
-nescope [OPTIONS] -- <command> [args...]
+nescope [OPTIONS] [-- <command> [args...]]
 
 Options:
-  --width  <N>     Output width  [default: 1920]
-  --height <N>     Output height [default: 1080]
-  --fps    <N>     Virtual refresh rate [default: 60]
-  --hdr            Enable HDR protocols
-  --socket <NAME>  Wayland socket name [default: nescope-0]
+  --width  <N>             Output width  [default: 1920]
+  --height <N>             Output height [default: 1080]
+  --fps    <N>             Virtual refresh rate [default: 60]
+  --hdr                    Enable HDR protocols
+  --socket <NAME>          Wayland socket name [default: nescope-0]
+  --input-ipc <PATH>       neshub's input socket [default: /tmp/nestri-input.sock]
+  --screenshot-ipc <PATH>  Serve screenshots here [default: off]
+  --render-device <PATH>   GPU to pin the workload to, e.g. /dev/dri/renderD128
+  --x-display <N>          XWayland display number [default: 1]
 ```
+
+The command is optional; see design decision 5 above.
 
 ### Environment Variables
 
@@ -81,16 +96,35 @@ Options:
 | `NESCOPE_FPS`    | Override `--fps`                       |
 | `NESCOPE_HDR`    | Enable HDR                             |
 | `NESCOPE_SOCKET` | Override socket name                   |
+| `NESCOPE_INPUT_IPC` | Override `--input-ipc`              |
+| `NESCOPE_SCREENSHOT_IPC` | Override `--screenshot-ipc`  |
+| `NESCOPE_RENDER_DEVICE` | Override `--render-device`    |
+| `NESCOPE_X_DISPLAY` | Override `--x-display`              |
 | `RUST_LOG`       | Tracing filter (e.g., `nescope=debug`) |
 
 ### Example
 
 ```sh
-# Launch a game at 1440p with HDR
+# Wrap one program at 1440p with HDR
 nescope --width 2560 --height 1440 --hdr -- %command%
 
-# 1080p with debug logging
+# Plain compositor mode: come up and wait for clients
+nescope --x-display 1
+
+# Debug logging
 RUST_LOG=nescope=debug nescope -- %command%
+```
+
+### Seeing what is on screen
+
+nescope is headless, so a black stream, a window that never mapped and a client
+rendering fine all look identical from outside. `nescope-shot` is the listener
+side of the screenshot socket:
+
+```sh
+# start this first — nescope dials out
+nescope-shot --socket /tmp/nestri-screenshot.sock --watch --out shot.ppm
+nescope --screenshot-ipc /tmp/nestri-screenshot.sock -- <program>
 ```
 
 ## HDR Support
@@ -123,12 +157,14 @@ nescope waits 5 seconds after the last mapped window disappears before exiting, 
 - **clap** — CLI parsing
 - **x11rb** — X11 atom management
 
-## License
+## What nescope does not do
 
-See project repository.
+Frames reach the client through [`nescapture`](../nescapture), which captures
+inside the workload's process, and [`neshub`](../neshub), which muxes and
+sends. Input arrives the same way in reverse. nescope provides the display
+those components need and injects what they hand it; it never touches the
+network.
 
-## TODO
+## Licence
 
-- [ ] Handle sending frames thru to the client
-- [ ] Handle packetizing and sharding
-- [ ] Handle mouse and kb input from the client
+Apache 2.0. See [LICENSE](../../LICENSE).

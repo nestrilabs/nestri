@@ -1,36 +1,81 @@
-## neswire
+# neswire
 
-A small custom PipeWire sink for cloud gaming audio capture.
+A PipeWire sink that Opus-encodes guest audio and sends it to
+[`neshub`](../neshub).
 
-Currently for debugging uses RTP to send Opus (with FEC enabled by default) over to target address.
+Audio in the guest has no speakers to reach, so neswire registers itself as an
+output device and takes what anything plays into it. From the application's
+side it is an ordinary sink.
 
+---
 
-### Testing
+## Running it
 
-#### Mono/Stereo
-
-Launch gstreamer pipeline to receive audio as so (will save incoming RTP audio into test.mkv):
 ```bash
-gst-launch-1.0 udpsrc port=12345 caps="application/x-rtp,media=audio,encoding-name=OPUS,clock-rate=48000,payload=111" ! rtpopusdepay2 ! opusdec ! matroskamux ! filesink location=test.mkv sync=false
+cargo run --release --bin neswire
 ```
 
-Then run neswire like so for example:
+Then select the **neswire** sink as the system output, or point an application
+at it.
+
+| Flag | Env | Default | Description |
+| --- | --- | --- | --- |
+| `--ipc-path` | `NESWIRE_IPC_PATH` | `/tmp/nestri-audio.sock` | Where to send Opus packets |
+| `--channels` | `NESWIRE_CHANNELS` | `2` | `2` stereo, `6` for 5.1, `8` for 7.1 |
+| `--packet-duration-ms` | `NESWIRE_PACKET_DURATION_MS` | `5` | Opus frame size in ms |
+| `--bitrate-per-channel` | `NESWIRE_BITRATE_PER_CHANNEL` | `64` | kbps per channel |
+
+`RUST_LOG` takes a standard tracing filter, e.g. `RUST_LOG=neswire=debug`.
+
+Sample rate is fixed at 48 kHz, which is what Opus wants and what every
+consumer device runs at anyway.
+
+---
+
+## Testing without a hub
+
+neswire's only output is a Unix datagram socket that `neshub` binds, so running
+it on a desktop means it has nothing to talk to — it retries `connect` forever
+and there is no way to see what it would have sent. `hub-stub` binds that
+socket and reports what arrives:
+
 ```bash
-cargo run --release --bin neswire -- --rtp-addr 127.0.0.1:12345
+# terminal 1
+cargo run --bin hub-stub
+
+# terminal 2
+cargo run --bin neswire
 ```
 
-#### Surround
+It **decodes** the Opus rather than counting bytes, and that distinction
+matters more than it looks. Opus codes digital silence in about two bytes a
+packet, so a sink that is receiving nothing but zeros still produces a steady
+~3 kbps and looks correct on every meter downstream. Peak amplitude is what
+tells a working sink from a silent one.
 
-Launch gstreamer pipeline to receive audio as so (will save incoming RTP audio into test_multi.mkv):
 ```bash
-gst-launch-1.0 udpsrc port=12345 caps='application/x-rtp,media=audio,encoding-name=MULTIOPUS,clock-rate=48000,payload=111,encoding-params=(string)8,num_streams=(string)5,coupled_streams=(string)3,channel_mapping=(string)"0,6,1,2,3,4,5,7"' ! rtpopusdepay2 ! opusdec ! matroskamux ! filesink location=test.mkv sync=false
+cargo run --bin hub-stub -- --channels 8    # match neswire's channel count
 ```
 
-Then run neswire like so for example:
-```bash
-cargo run --release --bin neswire -- --rtp-addr 127.0.0.1:12345 --channels 8
+`hub-stub` mirrors `ipc_listener::run_audio_listener` in `neshub`: same bind,
+same `0o666`, same stream-type and codec checks. Where the two disagree,
+`neshub` is right and the stub should be corrected.
+
+---
+
+## Layout
+
+```
+src/
+├── main.rs     CLI, wiring, the sink→encoder→IPC chain
+├── sink.rs     the PipeWire sink itself
+├── encoder.rs  Opus encode, including the multichannel mappings
+└── bin/
+    └── hub-stub.rs
 ```
 
+---
 
-For both afterwards, set the neswire sink as audio output source in your system (or specify it as output in some app/game),
- then play some audio, stop gst pipeline and sink, listen to results after.
+## Licence
+
+Apache 2.0. See [LICENSE](../../LICENSE).
