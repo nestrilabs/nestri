@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="gamescope_swapchain">
+
+  <copyright>
+    Copyright © 2023 Joshua Ashton for Valve Software
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+  </copyright>
+
+  <description summary="gamescope-specific swapchain protocol">
+    This is a private Gamescope protocol. Regular Wayland clients must not use
+    it.
+  </description>
+
+  <interface name="gamescope_swapchain_factory_v2" version="1">
+    <request name="destroy" type="destructor"></request>
+
+    <request name="create_swapchain">
+      <description summary="create Gamescope swapchain interface">
+      </description>
+
+      <arg name="surface" type="object" interface="wl_surface"
+           summary="target surface"/>
+      <arg name="callback" type="new_id" interface="gamescope_swapchain"
+           summary="new swapchain object"/>
+    </request>
+  </interface>
+
+  <interface name="gamescope_swapchain" version="1">
+    <request name="destroy" type="destructor"></request>
+
+    <request name="override_window_content">
+      <description summary="override an X11's window wl_surface">
+        Xwayland creates a wl_surface for each X11 window. It sends a
+        WL_SURFACE_ID client message to indicate the mapping between the X11
+        windows and the wl_surface objects.
+
+        This request overrides this mapping for a given X11 window, allowing an
+        X11 client to submit buffers via the Wayland protocol. The override
+        only affects buffer submission. Everything else (e.g. input events)
+        still uses Xwayland's WL_SURFACE_ID.
+
+        x11_server is gotten by the GAMESCOPE_XWAYLAND_SERVER_ID property on the
+        root window of the associated server.
+      </description>
+      <arg name="gamescope_xwayland_server_id" type="uint" summary="gamescope xwayland server ID"/>
+      <arg name="x11_window" type="uint" summary="X11 window ID"/>
+    </request>
+
+    <request name="swapchain_feedback">
+      <description summary="provide swapchain feedback">
+        Provide swapchain feedback to the compositor.
+
+        This is what the useless tearing protocol should have been.
+        Absolutely not enough information in the final protocol to do what we want for SteamOS --
+        which is have the Allow Tearing toggle apply to *both* Mailbox + Immediate and NOT fifo,
+        essentially acting as an override for tearing on/off for games.
+        The upstream protocol is very useless for our usecase here.
+
+        Provides image count ahead of time instead of needing to try and calculate it from
+        an initial stall if we are doing low latency.
+
+        Provides colorspace info for us to do HDR for both HDR10 PQ and scRGB.
+        The upstream HDR efforts seem to have no interest in supporting scRGB but we *need* that so /shrug
+        We can do it here now! Yipee!
+
+        Swapchain feedback solves so many problems! :D
+      </description>
+      <arg name="image_count" type="uint" summary="image count of swapchain"/>
+      <arg name="vk_format" type="uint" summary="VkFormat of swapchain"/>
+      <arg name="vk_colorspace" type="uint" summary="VkColorSpaceKHR of swapchain"/>
+      <arg name="vk_composite_alpha" type="uint" summary="VkCompositeAlphaFlagBitsKHR of swapchain"/>
+      <arg name="vk_pre_transform" type="uint" summary="VkSurfaceTransformFlagBitsKHR of swapchain"/>
+      <arg name="vk_clipped" type="uint" summary="clipped (VkBool32) of swapchain"/>
+      <arg name="vk_engine_name" type="string" summary="Engine name"/>
+    </request>
+
+    <request name="set_present_mode">
+      <description summary="Add a fifo queue constraint"/>
+      <arg name="vk_present_mode" type="uint" summary="VkPresentModeKHR"/>
+    </request>
+
+    <request name="set_hdr_metadata">
+      <description summary="set HDR metadata for a surface">
+        Forward HDR metadata from Vulkan to the compositor.
+
+        HDR Metadata Infoframe as per CTA 861.G spec.
+        This is expected to match exactly with the spec.
+
+        display_primary_*:
+          Color Primaries of the Data.
+          Specifies X and Y coordinates.
+          These are coded as unsigned 16-bit values in units of
+          0.00002, where 0x0000 represents zero and 0xC350
+          represents 1.0000.
+
+        white_point_*:
+          White Point of Colorspace Data.
+          Specifies X and Y coordinates.
+          These are coded as unsigned 16-bit values in units of
+          0.00002, where 0x0000 represents zero and 0xC350
+          represents 1.0000.
+
+        max_display_mastering_luminance:
+          Max Mastering Display Luminance.
+          This value is coded as an unsigned 16-bit value in units of 1 cd/m2,
+          where 0x0001 represents 1 cd/m2 and 0xFFFF represents 65535 cd/m2.
+
+        max_display_mastering_luminance:
+          Min Mastering Display Luminance.
+          This value is coded as an unsigned 16-bit value in units of
+          0.0001 cd/m2, where 0x0001 represents 0.0001 cd/m2 and 0xFFFF
+          represents 6.5535 cd/m2.
+
+        max_cll:
+          Max Content Light Level.
+          This value is coded as an unsigned 16-bit value in units of 1 cd/m2,
+          where 0x0001 represents 1 cd/m2 and 0xFFFF represents 65535 cd/m2.
+
+        max_fall:
+          Max Frame Average Light Level.
+          This value is coded as an unsigned 16-bit value in units of 1 cd/m2,
+          where 0x0001 represents 1 cd/m2 and 0xFFFF represents 65535 cd/m2.
+      </description>
+      <arg name="display_primary_red_x" type="uint" summary="red primary x coordinate"/>
+      <arg name="display_primary_red_y" type="uint" summary="red primary y coordinate"/>
+      <arg name="display_primary_green_x" type="uint" summary="green primary x coordinate"/>
+      <arg name="display_primary_green_y" type="uint" summary="green primary y coordinate"/>
+      <arg name="display_primary_blue_x" type="uint" summary="blue primary x coordinate"/>
+      <arg name="display_primary_blue_y" type="uint" summary="blue primary y coordinate"/>
+      <arg name="white_point_x" type="uint" summary="white point x coordinate"/>
+      <arg name="white_point_y" type="uint" summary="white point y coordinate"/>
+      <arg name="max_display_mastering_luminance" type="uint" summary="max display mastering luminance"/>
+      <arg name="min_display_mastering_luminance" type="uint" summary="min display mastering luminance"/>
+      <arg name="max_cll" type="uint" summary="max content light level"/>
+      <arg name="max_fall" type="uint" summary="max frame average light level"/>
+    </request>
+
+    <request name="set_present_time">
+      <description summary="display timing of next commit">
+        Sets the display timing of the next commit.
+
+        This gets reset to 0s in the compositor's state after a commit.
+      </description>
+      <arg name="present_id" type="uint" summary="application provided presentation id"/>
+      <arg name="desired_present_time_hi" type="uint" summary="high part of the desired presentation time for this commit. Uses CLOCK_MONOTONIC. 0 = present as soon as possible."/>
+      <arg name="desired_present_time_lo" type="uint" summary="low part of the desired presentation time for this commit. Uses CLOCK_MONOTONIC. 0 = present as soon as possible."/>
+    </request>
+
+    <event name="past_present_timing">
+      <description summary="information about past presentation">
+        Gives information on the past presentation timing
+      </description>
+      <arg name="present_id" type="uint" summary="application provided presentation id"/>
+      <arg name="desired_present_time_hi" type="uint" summary="high part of the desired presentation time for the commit. (from the app)"/>
+      <arg name="desired_present_time_lo" type="uint" summary="low part of the desired presentation time for the commit. (from the app)"/>
+      <arg name="actual_present_time_hi" type="uint" summary="high part of the actual present time for this commit."/>
+      <arg name="actual_present_time_lo" type="uint" summary="low part of the actual present time for this commit."/>
+      <arg name="earliest_present_time_hi" type="uint" summary="high part of the refresh time that Gamescope thought this commit was done by."/>
+      <arg name="earliest_present_time_lo" type="uint" summary="low part of the refresh time that Gamescope thought this commit was done by."/>
+      <arg name="present_margin_hi" type="uint" summary="high part of the difference between earliest present time and the earliest latch time"/>
+      <arg name="present_margin_lo" type="uint" summary="low part of the difference between earliest present time and the earliest latch time"/>
+    </event>
+
+    <event name="refresh_cycle">
+      <description summary="information about refresh cycle for this swapchain">
+        Gives information on the refresh cycle for this swapchain
+      </description>
+      <arg name="refresh_cycle_hi" type="uint" summary="high part of the refresh cycle in nanos"/>
+      <arg name="refresh_cycle_lo" type="uint" summary="low part of the refresh cycle in nanos"/>
+    </event>
+
+    <event name="retired">
+      <description summary="Swapchain was remotely retired"></description>
+    </event>
+  </interface>
+</protocol>

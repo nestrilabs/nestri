@@ -1,0 +1,48 @@
+[package]
+name = "nescope"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "nescope"
+path = "src/main.rs"
+
+[dependencies]
+# Smithay – Wayland compositor framework.
+# "backend_drm" gives us Fourcc/Format/Modifier without pulling in a full renderer.
+smithay = { version = "0.7", default-features = false, features = [
+    "wayland_frontend",
+    "xwayland",
+    "backend_drm",
+    "desktop",
+    "backend_libinput",
+    "renderer_pixman",    # needed for on_commit_buffer_handler
+    # Reading a dmabuf back to the CPU. nescope still does not composite or
+    # present anything -- this is import-and-copy only, so a client that
+    # renders on the GPU can be screenshotted like any other.
+    "renderer_gl",
+    "backend_egl",
+    "backend_gbm",
+] }
+
+# Wayland client – connects to the host compositor to forward buffers.
+wayland-client   = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging", "server"] }
+# Needed to generate the gamescope_swapchain protocol bindings.
+wayland-scanner  = "0.31"
+wayland-backend  = "0.3"
+
+# Event loop
+calloop          = { version = "0.14", features = ["signals"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+
+libc = "0.2"
+input = { version = "0.9", features = ["udev"] }
+nesprotocol = { path = "../../crates/nesprotocol" }
+glob = "0.3"
