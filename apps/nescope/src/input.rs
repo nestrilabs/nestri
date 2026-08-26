@@ -32,7 +32,7 @@ use nesprotocol::input::{self as nestri_input, DecodedInput};
 use crate::focus::KeyboardFocusTarget;
 use crate::state::NescopeState;
 
-// ── Wire protocol constants (mirrors nestri-protocol/src/input.rs) ──
+// ── Wire protocol constants (mirrors nesprotocol/src/input.rs) ──
 const WIRE_INPUT_KEY: u8 = 0;
 const WIRE_INPUT_MOUSE_MOVE: u8 = 1;
 const WIRE_INPUT_MOUSE_BUTTON: u8 = 2;
@@ -304,7 +304,7 @@ pub fn process_input(event: InputEvent, state: &mut NescopeState) {
 // Wire-protocol decoder
 // ---------------------------------------------------------------------------
 
-/// Decode a single input event from the nestri guest-hub wire protocol
+/// Decode a single input event from the neshub wire protocol
 /// and convert it to an [`InputEvent`] for the compositor seat.
 ///
 /// Uses the shared [`nesprotocol::input::decode_input_event`] and maps:

@@ -5,7 +5,7 @@ use clap::Parser;
 
 #[derive(Parser, Debug)]
 struct Args {
-    /// Path for the audio IPC socket (neswire → nestri-guest-hub)
+    /// Path for the audio IPC socket (neswire → neshub)
     #[arg(
         long,
         env = "NESWIRE_IPC_PATH",

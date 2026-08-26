@@ -337,7 +337,7 @@ fn main() {
     }
 
     // ── Input IPC source ─────────────────────────────────────────────────
-    // Connect to the nestri-guest-hub input socket and feed events into the
+    // Connect to the neshub input socket and feed events into the
     // compositor seat. Reconnection is handled in the idle callback.
     let ipc_path = args.input_ipc.clone();
     match input_ipc::InputIpcSource::connect(&ipc_path) {

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-//  encode.rs — Vulkan Video hardware encoding + IPC transmission to nestri-guest-hub
+//  encode.rs — Vulkan Video hardware encoding + IPC transmission to neshub
 //
 //  ┌─────────────────── Zero-copy GPU pipeline ──────────────────────────────┐
 //  │                                                                         │
@@ -13,7 +13,7 @@
 //  │                            encoder.input_image())   BGRA/RGB10/FP16    │
 //  │                                                   → NV12/P010/YUV444   │
 //  │    Encoder::encode(encoder.input_image())     ← Vulkan Video encode     │
-//  │    IPC send to nestri-guest-hub                                          │
+//  │    IPC send to neshub                                                   │
 //  └─────────────────────────────────────────────────────────────────────────┘
 //
 //  Environment variables

@@ -1,4 +1,4 @@
-//! A stand-in for nestri-guest-hub's audio IPC listener.
+//! A stand-in for neshub's audio IPC listener.
 //!
 //! neswire's only output is a Unix datagram socket that the hub binds, so
 //! running it outside a guest means having nothing to talk to: it retries
