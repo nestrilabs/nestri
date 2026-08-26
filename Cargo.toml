@@ -15,6 +15,7 @@ resolver = "3"
 members = [
   "apps/nescapture",
   "apps/nescope",
+  "apps/neshub",
   "apps/neswire",
   "crates/nesprotocol",
 ]
