@@ -1,0 +1,17 @@
+[package]
+name = "neswire"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+pipewire = "0.10"
+crossbeam-channel = "0.5"
+anyhow = "1"
+opus-head-sys = "0.3"
+bytemuck = { version = "1", features = ["extern_crate_alloc"] }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+nesprotocol = { path = "../../crates/nesprotocol" }

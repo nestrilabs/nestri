@@ -1,0 +1,45 @@
+```
+# Rust/Cargo specific
+/target/
+Cargo.lock
+**/Cargo.lock
+.cargo/
+cargo_home/
+
+# Git related
+.git/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+*.env.*
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+dist/
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
+```
