@@ -13,6 +13,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "apps/nescapture",
   "apps/nescope",
   "apps/neswire",
   "crates/nesprotocol",

@@ -1,0 +1,45 @@
+[package]
+name = "nescapture"
+version = "0.2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Vulkan implicit layer: direct frame capture, Vulkan Video encode, and IPC out to the session transport"
+
+[lib]
+name = "nescapture_layer"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Vulkan bindings
+ash = { git = "https://github.com/ash-rs/ash", rev = "55dd56906bbb5760e9e9e6c56f45be67f67e0649" }
+# Shader fingerprinting
+sha2     = "0.10"
+bytemuck = "1"
+
+# Concurrent state maps
+dashmap   = "6"
+once_cell = "1"
+pollster = "0.4.0"
+
+# Logging
+log        = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+
+# Per-game shader-hash config
+toml  = "0.8"
+serde = { version = "1", features = ["derive"] }
+
+# Vulkan Video hardware encoding.
+pixelforge = { git = "https://github.com/hgaiser/pixelforge.git", rev = "85c8654d383e194b984e27b319de96e4335e2b4f", features = ["dmabuf"] }
+
+# libc for DMA-BUF OS primitives
+libc = "0.2"
+
+# Shared IPC protocol
+nesprotocol = { path = "../../crates/nesprotocol" }
+
+[profile.release]
+opt-level = 3
+lto       = "thin"

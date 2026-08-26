@@ -1,0 +1,22 @@
+{
+  "file_format_version": "1.2.0",
+  "layer": {
+    "name": "VK_LAYER_nescapture",
+    "type": "GLOBAL",
+    "library_path": "/usr/lib/libnescapture_layer.so",
+    "api_version": "1.3.290",
+    "implementation_version": "1",
+    "description": "direct game frame capture for Nestri",
+    "functions": {
+      "vkGetInstanceProcAddr": "vkGetInstanceProcAddr",
+      "vkGetDeviceProcAddr": "vkGetDeviceProcAddr",
+      "vkNegotiateLoaderLayerInterfaceVersion": "vkNegotiateLoaderLayerInterfaceVersion"
+    },
+    "enable_environment": {
+      "NESCAPTURE_ENABLE": "1"
+    },
+    "disable_environment": {
+      "DISABLE_NESCAPTURE": "1"
+    }
+  }
+}
