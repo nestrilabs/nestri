@@ -1,0 +1,7 @@
+[package]
+name = "nesprotocol"
+version = "0.1.0"
+description = "Wire types shared by the capture, audio and compositor components"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true

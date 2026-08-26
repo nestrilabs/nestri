@@ -12,7 +12,9 @@
 
 [workspace]
 resolver = "3"
-members = []
+members = [
+  "crates/nesprotocol",
+]
 
 # One pin per dependency, here. A member never writes a version — that is what
 # stops two crates in one tree from disagreeing about tokio.
