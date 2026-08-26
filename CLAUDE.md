@@ -9,7 +9,7 @@ fact about it and most of the rules below follow from it.
 Split by *what a thing is*, not by what language it is written in.
 
 ```
-apps/       what runs        api, auth (TS) · nescope, neswire, nescapture (Rust)
+apps/       what runs        api, auth (TS) · nescope, neswire, nescapture, neshub (Rust)
 crates/     shared Rust      nesprotocol
 packages/   shared TS        core, auth
 docs/       long-form        alchemy.md
@@ -63,7 +63,15 @@ half matters.
 **Rust components are guest-side**: they run inside a virtual machine, not on
 the control plane. `nescope` composites, `nescapture` captures and encodes
 frames from inside the workload's own process, `neswire` handles audio, and
-`nesprotocol` is the wire format all three share. None of them talk to the API.
+`neshub` muxes all of it into one connection to the client. `nesprotocol` is
+the wire format they share. None of them talk to the API.
+
+**None of them depend on what they are running.** The box starts a payload that
+the open components are not allowed to understand, so no code here may branch on
+which one it is. `nescope` does mention Steam and Proton in comments — it
+implements public Wayland and Vulkan protocols that gamescope also implements,
+and those comments say which real case motivated a workaround. That is the
+allowed kind: a name in prose, never a dependency in code.
 
 ## Conventions
 

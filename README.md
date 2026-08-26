@@ -39,7 +39,8 @@ control plane.
 | [`apps/nescope`](apps/nescope) | A headless Wayland compositor for one fullscreen client. A lighter answer to the same problem gamescope solves. |
 | [`apps/nescapture`](apps/nescapture) | A Vulkan implicit layer. It captures frames from inside the workload's own process and encodes them on the GPU that drew them — no copy out to the CPU and back. |
 | [`apps/neswire`](apps/neswire) | Audio capture and transport. |
-| [`crates/nesprotocol`](crates/nesprotocol) | The wire types all three share, so no two ends can drift apart silently. |
+| [`apps/neshub`](apps/neshub) | One connection out of the box. Muxes video, audio, cursor and input into a single QUIC stream to the client. |
+| [`crates/nesprotocol`](crates/nesprotocol) | The wire types they all share, so no two ends can drift apart silently. |
 
 The hypervisor these run under is [`nesbox`](https://github.com/nestrilabs/nesbox),
 a separate repository: a micro-VM with a real GPU in it, using virtio-gpu native
