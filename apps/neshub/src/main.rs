@@ -209,7 +209,7 @@ async fn main() -> Result<()> {
     let stream_name = ticket::generate_stream_name();
     let ticket = NestriTicket::new(endpoint_addr, stream_name);
 
-    tracing::info!("\n╔═══════════════╗");
+    tracing::info!("╔═══════════════╗");
     tracing::info!("║ NESTRI TICKET ║");
     tracing::info!("╚═══════════════╝");
     tracing::info!("{ticket}\n");
