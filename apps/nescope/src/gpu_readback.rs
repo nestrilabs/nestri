@@ -25,10 +25,10 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
+use smithay::backend::allocator::Buffer;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::allocator::Buffer;
 use smithay::backend::renderer::{ExportMem, ImportDma};
 use smithay::utils::{Point, Rectangle, Size};
 
@@ -66,9 +66,10 @@ fn render_device() -> Result<PathBuf, String> {
         .filter_map(Result::ok)
         .collect();
     nodes.sort();
-    nodes.into_iter().next().ok_or_else(|| {
-        "no render node found in /dev/dri; pass --render-device".to_string()
-    })
+    nodes
+        .into_iter()
+        .next()
+        .ok_or_else(|| "no render node found in /dev/dri; pass --render-device".to_string())
 }
 
 /// Why a read did not happen.

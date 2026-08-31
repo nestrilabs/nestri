@@ -1,6 +1,6 @@
 [package]
 name = "neshub"
-version = "0.1.0"
+version = "0.2.0"
 description = "Muxes captured video, audio and input into one QUIC connection to the client"
 edition.workspace = true
 license.workspace = true
@@ -11,8 +11,7 @@ name = "neshub"
 path = "src/main.rs"
 
 [dependencies]
-# The transport. One endpoint per box; clients dial it with a ticket.
-iroh = "1.0.0"
+iroh = "1.1.0"
 
 anyhow.workspace = true
 clap.workspace = true
@@ -23,6 +22,7 @@ tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
+bytes = "1"
 base64 = "0.22"
 uuid = { version = "1", features = ["v7"] }
 

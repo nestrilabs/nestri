@@ -5,13 +5,9 @@ use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::path::Path;
 
 use smithay::reexports::input::{
-        self as libinput,
-        event::{
-            self,
-            keyboard::KeyboardEventTrait,
-            pointer::PointerScrollEvent,
-        },
-    };
+    self as libinput,
+    event::{self, keyboard::KeyboardEventTrait, pointer::PointerScrollEvent},
+};
 
 use crate::input::{InputEvent, process_input};
 use crate::state::NescopeState;
@@ -67,7 +63,10 @@ pub fn dispatch_libinput(ctx: &mut libinput::Libinput, state: &mut NescopeState)
                 match pev {
                     event::PointerEvent::Motion(ev) => {
                         process_input(
-                            InputEvent::MouseMoveRelative { dx: ev.dx(), dy: ev.dy() },
+                            InputEvent::MouseMoveRelative {
+                                dx: ev.dx(),
+                                dy: ev.dy(),
+                            },
                             state,
                         );
                     }
@@ -89,10 +88,8 @@ pub fn dispatch_libinput(ctx: &mut libinput::Libinput, state: &mut NescopeState)
                     }
                     event::PointerEvent::Button(ev) => {
                         let button = ev.button();
-                        let down = matches!(
-                            ev.button_state(),
-                            event::pointer::ButtonState::Pressed
-                        );
+                        let down =
+                            matches!(ev.button_state(), event::pointer::ButtonState::Pressed);
                         let ev = if down {
                             InputEvent::MouseButtonDown { button }
                         } else {

@@ -1,15 +1,6 @@
-//! neshub — one connection out of the box.
-//!
-//! Four producers inside the guest send it frames over Unix sockets:
-//! nescapture (video, stats), neswire (audio), nescope (cursor). It muxes
-//! them into one iroh QUIC endpoint, and fans client input back the other
-//! way. That is the whole job.
-//!
-//! It does not know what is producing the pixels. The payload is started by
-//! nesinit and neshub never learns its name, which is what lets the same
-//! binary serve a game, a desktop, or something nobody here has thought of.
-
+mod dgram;
 mod ipc_listener;
+mod keyframe;
 mod screenshot;
 mod session;
 mod ticket;
@@ -20,7 +11,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use clap::Parser;
 use iroh::endpoint::presets;
-use tracing::{info, warn};
 
 use crate::session::SessionManager;
 use crate::ticket::NestriTicket;
@@ -95,21 +85,27 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
         .init();
 
     let args = Args::parse();
 
-    let mut builder = iroh::Endpoint::builder(presets::N0).alpns(vec![ALPN.to_vec()]);
+    let mut builder = iroh::Endpoint::builder(presets::N0)
+        .alpns(vec![ALPN.to_vec()])
+        .transport_config(crate::dgram::media_transport_config());
 
     match args.relay.as_str() {
         "default" | "" => {
             builder = builder.relay_mode(iroh::endpoint::RelayMode::Default);
-            info!("using default n0-computer relays");
+            tracing::info!("using default n0-computer relays");
         }
         "none" | "off" | "disabled" => {
             builder = builder.relay_mode(iroh::endpoint::RelayMode::Disabled);
-            info!("relays disabled (direct connections only)");
+            tracing::info!("relays disabled (direct connections only)");
         }
         url => {
             let relay_url: iroh::RelayUrl = url.parse()?;
@@ -119,14 +115,14 @@ async fn main() -> Result<()> {
                 Arc::new(iroh::RelayConfig::new(relay_url, None)),
             );
             builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(relay_map));
-            info!("using custom relay: {url}");
+            tracing::info!("using custom relay: {url}");
         }
     }
 
     let endpoint = builder.bind().await?;
     let endpoint_addr = endpoint.addr();
     let ep_id = endpoint_addr.id;
-    info!("endpoint online: {}", ep_id.fmt_short());
+    tracing::info!("endpoint online: {}", ep_id.fmt_short());
 
     // Input broadcast channel: input reader -> input IPC listener -> nescope
     let (input_broadcast_tx, _) = tokio::sync::broadcast::channel::<Vec<u8>>(256);
@@ -148,7 +144,7 @@ async fn main() -> Result<()> {
             while let Some(bytes) = cmd_rx.recv().await {
                 if let Ok(sock) = std::os::unix::net::UnixDatagram::unbound() {
                     if sock.send_to(&bytes, &cmd_path).is_err() {
-                        warn!("nescapture cmd send failed at {}", cmd_path.display());
+                        tracing::warn!("nescapture cmd send failed at {}", cmd_path.display());
                     }
                 }
             }
@@ -179,13 +175,21 @@ async fn main() -> Result<()> {
     {
         let mgr = session_manager.clone();
         let audio_channels = args.audio_channels as u8;
-        let audio_kbps = args.audio_channels * args.audio_bitrate_per_channel;
+        // The configured target is worth saying once, here, where it is a fact
+        // about this hub's arguments. It is deliberately not what gets reported
+        // in the stats below -- see `SessionManager::audio_bitrate_kbps`.
+        tracing::info!(
+            "audio configured for {}ch at {}kbps/channel; stats report measured ingest",
+            args.audio_channels,
+            args.audio_bitrate_per_channel
+        );
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             loop {
                 interval.tick().await;
                 let clients = mgr.client_count().await as u8;
                 let bitrate = mgr.video_bitrate_bps();
+                let audio_kbps = mgr.audio_bitrate_kbps();
                 let relay_ms = mgr.relay_ms();
                 let mut buf = Vec::with_capacity(15);
                 nesprotocol::stats::encode_hub_stats(
@@ -201,15 +205,17 @@ async fn main() -> Result<()> {
         });
     }
 
-    // The ticket is how a client finds this endpoint. It is generated here
-    // because the endpoint is here, and served on a socket because the only
-    // thing that can carry it out of the VM is nesinit.
+    // ── Accept mode: generate ticket, wait for desktop-app to connect ─────
     let stream_name = ticket::generate_stream_name();
     let ticket = NestriTicket::new(endpoint_addr, stream_name);
-    info!(%ticket, "endpoint ticket generated");
-    ticket::serve(&args.ticket_ipc, ticket.to_string())?;
+
+    tracing::info!("\n╔═══════════════╗");
+    tracing::info!("║ NESTRI TICKET ║");
+    tracing::info!("╚═══════════════╝");
+    tracing::info!("{ticket}\n");
 
     // Spawn IPC listeners
+
     let video_ipc = args.video_ipc.clone();
     let audio_ipc = args.audio_ipc.clone();
     let input_ipc = args.input_ipc.clone();
@@ -237,6 +243,11 @@ async fn main() -> Result<()> {
         async move { ipc_listener::run_stats_ipc_listener(stats_ipc, stx).await }
     });
 
+    let ticket_ipc = args.ticket_ipc.clone();
+    tokio::spawn({
+        async move { ipc_listener::run_ticket_ipc_listener(ticket_ipc, ticket).await }
+    });
+
     // Accept loop
     let ep = endpoint.clone();
     let mgr = session_manager.clone();
@@ -245,7 +256,7 @@ async fn main() -> Result<()> {
             match incoming.await {
                 Ok(conn) => {
                     let remote_id = conn.remote_id();
-                    info!(remote = %remote_id.fmt_short(), "client connected");
+                    tracing::info!(remote = %remote_id.fmt_short(), "client connected");
                     let session = session::ClientSession::new(
                         conn.clone(),
                         input_broadcast_tx.clone(),
@@ -261,11 +272,11 @@ async fn main() -> Result<()> {
                     });
                 }
                 Err(e) => {
-                    warn!("incoming connection failed: {e}");
+                    tracing::warn!("incoming connection failed: {e}");
                 }
             }
         }
-        info!("accept loop exited");
+        tracing::info!("accept loop exited");
     });
 
     // Not wired to anything today. Kept because the capture works and "show me
@@ -274,18 +285,14 @@ async fn main() -> Result<()> {
     let _screenshots = match screenshot::listen(&args.screenshot_ipc) {
         Ok(connection) => Some(connection),
         Err(e) => {
-            warn!("screenshots unavailable: {e:#}");
+            tracing::warn!("screenshots unavailable: {e:#}");
             None
         }
     };
 
-    // neshub outlives every session and every payload. Nothing here decides
-    // when the box is done -- nesinit owns that, and shuts the VM down around
-    // this process.
-    info!("neshub running");
+    tracing::info!("neshub running, ctrl+c to stop");
     tokio::signal::ctrl_c().await?;
-
-    info!("shutting down..");
+    tracing::info!("shutting down..");
     endpoint.close().await;
     accept_handle.abort();
 
@@ -293,7 +300,7 @@ async fn main() -> Result<()> {
     let _ = std::fs::remove_file(&args.audio_ipc);
     let _ = std::fs::remove_file(&args.input_ipc);
     let _ = std::fs::remove_file(&args.stats_ipc);
-    let _ = std::fs::remove_file(&args.ticket_ipc);
     let _ = std::fs::remove_file("/tmp/nescapture-cmd.sock");
+    let _ = std::fs::remove_file(&args.ticket_ipc);
     Ok(())
 }

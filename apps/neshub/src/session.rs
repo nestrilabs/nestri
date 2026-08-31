@@ -5,10 +5,13 @@ use iroh::endpoint::Connection;
 use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
+use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
-use nesprotocol::{BIDI_INPUT, STREAM_AUDIO, STREAM_CURSOR, STREAM_STATS, STREAM_VIDEO};
-use nesprotocol::{FRAME_HDR_LEN, MSG_DATA, STREAM_VERSION, encode_frame};
+use nesprotocol::{BIDI_INPUT, STREAM_CURSOR, STREAM_STATS};
+use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH};
+
+use crate::dgram::run_datagram_writer;
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
@@ -36,12 +39,23 @@ impl ClientSession {
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (stats_tx, stats_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
+        // Delta frames and audio go out as datagrams; cursor, stats and input
+        // stay on reliable streams. See `nestri_protocol::datagram` for why.
+        //
+        // Video keyframes are the exception: each goes on a reliable stream of
+        // its own, because a lost keyframe freezes the picture until the next
+        // one instead of costing a single frame. See
+        // `nestri_protocol::reliable`. Audio is not offered the same path — it
+        // has no keyframes to promote.
         let conn_v = conn.clone();
-        let _video_task =
-            tokio::spawn(async move { run_video_sender(conn_v, video_rx, relay_ms).await });
+        let _video_task = tokio::spawn(async move {
+            run_datagram_writer(conn_v, DGRAM_VIDEO, "video", video_rx, Some(relay_ms), true).await
+        });
 
         let conn_a = conn.clone();
-        let _audio_task = tokio::spawn(async move { run_audio_sender(conn_a, audio_rx).await });
+        let _audio_task = tokio::spawn(async move {
+            run_datagram_writer(conn_a, DGRAM_AUDIO, "audio", audio_rx, None, false).await
+        });
 
         let conn_c = conn.clone();
         let _cursor_task = tokio::spawn(async move { run_cursor_sender(conn_c, cursor_rx).await });
@@ -218,131 +232,6 @@ async fn run_input_reader(
     debug!("input reader exiting");
 }
 
-async fn run_video_sender(
-    conn: Connection,
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
-    relay_ms: Arc<AtomicU32>,
-) {
-    loop {
-        let first = match rx.recv().await {
-            Some(data) => data,
-            None => {
-                debug!("video sender exiting (channel closed)");
-                return;
-            }
-        };
-
-        let mut send = match conn.open_uni().await {
-            Ok(s) => s,
-            Err(e) => {
-                debug!("video open_uni failed: {e}");
-                break;
-            }
-        };
-        debug!("video uni stream opened");
-
-        if send
-            .write_all(&[STREAM_VIDEO, STREAM_VERSION])
-            .await
-            .is_err()
-        {
-            let _ = send.finish();
-            break;
-        }
-
-        let mut seq: u16 = 0;
-        let mut buf = Vec::with_capacity(FRAME_HDR_LEN + first.len());
-        encode_frame(&mut buf, MSG_DATA, seq, &first);
-        if send.write_all(&buf).await.is_err() {
-            let _ = send.finish();
-            break;
-        }
-        seq = seq.wrapping_add(1);
-
-        loop {
-            match rx.recv().await {
-                Some(bytes) => {
-                    let t0 = std::time::Instant::now();
-                    buf.clear();
-                    encode_frame(&mut buf, MSG_DATA, seq, &bytes);
-                    if send.write_all(&buf).await.is_err() {
-                        break;
-                    }
-                    let elapsed = t0.elapsed().as_secs_f32() * 1000.0;
-                    relay_ms.store(elapsed.to_bits(), Ordering::Relaxed);
-                    seq = seq.wrapping_add(1);
-                }
-                None => {
-                    let _ = send.finish();
-                    debug!("video sender exiting (channel closed)");
-                    return;
-                }
-            }
-        }
-        let _ = send.finish();
-    }
-    debug!("video sender exiting");
-}
-
-async fn run_audio_sender(conn: Connection, mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>) {
-    loop {
-        let first = match rx.recv().await {
-            Some(data) => data,
-            None => {
-                debug!("audio sender exiting (channel closed)");
-                return;
-            }
-        };
-
-        let mut send = match conn.open_uni().await {
-            Ok(s) => s,
-            Err(e) => {
-                debug!("audio open_uni failed: {e}");
-                break;
-            }
-        };
-        debug!("audio uni stream opened");
-
-        if send
-            .write_all(&[STREAM_AUDIO, STREAM_VERSION])
-            .await
-            .is_err()
-        {
-            let _ = send.finish();
-            break;
-        }
-
-        let mut seq: u16 = 0;
-        let mut buf = Vec::with_capacity(FRAME_HDR_LEN + first.len());
-        encode_frame(&mut buf, MSG_DATA, seq, &first);
-        if send.write_all(&buf).await.is_err() {
-            let _ = send.finish();
-            break;
-        }
-        seq = seq.wrapping_add(1);
-
-        loop {
-            match rx.recv().await {
-                Some(bytes) => {
-                    buf.clear();
-                    encode_frame(&mut buf, MSG_DATA, seq, &bytes);
-                    if send.write_all(&buf).await.is_err() {
-                        break;
-                    }
-                    seq = seq.wrapping_add(1);
-                }
-                None => {
-                    let _ = send.finish();
-                    debug!("audio sender exiting (channel closed)");
-                    return;
-                }
-            }
-        }
-        let _ = send.finish();
-    }
-    debug!("audio sender exiting");
-}
-
 async fn run_cursor_sender(
     conn: Connection,
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
@@ -477,6 +366,8 @@ pub struct SessionManager {
     video_bytes: AtomicU64,
     last_video_bytes: AtomicU64,
     video_bitrate: AtomicU64, // bytes/sec
+    audio_bytes: AtomicU64,
+    last_audio_bytes: AtomicU64,
     relay_ms: Arc<AtomicU32>, // latest relay latency (f32 bits)
 }
 
@@ -487,6 +378,8 @@ impl SessionManager {
             video_bytes: AtomicU64::new(0),
             last_video_bytes: AtomicU64::new(0),
             video_bitrate: AtomicU64::new(0),
+            audio_bytes: AtomicU64::new(0),
+            last_audio_bytes: AtomicU64::new(0),
             relay_ms: Arc::new(AtomicU32::new(0)),
         }
     }
@@ -516,6 +409,11 @@ impl SessionManager {
     }
 
     pub async fn broadcast_audio(&self, data: Vec<u8>) {
+        // Counted before the early return, so the figure measures what neswire
+        // delivered rather than what a client happened to be around for. A hub
+        // with no client still knows whether audio is being produced.
+        self.audio_bytes
+            .fetch_add(data.len() as u64, Ordering::Relaxed);
         let sessions = self.sessions.lock().await;
         if sessions.is_empty() {
             return;
@@ -555,6 +453,25 @@ impl SessionManager {
 
     pub async fn client_count(&self) -> usize {
         self.sessions.lock().await.len()
+    }
+
+    /// Opus actually received from neswire since the last call, in kbps.
+    ///
+    /// Measured, not configured. The reported figure used to be
+    /// `channels * bitrate_per_channel` straight off the hub's own command line,
+    /// which is a constant: it read 128 kbps whether neswire was feeding the
+    /// socket, feeding it silence, or had never sent a byte. A stat that cannot
+    /// be wrong cannot be evidence of anything.
+    ///
+    /// Like [`video_bitrate_bps`], this assumes the caller ticks once a second
+    /// -- the difference since the previous call *is* the per-second figure.
+    ///
+    /// [`video_bitrate_bps`]: Self::video_bitrate_bps
+    pub fn audio_bitrate_kbps(&self) -> u32 {
+        let current = self.audio_bytes.load(Ordering::Relaxed);
+        let last = self.last_audio_bytes.swap(current, Ordering::Relaxed);
+        let diff = current.saturating_sub(last);
+        (diff * 8 / 1000) as u32
     }
 
     pub fn video_bitrate_bps(&self) -> u32 {

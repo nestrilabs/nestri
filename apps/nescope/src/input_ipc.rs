@@ -13,7 +13,10 @@ impl InputIpcSource {
     pub fn connect(path: &str) -> io::Result<Self> {
         let stream = UnixStream::connect(path)?;
         stream.set_nonblocking(true)?;
-        Ok(Self { stream, buf: Vec::new() })
+        Ok(Self {
+            stream,
+            buf: Vec::new(),
+        })
     }
 
     pub fn try_clone(&self) -> io::Result<UnixStream> {
@@ -46,7 +49,10 @@ impl EventSource for InputIpcSource {
         loop {
             match self.stream.read(&mut tmp) {
                 Ok(0) => {
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "IPC socket closed"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "IPC socket closed",
+                    ));
                 }
                 Ok(n) => {
                     self.buf.extend_from_slice(&tmp[..n]);

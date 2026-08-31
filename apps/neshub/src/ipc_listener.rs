@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixDatagram, UnixListener};
 use tokio::sync::broadcast::error::RecvError;
-use tracing::{debug, error, info, warn};
 
 use crate::session::SessionManager;
 use nesprotocol::{CODEC_OPUS, STREAM_AUDIO, STREAM_VIDEO, decode_ipc_frame};
@@ -36,7 +35,7 @@ pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<Sessi
             s
         }
         Err(e) => {
-            error!(
+            tracing::error!(
                 "Failed to bind video IPC socket {}: {e}",
                 socket_path.display()
             );
@@ -44,7 +43,7 @@ pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<Sessi
         }
     };
 
-    info!("Video IPC listening on {}", socket_path.display());
+    tracing::info!("Video IPC listening on {}", socket_path.display());
 
     let mut buf = vec![0u8; 2 * 1024 * 1024];
     loop {
@@ -52,7 +51,7 @@ pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<Sessi
             Ok(n) => {
                 if let Some(decoded) = decode_ipc_frame(&buf[..n]) {
                     if decoded.stream_type != STREAM_VIDEO {
-                        warn!(
+                        tracing::warn!(
                             "unexpected stream type on video socket: {}",
                             decoded.stream_type
                         );
@@ -68,17 +67,17 @@ pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<Sessi
 
                     session_manager.broadcast_video(frame_data).await;
                 } else {
-                    warn!("invalid video IPC frame ({} bytes)", n);
+                    tracing::warn!("invalid video IPC frame ({} bytes)", n);
                 }
             }
             Err(e) => {
-                error!("video IPC recv error: {e}");
+                tracing::error!("video IPC recv error: {e}");
                 break;
             }
         }
     }
 
-    info!("video IPC listener exited");
+    tracing::info!("video IPC listener exited");
 }
 
 pub async fn run_audio_listener(socket_path: PathBuf, session_manager: Arc<SessionManager>) {
@@ -96,7 +95,7 @@ pub async fn run_audio_listener(socket_path: PathBuf, session_manager: Arc<Sessi
             s
         }
         Err(e) => {
-            error!(
+            tracing::error!(
                 "Failed to bind audio IPC socket {}: {e}",
                 socket_path.display()
             );
@@ -104,7 +103,7 @@ pub async fn run_audio_listener(socket_path: PathBuf, session_manager: Arc<Sessi
         }
     };
 
-    info!("Audio IPC listening on {}", socket_path.display());
+    tracing::info!("Audio IPC listening on {}", socket_path.display());
 
     let mut buf = vec![0u8; 65536];
     loop {
@@ -112,30 +111,30 @@ pub async fn run_audio_listener(socket_path: PathBuf, session_manager: Arc<Sessi
             Ok(n) => {
                 if let Some(decoded) = decode_ipc_frame(&buf[..n]) {
                     if decoded.stream_type != STREAM_AUDIO {
-                        warn!(
+                        tracing::warn!(
                             "unexpected stream type on audio socket: {}",
                             decoded.stream_type
                         );
                         continue;
                     }
                     if decoded.codec != CODEC_OPUS {
-                        warn!("unexpected codec on audio socket: {}", decoded.codec);
+                        tracing::warn!("unexpected codec on audio socket: {}", decoded.codec);
                         continue;
                     }
                     let audio_data = decoded.data.to_vec();
                     session_manager.broadcast_audio(audio_data).await;
                 } else {
-                    warn!("invalid audio IPC frame ({} bytes)", n);
+                    tracing::warn!("invalid audio IPC frame ({} bytes)", n);
                 }
             }
             Err(e) => {
-                error!("audio IPC recv error: {e}");
+                tracing::error!("audio IPC recv error: {e}");
                 break;
             }
         }
     }
 
-    info!("audio IPC listener exited");
+    tracing::info!("audio IPC listener exited");
 }
 
 pub async fn run_input_ipc_listener(
@@ -157,7 +156,7 @@ pub async fn run_input_ipc_listener(
             l
         }
         Err(e) => {
-            error!(
+            tracing::error!(
                 "Failed to bind input IPC socket {}: {e}",
                 socket_path.display()
             );
@@ -165,14 +164,14 @@ pub async fn run_input_ipc_listener(
         }
     };
 
-    info!("Input IPC listening on {}", socket_path.display());
+    tracing::info!("Input IPC listening on {}", socket_path.display());
 
     loop {
         match listener.accept().await {
             Ok((stream, peer_addr)) => {
-                debug!(?peer_addr, "nescope connected to input IPC");
+                tracing::debug!(?peer_addr, "nescope connected to input IPC");
                 if let Some(addr) = peer_addr.as_pathname() {
-                    debug!(?addr, "nescope input IPC peer address");
+                    tracing::debug!(?addr, "nescope input IPC peer address");
                 }
 
                 let (mut read_half, mut write_half) = stream.into_split();
@@ -188,15 +187,15 @@ pub async fn run_input_ipc_listener(
                                 frame.extend_from_slice(&len.to_le_bytes());
                                 frame.extend_from_slice(&data);
                                 if write_half.write_all(&frame).await.is_err() {
-                                    debug!("input IPC write failed");
+                                    tracing::debug!("input IPC write failed");
                                     break;
                                 }
                             }
                             Err(RecvError::Lagged(n)) => {
-                                warn!("input broadcast lagged by {n} messages");
+                                tracing::warn!("input broadcast lagged by {n} messages");
                             }
                             Err(RecvError::Closed) => {
-                                debug!("input broadcast closed");
+                                tracing::debug!("input broadcast closed");
                                 break;
                             }
                         }
@@ -238,16 +237,16 @@ pub async fn run_input_ipc_listener(
                     _ = read_handle => {}
                 }
 
-                debug!("nescope disconnected from input IPC");
+                tracing::debug!("nescope disconnected from input IPC");
             }
             Err(e) => {
-                error!("input IPC accept error: {e}");
+                tracing::error!("input IPC accept error: {e}");
                 break;
             }
         }
     }
 
-    info!("input IPC listener exited");
+    tracing::info!("input IPC listener exited");
 }
 
 pub async fn run_stats_ipc_listener(
@@ -267,7 +266,7 @@ pub async fn run_stats_ipc_listener(
             s
         }
         Err(e) => {
-            error!(
+            tracing::error!(
                 "Failed to bind stats IPC socket {}: {e}",
                 socket_path.display()
             );
@@ -275,7 +274,7 @@ pub async fn run_stats_ipc_listener(
         }
     };
 
-    info!("Stats IPC listening on {}", socket_path.display());
+    tracing::info!("Stats IPC listening on {}", socket_path.display());
 
     let mut buf = vec![0u8; 256];
     loop {
@@ -284,10 +283,52 @@ pub async fn run_stats_ipc_listener(
                 let _ = stats_tx.send(buf[..n].to_vec());
             }
             Err(e) => {
-                error!("stats IPC recv error: {e}");
+                tracing::error!("stats IPC recv error: {e}");
                 break;
             }
         }
     }
-    info!("stats IPC listener exited");
+
+    tracing::info!("stats IPC listener exited");
+}
+
+pub async fn run_ticket_ipc_listener(socket_path: PathBuf, ticket: crate::NestriTicket) {
+    if socket_path.exists() {
+        let _ = std::fs::remove_file(&socket_path);
+    }
+
+    let listener = match UnixListener::bind(&socket_path) {
+        Ok(l) => {
+            let _ = std::fs::set_permissions(
+                &socket_path,
+                std::os::unix::fs::PermissionsExt::from_mode(0o666),
+            );
+            l
+        }
+        Err(e) => {
+            tracing::error!(
+                "Failed to bind ticket IPC socket {}: {e}",
+                socket_path.display()
+            );
+            return;
+        }
+    };
+
+    tracing::info!("ticket IPC listening on {}", socket_path.display());
+
+    loop {
+        match listener.accept().await {
+            Ok((mut stream, _)) => {
+                if let Err(e) = stream.write_all(format!("{ticket}\n").as_bytes()).await {
+                    tracing::warn!("could not write ticket to IPC: {e}");
+                }
+            }
+            Err(e) => {
+                tracing::error!("ticket IPC accept error: {e}");
+                break;
+            }
+        }
+    }
+
+    tracing::info!("ticket IPC listener exited");
 }

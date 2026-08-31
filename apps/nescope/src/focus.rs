@@ -156,12 +156,7 @@ impl KeyboardTarget<NescopeState> for KeyboardFocusTarget {
 }
 
 impl PointerTarget<NescopeState> for KeyboardFocusTarget {
-    fn enter(
-        &self,
-        seat: &Seat<NescopeState>,
-        data: &mut NescopeState,
-        event: &MotionEvent,
-    ) {
+    fn enter(&self, seat: &Seat<NescopeState>, data: &mut NescopeState, event: &MotionEvent) {
         match self {
             Self::Window(w) => match w.underlying_surface() {
                 WindowSurface::Wayland(w) => {
@@ -175,12 +170,7 @@ impl PointerTarget<NescopeState> for KeyboardFocusTarget {
         }
     }
 
-    fn motion(
-        &self,
-        seat: &Seat<NescopeState>,
-        data: &mut NescopeState,
-        event: &MotionEvent,
-    ) {
+    fn motion(&self, seat: &Seat<NescopeState>, data: &mut NescopeState, event: &MotionEvent) {
         match self {
             Self::Window(w) => match w.underlying_surface() {
                 WindowSurface::Wayland(w) => {
@@ -205,9 +195,7 @@ impl PointerTarget<NescopeState> for KeyboardFocusTarget {
                 WindowSurface::Wayland(w) => {
                     PointerTarget::relative_motion(w.wl_surface(), seat, data, event)
                 }
-                WindowSurface::X11(s) => {
-                    PointerTarget::relative_motion(s, seat, data, event)
-                }
+                WindowSurface::X11(s) => PointerTarget::relative_motion(s, seat, data, event),
             },
             Self::ProxiedX11 { proxy_surface, .. } => {
                 PointerTarget::relative_motion(proxy_surface, seat, data, event)
@@ -215,12 +203,7 @@ impl PointerTarget<NescopeState> for KeyboardFocusTarget {
         }
     }
 
-    fn button(
-        &self,
-        seat: &Seat<NescopeState>,
-        data: &mut NescopeState,
-        event: &ButtonEvent,
-    ) {
+    fn button(&self, seat: &Seat<NescopeState>, data: &mut NescopeState, event: &ButtonEvent) {
         match self {
             Self::Window(w) => match w.underlying_surface() {
                 WindowSurface::Wayland(w) => {
@@ -234,17 +217,10 @@ impl PointerTarget<NescopeState> for KeyboardFocusTarget {
         }
     }
 
-    fn axis(
-        &self,
-        seat: &Seat<NescopeState>,
-        data: &mut NescopeState,
-        frame: AxisFrame,
-    ) {
+    fn axis(&self, seat: &Seat<NescopeState>, data: &mut NescopeState, frame: AxisFrame) {
         match self {
             Self::Window(w) => match w.underlying_surface() {
-                WindowSurface::Wayland(w) => {
-                    PointerTarget::axis(w.wl_surface(), seat, data, frame)
-                }
+                WindowSurface::Wayland(w) => PointerTarget::axis(w.wl_surface(), seat, data, frame),
                 WindowSurface::X11(s) => PointerTarget::axis(s, seat, data, frame),
             },
             Self::ProxiedX11 { proxy_surface, .. } => {
@@ -253,13 +229,7 @@ impl PointerTarget<NescopeState> for KeyboardFocusTarget {
         }
     }
 
-    fn leave(
-        &self,
-        seat: &Seat<NescopeState>,
-        data: &mut NescopeState,
-        serial: Serial,
-        time: u32,
-    ) {
+    fn leave(&self, seat: &Seat<NescopeState>, data: &mut NescopeState, serial: Serial, time: u32) {
         match self {
             Self::Window(w) => match w.underlying_surface() {
                 WindowSurface::Wayland(w) => {
@@ -273,21 +243,67 @@ impl PointerTarget<NescopeState> for KeyboardFocusTarget {
         }
     }
 
-    fn gesture_swipe_begin(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GestureSwipeBeginEvent) {}
-    fn gesture_swipe_update(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GestureSwipeUpdateEvent) {}
-    fn gesture_swipe_end(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GestureSwipeEndEvent) {}
-    fn gesture_pinch_begin(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GesturePinchBeginEvent) {}
-    fn gesture_pinch_update(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GesturePinchUpdateEvent) {}
-    fn gesture_pinch_end(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GesturePinchEndEvent) {}
-    fn gesture_hold_begin(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GestureHoldBeginEvent) {}
-    fn gesture_hold_end(&self, _seat: &Seat<NescopeState>, _data: &mut NescopeState, _event: &smithay::input::pointer::GestureHoldEndEvent) {}
+    fn gesture_swipe_begin(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GestureSwipeBeginEvent,
+    ) {
+    }
+    fn gesture_swipe_update(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GestureSwipeUpdateEvent,
+    ) {
+    }
+    fn gesture_swipe_end(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GestureSwipeEndEvent,
+    ) {
+    }
+    fn gesture_pinch_begin(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GesturePinchBeginEvent,
+    ) {
+    }
+    fn gesture_pinch_update(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GesturePinchUpdateEvent,
+    ) {
+    }
+    fn gesture_pinch_end(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GesturePinchEndEvent,
+    ) {
+    }
+    fn gesture_hold_begin(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GestureHoldBeginEvent,
+    ) {
+    }
+    fn gesture_hold_end(
+        &self,
+        _seat: &Seat<NescopeState>,
+        _data: &mut NescopeState,
+        _event: &smithay::input::pointer::GestureHoldEndEvent,
+    ) {
+    }
 
     fn frame(&self, seat: &Seat<NescopeState>, data: &mut NescopeState) {
         match self {
             Self::Window(w) => match w.underlying_surface() {
-                WindowSurface::Wayland(w) => {
-                    PointerTarget::frame(w.wl_surface(), seat, data)
-                }
+                WindowSurface::Wayland(w) => PointerTarget::frame(w.wl_surface(), seat, data),
                 WindowSurface::X11(s) => PointerTarget::frame(s, seat, data),
             },
             Self::ProxiedX11 { proxy_surface, .. } => {

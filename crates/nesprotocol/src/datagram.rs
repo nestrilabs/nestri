@@ -193,7 +193,11 @@ mod tests {
 
         let mut framed = Vec::new();
         crate::encode_frame(&mut framed, crate::MSG_DATA, 42, &[9, 8, 7]);
-        assert_eq!(&framed[4..], &body[..], "body is the frame minus its prefix");
+        assert_eq!(
+            &framed[4..],
+            &body[..],
+            "body is the frame minus its prefix"
+        );
 
         let (msg_type, seq, payload) = crate::decode_frame(&body).expect("body parses");
         assert_eq!(msg_type, crate::MSG_DATA);

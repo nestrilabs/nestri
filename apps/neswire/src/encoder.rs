@@ -402,8 +402,7 @@ mod tests {
         let start = Instant::now();
         let mut opus_buf = vec![0u8; 4000];
 
-        send_frame(&encoder, &sender, &config, &tone(0), &start, &mut opus_buf)
-            .expect("send");
+        send_frame(&encoder, &sender, &config, &tone(0), &start, &mut opus_buf).expect("send");
 
         let mut buf = vec![0u8; 65536];
         let n = listener.recv(&mut buf).expect("recv");

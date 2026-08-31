@@ -1095,9 +1095,7 @@ fn stats_sender_thread(
         let ca = capture_attempts.swap(0, Ordering::Relaxed);
 
         let mut buf = Vec::with_capacity(22);
-        nesprotocol::stats::encode_hudless_stats(
-            &mut buf, fps, enc_ms, dropped, pa, ca, cap_ms,
-        );
+        nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
         let _ = socket.send(&buf);
     }
 

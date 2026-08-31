@@ -45,8 +45,8 @@ pub use crate::screenshot_wire::{REQUEST_CAPTURE, encode_reply};
 
 use smithay::desktop::{Space, Window};
 use smithay::reexports::wayland_server::protocol::wl_buffer;
-use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::compositor::{BufferAssignment, SurfaceAttributes, with_states};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shm::with_buffer_contents;
 
 /// Read the pixels of the frontmost mapped window.
@@ -185,7 +185,6 @@ impl ScreenshotIpcSource {
     pub fn try_clone_writer(&self) -> io::Result<UnixStream> {
         self.stream.try_clone()
     }
-
 }
 
 impl AsFd for ScreenshotIpcSource {
