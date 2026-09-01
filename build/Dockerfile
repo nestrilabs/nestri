@@ -155,6 +155,12 @@ RUN groupadd -f audio && groupadd -f video && groupadd -f input && groupadd -f r
 # ───────────────────────────────────────────────────────────
 FROM os-base AS runtime
 
+# This is what GHCR actually uses to connect a pushed image back to its
+# repo — not a setting to toggle after the fact, a label the image has to
+# carry. Without it a manually-pushed image shows no "used by" repo on its
+# package page even though this Dockerfile is exactly what built it.
+LABEL org.opencontainers.image.source="https://github.com/nestrilabs/nestri"
+
 # Our own builds, overlaid on the distro's mesa. The distro package landed
 # first (above) so every runtime dependency of *a* Mesa is present and
 # correctly versioned; this overwrites its .so files with ours.
