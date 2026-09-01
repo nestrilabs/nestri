@@ -33,6 +33,19 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# Cargo only reads `[profile.*]` from the workspace root, and warns about a
+# member that writes one. `apps/nescapture` had exactly this block and was
+# getting none of it: `cargo build --release --workspace` — which is what
+# build/Dockerfile runs — silently ignored it, so the Vulkan capture layer
+# shipped at the default release profile.
+#
+# `opt-level = 3` is already the release default; `lto = "thin"` is the part
+# that was actually being lost. It applies to the whole workspace now, which is
+# the same rule as `[workspace.dependencies]` above: settings that must not
+# differ between members live in one place.
+[profile.release]
+lto = "thin"
+
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"

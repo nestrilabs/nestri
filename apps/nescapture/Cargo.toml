@@ -40,6 +40,3 @@ libc = "0.2"
 # Shared IPC protocol
 nesprotocol = { path = "../../crates/nesprotocol" }
 
-[profile.release]
-opt-level = 3
-lto       = "thin"
