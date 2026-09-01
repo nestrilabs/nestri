@@ -21,8 +21,16 @@ rather than a promise about our intentions: there is nothing to switch on later.
 
 The shareable line carries **no hostname, no IP, no username, no game titles and
 no file paths** — a size band rather than a size, and an hour histogram rather
-than timestamps. The long version does include titles and paths, and it stays in
-`nesdoctor.json` on your disk.
+than timestamps. It is put on your clipboard at the end so pasting it is one
+keystroke.
+
+The long version lands in `nesdoctor.json`: every check with its reason, the
+full latency series, and your installed titles with sizes and launch times if
+you said yes to Steam. **That file is considerably more useful to us than the
+line** — it is what lets us size a game library and see which requirement
+actually stops people — so do have a read through it and send it along if
+nothing in there bothers you. Plain JSON, entirely optional, and the one-line
+version is already plenty.
 
 Reading your Steam library needs an explicit yes, and the question is asked last,
 after you have seen what this program does.

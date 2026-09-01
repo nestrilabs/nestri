@@ -206,27 +206,62 @@ fn main() {
         return;
     }
 
+    let clip = report::to_clipboard(&line);
+
     println!();
-    println!("\x1b[1mThe line to share, if you want to\x1b[0m");
-    println!(
-        "\x1b[2m  No hostname, no IP, no username, no game titles, no paths. A size band\x1b[0m"
-    );
-    println!("\x1b[2m  rather than a size, and hours rather than dates. Read it yourself:\x1b[0m");
+    println!("\x1b[1m─── Copy this ───────────────────────────────────────────────────\x1b[0m");
     println!();
-    println!("  {line}");
+    println!("\x1b[1;97;44m {line} \x1b[0m");
     println!();
-    if wrote {
-        println!(
-            "\x1b[2mThe long version — which does include titles and paths — is in {} and\x1b[0m",
-            args.json.display()
-        );
-        println!("\x1b[2mgoes nowhere unless you send it.\x1b[0m");
+    match clip {
+        Some(tool) => println!(
+            "\x1b[32m  ✓ Already on your clipboard\x1b[0m \x1b[2m(via {tool}) — just paste it.\x1b[0m"
+        ),
+        None => println!(
+            "\x1b[2m  Select the line above to copy it. (Install wl-clipboard or xclip and\x1b[0m\n\x1b[2m  this happens by itself next time.)\x1b[0m"
+        ),
     }
     println!();
     println!(
-        "\x1b[2mIf you are willing: paste that line into the thread you got this from.\x1b[0m"
+        "\x1b[2m  Every field is above: no hostname, no IP, no username, no game titles,\x1b[0m"
     );
-    println!("\x1b[2mIt is the only way we learn what the machines on the other end are.\x1b[0m");
+    println!("\x1b[2m  no paths. A size band rather than a size, hours rather than dates.\x1b[0m");
+    println!();
+    println!("\x1b[1m  → Paste it into the thread you got this from.\x1b[0m");
+    println!(
+        "\x1b[2m    It is the only way we find out what the machines on the other end are,\x1b[0m"
+    );
+    println!("\x1b[2m    and right now we genuinely have no idea.\x1b[0m");
+
+    if wrote {
+        println!();
+        println!("\x1b[1mAnd if you feel like being properly helpful\x1b[0m");
+        println!(
+            "\x1b[2m  {} has the long version: every check with its reason, the full\x1b[0m",
+            args.json.display()
+        );
+        println!(
+            "\x1b[2m  latency series, and — if you said yes to Steam — your installed titles\x1b[0m"
+        );
+        println!("\x1b[2m  with their sizes and launch times.\x1b[0m");
+        println!();
+        println!(
+            "\x1b[2m  That file is more useful to us than the line by a long way: it is what\x1b[0m"
+        );
+        println!(
+            "\x1b[2m  lets us size a game library properly and see which requirement actually\x1b[0m"
+        );
+        println!(
+            "\x1b[2m  stops people. Have a look through it — it is plain JSON — and send it\x1b[0m"
+        );
+        println!(
+            "\x1b[2m  along if nothing in there bothers you. Entirely optional, and the\x1b[0m"
+        );
+        println!("\x1b[2m  line above is already plenty.\x1b[0m");
+    }
+    println!();
+    println!("\x1b[2mThanks. Genuinely — this is the part we cannot do on our own.\x1b[0m");
+    println!();
 }
 
 fn banner() {

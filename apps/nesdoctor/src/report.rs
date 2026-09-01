@@ -310,3 +310,44 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
     out.retain(|l| !l.is_empty());
     out
 }
+
+/// Put the summary line on the clipboard, and say which tool did it.
+///
+/// Selecting a long line out of a terminal is fiddly and it is the last step
+/// before we learn anything, so it should not be work. Every one of these ships
+/// with the desktop it belongs to; where none is present we simply say so and
+/// the line is still on screen.
+pub fn to_clipboard(line: &str) -> Option<&'static str> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    const TOOLS: [(&str, &[&str]); 5] = [
+        ("wl-copy", &[]),                        // Wayland
+        ("xclip", &["-selection", "clipboard"]), // X11
+        ("xsel", &["--clipboard", "--input"]),   // X11, the other one
+        ("pbcopy", &[]),                         // macOS
+        ("clip", &[]),                           // Windows
+    ];
+
+    for (tool, args) in TOOLS {
+        let Ok(mut child) = Command::new(tool)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            continue;
+        };
+        let wrote = child
+            .stdin
+            .as_mut()
+            .is_some_and(|s| s.write_all(line.as_bytes()).is_ok());
+        // Wait either way, so a failed tool is not left running.
+        let ok = child.wait().map(|s| s.success()).unwrap_or(false);
+        if wrote && ok {
+            return Some(tool);
+        }
+    }
+    None
+}
