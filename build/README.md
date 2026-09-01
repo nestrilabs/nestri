@@ -20,8 +20,8 @@ build/
 ```
 
 ```sh
-make build          # docker build --target runtime_prod   → nestrilabs/nestri:base
-make build-debug    # docker build --target runtime_debug  → nestrilabs/nestri:base-debug
+make build          # docker build --target runtime_prod   → ghcr.io/nestrilabs/nestri/base:latest
+make build-debug    # docker build --target runtime_debug  → ghcr.io/nestrilabs/nestri/base:debug
 make image          # + pack into output/rootfs.ext4
 make image-debug    # + pack into output/rootfs-debug.ext4
 ```
@@ -54,7 +54,7 @@ Three things worth knowing about how this is put together:
 `nestri/CLAUDE.md` is explicit — *"Nothing closed may enter this repo. Not
 source, not a dependency, not a directory that 'looked convenient'."* Both
 are closed. `runtime_prod` from this Dockerfile — tagged
-`nestrilabs/nestri:base` — is a complete, bootable, Steam-less guest image,
+`ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable, Steam-less guest image,
 and also the shared foundation other builds start from: nesbox's jailer
 image (see `nesbox/build/`) extracts Mesa and virglrenderer from it so the
 guest and host sides of the virtio-gpu native-context protocol never drift
