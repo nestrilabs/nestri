@@ -202,7 +202,10 @@ mod tests {
             v.get(&["appstate", "sizeondisk"]).unwrap().as_u64(),
             Some(38654705664)
         );
-        assert_eq!(v.get(&["AppState", "nested", "a"]).unwrap().as_u64(), Some(1));
+        assert_eq!(
+            v.get(&["AppState", "nested", "a"]).unwrap().as_u64(),
+            Some(1)
+        );
     }
 
     #[test]

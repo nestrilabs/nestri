@@ -90,13 +90,7 @@ pub fn probe(sys: &SysInfo) -> HostReport {
     c.push(Check {
         id: "kvm",
         what: "/dev/kvm present and openable",
-        state: if kvm_rw {
-            State::Pass
-        } else if kvm {
-            State::Fail
-        } else {
-            State::Fail
-        },
+        state: if kvm_rw { State::Pass } else { State::Fail },
         detail: match (kvm, kvm_rw) {
             (true, true) => "yes".into(),
             (true, false) => {
@@ -104,7 +98,9 @@ pub fn probe(sys: &SysInfo) -> HostReport {
                  is disabled in firmware"
                     .into()
             }
-            _ => "missing — enable SVM/VT-x in firmware, or this is a VM without nested virt".into(),
+            _ => {
+                "missing — enable SVM/VT-x in firmware, or this is a VM without nested virt".into()
+            }
         },
         blocking: true,
     });
@@ -131,7 +127,11 @@ pub fn probe(sys: &SysInfo) -> HostReport {
             State::Fail
         },
         detail: if let Some(g) = usable.first() {
-            format!("{} at {}", g.name, g.render_node.clone().unwrap_or_default())
+            format!(
+                "{} at {}",
+                g.name,
+                g.render_node.clone().unwrap_or_default()
+            )
         } else if nvidia_only {
             "NVIDIA only. Nvidia needs virtio-nvgpu, which is not funded — so this card \
              cannot host today. It is a fine client."
@@ -293,16 +293,19 @@ pub fn probe(sys: &SysInfo) -> HostReport {
         detail: if io_ctrl {
             "present at the root".into()
         } else {
-            "not available. Without it a per-box io.max silently has nothing to attach to."
-                .into()
+            "not available. Without it a per-box io.max silently has nothing to attach to.".into()
         },
         blocking: false,
     });
 
     // --- virtiofsd --------------------------------------------------------
-    let virtiofsd = ["/usr/bin/virtiofsd", "/usr/libexec/virtiofsd", "/usr/lib/virtiofsd"]
-        .iter()
-        .find(|p| sys::exists(p));
+    let virtiofsd = [
+        "/usr/bin/virtiofsd",
+        "/usr/libexec/virtiofsd",
+        "/usr/lib/virtiofsd",
+    ]
+    .iter()
+    .find(|p| sys::exists(p));
     c.push(Check {
         id: "virtiofsd",
         what: "virtiofsd, for shared directories into the guest",
@@ -322,9 +325,7 @@ pub fn probe(sys: &SysInfo) -> HostReport {
         .iter()
         .filter(|k| k.blocking && k.state == State::Unknown)
         .count();
-    let could_host = !c
-        .iter()
-        .any(|k| k.blocking && k.state == State::Fail);
+    let could_host = !c.iter().any(|k| k.blocking && k.state == State::Fail);
 
     HostReport {
         checks: c,

@@ -47,7 +47,7 @@ mod steam;
 mod sys;
 mod vdf;
 
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -142,9 +142,19 @@ fn main() {
             .iter()
             .any(|g| matches!(g.vendor.as_deref(), Some("AMD") | Some("Intel")));
 
-    let answers = if args.yes {
+    // Do not ask questions that cannot be answered. `--quiet` promises a single
+    // parseable line, and a prompt written to stdout breaks that promise; a
+    // non-terminal stdin cannot answer at all, so prompting into it just prints
+    // the whole questionnaire and skips every item. Both cases used to print
+    // three questions and then "skipped" -- found by the CI smoke test, which
+    // is the only reason anything runs this way.
+    let interactive = !args.quiet && std::io::stdin().is_terminal();
+
+    let answers = if args.yes || !interactive {
         ask::Answers {
-            steam_consent: steam_present,
+            // `--yes` is a deliberate consent; a pipe is not consent to read
+            // somebody's library.
+            steam_consent: args.yes && steam_present,
             ..Default::default()
         }
     } else {
@@ -213,7 +223,9 @@ fn main() {
         println!("\x1b[2mgoes nowhere unless you send it.\x1b[0m");
     }
     println!();
-    println!("\x1b[2mIf you are willing: paste that line into the thread you got this from.\x1b[0m");
+    println!(
+        "\x1b[2mIf you are willing: paste that line into the thread you got this from.\x1b[0m"
+    );
     println!("\x1b[2mIt is the only way we learn what the machines on the other end are.\x1b[0m");
 }
 
@@ -223,7 +235,9 @@ fn banner() {
     println!("\x1b[2mChecks whether this machine can host a Nestri box, measures what your\x1b[0m");
     println!("\x1b[2mconnection actually does under load, and asks at most five questions.\x1b[0m");
     println!();
-    println!("\x1b[2mNothing is uploaded. There is no server to upload to — the output is a\x1b[0m");
+    println!(
+        "\x1b[2mNothing is uploaded. There is no server to upload to — the output is a\x1b[0m"
+    );
     println!("\x1b[2mline on your terminal that you may choose to paste somewhere.\x1b[0m");
     println!();
 }
@@ -282,9 +296,7 @@ fn print_net(n: &net::NetReport) {
         println!(
             "  \x1b[2m  That is the round trip to the *nearest* major network, so it is a\x1b[0m"
         );
-        println!(
-            "  \x1b[2m  floor on what any player sees. It is distance, not a fault.\x1b[0m"
-        );
+        println!("  \x1b[2m  floor on what any player sees. It is distance, not a fault.\x1b[0m");
     }
     println!("  latency, loaded     {}", f(n.loaded_rtt_ms, " ms"));
     println!("  latency, loaded p95 {}", f(n.loaded_rtt_p95_ms, " ms"));
@@ -332,9 +344,7 @@ fn print_steam(s: &steam::SteamReport) {
         println!("    {}", steam::sparkline(&s.launch_hours));
         println!("    \x1b[2m0h          6h          12h         18h        23h\x1b[0m");
         if let Some((a, b)) = s.peak_window {
-            println!(
-                "  Half of your launches fall between \x1b[1m{a:02}:00 and {b:02}:59\x1b[0m."
-            );
+            println!("  Half of your launches fall between \x1b[1m{a:02}:00 and {b:02}:59\x1b[0m.");
             let width = if b >= a { b - a + 1 } else { 24 - a + b + 1 };
             if width <= 6 {
                 println!(

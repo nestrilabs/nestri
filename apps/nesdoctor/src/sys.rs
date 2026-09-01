@@ -10,6 +10,13 @@
 //! Every probe degrades to `None` rather than failing the run. A missing
 //! `lspci` costs one field.
 
+// Every probe in this module is a stack of `#[cfg]`-gated `return`s, one per
+// platform, so that exactly one compiles. The trailing `return` in each arm is
+// load-bearing -- dropping it makes the arms fall through to each other and the
+// function stops compiling on some targets -- so clippy's advice is wrong here
+// specifically, and is not suppressed anywhere else in the crate.
+#![allow(clippy::needless_return)]
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -134,7 +141,13 @@ fn ram_gib() -> Option<f64> {
             / 1073741824.0,
     );
     #[cfg(target_os = "macos")]
-    return Some(sh("sysctl", &["-n", "hw.memsize"])?.trim().parse::<f64>().ok()? / 1073741824.0);
+    return Some(
+        sh("sysctl", &["-n", "hw.memsize"])?
+            .trim()
+            .parse::<f64>()
+            .ok()?
+            / 1073741824.0,
+    );
     #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     return None;
 }
@@ -213,7 +226,9 @@ fn linux_gpus() -> Vec<Gpu> {
             .as_ref()
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
             .unwrap_or_default();
-        let bdf = slot.splitn(2, ':').nth(1).unwrap_or(&slot).to_string();
+        let bdf = slot
+            .split_once(':')
+            .map_or(slot.clone(), |(_, r)| r.to_string());
 
         let name = lspci
             .lines()

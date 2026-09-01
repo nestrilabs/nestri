@@ -84,7 +84,9 @@ fn candidate_roots() -> Vec<PathBuf> {
     }
     v.push(PathBuf::from(r"C:\Program Files (x86)\Steam"));
     v.push(PathBuf::from("/usr/lib/steam"));
-    v.into_iter().filter(|p| p.join("steamapps").is_dir()).collect()
+    v.into_iter()
+        .filter(|p| p.join("steamapps").is_dir())
+        .collect()
 }
 
 /// True when there is anything to ask about. Called *before* consent so the
@@ -113,7 +115,7 @@ pub fn read() -> SteamReport {
         if let Ok(txt) = fs::read_to_string(&lf) {
             let doc = vdf::parse(&txt);
             if let Some(folders) = doc.get(&["libraryfolders"]).and_then(vdf::Value::as_node) {
-                for (_, entry) in folders {
+                for entry in folders.values() {
                     if let Some(p) = entry.get(&["path"]).and_then(vdf::Value::as_str) {
                         let d = PathBuf::from(p).join("steamapps");
                         if d.is_dir() {
@@ -129,7 +131,9 @@ pub fn read() -> SteamReport {
 
     let mut by_size: Vec<(String, u64)> = Vec::new();
     for dir in &app_dirs {
-        let Ok(entries) = fs::read_dir(dir) else { continue };
+        let Ok(entries) = fs::read_dir(dir) else {
+            continue;
+        };
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
             if !(name.starts_with("appmanifest_") && name.ends_with(".acf")) {
@@ -160,7 +164,7 @@ pub fn read() -> SteamReport {
 
     r.titles = by_size.len();
     r.bytes_on_disk = by_size.iter().map(|(_, s)| s).sum();
-    by_size.sort_by(|a, b| b.1.cmp(&a.1));
+    by_size.sort_by_key(|(_, size)| std::cmp::Reverse(*size));
     r.largest = by_size.into_iter().take(5).collect();
 
     // --- when do they play -----------------------------------------------
@@ -175,18 +179,12 @@ pub fn read() -> SteamReport {
             };
             let doc = vdf::parse(&txt);
             let Some(apps) = doc
-                .get(&[
-                    "UserLocalConfigStore",
-                    "Software",
-                    "Valve",
-                    "Steam",
-                    "apps",
-                ])
+                .get(&["UserLocalConfigStore", "Software", "Valve", "Steam", "apps"])
                 .and_then(vdf::Value::as_node)
             else {
                 continue;
             };
-            for (_, app) in apps {
+            for app in apps.values() {
                 let Some(ts) = app.get(&["LastPlayed"]).and_then(vdf::Value::as_u64) else {
                     continue;
                 };

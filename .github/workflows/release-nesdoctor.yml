@@ -1,0 +1,156 @@
+# Builds the binaries people actually download.
+#
+# `nesdoctor` is handed to strangers and asked to be trusted, so the release
+# artefacts are built here and nowhere else: a binary someone produced on their
+# laptop and uploaded is not auditable, however honest they are.
+#
+# Tag `nesdoctor-v0.1.0` to cut a release, or run it by hand to check the
+# matrix still builds.
+name: release nesdoctor
+
+on:
+  push:
+    tags: ["nesdoctor-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One broken target must not suppress the others: a Windows failure
+      # should still leave the Linux binary available to look at.
+      fail-fast: false
+      matrix:
+        include:
+          # musl and not glibc, so one Linux binary runs on every distro
+          # regardless of its glibc version. Static linking is the whole reason
+          # this target is here.
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            bin: nesdoctor
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin: nesdoctor.exe
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bin: nesdoctor
+          # Intel Macs are still most of the installed base and they are
+          # clients, which is a category we want answers from.
+          - os: macos-13
+            target: x86_64-apple-darwin
+            bin: nesdoctor
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup target add ${{ matrix.target }}
+
+      # `ring`, under rustls, compiles C. On musl that needs the musl C
+      # toolchain present or the build fails at link time with an error that
+      # does not mention TLS at all.
+      - name: musl toolchain
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release -p nesdoctor --target ${{ matrix.target }}
+
+      # The binary is run here on purpose, and this step is the reason this
+      # workflow is worth having rather than a `cargo build` someone trusts.
+      #
+      # A static musl build resolves root certificates through the host trust
+      # store, so TLS can compile perfectly and then fail on the machine it is
+      # shipped to -- which would break the network test, the one feature
+      # anybody runs this for, silently and only for other people. Running the
+      # real thing here catches that class of failure before a tag exists.
+      - name: Smoke test — the whole run, network included
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          test -x "$BIN"
+          # --no-steam because a runner has no Steam and the consent prompt
+          # would block; stdin is closed so any prompt reads as a skip.
+          OUT="$("$BIN" --quiet --no-steam --json "$RUNNER_TEMP/nd.json" < /dev/null)"
+          echo "$OUT"
+          # The summary line must exist and must not have fallen back to
+          # "net=unmeasured", which is what a TLS or upload failure looks like.
+          grep -q "nesdoctor " <<<"$OUT"
+          if grep -q "net=unmeasured" <<<"$OUT"; then
+            echo "::error::network test did not run in the built binary — \
+            TLS or the upload sink failed at runtime, which is exactly the \
+            failure this step exists to catch"
+            exit 1
+          fi
+          test -s "$RUNNER_TEMP/nd.json"
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          NAME="nesdoctor-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/${{ matrix.bin }}" "dist/$NAME${{ matrix.bin == 'nesdoctor.exe' && '.exe' || '' }}"
+          cd dist
+          # Checksums beside the binary, because "download this and run it" is
+          # only a reasonable request if the file can be verified.
+          if command -v sha256sum >/dev/null; then
+            sha256sum * > "$NAME.sha256"
+          else
+            shasum -a 256 * > "$NAME.sha256"
+          fi
+          cat *.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nesdoctor-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    # Only on a tag. A manual run builds and smoke-tests the matrix without
+    # publishing anything, which is what you want while iterating.
+    if: startsWith(github.ref, 'refs/tags/nesdoctor-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Collect checksums
+        run: |
+          cd dist
+          cat *.sha256 | sort -k2 > SHA256SUMS
+          rm -f nesdoctor-*.sha256
+          ls -la
+          cat SHA256SUMS
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            **nesdoctor** — checks whether this machine can host a Nestri box,
+            and measures what your connection actually does under load.
+
+            Nothing is uploaded. There is no server to upload to: the network
+            test talks to Cloudflare's public speed-test sink and to `1.1.1.1`,
+            neither of which is ours. The output is a line on your terminal that
+            you may choose to paste somewhere.
+
+            Download the file for your platform, verify it against
+            `SHA256SUMS`, and run it. On macOS and Linux you will need
+            `chmod +x` first. Source is in `apps/nesdoctor`.
+
+            The number worth running it for is **added latency under load**.
+            Everybody knows their download speed; almost nobody has seen this
+            one, and for anything interactive it is the figure that decides it.
