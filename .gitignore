@@ -6,11 +6,18 @@ node_modules
 .netlify
 .wrangler
 .svelte-kit
-build
+# JS-framework build-output dirs, at any depth — but not the top-level
+# build/ directory, which is the guest rootfs build (see build/README.md),
+# a real source tree we want tracked.
+**/build
+!/build
 
 # Rust
 /target
 **/*.rs.bk
+
+# build/'s own output — the packed rootfs images, not source
+/build/output/
 
 # OS
 .DS_Store

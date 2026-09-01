@@ -1,0 +1,93 @@
+#!/sbin/openrc-run
+
+description="Nestri pipewire audio sink"
+
+nestri_export_env
+
+: "${NESTRI_UID:=1000}"
+: "${NESTRI_USER:=nestri}"
+
+command="/usr/bin/neswire"
+command_user="${NESTRI_USER}:${NESTRI_USER}"
+command_background="yes"
+pidfile="/run/nestri/neswire.pid"
+output_log="/nestri/logs/neswire.log"
+error_log="/nestri/logs/neswire.log"
+respawn="yes"
+respawn_delay="2"
+respawn_max="2"
+
+export XDG_RUNTIME_DIR="/run/user/${NESTRI_UID}"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${NESTRI_UID}/bus"
+
+depend() {
+    # wireplumber is a hard dependency, not a nicety: start_post below pins
+    # the default sink through the `default` metadata object, and
+    # WirePlumber is what owns that object. Started concurrently, the pin
+    # lands in an object pw-metadata created itself, which is destroyed the
+    # moment it exits.
+    need xdg-runtime dbus dbus-session pipewire wireplumber
+    use neshub
+    after pipewire wireplumber neshub
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o "${NESTRI_USER}:${NESTRI_USER}" /run/nestri
+}
+
+# Point the graph at neswire's sink, by name.
+#
+# `neswire` registers itself as media.class = Audio/Sink, node.name = neswire
+# ("Neswire Cloud Gaming Audio Sink"). With the hardware monitors off it is
+# the only sink, so WirePlumber's find-best hook should land on it anyway --
+# this makes it explicit rather than a consequence of there being nothing
+# else, so adding a second sink later cannot silently steal the default.
+#
+# `default.configured.audio.sink` is the metadata WirePlumber's find-selected
+# hook reads, and it takes a name; `wpctl set-default` takes a numeric object
+# id that changes every boot, which is why this uses pw-metadata instead.
+#
+# Not fatal if it fails: find-best still has one candidate. A game playing
+# into the wrong sink is silent, and a warning here is the only place that
+# would say so.
+start_post() {
+    local i=0
+    while [ $i -lt 50 ]; do
+        pw-dump 2>/dev/null | grep -q '"node.name": "neswire"' && break
+        sleep 0.1
+        i=$((i+1))
+    done
+    if ! pw-dump 2>/dev/null | grep -q '"node.name": "neswire"'; then
+        ewarn "neswire started but its sink never appeared in the graph"
+        return 0
+    fi
+
+    # Wait for WirePlumber to own the `default` metadata before writing to it.
+    #
+    # `need wireplumber` only guarantees its script returned, not that it has
+    # built its objects. Writing too early is silently useless rather than an
+    # error: pw-metadata creates the object, sets the key, exits 0, and the
+    # object dies with the client. So wait for the object to exist, and say
+    # so if it never does.
+    i=0
+    while [ $i -lt 50 ]; do
+        pw-metadata -n default >/dev/null 2>&1 && break
+        sleep 0.1
+        i=$((i+1))
+    done
+    if ! pw-metadata -n default >/dev/null 2>&1; then
+        ewarn "no 'default' metadata: WirePlumber is not running, sink not pinned"
+        return 0
+    fi
+
+    pw-metadata -n default 0 default.configured.audio.sink '{ "name": "neswire" }' \
+        >/dev/null 2>&1
+
+    # Read it back. A write that did not stick is the failure this whole
+    # sequence exists to catch, and it is invisible unless checked.
+    if pw-metadata -n default 2>/dev/null | grep -q "neswire"; then
+        einfo "default sink pinned to neswire"
+    else
+        ewarn "pinned neswire as default sink but it did not stick"
+    fi
+}

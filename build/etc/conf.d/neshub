@@ -1,0 +1,18 @@
+# Configuration for neshub, the media hub.
+#
+# Not a symlink to nestri-user-env like pipewire and friends: neshub wants a
+# setting of its own, so it sources that file rather than replacing it — same
+# pattern as nescope and neswire below.
+. /etc/conf.d/nestri-user-env
+
+# What neshub logs, and nothing else.
+#
+# Scoped and exported for the reason spelled out at length in the old
+# nestri-guest-hub conf.d this replaces: an unscoped `RUST_LOG=info` turns on
+# every crate linked in, iroh included, and OpenRC hands a service its own
+# environment, not the shell's locals — an unexported variable here goes
+# nowhere.
+#
+# Overridable, so a bad boot can be re-run with more without a rebuild.
+RUST_LOG="${RUST_LOG:-neshub=info}"
+export RUST_LOG

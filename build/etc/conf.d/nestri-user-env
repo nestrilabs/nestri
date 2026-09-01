@@ -1,0 +1,30 @@
+HOME="/home/nestri"
+USER="nestri"
+LOGNAME="nestri"
+XDG_RUNTIME_DIR="/run/user/1000"
+XDG_CONFIG_HOME="/home/nestri/.config"
+XDG_DATA_HOME="/home/nestri/.local/share"
+XDG_CACHE_HOME="/home/nestri/.cache"
+XDG_STATE_HOME="/home/nestri/.local/state"
+XDG_DATA_DIRS="/usr/local/share:/usr/share"
+XDG_SESSION_TYPE="wayland"
+XDG_SESSION_DESKTOP="nestri"
+DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus"
+
+# Driver forcing, mirrored from /etc/profile.d/nestri-env.sh. That file only
+# runs for login shells, and nothing here is a login shell — every service
+# below runs from OpenRC. Capture happens through a Vulkan layer, so a
+# process that reached the GPU via native OpenGL would render fine and
+# capture nothing; zink is what makes such a process capturable at all.
+# These are load-bearing. Keep them in step with the profile.d copy.
+#__GLX_VENDOR_LIBRARY_NAME="mesa"
+#MESA_LOADER_DRIVER_OVERRIDE="zink"
+#GALLIUM_DRIVER="zink"
+
+nestri_export_env() {
+    export HOME USER LOGNAME
+    export XDG_RUNTIME_DIR XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
+    export XDG_DATA_DIRS XDG_SESSION_TYPE XDG_SESSION_DESKTOP
+    export DBUS_SESSION_BUS_ADDRESS
+    #export __GLX_VENDOR_LIBRARY_NAME MESA_LOADER_DRIVER_OVERRIDE GALLIUM_DRIVER
+}

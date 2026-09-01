@@ -1,0 +1,39 @@
+#!/sbin/openrc-run
+
+description="Nestri media hub"
+
+nestri_export_env
+
+: "${NESTRI_UID:=1000}"
+: "${NESTRI_USER:=nestri}"
+
+command="/usr/bin/neshub"
+# Unprivileged. The old nestri-guest-hub ran as root and mounted the
+# session's filesystem itself; the open neshub does neither — per its own
+# README it only muxes the Unix sockets the other components dial into one
+# QUIC endpoint. Whatever ends up owning session mounts (nesinit, presumably)
+# is a separate, still-closed piece.
+command_user="${NESTRI_USER}:${NESTRI_USER}"
+command_background="yes"
+pidfile="/run/nestri/neshub.pid"
+
+# Where neshub's output goes. /nestri/logs is a virtiofs share mounted from
+# /etc/fstab at boot, before this service starts, so a hub that fails
+# immediately still leaves a record, and the record survives the VM.
+output_log="/nestri/logs/neshub.log"
+error_log="/nestri/logs/neshub.log"
+respawn="yes"
+respawn_delay="2"
+respawn_max="2"   # NO infinite — if it fails, it fails for a reason
+
+export XDG_RUNTIME_DIR="/run/user/${NESTRI_UID}"
+
+depend() {
+    need xdg-runtime
+    use net
+    after xdg-runtime
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o "${NESTRI_USER}:${NESTRI_USER}" /run/nestri
+}

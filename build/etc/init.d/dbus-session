@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+
+description="D-Bus session bus for nestri user"
+
+nestri_export_env
+
+command="/usr/bin/dbus-daemon"
+command_args="--session --address=unix:path=/run/user/1000/bus --nofork --nopidfile --print-address"
+command_user="nestri:nestri"
+command_background="yes"
+pidfile="/run/nestri/dbus-session.pid"
+
+depend() {
+    need xdg-runtime dbus
+    before pipewire wireplumber
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o "nestri:nestri" /run/nestri
+    if [ -e "/run/user/1000/bus" ]; then
+        ewarn "Removing stale bus socket"
+        rm -f "/run/user/1000/bus"
+    fi
+}
+
+start_post() {
+    local i=0
+    while [ ! -S /run/user/1000/bus ] && [ $i -lt 20 ]; do
+        sleep 0.1
+        i=$((i+1))
+    done
+    [ -S /run/user/1000/bus ] || { eerror "Bus didn't appear"; return 1; }
+}

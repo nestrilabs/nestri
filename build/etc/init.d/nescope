@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+
+description="Nestri headless compositor"
+
+nestri_export_env
+
+: "${NESTRI_UID:=1000}"
+: "${NESTRI_USER:=nestri}"
+
+command="/usr/bin/nescope"
+# No command after `--`: plain-compositor mode. nescope comes up and waits
+# for something to connect rather than wrapping a payload — starting one is
+# nesinit's job, and nesinit is not open code yet. See build/README.md.
+command_user="${NESTRI_USER}:${NESTRI_USER}"
+command_background="yes"
+pidfile="/run/nestri/nescope.pid"
+output_log="/nestri/logs/nescope.log"
+error_log="/nestri/logs/nescope.log"
+respawn="yes"
+respawn_delay="2"
+respawn_max="2"
+
+export XDG_RUNTIME_DIR="/run/user/${NESTRI_UID}"
+
+depend() {
+    need xdg-runtime
+    use neshub
+    after xdg-runtime
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o "${NESTRI_USER}:${NESTRI_USER}" /run/nestri
+}

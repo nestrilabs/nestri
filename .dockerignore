@@ -1,0 +1,18 @@
+# build/Dockerfile's context is the repo root (see build/Makefile), so this
+# keeps the daemon-side context transfer to what it actually COPYs: the
+# workspace manifests plus the five Rust members. Everything else here is
+# TypeScript/tooling the guest rootfs build never touches.
+.git
+node_modules
+target
+build/output
+docs
+apps/api
+apps/auth
+packages
+*.md
+deno.lock
+bun.lock
+.env*
+.zed
+.github
