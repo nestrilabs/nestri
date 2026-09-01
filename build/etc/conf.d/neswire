@@ -1,0 +1,32 @@
+# Configuration for the audio wire.
+#
+# Not a symlink to nestri-user-env like pipewire and friends, for the same
+# reason neshub is not: it needs a setting of its own -- and it still wants
+# that file's environment, so it sources it rather than replacing it.
+. /etc/conf.d/nestri-user-env
+
+# What neswire logs, and nothing else.
+#
+# Without this neswire is *silent* -- it starts, fails, and exits leaving an
+# empty log, which is indistinguishable from never having been started at
+# all. That ambiguity is the reason this file exists.
+#
+# Scoped, and `export`ed, for the reasons spelled out at length in
+# conf.d/neshub: an unscoped `info` turns on every linked crate, and an
+# unexported one reaches the service's shell and not the service.
+#
+# Overridable, so a bad boot can be re-run with more without a rebuild.
+RUST_LOG="${RUST_LOG:-neswire=info}"
+export RUST_LOG
+
+# neswire's own defaults, spelled out rather than inherited.
+#
+# All four are clap args with defaults (`neswire --help`), so the service
+# works without them. They are here because the IPC path is a contract with
+# neshub -- it reads this socket -- and a contract that lives only inside two
+# binaries' default values is one nobody can check.
+NESWIRE_IPC_PATH="/tmp/nestri-audio.sock"
+NESWIRE_CHANNELS="2"
+NESWIRE_PACKET_DURATION_MS="5"
+NESWIRE_BITRATE_PER_CHANNEL="64"
+export NESWIRE_IPC_PATH NESWIRE_CHANNELS NESWIRE_PACKET_DURATION_MS NESWIRE_BITRATE_PER_CHANNEL

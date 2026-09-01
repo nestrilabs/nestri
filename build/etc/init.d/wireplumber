@@ -1,0 +1,20 @@
+#!/sbin/openrc-run
+
+description="WirePlumber session manager for PipeWire"
+
+nestri_export_env
+
+: "${NESTRI_UID:=1000}"
+: "${NESTRI_USER:=nestri}"
+
+command="/usr/bin/wireplumber"
+command_user="${NESTRI_USER}:${NESTRI_USER}"
+command_background="yes"
+pidfile="/run/pipewire/wireplumber.pid"
+
+export XDG_RUNTIME_DIR="/run/user/${NESTRI_UID}"
+
+depend() {
+    need pipewire
+    after pipewire
+}

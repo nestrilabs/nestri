@@ -1,0 +1,44 @@
+#!/sbin/openrc-run
+
+description="Create runtime directories (XDG_RUNTIME_DIR, X11 socket dir..)"
+
+NESTRI_UID="${NESTRI_UID:-1000}"
+NESTRI_USER="${NESTRI_USER:-nestri}"
+
+depend() {
+    need localmount
+    before dbus pipewire
+}
+
+start() {
+    ebegin "Preparing runtime directories"
+
+    if ! getent passwd "${NESTRI_USER}" >/dev/null 2>&1; then
+        eerror "User ${NESTRI_USER} does not exist"
+        return 1
+    fi
+
+    # Per-user XDG runtime dir
+    mkdir -p "/run/user/${NESTRI_UID}"
+    chown "${NESTRI_USER}:${NESTRI_USER}" "/run/user/${NESTRI_UID}"
+    chmod 0700 "/run/user/${NESTRI_UID}"
+
+    # X11 socket dir (Xwayland + any X clients expect this)
+    mkdir -p /tmp/.X11-unix
+    chown root:root /tmp/.X11-unix
+    chmod 1777 /tmp/.X11-unix
+
+    # ICE socket dir - some toolkits look for it
+    mkdir -p /tmp/.ICE-unix
+    chown root:root /tmp/.ICE-unix
+    chmod 1777 /tmp/.ICE-unix
+
+    eend $?
+}
+
+stop() {
+    ebegin "Removing runtime directories"
+    rm -rf "/run/user/${NESTRI_UID}"
+    # Don't rm /tmp/.X11-unix on stop - other things may be using it
+    eend 0
+}

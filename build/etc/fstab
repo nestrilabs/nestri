@@ -1,0 +1,29 @@
+/dev/vda    /          ext4     rw,relatime              0 1
+devtmpfs    /dev       devtmpfs rw,nosuid                0 0
+proc        /proc      proc     rw,nosuid,nodev,noexec   0 0
+sysfs       /sys       sysfs    rw,nosuid,nodev,noexec   0 0
+tmpfs       /tmp       tmpfs    rw,nosuid,nodev,size=64M 0 0
+tmpfs       /run       tmpfs    rw,nosuid,nodev,size=32M,mode=0755 0 0
+tmpfs       /var/log   tmpfs    rw,nosuid,nodev,size=16M 0 0
+# POSIX shared memory. devtmpfs does not provide it and nothing else mounts it,
+# so without this entry /dev/shm does not exist at all and `shm_open` fails.
+#
+# PipeWire itself gets by: it allocates buffers with memfd_create and only
+# falls back to /dev/shm. Kept as a precaution for anything else that uses
+# POSIX shm/semaphores directly — Proton is the known example, and it is not
+# part of this image yet (see build/README.md), but a failure here is silent
+# rather than fatal, so it costs nothing to have ready.
+#
+# `nosuid,nodev` and a size cap because everything a game can write to should
+# have both.
+tmpfs       /dev/shm   tmpfs    rw,nosuid,nodev,size=256M 0 0
+# The guest's logs, on a host directory that outlives the VM.
+#
+# Here rather than mounted by a service, because the failures worth reading
+# are the ones that happen *before* anything else has mounted something — a
+# log directory that appears only after a successful start cannot record an
+# unsuccessful one. The tag is fixed by nessh, so plain fstab works.
+#
+# `nofail` because a VM started without the share still has to boot: that is
+# how somebody gets a shell to find out why it has no share.
+logs        /nestri/logs virtiofs rw,nofail                0 0

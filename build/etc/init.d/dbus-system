@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+
+description="D-Bus system message bus"
+
+command="/usr/bin/dbus-daemon"
+command_args="--system --nofork --nopidfile"
+command_background="yes"
+pidfile="/run/dbus/dbus.pid"
+
+depend() {
+    need localmount xdg-runtime
+    before pipewire
+}
+
+start_pre() {
+    checkpath -d -m 0755 -o root:root /run/dbus
+    checkpath -d -m 0755 -o messagebus:messagebus /var/run/dbus 2>/dev/null || true
+    dbus-uuidgen --ensure=/var/lib/dbus/machine-id
+}

@@ -1,0 +1,16 @@
+# Configuration for nescope, the headless compositor.
+#
+# Sources nestri-user-env rather than symlinking it, for the same reason
+# neshub and neswire do.
+. /etc/conf.d/nestri-user-env
+
+RUST_LOG="${RUST_LOG:-nescope=info}"
+export RUST_LOG
+
+# Started in plain-compositor mode by /etc/init.d/nescope (no command after
+# `--`): it comes up and waits for something to connect rather than wrapping
+# a payload. Starting an actual payload — a game, a desktop — is nesinit's
+# job, and nesinit is not open code yet. See build/README.md.
+NESCOPE_SOCKET="${NESCOPE_SOCKET:-nescope-0}"
+NESCOPE_INPUT_IPC="${NESCOPE_INPUT_IPC:-/tmp/nestri-input.sock}"
+export NESCOPE_SOCKET NESCOPE_INPUT_IPC

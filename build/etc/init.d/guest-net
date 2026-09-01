@@ -1,0 +1,92 @@
+#!/sbin/openrc-run
+
+description="Configure the guest's network to match the host's tap"
+
+# Overridden from /etc/conf.d/guest-net if present. These defaults match
+# nesbox's own defaults; if you change the `network` section in the VM's
+# JSON, change these to match.
+: ${GUEST_IFACE:=eth0}
+: ${GUEST_IP:=172.30.0.2}
+: ${GUEST_PREFIX:=24}
+: ${GUEST_GATEWAY:=172.30.0.1}
+
+depend() {
+    need localmount
+    provide net
+    keyword -shutdown
+}
+
+# Read one `nestri.<key>=<value>` from the kernel command line.
+#
+# The address has to come from somewhere per-boot, because the alternative --
+# baking it into the image -- makes every guest built from that image the
+# same host on the network. Two sandboxes then collide the moment they run
+# together.
+#
+# `nestri.`-prefixed rather than the kernel's own `ip=`: that one needs
+# CONFIG_IP_PNP and exists to configure NFS root, and the prefix makes it
+# obvious whose parameter this is.
+cmdline_value() {
+    local key="$1" word
+    for word in $(cat /proc/cmdline 2>/dev/null); do
+        case "$word" in
+            "nestri.${key}="*) printf '%s' "${word#nestri.${key}=}"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+start() {
+    ebegin "Bringing up loopback"
+    ip link set lo up
+    eend $?
+
+    # The command line wins over conf.d when it says anything, and conf.d is
+    # the fallback so a hand-written VM config with no parameters keeps
+    # working -- which is how a guest gets debugged.
+    local source="/etc/conf.d/guest-net"
+    local cmdline_ip
+    if cmdline_ip="$(cmdline_value ip)"; then
+        # Accepts address/prefix; a bare address keeps the configured prefix
+        # rather than guessing one.
+        case "$cmdline_ip" in
+            */*)
+                GUEST_IP="${cmdline_ip%%/*}"
+                GUEST_PREFIX="${cmdline_ip##*/}"
+                ;;
+            *)  GUEST_IP="$cmdline_ip" ;;
+        esac
+        source="kernel command line"
+    fi
+
+    local cmdline_gw
+    if cmdline_gw="$(cmdline_value gw)"; then
+        GUEST_GATEWAY="$cmdline_gw"
+        source="kernel command line"
+    fi
+
+    # The VM may have been started with no network device at all, which is a
+    # perfectly good configuration. Do not fail the boot over it.
+    if [ ! -e "/sys/class/net/${GUEST_IFACE}" ]; then
+        einfo "no ${GUEST_IFACE}: this VM has no network device"
+        return 0
+    fi
+
+    # Says which source won, because "the address is wrong" and "the address
+    # came from somewhere unexpected" look identical from inside the guest.
+    ebegin "Configuring ${GUEST_IFACE} as ${GUEST_IP}/${GUEST_PREFIX} via ${GUEST_GATEWAY} (from ${source})"
+    # `replace` rather than `add` so a restart is not an error.
+    ip link set "${GUEST_IFACE}" up &&
+        ip addr replace "${GUEST_IP}/${GUEST_PREFIX}" dev "${GUEST_IFACE}" &&
+        ip route replace default via "${GUEST_GATEWAY}" dev "${GUEST_IFACE}"
+    eend $? "could not configure ${GUEST_IFACE}"
+}
+
+stop() {
+    if [ -e "/sys/class/net/${GUEST_IFACE}" ]; then
+        ebegin "Bringing down ${GUEST_IFACE}"
+        ip link set "${GUEST_IFACE}" down
+        eend 0
+    fi
+    return 0
+}
