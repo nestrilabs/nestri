@@ -11,12 +11,16 @@ XDG_SESSION_TYPE="wayland"
 XDG_SESSION_DESKTOP="nestri"
 DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/1000/bus"
 
-# Driver forcing, mirrored from /etc/profile.d/nestri-env.sh. That file only
-# runs for login shells, and nothing here is a login shell — every service
-# below runs from OpenRC. Capture happens through a Vulkan layer, so a
-# process that reached the GPU via native OpenGL would render fine and
-# capture nothing; zink is what makes such a process capturable at all.
-# These are load-bearing. Keep them in step with the profile.d copy.
+# Driver forcing — currently off, in both copies. Kept, commented, because
+# the reasoning still applies if it is ever needed again: capture happens
+# through a Vulkan layer, so a process reaching the GPU via native OpenGL
+# would render fine and capture nothing, and zink is what makes such a
+# process capturable at all. Nothing has needed it so far.
+#
+# /etc/profile.d/nestri-env.sh carries the same block, also commented, and
+# only runs for login shells — nothing here is one, every service below runs
+# from OpenRC. If these are ever re-enabled, re-enable both: one copy on and
+# one off means services and shells reach the GPU by different paths.
 #__GLX_VENDOR_LIBRARY_NAME="mesa"
 #MESA_LOADER_DRIVER_OVERRIDE="zink"
 #GALLIUM_DRIVER="zink"

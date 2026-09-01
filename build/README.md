@@ -55,12 +55,15 @@ Three things worth knowing about how this is put together:
 source, not a dependency, not a directory that 'looked convenient'."* Both
 are closed. `runtime_prod` from this Dockerfile — tagged
 `ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable, Steam-less guest image,
-and also the shared foundation other builds start from: nesbox's jailer
-image (see `nesbox/build/`) extracts Mesa and virglrenderer from it so the
-guest and host sides of the virtio-gpu native-context protocol never drift
-apart. Whatever layers Proton and the Steam client on top of it is a closed
-build outside this repo, by design — not something this repo names, links
-to, or depends on.
+and also the shared foundation other builds start from: nesbox's jail image
+(see `nesbox/build/`) extracts **Mesa** from it so the guest and host sides of
+the virtio-gpu native-context protocol never drift apart. Only Mesa —
+`virglrenderer` is the host half of that protocol and nesbox builds its own,
+patched, from `nesbox/patches/`; nothing in this image carries it.
+
+Whatever layers Proton and the Steam client on top of it is a closed build
+outside this repo, by design — not something this repo names, links to, or
+depends on.
 
 ## The nesinit gap
 

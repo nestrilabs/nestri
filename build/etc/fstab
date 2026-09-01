@@ -1,4 +1,10 @@
-/dev/vda    /          ext4     rw,relatime              0 1
+# `ro`, matching how a box is actually started: nesbox passes `ro` on the
+# kernel command line and marks the root device `is_read_only: true` (see
+# nesbox's examples/vm.json), so the virtio-blk device refuses writes at the
+# device level. Saying `rw` here does not make it writable — it only asks
+# OpenRC's `root` service to attempt a remount that the device must reject.
+# Everything a running box writes to is a tmpfs or a share below.
+/dev/vda    /          ext4     ro,relatime              0 1
 devtmpfs    /dev       devtmpfs rw,nosuid                0 0
 proc        /proc      proc     rw,nosuid,nodev,noexec   0 0
 sysfs       /sys       sysfs    rw,nosuid,nodev,noexec   0 0
