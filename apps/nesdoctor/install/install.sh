@@ -23,7 +23,7 @@ REPO="nestrilabs/nestri"
 # product release goes out it would move again and every install here would
 # 404. Bump this line when cutting a nesdoctor release; `NESDOCTOR_TAG`
 # overrides it for testing.
-DEFAULT_TAG="nesdoctor-v0.2.1"
+DEFAULT_TAG="nesdoctor-v0.2.2"
 TAG="${NESDOCTOR_TAG:-$DEFAULT_TAG}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
