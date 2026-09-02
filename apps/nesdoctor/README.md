@@ -101,6 +101,33 @@ always a router setting rather than a line you need to upgrade.
 | `CLIENT` | Not a host. A complete answer, and what most machines are |
 | `UNKNOWN` | A blocking check could not be run. An unknown is not a no |
 
+## Your display, and why we ask
+
+```
+  presentation path   x11 · bspwm
+  eDP-1               1920x1200 @ 60 Hz, 8-bit
+  Vulkan decode       h264, h265
+  VA-API decode       h264, h265, vp9
+```
+
+Read from your monitor's EDID and your session, not guessed. Resolution,
+refresh, **colour depth**, which HDR transfer functions the panel accepts,
+whether it takes BT.2020, whether it takes 4:2:0 chroma — plus what your
+hardware can decode.
+
+This decides real choices on our side: whether 10-bit is worth sending, whether
+BT.2020 is worth encoding, which codec to reach for. Every one of those had
+been decided against the single panel in one room.
+
+Its other use is **attribution**. Told only that a stream "looks bad", the
+cheapest explanation is always that we compressed it too hard — so without
+knowing that a compositor is rescaling the picture, we would turn down our own
+quality to pay for somebody else's window manager.
+
+**Present mode, tearing and fractional scaling are not here.** They need a real
+window and a swapchain, so they belong in the client, and are reported as
+unknown rather than guessed.
+
 ## Sending it back
 
 At the end it prints a link, lists in plain English what the link contains, and
@@ -121,6 +148,11 @@ for it.
 
 If you would rather not click a link we wrote, the short line is printed too and
 put on your clipboard.
+
+At the very end it offers to take an **email address** — optional, blank skips
+it — so we can come to you when there is something to try. That is the only
+identifying thing this program collects, it is asked last, and it appears in the
+disclosure list like everything else so you see it before it is sent.
 
 ## What it deliberately does not tell you
 

@@ -40,6 +40,7 @@
 //! `fq_codel` can.
 
 mod ask;
+mod display;
 mod hostreq;
 mod net;
 mod report;
@@ -115,6 +116,11 @@ fn main() {
     }
 
     // --- can it host ------------------------------------------------------
+    let disp = display::probe();
+    if !args.quiet {
+        print_display(&disp);
+    }
+
     let host = hostreq::probe(&sys);
     if !args.quiet {
         report::print_checks(&host);
@@ -165,7 +171,7 @@ fn main() {
     // is the only reason anything runs this way.
     let interactive = !args.quiet && std::io::stdin().is_terminal();
 
-    let answers = if args.yes || !interactive {
+    let mut answers = if args.yes || !interactive {
         ask::Answers {
             // `--yes` is a deliberate consent; a pipe is not consent to read
             // somebody's library.
@@ -198,9 +204,24 @@ fn main() {
         report::print_verdict(v, &netr);
     }
 
+    // The early-access offer comes after the verdict has been printed, so the
+    // wording can be true and so nobody types an address before seeing what
+    // this thing actually said about their machine. Before the link is built,
+    // so what they typed goes in it and they see it there.
+    if interactive && !args.yes {
+        let offer = match v {
+            report::Verdict::HostReady
+            | report::Verdict::HostReadyLocalOnly
+            | report::Verdict::HostFixable => ask::Offer::Host,
+            _ => ask::Offer::Player,
+        };
+        answers.email = ask::offer_early_access(offer);
+    }
+
     let full = report::Full {
         nesdoctor: report::VERSION,
         sys: &sys,
+        display: &disp,
         host: &host,
         net: &netr,
         steam: &steamr,
@@ -473,4 +494,69 @@ fn print_steam(s: &steam::SteamReport) {
         }
     }
     let _ = std::io::stdout().flush();
+}
+
+fn print_display(d: &display::DisplayReport) {
+    println!("\n\x1b[1mDisplay and decode\x1b[0m");
+    let mut path = Vec::new();
+    if let Some(s) = &d.session {
+        path.push(s.clone());
+    }
+    if let Some(c) = &d.compositor {
+        path.push(c.clone());
+    }
+    if d.xwayland {
+        path.push("XWayland".into());
+    }
+    println!(
+        "  presentation path   {}",
+        if path.is_empty() {
+            "unknown (headless?)".to_string()
+        } else {
+            path.join(" · ")
+        }
+    );
+
+    for o in &d.outputs {
+        let geom = match (o.width, o.height, o.refresh_hz) {
+            (Some(w), Some(h), Some(r)) => format!("{w}x{h} @ {r:.0} Hz"),
+            (Some(w), Some(h), None) => format!("{w}x{h}"),
+            _ => "unknown mode".into(),
+        };
+        println!(
+            "  {:<19} {geom}{}",
+            o.name.clone().unwrap_or_else(|| "display".into()),
+            o.bit_depth
+                .map(|b| format!(", {b}-bit"))
+                .unwrap_or_default()
+        );
+        let mut caps = Vec::new();
+        if !o.eotf.is_empty() {
+            caps.push(format!("HDR: {}", o.eotf.join(", ")));
+        }
+        if !o.bt2020.is_empty() {
+            caps.push(format!("BT.2020: {}", o.bt2020.join(", ")));
+        }
+        if o.ycbcr420 {
+            caps.push("4:2:0".into());
+        }
+        if !caps.is_empty() {
+            println!("  \x1b[2m                    {}\x1b[0m", caps.join(" · "));
+        }
+    }
+
+    let dec = |label: &str, v: &[&str]| {
+        if !v.is_empty() {
+            println!("  {label:<19} {}", v.join(", "));
+        }
+    };
+    dec("Vulkan decode", &d.decode.vulkan);
+    dec("VA-API decode", &d.decode.vaapi);
+    if d.decode.vulkan.is_empty() && d.decode.vaapi.is_empty() {
+        println!("  \x1b[2mdecode              could not be determined here\x1b[0m");
+    }
+    println!(
+        "  \x1b[2mpresent mode and tearing need a real window, so they are not in this\x1b[0m"
+    );
+    println!("  \x1b[2mreport — they belong in the client.\x1b[0m");
 }

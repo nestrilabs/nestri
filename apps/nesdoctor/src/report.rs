@@ -30,6 +30,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct Full<'a> {
     pub nesdoctor: &'static str,
     pub sys: &'a SysInfo,
+    pub display: &'a crate::display::DisplayReport,
     pub host: &'a HostReport,
     pub net: &'a NetReport,
     pub steam: &'a SteamReport,
@@ -544,6 +545,59 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
             put(k, v.clone());
         }
     }
+    // Display and decode. These are what decide the colour and codec choices
+    // on the wire -- until now every one of them was made against the single
+    // panel in one room.
+    let d = f_.display;
+    if let Some(s) = &d.session {
+        put("session", s.clone());
+    }
+    if let Some(c) = &d.compositor {
+        put("wm", c.clone());
+    }
+    if d.xwayland {
+        put("xwayland", "1".into());
+    }
+    if let Some(o) = d.outputs.first() {
+        if let (Some(w), Some(h)) = (o.width, o.height) {
+            put("mode", format!("{w}x{h}"));
+        }
+        if let Some(r) = o.refresh_hz {
+            put("hz", format!("{r:.0}"));
+        }
+        if let Some(b) = o.bit_depth {
+            put("bpc", b.to_string());
+        }
+        if !o.eotf.is_empty() {
+            put("eotf", o.eotf.join(","));
+        }
+        if !o.bt2020.is_empty() {
+            put("bt2020", o.bt2020.join(","));
+        }
+        put(
+            "chroma",
+            match (o.ycbcr420, o.ycbcr444) {
+                (true, true) => "420+444",
+                (true, false) => "420",
+                (false, true) => "444",
+                (false, false) => "-",
+            }
+            .into(),
+        );
+    }
+    if d.outputs.len() > 1 {
+        put("outputs", d.outputs.len().to_string());
+    }
+    if !d.decode.vulkan.is_empty() {
+        put("vkdec", d.decode.vulkan.join(","));
+    }
+    if !d.decode.vaapi.is_empty() {
+        put("vadec", d.decode.vaapi.join(","));
+    }
+
+    if let Some(e) = &answers.email {
+        put("email", e.clone());
+    }
     put("verdict", verdict.tag().to_string());
 
     format!("{}/?{}", base.trim_end_matches('/'), q.join("&"))
@@ -556,6 +610,7 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
 pub fn submit_contents(steam: &SteamReport, answers: &Answers) -> Vec<&'static str> {
     let mut v = vec![
         "this machine's OS, CPU, RAM and GPU model",
+        "your display's resolution, refresh rate, colour depth and HDR support",
         "which host requirements passed and which did not",
         "the network figures you just saw",
         "free disk space, and how long this machine tends to stay on",
@@ -573,7 +628,13 @@ pub fn submit_contents(steam: &SteamReport, answers: &Answers) -> Vec<&'static s
     {
         v.push("your answers to the questions");
     }
-    v.push("no hostname, no IP address, no username, no file paths");
+    // Reworded when the email field landed. The old line said "no username, no
+    // identifiers", which stopped being true, and leaving it up would have been
+    // the dishonest option.
+    if answers.email.is_some() {
+        v.push("the email address you just typed — the only identifying thing here");
+    }
+    v.push("no hostname, no IP address, no file paths, and nothing about your account");
     v
 }
 

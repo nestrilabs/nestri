@@ -38,7 +38,22 @@ pub struct Answers {
     pub other_linux: Option<String>,
     /// Consent gate, not a survey question.
     pub steam_consent: bool,
+    /// Optional, and the only field in this program that identifies a person.
+    /// Blank unless they typed one.
+    pub email: Option<String>,
     pub asked: usize,
+}
+
+/// What to offer at the end, which depends on what the machine turned out to
+/// be. The wording matters: telling someone with a grade-F line and no KVM that
+/// we liked what their machine can do is a lie, and a tool whose whole argument
+/// is that it does not flatter you cannot afford one.
+pub enum Offer {
+    /// The machine could host, or could with setup. These are the people we
+    /// most want to talk to.
+    Host,
+    /// Everyone else. Early access as a player is a real offer too.
+    Player,
 }
 
 pub struct Ctx {
@@ -201,4 +216,114 @@ fn read_line() -> String {
         return String::new();
     }
     s
+}
+
+/// Offer early access, and take an email only if they want to give one.
+///
+/// This is the one identifying thing the program will ever collect, and it is
+/// the reason the wording around it is careful:
+///
+/// - **It is asked last**, after the verdict, so nobody types an address before
+///   seeing what the tool actually does.
+/// - **Blank skips it**, and the prompt says so.
+/// - **It is listed in the pre-submit disclosure** like everything else, and the
+///   promise elsewhere had to be reworded, because "no username, no
+///   identifiers" stops being true the moment this field exists. Quietly
+///   leaving the old promise up would have been the dishonest option.
+/// - **The offer is branched on the verdict.** Saying "we liked what your
+///   machine can do" to a machine that cannot host is a lie, and this program's
+///   only real asset is that it does not flatter anyone.
+pub fn offer_early_access(offer: Offer) -> Option<String> {
+    println!();
+    match offer {
+        Offer::Host => {
+            println!("\x1b[1;32m  We would like to talk to you.\x1b[0m");
+            println!(
+                "\x1b[2m    Machines that can actually host are rare — most results are clients —\x1b[0m"
+            );
+            println!(
+                "\x1b[2m    and yours is one. If you leave an email we will put you in the\x1b[0m"
+            );
+            println!(
+                "\x1b[2m    first group to try Nestri, and ask you first when there is\x1b[0m"
+            );
+            println!("\x1b[2m    something to try.\x1b[0m");
+        }
+        Offer::Player => {
+            println!("\x1b[1m  Want to be among the first to try Nestri?\x1b[0m");
+            println!(
+                "\x1b[2m    Leave an email and we will come to you when there is something\x1b[0m"
+            );
+            println!("\x1b[2m    worth playing. Nothing else — no newsletter, no list.\x1b[0m");
+        }
+    }
+    println!();
+    println!("\x1b[2m    This is the only thing here that identifies you, it is entirely\x1b[0m");
+    println!(
+        "\x1b[2m    optional, and it goes in the link with everything else so you will\x1b[0m"
+    );
+    println!("\x1b[2m    see it before it is sent.\x1b[0m");
+
+    loop {
+        print!("\x1b[1m  email\x1b[0m \x1b[2m(Enter to skip)\x1b[0m > ");
+        let _ = std::io::stdout().flush();
+        let line = read_line();
+        let e = line.trim();
+        if e.is_empty() {
+            println!("  \x1b[2mskipped\x1b[0m");
+            return None;
+        }
+        if plausible_email(e) {
+            println!("  \x1b[32m✓\x1b[0m");
+            return Some(e.to_string());
+        }
+        println!(
+            "  \x1b[2mthat does not look like an address — try again, or Enter to skip\x1b[0m"
+        );
+    }
+}
+
+/// Deliberately loose. Rejecting a valid address is worse than accepting a junk
+/// one: a bounce costs us nothing, and arguing with somebody about their own
+/// email address over a regex is how you lose the response entirely.
+fn plausible_email(s: &str) -> bool {
+    if s.len() > 254 || s.contains(char::is_whitespace) {
+        return false;
+    }
+    let Some((local, domain)) = s.split_once('@') else {
+        return false;
+    };
+    !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::plausible_email;
+
+    #[test]
+    fn accepts_real_addresses() {
+        for e in [
+            "a@b.co",
+            "first.last+tag@sub.example.com",
+            "someone@example.co.uk",
+            "x_y-z@example.io",
+        ] {
+            assert!(plausible_email(e), "{e} should be accepted");
+        }
+    }
+
+    #[test]
+    fn rejects_the_obvious() {
+        for e in [
+            "",
+            "nope",
+            "@example.com",
+            "a@b",
+            "a@.com",
+            "a@b.",
+            "a b@c.com",
+        ] {
+            assert!(!plausible_email(e), "{e} should be rejected");
+        }
+    }
 }
