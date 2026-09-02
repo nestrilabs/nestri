@@ -32,17 +32,29 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             bin: nesdoctor
+            smoke: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             bin: nesdoctor.exe
+            smoke: true
           - os: macos-latest
             target: aarch64-apple-darwin
             bin: nesdoctor
-          # Intel Macs are still most of the installed base and they are
-          # clients, which is a category we want answers from.
-          - os: macos-13
+            smoke: true
+          # Intel Macs are still a large installed base and they are clients,
+          # which is a category we want answers from. Cross-compiled from the
+          # arm64 runner rather than built on `macos-13`: that runner is being
+          # retired and a dispatch on 2026-09-02 sat queued indefinitely
+          # waiting for one, which is not a dependency a release should have.
+          #
+          # The cost is honest and stated: an x86_64 binary cannot be executed
+          # on an arm64 runner without Rosetta, which these images do not
+          # carry, so this is the one target whose smoke test cannot run. It
+          # ships cross-compiled and unexercised, and the release notes say so.
+          - os: macos-latest
             target: x86_64-apple-darwin
             bin: nesdoctor
+            smoke: false
 
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +83,7 @@ jobs:
       # anybody runs this for, silently and only for other people. Running the
       # real thing here catches that class of failure before a tag exists.
       - name: Smoke test — the whole run, network included
+        if: matrix.smoke
         shell: bash
         run: |
           set -euo pipefail
@@ -136,6 +149,10 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          # A draft, always. The binaries are attached and the notes are
+          # written, and a person reads both and presses publish -- which is
+          # the only step in this pipeline that is irreversible in public.
+          draft: true
           files: dist/*
           generate_release_notes: true
           body: |
@@ -150,6 +167,10 @@ jobs:
             Download the file for your platform, verify it against
             `SHA256SUMS`, and run it. On macOS and Linux you will need
             `chmod +x` first. Source is in `apps/nesdoctor`.
+
+            The Intel macOS binary is cross-compiled and is the one target CI
+            cannot execute to test. Every other binary here was run by the
+            workflow that built it.
 
             The number worth running it for is **added latency under load**.
             Everybody knows their download speed; almost nobody has seen this
