@@ -353,12 +353,23 @@ fn disks() -> Vec<Disk> {
             if f.len() < 6 {
                 continue;
             }
-            let Ok(avail_kb) = f[3].parse::<f64>() else {
+            // Counted from the RIGHT, not the left.
+            //
+            // `df -P` guarantees the column order but not that the filesystem
+            // name is one word. macOS emits `map auto_home 0 0 0 100% /path`,
+            // which shifts every field by one -- so indexing from the left read
+            // the capacity percentage as the mount point and a device name as
+            // the size. Found in the macOS CI log, where a row appeared as
+            // `100% /System/Volumes/Data/home`.
+            //
+            // The trailing columns are fixed: ... size used avail capacity mount.
+            let n = f.len();
+            let mount = f[n - 1].to_string();
+            let Ok(avail_kb) = f[n - 3].parse::<f64>() else {
                 continue;
             };
-            let size_kb = f[1].parse::<f64>().ok();
-            let source = f[0].to_string();
-            let mount = f[5..].join(" ");
+            let size_kb = f[n - 5].parse::<f64>().ok();
+            let source = f[..n - 5].join(" ");
             let fs = fs_type(&mount);
 
             // Filter by filesystem type, not by mount path. Filtering paths
@@ -380,6 +391,11 @@ fn disks() -> Vec<Disk> {
                 continue;
             }
             // Paths still worth skipping regardless of what they are mounted as.
+            //
+            // `/System` is macOS: an APFS container presents Preboot, Update,
+            // VM, xarts and a pile of signed asset bundles as separate
+            // filesystems sharing one pool. None is user storage, and on a Mac
+            // they are most of the rows.
             if [
                 "/dev",
                 "/sys",
@@ -388,10 +404,19 @@ fn disks() -> Vec<Disk> {
                 "/boot",
                 "/snap",
                 "/var/lib/docker",
+                "/System",
+                "/private/var/vm",
+                "/Volumes/Recovery",
             ]
             .iter()
             .any(|p| mount.starts_with(p))
             {
+                continue;
+            }
+            // A filesystem with no capacity is not storage. `map auto_home`,
+            // devfs and macOS asset bundles all report zero and would
+            // otherwise pad the count in the summary line.
+            if size_kb.is_some_and(|k| k < 1024.0) {
                 continue;
             }
             out.push(Disk {
@@ -701,6 +726,49 @@ mod tests {
             "Radeon RX 7900 XTX",
         ] {
             assert!(!is_virtual_adapter(name), "{name} should be real");
+        }
+    }
+
+    /// `df -P` fixes the column order but not that the filesystem name is one
+    /// word, so the columns are counted from the right. macOS emits
+    /// `map auto_home 0 0 0 100% /path`, which shifted every field by one and
+    /// made a capacity percentage into a mount point.
+    #[test]
+    fn df_columns_are_counted_from_the_right() {
+        // (line, expected mount, expected avail kB, expected size kB)
+        let cases: [(&str, &str, f64, Option<f64>); 3] = [
+            (
+                "/dev/nvme0n1p2 498008372 396520404 94948460 81% /",
+                "/",
+                94_948_460.0,
+                Some(498_008_372.0),
+            ),
+            // The row that broke it: two words before the numbers.
+            (
+                "map auto_home 0 0 0 100% /System/Volumes/Data/home",
+                "/System/Volumes/Data/home",
+                0.0,
+                Some(0.0),
+            ),
+            // And a device with a space in it, which is why indexing from the
+            // left can never be right.
+            (
+                "//server/my share 1000 400 600 40% /mnt/share",
+                "/mnt/share",
+                600.0,
+                Some(1000.0),
+            ),
+        ];
+        for (line, mount, avail, size) in cases {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            let n = f.len();
+            assert_eq!(f[n - 1], mount, "mount for {line:?}");
+            assert_eq!(
+                f[n - 3].parse::<f64>().ok(),
+                Some(avail),
+                "avail for {line:?}"
+            );
+            assert_eq!(f[n - 5].parse::<f64>().ok(), size, "size for {line:?}");
         }
     }
 }
