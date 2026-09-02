@@ -26,6 +26,22 @@ Or build it yourself:
 cargo run --release -p nesdoctor
 ```
 
+### Windows will block it
+
+It will, and not because of anything the program does. SmartScreen refuses any
+executable that is **unsigned** and has **no download history** — and history
+attaches to the file hash, so every new release starts from zero. Ours is both,
+for now.
+
+On the dialog: **More info** → **Run anyway**. If that is not a trade you want
+to make, stopping there is completely reasonable — or build from source above,
+which needs no trust at all.
+
+Every binary is built by GitHub Actions from a tagged commit, never from
+anyone's machine, and `SHA256SUMS` is published beside it. That proves the file
+came from the source you can read. It does not make Windows any happier, which
+is a separate problem and one we owe money rather than words to fix.
+
 Checks every hard requirement for running a Nestri box, measures what your
 connection actually does when it is busy, and asks at most five questions.
 
