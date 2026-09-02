@@ -22,6 +22,12 @@ use serde::Serialize;
 
 #[derive(Debug, Serialize, Default)]
 pub struct Answers {
+    /// The one question that could change the roadmap, so it is asked first and
+    /// of everybody. Answer `remote` is a product with no capacity model, no
+    /// library cost, no peak and no trough — and it is what the people we can
+    /// currently reach are already doing for themselves. That is the
+    /// uncomfortable possibility, which is the reason to ask rather than not.
+    pub want: Option<String>,
     /// USERS.md 7, roughly: is this machine a host, a client, or both?
     pub role: Option<String>,
     /// USERS.md 6: cash or credit. Only asked of a machine that could host.
@@ -47,11 +53,25 @@ pub struct Ctx {
 
 pub fn run(ctx: &Ctx) -> Answers {
     let mut a = Answers::default();
-    println!("\n\x1b[1mFive questions, maximum. Enter skips any of them.\x1b[0m");
+    println!("\n\x1b[1mFour or five questions, and Enter skips any of them.\x1b[0m");
     println!("\x1b[2mNothing here is sent anywhere. You will see the exact line before you\x1b[0m");
     println!("\x1b[2mshare it, and you can edit or discard it.\x1b[0m\n");
 
-    // 1 — role. Asked of everyone, because it decides what the rest means.
+    // 1 — the roadmap question. First because it is the one whose answer we
+    // would most regret not having, and because a respondent who quits after
+    // one question should have answered this one.
+    a.want = choose(
+        "If Nestri could only do one of these well, which would you want?",
+        &[
+            ("cloud", "Play my games on your hardware, somewhere near me"),
+            ("remote", "Reach my own gaming PC from anywhere"),
+            ("both", "Both, equally"),
+            ("watch", "Neither — just having a look"),
+        ],
+    );
+    a.asked += 1;
+
+    // 2 — role. Asked of everyone, because it decides what the rest means.
     a.role = choose(
         "What is this machine for?",
         &[
@@ -63,7 +83,7 @@ pub fn run(ctx: &Ctx) -> Answers {
     );
     a.asked += 1;
 
-    // 2 — cash or credit, only where it is not a hypothetical. Asking someone
+    // 3 — cash or credit, only where it is not a hypothetical. Asking someone
     // whose machine cannot host what they would charge for it produces noise.
     if ctx.capable && matches!(a.role.as_deref(), Some("host") | Some("both") | None) {
         a.share_for = choose(
@@ -79,7 +99,7 @@ pub fn run(ctx: &Ctx) -> Answers {
         a.asked += 1;
     }
 
-    // 3 — current spend. The factual version of willingness to pay.
+    // 4 — current spend. The factual version of willingness to pay.
     a.pays_today = choose(
         "What do you pay a month for gaming right now, all in?",
         &[
@@ -92,7 +112,7 @@ pub fn run(ctx: &Ctx) -> Answers {
     );
     a.asked += 1;
 
-    // 4 — a client machine may still have a host behind it. This converts a
+    // 5 — a client machine may still have a host behind it. This converts a
     // respondent who is not a candidate into a supply data point.
     if !ctx.is_linux {
         a.other_linux = choose(
@@ -106,7 +126,7 @@ pub fn run(ctx: &Ctx) -> Answers {
         a.asked += 1;
     }
 
-    // 5 — the consent gate. Last, so that by now the person has seen what this
+    // The consent gate — not counted as one of the five. Last, so that by now the person has seen what this
     // program is and what it prints.
     if ctx.steam_present {
         println!();
@@ -120,7 +140,7 @@ pub fn run(ctx: &Ctx) -> Answers {
         println!("  \x1b[2mIt is read locally. Titles never appear in the shareable line — only");
         println!("  a count, a size band, and an hour histogram. You will see all of it.\x1b[0m");
         println!();
-        a.steam_consent = yes_no("May I read it?", false);
+        a.steam_consent = yes_no("May I read it?", true);
     }
 
     if !ctx.could_host && ctx.is_linux {

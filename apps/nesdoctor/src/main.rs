@@ -80,6 +80,14 @@ struct Args {
     /// Print only the summary line.
     #[arg(long)]
     quiet: bool,
+
+    /// Where the submit link points. Override to test against a local worker.
+    #[arg(long, default_value = "https://doctor.nestri.io")]
+    submit_url: String,
+
+    /// Do not offer to open a browser; just print the link.
+    #[arg(long)]
+    no_open: bool,
 }
 
 fn main() {
@@ -183,9 +191,6 @@ fn main() {
         report::print_verdict(v, &netr);
     }
 
-    let line = report::summary_line(&sys, &host, &netr, &steamr, &answers, v, &region);
-
-    // --- the full report, locally -----------------------------------------
     let full = report::Full {
         nesdoctor: report::VERSION,
         sys: &sys,
@@ -196,6 +201,9 @@ fn main() {
         verdict: v,
         region_hint: region.clone(),
     };
+    let line = report::summary_line(&full);
+
+    // --- the full report, locally -----------------------------------------
     let wrote = serde_json::to_string_pretty(&full)
         .ok()
         .and_then(|j| std::fs::write(&args.json, j).ok().map(|_| ()))
@@ -206,61 +214,73 @@ fn main() {
         return;
     }
 
-    let clip = report::to_clipboard(&line);
+    let url = report::submit_url(&args.submit_url, &full);
 
     println!();
-    println!("\x1b[1m─── Copy this ───────────────────────────────────────────────────\x1b[0m");
+    println!("\x1b[1m─── One keystroke and we are done ───────────────────────────────\x1b[0m");
     println!();
-    println!("\x1b[1;97;44m {line} \x1b[0m");
-    println!();
-    match clip {
-        Some(tool) => println!(
-            "\x1b[32m  ✓ Already on your clipboard\x1b[0m \x1b[2m(via {tool}) — just paste it.\x1b[0m"
-        ),
-        None => println!(
-            "\x1b[2m  Select the line above to copy it. (Install wl-clipboard or xclip and\x1b[0m\n\x1b[2m  this happens by itself next time.)\x1b[0m"
-        ),
+    println!("\x1b[2m  Everything above goes to us through this link. It contains:\x1b[0m");
+    for item in report::submit_contents(&steamr, &answers) {
+        println!("\x1b[2m    · {item}\x1b[0m");
     }
     println!();
-    println!(
-        "\x1b[2m  Every field is above: no hostname, no IP, no username, no game titles,\x1b[0m"
-    );
-    println!("\x1b[2m  no paths. A size band rather than a size, hours rather than dates.\x1b[0m");
+    println!("\x1b[2m  {}\x1b[0m", args.submit_url);
     println!();
-    println!("\x1b[1m  → Paste it into the thread you got this from.\x1b[0m");
-    println!(
-        "\x1b[2m    It is the only way we find out what the machines on the other end are,\x1b[0m"
-    );
-    println!("\x1b[2m    and right now we genuinely have no idea.\x1b[0m");
+
+    let opened = if args.no_open || !interactive {
+        false
+    } else {
+        print!(
+            "\x1b[1;97;44m  Press Enter to send it  \x1b[0m\x1b[2m  (or Ctrl-C to send nothing)  \x1b[0m"
+        );
+        let _ = std::io::stdout().flush();
+        let mut s = String::new();
+        let _ = std::io::stdin().read_line(&mut s);
+        println!();
+        report::open_in_browser(&url)
+    };
+
+    if opened {
+        println!("\x1b[32m  ✓ Opened in your browser. That is it — thank you.\x1b[0m");
+        println!(
+            "\x1b[2m    If the page did not load, the link is below and it still works later.\x1b[0m"
+        );
+    } else {
+        println!("\x1b[1m  Open this to send it:\x1b[0m");
+    }
+    println!();
+    println!("\x1b[4;36m{url}\x1b[0m");
+    println!();
+
+    // The clipboard line stays as the offline path: a headless host, a machine
+    // with no browser, or somebody who would rather paste into a channel than
+    // click a link we wrote.
+    let clip = report::to_clipboard(&line);
+    println!("\x1b[2m  Prefer to paste it yourself? The short version:\x1b[0m");
+    println!();
+    println!("  {line}");
+    if let Some(tool) = clip {
+        println!("\x1b[2m  (also on your clipboard, via {tool})\x1b[0m");
+    }
 
     if wrote {
         println!();
-        println!("\x1b[1mAnd if you feel like being properly helpful\x1b[0m");
+        println!("\x1b[1m  And if you feel like being properly helpful\x1b[0m");
         println!(
-            "\x1b[2m  {} has the long version: every check with its reason, the full\x1b[0m",
+            "\x1b[2m    {} has the long version — every check with its reason, the\x1b[0m",
             args.json.display()
         );
         println!(
-            "\x1b[2m  latency series, and — if you said yes to Steam — your installed titles\x1b[0m"
-        );
-        println!("\x1b[2m  with their sizes and launch times.\x1b[0m");
-        println!();
-        println!(
-            "\x1b[2m  That file is more useful to us than the line by a long way: it is what\x1b[0m"
+            "\x1b[2m    full latency series, and your installed titles with sizes and launch\x1b[0m"
         );
         println!(
-            "\x1b[2m  lets us size a game library properly and see which requirement actually\x1b[0m"
+            "\x1b[2m    times. It is more useful to us than anything above, because it is what\x1b[0m"
         );
         println!(
-            "\x1b[2m  stops people. Have a look through it — it is plain JSON — and send it\x1b[0m"
+            "\x1b[2m    lets us size a real game library. Have a read and send it along if\x1b[0m"
         );
-        println!(
-            "\x1b[2m  along if nothing in there bothers you. Entirely optional, and the\x1b[0m"
-        );
-        println!("\x1b[2m  line above is already plenty.\x1b[0m");
+        println!("\x1b[2m    nothing in there bothers you.\x1b[0m");
     }
-    println!();
-    println!("\x1b[2mThanks. Genuinely — this is the part we cannot do on our own.\x1b[0m");
     println!();
 }
 

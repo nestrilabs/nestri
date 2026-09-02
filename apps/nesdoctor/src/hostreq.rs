@@ -10,9 +10,12 @@
 //! - **`vulkaninfo` is not sufficient by itself.** The contract says so twice,
 //!   we have had the case that proves it: extension present, path still broken. So the encode row reports what the extension list says
 //!   and labels it as such.
-//! - **The renderer's patch state is not checkable from outside.** The contract
-//!   calls it "the requirement most likely to be silently wrong". We report the
-//!   library's presence and version and say nothing about the patch.
+//! - **The renderer is not checked at all, on purpose.** It used to be, and the
+//!   row could only ever say "present, patch state unknown" — which is a row
+//!   that cannot pass. The box now carries its own virglrenderer and Mesa
+//!   inside the image it runs in, so the host's copies are not on the path and
+//!   asking about them told a prospective host their machine was wrong when it
+//!   was not.
 //! - **Nothing here is measured under load.** A host that passes every row can
 //!   still fail on block I/O, which is the real density ceiling and needs a
 //!   benchmark rather than a probe.
@@ -187,34 +190,6 @@ pub fn probe(sys: &SysInfo) -> HostReport {
                 .into()
         },
         blocking: true,
-    });
-
-    // --- virglrenderer ----------------------------------------------------
-    let virgl = ["/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu"]
-        .iter()
-        .flat_map(|d| std::fs::read_dir(d).ok())
-        .flatten()
-        .flatten()
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .find(|n| n.starts_with("libvirglrenderer.so"));
-    c.push(Check {
-        id: "virgl",
-        what: "libvirglrenderer with DRM native context, patched",
-        state: match &virgl {
-            Some(_) => State::Unknown,
-            None => State::Fail,
-        },
-        detail: match &virgl {
-            Some(n) => format!(
-                "{n} found. Whether it carries the native-context patches cannot be told from \
-                 outside — the contract calls this the requirement most likely to be silently \
-                 wrong, so we report presence only."
-            ),
-            None => "not found. The host supplies the native context, not the guest.".into(),
-        },
-        // Not blocking, because unknown-vs-missing is the whole point and the
-        // patched build is something we would ship anyway.
-        blocking: false,
     });
 
     // --- two stores -------------------------------------------------------

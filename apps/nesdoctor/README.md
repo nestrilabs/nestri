@@ -61,6 +61,8 @@ always a router setting rather than a line you need to upgrade.
 | `--yes` | Take the defaults — for a second run, not a first |
 | `--json <PATH>` | Where to write the full report |
 | `--quiet` | Only the summary line, for scripting |
+| `--no-open` | Do not offer to open a browser; just print the link |
+| `--submit-url` | Where the submit link points (default `https://doctor.nestri.io`) |
 
 ## Verdicts
 
@@ -73,14 +75,30 @@ always a router setting rather than a line you need to upgrade.
 | `CLIENT` | Not a host. A complete answer, and what most machines are |
 | `UNKNOWN` | A blocking check could not be run. An unknown is not a no |
 
+## Sending it back
+
+At the end it prints a link, lists in plain English what the link contains, and
+opens it when you press Enter. That is the whole submission — no account, no
+form, no email client.
+
+The link is built from **readable query parameters** rather than an encoded
+blob. A blob would be shorter and would let us send more; it would also mean you
+cannot read what you are sending, which is the one thing this program has going
+for it.
+
+If you would rather not click a link we wrote, the short line is printed too and
+put on your clipboard.
+
 ## What it deliberately does not tell you
 
 - **A pass is not a promise.** Every check is a *necessary* condition. Nothing
   here runs under load, so a machine that passes can still fail on block I/O.
 - **`vulkaninfo` reporting the encode extension is not proof the path works.**
   We have had a correct extension list over a broken path before.
-- **Whether `libvirglrenderer` carries the native-context patches cannot be
-  determined from outside**, so that row reports presence only.
+- **The host's `virglrenderer` and Mesa are not checked at all**, on purpose.
+  The box carries its own inside the image it runs in, so the host's copies are
+  not on the path — and a row that could only ever say "present, patch state
+  unknown" told prospective hosts their machine was wrong when it was not.
 
 ## Building
 

@@ -130,15 +130,19 @@ pub fn verdict(sys: &SysInfo, host: &HostReport, net: &NetReport) -> Verdict {
 }
 
 /// The line to paste. Pipe-separated fields, `k=v` inside, stable key order.
-pub fn summary_line(
-    sys: &SysInfo,
-    host: &HostReport,
-    net: &NetReport,
-    steam: &SteamReport,
-    answers: &Answers,
-    verdict: Verdict,
-    region: &Option<String>,
-) -> String {
+/// Both renderers take the assembled report rather than seven arguments: the
+/// set of things they need is exactly [`Full`], and keeping them in step with
+/// it is the point.
+pub fn summary_line(f_: &Full) -> String {
+    let (sys, host, net, steam, answers, verdict, region) = (
+        f_.sys,
+        f_.host,
+        f_.net,
+        f_.steam,
+        f_.answers,
+        f_.verdict,
+        &f_.region_hint,
+    );
     let mut f: Vec<String> = Vec::new();
     f.push(format!("nesdoctor {VERSION}"));
     f.push(format!("{}/{}", sys.os, sys.arch));
@@ -350,4 +354,220 @@ pub fn to_clipboard(line: &str) -> Option<&'static str> {
         }
     }
     None
+}
+
+// ------------------------------------------------------------------ submit ---
+
+/// Percent-encode everything that is not unreserved. Small enough to write.
+fn enc(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
+/// The URL that submits this run.
+///
+/// Query parameters rather than an opaque blob, deliberately. A base64 payload
+/// would be shorter and would let us send more, and it would also mean the
+/// person clicking cannot read what they are sending — which is the one thing
+/// this program has going for it. Readable parameters are self-documenting, and
+/// the length is nowhere near a browser limit.
+///
+/// Carries more than the clipboard line does, because it is not something
+/// anyone has to eyeball in a chat window: every check individually, the full
+/// latency triple, the 24-hour launch histogram, and the five largest titles.
+pub fn submit_url(base: &str, f_: &Full) -> String {
+    let (sys, host, net, steam, answers, verdict, region) = (
+        f_.sys,
+        f_.host,
+        f_.net,
+        f_.steam,
+        f_.answers,
+        f_.verdict,
+        &f_.region_hint,
+    );
+    let mut q: Vec<String> = Vec::new();
+    let mut put = |k: &str, v: String| q.push(format!("{k}={}", enc(&v)));
+
+    put("v", VERSION.to_string());
+    put("os", format!("{}/{}", sys.os, sys.arch));
+    if let Some(rel) = &sys.release {
+        put("rel", rel.clone());
+    }
+    if let Some(g) = sys
+        .gpus
+        .iter()
+        .find(|g| g.render_node.is_some())
+        .or_else(|| sys.gpus.first())
+    {
+        put("gpu", g.name.clone());
+    }
+    if sys.gpus.len() > 1 {
+        put("gpus", sys.gpus.len().to_string());
+    }
+    put("cpu", sys.cpu_threads.to_string());
+    if let Some(m) = &sys.cpu_model {
+        put("cpumodel", m.clone());
+    }
+    if let Some(r) = sys.ram_gib {
+        put("ram", format!("{r:.0}"));
+    }
+
+    // Every check, individually — the aggregate verdict hides which single
+    // requirement stops people, which is the thing worth knowing.
+    for c in &host.checks {
+        // Prefixed: the `gpu` check id would otherwise overwrite the GPU model
+        // parameter, and last-writer-wins in a query string is a silent loss.
+        put(
+            &format!("ck_{}", c.id),
+            match c.state {
+                State::Pass => "y",
+                State::Fail => "n",
+                State::Unknown => "?",
+            }
+            .to_string(),
+        );
+    }
+
+    if let Some(u) = net.upstream_mbps {
+        put("up", format!("{u:.1}"));
+    }
+    if let Some(v) = net.idle_rtt_ms {
+        put("rtt", format!("{v:.0}"));
+    }
+    if let Some(v) = net.loaded_rtt_ms {
+        put("rttload", format!("{v:.0}"));
+    }
+    if let Some(v) = net.loaded_rtt_p95_ms {
+        put("rttp95", format!("{v:.0}"));
+    }
+    if let Some(v) = net.bloat_ms {
+        put("bloat", format!("{v:.0}"));
+    }
+    if let Some(g) = net.grade {
+        put("grade", g.to_string());
+    }
+    if let Some(r) = region {
+        put("edge", r.clone());
+    }
+
+    if let Some(d) = sys.disks.first() {
+        put("disk", format!("{:.0}", d.free_gib));
+        if let Some(fs) = &d.fs {
+            put("diskfs", fs.clone());
+        }
+    }
+    put("disks", sys.disks.len().to_string());
+    if let (Some(h), Some(s)) = (sys.powered_hours_per_day, sys.powered_span_days) {
+        put("powered", format!("{h:.1}"));
+        put("span", format!("{s:.0}"));
+    }
+
+    if steam.found {
+        put("titles", steam.titles.to_string());
+        put("gib", format!("{:.0}", steam::gib(steam.bytes_on_disk)));
+        if steam.launch_samples > 0 {
+            put(
+                "hours",
+                steam
+                    .launch_hours
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            put("n", steam.launch_samples.to_string());
+        }
+        if let Some((a, b)) = steam.peak_window {
+            put("peak", format!("{a}-{b}"));
+        }
+        if !steam.largest.is_empty() {
+            // Whether the title distribution has a head decides whether a depot
+            // cache is worth building at all, and it cannot be seen from counts.
+            put(
+                "top",
+                steam
+                    .largest
+                    .iter()
+                    .map(|(n, _)| n.as_str())
+                    .collect::<Vec<_>>()
+                    .join("~"),
+            );
+        }
+    }
+
+    for (k, v) in [
+        ("want", &answers.want),
+        ("role", &answers.role),
+        ("share", &answers.share_for),
+        ("pays", &answers.pays_today),
+        ("otherlinux", &answers.other_linux),
+    ] {
+        if let Some(v) = v {
+            put(k, v.clone());
+        }
+    }
+    put("verdict", verdict.tag().to_string());
+
+    format!("{}/?{}", base.trim_end_matches('/'), q.join("&"))
+}
+
+/// Plain English list of what the submit URL contains, printed before it opens.
+///
+/// The URL is readable, but it is also 800 characters long and nobody reads
+/// 800 characters. This is the honest summary of it.
+pub fn submit_contents(steam: &SteamReport, answers: &Answers) -> Vec<&'static str> {
+    let mut v = vec![
+        "this machine's OS, CPU, RAM and GPU model",
+        "which host requirements passed and which did not",
+        "the network figures you just saw",
+        "free disk space, and how long this machine tends to stay on",
+    ];
+    if steam.found && steam.titles > 0 {
+        v.push("how many games are installed, their total size, and your five largest");
+        if steam.launch_samples > 0 {
+            v.push("the hour-of-day histogram above — hours, never dates");
+        }
+    }
+    if answers.want.is_some()
+        || answers.role.is_some()
+        || answers.share_for.is_some()
+        || answers.pays_today.is_some()
+    {
+        v.push("your answers to the questions");
+    }
+    v.push("no hostname, no IP address, no username, no file paths");
+    v
+}
+
+/// Hand a URL to whatever the desktop uses to open links.
+pub fn open_in_browser(url: &str) -> bool {
+    use std::process::{Command, Stdio};
+    let attempts: [(&str, &[&str]); 4] = [
+        ("xdg-open", &[]),
+        ("open", &[]),                 // macOS
+        ("cmd", &["/C", "start", ""]), // Windows
+        ("wslview", &[]),              // WSL, where xdg-open is often absent
+    ];
+    for (cmd, args) in attempts {
+        if Command::new(cmd)
+            .args(args)
+            .arg(url)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+    false
 }
