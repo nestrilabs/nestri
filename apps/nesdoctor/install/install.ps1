@@ -24,7 +24,7 @@ $Repo = 'nestrilabs/nestri'
 # product release goes out it would move again and every install here would
 # 404. Bump this line when cutting a nesdoctor release; NESDOCTOR_TAG overrides
 # it for testing.
-$DefaultTag = 'nesdoctor-v0.1.0'
+$DefaultTag = 'nesdoctor-v0.1.1'
 $Tag = if ($env:NESDOCTOR_TAG) { $env:NESDOCTOR_TAG } else { $DefaultTag }
 
 # TLS 1.2 explicitly: Windows PowerShell 5.1 still defaults to older protocols
