@@ -641,11 +641,30 @@ pub fn submit_contents(steam: &SteamReport, answers: &Answers) -> Vec<&'static s
 /// Hand a URL to whatever the desktop uses to open links.
 pub fn open_in_browser(url: &str) -> bool {
     use std::process::{Command, Stdio};
+
+    // NEVER route this through `cmd`.
+    //
+    // The Windows arm used to be `cmd /C start "" <url>` and it destroyed every
+    // Windows submission we received. `cmd.exe` re-parses its own command line
+    // and treats `&` as a command separator; Rust's `Command` quotes arguments
+    // for the MSVC C runtime convention, which `cmd` does not honour. So a URL
+    // is cut at its first `&` -- which in ours falls immediately after `v=` --
+    // and the browser opened `https://doctor.nestri.io/?v=0.2.0` carrying
+    // nothing else at all.
+    //
+    // Silently, too: the worker saw a version, accepted it, and thanked the
+    // person for a submission that contained one field. Two arrived like that
+    // before anyone noticed.
+    //
+    // `rundll32 url.dll,FileProtocolHandler` hands the URL to the shell's
+    // protocol handler without any command interpreter in the path, so nothing
+    // re-parses it. `explorer.exe` also works and returns a non-zero exit
+    // status even on success, which would make the caller think it failed.
     let attempts: [(&str, &[&str]); 4] = [
         ("xdg-open", &[]),
-        ("open", &[]),                 // macOS
-        ("cmd", &["/C", "start", ""]), // Windows
-        ("wslview", &[]),              // WSL, where xdg-open is often absent
+        ("open", &[]),                                  // macOS
+        ("rundll32", &["url.dll,FileProtocolHandler"]), // Windows
+        ("wslview", &[]),                               // WSL, where xdg-open is often absent
     ];
     for (cmd, args) in attempts {
         if Command::new(cmd)
