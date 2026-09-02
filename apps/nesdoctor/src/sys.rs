@@ -63,6 +63,14 @@ pub struct Disk {
     /// *separate devices*) cannot be answered at all.
     pub source: Option<String>,
     pub free_gib: f64,
+    /// Total capacity, not just what is free.
+    ///
+    /// Added after a submission from a machine with four drives and 22 TiB
+    /// reported `disk=8880` -- the free space on the single largest mount. A
+    /// content store is sized against capacity, and reporting only the largest
+    /// mount's free space understates a multi-drive machine by however many
+    /// drives it has.
+    pub size_gib: Option<f64>,
 }
 
 pub fn probe() -> SysInfo {
@@ -348,38 +356,75 @@ fn disks() -> Vec<Disk> {
             let Ok(avail_kb) = f[3].parse::<f64>() else {
                 continue;
             };
+            let size_kb = f[1].parse::<f64>().ok();
             let source = f[0].to_string();
             let mount = f[5..].join(" ");
-            // Pseudo-filesystems are noise, and tmpfs free space is RAM.
-            if ["/dev", "/sys", "/proc", "/run", "/boot", "/snap"]
-                .iter()
-                .any(|p| mount.starts_with(p))
+            let fs = fs_type(&mount);
+
+            // Filter by filesystem type, not by mount path. Filtering paths
+            // missed `/tmp` on a tmpfs, whose "free space" is RAM -- so a
+            // 7 GiB tmpfs was being added to a storage total, which is exactly
+            // the sort of number a capacity plan would then be built on.
+            const PSEUDO: [&str; 9] = [
+                "tmpfs",
+                "ramfs",
+                "devtmpfs",
+                "devfs",
+                "squashfs",
+                "overlay",
+                "efivarfs",
+                "fuse.portal",
+                "iso9660",
+            ];
+            if fs.as_deref().is_some_and(|f| PSEUDO.contains(&f)) {
+                continue;
+            }
+            // Paths still worth skipping regardless of what they are mounted as.
+            if [
+                "/dev",
+                "/sys",
+                "/proc",
+                "/run",
+                "/boot",
+                "/snap",
+                "/var/lib/docker",
+            ]
+            .iter()
+            .any(|p| mount.starts_with(p))
             {
                 continue;
             }
             out.push(Disk {
-                fs: fs_type(&mount),
+                fs,
                 mount,
                 source: Some(source),
                 free_gib: avail_kb / 1048576.0,
+                size_gib: size_kb.map(|k| k / 1048576.0),
             });
         }
     }
     #[cfg(windows)]
-    if let Some(txt) =
-        ps("Get-PSDrive -PSProvider FileSystem | ForEach-Object { \"$($_.Name)|$($_.Free)\" }")
-    {
+    // Free *and* Used, so capacity is Free + Used. `Get-PSDrive` reports both
+    // and we were reading only Free.
+    if let Some(txt) = ps(
+        r#"Get-PSDrive -PSProvider FileSystem | ForEach-Object { "$($_.Name)|$($_.Free)|$($_.Used)" }"#,
+    ) {
         for line in txt.lines() {
-            if let Some((name, free)) = line.split_once('|') {
-                if let Ok(b) = free.trim().parse::<f64>() {
-                    out.push(Disk {
-                        mount: format!("{}:", name.trim()),
-                        fs: None,
-                        source: None,
-                        free_gib: b / 1073741824.0,
-                    });
-                }
+            let f: Vec<&str> = line.split('|').collect();
+            if f.len() < 2 {
+                continue;
             }
+            let Ok(free) = f[1].trim().parse::<f64>() else {
+                continue;
+            };
+            let used = f.get(2).and_then(|u| u.trim().parse::<f64>().ok());
+            out.push(Disk {
+                mount: format!("{}:", f[0].trim()),
+                fs: None,
+                source: None,
+                free_gib: free / 1073741824.0,
+                size_gib: used.map(|u| (free + u) / 1073741824.0),
+            });
         }
     }
     out.sort_by(|a, b| b.free_gib.total_cmp(&a.free_gib));

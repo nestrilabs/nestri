@@ -389,13 +389,32 @@ fn print_sys(s: &sys::SysInfo) {
                 .unwrap_or_default()
         );
     }
-    for d in s.disks.iter().take(3) {
+    for d in s.disks.iter().take(5) {
         println!(
-            "  {} · {} · {:.0} GiB free",
+            "  {} · {} · {:.0} GiB free{}",
             d.mount,
             d.fs.clone().unwrap_or_else(|| "?".into()),
-            d.free_gib
+            d.free_gib,
+            d.size_gib
+                .map(|s| format!(" of {s:.0} GiB"))
+                .unwrap_or_default()
         );
+    }
+    if s.disks.len() > 1 {
+        let free: f64 = s.disks.iter().map(|d| d.free_gib).sum();
+        let size: f64 = s.disks.iter().filter_map(|d| d.size_gib).sum();
+        println!(
+            "  {} filesystems · {free:.0} GiB free{}",
+            s.disks.len(),
+            if size > 0.0 {
+                format!(" of {size:.0} GiB total")
+            } else {
+                String::new()
+            }
+        );
+    }
+    if s.disks.len() > 5 {
+        println!("  \x1b[2m(showing the five largest)\x1b[0m");
     }
     match (s.powered_hours_per_day, s.powered_span_days) {
         (Some(h), Some(days)) => println!(

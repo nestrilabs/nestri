@@ -104,6 +104,33 @@ jobs:
           fi
           test -s "$RUNNER_TEMP/nd.json"
 
+      # Eyes on the platforms the developer machine is not.
+      #
+      # Every Windows bug this tool has had was found by a person reading the
+      # results channel: a virtual display adapter reported as the GPU, and a
+      # URL truncated at its first `&`. Both were in code that only runs on
+      # Windows, and the development machine is Linux -- so nobody had ever
+      # seen what these probes return on the platform most of the audience
+      # uses.
+      #
+      # CI already runs a real Windows machine and a real macOS one. Printing
+      # the full report from each is nearly free and turns "we are working
+      # blind" into "we are looking at it once per release".
+      - name: Show what the probes actually return here
+        if: matrix.smoke
+        shell: bash
+        run: |
+          set -uo pipefail
+          BIN="target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          echo "::group::${{ matrix.target }} — full report"
+          # Not `set -e`: this step is for looking, and a probe that fails on a
+          # runner must not fail the release.
+          "$BIN" --no-net --no-steam --json "$RUNNER_TEMP/probe.json" < /dev/null || true
+          echo "::endgroup::"
+          echo "::group::${{ matrix.target }} — JSON"
+          cat "$RUNNER_TEMP/probe.json" 2>/dev/null || echo "(no json written)"
+          echo "::endgroup::"
+
       - name: Package
         shell: bash
         run: |

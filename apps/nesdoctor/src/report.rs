@@ -204,8 +204,19 @@ pub fn summary_line(f_: &Full) -> String {
         _ => f.push("net=unmeasured".into()),
     }
 
-    if let Some(d) = sys.disks.first() {
-        f.push(format!("disk={:.0}G", d.free_gib));
+    // Total free, and the largest single filesystem, because one dataset
+    // cannot span drives.
+    let free_total: f64 = sys.disks.iter().map(|d| d.free_gib).sum();
+    if free_total > 0.0 {
+        let max = sys.disks.first().map_or(0.0, |d| d.free_gib);
+        f.push(if sys.disks.len() > 1 {
+            format!(
+                "disk={free_total:.0}G free/{max:.0}G largest x{}",
+                sys.disks.len()
+            )
+        } else {
+            format!("disk={free_total:.0}G")
+        });
     }
     if let (Some(h), Some(days)) = (sys.powered_hours_per_day, sys.powered_span_days) {
         f.push(format!("powered={h:.0}h/d over {days:.0}d"));
@@ -485,8 +496,25 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
         put("edge", r.clone());
     }
 
+    // Four fields rather than one, because `disk=8880` was ambiguous and wrong
+    // for its purpose. A submission from a four-drive, 22 TiB machine reported
+    // the free space on its single largest mount and nothing else.
+    //
+    // Both the totals and the largest single mount matter, and they answer
+    // different questions: a content store is sized against total capacity,
+    // but one dataset cannot be spread across drives, so the largest single
+    // filesystem is the real ceiling for any one store. The old ambiguous
+    // `disk` key is gone rather than silently redefined.
+    let free_total: f64 = sys.disks.iter().map(|d| d.free_gib).sum();
+    let size_total: f64 = sys.disks.iter().filter_map(|d| d.size_gib).sum();
+    if free_total > 0.0 {
+        put("diskfree", format!("{free_total:.0}"));
+    }
+    if size_total > 0.0 {
+        put("disksize", format!("{size_total:.0}"));
+    }
     if let Some(d) = sys.disks.first() {
-        put("disk", format!("{:.0}", d.free_gib));
+        put("diskmax", format!("{:.0}", d.free_gib));
         if let Some(fs) = &d.fs {
             put("diskfs", fs.clone());
         }
@@ -638,6 +666,17 @@ pub fn submit_contents(steam: &SteamReport, answers: &Answers) -> Vec<&'static s
     v
 }
 
+/// Every program we will hand a URL to, in order.
+///
+/// A `const` rather than a local, so the tests at the bottom of this file can
+/// assert the property that actually matters about this list.
+const OPENERS: [(&str, &[&str]); 4] = [
+    ("xdg-open", &[]),
+    ("open", &[]),                                  // macOS
+    ("rundll32", &["url.dll,FileProtocolHandler"]), // Windows
+    ("wslview", &[]),                               // WSL, where xdg-open is often absent
+];
+
 /// Hand a URL to whatever the desktop uses to open links.
 pub fn open_in_browser(url: &str) -> bool {
     use std::process::{Command, Stdio};
@@ -660,13 +699,7 @@ pub fn open_in_browser(url: &str) -> bool {
     // protocol handler without any command interpreter in the path, so nothing
     // re-parses it. `explorer.exe` also works and returns a non-zero exit
     // status even on success, which would make the caller think it failed.
-    let attempts: [(&str, &[&str]); 4] = [
-        ("xdg-open", &[]),
-        ("open", &[]),                                  // macOS
-        ("rundll32", &["url.dll,FileProtocolHandler"]), // Windows
-        ("wslview", &[]),                               // WSL, where xdg-open is often absent
-    ];
-    for (cmd, args) in attempts {
+    for (cmd, args) in OPENERS {
         if Command::new(cmd)
             .args(args)
             .arg(url)
@@ -680,4 +713,62 @@ pub fn open_in_browser(url: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OPENERS;
+
+    /// The regression test for the worst bug this program has had.
+    ///
+    /// `cmd /C start "" <url>` destroyed every Windows submission for a day.
+    /// `cmd.exe` re-parses its own command line and treats `&` as a command
+    /// separator, so the URL was cut at its first one — immediately after
+    /// `v=` — and the browser opened a link carrying a version number and
+    /// nothing else, behind a thank-you page.
+    ///
+    /// It was found by a person reading the results channel, because the
+    /// developer machine is Linux and `xdg-open` never sees a shell. The
+    /// property that prevents the whole class is **never hand a URL to
+    /// anything that will re-parse it** — and unlike the bug, that is
+    /// checkable on every platform, in a millisecond, forever.
+    #[test]
+    fn no_opener_goes_through_a_command_interpreter() {
+        const INTERPRETERS: [&str; 8] = [
+            "cmd",
+            "cmd.exe",
+            "sh",
+            "bash",
+            "zsh",
+            "powershell",
+            "powershell.exe",
+            "pwsh",
+        ];
+        for (cmd, args) in OPENERS {
+            assert!(
+                !INTERPRETERS.contains(&cmd),
+                "{cmd} re-parses its arguments; a URL containing & will be truncated"
+            );
+            // `start` exists only as a cmd builtin, so seeing it means a shell
+            // is involved even when the program name looks innocent.
+            assert!(
+                !args.contains(&"start"),
+                "{cmd} {args:?} looks like a shell invocation"
+            );
+        }
+    }
+
+    /// The URL is always passed as its own argument, never interpolated into
+    /// one — the other half of the same property.
+    #[test]
+    fn openers_take_fixed_arguments_only() {
+        for (_, args) in OPENERS {
+            for a in args {
+                assert!(
+                    !a.contains("{}") && !a.contains('&') && !a.contains('?'),
+                    "argument {a:?} looks like it wants the URL interpolated into it"
+                );
+            }
+        }
+    }
 }
