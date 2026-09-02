@@ -252,7 +252,50 @@ fn gpus() -> Vec<Gpu> {
         out.sort_by_key(|g| (is_virtual_adapter(&g.name), g.vendor.is_none()));
         return out;
     }
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[cfg(target_os = "macos")]
+    {
+        // Every Mac reported `gpu=unknown`, because this arm did not exist --
+        // seen in the macOS CI log. Macs are clients rather than hosts, but
+        // 0041 wants a client vendor matrix and an unlabelled entry is no use
+        // in one: an M-series integrated GPU and a discrete Radeon in an Intel
+        // Mac decode very differently.
+        //
+        // `SPDisplaysDataType` is the only place the chipset name lives.
+        // Parsed loosely on purpose: the format has changed between macOS
+        // releases and a missing name should cost a field.
+        let out = sh("system_profiler", &["SPDisplaysDataType"]).unwrap_or_default();
+        let mut gpus = Vec::new();
+        for line in out.lines() {
+            let l = line.trim();
+            if let Some(name) = l
+                .strip_prefix("Chipset Model:")
+                .or_else(|| l.strip_prefix("Chipset:"))
+            {
+                let name = name.trim();
+                if name.is_empty() {
+                    continue;
+                }
+                let up = name.to_uppercase();
+                gpus.push(Gpu {
+                    name: name.to_string(),
+                    vendor: [
+                        ("APPLE", "Apple"),
+                        ("AMD", "AMD"),
+                        ("RADEON", "AMD"),
+                        ("NVIDIA", "NVIDIA"),
+                        ("INTEL", "Intel"),
+                    ]
+                    .into_iter()
+                    .find(|(needle, _)| up.contains(needle))
+                    .map(|(_, v)| v.to_string()),
+                    // macOS has no DRM render nodes; a Mac cannot host anyway.
+                    render_node: None,
+                });
+            }
+        }
+        return gpus;
+    }
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     return Vec::new();
 }
 
