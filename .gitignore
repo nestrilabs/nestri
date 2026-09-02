@@ -43,3 +43,10 @@ lunora/_generated
 
 #turbo
 .turbo
+
+# nesdoctor writes its report next to wherever it is run, and it is run from
+# the repository root during development. It contains the operator's own
+# machine: home paths, installed game titles, launch times. Committed once by
+# accident; never again.
+nesdoctor.json
+*.nesdoctor.json

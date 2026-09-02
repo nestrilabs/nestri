@@ -74,6 +74,13 @@ struct Args {
     yes: bool,
 
     /// Where to write the full report.
+    ///
+    /// Relative to the working directory, which during development is a git
+    /// checkout -- and this file contains the operator's own machine: home
+    /// paths, installed titles, launch times. It was committed to the public
+    /// repository once by accident. `.gitignore` now covers the default name,
+    /// and the default is deliberately not something like `report.json` that
+    /// an ignore rule would miss.
     #[arg(long, default_value = "nesdoctor.json")]
     json: PathBuf,
 
