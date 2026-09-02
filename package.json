@@ -20,6 +20,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "alchemy dev",
+		"db:migrate": "bun run --cwd packages/core db:migrate",
+		"db:push": "bun run --cwd packages/core db:push",
 		"test": "test",
 		"deploy:sandbox": "alchemy deploy --stage sandbox --yes",
 		"deploy:production": "alchemy deploy --stage production --yes"
