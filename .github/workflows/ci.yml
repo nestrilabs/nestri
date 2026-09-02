@@ -29,8 +29,13 @@ jobs:
           bun-version: 1.3.11
       - name: Install
         run: bun install --frozen-lockfile
-      - name: Push migrations
-        run: bun run db:push
+      # Apply the committed migrations rather than `drizzle-kit push`. Two
+      # reasons: `push` diffs the schema against whatever is in the database and
+      # is a development tool, whereas CI wants exactly what is in
+      # `packages/core/migrations`; and `push` under `strict: true` asks for
+      # confirmation, which on a runner is a hang rather than a failure.
+      - name: Apply migrations
+        run: bun run db:migrate
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/nestri
       - name: Test

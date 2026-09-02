@@ -13,7 +13,8 @@
 	},
 	"scripts": {
 		"db": "drizzle-kit",
-		"db:push": "drizzle-kit push"
+		"db:push": "drizzle-kit push",
+		"db:migrate": "drizzle-kit migrate"
 	},
 	"dependencies": {
 		"@nestri/auth": "workspace:",
