@@ -1,0 +1,25 @@
+[package]
+name = "nesdoctor"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "nesdoctor"
+path = "src/main.rs"
+
+# Dependencies are deliberately few. This binary is handed to strangers and
+# asked to be trusted with a look at their machine, so the dependency tree is
+# part of the interface: a reviewer has to be able to read all of it. Anything
+# that can be done with `std` is done with `std` -- the VDF parser and every
+# platform probe shell out or read files rather than pulling a crate.
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# The one non-trivial dependency, and only for the throughput half of the
+# network test. rustls rather than native-tls so there is no OpenSSL to find.
+ureq = "3"

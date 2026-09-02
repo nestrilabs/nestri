@@ -1,0 +1,545 @@
+//! What the machine is: OS, CPU, memory, GPU, disk, and how long it stays on.
+//!
+//! Everything here is read from files or from a command that ships with the OS.
+//! No crate is used to describe hardware, because a wrong answer from a
+//! dependency is indistinguishable from a wrong answer from us, and this output
+//! is what a host-capacity decision would rest on: hosts are
+//! customer-supplied and heterogeneous, so an unlabelled capacity number is a
+//! wrong one.
+//!
+//! Every probe degrades to `None` rather than failing the run. A missing
+//! `lspci` costs one field.
+
+// Every probe in this module is a stack of `#[cfg]`-gated `return`s, one per
+// platform, so that exactly one compiles. The trailing `return` in each arm is
+// load-bearing -- dropping it makes the arms fall through to each other and the
+// function stops compiling on some targets -- so clippy's advice is wrong here
+// specifically, and is not suppressed anywhere else in the crate.
+#![allow(clippy::needless_return)]
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+pub struct SysInfo {
+    pub os: &'static str,
+    pub arch: &'static str,
+    pub release: Option<String>,
+    pub kernel: Option<String>,
+    pub cpu_model: Option<String>,
+    pub cpu_threads: usize,
+    pub ram_gib: Option<f64>,
+    pub gpus: Vec<Gpu>,
+    /// Mounts with usable free space, largest first.
+    pub disks: Vec<Disk>,
+    pub uptime_hours: Option<f64>,
+    /// Mean hours per day the machine was powered, from boot history. See
+    /// [`powered`]. `None` where the history is not readable.
+    pub powered_hours_per_day: Option<f64>,
+    /// Days the boot history spans, so the reader can judge the above.
+    pub powered_span_days: Option<f64>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct Gpu {
+    pub name: String,
+    pub vendor: Option<String>,
+    /// The DRM render node, where one exists. Linux only, and a hard
+    /// requirement in `contracts/host-requirements.md`: a card without one
+    /// cannot host, however good it is.
+    pub render_node: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct Disk {
+    pub mount: String,
+    pub fs: Option<String>,
+    /// The backing device. Kept because btrfs and ZFS present many mount
+    /// points on one device: without this, three subvolumes of one 91 GiB disk
+    /// read as 273 GiB of capacity, and the two-stores check (which wants
+    /// *separate devices*) cannot be answered at all.
+    pub source: Option<String>,
+    pub free_gib: f64,
+}
+
+pub fn probe() -> SysInfo {
+    let (powered_hours_per_day, powered_span_days) = powered();
+    SysInfo {
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        release: release(),
+        kernel: kernel(),
+        cpu_model: cpu_model(),
+        cpu_threads: std::thread::available_parallelism().map_or(0, |n| n.get()),
+        ram_gib: ram_gib(),
+        gpus: gpus(),
+        disks: disks(),
+        uptime_hours: uptime_hours(),
+        powered_hours_per_day,
+        powered_span_days,
+    }
+}
+
+// ---------------------------------------------------------------- identity ---
+
+fn release() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    return kv_line(&fs::read_to_string("/etc/os-release").ok()?, "PRETTY_NAME");
+    #[cfg(windows)]
+    return ps("(Get-CimInstance Win32_OperatingSystem).Caption");
+    #[cfg(target_os = "macos")]
+    return sh("sw_vers", &["-productVersion"]).map(|v| format!("macOS {v}"));
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+    return None;
+}
+
+fn kernel() -> Option<String> {
+    if cfg!(windows) {
+        return None;
+    }
+    sh("uname", &["-r"])
+}
+
+fn cpu_model() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    return fs::read_to_string("/proc/cpuinfo")
+        .ok()?
+        .lines()
+        .find(|l| l.starts_with("model name"))
+        .and_then(|l| l.split_once(':'))
+        .map(|(_, v)| v.trim().to_string());
+    #[cfg(windows)]
+    return ps("(Get-CimInstance Win32_Processor).Name");
+    #[cfg(target_os = "macos")]
+    return sh("sysctl", &["-n", "machdep.cpu.brand_string"]);
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+    return None;
+}
+
+fn ram_gib() -> Option<f64> {
+    #[cfg(target_os = "linux")]
+    {
+        let txt = fs::read_to_string("/proc/meminfo").ok()?;
+        let kb: f64 = txt
+            .lines()
+            .find(|l| l.starts_with("MemTotal:"))?
+            .split_whitespace()
+            .nth(1)?
+            .parse()
+            .ok()?;
+        return Some(kb / 1048576.0);
+    }
+    #[cfg(windows)]
+    return Some(
+        ps("(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory")?
+            .trim()
+            .parse::<f64>()
+            .ok()?
+            / 1073741824.0,
+    );
+    #[cfg(target_os = "macos")]
+    return Some(
+        sh("sysctl", &["-n", "hw.memsize"])?
+            .trim()
+            .parse::<f64>()
+            .ok()?
+            / 1073741824.0,
+    );
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
+    return None;
+}
+
+// --------------------------------------------------------------------- gpu ---
+
+/// PCI vendor ids as they appear in `/sys/.../vendor`.
+fn vendor_name(id: &str) -> Option<&'static str> {
+    match id.trim().trim_start_matches("0x") {
+        "1002" => Some("AMD"),
+        "8086" => Some("Intel"),
+        "10de" => Some("NVIDIA"),
+        _ => None,
+    }
+}
+
+fn gpus() -> Vec<Gpu> {
+    #[cfg(target_os = "linux")]
+    return linux_gpus();
+    #[cfg(windows)]
+    return ps("Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }")
+        .map(|s| {
+            s.lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .map(|l| {
+                    let up = l.to_uppercase();
+                    Gpu {
+                        name: l.to_string(),
+                        vendor: ["AMD", "NVIDIA", "INTEL"]
+                            .into_iter()
+                            .find(|v| up.contains(v))
+                            .map(str::to_string),
+                        render_node: None,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    #[cfg(not(any(target_os = "linux", windows)))]
+    return Vec::new();
+}
+
+/// Walk `/sys/class/drm` for cards and pair each with its render node.
+#[cfg(target_os = "linux")]
+fn linux_gpus() -> Vec<Gpu> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir("/sys/class/drm") else {
+        return out;
+    };
+    let all: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+
+    let mut cards: Vec<&PathBuf> = all
+        .iter()
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("card") && !n.contains('-'))
+        })
+        .collect();
+    cards.sort();
+
+    let lspci = sh("lspci", &["-mm"]).unwrap_or_default();
+
+    for card in cards {
+        let dev = card.join("device");
+        let real = fs::canonicalize(&dev).ok();
+        let vendor = fs::read_to_string(dev.join("vendor"))
+            .ok()
+            .and_then(|v| vendor_name(&v))
+            .map(str::to_string);
+
+        // The PCI slot is the symlink target's basename; lspci -mm keys on the
+        // bus:device.function part of it.
+        let slot = real
+            .as_ref()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_default();
+        let bdf = slot
+            .split_once(':')
+            .map_or(slot.clone(), |(_, r)| r.to_string());
+
+        let name = lspci
+            .lines()
+            .find(|l| l.starts_with(&bdf))
+            // lspci -mm quotes each field; index 5 is the device name.
+            .and_then(|l| l.split('"').nth(5).map(str::to_string))
+            .or_else(|| {
+                fs::read_to_string(dev.join("device")).ok().map(|d| {
+                    format!(
+                        "{} device {}",
+                        vendor.clone().unwrap_or_else(|| "unknown".into()),
+                        d.trim()
+                    )
+                })
+            })
+            .unwrap_or_else(|| "unknown GPU".into());
+
+        let render_node = all
+            .iter()
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("renderD"))
+            })
+            .find(|p| fs::canonicalize(p.join("device")).ok() == real)
+            .and_then(|p| {
+                p.file_name()
+                    .map(|n| format!("/dev/dri/{}", n.to_string_lossy()))
+            });
+
+        // 0041 requires a *recorded* gpu_model per host, so prefer a name that
+        // identifies the part. lspci gives the codename alone ("Barcelo"),
+        // which is thin on its own.
+        let name = match &vendor {
+            Some(v) if !name.to_uppercase().contains(&v.to_uppercase()) => format!("{v} {name}"),
+            _ => name,
+        };
+        out.push(Gpu {
+            name,
+            vendor,
+            render_node,
+        });
+    }
+    out
+}
+
+// -------------------------------------------------------------------- disk ---
+
+fn disks() -> Vec<Disk> {
+    let mut out = Vec::new();
+    #[cfg(unix)]
+    if let Some(txt) = sh("df", &["-Pk"]) {
+        // -P for POSIX output and -k for a unit that does not move under
+        // locale. Both matter, because this is parsed.
+        for line in txt.lines().skip(1) {
+            let f: Vec<&str> = line.split_whitespace().collect();
+            if f.len() < 6 {
+                continue;
+            }
+            let Ok(avail_kb) = f[3].parse::<f64>() else {
+                continue;
+            };
+            let source = f[0].to_string();
+            let mount = f[5..].join(" ");
+            // Pseudo-filesystems are noise, and tmpfs free space is RAM.
+            if ["/dev", "/sys", "/proc", "/run", "/boot", "/snap"]
+                .iter()
+                .any(|p| mount.starts_with(p))
+            {
+                continue;
+            }
+            out.push(Disk {
+                fs: fs_type(&mount),
+                mount,
+                source: Some(source),
+                free_gib: avail_kb / 1048576.0,
+            });
+        }
+    }
+    #[cfg(windows)]
+    if let Some(txt) =
+        ps("Get-PSDrive -PSProvider FileSystem | ForEach-Object { \"$($_.Name)|$($_.Free)\" }")
+    {
+        for line in txt.lines() {
+            if let Some((name, free)) = line.split_once('|') {
+                if let Ok(b) = free.trim().parse::<f64>() {
+                    out.push(Disk {
+                        mount: format!("{}:", name.trim()),
+                        fs: None,
+                        source: None,
+                        free_gib: b / 1073741824.0,
+                    });
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| b.free_gib.total_cmp(&a.free_gib));
+    out.dedup_by(|a, b| a.mount == b.mount);
+    // One entry per backing device. Measured 2026-09-02: this laptop reported
+    // /, /home and /srv at 91 GiB each — three btrfs subvolumes of one device,
+    // counted three times.
+    out.dedup_by(|a, b| a.source.is_some() && a.source == b.source);
+    out
+}
+
+/// The physical block devices behind a `df` source string.
+///
+/// A source string is not a device. `/dev/nvme0n1p2` and `/dev/nvme0n1p3` are
+/// two strings and one SSD, sharing one queue — so comparing the strings says
+/// "separate devices" about a topology with no I/O isolation whatever, which is
+/// the entire reason the two-stores requirement exists. LVM is worse: two
+/// logical volumes on one physical disk look completely unrelated.
+///
+/// So: a partition resolves to its parent disk through sysfs, a device-mapper
+/// or MD device resolves to everything in its `slaves/` directory, recursively,
+/// and anything unrecognised resolves to itself. Two mounts share hardware when
+/// the returned sets intersect.
+pub fn physical_devices(source: &str) -> Vec<String> {
+    if !cfg!(target_os = "linux") {
+        return vec![source.to_string()];
+    }
+    let name = source.rsplit('/').next().unwrap_or(source);
+    let mut out = Vec::new();
+    resolve_device(name, &mut out, 0);
+    if out.is_empty() {
+        out.push(name.to_string());
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn resolve_device(name: &str, out: &mut Vec<String>, depth: u8) {
+    // Stacked device mapper (LUKS over LVM over MD) nests, and a cycle would
+    // otherwise be a hang in a diagnostic tool.
+    if depth > 6 || name.is_empty() {
+        return;
+    }
+    let base = format!("/sys/class/block/{name}");
+    if !Path::new(&base).exists() {
+        out.push(name.to_string());
+        return;
+    }
+
+    // A partition: its sysfs parent directory is the whole disk.
+    if Path::new(&format!("{base}/partition")).exists()
+        && let Some(disk) = fs::canonicalize(&base)
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
+    {
+        resolve_device(&disk, out, depth + 1);
+        return;
+    }
+
+    // Device mapper, MD or anything else built on other devices.
+    if let Ok(slaves) = fs::read_dir(format!("{base}/slaves")) {
+        let mut any = false;
+        for s in slaves.flatten() {
+            any = true;
+            resolve_device(&s.file_name().to_string_lossy(), out, depth + 1);
+        }
+        if any {
+            return;
+        }
+    }
+
+    out.push(name.to_string());
+}
+
+/// Filesystem type for a mount point.
+///
+/// `hostreq` needs this in both directions: ZFS is *required* for the content
+/// store and *disqualifying* for the box store, because it ignores `O_DIRECT`
+/// ignores `O_DIRECT`.
+pub fn fs_type(mount: &str) -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    // Last match wins: a later mount shadows an earlier one on the same point.
+    fs::read_to_string("/proc/mounts")
+        .ok()?
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            let _src = f.next()?;
+            let mnt = f.next()?;
+            let ty = f.next()?;
+            (mnt == mount).then(|| ty.to_string())
+        })
+        .next_back()
+}
+
+// ------------------------------------------------------------------ powered ---
+
+fn uptime_hours() -> Option<f64> {
+    #[cfg(target_os = "linux")]
+    return Some(
+        fs::read_to_string("/proc/uptime")
+            .ok()?
+            .split_whitespace()
+            .next()?
+            .parse::<f64>()
+            .ok()?
+            / 3600.0,
+    );
+    #[cfg(windows)]
+    return ps(
+        "[int]((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalSeconds",
+    )?
+    .trim()
+    .parse::<f64>()
+    .ok()
+    .map(|s| s / 3600.0);
+    #[cfg(not(any(target_os = "linux", windows)))]
+    return None;
+}
+
+/// Mean hours per day the machine was powered, and the span that covers.
+///
+/// This exists so no question has to ask *"how many hours is this machine
+/// on?"* — which is exactly the kind of question nobody can answer about
+/// themselves, so it should never be asked.
+///
+/// Method: `journalctl --list-boots -o json` gives a `first_entry` and
+/// `last_entry` microsecond timestamp per boot. Summing `last − first` gives
+/// time powered; `max(last) − min(first)` gives the wall-clock span. The ratio
+/// is the answer, and it needs no date parsing at all — only integers.
+///
+/// It is a **coarse** instrument and is reported as one: it measures powered,
+/// not idle, and a machine that suspends looks powered-off. It answers "always
+/// on" versus "a few hours in the evening", which is the only resolution the
+/// availability question needs at this stage.
+pub fn powered() -> (Option<f64>, Option<f64>) {
+    let Some(txt) = sh("journalctl", &["--list-boots", "-o", "json", "--no-pager"]) else {
+        return (None, None);
+    };
+    let mut up_us: u128 = 0;
+    let (mut lo, mut hi) = (u128::MAX, 0u128);
+    let mut boots = 0usize;
+
+    // Deliberately not a JSON parse: the shape is flat and stable, and pulling
+    // the whole document through serde_json to read two integers per record
+    // buys nothing.
+    for first in txt.split("\"first_entry\":").skip(1) {
+        let Some(a) = read_int(first) else { continue };
+        let Some(rest) = first.split_once("\"last_entry\":") else {
+            continue;
+        };
+        let Some(b) = read_int(rest.1) else { continue };
+        if b <= a {
+            continue;
+        }
+        up_us += b - a;
+        lo = lo.min(a);
+        hi = hi.max(b);
+        boots += 1;
+    }
+    if boots < 2 || hi <= lo {
+        return (None, None);
+    }
+    let span_days = (hi - lo) as f64 / 86_400_000_000.0;
+    // Under three days this is one or two boots and says nothing about a
+    // habit. Reporting it anyway invites someone to read "13 h/day" off two
+    // days of history, so report the span with no rate instead.
+    if span_days < 3.0 {
+        return (None, Some(span_days));
+    }
+    let up_hours = up_us as f64 / 3_600_000_000.0;
+    (Some(up_hours / span_days), Some(span_days))
+}
+
+fn read_int(s: &str) -> Option<u128> {
+    let s = s.trim_start().trim_start_matches('"');
+    let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
+
+// ------------------------------------------------------------------- shell ---
+
+/// Run a command, return trimmed stdout, `None` on any failure.
+pub fn sh(cmd: &str, args: &[&str]) -> Option<String> {
+    let out = Command::new(cmd).args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+/// PowerShell, for the Windows probes. `-NoProfile` so a user's profile script
+/// cannot change what we read.
+#[allow(dead_code)]
+pub fn ps(script: &str) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+    sh(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", script],
+    )
+}
+
+pub fn exists(p: &str) -> bool {
+    Path::new(p).exists()
+}
+
+#[allow(dead_code)]
+fn kv_line(txt: &str, key: &str) -> Option<String> {
+    txt.lines()
+        .find(|l| l.starts_with(&format!("{key}=")))
+        .and_then(|l| l.split_once('='))
+        .map(|(_, v)| v.trim().trim_matches('"').to_string())
+}

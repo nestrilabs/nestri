@@ -42,3 +42,28 @@ jobs:
         run: bun test
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/nestri
+
+  # Scoped to `nesdoctor` deliberately. The rest of the Rust half has never
+  # been under CI, so widening this to `--workspace` would turn every PR red
+  # for reasons unrelated to the PR. Widen it one member at a time, as each is
+  # made to pass.
+  nesdoctor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: Format
+        run: cargo fmt -p nesdoctor -- --check
+      - name: Clippy
+        run: cargo clippy -p nesdoctor --all-targets -- -D warnings
+      - name: Test
+        run: cargo test -p nesdoctor
+      # Runs without touching the network, so this stays fast and cannot fail
+      # on a runner's egress rules. The network path is exercised by the
+      # release workflow's smoke test, where it belongs.
+      - name: Runs at all
+        run: cargo run -p nesdoctor -- --quiet --no-net --no-steam --json "$RUNNER_TEMP/nd.json" < /dev/null
