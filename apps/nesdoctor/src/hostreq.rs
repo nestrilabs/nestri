@@ -220,17 +220,28 @@ pub fn probe(sys: &SysInfo) -> HostReport {
 
     // "Its own device" is part of the requirement, not a nicety: separate
     // devices keep a box's disk latency out of a game download's write path.
-    let root_dev = sys
+    //
+    // Compared by *physical* device, not by the `df` source string. Two
+    // partitions of one SSD are two strings and one queue, and two LVM logical
+    // volumes on one disk look entirely unrelated — so a string comparison
+    // passes exactly the topology this requirement exists to reject.
+    let root_phys: Vec<String> = sys
         .disks
         .iter()
         .find(|d| d.mount == "/")
-        .and_then(|d| d.source.clone());
+        .and_then(|d| d.source.as_deref())
+        .map(sys::physical_devices)
+        .unwrap_or_default();
     let box_store = sys.disks.iter().find(|d| {
+        let Some(src) = d.source.as_deref() else {
+            return false;
+        };
+        let phys = sys::physical_devices(src);
         matches!(d.fs.as_deref(), Some("ext4") | Some("xfs"))
             && d.mount != "/"
-            && d.source.is_some()
-            && d.source != root_dev
             && d.free_gib >= 64.0
+            // No overlap with whatever carries the root filesystem.
+            && !phys.iter().any(|p| root_phys.contains(p))
     });
     c.push(Check {
         id: "box-store",

@@ -391,10 +391,25 @@ fn print_steam(s: &steam::SteamReport) {
     for (name, bytes) in &s.largest {
         println!("    {:>6.0} GiB  {}", steam::gib(*bytes), name);
     }
+    if s.profiles > 1 {
+        println!(
+            "  \x1b[2m{} Steam profiles here — the hours below are the busiest one, not all of\x1b[0m",
+            s.profiles
+        );
+        println!("  \x1b[2mthem added together, which would be a histogram of nobody.\x1b[0m");
+    }
     if s.launch_samples > 0 {
         println!(
-            "\n  When you launch games — {} samples, one per title, local time:",
-            s.launch_samples
+            "\n  When you launch games — {} launch records{}, local time:",
+            s.launch_samples,
+            if s.launches_uninstalled > 0 {
+                format!(
+                    ", {} of them games you no longer have installed",
+                    s.launches_uninstalled
+                )
+            } else {
+                String::new()
+            }
         );
         println!("    {}", steam::sparkline(&s.launch_hours));
         println!("    \x1b[2m0h          6h          12h         18h        23h\x1b[0m");

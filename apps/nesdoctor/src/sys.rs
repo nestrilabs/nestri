@@ -334,6 +334,71 @@ fn disks() -> Vec<Disk> {
     out
 }
 
+/// The physical block devices behind a `df` source string.
+///
+/// A source string is not a device. `/dev/nvme0n1p2` and `/dev/nvme0n1p3` are
+/// two strings and one SSD, sharing one queue — so comparing the strings says
+/// "separate devices" about a topology with no I/O isolation whatever, which is
+/// the entire reason the two-stores requirement exists. LVM is worse: two
+/// logical volumes on one physical disk look completely unrelated.
+///
+/// So: a partition resolves to its parent disk through sysfs, a device-mapper
+/// or MD device resolves to everything in its `slaves/` directory, recursively,
+/// and anything unrecognised resolves to itself. Two mounts share hardware when
+/// the returned sets intersect.
+pub fn physical_devices(source: &str) -> Vec<String> {
+    if !cfg!(target_os = "linux") {
+        return vec![source.to_string()];
+    }
+    let name = source.rsplit('/').next().unwrap_or(source);
+    let mut out = Vec::new();
+    resolve_device(name, &mut out, 0);
+    if out.is_empty() {
+        out.push(name.to_string());
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+fn resolve_device(name: &str, out: &mut Vec<String>, depth: u8) {
+    // Stacked device mapper (LUKS over LVM over MD) nests, and a cycle would
+    // otherwise be a hang in a diagnostic tool.
+    if depth > 6 || name.is_empty() {
+        return;
+    }
+    let base = format!("/sys/class/block/{name}");
+    if !Path::new(&base).exists() {
+        out.push(name.to_string());
+        return;
+    }
+
+    // A partition: its sysfs parent directory is the whole disk.
+    if Path::new(&format!("{base}/partition")).exists()
+        && let Some(disk) = fs::canonicalize(&base)
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().into_owned()))
+    {
+        resolve_device(&disk, out, depth + 1);
+        return;
+    }
+
+    // Device mapper, MD or anything else built on other devices.
+    if let Ok(slaves) = fs::read_dir(format!("{base}/slaves")) {
+        let mut any = false;
+        for s in slaves.flatten() {
+            any = true;
+            resolve_device(&s.file_name().to_string_lossy(), out, depth + 1);
+        }
+        if any {
+            return;
+        }
+    }
+
+    out.push(name.to_string());
+}
+
 /// Filesystem type for a mount point.
 ///
 /// `hostreq` needs this in both directions: ZFS is *required* for the content

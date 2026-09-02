@@ -484,6 +484,10 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
                     .join(","),
             );
             put("n", steam.launch_samples.to_string());
+            put("profiles", steam.profiles.to_string());
+            if steam.launches_uninstalled > 0 {
+                put("ngone", steam.launches_uninstalled.to_string());
+            }
         }
         if let Some((a, b)) = steam.peak_window {
             put("peak", format!("{a}-{b}"));

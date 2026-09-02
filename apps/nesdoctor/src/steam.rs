@@ -44,6 +44,15 @@ pub struct SteamReport {
     /// Count of `LastPlayed` timestamps falling in each local hour, 0–23.
     pub launch_hours: [u32; 24],
     pub launch_samples: usize,
+    /// How many Steam user profiles were found on this machine. More than one
+    /// means more than one person may use it, and the histogram is taken from
+    /// the busiest profile rather than summed across strangers.
+    pub profiles: usize,
+    /// Launch records whose title is not installed any more. Kept in the
+    /// histogram on purpose — a game someone uninstalled is still a real
+    /// record of when they play — and reported so `n` cannot be mistaken for
+    /// the installed-title count.
+    pub launches_uninstalled: usize,
     /// Hours covering half of all launches, contiguous and wrapping — the
     /// "evening peak" if there is one.
     pub peak_window: Option<(u32, u32)>,
@@ -84,9 +93,20 @@ fn candidate_roots() -> Vec<PathBuf> {
     }
     v.push(PathBuf::from(r"C:\Program Files (x86)\Steam"));
     v.push(PathBuf::from("/usr/lib/steam"));
-    v.into_iter()
+
+    // Canonicalise before deduplicating. `~/.steam/steam` is conventionally a
+    // symlink to `~/.local/share/Steam`, so both candidates hit and every
+    // profile is found twice -- measured on the development machine, which
+    // reported four Steam profiles for two real ones and would have claimed a
+    // shared machine where there is not one.
+    let mut out: Vec<PathBuf> = v
+        .into_iter()
         .filter(|p| p.join("steamapps").is_dir())
-        .collect()
+        .map(|p| fs::canonicalize(&p).unwrap_or(p))
+        .collect();
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// True when there is anything to ask about. Called *before* consent so the
@@ -130,6 +150,9 @@ pub fn read() -> SteamReport {
     app_dirs.dedup();
 
     let mut by_size: Vec<(String, u64)> = Vec::new();
+    // appid -> (title, is_runtime). Needed by the launch histogram below, which
+    // sees appids and nothing else.
+    let mut known: BTreeMap<String, (String, bool)> = BTreeMap::new();
     for dir in &app_dirs {
         let Ok(entries) = fs::read_dir(dir) else {
             continue;
@@ -148,6 +171,13 @@ pub fn read() -> SteamReport {
                 .and_then(vdf::Value::as_str)
                 .unwrap_or("unknown")
                 .to_string();
+            if let Some(id) = doc
+                .get(&["AppState", "appid"])
+                .and_then(vdf::Value::as_str)
+                .map(str::to_string)
+            {
+                known.insert(id, (title.clone(), is_runtime(&title)));
+            }
             let size = doc
                 .get(&["AppState", "SizeOnDisk"])
                 .and_then(vdf::Value::as_u64)
@@ -168,6 +198,21 @@ pub fn read() -> SteamReport {
     r.largest = by_size.into_iter().take(5).collect();
 
     // --- when do they play -----------------------------------------------
+    //
+    // `localconfig.vdf` keeps a `LastPlayed` per app, which makes a library of
+    // eighty games eighty samples of what hour this person starts playing.
+    // Two things have to be handled or the number is wrong:
+    //
+    // **Runtimes are not launches.** Proton and the Steam Linux Runtimes carry
+    // `LastPlayed` like any app, and Steam starts them itself, at whatever hour
+    // it happens to update them. They are filtered here by joining the appid
+    // against the installed-title names — the same filter the title count uses,
+    // so the two cannot disagree about what a game is.
+    //
+    // **Profiles are not one person.** A shared machine has several, and
+    // summing them produces a histogram of nobody. The busiest profile is used
+    // and the count is reported, so a two-profile machine is visible as one.
+    let mut per_profile: Vec<([u32; 24], usize, usize)> = Vec::new();
     for root in &roots {
         let Ok(users) = fs::read_dir(root.join("userdata")) else {
             continue;
@@ -184,20 +229,44 @@ pub fn read() -> SteamReport {
             else {
                 continue;
             };
-            for app in apps.values() {
+
+            let mut hours = [0u32; 24];
+            let mut n = 0usize;
+            let mut gone = 0usize;
+            for (appid, app) in apps {
                 let Some(ts) = app.get(&["LastPlayed"]).and_then(vdf::Value::as_u64) else {
                     continue;
                 };
                 if ts == 0 {
                     continue;
                 }
-                if let Some(h) = local_hour(ts) {
-                    r.launch_hours[h as usize] += 1;
-                    r.launch_samples += 1;
+                match known.get(appid) {
+                    // A tool Steam launched, not a person playing.
+                    Some((_, true)) => continue,
+                    Some((_, false)) => {}
+                    // Not installed now. A real launch by a real person, and
+                    // counted — but counted separately so `n` is never read as
+                    // the installed-title count.
+                    None => gone += 1,
                 }
+                if let Some(h) = local_hour(ts) {
+                    hours[h as usize] += 1;
+                    n += 1;
+                }
+            }
+            if n > 0 {
+                per_profile.push((hours, n, gone));
             }
         }
     }
+
+    r.profiles = per_profile.len();
+    if let Some((hours, n, gone)) = per_profile.into_iter().max_by_key(|(_, n, _)| *n) {
+        r.launch_hours = hours;
+        r.launch_samples = n;
+        r.launches_uninstalled = gone;
+    }
+
     r.peak_window = peak_window(&r.launch_hours, r.launch_samples);
     r
 }

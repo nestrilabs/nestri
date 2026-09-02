@@ -41,6 +41,15 @@ const PROBE_ADDR: &str = "1.1.1.1:443";
 /// a short burst measures nothing, because bufferbloat is a steady-state
 /// property — and short enough not to ruin someone's evening.
 const LOAD_SECONDS: u64 = 8;
+
+/// Every HTTP call gets a hard ceiling.
+///
+/// Without one, an intermediary that accepts a connection and then stalls
+/// leaves `send` blocked forever: the stop flag cannot interrupt a blocking
+/// call, so the joins below never return and **nesdoctor never prints its
+/// report at all.** A hang is the worst outcome available to a program someone
+/// runs once, because there is no second chance to ask them.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const STREAMS: usize = 3;
 const CHUNK: usize = 1 << 20; // 1 MiB per write
 
@@ -93,6 +102,14 @@ fn grade(bloat_ms: f64) -> &'static str {
     }
 }
 
+/// One agent for every request this module makes, carrying the timeout.
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        .build()
+        .into()
+}
+
 pub fn run() -> NetReport {
     let Some(addr) = resolve(PROBE_ADDR) else {
         return NetReport::unavailable("could not resolve the latency probe address — offline?");
@@ -116,7 +133,8 @@ pub fn run() -> NetReport {
         .map(|_| {
             let stop = Arc::clone(&stop);
             let sent = Arc::clone(&sent);
-            std::thread::spawn(move || upload_until(&stop, &sent))
+            let ag = agent();
+            std::thread::spawn(move || upload_until(&ag, &stop, &sent))
         })
         .collect();
 
@@ -201,7 +219,7 @@ fn percentile(v: &[f64], p: f64) -> Option<f64> {
 ///
 /// The body is generated rather than read from anywhere, and is
 /// incompressible-enough zeroes; the sink discards it.
-fn upload_until(stop: &AtomicBool, sent: &AtomicU64) -> bool {
+fn upload_until(ag: &ureq::Agent, stop: &AtomicBool, sent: &AtomicU64) -> bool {
     let mut ok = false;
     let chunk = vec![0u8; CHUNK];
     while !stop.load(Ordering::Relaxed) {
@@ -210,7 +228,8 @@ fn upload_until(stop: &AtomicBool, sent: &AtomicU64) -> bool {
         // a measure of the proxy rather than of the line.
         let body: Vec<u8> = chunk.repeat(8);
         let n = body.len() as u64;
-        match ureq::post(UPLOAD_URL)
+        match ag
+            .post(UPLOAD_URL)
             .header("content-type", "application/octet-stream")
             .send(&body[..])
         {
@@ -234,7 +253,8 @@ fn upload_until(stop: &AtomicBool, sent: &AtomicU64) -> bool {
 /// is a latency radius rather than a location. No IP address is retained and
 /// none goes into the summary line.
 pub fn region_hint() -> Option<String> {
-    let body = ureq::get("https://speed.cloudflare.com/cdn-cgi/trace")
+    let body = agent()
+        .get("https://speed.cloudflare.com/cdn-cgi/trace")
         .call()
         .ok()?
         .body_mut()
