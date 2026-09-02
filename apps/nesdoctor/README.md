@@ -2,8 +2,24 @@
 
 **Is this machine any good — as a Nestri host, or as a client?**
 
+```sh
+# macOS and Linux
+curl -fsSL https://doctor.nestri.io/install.sh | sh
+
+# Windows
+powershell -c "irm https://doctor.nestri.io/install.ps1 | iex"
 ```
-nesdoctor
+
+Both download one binary, verify its checksum, run it, and delete it. They
+install nothing, need no administrator rights, and touch no system directory.
+**The scripts those URLs serve are the files in [`install/`](install/)** — the
+worker fetches them from this repository, so you can read exactly what you are
+about to run before you run it.
+
+Or build it yourself:
+
+```
+cargo run --release -p nesdoctor
 ```
 
 Checks every hard requirement for running a Nestri box, measures what your
@@ -80,6 +96,13 @@ always a router setting rather than a line you need to upgrade.
 At the end it prints a link, lists in plain English what the link contains, and
 opens it when you press Enter. That is the whole submission — no account, no
 form, no email client.
+
+One thing worth knowing if you are reading `install/install.sh`: it reopens
+stdin on `/dev/tty` before handing over. Piped into a shell the documented way,
+the script's stdin **is** the pipe and the pipe is at end of file, so without
+that line `nesdoctor` correctly sees a non-terminal stdin and skips every
+question — a run that completes, looks fine, and answers nothing. Running the
+script from a file works perfectly, which is what makes it worth a comment.
 
 The link is built from **readable query parameters** rather than an encoded
 blob. A blob would be shorter and would let us send more; it would also mean you
