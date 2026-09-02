@@ -9,7 +9,8 @@ fact about it and most of the rules below follow from it.
 Split by *what a thing is*, not by what language it is written in.
 
 ```
-apps/       what runs        api, auth (TS) · nescope, neswire, nescapture, neshub (Rust)
+apps/       what runs        api, auth (TS) · nescope, neswire, nescapture, neshub (Rust, guest-side)
+                            nesdoctor (Rust, runs on the user's own machine)
 crates/     shared Rust      nesprotocol
 packages/   shared TS        core, auth
 docs/       long-form        alchemy.md
@@ -60,13 +61,24 @@ being written.
 in much more depth. That is a gap in the writing, not a statement about which
 half matters.
 
-**Rust components are guest-side**: they run inside a virtual machine, not on
-the control plane. `nescope` composites, `nescapture` captures and encodes
+**Most Rust components are guest-side**: they run inside a virtual machine, not
+on the control plane. `nescope` composites, `nescapture` captures and encodes
 frames from inside the workload's own process, `neswire` handles audio, and
 `neshub` muxes all of it into one connection to the client. `nesprotocol` is
 the wire format they share. None of them talk to the API.
 
-**None of them depend on what they are running.** The box starts a payload that
+**`nesdoctor` is the exception to all of the above.** It runs on a stranger's
+own machine, on Linux, Windows and macOS, and is the only thing here that a
+person outside the project can operate. Two consequences that do not apply
+anywhere else in the tree: its dependency list is part of its interface,
+because it is handed to people and asked to be trusted — everything doable with
+`std` is done with `std`; and **it cannot be tested on the development
+machine alone.** Both bugs it has shipped were Windows-only, found by users, in
+code paths Linux never executes. Prefer a property test that runs everywhere
+over a platform check that runs nowhere, and read what the Windows and macOS CI
+runners print.
+
+**None of the guest components depend on what they are running.** The box starts a payload that
 the open components are not allowed to understand, so no code here may branch on
 which one it is. `nescope` does mention Steam and Proton in comments — it
 implements public Wayland and Vulkan protocols that gamescope also implements,
