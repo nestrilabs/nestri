@@ -433,6 +433,27 @@ fn disks() -> Vec<Disk> {
     // /, /home and /srv at 91 GiB each — three btrfs subvolumes of one device,
     // counted three times.
     out.dedup_by(|a, b| a.source.is_some() && a.source == b.source);
+
+    // And one entry per *pool*, which a device name cannot see.
+    //
+    // Found by finally reading what the macOS CI runner prints: an APFS
+    // container gives each volume its own `/dev/diskNsM`, so the device names
+    // differ while the space is shared — eleven filesystems reporting
+    // "483 GiB free of 1600 GiB" on a machine with 320 GiB. The same shape
+    // appears with bind mounts and with thin-provisioned LVM.
+    //
+    // Two filesystems reporting byte-identical capacity *and* byte-identical
+    // free space are the same store. Two genuinely separate disks agreeing to
+    // the byte on both figures would cost one row; a storage total inflated
+    // fivefold is a number a capacity plan gets built on.
+    out.dedup_by(|a, b| {
+        let same = |x: Option<f64>, y: Option<f64>| match (x, y) {
+            (Some(x), Some(y)) => (x - y).abs() < 0.001,
+            (None, None) => true,
+            _ => false,
+        };
+        same(a.size_gib, b.size_gib) && (a.free_gib - b.free_gib).abs() < 0.001
+    });
     out
 }
 
