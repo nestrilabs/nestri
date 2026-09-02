@@ -307,7 +307,16 @@ fn gpus() -> Vec<Gpu> {
                 let soc = soc.trim();
                 if !soc.is_empty() {
                     gpus.push(Gpu {
-                        name: format!("{soc} (integrated)"),
+                        // Em-dash rather than a parenthetical: the SoC name can
+                        // already carry one. The CI runner reports
+                        // "Apple M1 (Virtual)", which became
+                        // "Apple M1 (Virtual) (integrated)".
+                        //
+                        // The suffix is worth keeping despite that -- it says
+                        // this name came from the chip rather than from a
+                        // display adapter, which is the difference between a
+                        // machine with no GPU and a machine with no display.
+                        name: format!("{soc} — SoC GPU"),
                         vendor: Some("Apple".into()),
                         render_node: None,
                     });
