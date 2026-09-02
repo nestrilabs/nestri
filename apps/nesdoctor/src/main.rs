@@ -288,6 +288,45 @@ fn main() {
         );
         println!("\x1b[2m    nothing in there bothers you.\x1b[0m");
     }
+
+    // The one thing we can never ask afterwards.
+    //
+    // A submission carries no hostname, no address and no name, by design -- so
+    // the moment this program exits, whoever ran it is anonymous and
+    // unreachable. Our first respondent answered that they *also* have a Linux
+    // machine, which is exactly the result we have none of, and there was no
+    // way on earth to go back and ask for it. So the ask has to happen here,
+    // while they are still reading, or it does not happen.
+    if matches!(answers.other_linux.as_deref(), Some("yes") | Some("could"))
+        && !matches!(
+            v,
+            report::Verdict::HostReady | report::Verdict::HostReadyLocalOnly
+        )
+    {
+        println!();
+        println!("\x1b[1;33m  One more thing, and it is the useful one\x1b[0m");
+        println!(
+            "\x1b[2m    You said you have a Linux machine.\x1b[0m \x1b[1mThat is the one we have\x1b[0m"
+        );
+        println!(
+            "\x1b[1m    never seen.\x1b[0m\x1b[2m Nearly every result we get is a client, because a\x1b[0m"
+        );
+        println!(
+            "\x1b[2m    host has to be Linux with KVM — so one run over there is worth more\x1b[0m"
+        );
+        println!("\x1b[2m    to us than a hundred of these.\x1b[0m");
+        println!();
+        println!("\x1b[2m    Same command, on that box:\x1b[0m");
+        println!("\x1b[36m      curl -fsSL https://doctor.nestri.io/install.sh | sh\x1b[0m");
+        println!();
+        println!(
+            "\x1b[2m    We cannot come back and ask you — nothing you send identifies you,\x1b[0m"
+        );
+        println!(
+            "\x1b[2m    which is the whole idea. So this is the only chance to mention it.\x1b[0m"
+        );
+    }
+
     println!();
 }
 
