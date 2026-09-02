@@ -130,6 +130,29 @@ jobs:
           echo "::group::${{ matrix.target }} — JSON"
           cat "$RUNNER_TEMP/probe.json" 2>/dev/null || echo "(no json written)"
           echo "::endgroup::"
+          # The raw output of the platform probes, so a field that comes back
+          # empty can be told apart from a parser that is wrong. `gpu=unknown`
+          # on the macOS runner could be either, and guessing which cost a
+          # round trip.
+          echo "::group::${{ matrix.target }} — raw platform probes"
+          case "${{ runner.os }}" in
+            macOS)
+              system_profiler SPDisplaysDataType 2>&1 | head -40 || true
+              sysctl -n machdep.cpu.brand_string 2>&1 || true
+              df -Pk 2>&1 | head -20 || true
+              ;;
+            Windows)
+              powershell -NoProfile -Command \
+                "Get-CimInstance Win32_VideoController | Format-List Name,AdapterCompatibility,AdapterRAM" 2>&1 | head -30 || true
+              powershell -NoProfile -Command \
+                "Get-PSDrive -PSProvider FileSystem | Format-Table Name,Free,Used" 2>&1 | head -20 || true
+              ;;
+            Linux)
+              df -Pk 2>&1 | head -20 || true
+              ls -l /sys/class/drm/ 2>&1 | head -20 || true
+              ;;
+          esac
+          echo "::endgroup::"
 
       - name: Package
         shell: bash

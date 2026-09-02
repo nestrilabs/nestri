@@ -293,6 +293,27 @@ fn gpus() -> Vec<Gpu> {
                 });
             }
         }
+        // Fallback for Apple Silicon, where the GPU *is* the SoC.
+        //
+        // The CI runner is a headless virtual Mac and still reported
+        // `gpu=unknown` after the parser above was added, which means either
+        // the parser is wrong or that machine genuinely has no display adapter
+        // to enumerate. Both are plausible and the second is likely, so rather
+        // than guess: on an arm64 Mac the integrated GPU is part of the chip,
+        // so the chip name is a true and useful answer even with no display
+        // attached.
+        if gpus.is_empty() && cfg!(target_arch = "aarch64") {
+            if let Some(soc) = sh("sysctl", &["-n", "machdep.cpu.brand_string"]) {
+                let soc = soc.trim();
+                if !soc.is_empty() {
+                    gpus.push(Gpu {
+                        name: format!("{soc} (integrated)"),
+                        vendor: Some("Apple".into()),
+                        render_node: None,
+                    });
+                }
+            }
+        }
         return gpus;
     }
     #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
