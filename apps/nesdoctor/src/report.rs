@@ -423,6 +423,17 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
     }
     if sys.gpus.len() > 1 {
         put("gpus", sys.gpus.len().to_string());
+        // Every adapter, not just the count. The first Windows submission
+        // reported `gpus=2` with a virtual adapter as the primary, which told
+        // us something had been lost but not what.
+        put(
+            "gpulist",
+            sys.gpus
+                .iter()
+                .map(|g| g.name.as_str())
+                .collect::<Vec<_>>()
+                .join("~"),
+        );
     }
     put("cpu", sys.cpu_threads.to_string());
     if let Some(m) = &sys.cpu_model {

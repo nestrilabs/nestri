@@ -164,29 +164,86 @@ fn vendor_name(id: &str) -> Option<&'static str> {
     }
 }
 
+/// Adapters that are software, not hardware.
+///
+/// The first Windows submission we ever received reported
+/// `gpu=Parsec Virtual Display Adapter` with `gpus=2`: Parsec installs an
+/// indirect display driver, it enumerated first, and the real card was lost.
+/// Every remote-play tool does this -- Parsec, Sunshine, Moonlight, TeamViewer,
+/// Splashtop -- and a cloud-gaming audience is exactly the population that has
+/// one installed. A recorded `gpu_model` is a hard requirement per our host
+/// rules, and recording a virtual display driver satisfies it in name only.
+/// Only consulted on Windows -- Linux adapters are found through DRM render
+/// nodes, which a virtual display driver does not have -- but kept
+/// unconditional so the list is compiled and unit-tested on every platform.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_virtual_adapter(name: &str) -> bool {
+    let n = name.to_lowercase();
+    [
+        "virtual",
+        "basic display",
+        "basic render",
+        "remote display",
+        "indirect display",
+        "idd",
+        "parsec",
+        "sunshine",
+        "teamviewer",
+        "splashtop",
+        "nomachine",
+        "citrix",
+        "vmware",
+        "virtualbox",
+        "hyper-v",
+        "qxl",
+        "meta virtual",
+    ]
+    .iter()
+    .any(|p| n.contains(p))
+}
+
 fn gpus() -> Vec<Gpu> {
     #[cfg(target_os = "linux")]
     return linux_gpus();
     #[cfg(windows)]
-    return ps("Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }")
-        .map(|s| {
-            s.lines()
-                .map(str::trim)
-                .filter(|l| !l.is_empty())
-                .map(|l| {
-                    let up = l.to_uppercase();
-                    Gpu {
-                        name: l.to_string(),
-                        vendor: ["AMD", "NVIDIA", "INTEL"]
-                            .into_iter()
-                            .find(|v| up.contains(v))
-                            .map(str::to_string),
-                        render_node: None,
-                    }
-                })
-                .collect()
-        })
+    {
+        // AdapterCompatibility carries the vendor, which is more reliable than
+        // pattern-matching the marketing name -- an "AMD Radeon" string is easy,
+        // an OEM-rebadged one is not.
+        let raw = ps(
+            r#"Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name)|$($_.AdapterCompatibility)" }"#,
+        )
         .unwrap_or_default();
+
+        let mut out: Vec<Gpu> = raw
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(|l| {
+                let (name, compat) = l.split_once('|').unwrap_or((l, ""));
+                let hay = format!("{name} {compat}").to_uppercase();
+                Gpu {
+                    name: name.trim().to_string(),
+                    vendor: [
+                        ("AMD", "AMD"),
+                        ("NVIDIA", "NVIDIA"),
+                        ("INTEL", "Intel"),
+                        ("ATI", "AMD"),
+                    ]
+                    .into_iter()
+                    .find(|(needle, _)| hay.contains(needle))
+                    .map(|(_, v)| v.to_string()),
+                    render_node: None,
+                }
+            })
+            .collect();
+
+        // Real hardware first, so the primary is never a virtual adapter that
+        // merely happened to enumerate earlier. Order is the only signal the
+        // rest of the program has.
+        out.sort_by_key(|g| (is_virtual_adapter(&g.name), g.vendor.is_none()));
+        return out;
+    }
     #[cfg(not(any(target_os = "linux", windows)))]
     return Vec::new();
 }
@@ -542,4 +599,42 @@ fn kv_line(txt: &str, key: &str) -> Option<String> {
         .find(|l| l.starts_with(&format!("{key}=")))
         .and_then(|l| l.split_once('='))
         .map(|(_, v)| v.trim().trim_matches('"').to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_virtual_adapter;
+
+    /// The first Windows submission we received reported
+    /// `Parsec Virtual Display Adapter` as the primary GPU on a machine that
+    /// had a real one. This list is the fix, so it gets a test.
+    #[test]
+    fn virtual_adapters_are_recognised() {
+        for name in [
+            "Parsec Virtual Display Adapter",
+            "Microsoft Basic Display Adapter",
+            "Microsoft Remote Display Adapter",
+            "Microsoft Hyper-V Video",
+            "IddSampleDriver Device",
+            "VMware SVGA 3D",
+            "VirtualBox Graphics Adapter",
+            "Citrix Indirect Display Adapter",
+            "Splashtop Virtual Display",
+        ] {
+            assert!(is_virtual_adapter(name), "{name} should be virtual");
+        }
+    }
+
+    #[test]
+    fn real_cards_are_not_recognised_as_virtual() {
+        for name in [
+            "AMD Radeon RX 9060 XT",
+            "NVIDIA GeForce RTX 4070",
+            "Intel(R) Arc(TM) A310 Graphics",
+            "AMD Barcelo",
+            "Radeon RX 7900 XTX",
+        ] {
+            assert!(!is_virtual_adapter(name), "{name} should be real");
+        }
+    }
 }
