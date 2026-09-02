@@ -16,7 +16,15 @@
 set -eu
 
 REPO="nestrilabs/nestri"
-TAG="${NESDOCTOR_TAG:-}"          # empty means latest
+
+# Pinned, and NOT `releases/latest`. This repository ships product releases as
+# well as this tool, so `latest` is whatever went out most recently -- it
+# resolved to a 2024 release while this was being written, and the day a
+# product release goes out it would move again and every install here would
+# 404. Bump this line when cutting a nesdoctor release; `NESDOCTOR_TAG`
+# overrides it for testing.
+DEFAULT_TAG="nesdoctor-v0.1.0"
+TAG="${NESDOCTOR_TAG:-$DEFAULT_TAG}"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
@@ -60,14 +68,10 @@ else
   die "need curl or wget"
 fi
 
-if [ -n "$TAG" ]; then
-  BASE="https://github.com/$REPO/releases/download/$TAG"
-else
-  BASE="https://github.com/$REPO/releases/latest/download"
-fi
+BASE="https://github.com/$REPO/releases/download/$TAG"
 
 say "Downloading nesdoctor ($target)…"
-get "$BASE/$ASSET" "$TMP/$ASSET" || die "download failed. Is there a release yet? $BASE/$ASSET"
+get "$BASE/$ASSET" "$TMP/$ASSET" || die "download failed: $BASE/$ASSET\n  If $TAG is not published yet, that is why."
 
 # --- verify -----------------------------------------------------------------
 # A checksum we fetch from the same place as the binary is not a security

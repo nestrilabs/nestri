@@ -16,6 +16,10 @@ install nothing, need no administrator rights, and touch no system directory.
 worker fetches them from this repository, so you can read exactly what you are
 about to run before you run it.
 
+They pin a release tag rather than using `releases/latest`, because this
+repository ships product releases too and `latest` is whichever went out most
+recently. `NESDOCTOR_TAG` overrides it.
+
 Or build it yourself:
 
 ```

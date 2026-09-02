@@ -17,7 +17,15 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $Repo = 'nestrilabs/nestri'
-$Tag  = $env:NESDOCTOR_TAG
+
+# Pinned, and NOT `releases/latest`. This repository ships product releases as
+# well as this tool, so `latest` is whatever went out most recently -- it
+# resolved to a 2024 release while this was being written, and the day a
+# product release goes out it would move again and every install here would
+# 404. Bump this line when cutting a nesdoctor release; NESDOCTOR_TAG overrides
+# it for testing.
+$DefaultTag = 'nesdoctor-v0.1.0'
+$Tag = if ($env:NESDOCTOR_TAG) { $env:NESDOCTOR_TAG } else { $DefaultTag }
 
 # TLS 1.2 explicitly: Windows PowerShell 5.1 still defaults to older protocols
 # on some builds, and GitHub refuses them, which surfaces as a bare
@@ -31,11 +39,7 @@ if ($arch -ne 'x86_64') {
 $target = 'x86_64-pc-windows-msvc'
 $asset  = "nesdoctor-$target.exe"
 
-$base = if ($Tag) {
-  "https://github.com/$Repo/releases/download/$Tag"
-} else {
-  "https://github.com/$Repo/releases/latest/download"
-}
+$base = "https://github.com/$Repo/releases/download/$Tag"
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("nesdoctor-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tmp | Out-Null
