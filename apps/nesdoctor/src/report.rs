@@ -119,7 +119,17 @@ pub fn verdict(sys: &SysInfo, host: &HostReport, net: &NetReport) -> Verdict {
         (Some(up), Some(bloat)) => {
             if up < MIN_UP_MBPS || bloat > MAX_BLOAT_MS {
                 Verdict::HostBlockedByNetwork
-            } else if net.idle_rtt_ms.is_some_and(|r| r > FAR_RTT_MS) {
+            // Deliberately the *median* and not the floor. Bloat asks "how much
+            // queueing is added", so its baseline is the best the path can do.
+            // This asks "what will a player actually see", so it takes the
+            // typical case -- and on a link whose idle latency is bimodal
+            // between 56 ms and 180 ms, the floor would call it near when half
+            // of all connections are not.
+            } else if net
+                .idle_rtt_p50_ms
+                .or(net.idle_rtt_ms)
+                .is_some_and(|r| r > FAR_RTT_MS)
+            {
                 Verdict::HostReadyLocalOnly
             } else {
                 Verdict::HostReady
@@ -185,8 +195,10 @@ pub fn summary_line(f_: &Full) -> String {
 
     match (net.upstream_mbps, net.bloat_ms, net.grade) {
         (Some(up), Some(b), Some(g)) => f.push(format!(
-            "up={up:.0}Mbps rtt={}ms bloat=+{b:.0}ms grade={g}",
-            net.idle_rtt_ms.map_or("?".into(), |r| format!("{r:.0}"))
+            "up={up:.0}Mbps rtt={}/{}ms bloat=+{b:.0}ms grade={g}",
+            net.idle_rtt_ms.map_or("?".into(), |r| format!("{r:.0}")),
+            net.idle_rtt_p50_ms
+                .map_or("?".into(), |r| format!("{r:.0}"))
         )),
         _ => f.push("net=unmeasured".into()),
     }
@@ -441,6 +453,9 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
     }
     if let Some(v) = net.idle_rtt_ms {
         put("rtt", format!("{v:.0}"));
+    }
+    if let Some(v) = net.idle_rtt_p50_ms {
+        put("rttidle50", format!("{v:.0}"));
     }
     if let Some(v) = net.loaded_rtt_ms {
         put("rttload", format!("{v:.0}"));

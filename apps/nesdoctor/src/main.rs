@@ -353,7 +353,8 @@ fn print_net(n: &net::NetReport) {
             .unwrap_or_else(|| "—".into())
     };
     println!("  upstream            {}", f(n.upstream_mbps, " Mbps"));
-    println!("  latency, idle       {}", f(n.idle_rtt_ms, " ms"));
+    println!("  latency, idle floor {}", f(n.idle_rtt_ms, " ms"));
+    println!("  latency, idle typ.  {}", f(n.idle_rtt_p50_ms, " ms"));
     if n.idle_rtt_ms.is_some_and(|r| r > 60.0) {
         println!(
             "  \x1b[2m  That is the round trip to the *nearest* major network, so it is a\x1b[0m"

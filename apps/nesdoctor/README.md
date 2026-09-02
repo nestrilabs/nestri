@@ -62,11 +62,17 @@ their connection adds when it is busy**, and for anything interactive that is th
 figure that decides it:
 
 ```
-  upstream            28 Mbps
-  latency, idle      179 ms
-  latency, loaded    198 ms
-  added under load   +19 ms   grade B
+  upstream             39 Mbps
+  latency, idle floor  55 ms
+  latency, idle typ.  180 ms
+  latency, loaded      95 ms
+  added under load    +39 ms   grade C
 ```
+
+Two idle figures because they answer different questions. **Floor** is the best
+the path can do, and queueing is everything above it — so that is what the
+bloat number is measured against. **Typical** is what a connection actually
+gets, and where the two differ this much, the route itself is the problem.
 
 A 500 Mbps uplink that queues for 300 ms under load cannot carry a game. A
 25 Mbps one with `fq_codel` or CAKE can. If your grade is C or F it is almost

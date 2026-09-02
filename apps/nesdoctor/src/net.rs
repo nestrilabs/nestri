@@ -55,7 +55,12 @@ const CHUNK: usize = 1 << 20; // 1 MiB per write
 
 #[derive(Debug, Serialize)]
 pub struct NetReport {
+    /// The **floor** of the idle distribution, which is the propagation delay
+    /// the path is capable of. Baseline for [`NetReport::bloat_ms`].
     pub idle_rtt_ms: Option<f64>,
+    /// The **typical** idle round trip. Reported separately because the two
+    /// answer different questions and, on a badly routed link, differ wildly.
+    pub idle_rtt_p50_ms: Option<f64>,
     pub loaded_rtt_ms: Option<f64>,
     pub loaded_rtt_p95_ms: Option<f64>,
     /// Loaded minus idle: the queue, in milliseconds.
@@ -77,6 +82,7 @@ impl NetReport {
     fn unavailable(note: &str) -> Self {
         Self {
             idle_rtt_ms: None,
+            idle_rtt_p50_ms: None,
             loaded_rtt_ms: None,
             loaded_rtt_p95_ms: None,
             bloat_ms: None,
@@ -116,8 +122,14 @@ pub fn run() -> NetReport {
     };
 
     // --- idle baseline ---------------------------------------------------
-    let idle = sample_rtt(addr, 12, Duration::from_millis(120));
-    let Some(idle_p50) = percentile(&idle, 0.50) else {
+    //
+    // Twenty samples, not twelve. Measured on a Nairobi connection
+    // 2026-09-02, twelve idle handshakes to one anycast address came back
+    // **bimodal** -- `[56, 56, 57, 59, 60, 176, 177, 179, 179, 179, 182, 368]`,
+    // two different points of presence answering, 312 ms of spread on an *idle*
+    // link.
+    let idle = sample_rtt(addr, 20, Duration::from_millis(120));
+    let Some(idle_min) = percentile(&idle, 0.0) else {
         return NetReport::unavailable(
             "no TCP handshake completed to 1.1.1.1:443 — a firewall may block it, so the \
              latency half could not run",
@@ -160,7 +172,19 @@ pub fn run() -> NetReport {
 
     let loaded_p50 = percentile(&loaded, 0.50);
     let loaded_p95 = percentile(&loaded, 0.95);
-    let bloat = loaded_p50.map(|l| (l - idle_p50).max(0.0));
+    let idle_p50 = percentile(&idle, 0.50);
+
+    // Bloat is measured against the **minimum**, not the median.
+    //
+    // Queueing is delay *above the floor the path can do*, so the floor is the
+    // baseline; that is also how every bufferbloat test does it. Using the
+    // median was a real bug and it failed in the dangerous direction: on the
+    // bimodal link above, the idle median landed at 188 ms while the loaded
+    // median came back 181 ms, so the difference went negative, clamped to
+    // zero, and reported **grade A on a connection that measures +115 ms and
+    // grade F**. A tool whose headline number can say "fine" about a line that
+    // is not fine has no business being trusted with the rest.
+    let bloat = loaded_p50.map(|l| (l - idle_min).max(0.0));
 
     let note = match (&upstream_mbps, &bloat) {
         (None, _) => "upstream could not be measured (the upload sink was unreachable), so the \
@@ -175,7 +199,8 @@ pub fn run() -> NetReport {
     };
 
     NetReport {
-        idle_rtt_ms: Some(idle_p50),
+        idle_rtt_ms: Some(idle_min),
+        idle_rtt_p50_ms: idle_p50,
         loaded_rtt_ms: loaded_p50,
         loaded_rtt_p95_ms: loaded_p95,
         bloat_ms: bloat,
@@ -204,6 +229,7 @@ fn sample_rtt(addr: SocketAddr, n: usize, gap: Duration) -> Vec<f64> {
     out
 }
 
+/// `p` of 0.0 gives the minimum, which is what the bloat baseline uses.
 fn percentile(v: &[f64], p: f64) -> Option<f64> {
     if v.is_empty() {
         return None;
