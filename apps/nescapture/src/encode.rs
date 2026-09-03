@@ -92,11 +92,26 @@ pub fn vk_format_to_bit_depth(vk_format: u32) -> EncodeBitDepth {
 }
 
 pub fn vk_colorspace_to_color_description(vk_colorspace: u32) -> Option<ColorDescription> {
+    // Full range on every arm, because the converter is unconditionally full-range
+    // (`set_full_range(true)` below) and the VUI has to agree with the shader that
+    // wrote the samples. pixelforge's constructors default to limited range, so
+    // leaving it off tags full-range luma as limited and every compliant decoder
+    // expands it again — darkening midtones and clipping both ends.
     match vk_colorspace {
         VK_COLOR_SPACE_HDR10_ST2084_EXT
         | VK_COLOR_SPACE_DOLBYVISION_EXT
-        | VK_COLOR_SPACE_HDR10_HLG_EXT => Some(ColorDescription::bt2020_pq()),
-        _ => Some(ColorDescription::bt709()),
+        | VK_COLOR_SPACE_HDR10_HLG_EXT => Some(full_range(ColorDescription::bt2020_pq())),
+        _ => Some(full_range(ColorDescription::bt709())),
+    }
+}
+
+/// pixelforge's `ColorDescription` constructors are limited-range; the capture
+/// path is always full-range. The pinned revision has no builder for this, so the
+/// field is set directly.
+fn full_range(desc: ColorDescription) -> ColorDescription {
+    ColorDescription {
+        full_range: true,
+        ..desc
     }
 }
 
@@ -773,7 +788,7 @@ impl PerFrameEncoder {
         } else {
             // GPU framebuffer captures are always full-range — use BT.709 full-range
             // so the decoder doesn't apply limited‑range expansion.
-            enc_cfg = enc_cfg.with_color_description(ColorDescription::bt709());
+            enc_cfg = enc_cfg.with_color_description(full_range(ColorDescription::bt709()));
         }
         enc_cfg = if let Some(q) = qp {
             enc_cfg
