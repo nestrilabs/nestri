@@ -49,13 +49,24 @@ use pixelforge::{
 
 use crate::dmabuf_import::{DmaBufImporter, DmaBufPlane};
 
-// ── VkColorSpaceKHR constants (raw values, matches ash/Vulkan spec) ───────────
-const VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: u32 = 0;
-const VK_COLOR_SPACE_HDR10_ST2084_EXT: u32 = 1_000_104_002;
-const VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT: u32 = 1_000_104_003;
-const VK_COLOR_SPACE_BT2020_LINEAR_EXT: u32 = 1_000_104_007;
-const VK_COLOR_SPACE_DOLBYVISION_EXT: u32 = 1_000_104_009;
-const VK_COLOR_SPACE_HDR10_HLG_EXT: u32 = 1_000_104_010;
+// ── VkColorSpaceKHR constants ────────────────────────────────────────────────
+//
+// Taken from `ash` rather than written out. They were transcribed by hand once
+// and two of them were wrong: HDR10 ST2084 was given the value of extended-sRGB
+// linear, and extended-sRGB linear the value of Display-P3 linear. Both are HDR
+// entry points, so every HDR swapchain fell through to the SDR arm and was
+// converted and tagged BT.709 — a silent, total loss of the colour volume the
+// workload asked for. Deriving them here means a wrong value cannot be written.
+const fn colorspace(c: ash::vk::ColorSpaceKHR) -> u32 {
+    c.as_raw() as u32
+}
+const VK_COLOR_SPACE_SRGB_NONLINEAR_KHR: u32 = colorspace(ash::vk::ColorSpaceKHR::SRGB_NONLINEAR);
+const VK_COLOR_SPACE_HDR10_ST2084_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::HDR10_ST2084_EXT);
+const VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT: u32 =
+    colorspace(ash::vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT);
+const VK_COLOR_SPACE_BT2020_LINEAR_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::BT2020_LINEAR_EXT);
+const VK_COLOR_SPACE_DOLBYVISION_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::DOLBYVISION_EXT);
+const VK_COLOR_SPACE_HDR10_HLG_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::HDR10_HLG_EXT);
 
 pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
     match vk_format {
@@ -1115,4 +1126,71 @@ fn stats_sender_thread(
     }
 
     log::info!("stats sender exited");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ash::vk::ColorSpaceKHR as Cs;
+
+    /// The colour space values were once written out by hand and two were wrong,
+    /// which routed every HDR swapchain into the SDR arm silently. Deriving them
+    /// from `ash` is the fix; this pins the behaviour that depended on them.
+    #[test]
+    fn hdr_colour_spaces_select_the_hdr_arm() {
+        for cs in [
+            Cs::HDR10_ST2084_EXT,
+            Cs::DOLBYVISION_EXT,
+            Cs::HDR10_HLG_EXT,
+        ] {
+            let raw = cs.as_raw() as u32;
+            assert_eq!(
+                vk_colorspace_to_color_space(raw),
+                ColorSpace::Bt2020,
+                "{cs:?} must convert as BT.2020, not BT.709"
+            );
+            let desc = vk_colorspace_to_color_description(raw).expect("a description");
+            assert_eq!(desc, full_range(ColorDescription::bt2020_pq()), "{cs:?}");
+        }
+    }
+
+    #[test]
+    fn scrgb_and_bt2020_linear_select_the_pq_conversion() {
+        for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
+            assert_eq!(
+                vk_colorspace_to_color_space(cs.as_raw() as u32),
+                ColorSpace::SrgbToBt2020Pq,
+                "{cs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sdr_colour_spaces_stay_on_bt709() {
+        for cs in [Cs::SRGB_NONLINEAR, Cs::PASS_THROUGH_EXT] {
+            assert_eq!(
+                vk_colorspace_to_color_space(cs.as_raw() as u32),
+                ColorSpace::Bt709,
+                "{cs:?}"
+            );
+        }
+    }
+
+    /// The converter is configured full-range unconditionally, so every colour
+    /// description handed to the encoder has to say so. A limited-range tag over
+    /// full-range samples is expanded again by the decoder.
+    #[test]
+    fn every_colour_description_is_full_range() {
+        for cs in [
+            Cs::SRGB_NONLINEAR,
+            Cs::HDR10_ST2084_EXT,
+            Cs::DOLBYVISION_EXT,
+            Cs::HDR10_HLG_EXT,
+            Cs::EXTENDED_SRGB_LINEAR_EXT,
+            Cs::PASS_THROUGH_EXT,
+        ] {
+            let desc = vk_colorspace_to_color_description(cs.as_raw() as u32).expect("a description");
+            assert!(desc.full_range, "{cs:?} produced a limited-range description");
+        }
+    }
 }
