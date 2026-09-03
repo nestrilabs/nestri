@@ -232,7 +232,18 @@ pub fn summary_line(f_: &Full) -> String {
             steam::size_band(steam.bytes_on_disk)
         ));
         if let Some((s, e)) = steam.peak_window {
-            f.push(format!("plays={s:02}-{e:02}h n={}", steam.launch_samples));
+            // The sample count shown is the one the window was actually
+            // computed from, so a narrow peak drawn from nine titles cannot
+            // borrow the authority of three hundred.
+            let n = if steam.peak_source == Some("30d") {
+                steam.recent_samples
+            } else {
+                steam.titles_sampled
+            };
+            f.push(format!(
+                "plays={s:02}-{e:02}h n={n}/{}",
+                steam.peak_source.unwrap_or("?")
+            ));
         }
     }
 
@@ -528,24 +539,35 @@ pub fn submit_url(base: &str, f_: &Full) -> String {
     if steam.found {
         put("titles", steam.titles.to_string());
         put("gib", format!("{:.0}", steam::gib(steam.bytes_on_disk)));
-        if steam.launch_samples > 0 {
-            put(
-                "hours",
-                steam
-                    .launch_hours
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            );
-            put("n", steam.launch_samples.to_string());
+        let csv = |h: &[u32; 24]| h.iter().map(u32::to_string).collect::<Vec<_>>().join(",");
+        if steam.titles_sampled > 0 {
+            // `hours` and `n` keep their names and their meaning so the corpus
+            // stays continuous, but neither ever meant launches. What is new is
+            // everything needed to tell a stale histogram from a live one:
+            // the recent subset, how far back the full one reaches, and which
+            // of the two `peak` came from.
+            put("hours", csv(&steam.last_played_hours));
+            put("n", steam.titles_sampled.to_string());
             put("profiles", steam.profiles.to_string());
-            if steam.launches_uninstalled > 0 {
-                put("ngone", steam.launches_uninstalled.to_string());
+            if steam.recent_samples > 0 {
+                put("hours30", csv(&steam.recent_hours));
+                put("n30", steam.recent_samples.to_string());
+            }
+            if let Some(d) = steam.sample_span_days {
+                put("nspan", d.to_string());
+            }
+            if steam.playtime_minutes > 0 {
+                put("playh", format!("{}", steam.playtime_minutes / 60));
+            }
+            if steam.sampled_uninstalled > 0 {
+                put("ngone", steam.sampled_uninstalled.to_string());
             }
         }
         if let Some((a, b)) = steam.peak_window {
             put("peak", format!("{a}-{b}"));
+            if let Some(src) = steam.peak_source {
+                put("peaksrc", src.to_string());
+            }
         }
         if !steam.largest.is_empty() {
             // Whether the title distribution has a head decides whether a depot
@@ -645,7 +667,7 @@ pub fn submit_contents(steam: &SteamReport, answers: &Answers) -> Vec<&'static s
     ];
     if steam.found && steam.titles > 0 {
         v.push("how many games are installed, their total size, and your five largest");
-        if steam.launch_samples > 0 {
+        if steam.titles_sampled > 0 {
             v.push("the hour-of-day histogram above — hours, never dates");
         }
     }

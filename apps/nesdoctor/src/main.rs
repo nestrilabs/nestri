@@ -485,23 +485,54 @@ fn print_steam(s: &steam::SteamReport) {
         );
         println!("  \x1b[2mthem added together, which would be a histogram of nobody.\x1b[0m");
     }
-    if s.launch_samples > 0 {
+    if s.titles_sampled > 0 {
+        // Steam stores one timestamp per title, so this says "titles", not
+        // "launches". It was labelled launches until 2026-09-03 and the label
+        // was doing real damage: it made a library's history look like a week's
+        // behaviour.
         println!(
-            "\n  When you launch games — {} launch records{}, local time:",
-            s.launch_samples,
-            if s.launches_uninstalled > 0 {
+            "\n  When you last played each game — {} titles, local time{}{}:",
+            s.titles_sampled,
+            match s.sample_span_days {
+                Some(d) if d >= 60 => format!(", reaching back {} months", d / 30),
+                Some(d) => format!(", reaching back {d} days"),
+                None => String::new(),
+            },
+            if s.sampled_uninstalled > 0 {
                 format!(
-                    ", {} of them games you no longer have installed",
-                    s.launches_uninstalled
+                    "; {} of them you no longer have installed",
+                    s.sampled_uninstalled
                 )
             } else {
                 String::new()
             }
         );
-        println!("    {}", steam::sparkline(&s.launch_hours));
+        println!("    {}", steam::sparkline(&s.last_played_hours));
         println!("    \x1b[2m0h          6h          12h         18h        23h\x1b[0m");
+        if s.recent_samples > 0 {
+            println!(
+                "\n  \x1b[2mAnd the {} still played in the last 30 days, which is the\x1b[0m",
+                s.recent_samples
+            );
+            println!("  \x1b[2mone that describes now rather than the whole library:\x1b[0m");
+            println!("    {}", steam::sparkline(&s.recent_hours));
+        }
         if let Some((a, b)) = s.peak_window {
-            println!("  Half of your launches fall between \x1b[1m{a:02}:00 and {b:02}:59\x1b[0m.");
+            let scope = if s.peak_source == Some("30d") {
+                "the games you still play"
+            } else {
+                "your library"
+            };
+            println!(
+                "  Half of {scope} was last played between \x1b[1m{a:02}:00 and {b:02}:59\x1b[0m."
+            );
+            if s.peak_source != Some("30d") {
+                println!(
+                    "  \x1b[2mFewer than {} titles in the last 30 days, so that is the whole\x1b[0m",
+                    steam::MIN_SAMPLES
+                );
+                println!("  \x1b[2mlibrary's history, not a picture of this month.\x1b[0m");
+            }
             let width = if b >= a { b - a + 1 } else { 24 - a + b + 1 };
             if width <= 6 {
                 println!(

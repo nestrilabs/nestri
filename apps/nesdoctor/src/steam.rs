@@ -9,12 +9,38 @@
 //! | *how big is a library?* | the sum of those sizes, which is the content store's cost |
 //! | *when do you play?* | `localconfig.vdf` — `LastPlayed` per title, as an hour-of-day histogram |
 //!
-//! The third is the interesting one. Steam keeps one `LastPlayed` timestamp per
-//! title, so a library of eighty games is **eighty samples of what hour this
-//! person launches a game at** — a real distribution, taken without asking, and
-//! the thing a demand trough is made of. It is biased toward whatever
-//! they played most recently and it is not a schedule; it is a sample, and it is
-//! reported as one.
+//! # The third one is biased, and this is the shape of the bias
+//!
+//! This module used to claim that a library of eighty games is *"eighty samples
+//! of what hour this person launches a game at — a real distribution"*. **It is
+//! not.** Steam keeps one `LastPlayed` per title, so what the histogram holds is
+//! one sample per *title*, at the hour that title was last closed, over the
+//! whole life of the library. Three things follow, and all three push the same
+//! way:
+//!
+//! - **A title played once, years ago, weighs exactly as much as a daily
+//!   driver.** Measured on one dev machine: eight titles, eight samples,
+//!   spanning back to 2025-09-04.
+//! - **A daily driver contributes one sample, ever**, at whatever hour it
+//!   happened to be closed last. Five hundred hours of play, one point.
+//! - **So the metric over-weights trying and under-weights playing.** An
+//!   afternoon spent installing and sampling a dozen games stamps a dozen
+//!   titles with that afternoon's hour; every one of them outvotes the game
+//!   somebody actually plays every evening. On the production host this reads
+//!   `n=331` with **329 titles no longer installed** — a histogram that is
+//!   mostly the archaeology of a library, presented as current behaviour.
+//!
+//! The direction is knowable, so it is corrected rather than disclaimed. Two
+//! histograms are reported: the whole library, as before, and **titles played
+//! within [`RECENT_DAYS`]**, which is one sample per title still in use and is
+//! the one the peak window prefers when it has the samples for it. Which one
+//! the peak came from is stated in the output and on the wire (`peaksrc=`),
+//! because a corpus that cannot tell them apart is a corpus that will mix them.
+//!
+//! What no local file supports is weighting a sample by how much a title is
+//! played: `Playtime` is a lifetime total against a single timestamp, so
+//! weighting by it would multiply one arbitrary hour by five hundred. It is
+//! read and reported, and it is not used as a weight.
 //!
 //! # This is somebody's private library
 //!
@@ -27,6 +53,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
@@ -41,21 +68,40 @@ pub struct SteamReport {
     /// The five largest, by size on disk. Included because library *shape* is
     /// what decides whether a depot cache has a head to cache.
     pub largest: Vec<(String, u64)>,
-    /// Count of `LastPlayed` timestamps falling in each local hour, 0–23.
-    pub launch_hours: [u32; 24],
-    pub launch_samples: usize,
+    /// Count of `LastPlayed` timestamps falling in each local hour, 0–23, one
+    /// per title across the whole library. See the module header: this is a
+    /// per-*title* sample, not a per-launch one.
+    pub last_played_hours: [u32; 24],
+    /// Titles with a usable `LastPlayed`. **Not a launch count** — it was
+    /// reported as one until 2026-09-03 and it never was.
+    pub titles_sampled: usize,
+    /// The same histogram restricted to titles played within [`RECENT_DAYS`].
+    /// One sample per title still in use, which is the closest this data gets
+    /// to current behaviour.
+    pub recent_hours: [u32; 24],
+    pub recent_samples: usize,
+    /// Lifetime `Playtime`, in minutes, summed over sampled titles. Reported
+    /// for scale; deliberately *not* used to weight the histogram.
+    pub playtime_minutes: u64,
+    /// How far back the whole-library histogram reaches, in days. A histogram
+    /// spanning two years is a different object from one spanning a month.
+    pub sample_span_days: Option<u32>,
     /// How many Steam user profiles were found on this machine. More than one
     /// means more than one person may use it, and the histogram is taken from
     /// the busiest profile rather than summed across strangers.
     pub profiles: usize,
-    /// Launch records whose title is not installed any more. Kept in the
-    /// histogram on purpose — a game someone uninstalled is still a real
-    /// record of when they play — and reported so `n` cannot be mistaken for
-    /// the installed-title count.
-    pub launches_uninstalled: usize,
-    /// Hours covering half of all launches, contiguous and wrapping — the
-    /// "evening peak" if there is one.
+    /// Sampled titles that are not installed any more. Kept in the whole-library
+    /// histogram on purpose — someone did play them once — and reported so `n`
+    /// cannot be mistaken for the installed-title count. When this dwarfs
+    /// `titles`, the whole-library histogram is mostly history.
+    pub sampled_uninstalled: usize,
+    /// Hours covering half the samples, contiguous and wrapping — the "evening
+    /// peak" if there is one. Taken from [`Self::recent_hours`] when that has
+    /// enough samples to claim a shape, and from the whole library otherwise.
     pub peak_window: Option<(u32, u32)>,
+    /// Which histogram [`Self::peak_window`] came from: `"30d"` or `"all"`.
+    /// Never infer it from the sample counts; read it here.
+    pub peak_source: Option<&'static str>,
 }
 
 /// Proton builds, runtimes and redistributables are installed like games and
@@ -212,7 +258,15 @@ pub fn read() -> SteamReport {
     // **Profiles are not one person.** A shared machine has several, and
     // summing them produces a histogram of nobody. The busiest profile is used
     // and the count is reported, so a two-profile machine is visible as one.
-    let mut per_profile: Vec<([u32; 24], usize, usize)> = Vec::new();
+    let mut per_profile: Vec<ProfileSample> = Vec::new();
+
+    // Wall clock, once. If it is unavailable the recent subset stays empty and
+    // the peak falls back to the whole library, labelled `all` — degraded, and
+    // never silently mislabelled.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs());
     for root in &roots {
         let Ok(users) = fs::read_dir(root.join("userdata")) else {
             continue;
@@ -230,9 +284,7 @@ pub fn read() -> SteamReport {
                 continue;
             };
 
-            let mut hours = [0u32; 24];
-            let mut n = 0usize;
-            let mut gone = 0usize;
+            let mut p = ProfileSample::default();
             for (appid, app) in apps {
                 let Some(ts) = app.get(&["LastPlayed"]).and_then(vdf::Value::as_u64) else {
                     continue;
@@ -244,31 +296,90 @@ pub fn read() -> SteamReport {
                     // A tool Steam launched, not a person playing.
                     Some((_, true)) => continue,
                     Some((_, false)) => {}
-                    // Not installed now. A real launch by a real person, and
-                    // counted — but counted separately so `n` is never read as
-                    // the installed-title count.
-                    None => gone += 1,
+                    // Not installed now. Someone did play it once, so it stays
+                    // in the whole-library histogram — but it is counted
+                    // separately, because a large count here is the signal that
+                    // that histogram is history rather than behaviour.
+                    None => p.gone += 1,
                 }
-                if let Some(h) = local_hour(ts) {
-                    hours[h as usize] += 1;
-                    n += 1;
+                let Some(h) = local_hour(ts) else { continue };
+                p.hours[h as usize] += 1;
+                p.n += 1;
+                p.playtime += app
+                    .get(&["Playtime"])
+                    .and_then(vdf::Value::as_u64)
+                    .unwrap_or(0);
+                p.oldest = Some(p.oldest.map_or(ts, |o: u64| o.min(ts)));
+                // Recent means "still in use". Age is taken from the timestamp
+                // itself rather than from `Playtime2wks`, which is absent on
+                // most entries and so would silently shrink the subset.
+                if now.is_some_and(|now| now.saturating_sub(ts) <= RECENT_DAYS * 86_400) {
+                    p.recent_hours[h as usize] += 1;
+                    p.recent_n += 1;
                 }
             }
-            if n > 0 {
-                per_profile.push((hours, n, gone));
+            if p.n > 0 {
+                per_profile.push(p);
             }
         }
     }
 
     r.profiles = per_profile.len();
-    if let Some((hours, n, gone)) = per_profile.into_iter().max_by_key(|(_, n, _)| *n) {
-        r.launch_hours = hours;
-        r.launch_samples = n;
-        r.launches_uninstalled = gone;
+    if let Some(p) = per_profile.into_iter().max_by_key(|p| p.n) {
+        r.last_played_hours = p.hours;
+        r.titles_sampled = p.n;
+        r.sampled_uninstalled = p.gone;
+        r.recent_hours = p.recent_hours;
+        r.recent_samples = p.recent_n;
+        r.playtime_minutes = p.playtime;
+        r.sample_span_days = match (now, p.oldest) {
+            (Some(now), Some(oldest)) => Some((now.saturating_sub(oldest) / 86_400) as u32),
+            _ => None,
+        };
     }
 
-    r.peak_window = peak_window(&r.launch_hours, r.launch_samples);
+    (r.peak_window, r.peak_source) = choose_peak(
+        (&r.recent_hours, r.recent_samples),
+        (&r.last_played_hours, r.titles_sampled),
+    );
     r
+}
+
+/// Prefer the subset that describes current behaviour, and say which was used.
+///
+/// Falling back to the whole library is better than reporting nothing, but the
+/// two answer different questions — *when does this person play* against *when
+/// was this library touched, ever* — so a window must never arrive unlabelled.
+fn choose_peak(
+    recent: (&[u32; 24], usize),
+    all: (&[u32; 24], usize),
+) -> (Option<(u32, u32)>, Option<&'static str>) {
+    if let Some(w) = peak_window(recent.0, recent.1) {
+        return (Some(w), Some("30d"));
+    }
+    match peak_window(all.0, all.1) {
+        Some(w) => (Some(w), Some("all")),
+        None => (None, None),
+    }
+}
+
+/// How recent a `LastPlayed` has to be for its title to count as still in use.
+///
+/// Thirty days rather than Steam's own two-week `Playtime2wks`: two weeks is
+/// below [`MIN_SAMPLES`] for most libraries, and a subset too small to claim a
+/// shape is a subset that silently falls back to the biased histogram.
+const RECENT_DAYS: u64 = 30;
+
+/// One profile's tally, before the busiest is chosen.
+#[derive(Default)]
+struct ProfileSample {
+    hours: [u32; 24],
+    n: usize,
+    gone: usize,
+    recent_hours: [u32; 24],
+    recent_n: usize,
+    playtime: u64,
+    oldest: Option<u64>,
 }
 
 /// Hour of day, in the machine's local time, for a Unix timestamp.
@@ -301,11 +412,14 @@ fn utc_offset_seconds() -> Option<i64> {
     Some(sign * (h * 3600 + m * 60))
 }
 
+/// Fewer samples than this cannot claim a shape, so no peak is reported.
+pub const MIN_SAMPLES: usize = 8;
+
 /// The shortest contiguous, wrapping run of hours holding at least half the
-/// launches. That is the honest form of "when do you play": if it is four hours
+/// samples. That is the honest form of "when do you play": if it is four hours
 /// wide there is an evening peak, and if it takes fourteen there is not.
 fn peak_window(hours: &[u32; 24], total: usize) -> Option<(u32, u32)> {
-    if total < 8 {
+    if total < MIN_SAMPLES {
         return None; // too few samples to claim a shape
     }
     let half = (total as f64 / 2.0).ceil() as u32;
@@ -366,3 +480,60 @@ pub fn size_band(bytes: u64) -> &'static str {
 
 #[allow(dead_code)]
 pub fn debug_map(_m: &BTreeMap<String, vdf::Value>) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hist(pairs: &[(usize, u32)]) -> ([u32; 24], usize) {
+        let mut h = [0u32; 24];
+        for &(hour, n) in pairs {
+            h[hour] += n;
+        }
+        (h, h.iter().sum::<u32>() as usize)
+    }
+
+    #[test]
+    fn the_recent_subset_wins_when_it_can_claim_a_shape() {
+        // 8 samples, half is 4, and no single hour holds 4 — so the window is
+        // genuinely two hours wide and not an artefact of one tall bar.
+        let (recent, rn) = hist(&[(22, 3), (23, 3), (2, 2)]);
+        let (all, an) = hist(&[(14, 200), (22, 3), (23, 3), (2, 2)]);
+        let (w, src) = choose_peak((&recent, rn), (&all, an));
+        assert_eq!(src, Some("30d"));
+        assert_eq!(w, Some((22, 23)));
+    }
+
+    #[test]
+    fn a_thin_recent_subset_falls_back_and_says_so() {
+        // Three titles this month cannot outvote a library; the point is that
+        // the fallback is *labelled*, not that it is avoided.
+        let (recent, rn) = hist(&[(22, 3)]);
+        let (all, an) = hist(&[(14, 40)]);
+        let (w, src) = choose_peak((&recent, rn), (&all, an));
+        assert_eq!(src, Some("all"));
+        assert_eq!(w, Some((14, 14)));
+    }
+
+    #[test]
+    fn no_samples_means_no_window_and_no_source() {
+        let empty = [0u32; 24];
+        assert_eq!(choose_peak((&empty, 0), (&empty, 0)), (None, None));
+    }
+
+    #[test]
+    fn a_peak_is_never_claimed_from_too_few_samples() {
+        let (h, n) = hist(&[(20, (MIN_SAMPLES - 1) as u32)]);
+        assert_eq!(peak_window(&h, n), None);
+        let (h, n) = hist(&[(20, MIN_SAMPLES as u32)]);
+        assert_eq!(peak_window(&h, n), Some((20, 20)));
+    }
+
+    #[test]
+    fn the_window_is_the_shortest_wrapping_run_holding_half() {
+        // Straddling midnight is the case a non-wrapping scan gets wrong, and
+        // it is exactly the evening peak 0017 is about.
+        let (h, n) = hist(&[(23, 6), (0, 6), (12, 1), (13, 1)]);
+        assert_eq!(peak_window(&h, n), Some((23, 0)));
+    }
+}
