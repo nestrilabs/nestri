@@ -171,14 +171,59 @@ export namespace Machine {
 		}
 	);
 
+	/**
+	 * How often a host should say it is alive, in seconds.
+	 *
+	 * Returned to the host on every heartbeat rather than compiled into it: the
+	 * cadence is the control plane's business, and a fleet whose interval can
+	 * only be changed by shipping a new agent is a fleet whose interval never
+	 * changes. Thirty seconds is a placeholder — it is short enough that a dead
+	 * host is noticed within a session's setup, and long enough to be free.
+	 */
+	export const HEARTBEAT_SECONDS = 30;
+
+	/**
+	 * A host is considered offline once it has missed this many heartbeats.
+	 *
+	 * Three rather than one, because a single missed beat is a lost packet and
+	 * calling that "offline" would make placement flap.
+	 */
+	export const OFFLINE_AFTER_MISSED = 3;
+
+	/**
+	 * Record that a host is alive, and say when that was.
+	 *
+	 * Returns the stored timestamp rather than void so a caller can hand it
+	 * straight back to the host — which is what lets a heartbeat be one round
+	 * trip instead of a write followed by a read.
+	 */
 	export const touchLastSeen = fn(Info.shape.id, async (id) => {
-		await Database.use(async (tx) => {
-			await tx
+		return Database.use(async (tx) => {
+			return tx
 				.update(MachineTable)
 				.set({ lastSeen: sql`now()` })
-				.where(eq(MachineTable.id, id));
+				.where(eq(MachineTable.id, id))
+				.returning({ lastSeen: MachineTable.lastSeen })
+				.then((rows) => rows.at(0)?.lastSeen ?? null);
 		});
 	});
+
+	/**
+	 * Whether a host has beaten recently enough to place work on.
+	 *
+	 * Derived from `lastSeen` rather than stored as a column, so there is no
+	 * state to go stale when nothing is running to clear it — a host that stops
+	 * beating becomes offline by the passage of time, which is the one mechanism
+	 * that cannot itself fail.
+	 */
+	export function isOnline(lastSeen: Date | string | null): boolean {
+		if (!lastSeen) {
+			return false;
+		}
+		const at = lastSeen instanceof Date ? lastSeen : new Date(lastSeen);
+		const age = (Date.now() - at.getTime()) / 1000;
+		return age <= HEARTBEAT_SECONDS * OFFLINE_AFTER_MISSED;
+	}
 
 	export const fromID = fn(Info.shape.id, async (id) => {
 		return Database.use(async (tx) => {

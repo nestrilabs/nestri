@@ -208,6 +208,58 @@ export namespace MachineApi {
 				});
 			}
 		)
+		.post(
+			'/heartbeat',
+			machineOnly,
+			describeRoute({
+				tags: ['Machine'],
+				summary: 'Say the host is alive',
+				description:
+					'Records liveness for the calling machine and returns how often it should call back. The interval comes from the server on purpose: a fleet whose cadence can only change by shipping a new agent is a fleet whose cadence never changes. Takes no body — what a host is *running* is reported separately, and reporting a shape we cannot yet act on would be worse than reporting nothing.',
+				responses: {
+					200: {
+						content: {
+							'application/json': {
+								schema: Result(
+									z.object({
+										lastSeen: z.iso.datetime().meta({
+											description: 'When this beat was recorded, by the database’s clock',
+											example: Examples.Machine.lastSeen
+										}),
+										intervalSeconds: z.number().meta({
+											description: 'Call back this often',
+											example: Machine.HEARTBEAT_SECONDS
+										})
+									})
+								)
+							}
+						},
+						description: 'The beat was recorded'
+					},
+					403: ErrorResponses[403],
+					404: ErrorResponses[404]
+				}
+			}),
+			async (c) => {
+				const lastSeen = await Machine.touchLastSeen(Actor.machineID);
+				if (!lastSeen) {
+					// The credentials authenticated but the row is gone — a host
+					// deleted mid-beat. It must re-register rather than keep
+					// beating into nothing, so this is a 404 and not a 200.
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'This machine no longer exists'
+					);
+				}
+				return c.json({
+					data: {
+						lastSeen: lastSeen.toISOString(),
+						intervalSeconds: Machine.HEARTBEAT_SECONDS
+					}
+				});
+			}
+		)
 		.get(
 			'/me',
 			machineOnly,

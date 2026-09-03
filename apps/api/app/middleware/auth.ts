@@ -80,7 +80,7 @@ export const auth: MiddlewareHandler = async (c, next) => {
 					properties: {
 						machineID: machine.id,
 						ownerUserID: machine.ownerUserId,
-						...(machine.teamId ? { teamID: machine.teamId } : {})
+						teamID: machine.teamId
 					}
 				},
 				next
