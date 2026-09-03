@@ -134,13 +134,42 @@ if dec and shots:
                      "paths saw the same frames, so they should carry the same detail")
 
 if dec and shots:
-    a, b = luma(shots[-1]).mean(), luma(dec[-1]).mean()
-    print(f"readback mean:    {a:.2f}")
-    print(f"decoded mean:     {b:.2f}")
+    # Compare a corner, not the whole frame. The two instruments sample at
+    # different moments -- the readback is on a 1 s timer, the decoded frames are
+    # picked by index -- so any whole-frame statistic also carries whatever the
+    # workload was doing at each instant. The workload draws a centred object on
+    # a flat background, so a corner patch is the same colour in every frame and
+    # the comparison stops depending on lining them up.
+    #
+    # This is the measurement that catches a range or matrix error: a flat patch
+    # of known colour, decoded, against the same patch read back from the
+    # compositor. It is where a full-range/limited-range mismatch shows up as a
+    # constant offset.
+    def corner(a):
+        return a[8:72, 8:72]
+
+    def spread(patches):
+        m = [luma(p).mean() for p in patches]
+        return max(m) - min(m)
+
+    dc, sc = [corner(d) for d in dec], [corner(s) for s in shots]
+    a = float(np.mean([luma(p).mean() for p in sc]))
+    b = float(np.mean([luma(p).mean() for p in dc]))
+    print(f"readback corner:  {a:.2f}")
+    print(f"decoded corner:   {b:.2f}")
     print(f"difference:       {abs(a - b):.2f}")
-    if abs(a - b) > 4.0:
+
+    # If the corner is not actually flat across frames, the assumption above does
+    # not hold for this workload and the comparison would be measuring animation.
+    # Say so rather than reporting a number that means nothing.
+    drift = max(spread(dc), spread(sc))
+    if drift > 3.0:
+        fails.append(f"the corner patch varies by {drift:.2f} between frames, so it "
+                     "is not background here; the brightness check assumes a "
+                     "workload that leaves its corners alone")
+    elif abs(a - b) > 4.0:
         fails.append(f"the two paths disagree on brightness by {abs(a-b):.2f}; "
-                     "they are looking at the same frames, so one of them is wrong")
+                     "they are looking at the same content, so one of them is wrong")
 
 print()
 if fails:

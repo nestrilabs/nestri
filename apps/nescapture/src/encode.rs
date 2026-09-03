@@ -932,15 +932,24 @@ fn bgra_to_yuv420(pixels: &[u8], width: u32, height: u32, vk_format: u32) -> Vec
                 break;
             }
             let (r, g, b) = if bgra {
-                (pixels[i + 2] as i32, pixels[i + 1] as i32, pixels[i] as i32)
+                (pixels[i + 2] as f32, pixels[i + 1] as f32, pixels[i] as f32)
             } else {
-                (pixels[i] as i32, pixels[i + 1] as i32, pixels[i + 2] as i32)
+                (pixels[i] as f32, pixels[i + 1] as f32, pixels[i + 2] as f32)
             };
-            y[row * w + col] = (((66 * r + 129 * g + 25 * b + 128) >> 8) + 16).clamp(16, 235) as u8;
+            // BT.709, full range — the same thing the GPU converter is configured
+            // to produce and the same thing the stream's colour description
+            // declares. This used to be BT.601 limited range, which disagreed with
+            // the declaration on both counts: a decoder expanded 16-235 that was
+            // never compressed, using the wrong matrix to do it. The fallback is
+            // rare enough that nobody would have noticed it looking different
+            // from the GPU path.
+            let yf = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            y[row * w + col] = yf.round().clamp(0.0, 255.0) as u8;
             if row % 2 == 0 && col % 2 == 0 {
                 let ci = (row / 2) * (w / 2) + col / 2;
-                u[ci] = (((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128).clamp(16, 240) as u8;
-                v[ci] = (((112 * r - 94 * g - 18 * b + 128) >> 8) + 128).clamp(16, 240) as u8;
+                // Cb, Cr from the same primaries: (B-Y)/(2(1-Kb)), (R-Y)/(2(1-Kr)).
+                u[ci] = ((b - yf) / 1.8556 + 128.0).round().clamp(0.0, 255.0) as u8;
+                v[ci] = ((r - yf) / 1.5748 + 128.0).round().clamp(0.0, 255.0) as u8;
             }
         }
     }
@@ -1174,6 +1183,32 @@ mod tests {
                 "{cs:?}"
             );
         }
+    }
+
+    /// The CPU fallback has to agree with the declaration too. A flat grey of 51
+    /// is the value that exposed the GPU path's range bug on real hardware: full
+    /// range encodes it as Y=51, limited range as Y=60. The stream says full.
+    #[test]
+    fn cpu_fallback_is_full_range_bt709() {
+        // 4x2 of solid RGB(51,51,51); vk_format 44 selects the BGRA branch.
+        let px = vec![51u8; 4 * 2 * 4];
+        let yuv = bgra_to_yuv420(&px, 4, 2, 44);
+        for (i, &y) in yuv[..8].iter().enumerate() {
+            assert_eq!(y, 51, "luma[{i}] should be 51 full-range, not 60 limited-range");
+        }
+        // Achromatic input must sit at the chroma centre.
+        for &c in &yuv[8..] {
+            assert!((c as i32 - 128).abs() <= 1, "grey must be neutral, got {c}");
+        }
+    }
+
+    /// Saturated primaries must not be clamped into the limited-range box.
+    #[test]
+    fn cpu_fallback_uses_the_full_code_range() {
+        let white = vec![255u8; 4 * 2 * 4];
+        assert_eq!(bgra_to_yuv420(&white, 4, 2, 44)[0], 255, "white must reach 255");
+        let black = vec![0u8; 4 * 2 * 4];
+        assert_eq!(bgra_to_yuv420(&black, 4, 2, 44)[0], 0, "black must reach 0");
     }
 
     /// The converter is configured full-range unconditionally, so every colour
