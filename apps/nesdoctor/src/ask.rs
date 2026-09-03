@@ -148,7 +148,7 @@ pub fn run(ctx: &Ctx) -> Answers {
         println!(
             "\x1b[1mOne permission.\x1b[0m Steam keeps, on this disk, the size of each game you"
         );
-        println!("have installed and the time you last launched it. Reading it answers three");
+        println!("have installed and when you last played it. Reading it answers three");
         println!("things we would otherwise have to ask you badly: how big a library is, what");
         println!("shape it has, and what hours you actually play.");
         println!();

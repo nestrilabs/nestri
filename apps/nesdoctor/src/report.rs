@@ -417,7 +417,7 @@ fn enc(s: &str) -> String {
 ///
 /// Carries more than the clipboard line does, because it is not something
 /// anyone has to eyeball in a chat window: every check individually, the full
-/// latency triple, the 24-hour launch histogram, and the five largest titles.
+/// latency triple, the 24-hour last-played histogram, and the five largest titles.
 pub fn submit_url(base: &str, f_: &Full) -> String {
     let (sys, host, net, steam, answers, verdict, region) = (
         f_.sys,

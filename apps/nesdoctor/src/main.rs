@@ -78,7 +78,7 @@ struct Args {
     ///
     /// Relative to the working directory, which during development is a git
     /// checkout -- and this file contains the operator's own machine: home
-    /// paths, installed titles, launch times. It was committed to the public
+    /// paths, installed titles, when each was last played. It was committed to the public
     /// repository once by accident. `.gitignore` now covers the default name,
     /// and the default is deliberately not something like `report.json` that
     /// an ignore rule would miss.
@@ -299,15 +299,15 @@ fn main() {
             args.json.display()
         );
         println!(
-            "\x1b[2m    full latency series, and your installed titles with sizes and launch\x1b[0m"
+            "\x1b[2m    full latency series, and your installed titles with sizes and when\x1b[0m"
         );
         println!(
-            "\x1b[2m    times. It is more useful to us than anything above, because it is what\x1b[0m"
+            "\x1b[2m    each was last played. It is more useful to us than anything above,\x1b[0m"
         );
         println!(
-            "\x1b[2m    lets us size a real game library. Have a read and send it along if\x1b[0m"
+            "\x1b[2m    because it is what lets us size a real game library. Have a read and\x1b[0m"
         );
-        println!("\x1b[2m    nothing in there bothers you.\x1b[0m");
+        println!("\x1b[2m    send it along if nothing in there bothers you.\x1b[0m");
     }
 
     // The one thing we can never ask afterwards.
