@@ -65,6 +65,9 @@ pub struct NetReport {
     pub loaded_rtt_p95_ms: Option<f64>,
     /// Loaded minus idle: the queue, in milliseconds.
     pub bloat_ms: Option<f64>,
+    /// Sustained upstream over the steady-state window only: the 1.5 s ramp is
+    /// excluded from the bytes *and* from the clock. Never divide a byte count
+    /// by a window that does not contain it.
     pub upstream_mbps: Option<f64>,
     /// A, B, C or F. See [`grade`].
     pub grade: Option<&'static str>,
@@ -139,7 +142,6 @@ pub fn run() -> NetReport {
     // --- saturate, and measure again -------------------------------------
     let stop = Arc::new(AtomicBool::new(false));
     let sent = Arc::new(AtomicU64::new(0));
-    let started = Instant::now();
 
     let uploaders: Vec<_> = (0..STREAMS)
         .map(|_| {
@@ -153,6 +155,30 @@ pub fn run() -> NetReport {
     // Give the queue a moment to actually fill before sampling: measuring from
     // t=0 averages in the unloaded state and understates the bloat.
     std::thread::sleep(Duration::from_millis(1500));
+
+    // Throughput is measured from *here*, and so are the bytes.
+    //
+    // This used to divide every byte sent since the threads started — the ramp
+    // above included — by a window with that same ramp subtracted from it, so
+    // the numerator covered ~8.3 s and the denominator ~6.8 s and **every
+    // published `up=` figure was overstated by about a fifth.** It was found by
+    // running `speedtest` on the same line in the same afternoon (284 Mbps
+    // against our 502) and it is invisible to re-reading, because the code was
+    // self-consistent and the number it printed was plausible.
+    //
+    // Excluding the ramp from both is also the better measurement: TCP
+    // slow-start lives in there, so the first 1.5 s is not the steady state
+    // that a session would actually get.
+    //
+    // What remains is a boundary effect, and it is worth knowing rather than
+    // claiming exactness: bytes land on the counter one completed 8 MiB POST at
+    // a time, so a request straddling the snapshot below is counted whole. That
+    // is up to `STREAMS * 8 MiB` attributed to a window it only partly occupies
+    // — a few per cent, still upward. Read `up=` as a figure with a ceiling of
+    // roughly that, not as a calibrated number.
+    let measure_from = Instant::now();
+    let sent_before = sent.load(Ordering::Relaxed);
+
     let loaded = sample_rtt(
         addr,
         (LOAD_SECONDS as usize - 2) * 4,
@@ -165,8 +191,8 @@ pub fn run() -> NetReport {
         any_upload_ok |= h.join().unwrap_or(false);
     }
 
-    let elapsed = started.elapsed().as_secs_f64() - 1.5;
-    let bytes = sent.load(Ordering::Relaxed) as f64;
+    let elapsed = measure_from.elapsed().as_secs_f64();
+    let bytes = sent.load(Ordering::Relaxed).saturating_sub(sent_before) as f64;
     let upstream_mbps = (any_upload_ok && elapsed > 1.0 && bytes > 0.0)
         .then(|| bytes * 8.0 / elapsed / 1_000_000.0);
 
