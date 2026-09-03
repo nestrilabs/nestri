@@ -53,10 +53,10 @@ describe('POST /machine/heartbeat', () => {
 		expect(res.status).toBe(200);
 
 		const body = (await res.json()) as any;
-		// These two field names are what `neslet`'s plane.rs reads out of the
-		// reply. A rename on either side produces a host that beats, parses
-		// nothing, and reports success — so the names are the contract and this
-		// is the test that holds them.
+		// These two field names are what a host agent reads out of the reply. A
+		// rename on either side produces a host that beats, parses nothing, and
+		// reports success — so the names are the contract and this is the test
+		// that holds them.
 		expect(typeof body.data.lastSeen).toBe('string');
 		expect(body.data.intervalSeconds).toBe(Machine.HEARTBEAT_SECONDS);
 		expect(new Date(body.data.lastSeen).getTime()).not.toBeNaN();

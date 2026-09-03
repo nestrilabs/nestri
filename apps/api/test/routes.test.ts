@@ -386,10 +386,10 @@ describe('Box access', () => {
 	});
 
 	test('teamId is required on the body, and null is no longer a value', async () => {
-		// Null used to mean "make it mine alone". Since 0048 made
-		// `machine.teamId` notNull there is no such state — hardware belongs to
-		// exactly one team and the personal team is the one to name — so null is
-		// now a validation error rather than a meaning.
+		// Null used to mean "make it mine alone". Now that `machine.teamId` is
+		// notNull there is no such state — hardware belongs to exactly one team
+		// and the personal team is the one to name — so null is a validation
+		// error rather than a meaning.
 		const missing = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
 			headers: { ...adminHeaders(), 'content-type': 'application/json' },

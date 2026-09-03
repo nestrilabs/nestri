@@ -26,16 +26,65 @@ Both toolchains live at the root: `package.json` is the Bun workspace,
 | `cargo build --workspace` · `cargo test --workspace` | the Rust half |
 | `bun run deploy:sandbox` | deploy a stage |
 
-## Two rules that are not style preferences
+## Three rules that are not style preferences
 
-**Nothing closed may enter this repo.** Not source, not a dependency, not a
-directory that "looked convenient". Before adding a top-level directory, know
-which component it is and that the component is open. This has already been
-caught once, in a commit that was never pushed.
+### 1. THIS REPO IS PUBLIC. Write nothing that only makes sense to us.
 
-**Versions are pinned once, centrally.** A Cargo member writes
-`tokio.workspace = true` and never a version; a TS package uses the root
-`catalog`. Two packages in one tree must not disagree about a dependency.
+**Read this before writing a single comment, docstring or commit message.** It
+has been violated twice, both times by someone who knew the repo was public,
+both times about ten occurrences deep before anyone noticed. Being careful is
+demonstrably not enough, so the rules below are mechanical.
+
+**Never, anywhere in this repo:**
+
+| ✗ | why |
+|---|---|
+| **Any relative path that escapes this tree** into an internal repo, or the filename of an internal document | A filename plus a title tells a reader exactly what to ask for |
+| A quotation from an internal document, even one phrase | Restate the requirement in this repo's own words |
+| The name of a component with no public surface | It discloses the shape of the system, which is the part deliberately kept |
+| Anything of the above in a **commit message** | History is permanent here and is deliberately never rewritten — a message cannot be fixed by a later commit |
+| Anything of the above in **published output** — an OpenAPI `description`, an error message, CLI text, a README | A docstring that becomes an API description reaches people who never open the source. Check where a string *goes*, not what file it is in |
+
+**The one sanctioned exception**, and the only way to cite internal reasoning:
+
+```ts
+// A size tier sets vCPU, RAM and the output geometry. ref(d-0021)
+```
+
+`ref(d-NNNN)` · `todo(d-NNNN)` · `fixme(d-NNNN)`, in **source comments only**.
+Note `d-NNNN` and never `d/NNNN` — a slash reads as a path.
+
+**The test that makes it decidable — apply it to every sentence:**
+
+> Delete the marker. Does the comment still say something true and useful about
+> *this* code?
+
+If yes, it belongs. If the sentence collapses without the reference, it was
+describing our topology rather than this component, and the fix is to state the
+**requirement** instead of who set it. In practice a category noun does it —
+*the caller*, *the host agent*, *an orchestrator*, *the control plane* — and the
+result is a better sentence, because it says what is needed rather than who
+happens to satisfy it. Every single case fixed so far got shorter and clearer.
+
+**A name a user types is not a leak.** `nessh` appears throughout this repo on
+purpose: the product *is* `ssh nestri.io`, so hiding it would mean hiding what
+we sell. The test narrows to: does this name appear because a **user**
+encounters it, or because a **component** does?
+
+If you are unsure whether a name is internal, do not guess and do not grep for
+permission — write the category noun. It is never wrong.
+
+### 2. Nothing closed may enter this repo.
+
+Not source, not a dependency, not a directory that "looked convenient". Before
+adding a top-level directory, know which component it is and that the component
+is open. This has already been caught once, in a commit that was never pushed.
+
+### 3. Versions are pinned once, centrally.
+
+A Cargo member writes `tokio.workspace = true` and never a version; a TS package
+uses the root `catalog`. Two packages in one tree must not disagree about a
+dependency.
 
 ## Where the detail is
 
@@ -90,3 +139,8 @@ allowed kind: a name in prose, never a dependency in code.
 Conventional commits. Explain *why* in the body — the diff already shows what.
 Comments earn their place by saying something the code cannot; a comment
 restating the line below it is noise.
+
+**A commit message here is public and permanent.** No internal component names,
+no decision numbers, no `ref(d-…)` markers — those are for source comments,
+where a later commit can fix a mistake. Describe the change in this repo's own
+terms: what changed, and why it is better. See rule 1.

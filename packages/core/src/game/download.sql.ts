@@ -17,9 +17,9 @@ export const GameDownloadTable = pgTable(
 	{
 		...id,
 		...timestamps,
-		// A foreign key since 0048. It was a bare `text` column — the one place a
-		// host was referred to by a string nothing checked — so a typo produced
-		// a download row belonging to a machine that had never existed.
+		// A foreign key. It was a bare `text` column — the one place a host was
+		// referred to by a string nothing checked — so a typo produced a download
+		// row belonging to a machine that had never existed. ref(d-0048)
 		hostId: ulid('host_id')
 			.notNull()
 			.references(() => MachineTable.id, { onDelete: 'cascade' }),

@@ -1,5 +1,5 @@
--- 0048: a box is a row, a session is the billing unit, and hardware belongs to
--- exactly one team.
+-- A box is a row, a session is the billing unit, and hardware belongs to
+-- exactly one team. ref(d-0048)
 --
 -- Three of the five changes here touch live rows, and the generated form of
 -- this migration would have failed on all three:
@@ -105,7 +105,7 @@ WHERE m."team_id" IS NULL;--> statement-breakpoint
 --
 -- This is the only destructive statement in the migration and it is a
 -- considered loss: `game_download` is a progress report a host writes about
--- itself, and `neslet` re-derives it from what is on disk. A row that survives
+-- itself, and the host re-derives it from what is on disk. A row that survives
 -- here is one whose host we can actually name; one that does not was
 -- unattributable, which is exactly the bug the foreign key exists to prevent.
 DELETE FROM "game_download" d

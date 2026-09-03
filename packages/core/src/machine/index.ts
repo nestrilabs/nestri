@@ -133,11 +133,10 @@ export namespace Machine {
 	/**
 	 * Move a host to a different team.
 	 *
-	 * There is no "out of a team" any more: `teamId` is notNull since
-	 * [0048](../../../../.nestri/decisions/0048-email-is-the-root-identity-and-a-box-is-a-row.md),
-	 * so a host always belongs to exactly one, and the single-operator case is a
-	 * team of one rather than a null. What used to be *unscope* is now *move to
-	 * my personal team*, which the caller names explicitly.
+	 * There is no "out of a team" any more: `teamId` is notNull, so a host always
+	 * belongs to exactly one and the single-operator case is a team of one rather
+	 * than a null. What used to be *unscope* is now *move to my personal team*,
+	 * which the caller names explicitly. ref(d-0048)
 	 *
 	 * Scoped to the owner in the query itself, so a machine belonging to
 	 * someone else is a miss rather than a permission check that could be

@@ -84,10 +84,10 @@ export default {
 					});
 
 					// Every user needs a personal team, because `machine.teamId` is
-					// notNull since 0048 and registering a host has nowhere to put
-					// it otherwise. `packages/core/CLAUDE.md` documented this call
-					// as part of the login flow and it was never actually made, so
-					// no user in the database has one.
+					// notNull and registering a host has nowhere to put it
+					// otherwise. `packages/core/CLAUDE.md` documented this call as
+					// part of the login flow and it was never actually made, so no
+					// user in the database has one. ref(d-0048)
 					//
 					// Run on every login rather than only on creation: that is what
 					// backfills the accounts made before this existed, and

@@ -76,11 +76,11 @@ export namespace MachineApi {
 					);
 				}
 
-				// `machine.teamId` is notNull since 0048, so a team has to be
-				// resolved rather than defaulted to null. The order is: what the
-				// caller asked for, then the team they are acting inside, then
-				// their personal team — which `ensurePersonal` makes if this is a
-				// user who predates 0048 and has none.
+				// A team has to be resolved rather than defaulted to null, because
+				// `machine.teamId` is notNull. The order is: what the caller asked
+				// for, then the team they are acting inside, then their personal
+				// team — which `ensurePersonal` makes if this is an older user who
+				// has none. ref(d-0048)
 				const owningTeam =
 					teamId ??
 					(actor.type === 'member'
@@ -120,7 +120,7 @@ export namespace MachineApi {
 				tags: ['Machine'],
 				summary: 'Move a box to another team',
 				description:
-					'Move a machine you own to a team you belong to. Hardware always belongs to exactly one team since 0048, so there is no way to unscope — name your personal team instead. This is not ownership transfer: the owner does not change.',
+					'Move a machine you own to a team you belong to. Hardware always belongs to exactly one team, so there is no way to unscope — name your personal team instead. This is not ownership transfer: the owner does not change.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Machine.Info) } },

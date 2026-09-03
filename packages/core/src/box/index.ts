@@ -9,11 +9,10 @@ import { BoxState, BoxTable, BoxTier } from './box.sql.js';
 /**
  * A VM someone owns.
  *
- * The box is the thing with a name and a URL ([0010](../../../../.nestri/decisions/0010-the-name-is-the-interface.md),
- * [0019](../../../../.nestri/decisions/0019-box-naming.md)); a
- * {@link ../session/index.ts | session} is one run of it, and the session is
- * what costs money. Keeping them apart is what lets a box be a durable thing a
- * person owns rather than a synonym for "currently playing".
+ * The box is the thing with a name and a URL; a session is one run of it, and
+ * the session is what costs money. Keeping them apart is what lets a box be a
+ * durable thing a person owns rather than a synonym for "currently playing".
+ * ref(d-0010), ref(d-0019)
  */
 export namespace Box {
 	export const Info = z
@@ -39,11 +38,11 @@ export namespace Box {
 				example: Examples.Box.tier
 			}),
 			state: z.enum(BoxState.enumValues).meta({
-				description: 'What the box is doing, in neslet’s vocabulary',
+				description: 'What the box is doing, as last reported by its host',
 				example: Examples.Box.state
 			}),
 			stopReason: z.string().nullable().optional().meta({
-				description: 'Why it stopped, verbatim from neslet. Null if it never ran',
+				description: 'Why it stopped, as reported by its host. Null if it never ran',
 				example: Examples.Box.stopReason
 			}),
 			stopClean: z.boolean().nullable().optional().meta({
@@ -114,7 +113,7 @@ export namespace Box {
 	});
 
 	/**
-	 * Record what `neslet` says a box is doing.
+	 * Record what a box's host says it is doing.
 	 *
 	 * The stop reason is cleared on any state that is not `stopped`, so a box
 	 * that ran, faulted, and was started again does not keep explaining a

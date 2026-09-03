@@ -62,8 +62,8 @@ describe('Machine registration', () => {
 
 	test('a host always has a team, so registering without one is impossible', async () => {
 		const owner = await newOwner('mch-team');
-		// `teamId` is notNull since 0048 and required by the schema, so this is a
-		// validation failure rather than a row with a null team.
+		// `teamId` is notNull and required by the schema, so this is a validation
+		// failure rather than a row with a null team.
 		//
 		// `toThrow` and not `rejects.toThrow`: `fn()` parses its input
 		// synchronously, before any promise exists, so a bad argument never

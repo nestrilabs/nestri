@@ -87,8 +87,8 @@ describe('Session', () => {
 		expect((await Session.setTicket({ id: session.id, ticket: 'ticket-one' }))?.ticket).toBe(
 			'ticket-one'
 		);
-		// The vsock contract calls the ticket "a stream, not one value" — a second
-		// ticket is a better address for the same session, not a new session.
+		// A ticket is republished as addresses are discovered — a second one is a
+		// better address for the same session, not a new session.
 		expect((await Session.setTicket({ id: session.id, ticket: 'ticket-two' }))?.ticket).toBe(
 			'ticket-two'
 		);

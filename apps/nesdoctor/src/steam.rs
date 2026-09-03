@@ -532,7 +532,8 @@ mod tests {
     #[test]
     fn the_window_is_the_shortest_wrapping_run_holding_half() {
         // Straddling midnight is the case a non-wrapping scan gets wrong, and
-        // it is exactly the evening peak 0017 is about.
+        // it is exactly the evening peak the demand question is about.
+        // ref(d-0017)
         let (h, n) = hist(&[(23, 6), (0, 6), (12, 1), (13, 1)]);
         assert_eq!(peak_window(&h, n), Some((23, 0)));
     }

@@ -6,16 +6,15 @@ import { User } from '../user/index.js';
 import { LinkedAccount } from '../user/linked-account.js';
 
 /**
- * Fixtures for the ownership chain, because since
- * [0048](../../../../.nestri/decisions/0048-email-is-the-root-identity-and-a-box-is-a-row.md)
- * it is a chain rather than a set of loose rows.
+ * Fixtures for the ownership chain, which is now a chain rather than a set of
+ * loose rows.
  *
- * A box now needs a user, a team, and a machine to exist before it can, and a
+ * A box needs a user, a team, and a machine to exist before it can, and a
  * session needs a game and a linked account on top of that. Every test that
  * touches either was otherwise going to build the same four rows by hand, and
- * the version built by hand is the version that quietly uses a `hst_…` string
- * where a real machine id belongs — which is exactly what the new foreign key
- * exists to catch.
+ * the version built by hand is the version that quietly uses a made-up host
+ * string where a real machine id belongs — which is exactly what the foreign
+ * key exists to catch. ref(d-0048)
  *
  * Test-only. Nothing here is imported by shipping code.
  */

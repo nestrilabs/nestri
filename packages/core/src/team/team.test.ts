@@ -54,8 +54,8 @@ describe('Team.ensurePersonal', () => {
 	});
 
 	test('a user who predates the personal team gets one on next login', async () => {
-		// The legacy row the 0007 migration and this call between them repair: a
-		// user created by Steam sign-in before `ensurePersonal` was ever wired up.
+		// The legacy row the migration and this call between them repair: a user
+		// created by Steam sign-in before `ensurePersonal` was ever wired up.
 		const userId = Identifier.ascending('user');
 		createdUserIds.push(userId);
 		await sql`insert into "user" (id, name, email) values (${userId}, ${'legacy'}, ${`legacy-${userId}@example.test`})`;

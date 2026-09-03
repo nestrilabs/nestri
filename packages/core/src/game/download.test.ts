@@ -9,9 +9,9 @@ import { GameDownload } from './download.js';
 const sql = testDb();
 
 /**
- * Real registered hosts, not `hst_…` strings.
+ * Real registered hosts, not made-up strings.
  *
- * These were literals until 0048 made `host_id` a foreign key. The old values
+ * These were literals until `host_id` became a foreign key. The old values
  * were the bug the key exists to prevent — a download row attributed to a host
  * that had never registered — so the test that used them was asserting against
  * a state the database now refuses.

@@ -136,9 +136,9 @@ export namespace Session {
 	/**
 	 * Publish the current ticket.
 	 *
-	 * Overwrites, deliberately: the vsock contract describes the ticket as *"a
-	 * stream, not one value"*, so a later ticket for the same session is a
-	 * better address for the same thing and not a second session.
+	 * Overwrites, deliberately: a ticket is republished as addresses are
+	 * discovered, so a later one for the same session is a better address for
+	 * the same thing and not a second session.
 	 */
 	export const setTicket = fn(Info.pick({ id: true, ticket: true }), async (input) => {
 		return Database.use(async (tx) => {

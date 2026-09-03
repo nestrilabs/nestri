@@ -119,7 +119,7 @@ export namespace Team {
 	 * only thing that mints a team at signup — so the first one is the personal
 	 * one and any later ones were made deliberately. This is a convention, not a
 	 * column: adding an `isPersonal` flag would let the two disagree, and there
-	 * is nothing yet that needs them to.
+	 * is nothing yet that needs them to. ref(d-0048)
 	 */
 	export const personalFor = fn(Info.shape.ownerId, async (ownerId) => {
 		return Database.use(async (tx) => {
@@ -136,11 +136,10 @@ export namespace Team {
 	/**
 	 * The personal team, made if it is not there.
 	 *
-	 * Every user has needed one since [0048](../../../../.nestri/decisions/0048-email-is-the-root-identity-and-a-box-is-a-row.md)
-	 * made `machine.teamId` notNull, so signup calls this and so does anything
-	 * that needs somewhere to put a host. Idempotent, because it runs on every
-	 * login rather than only on the first one — a user created before 0048 has
-	 * no team and gets one the next time they appear.
+	 * Every user has needed one since `machine.teamId` became notNull, so signup
+	 * calls this and so does anything that needs somewhere to put a host.
+	 * Idempotent, because it runs on every login rather than only on the first
+	 * one — an older user with no team gets one the next time they appear.
 	 */
 	export const ensurePersonal = fn(z.object({ displayName: z.string() }), async (input) => {
 		const existing = await personalFor(Actor.userID);

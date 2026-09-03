@@ -51,9 +51,9 @@ const Machine = z.object({
 	properties: z.object({
 		machineID: z.string(),
 		ownerUserID: z.string(),
-		// Not optional: `machine.teamId` is notNull since 0048, so a host that
-		// authenticated always has a team and the branch that used to handle
-		// its absence was handling a state that can no longer exist.
+		// Not optional: `machine.teamId` is notNull, so a host that authenticated
+		// always has a team, and the branch that used to handle its absence was
+		// handling a state that can no longer exist.
 		teamID: z.string()
 	})
 });

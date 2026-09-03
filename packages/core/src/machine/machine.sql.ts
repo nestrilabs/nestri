@@ -23,8 +23,8 @@ export const MachineTable = pgTable(
 			.references(() => UserTable.id, { onDelete: 'cascade' }),
 		// Every user gets a personal team at signup, so there is always one to
 		// point at and the single-operator case is a team of one rather than a
-		// special case in every query. This was nullable until 0048, which cost
-		// a `teamId ?? ownerUserId` branch at each call site instead.
+		// special case in every query. This was nullable, which cost a
+		// `teamId ?? ownerUserId` branch at each call site instead. ref(d-0048)
 		teamId: ulid('team_id')
 			.notNull()
 			.references(() => TeamTable.id, { onDelete: 'restrict' }),
