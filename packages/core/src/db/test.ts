@@ -18,5 +18,13 @@ export function testDb() {
 				'TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/nestri'
 		);
 	}
-	return postgres(url, { idle_timeout: 30, connect_timeout: 30 });
+	// A small pool per test file, deliberately.
+	//
+	// `postgres` defaults to ten connections, and every test file that calls
+	// this opens its own pool alongside the one `Database.use` opens — so at a
+	// dozen files the suite asks for more connections than Postgres will give
+	// and fails with *"sorry, too many clients already"*, in whichever file
+	// happens to run last. Two is plenty: these are sequential fixtures and
+	// assertions, not a load test.
+	return postgres(url, { max: 2, idle_timeout: 5, connect_timeout: 30 });
 }

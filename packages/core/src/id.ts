@@ -12,6 +12,8 @@ export namespace Identifier {
 		userFingerprint: 'ufp',
 		pairingCode: 'pai',
 		machine: 'mch',
+		box: 'box',
+		session: 'ses',
 		accessToken: 'pat',
 		game: 'gam',
 		userLibrary: 'ulb',

@@ -29,8 +29,22 @@ export namespace Database {
 		}
 	}
 
-	export function client() {
-		const url = Env.get().DATABASE_URL || process.env.DATABASE_URL;
+	/**
+	 * One pool per connection string, kept.
+	 *
+	 * This used to build a fresh `postgres()` pool on **every call**, and
+	 * {@link use} calls it twice per invocation — so a process doing real work
+	 * accumulated pools of ten connections each, holding them for the 30 second
+	 * idle timeout. In a Worker each request is short-lived and it never showed;
+	 * the test suite crossed 100 connections and Postgres answered *"sorry, too
+	 * many clients already"* in whichever file happened to run last, which
+	 * looked like a flaky test rather than a leak.
+	 *
+	 * Keyed by URL rather than memoized once, because `Env.init` can point at a
+	 * different database within one process and a cached client for the previous
+	 * one would silently keep being used.
+	 */
+	function connect(url: string | undefined) {
 		const c = url
 			? postgres(url, { idle_timeout: 30, connect_timeout: 30 })
 			: postgres({
@@ -43,6 +57,28 @@ export namespace Database {
 					port: 5432
 				});
 		return drizzle({ client: c });
+	}
+
+	// Typed from `connect` rather than from `drizzle` directly: spelling it
+	// `ReturnType<typeof drizzle>` widens the schema parameter to its default,
+	// which makes `Transaction` and the plain client incompatible halves of
+	// `TxOrDb` and breaks every caller.
+	type Client = ReturnType<typeof connect>;
+
+	const clients = new Map<string, Client>();
+
+	export function client(): Client {
+		const url = Env.get().DATABASE_URL || process.env.DATABASE_URL;
+		const key = url ?? 'local:nestri';
+
+		const cached = clients.get(key);
+		if (cached) {
+			return cached;
+		}
+
+		const db = connect(url);
+		clients.set(key, db);
+		return db;
 	}
 
 	export type Transaction = PgTransaction<
@@ -65,12 +101,14 @@ export namespace Database {
 		} catch (err) {
 			if (err instanceof Context.NotFound) {
 				const effects: (() => void | Promise<void>)[] = [];
+				// One client, used for both. These were two separate `client()`
+				// calls, so the handle in the context was not the handle the
+				// callback ran on — harmless by luck, since neither was a real
+				// transaction, and twice the pools either way.
+				const db = client();
 				const result = await TransactionContext.provide(
-					{
-						effects,
-						tx: client()
-					},
-					() => callback(client())
+					{ effects, tx: db },
+					() => callback(db)
 				);
 				await Promise.all(effects.map((x) => x()));
 				return result;

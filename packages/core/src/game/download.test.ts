@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 
+import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
 import { Game } from '../game/index.js';
 import { Identifier } from '../id.js';
@@ -7,10 +8,19 @@ import { GameDownload } from './download.js';
 
 const sql = testDb();
 
-const HOST_A = 'hst_aaaaaaaaaaaaaaaaaaaaaaaaa';
-const HOST_B = 'hst_bbbbbbbbbbbbbbbbbbbbbbbbb';
+/**
+ * Real registered hosts, not `hst_…` strings.
+ *
+ * These were literals until 0048 made `host_id` a foreign key. The old values
+ * were the bug the key exists to prevent — a download row attributed to a host
+ * that had never registered — so the test that used them was asserting against
+ * a state the database now refuses.
+ */
+let HOST_A: string;
+let HOST_B: string;
 
 const createdGameIds: string[] = [];
+const createdUserIds: string[] = [];
 const gameIdByApp = new Map<number, string>();
 
 async function ensureGame(steamAppId: number): Promise<string> {
@@ -29,6 +39,11 @@ async function ensureGame(steamAppId: number): Promise<string> {
 }
 
 beforeAll(async () => {
+	const owner = await Fixtures.owner('download-host-owner');
+	createdUserIds.push(owner.userId);
+	HOST_A = await Fixtures.machine(owner, 'download-host-a');
+	HOST_B = await Fixtures.machine(owner, 'download-host-b');
+
 	await ensureGame(4400);
 	await ensureGame(4401);
 	await ensureGame(4402);
@@ -39,6 +54,11 @@ afterAll(async () => {
 		// Deleting the games cascades to their game_download rows.
 		await sql`delete from "game" where id in ${sql(createdGameIds)}`;
 		createdGameIds.length = 0;
+	}
+	if (createdUserIds.length > 0) {
+		// And the user cascades to the machines those rows pointed at.
+		await sql`delete from "user" where id in ${sql(createdUserIds)}`;
+		createdUserIds.length = 0;
 	}
 });
 

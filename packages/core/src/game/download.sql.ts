@@ -1,6 +1,7 @@
 import { bigint, index, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { id, timestamps, ulid, utc } from '../db/types.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { GameTable } from './game.sql.js';
 
 export const GameDownloadStatus = pgEnum('game_download_status', [
@@ -16,7 +17,12 @@ export const GameDownloadTable = pgTable(
 	{
 		...id,
 		...timestamps,
-		hostId: text('host_id').notNull(),
+		// A foreign key since 0048. It was a bare `text` column — the one place a
+		// host was referred to by a string nothing checked — so a typo produced
+		// a download row belonging to a machine that had never existed.
+		hostId: ulid('host_id')
+			.notNull()
+			.references(() => MachineTable.id, { onDelete: 'cascade' }),
 		gameId: ulid('game_id')
 			.notNull()
 			.references(() => GameTable.id, { onDelete: 'cascade' }),

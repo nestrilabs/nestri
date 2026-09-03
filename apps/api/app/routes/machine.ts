@@ -4,6 +4,7 @@ import { Examples } from '@nestri/core/examples';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
 import { Member } from '@nestri/core/team/member';
+import { Team } from '@nestri/core/team/index';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { z } from 'zod';
@@ -56,7 +57,8 @@ export namespace MachineApi {
 						example: Examples.Machine.label
 					}),
 					teamId: z.string().optional().meta({
-						description: 'Register the box into a team rather than to the user alone'
+						description:
+							'Team to own this hardware. Defaults to the caller’s personal team, which always exists'
 					})
 				})
 			),
@@ -74,10 +76,37 @@ export namespace MachineApi {
 					);
 				}
 
+				// `machine.teamId` is notNull since 0048, so a team has to be
+				// resolved rather than defaulted to null. The order is: what the
+				// caller asked for, then the team they are acting inside, then
+				// their personal team — which `ensurePersonal` makes if this is a
+				// user who predates 0048 and has none.
+				const owningTeam =
+					teamId ??
+					(actor.type === 'member'
+						? actor.properties.teamID
+						: await Team.ensurePersonal({ displayName: Actor.userID }));
+
+				// A caller naming a team must belong to it. Without this, `teamId`
+				// would be a way to park hardware in somebody else's team.
+				if (teamId) {
+					const membership = await Member.findByTeamAndUser({
+						teamId,
+						userId: Actor.userID
+					});
+					if (!membership) {
+						throw new VisibleError(
+							'forbidden',
+							ErrorCodes.Permission.FORBIDDEN,
+							'You are not a member of that team'
+						);
+					}
+				}
+
 				const registered = await Machine.register({
 					id: Identifier.ascending('machine'),
 					ownerUserId: Actor.userID,
-					teamId: teamId ?? (actor.type === 'member' ? actor.properties.teamID : null),
+					teamId: owningTeam,
 					label
 				});
 
@@ -89,9 +118,9 @@ export namespace MachineApi {
 			notPublic,
 			describeRoute({
 				tags: ['Machine'],
-				summary: 'Move a box into a team, or out of one',
+				summary: 'Move a box to another team',
 				description:
-					'Scope a machine you own to a team you belong to, or pass teamId: null to make it yours alone again. This is not ownership transfer — the owner does not change.',
+					'Move a machine you own to a team you belong to. Hardware always belongs to exactly one team since 0048, so there is no way to unscope — name your personal team instead. This is not ownership transfer: the owner does not change.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Machine.Info) } },
@@ -105,8 +134,9 @@ export namespace MachineApi {
 			validator(
 				'json',
 				z.object({
-					teamId: z.string().nullable().meta({
-						description: 'Team to scope the box to, or null to scope it to you alone'
+					teamId: z.string().meta({
+						description:
+							'Team to move the box to. There is no “no team” — to unscope, name your personal team'
 					})
 				})
 			),
@@ -125,18 +155,16 @@ export namespace MachineApi {
 				// Verified before the write. `setTeam` scopes to the owner but
 				// knows nothing about who belongs to the target team, so this is
 				// the only place that check exists.
-				if (teamId) {
-					const membership = await Member.findByTeamAndUser({
-						teamId,
-						userId: Actor.userID
-					});
-					if (!membership) {
-						throw new VisibleError(
-							'forbidden',
-							ErrorCodes.Permission.FORBIDDEN,
-							'You are not a member of that team'
-						);
-					}
+				const membership = await Member.findByTeamAndUser({
+					teamId,
+					userId: Actor.userID
+				});
+				if (!membership) {
+					throw new VisibleError(
+						'forbidden',
+						ErrorCodes.Permission.FORBIDDEN,
+						'You are not a member of that team'
+					);
 				}
 
 				const machine = await Machine.setTeam({

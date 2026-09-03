@@ -112,6 +112,44 @@ export namespace Team {
 		});
 	});
 
+	/**
+	 * The team a user owns by virtue of existing.
+	 *
+	 * Defined as the oldest team they own, because {@link createPersonal} is the
+	 * only thing that mints a team at signup — so the first one is the personal
+	 * one and any later ones were made deliberately. This is a convention, not a
+	 * column: adding an `isPersonal` flag would let the two disagree, and there
+	 * is nothing yet that needs them to.
+	 */
+	export const personalFor = fn(Info.shape.ownerId, async (ownerId) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select()
+				.from(TeamTable)
+				.where(and(eq(TeamTable.ownerId, ownerId), isNull(TeamTable.timeDeleted)))
+				.orderBy(TeamTable.timeCreated)
+				.limit(1)
+				.then((rows) => rows.at(0) ?? null);
+		});
+	});
+
+	/**
+	 * The personal team, made if it is not there.
+	 *
+	 * Every user has needed one since [0048](../../../../.nestri/decisions/0048-email-is-the-root-identity-and-a-box-is-a-row.md)
+	 * made `machine.teamId` notNull, so signup calls this and so does anything
+	 * that needs somewhere to put a host. Idempotent, because it runs on every
+	 * login rather than only on the first one — a user created before 0048 has
+	 * no team and gets one the next time they appear.
+	 */
+	export const ensurePersonal = fn(z.object({ displayName: z.string() }), async (input) => {
+		const existing = await personalFor(Actor.userID);
+		if (existing) {
+			return existing.id;
+		}
+		return createPersonal({ displayName: input.displayName });
+	});
+
 	export const createPersonal = fn(z.object({ displayName: z.string() }), async (input) => {
 		const baseSlug = input.displayName
 			.toLowerCase()

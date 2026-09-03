@@ -50,6 +50,13 @@
       "when": 1786205230097,
       "tag": "0006_waitlist_verification_game_aliases",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1788460224524,
+      "tag": "0007_box_session_team_notnull",
+      "breakpoints": true
     }
   ]
 }

@@ -32,8 +32,9 @@ export namespace Machine {
 				description: 'The user who registered this machine',
 				example: Examples.Machine.ownerUserId
 			}),
-			teamId: z.string().optional().nullable().meta({
-				description: 'The team this machine belongs to, when registered inside one',
+			teamId: z.string().meta({
+				description:
+					'The team that owns this hardware. Always set — every user has a personal team',
 				example: Examples.Machine.teamId
 			}),
 			label: z.string().meta({
@@ -89,7 +90,7 @@ export namespace Machine {
 				await tx.insert(MachineTable).values({
 					id: input.id,
 					ownerUserId: input.ownerUserId,
-					teamId: input.teamId ?? null,
+					teamId: input.teamId,
 					label: input.label,
 					secretHash: await hashSecret(secret),
 					lastSeen: null
@@ -130,7 +131,13 @@ export namespace Machine {
 	);
 
 	/**
-	 * Move a box into a team, or back out of one with `teamId: null`.
+	 * Move a host to a different team.
+	 *
+	 * There is no "out of a team" any more: `teamId` is notNull since
+	 * [0048](../../../../.nestri/decisions/0048-email-is-the-root-identity-and-a-box-is-a-row.md),
+	 * so a host always belongs to exactly one, and the single-operator case is a
+	 * team of one rather than a null. What used to be *unscope* is now *move to
+	 * my personal team*, which the caller names explicitly.
 	 *
 	 * Scoped to the owner in the query itself, so a machine belonging to
 	 * someone else is a miss rather than a permission check that could be
@@ -147,7 +154,7 @@ export namespace Machine {
 			return Database.use(async (tx) => {
 				return tx
 					.update(MachineTable)
-					.set({ teamId: input.teamId ?? null })
+					.set({ teamId: input.teamId })
 					.where(
 						and(
 							eq(MachineTable.id, input.id),

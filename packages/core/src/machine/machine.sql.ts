@@ -1,6 +1,7 @@
 import { index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { id, timestamps, ulid, utc } from '../db/types.js';
+import { TeamTable } from '../team/team.sql.js';
 import { UserTable } from '../user/user.sql.js';
 
 /**
@@ -20,10 +21,13 @@ export const MachineTable = pgTable(
 		ownerUserId: ulid('owner_user_id')
 			.notNull()
 			.references(() => UserTable.id, { onDelete: 'cascade' }),
-		// Set only when the box was registered by someone acting inside a team.
-		// A personal box has no team, and requiring one would make registering
-		// impossible for the single-operator case that self-hosting is.
-		teamId: ulid('team_id'),
+		// Every user gets a personal team at signup, so there is always one to
+		// point at and the single-operator case is a team of one rather than a
+		// special case in every query. This was nullable until 0048, which cost
+		// a `teamId ?? ownerUserId` branch at each call site instead.
+		teamId: ulid('team_id')
+			.notNull()
+			.references(() => TeamTable.id, { onDelete: 'restrict' }),
 		label: text('label').notNull(),
 		// The secret itself is returned exactly once, at registration, and never
 		// stored: a leaked database must not yield working box credentials.

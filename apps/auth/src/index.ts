@@ -6,8 +6,10 @@ import { CloudflareStorage } from '@nestri/auth/storage/cloudflare';
 import { subjects } from '@nestri/core/auth/subjects';
 import { Database } from '@nestri/core/db/index';
 import { Env } from '@nestri/core/env';
+import { Actor } from '@nestri/core/actor';
 import { Identifier } from '@nestri/core/id';
 import { Steam } from '@nestri/core/steam/index';
+import { Team } from '@nestri/core/team/index';
 import { User } from '@nestri/core/user/index';
 import { LinkedAccount } from '@nestri/core/user/linked-account';
 
@@ -81,6 +83,19 @@ export default {
 						return { userID: newUserID, linkedAccountID: newLinkedAccountID };
 					});
 
+					// Every user needs a personal team, because `machine.teamId` is
+					// notNull since 0048 and registering a host has nowhere to put
+					// it otherwise. `packages/core/CLAUDE.md` documented this call
+					// as part of the login flow and it was never actually made, so
+					// no user in the database has one.
+					//
+					// Run on every login rather than only on creation: that is what
+					// backfills the accounts made before this existed, and
+					// `ensurePersonal` is idempotent precisely so it can be.
+					await Actor.with({ type: 'user', properties: { userID, linkedAccountID } }, () =>
+						Team.ensurePersonal({ displayName: personaname })
+					);
+
 					return context.subject('user', {
 						userID,
 						linkedAccountID
@@ -95,6 +110,16 @@ export default {
 						username,
 						profile
 					});
+
+					// Same reason as the Steam branch above. The SSH path creates
+					// users too, so leaving it out would give a host registered
+					// from `nessh` nowhere to live.
+					await Actor.with({ type: 'user', properties: { userID, linkedAccountID } }, () =>
+						// `username` is optional on the SSH path — a key can arrive
+						// before a persona does. The slug only has to be derivable,
+						// not pretty, and a rename is a later problem.
+						Team.ensurePersonal({ displayName: username ?? 'Player' })
+					);
 
 					return context.subject('user', {
 						userID,

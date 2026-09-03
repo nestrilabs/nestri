@@ -123,9 +123,32 @@ export namespace Examples {
 	export const Machine = {
 		id: Id('machine'),
 		ownerUserId: Id('user'),
-		teamId: null,
+		teamId: Id('team'),
 		label: 'living-room-box',
 		lastSeen: '2026-07-28T12:00:00.000Z'
+	};
+
+	export const Box = {
+		id: Id('box'),
+		userId: Id('user'),
+		machineId: Id('machine'),
+		label: 'living room',
+		tier: 'sm' as const,
+		state: 'created' as const,
+		stopReason: null,
+		stopClean: null
+	};
+
+	export const Session = {
+		id: Id('session'),
+		boxId: Id('box'),
+		gameId: Id('game'),
+		linkedAccountId: Id('linkedAccount'),
+		state: 'live' as const,
+		ticket: 'nodeaaqf…',
+		timeStarted: '2026-07-28T12:00:00.000Z',
+		timeStopped: null,
+		errorMessage: null
 	};
 
 	export const GameDownload = {

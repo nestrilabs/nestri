@@ -378,16 +378,18 @@ describe('Box access', () => {
 		const res = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
 			headers: { ...adminHeaders(), 'content-type': 'application/json' },
-			body: JSON.stringify({ teamId: null })
+			body: JSON.stringify({ teamId: 'tem_whatever' })
 		});
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as any;
 		expect(body.message).toContain('user session');
 	});
 
-	test('teamId is required on the body, and may be null', async () => {
-		// Null is "make it mine alone" — a different thing from omitting the
-		// field, which would leave the scope ambiguous.
+	test('teamId is required on the body, and null is no longer a value', async () => {
+		// Null used to mean "make it mine alone". Since 0048 made
+		// `machine.teamId` notNull there is no such state — hardware belongs to
+		// exactly one team and the personal team is the one to name — so null is
+		// now a validation error rather than a meaning.
 		const missing = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
 			headers: { ...adminHeaders(), 'content-type': 'application/json' },
@@ -400,8 +402,15 @@ describe('Box access', () => {
 			headers: { ...adminHeaders(), 'content-type': 'application/json' },
 			body: JSON.stringify({ teamId: null })
 		});
+		expect(explicitNull.status).toBe(400);
+
+		const named = await app.request('/machine/mch_whatever', {
+			method: 'PATCH',
+			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			body: JSON.stringify({ teamId: 'tem_whatever' })
+		});
 		// Past validation, refused at the handler for being admin.
-		expect(explicitNull.status).toBe(403);
+		expect(named.status).toBe(403);
 	});
 
 	test('entitlement requires machine credentials, not a user session', async () => {
