@@ -530,3 +530,111 @@ describe('Session tickets and the end of a run', () => {
 		expect(ended?.ticket).toBeNull();
 	});
 });
+
+describe('Session and the box underneath it', () => {
+	test('a live run is what makes its box running', async () => {
+		const { machineId, box, session } = await requestedRun('ses-box-live', 5460);
+		// A box starts out `created` and nothing had ever moved it, so it read
+		// `created` while a run on it was `live`.
+		expect((await Box.fromID(box.id))?.state).toBe('created');
+
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		// `starting` is deliberately not a box state: that transition is
+		// synchronous from the agent's side, so nothing would ever write it.
+		expect((await Box.fromID(box.id))?.state).toBe('created');
+
+		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		const running = await Box.fromID(box.id);
+		expect(running?.state).toBe('running');
+		expect(running?.stopReason).toBeNull();
+		expect(running?.stopClean).toBeNull();
+	});
+
+	test('a run that ends stops its box, cleanly', async () => {
+		const { machineId, box, session } = await requestedRun('ses-box-ended', 5461);
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'ended', errorMessage: null });
+
+		const stopped = await Box.fromID(box.id);
+		expect(stopped?.state).toBe('stopped');
+		expect(stopped?.stopClean).toBe(true);
+		expect(stopped?.stopReason).toBeNull();
+	});
+
+	test('a run that fails stops its box in the words the agent used', async () => {
+		const { machineId, box, session } = await requestedRun('ses-box-failed', 5462);
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'failed',
+			errorMessage: 'the guest never came up'
+		});
+
+		const stopped = await Box.fromID(box.id);
+		expect(stopped?.state).toBe('stopped');
+		// "It is not running" and "it faulted" are different facts, and the
+		// difference lives in the reason rather than in a fourth state.
+		expect(stopped?.stopClean).toBe(false);
+		expect(stopped?.stopReason).toBe('the guest never came up');
+	});
+
+	test('a refused report leaves the box alone', async () => {
+		const { machineId, box, session } = await requestedRun('ses-box-untouched', 5463);
+		const other = await scene('ses-box-otherhost', 5464);
+
+		const refused = await Session.transition({
+			id: session.id,
+			machineId: other.machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(refused.outcome).toBe('forbidden');
+
+		// An illegal transition does not move the run, so it must not move the
+		// box either — otherwise the box records a run that never happened.
+		const illegal = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		expect(illegal.outcome).toBe('illegal');
+		expect((await Box.fromID(box.id))?.state).toBe('created');
+	});
+});
+
+describe('Session tickets need a claim first', () => {
+	test('a run nobody has claimed has no address to publish', async () => {
+		const { machineId, session } = await requestedRun('ses-ticket-unclaimed', 5465);
+
+		// A ticket is the address of something being brought up, so publishing
+		// one for a `requested` run means the agent skipped the claim — the
+		// step that is the only mutual exclusion in the design.
+		const early = await Session.publishTicket({ id: session.id, machineId, ticket: 'too-soon' });
+		expect(early.outcome).toBe('unclaimed');
+		expect((await Session.fromID(session.id))?.ticket).toBeNull();
+
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		const now = await Session.publishTicket({ id: session.id, machineId, ticket: 'in-time' });
+		expect(now.outcome).toBe('published');
+		expect(now.session?.ticket).toBe('in-time');
+	});
+
+	test('the two refusals are different answers, because they are different mistakes', async () => {
+		const { machineId, session } = await requestedRun('ses-ticket-refusals', 5466);
+		const unclaimed = await Session.publishTicket({ id: session.id, machineId, ticket: 'a' });
+
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'ended', errorMessage: null });
+		const closed = await Session.publishTicket({ id: session.id, machineId, ticket: 'b' });
+
+		// One is an agent that has not claimed the work; the other is a run
+		// with nothing left to reach. Collapsing them would tell an agent
+		// retrying the wrong thing.
+		expect(unclaimed.outcome).toBe('unclaimed');
+		expect(closed.outcome).toBe('closed');
+	});
+});

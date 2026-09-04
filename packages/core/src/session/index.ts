@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { BoxTable, BoxTier } from '../box/box.sql.js';
+import { Box } from '../box/index.js';
 import { Database } from '../db/index.js';
 import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
@@ -497,6 +498,39 @@ export namespace Session {
 		session: Info | null;
 	}
 
+	/**
+	 * What a run reaching a state means for the box underneath it.
+	 *
+	 * The box has its own three states and nothing was writing them, so a box
+	 * read `created` while a run on it was `live` — the screens that show a
+	 * person what their hardware is doing would all have been wrong. The two
+	 * state machines are not the same shape and should not be: a box has no
+	 * `starting`, deliberately, because that transition is synchronous from
+	 * the agent's side and a state nobody sets is a state that lies. So only
+	 * the states that mean something to the box are mapped, and `requested`
+	 * and `starting` map to nothing at all.
+	 *
+	 * `failed` is a `stopped` box that did not stop cleanly, which is the
+	 * distinction `stopClean` exists for: "it is not running" and "it faulted"
+	 * are different facts and the difference lives in the reason.
+	 */
+	function boxStateFor(
+		run: Info
+	): { state: 'running' | 'stopped'; stopReason: string | null; stopClean: boolean | null } | null {
+		switch (run.state) {
+			case 'live':
+				return { state: 'running', stopReason: null, stopClean: null };
+			case 'ended':
+				return { state: 'stopped', stopReason: null, stopClean: true };
+			case 'failed':
+				// The run's own reason, so a box explains its stop in the words
+				// the agent used rather than in a second wording of one event.
+				return { state: 'stopped', stopReason: run.errorMessage ?? null, stopClean: false };
+			default:
+				return null;
+		}
+	}
+
 	export const transition = fn(
 		z.object({
 			id: Info.shape.id,
@@ -505,40 +539,66 @@ export namespace Session {
 			errorMessage: Info.shape.errorMessage
 		}),
 		async (input): Promise<TransitionResult> => {
-			const current = await forMachine({ id: input.id, machineId: input.machineId });
-			if (!current) return { outcome: 'forbidden', session: null };
-			if (current.state === input.state) return { outcome: 'unchanged', session: current };
-			if (!NEXT_STATES[current.state].includes(input.state)) {
-				return { outcome: 'illegal', session: current };
-			}
+			// One transaction, because "this run is live" and "the box under it
+			// is running" are one fact written to two tables. Committing the
+			// first without the second is how a box gets stuck `running` with
+			// nothing running on it, and nothing here would ever correct it.
+			return Database.transaction(async (): Promise<TransitionResult> => {
+				const current = await forMachine({ id: input.id, machineId: input.machineId });
+				if (!current) return { outcome: 'forbidden', session: null };
+				if (current.state === input.state) return { outcome: 'unchanged', session: current };
+				if (!NEXT_STATES[current.state].includes(input.state)) {
+					return { outcome: 'illegal', session: current };
+				}
 
-			const moved = await compareAndSetState({
-				id: input.id,
-				machineId: input.machineId,
-				from: current.state,
-				to: input.state,
-				errorMessage: input.errorMessage
+				const moved = await compareAndSetState({
+					id: input.id,
+					machineId: input.machineId,
+					from: current.state,
+					to: input.state,
+					errorMessage: input.errorMessage
+				});
+				// The state read above is not the state written below, and the
+				// gap is where two agents race. Nothing moved means somebody
+				// else did — and then the box is that caller's to update, not
+				// this one's.
+				if (!moved) return { outcome: 'lost', session: current };
+
+				const box = boxStateFor(moved);
+				if (box) {
+					await Box.setState({ id: moved.boxId, ...box });
+				}
+
+				return { outcome: 'moved', session: moved };
 			});
-			// The state read above is not the state written below, and the gap
-			// is where two agents race. Nothing moved means somebody else did.
-			if (!moved) return { outcome: 'lost', session: current };
-			return { outcome: 'moved', session: moved };
 		}
 	);
 
 	export interface TicketResult {
-		outcome: 'forbidden' | 'closed' | 'published';
+		outcome: 'forbidden' | 'unclaimed' | 'closed' | 'published';
 		session: Info | null;
 	}
+
+	/**
+	 * The states a run can have an address in.
+	 *
+	 * `starting` is in and `requested` is out, which is the whole distinction:
+	 * a ticket is the address of something being brought up, so publishing one
+	 * means the host has taken the work. It cannot have an address for a run it
+	 * has not claimed, and the terminal states are out because a run that is
+	 * not there has no address at all.
+	 */
+	const ADDRESSABLE = ['starting', 'live'] as const;
 
 	/**
 	 * Publish a ticket for a run, on behalf of the host it is placed on.
 	 *
 	 * A ticket may appear while the state is still `starting` — it is
 	 * republished as addresses are discovered, so the client polls and re-reads
-	 * rather than keeping the first one. A run that has stopped is refused: an
-	 * address for something that is not there can only mislead whoever is
-	 * still polling.
+	 * rather than keeping the first one. Outside {@link ADDRESSABLE} it is
+	 * refused, and the two refusals are separate answers because they are
+	 * different mistakes: a run not yet claimed is an agent that skipped a
+	 * step, and a run that stopped is one that has nothing left to reach.
 	 */
 	export const publishTicket = fn(
 		z.object({
@@ -549,6 +609,7 @@ export namespace Session {
 		async (input): Promise<TicketResult> => {
 			const current = await forMachine({ id: input.id, machineId: input.machineId });
 			if (!current) return { outcome: 'forbidden', session: null };
+			if (current.state === 'requested') return { outcome: 'unclaimed', session: current };
 
 			return Database.use(async (tx) => {
 				return tx
@@ -557,7 +618,10 @@ export namespace Session {
 					.where(
 						and(
 							eq(SessionTable.id, input.id),
-							notInArray(SessionTable.state, ['ended', 'failed']),
+							// The state is in the write and not only in the check
+							// above it, so a run that stops underneath this call
+							// does not acquire an address on the way out.
+							inArray(SessionTable.state, [...ADDRESSABLE]),
 							isNull(SessionTable.timeDeleted),
 							inArray(SessionTable.boxId, boxesOn(tx, input.machineId))
 						)

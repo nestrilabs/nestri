@@ -15,8 +15,14 @@
 --
 -- `ended` and not `failed`: nothing about these runs failed. They were work
 -- nobody picked up, and `failed` carries a reason there is none of.
+--
+-- The ticket goes with the state, exactly as the terminal transitions in
+-- `Session` do it. A duplicate that reached `starting` or `live` may have
+-- published an address, and a stopped run that still answers with one is an
+-- address a polling client would dial — with publishing a replacement already
+-- refused, it would also be the last word.
 UPDATE "session" s
-SET "state" = 'ended', "time_stopped" = now()
+SET "state" = 'ended', "time_stopped" = now(), "ticket" = NULL
 WHERE s."time_stopped" IS NULL
 	AND s."time_deleted" IS NULL
 	AND EXISTS (

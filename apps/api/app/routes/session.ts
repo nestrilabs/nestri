@@ -5,6 +5,7 @@ import { Examples } from '@nestri/core/examples';
 import { Game } from '@nestri/core/game/index';
 import { Identifier } from '@nestri/core/id';
 import { Session } from '@nestri/core/session/index';
+import { Library } from '@nestri/core/user/library';
 import { LinkedAccount } from '@nestri/core/user/linked-account';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -133,6 +134,27 @@ export namespace SessionApi {
 						'not_found',
 						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
 						'No such game'
+					);
+				}
+
+				// A run launches as a Steam account that has to own the game, so
+				// a game outside the caller's library is a box that starts, tries
+				// to launch, and fails minutes later with nothing to point at.
+				// Refusing here is the same answer sooner.
+				//
+				// Told apart from a game that does not exist rather than hidden:
+				// the catalog is public, so there is nothing to hide, and "you do
+				// not own this" is the sentence a person can act on.
+				//
+				// The library is a synced copy, so this refuses a game bought
+				// since the last sync. That is a staleness bug in the sync and
+				// not a reason to launch runs that cannot work.
+				const owned = await Library.findByUserAndGame({ userId, gameId: game.id });
+				if (!owned) {
+					throw new VisibleError(
+						'forbidden',
+						ErrorCodes.Permission.FORBIDDEN,
+						'That game is not in your library'
 					);
 				}
 
@@ -274,7 +296,7 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'Publish the address a client should connect to',
 				description:
-					'For the host the run’s box is placed on, and no other. Republish freely: a later ticket is a better address for the same run, not a second run, and the address changes as more of them are discovered. A run that has stopped has no address, so that is 409.',
+					'For the host the run’s box is placed on, and no other. Republish freely: a later ticket is a better address for the same run, not a second run, and the address changes as more of them are discovered. Only a run being brought up has an address: claim it by reporting `starting` first, and expect 409 both before that and once it has stopped.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Session.Info) } },
@@ -307,6 +329,8 @@ export namespace SessionApi {
 				switch (result.outcome) {
 					case 'forbidden':
 						notYours();
+					case 'unclaimed':
+						conflict('Claim this run by reporting `starting` before publishing an address');
 					case 'closed':
 						conflict('That run has stopped, so it has no address to publish');
 					default:

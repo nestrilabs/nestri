@@ -8,6 +8,7 @@ import { Game } from '@nestri/core/game/index';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
 import { Session } from '@nestri/core/session/index';
+import { Library } from '@nestri/core/user/library';
 
 import { app } from '../app/index';
 import './setup';
@@ -64,11 +65,24 @@ async function scene(label: string, steamAppId: number) {
 		name: label
 	});
 
+	const gameId = await newGame(steamAppId);
+	// A run launches as a Steam account that owns the game, so the endpoint
+	// refuses one outside the caller's library. Every scene here is about
+	// something else, so the game is stocked.
+	await Library.upsert({
+		id: Identifier.ascending('userLibrary'),
+		userId: owner.userId,
+		gameId,
+		playtime2w: null,
+		playtimeForever: null,
+		lastPlayed: null
+	});
+
 	return {
 		owner,
 		box,
 		machineId: registered.id,
-		gameId: await newGame(steamAppId),
+		gameId,
 		user: {
 			authorization: `Bearer ${pat.token}`,
 			'content-type': 'application/json'
@@ -228,6 +242,27 @@ describe('POST /session', () => {
 			})
 		});
 		expect(res.status).toBe(403);
+	});
+
+	test('you can only run a game you own', async () => {
+		const s = await scene('route-unowned', 5560);
+		// A real game in the catalog, simply not in this person's library.
+		const unowned = await newGame(5561);
+
+		const res = await app.request('/session', {
+			method: 'POST',
+			headers: s.user,
+			body: JSON.stringify({
+				boxId: s.box.id,
+				gameId: unowned,
+				linkedAccountId: s.owner.linkedAccountId
+			})
+		});
+		// Told apart from a game that does not exist, deliberately: the catalog
+		// is public, so there is nothing to hide, and a box that starts and
+		// then cannot launch is a worse answer minutes later.
+		expect(res.status).toBe(403);
+		expect(await Session.listByBox(s.box.id)).toHaveLength(0);
 	});
 
 	test('an unknown game is a 404 and not a foreign key crash', async () => {
@@ -526,6 +561,33 @@ describe('POST /session/:id/ticket', () => {
 		expect(await Session.listByBox(s.box.id)).toHaveLength(1);
 	});
 
+	test('a run nobody has claimed has no address to publish', async () => {
+		const s = await scene('route-ticket-early', 5546);
+		const { body } = await requestSession(s);
+
+		const early = await app.request(`/session/${body.data.id}/ticket`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ ticket: 'nodeaaa-too-soon' })
+		});
+		// Publishing before reporting `starting` means the agent skipped the
+		// claim, which is the only mutual exclusion in the design.
+		expect(early.status).toBe(409);
+		expect((await Session.fromID(body.data.id))?.ticket).toBeNull();
+
+		await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting' })
+		});
+		const now = await app.request(`/session/${body.data.id}/ticket`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ ticket: 'nodeaaa-in-time' })
+		});
+		expect(now.status).toBe(200);
+	});
+
 	test('a different host cannot publish an address for someone else’s run', async () => {
 		const mine = await scene('route-ticket-mine', 5541);
 		const theirs = await scene('route-ticket-theirs', 5542);
@@ -600,6 +662,33 @@ describe('POST /session/:id/ticket', () => {
 			body: JSON.stringify({ ticket: '' })
 		});
 		expect(res.status).toBe(400);
+	});
+});
+
+describe('The box a run happens on', () => {
+	test('the endpoints move the box, not just the run', async () => {
+		const s = await scene('route-box-state', 5550);
+		const { body } = await requestSession(s);
+		const report = (state: string, errorMessage?: string) =>
+			app.request(`/session/${body.data.id}/state`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ state, errorMessage })
+			});
+
+		expect((await Box.fromID(s.box.id))?.state).toBe('created');
+
+		await report('starting');
+		await report('live');
+		// The screens that tell a person what their hardware is doing read the
+		// box, so a live run has to be visible there and not only on the run.
+		expect((await Box.fromID(s.box.id))?.state).toBe('running');
+
+		await report('failed', 'the guest never came up');
+		const stopped = await Box.fromID(s.box.id);
+		expect(stopped?.state).toBe('stopped');
+		expect(stopped?.stopClean).toBe(false);
+		expect(stopped?.stopReason).toBe('the guest never came up');
 	});
 });
 
