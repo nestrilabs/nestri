@@ -16,9 +16,17 @@
 //!
 //! # What actually reaches a game
 //!
-//! Both paths are live, and both carry 10-bit and FP16. Verified on RDNA4
-//! against created swapchains rather than against the format list, because a
-//! format being offered and a format being usable are different claims.
+//! Both paths carry 10-bit and FP16 now, but they are not equally available and
+//! only one of them is usable end to end. In short:
+//!
+//! - Path 1 works here with no external dependency, and captures correctly.
+//! - Path 2 works only with a WSI layer we do not ship, and what it captures is
+//!   currently mislabelled. It is also the path Proton titles take.
+//!
+//! Both were verified on RDNA4 against created swapchains rather than against
+//! the format list, because a format being offered and a format being usable
+//! are different claims. Details below; do not read "carries 10-bit" as
+//! "HDR works".
 //!
 //! Path 1 goes through Mesa. It pairs the colour spaces it learns from
 //! `wp_color_management_v1` with the pixel formats it derives from our
@@ -62,14 +70,27 @@
 //! gamescope installed path 2 comes up with no further work. On a host without
 //! it, path 1 still carries HDR10 over the colour-management protocol.
 //!
-//! # Untested: everything past the swapchain
+//! # Past the swapchain: path 1 correct, path 2 mislabelled
 //!
-//! What is verified is that a client can obtain an HDR swapchain and that the
-//! colour space arrives here. No game has run, and no 10-bit or FP16 buffer has
-//! been through capture and encode -- every pixel-level check so far, including
-//! the HDR one, used 8-bit input. A wrong branch there would look like the
-//! failure this whole area keeps producing: a valid stream at the right frame
-//! rate, carrying wrong colour, with nothing reporting an error.
+//! Measured with a 10-bit client, which is what makes this worth stating rather
+//! than assuming. On path 1 the whole chain is right -- a request for
+//! `A2B10G10R10` + `HDR10_ST2084` comes out `yuv420p10le`, full range,
+//! `bt2020nc` / `smpte2084` / `bt2020`.
+//!
+//! On path 2 it is not. The layer rewrites `imageColorSpace` to
+//! `SRGB_NONLINEAR` before the driver sees it -- deliberately, that is how the
+//! design keeps HDR away from the driver -- and the capture layer sits below it
+//! and reads the rewrite. The result is ten-bit PQ samples encoded and tagged
+//! BT.709 SDR: a stream at full frame rate that decodes cleanly and is wrong.
+//! Recorded where the value is read, in the capture layer's swapchain hook.
+//!
+//! The colour space this module tracks is the one that would fix it, since we
+//! receive the real value over path 2 and the game's process cannot. What is
+//! missing is a channel from here to there; `color_space()` below is
+//! in-process, and the capture layer runs in the game.
+//!
+//! Still untested: no game has run, and the scRGB/FP16 arm has had no pixels
+//! through it -- only the HDR10 one.
 //!
 //! # FIXME: HDR is XWayland-only, and the reason is a connection, not a design
 //!

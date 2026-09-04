@@ -13,16 +13,27 @@
 # here and a fail there means we converted wrongly; a fail here means the game
 # never had the option and anything downstream is moot.
 #
-# Two states are worth distinguishing, so there are two modes:
+# The two surfaces a client can be on need separate answers, so there are two
+# modes:
 #
-#   (default)       Baseline. What works today: 8-bit BGRA carrying
-#                   HDR10_ST2084 via Mesa's wp_color_manager_v1 path. Fails if
-#                   we regress that.
+#   (default)       The native Wayland surface, which is what the compositor
+#                   itself controls. Guards both halves of it: the colour spaces
+#                   from wp_color_manager_v1, and the 10-bit and FP16 pixel
+#                   formats from the dmabuf list. Each is silently absent when
+#                   broken, and the colour space alone is what made an 8-bit
+#                   surface look like working HDR.
 #
-#   --expect-layer  Target. The three formats a WSI layer must inject before a
-#                   Proton HDR title can pick one. Expected to fail until that
-#                   layer exists; this is the regression target for that work,
-#                   not a bug report.
+#   --expect-layer  The XCB surface, which is where a Proton title presents.
+#                   Mesa offers no HDR colour space there at all, so the three
+#                   HDR pairs can only come from a WSI layer inside the game's
+#                   process. Passes with one loaded and fails without, e.g.
+#
+#                     VK_ADD_IMPLICIT_LAYER_PATH=<dir> \
+#                       apps/nescope/scripts/verify-hdr-formats.sh --expect-layer
+#
+#                   nescope ships no such layer; gamescope's drives this
+#                   compositor unmodified. A failure here means no layer was
+#                   loaded, not that the formats are missing.
 #
 # Usage: apps/nescope/scripts/verify-hdr-formats.sh [--expect-layer]
 set -euo pipefail
