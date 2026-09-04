@@ -13,6 +13,63 @@
 //! nescope never performs color conversion itself — it just tracks which color
 //! space the active surface has declared so that an external capture library
 //! (e.g. the Vulkan vkcapture layer) can retrieve it via the public API.
+//!
+//! # What actually reaches a game today
+//!
+//! Only path 1 is live, and it is 8-bit. Mesa's `wsi_wl` pairs color spaces
+//! with the pixel formats it derives from our `zwp_linux_dmabuf_v1` list, and
+//! that list carries no 10-bit or FP16 entry that it will accept — so a surface
+//! here offers `HDR10_ST2084_EXT` over `B8G8R8A8` and nothing else. PQ at 8
+//! bits bands. `EXTENDED_SRGB_LINEAR_EXT` is not offered at all, so a Proton
+//! title on the scRGB path finds no matching format and falls back to SDR.
+//!
+//! Path 2 is the half of the design that works, and we have only built the
+//! receiving end. Both gamescope and moonshine get HDR by *not* negotiating it
+//! with Mesa: a WSI layer in the game's process hooks
+//! `vkGetPhysicalDeviceSurfaceFormatsKHR` and appends three formats Mesa never
+//! offered —
+//!
+//! ```text
+//! A2B10G10R10_UNORM_PACK32 / HDR10_ST2084_EXT
+//! A2R10G10B10_UNORM_PACK32 / HDR10_ST2084_EXT
+//! R16G16B16A16_SFLOAT      / EXTENDED_SRGB_LINEAR_EXT
+//! ```
+//!
+//! — then rewrites `imageColorSpace` to `SRGB_NONLINEAR` before handing the
+//! swapchain to the ICD, and sends the *real* color space to the compositor
+//! over this protocol via `swapchain_feedback`. The driver is never told HDR is
+//! happening. We have no such layer: `nescapture` hooks presents and draws, not
+//! surface formats. Until one exists, path 2 never fires.
+//!
+//! # FIXME: HDR is XWayland-only, and the reason is a connection, not a design
+//!
+//! Add HDR for native Wayland clients. Both reference implementations stop at
+//! the same wall, and it is worth recording *why* so we do not mistake it for
+//! something deep:
+//!
+//! A WSI layer opens its **own** Wayland connection to the compositor in order
+//! to bind the swapchain factory. A native Wayland game's `wl_surface` lives on
+//! the **game's** connection. Wayland object IDs are per-connection, so the
+//! layer cannot pass that surface to a factory object it owns on a different
+//! one. gamescope leaves this as a bare `XXXX FIXME` and hardcodes
+//! `hdrOutput = false` for `vkCreateWaylandSurfaceKHR`; moonshine names the
+//! cause exactly and leaves the swapchain object `None`.
+//!
+//! The fix both of them point at: bind the factory global on the *app's*
+//! `wl_display` instead of a private connection, and the surface becomes
+//! referenceable. That is the work this FIXME is asking for.
+//!
+//! One trap to avoid when we do build the layer. Format injection must be
+//! gated on the surface being one we can actually signal for — not merely on
+//! "the compositor supports HDR". moonshine gates only on the latter, so a
+//! native Wayland game there *is* offered HDR10, picks it, has DXVK PQ-encode
+//! its pixels, and the compositor is never told: PQ samples arriving tagged as
+//! SDR. That is worse than offering no HDR at all, because nothing reports an
+//! error — it is the same class of silent failure as a correct-looking stream
+//! carrying the wrong matrix.
+//!
+//! So, for now: games must run under XWayland to get HDR. `nescapture` needs
+//! `PROTON_ENABLE_WAYLAND` left unset, which is already the Proton default.
 #![allow(unused)]
 use std::collections::HashMap;
 use std::sync::Mutex;
