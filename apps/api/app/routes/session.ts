@@ -137,18 +137,27 @@ export namespace SessionApi {
 					);
 				}
 
-				// A run launches as a Steam account that has to own the game, so
-				// a game outside the caller's library is a box that starts, tries
-				// to launch, and fails minutes later with nothing to point at.
-				// Refusing here is the same answer sooner.
+				// A game nobody has synced for this person is a box that starts,
+				// tries to launch and fails minutes later with nothing to point
+				// at. Refusing here is the same answer sooner.
 				//
 				// Told apart from a game that does not exist rather than hidden:
 				// the catalog is public, so there is nothing to hide, and "you do
-				// not own this" is the sentence a person can act on.
+				// not own this" is a sentence a person can act on.
 				//
-				// The library is a synced copy, so this refuses a game bought
-				// since the last sync. That is a staleness bug in the sync and
-				// not a reason to launch runs that cannot work.
+				// **This is a weaker check than the one that matters.** A run
+				// launches as one account, but a library entry records only the
+				// person, so what is verified is "somebody this person has linked
+				// owns it" and not "the account playing owns it". For the one
+				// linked account most people have those are the same sentence;
+				// for two they are not, and the second account can ask for a game
+				// only the first owns. Answering the real question needs the
+				// account recorded on the library entry, which is a decision
+				// about what a library *is* and not something to infer here.
+				//
+				// The library is also a synced copy, so this refuses a game
+				// bought since the last sync. Both gaps let a launch fail late;
+				// neither is a reason to start runs already known to fail.
 				const owned = await Library.findByUserAndGame({ userId, gameId: game.id });
 				if (!owned) {
 					throw new VisibleError(

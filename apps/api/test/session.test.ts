@@ -9,6 +9,7 @@ import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
 import { Session } from '@nestri/core/session/index';
 import { Library } from '@nestri/core/user/library';
+import { LinkedAccount } from '@nestri/core/user/linked-account';
 
 import { app } from '../app/index';
 import './setup';
@@ -263,6 +264,39 @@ describe('POST /session', () => {
 		// then cannot launch is a worse answer minutes later.
 		expect(res.status).toBe(403);
 		expect(await Session.listByBox(s.box.id)).toHaveLength(0);
+	});
+
+	test('the library check is per person, not per account it plays as', async () => {
+		const s = await scene('route-multilink', 5562);
+		// A second Steam account on the same person. The unique index is on
+		// (provider, providerAccountId) and is global rather than per user, so
+		// nothing stops this — but a fixed id here would collide with its own
+		// previous run, hence one shaped like a SteamID64 and unique per run.
+		const second = await LinkedAccount.create({
+			id: Identifier.ascending('linkedAccount'),
+			userId: s.owner.userId,
+			provider: 'steam',
+			providerAccountId: `7656119${Date.now()}`.slice(0, 17),
+			profile: null
+		});
+
+		const res = await app.request('/session', {
+			method: 'POST',
+			headers: s.user,
+			body: JSON.stringify({
+				boxId: s.box.id,
+				gameId: s.gameId,
+				linkedAccountId: second
+			})
+		});
+
+		// Accepted, and this pins a known gap rather than asserting it is
+		// right: a library entry records the person and not the account the
+		// games came from, so "the account playing owns this" cannot be asked.
+		// The run will fail at launch exactly as it did before the check
+		// existed. Closing it means recording the account on the library
+		// entry, which changes what a library is and what the sync must send.
+		expect(res.status).toBe(201);
 	});
 
 	test('an unknown game is a 404 and not a foreign key crash', async () => {
