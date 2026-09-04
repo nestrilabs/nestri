@@ -101,7 +101,13 @@ if len(section) > 1:
             continue
         m = re.match(r"\s*colorSpace\s*=\s*(\S+)", line)
         if m and cur_fmt and path:
-            by_path[path].append((cur_fmt, m.group(1)))
+            # vulkaninfo pads its listing with FORMAT_UNDEFINED entries when a
+            # layer appends to the surface format list. Checked against the API
+            # directly with the two-call pattern -- the count and the entries
+            # agree there, and VK_INCOMPLETE comes back on a short buffer -- so
+            # these are an artifact of the listing, not formats a client sees.
+            if cur_fmt != "FORMAT_UNDEFINED":
+                by_path[path].append((cur_fmt, m.group(1)))
             cur_fmt = None
 
 # A game under XWayland presents through the XCB surface, so that is the list
@@ -137,11 +143,23 @@ if formats:
         # Only what is genuinely working today. The point of this mode is to
         # notice if the colour-management path stops being wired up at all,
         # which would otherwise look identical to plain SDR.
-        wl_spaces = {cs for _, cs in by_path["wayland"]}
+        # Guard both halves of what the compositor itself controls: the colour
+        # spaces, which come from the colour-management protocol, and the pixel
+        # formats, which come from the dmabuf list. Each fails silently on its
+        # own -- a missing format is simply absent, with nothing logged.
+        wl = by_path["wayland"]
+        wl_spaces = {cs for _, cs in wl}
         if not any("ST2084" in s for s in wl_spaces):
             fails.append("HDR10_ST2084_EXT is no longer offered on the Wayland "
                          "surface — the wp_color_manager_v1 path has stopped "
                          "being advertised")
+        if not [f for f, _ in wl if "10" in f and "B8G8R8A8" not in f]:
+            fails.append("no 10-bit pixel format on the Wayland surface — Mesa "
+                         "drops any format lacking either its alpha or its "
+                         "opaque FourCC spelling, so check both are advertised")
+        if not [f for f, _ in wl if "16G16" in f]:
+            fails.append("no FP16 pixel format on the Wayland surface — the "
+                         "scRGB path needs R16G16B16A16_SFLOAT")
     else:
         # The three a WSI layer injects. Until one exists these all fail, and
         # that is the expected reading, not a defect in this script.
