@@ -87,11 +87,30 @@ pub fn vk_colorspace_to_color_space(vk_colorspace: u32) -> ColorSpace {
         | VK_COLOR_SPACE_DOLBYVISION_EXT
         | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpace::Bt2020,
 
+        // Both are linear, so the inverse sRGB EOTF that `SrgbToBt2020Pq` applies
+        // would decode data that was never encoded. `Bt709LinearToBt2020Pq` is
+        // documented for `EXTENDED_SRGB_LINEAR_EXT` exactly. `BT2020_LINEAR_EXT`
+        // is linear on BT.2020 primaries and there is no arm for that yet, so it
+        // borrows this one and takes a gamut error rather than a gamma one.
         VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT | VK_COLOR_SPACE_BT2020_LINEAR_EXT => {
-            ColorSpace::SrgbToBt2020Pq
+            ColorSpace::Bt709LinearToBt2020Pq
         }
 
         _ => ColorSpace::Bt709,
+    }
+}
+
+/// SDR reference white for the PQ conversions, in nits.
+///
+/// Only the two arms that write PQ consume this. They disagree on what 1.0 means:
+/// sRGB content is gamma-encoded and its white sits at the BT.2408 reference of
+/// 203 nits, while scRGB is linear and IEC 61966-2-2 puts 1.0 at 80 nits.
+/// pixelforge defaults to 203 for both, which maps scRGB white about 2.5x too
+/// bright.
+pub fn sdr_reference_white_nits(color_space: ColorSpace) -> f32 {
+    match color_space {
+        ColorSpace::Bt709LinearToBt2020Pq => 80.0,
+        _ => 203.0,
     }
 }
 
@@ -103,27 +122,25 @@ pub fn vk_format_to_bit_depth(vk_format: u32) -> EncodeBitDepth {
 }
 
 pub fn vk_colorspace_to_color_description(vk_colorspace: u32) -> Option<ColorDescription> {
-    // Full range on every arm, because the converter is unconditionally full-range
-    // (`set_full_range(true)` below) and the VUI has to agree with the shader that
-    // wrote the samples. pixelforge's constructors default to limited range, so
-    // leaving it off tags full-range luma as limited and every compliant decoder
-    // expands it again — darkening midtones and clipping both ends.
-    match vk_colorspace {
-        VK_COLOR_SPACE_HDR10_ST2084_EXT
-        | VK_COLOR_SPACE_DOLBYVISION_EXT
-        | VK_COLOR_SPACE_HDR10_HLG_EXT => Some(full_range(ColorDescription::bt2020_pq())),
-        _ => Some(full_range(ColorDescription::bt709())),
-    }
-}
-
-/// pixelforge's `ColorDescription` constructors are limited-range; the capture
-/// path is always full-range. The pinned revision has no builder for this, so the
-/// field is set directly.
-fn full_range(desc: ColorDescription) -> ColorDescription {
-    ColorDescription {
-        full_range: true,
-        ..desc
-    }
+    // Derived from the conversion rather than matched separately: the VUI has to
+    // describe what the shader actually wrote, and two independent matches on the
+    // same input drift the moment one gains an arm the other doesn't.
+    //
+    // Full range on every arm, because the converter is configured full-range
+    // unconditionally. pixelforge's constructors are limited-range per
+    // ITU-R BT.709-6, so leaving the flag off tags full-range luma as limited and
+    // every compliant decoder expands it again — darkening midtones and clipping
+    // both ends.
+    let desc = match vk_colorspace_to_color_space(vk_colorspace) {
+        ColorSpace::Bt709 => ColorDescription::bt709(),
+        // BT.2020 passthrough carries PQ-encoded input; the other two write PQ.
+        // HLG swapchains are tagged PQ here because pixelforge has no HLG transfer
+        // constant — a pre-existing approximation, not a consequence of this.
+        ColorSpace::Bt2020 | ColorSpace::SrgbToBt2020Pq | ColorSpace::Bt709LinearToBt2020Pq => {
+            ColorDescription::bt2020_pq()
+        }
+    };
+    Some(desc.with_full_range(true))
 }
 
 pub fn output_format(pixel_fmt: PixelFormat, bit_depth: EncodeBitDepth) -> OutputFormat {
@@ -799,7 +816,8 @@ impl PerFrameEncoder {
         } else {
             // GPU framebuffer captures are always full-range — use BT.709 full-range
             // so the decoder doesn't apply limited‑range expansion.
-            enc_cfg = enc_cfg.with_color_description(full_range(ColorDescription::bt709()));
+            enc_cfg =
+                enc_cfg.with_color_description(ColorDescription::bt709().with_full_range(true));
         }
         enc_cfg = if let Some(q) = qp {
             enc_cfg
@@ -820,13 +838,19 @@ impl PerFrameEncoder {
         let encoder =
             Encoder::new(ctx.clone(), enc_cfg).map_err(|e| format!("Encoder::new: {e}"))?;
 
-        let conv_cfg =
-            ColorConverterConfig::new(width, height, /*color_space,*/ input_fmt, out_fmt);
+        let mut conv_cfg = ColorConverterConfig::new(width, height, input_fmt, out_fmt);
+        // The matrix the shader applies has to be the one the VUI declares. The
+        // colour space was previously computed, logged and then dropped on the
+        // floor, so BT.2020 captures were converted with the BT.709 matrix and
+        // the scRGB→PQ arm never ran at all.
+        conv_cfg.color_space = color_space;
+        conv_cfg.sdr_reference_white_nits = sdr_reference_white_nits(color_space);
+        // Capture is always full-range; `vk_colorspace_to_color_description` tags
+        // the stream to match.
+        conv_cfg.full_range = true;
 
-        let mut converter = ColorConverter::new(ctx.clone(), conv_cfg)
+        let converter = ColorConverter::new(ctx.clone(), conv_cfg)
             .map_err(|e| format!("ColorConverter::new: {e}"))?;
-
-        converter.set_full_range(true);
 
         Ok(Self {
             encoder,
@@ -1147,11 +1171,7 @@ mod tests {
     /// from `ash` is the fix; this pins the behaviour that depended on them.
     #[test]
     fn hdr_colour_spaces_select_the_hdr_arm() {
-        for cs in [
-            Cs::HDR10_ST2084_EXT,
-            Cs::DOLBYVISION_EXT,
-            Cs::HDR10_HLG_EXT,
-        ] {
+        for cs in [Cs::HDR10_ST2084_EXT, Cs::DOLBYVISION_EXT, Cs::HDR10_HLG_EXT] {
             let raw = cs.as_raw() as u32;
             assert_eq!(
                 vk_colorspace_to_color_space(raw),
@@ -1159,16 +1179,66 @@ mod tests {
                 "{cs:?} must convert as BT.2020, not BT.709"
             );
             let desc = vk_colorspace_to_color_description(raw).expect("a description");
-            assert_eq!(desc, full_range(ColorDescription::bt2020_pq()), "{cs:?}");
+            assert_eq!(
+                desc,
+                ColorDescription::bt2020_pq().with_full_range(true),
+                "{cs:?}"
+            );
         }
     }
 
+    /// Linear swapchains must not be run through an inverse sRGB EOTF on the way
+    /// to PQ; `Bt709LinearToBt2020Pq` is the arm that skips it.
     #[test]
     fn scrgb_and_bt2020_linear_select_the_pq_conversion() {
         for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
             assert_eq!(
                 vk_colorspace_to_color_space(cs.as_raw() as u32),
-                ColorSpace::SrgbToBt2020Pq,
+                ColorSpace::Bt709LinearToBt2020Pq,
+                "{cs:?}"
+            );
+        }
+    }
+
+    /// scRGB is linear with 1.0 at 80 nits; everything else that reaches PQ is
+    /// gamma-encoded sRGB with white at the BT.2408 reference of 203.
+    #[test]
+    fn scrgb_white_is_not_the_srgb_reference() {
+        assert_eq!(
+            sdr_reference_white_nits(ColorSpace::Bt709LinearToBt2020Pq),
+            80.0
+        );
+        assert_eq!(sdr_reference_white_nits(ColorSpace::SrgbToBt2020Pq), 203.0);
+        for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
+            let nits = sdr_reference_white_nits(vk_colorspace_to_color_space(cs.as_raw() as u32));
+            assert_eq!(nits, 80.0, "{cs:?}");
+        }
+    }
+
+    /// The matrix and transfer the shader applies and the ones the VUI declares
+    /// come from the same match, so they cannot disagree.
+    #[test]
+    fn conversion_and_declaration_agree() {
+        for cs in [
+            Cs::SRGB_NONLINEAR,
+            Cs::PASS_THROUGH_EXT,
+            Cs::HDR10_ST2084_EXT,
+            Cs::DOLBYVISION_EXT,
+            Cs::HDR10_HLG_EXT,
+            Cs::EXTENDED_SRGB_LINEAR_EXT,
+            Cs::BT2020_LINEAR_EXT,
+        ] {
+            let raw = cs.as_raw() as u32;
+            let desc = vk_colorspace_to_color_description(raw).expect("a description");
+            let writes_bt2020 = vk_colorspace_to_color_space(raw) != ColorSpace::Bt709;
+            assert_eq!(desc.is_hdr(), writes_bt2020, "{cs:?}");
+            assert_eq!(
+                desc,
+                if writes_bt2020 {
+                    ColorDescription::bt2020_pq().with_full_range(true)
+                } else {
+                    ColorDescription::bt709().with_full_range(true)
+                },
                 "{cs:?}"
             );
         }
@@ -1194,7 +1264,10 @@ mod tests {
         let px = vec![51u8; 4 * 2 * 4];
         let yuv = bgra_to_yuv420(&px, 4, 2, 44);
         for (i, &y) in yuv[..8].iter().enumerate() {
-            assert_eq!(y, 51, "luma[{i}] should be 51 full-range, not 60 limited-range");
+            assert_eq!(
+                y, 51,
+                "luma[{i}] should be 51 full-range, not 60 limited-range"
+            );
         }
         // Achromatic input must sit at the chroma centre.
         for &c in &yuv[8..] {
@@ -1206,7 +1279,11 @@ mod tests {
     #[test]
     fn cpu_fallback_uses_the_full_code_range() {
         let white = vec![255u8; 4 * 2 * 4];
-        assert_eq!(bgra_to_yuv420(&white, 4, 2, 44)[0], 255, "white must reach 255");
+        assert_eq!(
+            bgra_to_yuv420(&white, 4, 2, 44)[0],
+            255,
+            "white must reach 255"
+        );
         let black = vec![0u8; 4 * 2 * 4];
         assert_eq!(bgra_to_yuv420(&black, 4, 2, 44)[0], 0, "black must reach 0");
     }
@@ -1224,8 +1301,12 @@ mod tests {
             Cs::EXTENDED_SRGB_LINEAR_EXT,
             Cs::PASS_THROUGH_EXT,
         ] {
-            let desc = vk_colorspace_to_color_description(cs.as_raw() as u32).expect("a description");
-            assert!(desc.full_range, "{cs:?} produced a limited-range description");
+            let desc =
+                vk_colorspace_to_color_description(cs.as_raw() as u32).expect("a description");
+            assert!(
+                desc.full_range,
+                "{cs:?} produced a limited-range description"
+            );
         }
     }
 }
