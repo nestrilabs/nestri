@@ -68,16 +68,27 @@ const VK_COLOR_SPACE_BT2020_LINEAR_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR:
 const VK_COLOR_SPACE_DOLBYVISION_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::DOLBYVISION_EXT);
 const VK_COLOR_SPACE_HDR10_HLG_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::HDR10_HLG_EXT);
 
+/// The converter input format for a swapchain's `VkFormat`, or `None` when
+/// there is no correct one.
+///
+/// `None` rather than a default on purpose. This used to fall back to BGRA,
+/// which reads a packed 10-bit or FP16 buffer as eight-bit channels and
+/// produces a stream that arrives at the right size and frame rate carrying
+/// nonsense — the failure nobody notices. Refusing the frame is louder.
+///
+/// `A2R10G10B10_UNORM_PACK32` (58) is the notable absence, and it is reachable:
+/// a WSI layer offers it as one of its HDR pairs and the compositor's dmabuf
+/// list advertises it too. The converter has no red-first 10-bit input, so
+/// there is nothing correct to map it to.
 pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
     match vk_format {
         44..=50 => Some(InputFormat::BGRA),
         37..=43 => Some(InputFormat::RGBA),
+        // VK_FORMAT_A2B10G10R10_UNORM_PACK32
         64 => Some(InputFormat::ABGR2101010),
+        // VK_FORMAT_R16G16B16A16_SFLOAT
         97 => Some(InputFormat::RGBA16F),
-        other => {
-            log::warn!("unsupported VkFormat {other} for color conversion — defaulting to BGRA");
-            Some(InputFormat::BGRA)
-        }
+        _ => None,
     }
 }
 
@@ -114,9 +125,17 @@ pub fn sdr_reference_white_nits(color_space: ColorSpace) -> f32 {
     }
 }
 
-pub fn vk_format_to_bit_depth(vk_format: u32) -> EncodeBitDepth {
-    match vk_format {
-        64 | 58 | 97 => EncodeBitDepth::Ten,
+/// Bit depth implied by a converter input format.
+///
+/// Taken from the input format rather than matched against the `VkFormat` a
+/// second time. The two matches had drifted: `A2R10G10B10` counted as ten-bit
+/// here while the input-format mapping above had no entry for it and fell back
+/// to eight-bit BGRA, so the encoder was configured for ten-bit while the
+/// converter read the buffer as eight. Deriving one from the other makes that
+/// particular disagreement unrepresentable.
+pub fn input_format_bit_depth(input_fmt: InputFormat) -> EncodeBitDepth {
+    match input_fmt {
+        InputFormat::ABGR2101010 | InputFormat::RGBA16F => EncodeBitDepth::Ten,
         _ => EncodeBitDepth::Eight,
     }
 }
@@ -583,6 +602,9 @@ fn encoder_thread(
     let ctx = cfg.ctx;
 
     let mut encoder_state: Option<PerFrameEncoder> = None;
+    // Last VkFormat we refused, so the error is logged on change rather than
+    // once per frame.
+    let mut unsupported_format: Option<u32> = None;
 
     let mut dmabuf_importer = match DmaBufImporter::new(ctx.clone()) {
         Ok(i) => Some(i),
@@ -648,16 +670,29 @@ fn encoder_thread(
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
 
+        let Some(input_fmt) = vk_format_to_input_format(raw.vk_format) else {
+            // Drop the frame rather than encode it wrongly. Logged once per
+            // format so a persistent mismatch says so without filling the log
+            // sixty times a second.
+            if unsupported_format.replace(raw.vk_format) != Some(raw.vk_format) {
+                log::error!(
+                    "VkFormat {} has no colour-conversion input format — dropping frames. \
+                     The stream will stall rather than carry wrong colour.",
+                    raw.vk_format
+                );
+            }
+            continue;
+        };
+
         let bit_depth = if let Some(ov) = cfg.wanted_depth_override {
             ov
         } else {
             match wanted_depth.as_deref() {
                 Ok("10") => EncodeBitDepth::Ten,
                 Ok("8") => EncodeBitDepth::Eight,
-                _ => vk_format_to_bit_depth(raw.vk_format),
+                _ => input_format_bit_depth(input_fmt),
             }
         };
-        let input_fmt = vk_format_to_input_format(raw.vk_format).unwrap_or(InputFormat::BGRA);
         let color_space = vk_colorspace_to_color_space(raw.vk_colorspace);
         let out_fmt = output_format(cfg.pixel_format, bit_depth);
 
@@ -919,6 +954,22 @@ fn cpu_encode_frame(
 ) -> Result<EncodeFuture> {
     use pixelforge::{EncodeBitDepth, InputImage};
 
+    // This path reads four bytes per pixel and encodes eight-bit, so it can
+    // only handle the eight-bit formats. A packed 10-bit buffer would be read
+    // as eight-bit channels and an FP16 one is twice the size with float
+    // samples; both produce a plausible-looking stream of nonsense. Refuse
+    // instead -- an error here is recoverable, a corrupt stream is not
+    // noticeable.
+    if !matches!(
+        vk_format_to_input_format(vk_format),
+        Some(InputFormat::BGRA | InputFormat::RGBA | InputFormat::BGRx | InputFormat::RGBx)
+    ) {
+        anyhow::bail!(
+            "CPU encode fallback cannot read VkFormat {vk_format}; it handles \
+             eight-bit RGBA/BGRA only"
+        );
+    }
+
     let yuv = bgra_to_yuv420(pixels, width, height, vk_format);
 
     let mut input_image = InputImage::new(
@@ -1169,6 +1220,68 @@ mod tests {
     /// The colour space values were once written out by hand and two were wrong,
     /// which routed every HDR swapchain into the SDR arm silently. Deriving them
     /// from `ash` is the fix; this pins the behaviour that depended on them.
+    #[test]
+    fn a2r10g10b10_has_no_input_format() {
+        // 58 is offered by a WSI layer's HDR pairs and by the compositor's
+        // dmabuf list, and the converter has no red-first 10-bit input. It has
+        // to come back None: the old fallback read it as eight-bit BGRA.
+        assert_eq!(vk_format_to_input_format(58), None);
+    }
+
+    #[test]
+    fn unmapped_formats_are_refused_rather_than_defaulted() {
+        // A format nobody has taught the converter about must not quietly
+        // become BGRA. Picked from the depth/stencil range, which no swapchain
+        // uses, so this stays true as colour formats get added.
+        for vk_format in [124u32, 125, 126, 129] {
+            assert_eq!(
+                vk_format_to_input_format(vk_format),
+                None,
+                "VkFormat {vk_format} should be refused, not defaulted"
+            );
+        }
+    }
+
+    #[test]
+    fn bit_depth_agrees_with_the_input_format() {
+        // The two used to be separate matches on VkFormat and had drifted.
+        // Ten-bit in means ten-bit out, eight means eight, for every format
+        // the converter accepts.
+        let ten = [64u32, 97];
+        let eight = [37u32, 43, 44, 50];
+        for f in ten {
+            let fmt = vk_format_to_input_format(f).expect("mapped");
+            assert_eq!(
+                input_format_bit_depth(fmt),
+                EncodeBitDepth::Ten,
+                "VkFormat {f} is a ten-bit format"
+            );
+        }
+        for f in eight {
+            let fmt = vk_format_to_input_format(f).expect("mapped");
+            assert_eq!(
+                input_format_bit_depth(fmt),
+                EncodeBitDepth::Eight,
+                "VkFormat {f} is an eight-bit format"
+            );
+        }
+    }
+
+    #[test]
+    fn hdr_formats_map_to_their_converter_inputs() {
+        // The two pairs a WSI layer injects that we can actually consume.
+        assert_eq!(
+            vk_format_to_input_format(64),
+            Some(InputFormat::ABGR2101010),
+            "A2B10G10R10_UNORM_PACK32 carries HDR10 PQ"
+        );
+        assert_eq!(
+            vk_format_to_input_format(97),
+            Some(InputFormat::RGBA16F),
+            "R16G16B16A16_SFLOAT carries scRGB linear"
+        );
+    }
+
     #[test]
     fn hdr_colour_spaces_select_the_hdr_arm() {
         for cs in [Cs::HDR10_ST2084_EXT, Cs::DOLBYVISION_EXT, Cs::HDR10_HLG_EXT] {
