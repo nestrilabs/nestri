@@ -14,20 +14,22 @@
 //! space the active surface has declared so that an external capture library
 //! (e.g. the Vulkan vkcapture layer) can retrieve it via the public API.
 //!
-//! # What actually reaches a game today
+//! # What actually reaches a game
 //!
-//! Only path 1 is live, and it is 8-bit. Mesa's `wsi_wl` pairs color spaces
-//! with the pixel formats it derives from our `zwp_linux_dmabuf_v1` list, and
-//! that list carries no 10-bit or FP16 entry that it will accept — so a surface
-//! here offers `HDR10_ST2084_EXT` over `B8G8R8A8` and nothing else. PQ at 8
-//! bits bands. `EXTENDED_SRGB_LINEAR_EXT` is not offered at all, so a Proton
-//! title on the scRGB path finds no matching format and falls back to SDR.
+//! Both paths are live, and both carry 10-bit and FP16. Verified on RDNA4
+//! against created swapchains rather than against the format list, because a
+//! format being offered and a format being usable are different claims.
 //!
-//! Path 2 is the half of the design that works, and we have only built the
-//! receiving end. Both gamescope and moonshine get HDR by *not* negotiating it
-//! with Mesa: a WSI layer in the game's process hooks
-//! `vkGetPhysicalDeviceSurfaceFormatsKHR` and appends three formats Mesa never
-//! offered —
+//! Path 1 goes through Mesa. It pairs the colour spaces it learns from
+//! `wp_color_management_v1` with the pixel formats it derives from our
+//! `zwp_linux_dmabuf_v1` list, so it needs both halves present. It offered
+//! nothing but `B8G8R8A8` until we advertised the opaque FourCC spellings
+//! alongside the alpha ones -- see the format list in `state.rs`, which is
+//! where that constraint lives.
+//!
+//! Path 2 bypasses Mesa entirely. Both gamescope and moonshine get HDR by *not*
+//! negotiating it: a WSI layer in the game's process hooks
+//! `vkGetPhysicalDeviceSurfaceFormatsKHR` and appends three pairs of its own --
 //!
 //! ```text
 //! A2B10G10R10_UNORM_PACK32 / HDR10_ST2084_EXT
@@ -35,17 +37,46 @@
 //! R16G16B16A16_SFLOAT      / EXTENDED_SRGB_LINEAR_EXT
 //! ```
 //!
-//! — then rewrites `imageColorSpace` to `SRGB_NONLINEAR` before handing the
-//! swapchain to the ICD, and sends the *real* color space to the compositor
+//! -- then rewrites `imageColorSpace` to `SRGB_NONLINEAR` before handing the
+//! swapchain to the ICD, and sends the *real* colour space to the compositor
 //! over this protocol via `swapchain_feedback`. The driver is never told HDR is
-//! happening. We have no such layer: `nescapture` hooks presents and draws, not
-//! surface formats. Until one exists, path 2 never fires.
+//! happening.
+//!
+//! Note what that means for path 2's dependency on path 1: the layer re-queries
+//! the ICD's own surface list and refuses the swapchain outright if the
+//! requested `VkFormat` is absent from it. So the layer supplies the colour
+//! space and the dmabuf list supplies the pixel format, and neither works
+//! alone.
+//!
+//! # Path 2 needs a layer we do not ship
+//!
+//! nescope implements only the compositor half. `nescapture` hooks presents and
+//! draws, not surface formats, so it is not that layer. Path 2 was verified with
+//! gamescope's stock `VkLayer_FROG_gamescope_wsi`, which drives our protocol
+//! unmodified -- the XML here is byte-identical to theirs, and the atoms
+//! written in `state.rs` are what it reads to decide HDR is available.
+//!
+//! In practice that makes it a packaging question rather than a code one:
+//! `ENABLE_GAMESCOPE_WSI=1`, which we already set for the child, is exactly the
+//! `enable_environment` key in that layer's manifest, so on a host with
+//! gamescope installed path 2 comes up with no further work. On a host without
+//! it, path 1 still carries HDR10 over the colour-management protocol.
+//!
+//! # Untested: everything past the swapchain
+//!
+//! What is verified is that a client can obtain an HDR swapchain and that the
+//! colour space arrives here. No game has run, and no 10-bit or FP16 buffer has
+//! been through capture and encode -- every pixel-level check so far, including
+//! the HDR one, used 8-bit input. A wrong branch there would look like the
+//! failure this whole area keeps producing: a valid stream at the right frame
+//! rate, carrying wrong colour, with nothing reporting an error.
 //!
 //! # FIXME: HDR is XWayland-only, and the reason is a connection, not a design
 //!
-//! Add HDR for native Wayland clients. Both reference implementations stop at
-//! the same wall, and it is worth recording *why* so we do not mistake it for
-//! something deep:
+//! Add HDR for native Wayland clients. This is separate from the layer question
+//! above -- it would remain true even with a layer of our own. Both reference
+//! implementations stop at the same wall, and it is worth recording *why* so we
+//! do not mistake it for something deep:
 //!
 //! A WSI layer opens its **own** Wayland connection to the compositor in order
 //! to bind the swapchain factory. A native Wayland game's `wl_surface` lives on
@@ -60,16 +91,15 @@
 //! referenceable. That is the work this FIXME is asking for.
 //!
 //! One trap to avoid when we do build the layer. Format injection must be
-//! gated on the surface being one we can actually signal for — not merely on
+//! gated on the surface being one we can actually signal for -- not merely on
 //! "the compositor supports HDR". moonshine gates only on the latter, so a
 //! native Wayland game there *is* offered HDR10, picks it, has DXVK PQ-encode
 //! its pixels, and the compositor is never told: PQ samples arriving tagged as
 //! SDR. That is worse than offering no HDR at all, because nothing reports an
-//! error — it is the same class of silent failure as a correct-looking stream
-//! carrying the wrong matrix.
+//! error.
 //!
-//! So, for now: games must run under XWayland to get HDR. `nescapture` needs
-//! `PROTON_ENABLE_WAYLAND` left unset, which is already the Proton default.
+//! So, for now: games must run under XWayland to get HDR, which is where Proton
+//! puts them unless `PROTON_ENABLE_WAYLAND` is set.
 #![allow(unused)]
 use std::collections::HashMap;
 use std::sync::Mutex;
