@@ -8,11 +8,12 @@
 // restarting is repair or a loop. ref(d-0033)
 
 use nesprotocol::lifecycle::{
-    BootDescriptor, CONTROL_VERSION, Exit, GuestToHost, HostToGuest, from_line, to_line,
+    CONTROL_VERSION, Exit, GuestToHost, HostToGuest, Payload, from_line, to_line,
 };
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
-use crate::workload::{Failure, Workload};
+use crate::payload::Ports;
+use crate::workload::{Exited, Failure, Workload};
 
 /// How a session ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,7 +35,42 @@ pub enum Outcome {
 /// Generic over the channel so the exchange can be driven from a test without
 /// a VM: the transport contributes nothing to the protocol beyond ordering and
 /// framing, which any byte stream has.
-pub async fn run<C, W>(channel: C, workload: &mut W) -> std::io::Result<Outcome>
+pub async fn run<C, W>(
+    channel: C,
+    workload: &mut W,
+    payload: &mut Ports,
+) -> std::io::Result<Outcome>
+where
+    C: AsyncRead + AsyncWrite,
+    W: Workload,
+{
+    match converse(channel, workload, payload).await {
+        Err(error) if channel_gone(&error) => {
+            // A caller that has stopped reading has also stopped being able to
+            // tell us to stop, which is the same situation as the channel
+            // closing under a read. One outcome, not two.
+            workload.signal_stop();
+            Ok(Outcome::ChannelClosed)
+        }
+        other => other,
+    }
+}
+
+/// Whether an error means the far end is gone rather than that something went
+/// wrong here.
+fn channel_gone(error: &std::io::Error) -> bool {
+    use std::io::ErrorKind::{BrokenPipe, ConnectionAborted, ConnectionReset, UnexpectedEof};
+    matches!(
+        error.kind(),
+        BrokenPipe | ConnectionReset | ConnectionAborted | UnexpectedEof
+    )
+}
+
+async fn converse<C, W>(
+    channel: C,
+    workload: &mut W,
+    payload: &mut Ports,
+) -> std::io::Result<Outcome>
 where
     C: AsyncRead + AsyncWrite,
     W: Workload,
@@ -53,19 +89,39 @@ where
     )
     .await?;
 
-    let mut running: Option<crate::workload::Exited> = None;
+    let mut running: Option<Exited> = None;
+    let mut relay_open = true;
 
     loop {
-        let line = match running.as_mut() {
+        let event = match running.as_mut() {
             Some(exited) => tokio::select! {
-                ended = exited => {
-                    let exit = ended?;
-                    send(&mut writer, &GuestToHost::WorkloadExited { exit }).await?;
-                    return Ok(Outcome::WorkloadExited(exit));
-                }
-                line = lines.next_line() => line?,
+                ended = exited => Event::Ended(ended?),
+                line = lines.next_line() => Event::Line(line?),
+                up = payload.from_workload.recv(), if relay_open => Event::FromWorkload(up),
             },
-            None => lines.next_line().await?,
+            None => tokio::select! {
+                line = lines.next_line() => Event::Line(line?),
+                up = payload.from_workload.recv(), if relay_open => Event::FromWorkload(up),
+            },
+        };
+
+        let line = match event {
+            Event::Ended(exit) => {
+                send(&mut writer, &GuestToHost::WorkloadExited { exit }).await?;
+                return Ok(Outcome::WorkloadExited(exit));
+            }
+            Event::FromWorkload(Some(payload)) => {
+                tracing::debug!(envelope = %payload.summary(), "sending an envelope on");
+                send(&mut writer, &GuestToHost::Payload { payload }).await?;
+                continue;
+            }
+            Event::FromWorkload(None) => {
+                // The relay is gone. The session is not: the workload can
+                // still be stopped, and its exit still has to be reported.
+                relay_open = false;
+                continue;
+            }
+            Event::Line(line) => line,
         };
 
         let Some(line) = line else {
@@ -92,31 +148,65 @@ where
                     tracing::warn!("ignoring a second descriptor: one is read per connection");
                     continue;
                 }
-                match begin(&descriptor, workload) {
-                    Ok(exited) => running = Some(exited),
+
+                // The shares, then the command, and each reported separately.
+                // Which of the two failed decides what is worth looking at,
+                // so the two are never one message.
+                match workload.mount(&descriptor.mounts) {
+                    Ok(()) => send(&mut writer, &GuestToHost::Mounted).await?,
                     Err(failure) => {
-                        tracing::error!(reason = %failure.reason, "the descriptor was refused");
+                        send(
+                            &mut writer,
+                            &GuestToHost::MountFailed {
+                                reason: failure.reason.clone(),
+                            },
+                        )
+                        .await?;
+                        return Ok(Outcome::Refused(failure));
+                    }
+                }
+
+                match workload.start(&descriptor.exec) {
+                    Ok(exited) => {
+                        send(&mut writer, &GuestToHost::Started).await?;
+                        running = Some(exited);
+                    }
+                    Err(failure) => {
+                        send(
+                            &mut writer,
+                            &GuestToHost::StartFailed {
+                                reason: failure.reason.clone(),
+                            },
+                        )
+                        .await?;
                         return Ok(Outcome::Refused(failure));
                     }
                 }
             }
+            HostToGuest::Payload { payload: envelope } => hand_over(payload, envelope).await,
             HostToGuest::Stop => workload.signal_stop(),
             HostToGuest::Shutdown => return Ok(Outcome::Shutdown),
         }
     }
 }
 
-/// Carry out a descriptor: shares first, then the command.
-///
-/// The two stay distinguishable on the way out because they want different
-/// things looked at — a share that did not mount and a command that did not
-/// start are not the same incident.
-fn begin<W: Workload>(
-    descriptor: &BootDescriptor,
-    workload: &mut W,
-) -> Result<crate::workload::Exited, Failure> {
-    workload.mount(&descriptor.mounts)?;
-    workload.start(&descriptor.exec)
+/// What the session is waiting on, and there are only three things.
+enum Event {
+    Line(Option<String>),
+    Ended(Exit),
+    FromWorkload(Option<Payload>),
+}
+
+/// Hand an envelope to the relay, and treat a relay that is not there as the
+/// caller's problem rather than a failure of this session.
+async fn hand_over(ports: &mut Ports, envelope: Payload) {
+    tracing::debug!(envelope = %envelope.summary(), "handing an envelope over");
+    if ports.to_workload.send(envelope).await.is_err() {
+        // The workload is not on the relay. Dropped rather than queued: what
+        // crosses here is re-sent when it changes, so a held copy is a stale
+        // copy.
+        tracing::warn!("dropped an envelope: nothing is on the relay");
+    }
 }
 
 async fn send<W>(writer: &mut W, message: &GuestToHost) -> std::io::Result<()>
@@ -132,8 +222,9 @@ where
 mod tests {
     use super::*;
     use crate::workload::double::Double;
-    use nesprotocol::lifecycle::{Exec, Geometry, Mount, OnExit};
+    use nesprotocol::lifecycle::{BootDescriptor, Exec, Geometry, Mount, OnExit};
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, DuplexStream};
+    use tokio::sync::mpsc;
 
     fn descriptor() -> BootDescriptor {
         BootDescriptor {
@@ -159,6 +250,21 @@ mod tests {
         }
     }
 
+    /// The relay's two ends, as the session sees them, plus the ends a
+    /// workload on the relay would hold.
+    fn ports() -> (Ports, mpsc::Receiver<Payload>, mpsc::Sender<Payload>) {
+        let (down_tx, down_rx) = mpsc::channel(4);
+        let (up_tx, up_rx) = mpsc::channel(4);
+        (
+            Ports {
+                to_workload: down_tx,
+                from_workload: up_rx,
+            },
+            down_rx,
+            up_tx,
+        )
+    }
+
     /// The other end of the channel, as a caller would drive it.
     struct Caller {
         lines: tokio::io::Lines<BufReader<DuplexStream>>,
@@ -181,6 +287,12 @@ mod tests {
             from_line(&line).unwrap()
         }
 
+        /// A descriptor being carried out: the shares, then the command.
+        async fn expect_started(&mut self) {
+            assert_eq!(self.expect().await, GuestToHost::Mounted);
+            assert_eq!(self.expect().await, GuestToHost::Started);
+        }
+
         async fn say(&mut self, message: &HostToGuest) {
             let line = to_line(message).unwrap();
             self.lines
@@ -197,8 +309,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
             (outcome, workload)
         });
 
@@ -221,8 +334,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
             (outcome, workload)
         });
 
@@ -246,8 +360,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(3));
-            let outcome = run(guest, &mut workload).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
             (outcome, workload)
         });
 
@@ -257,6 +372,7 @@ mod tests {
                 descriptor: Box::new(descriptor()),
             })
             .await;
+        caller.expect_started().await;
 
         assert_eq!(
             caller.expect().await,
@@ -280,8 +396,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::signal(9));
-            run(guest, &mut workload).await.unwrap()
+            run(guest, &mut workload, &mut ports).await.unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -290,6 +407,7 @@ mod tests {
                 descriptor: Box::new(descriptor()),
             })
             .await;
+        caller.expect_started().await;
 
         assert_eq!(
             caller.expect().await,
@@ -309,8 +427,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
             (outcome, workload)
         });
 
@@ -333,9 +452,10 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(0));
             workload.mount_failure = Some(Failure::new("EACCES: /mnt/user"));
-            let outcome = run(guest, &mut workload).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
             (outcome, workload)
         });
 
@@ -345,6 +465,14 @@ mod tests {
                 descriptor: Box::new(descriptor()),
             })
             .await;
+
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::MountFailed {
+                reason: "EACCES: /mnt/user".into()
+            },
+            "the reason is passed through as the operating system wrote it",
+        );
 
         let (outcome, workload) = session.await.unwrap();
         assert_eq!(outcome, Outcome::Refused(Failure::new("EACCES: /mnt/user")));
@@ -360,8 +488,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload).await.unwrap()
+            run(guest, &mut workload, &mut ports).await.unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -382,8 +511,9 @@ mod tests {
         let mut caller = Caller::new(host);
 
         let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
             (outcome, workload)
         });
 
@@ -404,5 +534,125 @@ mod tests {
             workload.stops >= 1,
             "the workload was left running with nobody listening"
         );
+    }
+
+    #[tokio::test]
+    async fn a_command_that_will_not_run_is_reported_apart_from_a_share_that_will_not_mount() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+
+        let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
+            let mut workload = Double::exits_at_once(Exit::code(0));
+            workload.start_failure = Some(Failure::new("ENOENT: /usr/bin/workload"));
+            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            (outcome, workload)
+        });
+
+        assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+
+        // The shares are reported as fine, and the failure is a different
+        // message: which of the two went wrong decides what to look at.
+        assert_eq!(caller.expect().await, GuestToHost::Mounted);
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::StartFailed {
+                reason: "ENOENT: /usr/bin/workload".into()
+            },
+        );
+
+        let (outcome, workload) = session.await.unwrap();
+        assert_eq!(
+            outcome,
+            Outcome::Refused(Failure::new("ENOENT: /usr/bin/workload"))
+        );
+        assert_eq!(workload.mounted.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_envelope_crosses_the_session_in_both_directions_unread() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (down_tx, down_rx) = mpsc::channel(4);
+        let (up_tx, up_rx) = mpsc::channel(4);
+
+        let session = tokio::spawn(async move {
+            let mut ports = Ports {
+                to_workload: down_tx,
+                from_workload: up_rx,
+            };
+            let mut workload = Double::exits_when_stopped(Exit::code(0));
+            run(guest, &mut workload, &mut ports).await.unwrap()
+        });
+        let mut to_relay = down_rx;
+
+        assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
+
+        // Down: an envelope arrives before any descriptor does, and still
+        // reaches the relay — what crosses this layer is not the boot
+        // sequence's business.
+        let body = r#"{"looks":"structured"} and is not"#;
+        caller
+            .say(&HostToGuest::Payload {
+                payload: Payload::new("identity", body),
+            })
+            .await;
+        let handed_over = to_relay.recv().await.unwrap();
+        assert_eq!(handed_over.body, body, "the body arrived changed");
+        assert_eq!(handed_over.channel, "identity");
+
+        // Up: the same, in reverse.
+        up_tx
+            .send(Payload::new("identity", "opaque back"))
+            .await
+            .unwrap();
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::Payload {
+                payload: Payload::new("identity", "opaque back")
+            },
+        );
+
+        caller.say(&HostToGuest::Shutdown).await;
+        assert_eq!(session.await.unwrap(), Outcome::Shutdown);
+    }
+
+    #[tokio::test]
+    async fn a_relay_nothing_is_on_does_not_end_a_session() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (down_tx, down_rx) = mpsc::channel(1);
+        let (_up_tx, up_rx) = mpsc::channel::<Payload>(1);
+        drop(down_rx); // nothing is on the relay
+
+        let session = tokio::spawn(async move {
+            let mut ports = Ports {
+                to_workload: down_tx,
+                from_workload: up_rx,
+            };
+            let mut workload = Double::exits_when_stopped(Exit::code(0));
+            run(guest, &mut workload, &mut ports).await.unwrap()
+        });
+
+        assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
+        caller
+            .say(&HostToGuest::Payload {
+                payload: Payload::new("identity", "dropped"),
+            })
+            .await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+        caller.expect_started().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        assert_eq!(session.await.unwrap(), Outcome::Shutdown);
     }
 }
