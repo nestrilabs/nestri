@@ -16,6 +16,7 @@ import { IndexApi } from './routes/index.js';
 import { LibraryApi } from './routes/library.js';
 import { MachineApi } from './routes/machine.js';
 import { PairingCodeApi } from './routes/pairing-code.js';
+import { SessionApi } from './routes/session.js';
 import { SteamApi } from './routes/steam.js';
 import { UserApi } from './routes/user.js';
 import { WaitlistApi } from './routes/waitlist.js';
@@ -44,6 +45,8 @@ const routes = app
 	.route('/games', GameApi.route)
 	.route('/pairing-code', PairingCodeApi.route)
 	.route('/machine', MachineApi.route)
+	.route('/machine', SessionApi.machineRoute)
+	.route('/session', SessionApi.route)
 	.route('/access-token', AccessTokenApi.route)
 	.route('/waitlist', WaitlistApi.route)
 	.onError((error, c) => {

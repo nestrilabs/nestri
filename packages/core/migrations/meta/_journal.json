@@ -57,6 +57,13 @@
       "when": 1788460224524,
       "tag": "0007_box_session_team_notnull",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1788547836146,
+      "tag": "0008_session_one_active_run_per_box",
+      "breakpoints": true
     }
   ]
 }

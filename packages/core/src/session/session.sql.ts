@@ -1,7 +1,8 @@
-import { index, pgEnum, pgTable, text } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+import { index, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
-import { id, timestamps, ulid, utc } from '../db/types.js';
 import { BoxTable } from '../box/box.sql.js';
+import { id, timestamps, ulid, utc } from '../db/types.js';
 import { GameTable } from '../game/game.sql.js';
 import { LinkedAccountTable } from '../user/linked-account.sql.js';
 
@@ -66,6 +67,18 @@ export const SessionTable = pgTable(
 	(t) => [
 		index('session_box_idx').on(t.boxId),
 		index('session_state_idx').on(t.state),
+		// A box runs one thing at a time, and this is where that is true.
+		//
+		// The caller checking first is a nicer error message; it is not the
+		// invariant. Two requests that both read "nothing is running" before
+		// either inserts each get a row, and the host is then handed the same
+		// box to start twice — the identical failure the state claim exists to
+		// prevent, one step earlier. So the predicate is exactly the one
+		// `Session.activeForBox` asks about, and the database refuses the
+		// second row rather than a caller remembering to.
+		uniqueIndex('session_box_active_unique')
+			.on(t.boxId)
+			.where(sql`time_stopped is null and time_deleted is null`),
 		// Metering reads "sessions in this window", and this table is what
 		// billing sums, so the time index is not speculative. ref(d-0048)
 		index('session_started_idx').on(t.timeStarted)
