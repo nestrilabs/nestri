@@ -50,32 +50,31 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     *ds.swapchain.lock().unwrap() = Some(unsafe { *p_swapchain });
     *ds.swapchain_format.lock().unwrap() = ci.image_format;
     *ds.swapchain_extent.lock().unwrap() = ci.image_extent;
-    // FIXME: this is the colour space the layer below us was asked for, which
-    // is not always the one the game asked for.
+    // The colour space the layer below us was asked for, which is the one the
+    // game asked for in every configuration we ship.
     //
-    // A WSI layer doing HDR signalling -- gamescope's, and moonshine's after it
-    // -- rewrites `imageColorSpace` to SRGB_NONLINEAR before calling down, on
-    // purpose: the driver must not be told HDR is happening, because the layer
-    // carries the real colour space to the compositor out of band over its own
-    // protocol. We sit below that layer, so we read the rewritten value.
-    //
-    // Measured, all three lines from one run of a client requesting HDR10 PQ:
+    // The exception is worth knowing about, because it is silent. A WSI layer
+    // of the gamescope kind rewrites `imageColorSpace` to SRGB_NONLINEAR before
+    // calling down -- deliberately, since it carries the real colour space to
+    // the compositor out of band instead. We sit below such a layer, so we
+    // would read the rewrite. Measured, all three lines from one run of a
+    // client requesting HDR10 PQ:
     //
     //     [Gamescope WSI] ... colorspace: VK_COLOR_SPACE_HDR10_ST2084_EXT
     //     swapchain created — format=A2B10G10R10 colorspace=SRGB_NONLINEAR
     //     (re)init encoder: H265 Yuv420 Ten Bt709 → P010
     //
-    // Ten-bit is right and BT.709 is wrong: PQ samples encoded and tagged as
-    // SDR BT.709. The stream arrives at full frame rate and decodes, so nothing
-    // reports it. Without such a layer the value here is correct and the same
-    // client yields `Ten Bt2020` and an smpte2084 stream, so this is specific
-    // to the layer path -- which is the path Proton titles take.
+    // Ten-bit right, BT.709 wrong: PQ samples encoded and tagged as SDR, at
+    // full frame rate, decoding cleanly.
     //
-    // The fix cannot be local: the true colour space only exists in the
-    // compositor, which does receive it. It needs a channel from there to here,
-    // and this field should prefer that over the Vulkan value when one is
-    // available. Layer ordering is not a fix -- it is not something we control,
-    // and the non-layer path still needs the Vulkan value.
+    // This is not a bug to fix here. That route predates Wayland colour
+    // management and the compositor no longer enables it -- HDR comes from
+    // `wp_color_manager_v1` on a Wayland surface, where this value is correct
+    // and the same client yields Bt2020 and an smpte2084 stream. It is recorded
+    // because it is the reason the route stays off: enabling it would trade no
+    // HDR for wrong HDR. Anyone re-enabling it has to give this process a
+    // channel to the compositor first, since the true colour space exists only
+    // there.
     ds.swapchain_colorspace
         .store(ci.image_color_space.as_raw() as u32, Ordering::Relaxed);
 
