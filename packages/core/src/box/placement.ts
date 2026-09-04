@@ -55,7 +55,7 @@ export namespace Placement {
 		}
 		if (hosts.length > 1) {
 			// Not a caller error: the request is fine and the system cannot yet
-			// answer it. An orchestrator is what closes this. todo(d-0048)
+			// answer it. An orchestrator is what closes this. todo(d-0014)
 			throw new VisibleError(
 				'internal',
 				ErrorCodes.Server.SERVICE_UNAVAILABLE,
