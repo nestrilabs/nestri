@@ -164,12 +164,17 @@ export namespace SessionApi {
 				// A box runs one thing at a time. Refusing is the honest answer;
 				// starting a second run would leave two rows that both think they
 				// own the same hardware.
+				//
+				// This read is the message, not the guarantee — two callers can
+				// both pass it. `Session.request` is refused by a unique index on
+				// the same predicate, and answers with the same 409 in the same
+				// words, so which one caught it is not visible from here.
 				const active = await Session.activeForBox(box.id);
 				if (active) {
-					conflict('That box already has a run that has not stopped');
+					conflict(Session.BOX_BUSY);
 				}
 
-				const session = await Session.create({
+				const session = await Session.request({
 					id: Identifier.ascending('session'),
 					boxId: box.id,
 					gameId: game.id,
@@ -185,7 +190,7 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'Read a run you asked for',
 				description:
-					'Poll this while a run starts. The ticket appears part-way through and is republished as addresses are discovered, so re-read it rather than keeping the first one — a client that treats the first ticket as final works on a local network and fails from anywhere else.',
+					'Poll this while a run starts. The ticket appears part-way through and is republished as addresses are discovered, so re-read it rather than keeping the first one — a client that treats the first ticket as final works on a local network and fails from anywhere else. Once the run reaches a terminal state the ticket is null: stop polling and stop dialling it.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Session.Info) } },

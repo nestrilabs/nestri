@@ -58,6 +58,18 @@ afterAll(async () => {
 	}
 });
 
+/** A scene with the run already requested. */
+async function requestedRun(label: string, steamAppId: number) {
+	const s = await scene(label, steamAppId);
+	const session = await Session.request({
+		id: Identifier.ascending('session'),
+		boxId: s.box.id,
+		gameId: s.gameId,
+		linkedAccountId: s.owner.linkedAccountId
+	});
+	return { ...s, session };
+}
+
 describe('Session', () => {
 	test('a session starts requested, with no ticket and no times', async () => {
 		const { owner, box, gameId } = await scene('ses-defaults', 5400);
@@ -412,5 +424,109 @@ describe('Session claim', () => {
 		const result = await Session.publishTicket({ id: session.id, machineId, ticket: 'late' });
 		expect(result.outcome).toBe('closed');
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
+	});
+});
+
+describe('Session one active run per box', () => {
+	test('the database refuses a second unstopped run, not just the caller', async () => {
+		const { owner, machineId, box, gameId } = await scene('ses-one-active', 5450);
+		const mk = () =>
+			Session.request({
+				id: Identifier.ascending('session'),
+				boxId: box.id,
+				gameId,
+				linkedAccountId: owner.linkedAccountId
+			});
+
+		const first = await mk();
+		expect(first.state).toBe('requested');
+
+		// The interleaving `POST /session` permits: both callers read
+		// `activeForBox` and see nothing, then both insert. The read is a
+		// message; the unique index is the invariant, so the second insert is
+		// refused rather than producing a row.
+		const before = await Session.activeForBox(box.id);
+		expect(before?.id).toBe(first.id);
+		await expect(mk()).rejects.toThrow(Session.BOX_BUSY);
+
+		expect(await Session.listByBox(box.id)).toHaveLength(1);
+		// The point of all of it: the host is handed one launch, not two.
+		expect(await Session.listJobsForMachine(machineId)).toHaveLength(1);
+	});
+
+	test('a box that has stopped running is free to run again', async () => {
+		const { owner, machineId, box, gameId } = await scene('ses-one-active-reuse', 5451);
+		const mk = () =>
+			Session.request({
+				id: Identifier.ascending('session'),
+				boxId: box.id,
+				gameId,
+				linkedAccountId: owner.linkedAccountId
+			});
+
+		const first = await mk();
+		await Session.transition({ id: first.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ id: first.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ id: first.id, machineId, state: 'ended', errorMessage: null });
+
+		// The index is partial for exactly this reason: a box is a durable
+		// thing and playing twice is the ordinary case, so a stopped run must
+		// not occupy the slot forever.
+		const second = await mk();
+		expect(second.id).not.toBe(first.id);
+		expect(await Session.listByBox(box.id)).toHaveLength(2);
+	});
+});
+
+describe('Session tickets and the end of a run', () => {
+	test('stopping a run takes its address away', async () => {
+		const { machineId, session } = await requestedRun('ses-ticket-cleared', 5452);
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		expect(
+			(await Session.publishTicket({ id: session.id, machineId, ticket: 'live-address' })).session
+				?.ticket
+		).toBe('live-address');
+
+		const ended = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
+		// Publishing an address for a stopped run is already refused, so a
+		// kept one would be the only ticket a client can read for a dead run
+		// and the one nothing is allowed to replace. It would be dialled.
+		expect(ended.outcome).toBe('moved');
+		expect(ended.session?.ticket).toBeNull();
+		expect((await Session.fromID(session.id))?.ticket).toBeNull();
+	});
+
+	test('a run that failed does not keep an address either', async () => {
+		const { machineId, session } = await requestedRun('ses-ticket-cleared-fail', 5453);
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.publishTicket({ id: session.id, machineId, ticket: 'starting-address' });
+
+		const failed = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'failed',
+			errorMessage: 'the guest never came up'
+		});
+		expect(failed.session?.ticket).toBeNull();
+		// The reason survives; only the address goes.
+		expect(failed.session?.errorMessage).toBe('the guest never came up');
+	});
+
+	test('the unscoped primitive clears it too, whichever writer stops a run', async () => {
+		const { session } = await requestedRun('ses-ticket-cleared-setstate', 5454);
+		await Session.setTicket({ id: session.id, ticket: 'an-address' });
+
+		const ended = await Session.setState({
+			id: session.id,
+			state: 'ended',
+			errorMessage: null
+		});
+		expect(ended?.ticket).toBeNull();
 	});
 });

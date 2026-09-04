@@ -191,6 +191,29 @@ describe('POST /session', () => {
 		expect(second.body.type).toBe('already_exists');
 	});
 
+	test('two requests racing for one box still start it once', async () => {
+		const s = await scene('route-race', 5509);
+		const [a, b] = await Promise.all([requestSession(s), requestSession(s)]);
+
+		// Which request wins is a timing detail; that exactly one does is not.
+		// The pre-check and the unique index answer identically, so the loser
+		// cannot tell which caught it.
+		//
+		// This asserts the endpoint's answer, not the invariant: two requests
+		// in one process usually interleave such that the pre-check catches
+		// the second, so it passes with the unique index dropped. The index is
+		// pinned in the core tests, where both callers can be made to read
+		// before either writes.
+		const statuses = [a.res.status, b.res.status].sort();
+		expect(statuses).toEqual([201, 409]);
+		expect([a.body, b.body].find((x) => x.type)?.type).toBe('already_exists');
+
+		expect(await Session.listByBox(s.box.id)).toHaveLength(1);
+		// The failure this prevents: the host offered the same box twice.
+		const jobs = await app.request('/machine/jobs', { headers: s.host });
+		expect(((await jobs.json()) as any).data).toHaveLength(1);
+	});
+
 	test('you can only play as an account you have linked', async () => {
 		const mine = await scene('route-account-mine', 5505);
 		const theirs = await scene('route-account-theirs', 5506);
@@ -537,6 +560,35 @@ describe('POST /session/:id/ticket', () => {
 		});
 		expect(res.status).toBe(409);
 		expect((await Session.fromID(body.data.id))?.ticket).toBeNull();
+	});
+
+	test('a run that stops loses the address it published', async () => {
+		const s = await scene('route-ticket-cleared', 5545);
+		const { body } = await requestSession(s);
+		const report = (state: string) =>
+			app.request(`/session/${body.data.id}/state`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ state })
+			});
+		await report('starting');
+		await report('live');
+		const published = await app.request(`/session/${body.data.id}/ticket`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ ticket: 'nodeaaa-live' })
+		});
+		expect(((await published.json()) as any).data.ticket).toBe('nodeaaa-live');
+
+		await report('ended');
+
+		// The polling client is the reason. It reads this endpoint until it has
+		// an address, and an address left behind by a run that stopped is one
+		// it would dial — while publishing a replacement is already refused.
+		const read = await app.request(`/session/${body.data.id}`, { headers: s.user });
+		const after = (await read.json()) as any;
+		expect(after.data.state).toBe('ended');
+		expect(after.data.ticket).toBeNull();
 	});
 
 	test('a ticket has to say something', async () => {

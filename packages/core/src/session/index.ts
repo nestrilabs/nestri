@@ -3,6 +3,7 @@ import z from 'zod';
 
 import { BoxTable, BoxTier } from '../box/box.sql.js';
 import { Database } from '../db/index.js';
+import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
@@ -18,6 +19,15 @@ import { SessionState, SessionTable } from './session.sql.js';
  * value once.
  */
 export namespace Session {
+	/**
+	 * One wording for "that box is busy", however it was discovered.
+	 *
+	 * Both the read in {@link activeForBox} and the unique index behind
+	 * {@link request} report it, and a caller must not be able to tell which,
+	 * because that would only tell it how close the race was.
+	 */
+	export const BOX_BUSY = 'That box already has a run that has not stopped';
+
 	export const Info = z
 		.object({
 			id: z.string().meta({
@@ -41,7 +51,8 @@ export namespace Session {
 				example: Examples.Session.state
 			}),
 			ticket: z.string().nullable().optional().meta({
-				description: 'Current iroh connect ticket, or null before neshub mints one',
+				description:
+					'Current connect ticket. Null before one has been minted, and null again once the run has stopped — a run that is not there has no address',
 				example: Examples.Session.ticket
 			}),
 			timeStarted: z.string().nullable().optional().meta({
@@ -83,6 +94,41 @@ export namespace Session {
 		}
 	);
 
+	/** Postgres refusing a second row for the same key. */
+	function isUniqueViolation(err: unknown): boolean {
+		const e = err as { code?: string; cause?: { code?: string } };
+		return e?.code === '23505' || e?.cause?.code === '23505';
+	}
+
+	/**
+	 * Ask for a run of a box, and let the database refuse a second one.
+	 *
+	 * The same argument as {@link compareAndSetState}, one step earlier. A
+	 * caller reading {@link activeForBox} first and the insert being refused
+	 * are different properties: the read is a nicer error message, the unique
+	 * index is the invariant. Two requests that both read "nothing is running"
+	 * before either inserts each get a row, and the host is then handed the
+	 * same box to start twice — which is exactly what the state claim exists
+	 * to prevent.
+	 *
+	 * The refusal is the same 409 a caller gets from the read, and worded
+	 * identically, because from outside they are the same fact and which one
+	 * answered is a timing detail.
+	 */
+	export const request = fn(
+		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }),
+		async (input) => {
+			try {
+				return await create(input);
+			} catch (err) {
+				if (isUniqueViolation(err)) {
+					throw new VisibleError('already_exists', ErrorCodes.Validation.INVALID_STATE, BOX_BUSY);
+				}
+				throw err;
+			}
+		}
+	);
+
 	export const fromID = fn(Info.shape.id, async (id) => {
 		return Database.use(async (tx) => {
 			return tx
@@ -99,9 +145,11 @@ export namespace Session {
 	/**
 	 * The run currently occupying a box, if any.
 	 *
-	 * Newest first and limited to one: a box has at most one live session by
-	 * construction, and if that ever stops being true this is the query that
-	 * should start refusing rather than picking a winner silently.
+	 * At most one row can match: `session_box_active_unique` is a unique index
+	 * on this exact predicate, so "newest first, limited to one" describes the
+	 * query and not a choice being made. Reading this before inserting gives a
+	 * caller a better message than a constraint violation; it is not what makes
+	 * the answer single. See {@link request}.
 	 */
 	export const activeForBox = fn(Info.shape.boxId, async (boxId) => {
 		return Database.use(async (tx) => {
@@ -177,7 +225,12 @@ export namespace Session {
 							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
 							: {}),
 						...(input.state === 'ended' || input.state === 'failed'
-							? { timeStopped: sql`coalesce(${SessionTable.timeStopped}, ${now})` }
+							? {
+									timeStopped: sql`coalesce(${SessionTable.timeStopped}, ${now})`,
+									// A stopped run has no address, whichever writer
+									// stopped it.
+									ticket: null
+								}
 							: {})
 					})
 					.where(and(eq(SessionTable.id, input.id), isNull(SessionTable.timeDeleted)))
@@ -395,7 +448,15 @@ export namespace Session {
 							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
 							: {}),
 						...(input.to === 'ended' || input.to === 'failed'
-							? { timeStopped: sql`coalesce(${SessionTable.timeStopped}, ${now})` }
+							? {
+									timeStopped: sql`coalesce(${SessionTable.timeStopped}, ${now})`,
+									// A stopped run has no address. Publishing one is
+									// already refused, so keeping the last one would
+									// leave the only readable ticket for a dead run
+									// being the one nothing may replace — and a client
+									// that polls would dial it.
+									ticket: null
+								}
 							: {})
 					})
 					.where(
