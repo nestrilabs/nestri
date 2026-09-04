@@ -101,6 +101,17 @@ struct Args {
     #[arg(long, env = "NESCOPE_HDR")]
     hdr: bool,
 
+    /// Run XWayland, for Linux-native software with no Wayland support.
+    ///
+    /// Off by default, and that is the point. XWayland costs input latency and
+    /// a compositing hop, which is the wrong trade for a streaming box. Windows
+    /// titles do not need it -- Proton renders through Wayland when told to,
+    /// which is what the launch environment does -- and HDR is only offered on
+    /// the Wayland surface, so a game routed through XWayland loses it too.
+    /// Turn this on for the shrinking set of X11-only native software.
+    #[arg(long, env = "NESCOPE_XWAYLAND")]
+    xwayland: bool,
+
     /// Wayland socket name (created in $XDG_RUNTIME_DIR).
     #[arg(long, default_value = "nescope-0", env = "NESCOPE_SOCKET")]
     socket: String,
@@ -283,7 +294,9 @@ fn main() {
         args.hdr,
         args.render_device.clone(),
     );
-    state.init_xwayland(&loop_handle, Some(args.x_display));
+    if args.xwayland {
+        state.init_xwayland(&loop_handle, Some(args.x_display));
+    }
 
     // Said out loud because in compositor mode nothing else can work them out.
     // A process started by the hub rather than by nescope has no inherited
@@ -291,7 +304,11 @@ fn main() {
     if args.command.is_empty() {
         tracing::info!(
             wayland_display = %socket_name.to_string_lossy(),
-            display = format!(":{}", args.x_display),
+            display = if args.xwayland {
+                format!(":{}", args.x_display)
+            } else {
+                "(none — XWayland off; pass --xwayland if you need it)".to_string()
+            },
             "compositor mode — point clients at these and they will connect"
         );
     }
@@ -425,23 +442,30 @@ fn main() {
                 && data.primary_pid.is_none()
                 && !data.state.game_launched
             {
-                if let Some(xdisplay) = data.state.xdisplay {
+                // Only wait on XWayland when we are the ones providing it.
+                // Without --xwayland there is no display coming, so waiting
+                // would mean never launching.
+                if !args.xwayland || data.state.xdisplay.is_some() {
                     data.state.game_launched = true;
                     tracing::info!("Launching {:?}", command[0]);
 
                     let mut cmd = std::process::Command::new(&command[0]);
 
                     cmd.args(&command[1..])
-                        .env("DISPLAY", format!(":{xdisplay}"))
                         .stdin(std::process::Stdio::null())
                         .stdout(std::process::Stdio::inherit())
                         .stderr(std::process::Stdio::inherit())
                         // Put the game in its own process group so we can
                         // kill the whole tree at once with kill(-pgid, …).
                         .process_group(0)
-                        // Provide also WAYLAND_DISPLAY, so if the game or application
-                        // is Wayland-native and doesn't support older X11 it'll still run.
                         .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
+
+                    // DISPLAY only if XWayland is actually running. Setting it
+                    // otherwise points clients at a server that is not there,
+                    // which is what the compositor used to do.
+                    if let Some(xdisplay) = data.state.xdisplay {
+                        cmd.env("DISPLAY", format!(":{xdisplay}"));
+                    }
 
                     if args.hdr {
                         // HDR arrives over the Wayland colour-management
@@ -503,7 +527,8 @@ fn main() {
                             return;
                         }
                     }
-                } else if !xwayland_timed_out
+                } else if args.xwayland
+                    && !xwayland_timed_out
                     && startup.elapsed() > Duration::from_secs(XWAYLAND_TIMEOUT_SECS)
                 {
                     // Waiting forever is the outcome to avoid: the auto-exit

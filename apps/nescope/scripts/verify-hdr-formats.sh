@@ -44,12 +44,15 @@
 set -euo pipefail
 
 MODE="baseline"
+NESCOPE_ARGS=()
 if [ "${1:-}" = "--expect-layer" ]; then
   MODE="layer"
   # nescope no longer sets this, on purpose, so the legacy layer stays inert in
   # normal use. This mode is the one place that wants it, so it opts in here
   # rather than relying on the compositor to leave a switch flipped.
   export ENABLE_GAMESCOPE_WSI=1
+  # And the route only exists on the XCB surface, which needs a server.
+  NESCOPE_ARGS=(--xwayland)
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -88,7 +91,8 @@ chmod +x "$WORK/probe.sh"
 
 echo "enumerating surface formats under nescope…"
 NESCOPE_RC=0
-timeout 60 "$ROOT/target/release/nescope" --hdr --width 1280 --height 720 \
+timeout 60 "$ROOT/target/release/nescope" --hdr "${NESCOPE_ARGS[@]}" \
+  --width 1280 --height 720 \
   -- "$WORK/probe.sh" > "$WORK/probe.out" 2>"$WORK/nescope.log" || NESCOPE_RC=$?
 
 # A compositor that died, or a probe that never got a Vulkan instance, is an
@@ -255,9 +259,14 @@ if formats:
 # because a native-Wayland client failing the layer checks above is failing for
 # a reason that has nothing to do with formats.
 if env.get("child_display", "unset") == "unset":
-    print("\nnote: the child had no DISPLAY, so it ran as a native Wayland client.")
-    print("      HDR signalling needs the XWayland path — see the FIXME in")
-    print("      apps/nescope/src/hdr.rs for why the Wayland one cannot carry it yet.")
+    print("\nnote: the child had no DISPLAY and ran as a native Wayland client,")
+    print("      which is the intended configuration — HDR is only offered on the")
+    print("      Wayland surface. Pass --xwayland to nescope for X11-only software,")
+    print("      at the cost of that software's HDR.")
+else:
+    print("\nnote: the child had a DISPLAY, so XWayland is running. A game that")
+    print("      presents through it gets no HDR: Mesa offers no HDR colour space")
+    print("      on the XWayland surface.")
 
 print()
 if fails:

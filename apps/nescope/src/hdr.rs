@@ -57,11 +57,12 @@
 //!
 //! # What HDR does not cover
 //!
-//! A game that cannot be a Wayland client gets SDR. XWayland runs and is the
-//! right thing for those titles -- it is what makes them work at all -- but
-//! HDR is not available there without the legacy route above. Nothing about
-//! this is fixable from inside this module; it is Mesa's XWayland surface
-//! offering no HDR colour space.
+//! A game that cannot be a Wayland client gets SDR, and XWayland is off by
+//! default -- it costs input latency and a compositing hop, which is the wrong
+//! trade for a streaming box, and Proton does not need it. `--xwayland` turns
+//! it on for the shrinking set of X11-only native software, which then runs
+//! without HDR: Mesa offers no HDR colour space on the XWayland surface, and
+//! nothing in this module can change that.
 //!
 //! Still unexercised: no game has run, and the scRGB/FP16 arm has had no pixels
 //! through it -- only HDR10 PQ.
