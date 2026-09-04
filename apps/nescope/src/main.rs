@@ -45,6 +45,11 @@ use std::os::unix::process::CommandExt;
 use std::sync::Arc;
 use std::time::Duration;
 
+/// How long to wait for XWayland to report a display before giving up. Startup
+/// is normally tens of milliseconds; this only has to be longer than a slow
+/// machine's worst case, not tuned.
+const XWAYLAND_TIMEOUT_SECS: u64 = 10;
+
 use calloop::generic::Generic;
 use calloop::signals::{Signal, Signals};
 use calloop::timer::Timer;
@@ -402,6 +407,11 @@ fn main() {
 
     // Run with a 1-second timeout so the idle closure fires even when no
     // Wayland events arrive (needed for zombie reaping and auto-exit checks).
+    // Deadline for XWayland to come up. The launch below waits on it, so if it
+    // never arrives there is nothing to wait for and no game to run.
+    let startup = std::time::Instant::now();
+    let mut xwayland_timed_out = false;
+
     event_loop
         .run(Some(Duration::from_secs(1)), &mut data, move |data| {
             // ── Reap zombie children ──────────────────────────────────
@@ -470,6 +480,23 @@ fn main() {
                             return;
                         }
                     }
+                } else if !xwayland_timed_out
+                    && startup.elapsed() > Duration::from_secs(XWAYLAND_TIMEOUT_SECS)
+                {
+                    // Waiting forever is the outcome to avoid: the auto-exit
+                    // below only runs once a game has been launched, so a
+                    // display that never arrives leaves nescope polling with no
+                    // game and nothing logged. Smithay does not always report a
+                    // failed XWayland as an error -- an Xwayland that exits
+                    // immediately simply never becomes ready -- so this is a
+                    // deadline, not an error handler.
+                    xwayland_timed_out = true;
+                    tracing::error!(
+                        "XWayland did not become ready within {XWAYLAND_TIMEOUT_SECS}s — \
+                         cannot launch a game without a display"
+                    );
+                    kill_all_children();
+                    data.loop_signal.stop();
                 }
             }
 

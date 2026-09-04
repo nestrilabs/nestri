@@ -370,7 +370,13 @@ impl NescopeState {
                 NescopeState::open_x11_input_conn(data, display_number);
             }
             XWaylandEvent::Error => {
-                tracing::error!("XWayland crashed at startup");
+                // The game launch waits for a display number, so a dead
+                // XWayland means it will never start. Nothing downstream can
+                // notice that: the auto-exit path keys off a game having been
+                // launched, so without stopping here nescope would poll
+                // forever with no game and no reason given.
+                tracing::error!("XWayland crashed at startup — cannot run a game without it");
+                data.loop_signal.stop();
             }
         });
 
@@ -954,20 +960,14 @@ where
     let formats = {
         use std::iter::once;
 
-        // The modifiers this driver reports for these formats. LINEAR alone is
-        // accepted but forces an untiled surface; the tiled ones are what the
-        // GPU actually wants to render into.
-        const TILED: &[u64] = &[
-            0x0200_0000_0008_2305,
-            0x0200_0000_0004_2305,
-            0x0200_0000_0008_2405,
-            0x0200_0000_0008_2205,
-            0x0200_0000_0008_2105,
-            0x0200_0000_0000_0305,
-            0x0200_0000_0000_0a04,
-            0x0200_0000_0000_0105,
-        ];
-
+        // Only LINEAR and INVALID, deliberately. Naming a driver's tiled
+        // modifiers here would mean hard-coding one vendor's values into a list
+        // sent to every client, and it buys nothing: INVALID leaves the choice
+        // of tiling to the driver, which picks its own optimal layout, and
+        // LINEAR is universally supported as the fallback. Measured on RDNA4 --
+        // adding that vendor's eight tiled modifiers changes neither the
+        // formats a client is offered nor whether an HDR swapchain is created.
+        //
         // alpha spelling, opaque spelling
         const PAIRS: &[(Fourcc, Fourcc)] = &[
             (Fourcc::Argb8888, Fourcc::Xrgb8888),
@@ -981,10 +981,7 @@ where
             .iter()
             .flat_map(|&(alpha, opaque)| once(alpha).chain(once(opaque)))
             .flat_map(|code| {
-                TILED
-                    .iter()
-                    .map(|&m| Modifier::from(m))
-                    .chain(once(Modifier::Linear))
+                once(Modifier::Linear)
                     .chain(once(Modifier::Invalid))
                     .map(move |modifier| Format { code, modifier })
             })
