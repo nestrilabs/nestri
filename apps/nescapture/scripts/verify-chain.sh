@@ -13,6 +13,11 @@
 # passes. So the checks below are about pixel values, not about whether bytes
 # moved.
 #
+# This covers the SDR path only. The HDR arms need a swapchain this workload
+# cannot ask for, and the check that matters there is a different one — absolute
+# sample values against the standard, rather than two instruments against each
+# other. See verify-hdr.sh.
+#
 # Usage: apps/nescapture/scripts/verify-chain.sh [seconds]
 set -euo pipefail
 
