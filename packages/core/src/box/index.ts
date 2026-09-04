@@ -5,6 +5,7 @@ import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { BoxState, BoxTable, BoxTier } from './box.sql.js';
+import { Placement } from './placement.js';
 
 /**
  * A VM someone owns.
@@ -76,6 +77,29 @@ export namespace Box {
 			});
 		}
 	);
+
+	/**
+	 * Create a box and let something else decide where it runs.
+	 *
+	 * The placement seam is here, at creation, and nowhere else: `machineId` is
+	 * set once and every later question about which hardware a box — or a run
+	 * of it — belongs to is answered by joining through this row. A caller that
+	 * knows the host still uses `create`; a caller acting for a person does not
+	 * know and must not guess, which is what this overload is for.
+	 */
+	export const createPlaced = async (
+		input: { id: string; userId: string; label: string; tier: Info['tier'] },
+		placer?: Placement.Placer
+	) => {
+		const machineId = await Placement.choose({ userId: input.userId, tier: input.tier }, placer);
+		return create({
+			id: input.id,
+			userId: input.userId,
+			machineId,
+			label: input.label,
+			tier: input.tier
+		});
+	};
 
 	export const fromID = fn(Info.shape.id, async (id) => {
 		return Database.use(async (tx) => {

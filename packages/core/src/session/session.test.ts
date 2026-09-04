@@ -41,7 +41,7 @@ async function scene(label: string, steamAppId: number) {
 		label,
 		tier: 'sm'
 	});
-	return { owner, box, gameId: await newGame(steamAppId) };
+	return { owner, machineId, box, gameId: await newGame(steamAppId) };
 }
 
 afterAll(async () => {
@@ -171,5 +171,246 @@ describe('Session', () => {
 
 		await sql`delete from "box" where id = ${box.id}`;
 		expect(await Session.listByBox(box.id)).toHaveLength(0);
+	});
+});
+
+describe('Session jobs', () => {
+	test('a requested session is the job, and it carries its kind', async () => {
+		const { owner, machineId, box, gameId } = await scene('ses-job-kind', 5410);
+		const session = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: box.id,
+			gameId,
+			linkedAccountId: owner.linkedAccountId
+		});
+
+		const jobs = await Session.listJobsForMachine(machineId);
+		expect(jobs).toHaveLength(1);
+		// The kind is on the wire from the first day there is only one, so the
+		// second kind is an addition rather than a redesign.
+		expect(jobs[0]!.kind).toBe('session.start');
+		expect(jobs[0]!.sessionId).toBe(session.id);
+		expect(jobs[0]!.boxId).toBe(box.id);
+		expect(jobs[0]!.boxTier).toBe('sm');
+		expect(jobs[0]!.gameId).toBe(gameId);
+		expect(jobs[0]!.steamAppId).toBe(5410);
+		expect(jobs[0]!.linkedAccountId).toBe(owner.linkedAccountId);
+	});
+
+	test('a job belongs to the machine its box is placed on and to no other', async () => {
+		const mine = await scene('ses-job-mine', 5411);
+		const theirs = await scene('ses-job-theirs', 5412);
+
+		const session = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: theirs.box.id,
+			gameId: theirs.gameId,
+			linkedAccountId: theirs.owner.linkedAccountId
+		});
+
+		// The scope is the join, not a filter the caller asks for. A machine
+		// credential is a long-lived secret on hardware in somebody's home, so
+		// what one leaking can reach is decided here.
+		expect(await Session.listJobsForMachine(mine.machineId)).toHaveLength(0);
+		expect((await Session.listJobsForMachine(theirs.machineId)).map((j) => j.sessionId)).toEqual([
+			session.id
+		]);
+	});
+
+	test('only a requested session is work; a claimed one is not offered again', async () => {
+		const { owner, machineId, box, gameId } = await scene('ses-job-claimed', 5413);
+		const session = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: box.id,
+			gameId,
+			linkedAccountId: owner.linkedAccountId
+		});
+
+		expect(await Session.listJobsForMachine(machineId)).toHaveLength(1);
+		await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(await Session.listJobsForMachine(machineId)).toHaveLength(0);
+	});
+});
+
+describe('Session claim', () => {
+	async function requested(label: string, steamAppId: number) {
+		const s = await scene(label, steamAppId);
+		const session = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: s.box.id,
+			gameId: s.gameId,
+			linkedAccountId: s.owner.linkedAccountId
+		});
+		return { ...s, session };
+	}
+
+	test('the claim is a compare-and-set, so the second attempt finds nothing to move', async () => {
+		const { machineId, session } = await requested('ses-cas', 5420);
+
+		const won = await Session.compareAndSetState({
+			id: session.id,
+			machineId,
+			from: 'requested',
+			to: 'starting',
+			errorMessage: null
+		});
+		expect(won?.state).toBe('starting');
+
+		// The same attempt again. The row is no longer `requested`, so the
+		// update matches nothing — which is what stops two agents from both
+		// starting the same box. Updating on the id alone would succeed twice.
+		const lost = await Session.compareAndSetState({
+			id: session.id,
+			machineId,
+			from: 'requested',
+			to: 'starting',
+			errorMessage: null
+		});
+		expect(lost).toBeNull();
+		expect((await Session.fromID(session.id))?.state).toBe('starting');
+	});
+
+	test('a machine that is not the box’s host cannot move the row', async () => {
+		const { session } = await requested('ses-cas-mine', 5421);
+		const other = await scene('ses-cas-other', 5422);
+
+		const result = await Session.transition({
+			id: session.id,
+			machineId: other.machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(result.outcome).toBe('forbidden');
+		expect((await Session.fromID(session.id))?.state).toBe('requested');
+
+		// And the compare-and-set is scoped in the same query, not only by the
+		// classification above it.
+		expect(
+			await Session.compareAndSetState({
+				id: session.id,
+				machineId: other.machineId,
+				from: 'requested',
+				to: 'starting',
+				errorMessage: null
+			})
+		).toBeNull();
+	});
+
+	test('a session that does not exist is refused the same way as one that is not yours', async () => {
+		const other = await scene('ses-cas-ghost', 5423);
+		const result = await Session.transition({
+			// A well-formed id for a row that was never written.
+			id: Identifier.ascending('session'),
+			machineId: other.machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		// Same answer as somebody else's session: an agent must not be able to
+		// learn which ids exist by reporting states at them.
+		expect(result.outcome).toBe('forbidden');
+	});
+
+	test('re-reporting the state you already reported changes nothing', async () => {
+		const { machineId, session } = await requested('ses-repeat', 5424);
+
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		const again = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		// A retry after a lost response is not a broken agent.
+		expect(again.outcome).toBe('unchanged');
+		expect(again.session?.state).toBe('starting');
+	});
+
+	test('a transition off the table is refused and the row does not move', async () => {
+		const { machineId, session } = await requested('ses-illegal', 5425);
+
+		// Skipping `starting` means nothing ever holds the claim, and the claim
+		// is the only mutual exclusion here — so it is refused however tempting
+		// the shortcut looks.
+		const skipped = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		expect(skipped.outcome).toBe('illegal');
+		expect((await Session.fromID(session.id))?.state).toBe('requested');
+
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'failed', errorMessage: 'no' });
+
+		// Terminal is terminal: a dead session cannot be resurrected.
+		const raised = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		expect(raised.outcome).toBe('illegal');
+		expect((await Session.fromID(session.id))?.state).toBe('failed');
+	});
+
+	test('the timestamps survive a duplicate report, which is what billing rests on', async () => {
+		const { machineId, session } = await requested('ses-idempotent', 5426);
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		const live = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		expect(live.session?.timeStarted).not.toBeNull();
+
+		const repeat = await Session.transition({
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		expect(repeat.session?.timeStarted).toBe(live.session!.timeStarted);
+	});
+
+	test('publishing a ticket is scoped to the host too', async () => {
+		const { machineId, session } = await requested('ses-ticket-scope', 5427);
+		const other = await scene('ses-ticket-other', 5428);
+
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+
+		const refused = await Session.publishTicket({
+			id: session.id,
+			machineId: other.machineId,
+			ticket: 'stolen'
+		});
+		expect(refused.outcome).toBe('forbidden');
+		expect((await Session.fromID(session.id))?.ticket).toBeNull();
+
+		// A ticket may appear while the state is still `starting`.
+		const first = await Session.publishTicket({ id: session.id, machineId, ticket: 'one' });
+		expect(first.outcome).toBe('published');
+		expect(first.session?.ticket).toBe('one');
+		expect(first.session?.state).toBe('starting');
+
+		const second = await Session.publishTicket({ id: session.id, machineId, ticket: 'two' });
+		expect(second.session?.ticket).toBe('two');
+	});
+
+	test('a stopped session has no address to publish', async () => {
+		const { machineId, session } = await requested('ses-ticket-dead', 5429);
+		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ id: session.id, machineId, state: 'ended', errorMessage: null });
+
+		const result = await Session.publishTicket({ id: session.id, machineId, ticket: 'late' });
+		expect(result.outcome).toBe('closed');
+		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 	});
 });
