@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# Report the surface formats a client actually sees under nescope.
+#
+# HDR reaches a game as a (VkFormat, VkColorSpaceKHR) pair on its swapchain
+# surface. Everything else -- the colour-management protocol, the dmabuf format
+# list, the encoder's matrix and transfer tags -- is downstream of whether that
+# pair was ever offered. So this asks the one question directly, from inside a
+# real client process, using the loader's own enumeration rather than ours.
+#
+# It deliberately does not check pixels. verify-hdr.sh in nescapture does that,
+# and the two are answering different questions: this one is "was HDR on the
+# menu", that one is "did the samples come out where the standard says". A pass
+# here and a fail there means we converted wrongly; a fail here means the game
+# never had the option and anything downstream is moot.
+#
+# The two surfaces a client can be on need separate answers, so there are two
+# modes:
+#
+#   (default)       The Wayland surface, which is where HDR actually comes
+#                   from: Mesa pairs the colour spaces it learns from
+#                   wp_color_manager_v1 with the pixel formats it derives from
+#                   the dmabuf list. Guards both halves. Each is silently
+#                   absent when broken, and the colour space alone is what made
+#                   an 8-bit surface look like working HDR.
+#
+#   --expect-layer  The XCB surface, for diagnosing the legacy route only.
+#                   Mesa offers no HDR colour space on XWayland at all, so the
+#                   HDR pairs can only come from a WSI layer inside the game's
+#                   process -- gamescope's approach, which predates Wayland
+#                   colour management. nescope does not ship such a layer and
+#                   does not enable one, because capture cannot see the colour
+#                   space it hides and would tag PQ samples as BT.709. This
+#                   mode passes only with a layer loaded, e.g.
+#
+#                     VK_ADD_IMPLICIT_LAYER_PATH=<dir> \
+#                       apps/nescope/scripts/verify-hdr-formats.sh --expect-layer
+#
+#                   A failure here is the expected state, not a regression.
+#
+# Exit codes are distinct on purpose: 0 pass, 1 the formats are wrong, 2 the
+# environment or the probe failed and this run measured nothing.
+#
+# Usage: apps/nescope/scripts/verify-hdr-formats.sh [--expect-layer]
+set -euo pipefail
+
+MODE="baseline"
+NESCOPE_ARGS=()
+if [ "${1:-}" = "--expect-layer" ]; then
+  MODE="layer"
+  # nescope no longer sets this, on purpose, so the legacy layer stays inert in
+  # normal use. This mode is the one place that wants it, so it opts in here
+  # rather than relying on the compositor to leave a switch flipped.
+  export ENABLE_GAMESCOPE_WSI=1
+  # And the route only exists on the XCB surface, which needs a server.
+  NESCOPE_ARGS=(--xwayland)
+fi
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+: "${XDG_RUNTIME_DIR:=/run/user/$(id -u)}"
+export XDG_RUNTIME_DIR
+
+for tool in vulkaninfo python3; do
+  command -v "$tool" >/dev/null || { echo "missing required tool: $tool" >&2; exit 1; }
+done
+
+echo "building…"
+cargo build --release -p nescope --manifest-path "$ROOT/Cargo.toml" >/dev/null
+
+# The probe runs as nescope's child, so it sees exactly the environment a game
+# would. Which display variables it inherits is itself a result -- a child with
+# no DISPLAY is a native Wayland client, and that is the path with no HDR -- so
+# record them before enumerating anything.
+cat > "$WORK/probe.sh" <<'PROBE'
+#!/usr/bin/env bash
+echo "child_wayland_display=${WAYLAND_DISPLAY:-unset}"
+echo "child_display=${DISPLAY:-unset}"
+echo "child_enable_gamescope_wsi=${ENABLE_GAMESCOPE_WSI:-unset}"
+echo "---VULKANINFO---"
+# Keep stderr. A Vulkan init failure and a missing HDR format both end up as
+# "no formats" otherwise, and only one of them is this script's business.
+if vulkaninfo 2>&1; then
+  echo "probe_vulkaninfo=ok"
+else
+  echo "probe_vulkaninfo=failed rc=$?"
+fi
+PROBE
+chmod +x "$WORK/probe.sh"
+
+echo "enumerating surface formats under nescope…"
+NESCOPE_RC=0
+timeout 60 "$ROOT/target/release/nescope" --hdr "${NESCOPE_ARGS[@]}" \
+  --width 1280 --height 720 \
+  -- "$WORK/probe.sh" > "$WORK/probe.out" 2>"$WORK/nescope.log" || NESCOPE_RC=$?
+
+# A compositor that died, or a probe that never got a Vulkan instance, is an
+# environment failure. Reporting it as missing HDR formats would be the exact
+# confusion this script exists to prevent, so say which one it was and show the
+# log rather than deleting it with the temp dir.
+if [ "$NESCOPE_RC" -eq 124 ]; then
+  echo
+  echo "FAIL — nescope did not exit within 60s; the run was killed." >&2
+  echo "This is an environment failure, not an HDR result. Last log lines:" >&2
+  tail -20 "$WORK/nescope.log" >&2
+  exit 2
+fi
+
+if grep -q "^probe_vulkaninfo=failed" "$WORK/probe.out"; then
+  echo
+  echo "FAIL — vulkaninfo failed inside the compositor." >&2
+  echo "This is an environment failure, not an HDR result:" >&2
+  sed -n "/---VULKANINFO---/,/probe_vulkaninfo=failed/p" "$WORK/probe.out" \
+    | grep -iE "error|cannot|failed|no such" | head -10 >&2 || true
+  exit 2
+fi
+
+if ! grep -q "^probe_vulkaninfo=ok" "$WORK/probe.out"; then
+  echo
+  echo "FAIL — the probe did not run to completion (nescope rc=$NESCOPE_RC)." >&2
+  echo "This is an environment failure, not an HDR result. Last log lines:" >&2
+  tail -20 "$WORK/nescope.log" >&2
+  exit 2
+fi
+
+python3 - "$WORK/probe.out" "$MODE" <<'PY'
+import re, sys
+
+path, mode = sys.argv[1], sys.argv[2]
+text = open(path, errors="replace").read()
+
+env = dict(re.findall(r"^(child_\w+)=(.*)$", text, re.M))
+print()
+print(f"child WAYLAND_DISPLAY:  {env.get('child_wayland_display', '?')}")
+print(f"child DISPLAY:          {env.get('child_display', '?')}")
+print(f"ENABLE_GAMESCOPE_WSI:   {env.get('child_enable_gamescope_wsi', '?')}")
+
+# Pull the format lists from the presentable-surface section of the first real
+# GPU. llvmpipe is enumerated too and would double every count, so skip any
+# adapter that names it -- a software rasteriser's opinion about HDR is not the
+# thing under test.
+#
+# Keep the XCB and Wayland surfaces apart. Once the child has a DISPLAY it has
+# both, they carry different formats, and merging them would let one path's HDR
+# support stand in for the other's. The XCB list is the one a Proton game sees.
+# One adapter only, and named in the output. Appending every adapter's formats
+# into one list would let a second GPU satisfy the checks while the one the game
+# runs on lacks the formats entirely -- a pass that means nothing. There is no
+# way to ask vulkaninfo which adapter a game would pick, so this takes the first
+# hardware one and says which, leaving a multi-GPU host to be read rather than
+# guessed at.
+section = text.split("Presentable Surfaces", 1)
+by_path = {"xcb": [], "wayland": []}
+gpu, path, chosen_gpu, other_gpus = None, None, None, []
+if len(section) > 1:
+    block, cur_fmt = section[1], None
+    for line in block.splitlines():
+        m = re.match(r"\s*GPU id\s*:\s*\d+\s*\((.+?)\)\s*\[(.+?)\]", line)
+        if m:
+            gpu, exts = m.group(1), m.group(2)
+            path = "wayland" if "wayland_surface" in exts else "xcb"
+            if "llvmpipe" not in gpu:
+                if chosen_gpu is None:
+                    chosen_gpu = gpu
+                elif gpu != chosen_gpu and gpu not in other_gpus:
+                    other_gpus.append(gpu)
+            continue
+        # Skip the software rasteriser, and every hardware adapter after the
+        # first: their formats are not the ones under test.
+        if gpu is None or "llvmpipe" in gpu or gpu != chosen_gpu:
+            continue
+        m = re.match(r"\s*format\s*=\s*(\S+)", line)
+        if m:
+            cur_fmt = m.group(1)
+            continue
+        m = re.match(r"\s*colorSpace\s*=\s*(\S+)", line)
+        if m and cur_fmt and path:
+            # vulkaninfo pads its listing with FORMAT_UNDEFINED entries when a
+            # layer appends to the surface format list. Checked against the API
+            # directly with the two-call pattern -- the count and the entries
+            # agree there, and VK_INCOMPLETE comes back on a short buffer -- so
+            # these are an artifact of the listing, not formats a client sees.
+            if cur_fmt != "FORMAT_UNDEFINED":
+                by_path[path].append((cur_fmt, m.group(1)))
+            cur_fmt = None
+
+# A game under XWayland presents through the XCB surface, so that is the list
+# under test whenever it exists. Fall back to the Wayland one when the child
+# never got a DISPLAY, which is the only case where it is what a game would use.
+on_xwayland = bool(by_path["xcb"])
+formats = by_path["xcb"] if on_xwayland else by_path["wayland"]
+
+fails = []
+if not formats:
+    fails.append("no surface formats enumerated at all — the probe never reached "
+                 "a surface, so this run measured nothing")
+
+print(f"\nadapter under test:     {chosen_gpu or '(none found)'}")
+if other_gpus:
+    print(f"  ignoring {len(other_gpus)} other adapter(s): {', '.join(other_gpus)}")
+    print("  a game may not pick the one above; check it is the render device")
+print(f"path under test:        {'XCB (XWayland)' if on_xwayland else 'native Wayland'}")
+if on_xwayland:
+    print(f"  (native Wayland surface offers {len(by_path['wayland'])} formats, not under test)")
+print(f"\nsurface formats offered: {len(formats)}")
+for f, cs in formats:
+    print(f"  {f:<34} {cs}")
+
+spaces = {cs for _, cs in formats}
+depth10 = [f for f, _ in formats if "10" in f and "B8G8R8A8" not in f]
+depth16 = [f for f, _ in formats if "16G16" in f or "SFLOAT" in f]
+
+print()
+print(f"HDR10_ST2084 offered:    {'yes' if any('ST2084' in s for s in spaces) else 'no'}")
+print(f"scRGB linear offered:    {'yes' if any('EXTENDED_SRGB_LINEAR' in s for s in spaces) else 'no'}")
+print(f"10-bit formats offered:  {'yes' if depth10 else 'no'}")
+print(f"FP16 formats offered:    {'yes' if depth16 else 'no'}")
+
+if formats:
+    if mode == "baseline":
+        # Only what is genuinely working today. The point of this mode is to
+        # notice if the colour-management path stops being wired up at all,
+        # which would otherwise look identical to plain SDR.
+        # Guard both halves of what the compositor itself controls: the colour
+        # spaces, which come from the colour-management protocol, and the pixel
+        # formats, which come from the dmabuf list. Each fails silently on its
+        # own -- a missing format is simply absent, with nothing logged.
+        wl = by_path["wayland"]
+        wl_spaces = {cs for _, cs in wl}
+        if not any("ST2084" in s for s in wl_spaces):
+            fails.append("HDR10_ST2084_EXT is no longer offered on the Wayland "
+                         "surface — the wp_color_manager_v1 path has stopped "
+                         "being advertised")
+        if not [f for f, _ in wl if "10" in f and "B8G8R8A8" not in f]:
+            fails.append("no 10-bit pixel format on the Wayland surface — Mesa "
+                         "drops any format lacking either its alpha or its "
+                         "opaque FourCC spelling, so check both are advertised")
+        if not [f for f, _ in wl if "16G16" in f]:
+            fails.append("no FP16 pixel format on the Wayland surface — the "
+                         "scRGB path needs R16G16B16A16_SFLOAT")
+    else:
+        # The three a WSI layer injects. Until one exists these all fail, and
+        # that is the expected reading, not a defect in this script.
+        if not any("ST2084" in s for s in spaces):
+            fails.append("HDR10_ST2084_EXT not offered")
+        if not depth10:
+            fails.append("no 10-bit format offered — PQ over 8-bit BGRA bands; a "
+                         "WSI layer must inject A2B10G10R10/A2R10G10B10")
+        if not any("EXTENDED_SRGB_LINEAR" in s for s in spaces):
+            fails.append("EXTENDED_SRGB_LINEAR_EXT not offered — Proton titles on "
+                         "the scRGB path find no matching format and fall back to SDR")
+        if not depth16:
+            fails.append("no FP16 format offered — the scRGB path needs "
+                         "R16G16B16A16_SFLOAT")
+
+# The display the child inherited decides which of the two code paths it is on,
+# and only one of them can carry HDR today. Worth saying plainly either way,
+# because a native-Wayland client failing the layer checks above is failing for
+# a reason that has nothing to do with formats.
+if env.get("child_display", "unset") == "unset":
+    print("\nnote: the child had no DISPLAY and ran as a native Wayland client,")
+    print("      which is the intended configuration — HDR is only offered on the")
+    print("      Wayland surface. Pass --xwayland to nescope for X11-only software,")
+    print("      at the cost of that software's HDR.")
+else:
+    print("\nnote: the child had a DISPLAY, so XWayland is running. A game that")
+    print("      presents through it gets no HDR: Mesa offers no HDR colour space")
+    print("      on the XWayland surface.")
+
+print()
+if fails:
+    print("FAIL" + (" (expected until the WSI layer lands)" if mode == "layer" else ""))
+    for f in fails:
+        print(f"  - {f}")
+    sys.exit(1)
+print("PASS")
+PY

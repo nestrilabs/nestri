@@ -25,7 +25,8 @@
 //! | Variable        | Effect                                        |
 //! |----------------|-----------------------------------------------|
 //! | `WAYLAND_DISPLAY` | Set by nescope before spawning the game      |
-//! | `DISPLAY`         | Set to the XWayland display (`:N`)           |
+//! | `DISPLAY`         | XWayland display (`:N`), only with `--xwayland` |
+//! | `PROTON_ENABLE_WAYLAND` | Set to `1` always, so Proton renders through Wayland |
 //! | `XCURSOR_THEME`   | XCursor theme name for the software cursor   |
 //! | `XCURSOR_SIZE`    | XCursor size in pixels                       |
 //! | `RUST_LOG`        | Tracing filter (e.g. `nescope=debug`)        |
@@ -44,6 +45,11 @@
 use std::os::unix::process::CommandExt;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// How long to wait for XWayland to report a display before giving up. Startup
+/// is normally tens of milliseconds; this only has to be longer than a slow
+/// machine's worst case, not tuned.
+const XWAYLAND_TIMEOUT_SECS: u64 = 10;
 
 use calloop::generic::Generic;
 use calloop::signals::{Signal, Signals};
@@ -95,6 +101,17 @@ struct Args {
     /// Enable HDR protocols (wp_color_management_v1 + gamescope_swapchain_factory_v2).
     #[arg(long, env = "NESCOPE_HDR")]
     hdr: bool,
+
+    /// Run XWayland, for Linux-native software with no Wayland support.
+    ///
+    /// Off by default, and that is the point. XWayland costs input latency and
+    /// a compositing hop, which is the wrong trade for a streaming box. Windows
+    /// titles do not need it -- Proton renders through Wayland when told to,
+    /// which is what the launch environment does -- and HDR is only offered on
+    /// the Wayland surface, so a game routed through XWayland loses it too.
+    /// Turn this on for the shrinking set of X11-only native software.
+    #[arg(long, env = "NESCOPE_XWAYLAND")]
+    xwayland: bool,
 
     /// Wayland socket name (created in $XDG_RUNTIME_DIR).
     #[arg(long, default_value = "nescope-0", env = "NESCOPE_SOCKET")]
@@ -278,7 +295,9 @@ fn main() {
         args.hdr,
         args.render_device.clone(),
     );
-    //state.init_xwayland(&loop_handle, Some(args.x_display));
+    if args.xwayland {
+        state.init_xwayland(&loop_handle, Some(args.x_display));
+    }
 
     // Said out loud because in compositor mode nothing else can work them out.
     // A process started by the hub rather than by nescope has no inherited
@@ -286,7 +305,11 @@ fn main() {
     if args.command.is_empty() {
         tracing::info!(
             wayland_display = %socket_name.to_string_lossy(),
-            display = format!(":{}", args.x_display),
+            display = if args.xwayland {
+                format!(":{}", args.x_display)
+            } else {
+                "(none — XWayland off; pass --xwayland if you need it)".to_string()
+            },
             "compositor mode — point clients at these and they will connect"
         );
     }
@@ -402,6 +425,11 @@ fn main() {
 
     // Run with a 1-second timeout so the idle closure fires even when no
     // Wayland events arrive (needed for zombie reaping and auto-exit checks).
+    // Deadline for XWayland to come up. The launch below waits on it, so if it
+    // never arrives there is nothing to wait for and no game to run.
+    let startup = std::time::Instant::now();
+    let mut xwayland_timed_out = false;
+
     event_loop
         .run(Some(Duration::from_secs(1)), &mut data, move |data| {
             // ── Reap zombie children ──────────────────────────────────
@@ -415,62 +443,110 @@ fn main() {
                 && data.primary_pid.is_none()
                 && !data.state.game_launched
             {
-                //if let Some(xdisplay) = data.state.xdisplay {
-                data.state.game_launched = true;
-                tracing::info!("Launching {:?}", command[0]);
+                // Only wait on XWayland when we are the ones providing it.
+                // Without --xwayland there is no display coming, so waiting
+                // would mean never launching.
+                if !args.xwayland || data.state.xdisplay.is_some() {
+                    data.state.game_launched = true;
+                    tracing::info!("Launching {:?}", command[0]);
 
-                let mut cmd = std::process::Command::new(&command[0]);
+                    let mut cmd = std::process::Command::new(&command[0]);
 
-                cmd.args(&command[1..])
-                    //.env("DISPLAY", format!(":{xdisplay}"))
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::inherit())
-                    .stderr(std::process::Stdio::inherit())
-                    // Put the game in its own process group so we can
-                    // kill the whole tree at once with kill(-pgid, …).
-                    .process_group(0)
-                    // Provide also WAYLAND_DISPLAY, so if the game or application
-                    // is Wayland-native and doesn't support older X11 it'll still run.
-                    .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
+                    cmd.args(&command[1..])
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::inherit())
+                        .stderr(std::process::Stdio::inherit())
+                        // Put the game in its own process group so we can
+                        // kill the whole tree at once with kill(-pgid, …).
+                        .process_group(0)
+                        .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
 
-                if args.hdr {
-                    tracing::debug!(
-                        gamescope_wayland_socket,
-                        "Setting GAMESCOPE_WAYLAND_DISPLAY for application"
+                    // DISPLAY only if XWayland is actually running. Setting it
+                    // otherwise points clients at a server that is not there,
+                    // which is what the compositor used to do.
+                    if let Some(xdisplay) = data.state.xdisplay {
+                        cmd.env("DISPLAY", format!(":{xdisplay}"));
+                    }
+
+                    // Proton renders through XWayland unless this is set, and
+                    // XWayland is off by default -- so without this a Windows
+                    // title has no display at all. Unconditional for that
+                    // reason: it is how the game reaches the compositor, not
+                    // an HDR switch. It is also what makes HDR reachable, since
+                    // colour management only exists on the Wayland surface --
+                    // measured here, that surface offers 21 formats including
+                    // HDR10 over A2B10G10R10 while the XWayland one offers two,
+                    // both 8-bit sRGB.
+                    cmd.env("PROTON_ENABLE_WAYLAND", "1");
+
+                    if args.hdr {
+                        // DXVK's dxgi.dll gates HDR colour space exposure on
+                        // this. Without it neither DX11 nor DX12 (vkd3d-proton
+                        // through DXVK's dxgi) sees HDR as available.
+                        cmd.env("DXVK_HDR", "1");
+
+                        // Left set, but deliberately without ENABLE_GAMESCOPE_WSI
+                        // alongside it, so it is inert unless somebody opts in.
+                        //
+                        // That pair activates gamescope's WSI layer, which
+                        // predates Wayland colour management and works by
+                        // hiding HDR from the driver and reporting it to the
+                        // compositor out of band. We do not want it: it needs a
+                        // layer this image does not ship, it only helps the
+                        // XWayland path, and capture reads the colour space it
+                        // hides -- measured, a game asking for HDR10 through it
+                        // has its PQ samples encoded and tagged BT.709 SDR.
+                        // Enabling it would trade no HDR for wrong HDR.
+                        tracing::debug!(
+                            gamescope_wayland_socket,
+                            "HDR: Wayland colour management; gamescope WSI not enabled"
+                        );
+                        cmd.env("GAMESCOPE_WAYLAND_DISPLAY", &gamescope_wayland_socket);
+                    }
+
+                    // Detect GPU vendor from render device and set VK_DRIVER_FILES
+                    // so the game uses the same GPU as nescope.
+                    if let Some(ref rd) = args.render_device {
+                        if let Some(icd_path) = detect_gpu_icd(rd) {
+                            cmd.env("VK_ICD_FILENAMES", &icd_path);
+                            cmd.env("VK_DRIVER_FILES", &icd_path); // Mesa fallback
+                            tracing::info!("GPU ICD → {icd_path}");
+                        }
+                    }
+
+                    match cmd.spawn() {
+                        Ok(child) => {
+                            let pid = child.id();
+                            tracing::info!("Game process spawned (pid {pid})");
+                            data.primary_pid = Some(pid as i32);
+                            data.game_pgid = Some(pid as i32); // PGID == PID due to .process_group(0)
+                            data.game_process = Some(child);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to launch {:?}: {e}", command[0]);
+                            data.loop_signal.stop();
+                            return;
+                        }
+                    }
+                } else if args.xwayland
+                    && !xwayland_timed_out
+                    && startup.elapsed() > Duration::from_secs(XWAYLAND_TIMEOUT_SECS)
+                {
+                    // Waiting forever is the outcome to avoid: the auto-exit
+                    // below only runs once a game has been launched, so a
+                    // display that never arrives leaves nescope polling with no
+                    // game and nothing logged. Smithay does not always report a
+                    // failed XWayland as an error -- an Xwayland that exits
+                    // immediately simply never becomes ready -- so this is a
+                    // deadline, not an error handler.
+                    xwayland_timed_out = true;
+                    tracing::error!(
+                        "XWayland did not become ready within {XWAYLAND_TIMEOUT_SECS}s — \
+                         cannot launch a game without a display"
                     );
-                    cmd.env("GAMESCOPE_WAYLAND_DISPLAY", &gamescope_wayland_socket);
-                    cmd.env("ENABLE_GAMESCOPE_WSI", "1");
-                    // DXVK's dxgi.dll gates HDR color space exposure on this env var.
-                    // Without it, both DX11 (DXVK) and DX12 (vkd3d-proton via DXVK dxgi)
-                    // games will not see HDR as available.
-                    cmd.env("DXVK_HDR", "1");
+                    kill_all_children();
+                    data.loop_signal.stop();
                 }
-
-                // Detect GPU vendor from render device and set VK_DRIVER_FILES
-                // so the game uses the same GPU as nescope.
-                if let Some(ref rd) = args.render_device {
-                    if let Some(icd_path) = detect_gpu_icd(rd) {
-                        cmd.env("VK_ICD_FILENAMES", &icd_path);
-                        cmd.env("VK_DRIVER_FILES", &icd_path); // Mesa fallback
-                        tracing::info!("GPU ICD → {icd_path}");
-                    }
-                }
-
-                match cmd.spawn() {
-                    Ok(child) => {
-                        let pid = child.id();
-                        tracing::info!("Game process spawned (pid {pid})");
-                        data.primary_pid = Some(pid as i32);
-                        data.game_pgid = Some(pid as i32); // PGID == PID due to .process_group(0)
-                        data.game_process = Some(child);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to launch {:?}: {e}", command[0]);
-                        data.loop_signal.stop();
-                        return;
-                    }
-                }
-                //}
             }
 
             // ── Poll primary process ──────────────────────────────────

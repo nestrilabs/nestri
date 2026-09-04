@@ -1,18 +1,82 @@
-//! HDR / color management protocol handlers.
+//! HDR / colour management protocol handlers.
 //!
-//! Two signalling paths feed into [`HdrState`]:
+//! # HDR here is Wayland colour management
 //!
-//! 1. **`wp_color_management_v1`** — the standard staging Wayland protocol.
-//!    Wine/Proton/SDL2 uses this when the game requests an HDR swapchain via
-//!    standard Vulkan color-space extensions.
+//! A game gets HDR by being a Wayland client and asking for it through
+//! `wp_color_manager_v1`, which Mesa turns into HDR colour spaces on the
+//! surface. That is the whole mechanism, it works, and it needs nothing outside
+//! this tree.
 //!
-//! 2. **`gamescope_swapchain_factory_v2`** — Valve's private protocol used by
-//!    the gamescope WSI Vulkan layer.  This is the primary path for Steam
-//!    games using PROTON_ENABLE_NVAPI / HDR10_ST2084.
+//! Measured on RDNA4, and the asymmetry is the point:
 //!
-//! nescope never performs color conversion itself — it just tracks which color
-//! space the active surface has declared so that an external capture library
-//! (e.g. the Vulkan vkcapture layer) can retrieve it via the public API.
+//! | surface | formats offered | HDR |
+//! |---|---|---|
+//! | Wayland | 21, incl. `A2B10G10R10` and `R16G16B16A16_SFLOAT` | yes |
+//! | XWayland | 2, both 8-bit sRGB | no -- "surface offers no format in HDR10_ST2084_EXT" |
+//!
+//! Verified past the swapchain too, not just on the format list: a client
+//! requesting `A2B10G10R10` + `HDR10_ST2084` comes out `yuv420p10le`, full
+//! range, `bt2020nc` / `smpte2084` / `bt2020`.
+//!
+//! So the launch environment always sets `PROTON_ENABLE_WAYLAND=1` -- not as an
+//! HDR switch but as the way a Windows title reaches the compositor at all,
+//! since Proton renders through XWayland otherwise and XWayland is off by
+//! default. `--hdr` adds `DXVK_HDR=1` (DXVK's dxgi gates HDR exposure on it).
+//! Those two are what HDR needs.
+//!
+//! Mesa pairs the colour spaces it learns here with the pixel formats it
+//! derives from our `zwp_linux_dmabuf_v1` list, so both halves have to be
+//! present -- the surface offered nothing but `B8G8R8A8` until the format list
+//! advertised the opaque FourCC spellings alongside the alpha ones. See the
+//! list in `state.rs`, which is where that constraint lives.
+//!
+//! # `gamescope_swapchain_factory_v2` is the legacy route, and stays off
+//!
+//! Also implemented here, because it costs little and a host may deliberately
+//! want it. It predates Wayland colour management and works the other way
+//! round: a WSI layer inside the game's process appends HDR colour spaces Mesa
+//! never offered, rewrites `imageColorSpace` to `SRGB_NONLINEAR` so the driver
+//! is never told HDR is happening, and reports the real colour space to the
+//! compositor over this protocol instead.
+//!
+//! It is not how we do HDR, for three reasons that all point the same way:
+//!
+//! - It needs a Vulkan layer this tree does not ship. Verified working with
+//!   gamescope's own, unmodified -- the XML here is byte-identical to theirs,
+//!   and the atoms written in `state.rs` are what it reads.
+//! - It only helps the XWayland path, which is the path without HDR anyway.
+//! - **Capture reads the colour space it hides.** A game asking for HDR10
+//!   through it has its ten-bit PQ samples encoded and tagged BT.709 SDR, at
+//!   full frame rate, decoding cleanly. Recorded where that value is read, in
+//!   the capture layer's swapchain hook.
+//!
+//! That last one makes enabling it worse than leaving it off: it trades no HDR
+//! for wrong HDR. So `GAMESCOPE_WAYLAND_DISPLAY` is set for the child but
+//! `ENABLE_GAMESCOPE_WSI` deliberately is not, which leaves the layer inert
+//! unless someone opts in. If anyone ever does want this path, the colour space
+//! it reports arrives here and the capture layer cannot see it, so it would
+//! need a channel from this process to that one.
+//!
+//! # What HDR does not cover
+//!
+//! A game that cannot be a Wayland client gets SDR, and XWayland is off by
+//! default -- it costs input latency and a compositing hop, which is the wrong
+//! trade for a streaming box, and Proton does not need it. `--xwayland` turns
+//! it on for the shrinking set of X11-only native software, which then runs
+//! without HDR: Mesa offers no HDR colour space on the XWayland surface, and
+//! nothing in this module can change that.
+//!
+//! Still unexercised: no game has run, and the scRGB/FP16 arm has had no pixels
+//! through it -- only HDR10 PQ.
+//!
+//! # Signalling paths, for reference
+//!
+//! Both feed [`HdrState`], which tracks the colour space the active surface has
+//! declared. This module never converts anything itself.
+//!
+//! 1. **`wp_color_manager_v1`** -- the standard protocol, and the live one.
+//! 2. **`gamescope_swapchain_factory_v2`** -- the legacy route described above,
+//!    reachable only if a WSI layer is present and opted into.
 #![allow(unused)]
 use std::collections::HashMap;
 use std::sync::Mutex;

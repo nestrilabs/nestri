@@ -370,7 +370,13 @@ impl NescopeState {
                 NescopeState::open_x11_input_conn(data, display_number);
             }
             XWaylandEvent::Error => {
-                tracing::error!("XWayland crashed at startup");
+                // The game launch waits for a display number, so a dead
+                // XWayland means it will never start. Nothing downstream can
+                // notice that: the auto-exit path keys off a game having been
+                // launched, so without stopping here nescope would poll
+                // forever with no game and no reason given.
+                tracing::error!("XWayland crashed at startup — cannot run a game without it");
+                data.loop_signal.stop();
             }
         });
 
@@ -934,38 +940,53 @@ where
     use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufState};
     use std::os::unix::fs::MetadataExt;
 
-    // Formats declared to XWayland for DRI3.  The actual pixel format used
-    // by the game's Vulkan swapchain is independent of this list.
-    let formats = [
-        Format {
-            code: Fourcc::Argb8888,
-            modifier: Modifier::Linear,
-        },
-        Format {
-            code: Fourcc::Xrgb8888,
-            modifier: Modifier::Linear,
-        },
-        Format {
-            code: Fourcc::Abgr8888,
-            modifier: Modifier::Linear,
-        },
-        Format {
-            code: Fourcc::Abgr2101010,
-            modifier: Modifier::Linear,
-        },
-        Format {
-            code: Fourcc::Argb2101010,
-            modifier: Modifier::Linear,
-        },
-        Format {
-            code: Fourcc::Argb8888,
-            modifier: Modifier::Invalid,
-        },
-        Format {
-            code: Fourcc::Xrgb8888,
-            modifier: Modifier::Invalid,
-        },
-    ];
+    // Formats offered to clients through zwp_linux_dmabuf_v1. This list does
+    // decide what pixel formats a game's Vulkan swapchain can use: Mesa's
+    // Wayland WSI derives its surface formats from it, so a format missing here
+    // is a format no client can select.
+    //
+    // Each VkFormat needs BOTH its alpha and its opaque FourCC spelling.
+    // Mesa tracks those as two flags on one VkFormat -- ARGB8888 contributes
+    // the alpha flag, XRGB8888 the opaque one -- and skips any format that does
+    // not carry both, so advertising only the alpha variant silently drops it.
+    // That is a quiet failure: the format simply never appears, with nothing
+    // logged at either end.
+    //
+    // The 10-bit and FP16 pairs are what carry HDR. A game asks for HDR through
+    // a WSI layer that injects the HDR colour spaces, but the layer re-checks
+    // the requested VkFormat against the driver's own surface list and refuses
+    // the swapchain outright if it is absent. So the colour space and the pixel
+    // format come from two different places, and HDR needs both.
+    let formats = {
+        use std::iter::once;
+
+        // Only LINEAR and INVALID, deliberately. Naming a driver's tiled
+        // modifiers here would mean hard-coding one vendor's values into a list
+        // sent to every client, and it buys nothing: INVALID leaves the choice
+        // of tiling to the driver, which picks its own optimal layout, and
+        // LINEAR is universally supported as the fallback. Measured on RDNA4 --
+        // adding that vendor's eight tiled modifiers changes neither the
+        // formats a client is offered nor whether an HDR swapchain is created.
+        //
+        // alpha spelling, opaque spelling
+        const PAIRS: &[(Fourcc, Fourcc)] = &[
+            (Fourcc::Argb8888, Fourcc::Xrgb8888),
+            (Fourcc::Abgr8888, Fourcc::Xbgr8888),
+            (Fourcc::Abgr2101010, Fourcc::Xbgr2101010),
+            (Fourcc::Argb2101010, Fourcc::Xrgb2101010),
+            (Fourcc::Abgr16161616f, Fourcc::Xbgr16161616f),
+        ];
+
+        PAIRS
+            .iter()
+            .flat_map(|&(alpha, opaque)| once(alpha).chain(once(opaque)))
+            .flat_map(|code| {
+                once(Modifier::Linear)
+                    .chain(once(Modifier::Invalid))
+                    .map(move |modifier| Format { code, modifier })
+            })
+            .collect::<Vec<_>>()
+    };
 
     let mut dmabuf_state = DmabufState::new();
 
