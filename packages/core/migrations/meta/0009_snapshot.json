@@ -1219,6 +1219,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "claim_token": {
+          "name": "claim_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
