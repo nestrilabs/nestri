@@ -278,7 +278,7 @@ fn main() {
         args.hdr,
         args.render_device.clone(),
     );
-    //state.init_xwayland(&loop_handle, Some(args.x_display));
+    state.init_xwayland(&loop_handle, Some(args.x_display));
 
     // Said out loud because in compositor mode nothing else can work them out.
     // A process started by the hub rather than by nescope has no inherited
@@ -415,62 +415,62 @@ fn main() {
                 && data.primary_pid.is_none()
                 && !data.state.game_launched
             {
-                //if let Some(xdisplay) = data.state.xdisplay {
-                data.state.game_launched = true;
-                tracing::info!("Launching {:?}", command[0]);
+                if let Some(xdisplay) = data.state.xdisplay {
+                    data.state.game_launched = true;
+                    tracing::info!("Launching {:?}", command[0]);
 
-                let mut cmd = std::process::Command::new(&command[0]);
+                    let mut cmd = std::process::Command::new(&command[0]);
 
-                cmd.args(&command[1..])
-                    //.env("DISPLAY", format!(":{xdisplay}"))
-                    .stdin(std::process::Stdio::null())
-                    .stdout(std::process::Stdio::inherit())
-                    .stderr(std::process::Stdio::inherit())
-                    // Put the game in its own process group so we can
-                    // kill the whole tree at once with kill(-pgid, …).
-                    .process_group(0)
-                    // Provide also WAYLAND_DISPLAY, so if the game or application
-                    // is Wayland-native and doesn't support older X11 it'll still run.
-                    .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
+                    cmd.args(&command[1..])
+                        .env("DISPLAY", format!(":{xdisplay}"))
+                        .stdin(std::process::Stdio::null())
+                        .stdout(std::process::Stdio::inherit())
+                        .stderr(std::process::Stdio::inherit())
+                        // Put the game in its own process group so we can
+                        // kill the whole tree at once with kill(-pgid, …).
+                        .process_group(0)
+                        // Provide also WAYLAND_DISPLAY, so if the game or application
+                        // is Wayland-native and doesn't support older X11 it'll still run.
+                        .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
 
-                if args.hdr {
-                    tracing::debug!(
-                        gamescope_wayland_socket,
-                        "Setting GAMESCOPE_WAYLAND_DISPLAY for application"
-                    );
-                    cmd.env("GAMESCOPE_WAYLAND_DISPLAY", &gamescope_wayland_socket);
-                    cmd.env("ENABLE_GAMESCOPE_WSI", "1");
-                    // DXVK's dxgi.dll gates HDR color space exposure on this env var.
-                    // Without it, both DX11 (DXVK) and DX12 (vkd3d-proton via DXVK dxgi)
-                    // games will not see HDR as available.
-                    cmd.env("DXVK_HDR", "1");
-                }
+                    if args.hdr {
+                        tracing::debug!(
+                            gamescope_wayland_socket,
+                            "Setting GAMESCOPE_WAYLAND_DISPLAY for application"
+                        );
+                        cmd.env("GAMESCOPE_WAYLAND_DISPLAY", &gamescope_wayland_socket);
+                        cmd.env("ENABLE_GAMESCOPE_WSI", "1");
+                        // DXVK's dxgi.dll gates HDR color space exposure on this env var.
+                        // Without it, both DX11 (DXVK) and DX12 (vkd3d-proton via DXVK dxgi)
+                        // games will not see HDR as available.
+                        cmd.env("DXVK_HDR", "1");
+                    }
 
-                // Detect GPU vendor from render device and set VK_DRIVER_FILES
-                // so the game uses the same GPU as nescope.
-                if let Some(ref rd) = args.render_device {
-                    if let Some(icd_path) = detect_gpu_icd(rd) {
-                        cmd.env("VK_ICD_FILENAMES", &icd_path);
-                        cmd.env("VK_DRIVER_FILES", &icd_path); // Mesa fallback
-                        tracing::info!("GPU ICD → {icd_path}");
+                    // Detect GPU vendor from render device and set VK_DRIVER_FILES
+                    // so the game uses the same GPU as nescope.
+                    if let Some(ref rd) = args.render_device {
+                        if let Some(icd_path) = detect_gpu_icd(rd) {
+                            cmd.env("VK_ICD_FILENAMES", &icd_path);
+                            cmd.env("VK_DRIVER_FILES", &icd_path); // Mesa fallback
+                            tracing::info!("GPU ICD → {icd_path}");
+                        }
+                    }
+
+                    match cmd.spawn() {
+                        Ok(child) => {
+                            let pid = child.id();
+                            tracing::info!("Game process spawned (pid {pid})");
+                            data.primary_pid = Some(pid as i32);
+                            data.game_pgid = Some(pid as i32); // PGID == PID due to .process_group(0)
+                            data.game_process = Some(child);
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to launch {:?}: {e}", command[0]);
+                            data.loop_signal.stop();
+                            return;
+                        }
                     }
                 }
-
-                match cmd.spawn() {
-                    Ok(child) => {
-                        let pid = child.id();
-                        tracing::info!("Game process spawned (pid {pid})");
-                        data.primary_pid = Some(pid as i32);
-                        data.game_pgid = Some(pid as i32); // PGID == PID due to .process_group(0)
-                        data.game_process = Some(child);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to launch {:?}: {e}", command[0]);
-                        data.loop_signal.stop();
-                        return;
-                    }
-                }
-                //}
             }
 
             // ── Poll primary process ──────────────────────────────────

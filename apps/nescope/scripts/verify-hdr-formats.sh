@@ -74,19 +74,24 @@ print(f"child WAYLAND_DISPLAY:  {env.get('child_wayland_display', '?')}")
 print(f"child DISPLAY:          {env.get('child_display', '?')}")
 print(f"ENABLE_GAMESCOPE_WSI:   {env.get('child_enable_gamescope_wsi', '?')}")
 
-# Pull the format list from the presentable-surface section of the first real
+# Pull the format lists from the presentable-surface section of the first real
 # GPU. llvmpipe is enumerated too and would double every count, so skip any
 # adapter that names it -- a software rasteriser's opinion about HDR is not the
 # thing under test.
+#
+# Keep the XCB and Wayland surfaces apart. Once the child has a DISPLAY it has
+# both, they carry different formats, and merging them would let one path's HDR
+# support stand in for the other's. The XCB list is the one a Proton game sees.
 section = text.split("Presentable Surfaces", 1)
-formats = []
-gpu = None
+by_path = {"xcb": [], "wayland": []}
+gpu, path = None, None
 if len(section) > 1:
     block, cur_fmt = section[1], None
     for line in block.splitlines():
-        m = re.match(r"\s*GPU id\s*:\s*\d+\s*\((.+?)\)", line)
+        m = re.match(r"\s*GPU id\s*:\s*\d+\s*\((.+?)\)\s*\[(.+?)\]", line)
         if m:
-            gpu = m.group(1)
+            gpu, exts = m.group(1), m.group(2)
+            path = "wayland" if "wayland_surface" in exts else "xcb"
             continue
         if gpu and "llvmpipe" in gpu:
             continue
@@ -95,15 +100,24 @@ if len(section) > 1:
             cur_fmt = m.group(1)
             continue
         m = re.match(r"\s*colorSpace\s*=\s*(\S+)", line)
-        if m and cur_fmt:
-            formats.append((cur_fmt, m.group(1)))
+        if m and cur_fmt and path:
+            by_path[path].append((cur_fmt, m.group(1)))
             cur_fmt = None
+
+# A game under XWayland presents through the XCB surface, so that is the list
+# under test whenever it exists. Fall back to the Wayland one when the child
+# never got a DISPLAY, which is the only case where it is what a game would use.
+on_xwayland = bool(by_path["xcb"])
+formats = by_path["xcb"] if on_xwayland else by_path["wayland"]
 
 fails = []
 if not formats:
     fails.append("no surface formats enumerated at all — the probe never reached "
                  "a surface, so this run measured nothing")
 
+print(f"\npath under test:        {'XCB (XWayland)' if on_xwayland else 'native Wayland'}")
+if on_xwayland:
+    print(f"  (native Wayland surface offers {len(by_path['wayland'])} formats, not under test)")
 print(f"\nsurface formats offered: {len(formats)}")
 for f, cs in formats:
     print(f"  {f:<34} {cs}")
@@ -123,9 +137,11 @@ if formats:
         # Only what is genuinely working today. The point of this mode is to
         # notice if the colour-management path stops being wired up at all,
         # which would otherwise look identical to plain SDR.
-        if not any("ST2084" in s for s in spaces):
-            fails.append("HDR10_ST2084_EXT is no longer offered — the "
-                         "wp_color_manager_v1 path has stopped being advertised")
+        wl_spaces = {cs for _, cs in by_path["wayland"]}
+        if not any("ST2084" in s for s in wl_spaces):
+            fails.append("HDR10_ST2084_EXT is no longer offered on the Wayland "
+                         "surface — the wp_color_manager_v1 path has stopped "
+                         "being advertised")
     else:
         # The three a WSI layer injects. Until one exists these all fail, and
         # that is the expected reading, not a defect in this script.
