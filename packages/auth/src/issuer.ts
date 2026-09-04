@@ -175,6 +175,13 @@ export interface AuthorizationState {
 		challenge: string;
 		method: 'S256';
 	};
+	/**
+	 * Set when the browser half of a device authorization grant is running.
+	 * There is no `redirect_uri` in that case: the thing waiting for the answer
+	 * is a program on another machine polling the token endpoint, so the
+	 * result is written to storage instead of into a redirect.
+	 */
+	device_code?: string;
 }
 
 /**
@@ -196,6 +203,7 @@ import {
 } from './error.js';
 import { encryptionKeys, legacySigningKeys, signingKeys } from './keys.js';
 import { validatePKCE } from './pkce.js';
+import { generateUnbiasedString } from './random.js';
 import { DynamoStorage } from './storage/dynamo.js';
 import { MemoryStorage } from './storage/memory.js';
 import { Storage, StorageAdapter } from './storage/storage.js';
@@ -205,6 +213,12 @@ import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
 
 /** @internal */
 export const aws = awsHandle;
+
+/** RFC 8628's grant type, spelled out because it is a URN and not a word. */
+const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+
+/** The longest a device is ever told to wait between polls, in seconds. */
+const DEVICE_MAX_INTERVAL = 60;
 
 export interface IssuerInput<
 	Providers extends Record<string, Provider<any>>,
@@ -348,6 +362,18 @@ export interface IssuerInput<
 		 * @default 0s
 		 */
 		retention?: number;
+		/**
+		 * Interval in seconds a device code stays usable before the user has to
+		 * start again.
+		 * @default 600s
+		 */
+		device?: number;
+		/**
+		 * Slowest a device may poll the token endpoint without being told to
+		 * slow down, in seconds.
+		 * @default 5s
+		 */
+		deviceInterval?: number;
 	};
 	/**
 	 * Optionally, configure the UI that's displayed when the user visits the root URL of the
@@ -466,6 +492,8 @@ export function issuer<
 	const ttlRefresh = input.ttl?.refresh ?? 60 * 60 * 24 * 365;
 	const ttlRefreshReuse = input.ttl?.reuse ?? 60;
 	const ttlRefreshRetention = input.ttl?.retention ?? 0;
+	const ttlDevice = input.ttl?.device ?? 60 * 10;
+	const deviceInterval = input.ttl?.deviceInterval ?? 5;
 	if (input.theme) {
 		setTheme(input.theme);
 	}
@@ -525,6 +553,44 @@ export function issuer<
 							? subjectOpts.subject
 							: await resolveSubject(type, properties);
 						await successOpts?.invalidate?.(await resolveSubject(type, properties));
+						if (authorization?.device_code) {
+							// The device grant has nowhere to redirect to. The
+							// program that started this is on another machine
+							// polling `/token`, so the tokens are left where
+							// that poll will find them and the person gets a
+							// page telling them they are done.
+							const grant = await Storage.get<DeviceGrant>(
+								storage,
+								deviceKey(authorization.device_code)
+							);
+							await auth.unset(ctx, 'authorization');
+							if (!grant || grant.status !== 'pending' || grant.expires <= Date.now()) {
+								return ctx.text(
+									'That sign-in request has expired. Start it again from the app.',
+									400
+								);
+							}
+							const tokens = await generateTokens(ctx, {
+								subject,
+								type: type as string,
+								properties,
+								clientID: grant.clientID,
+								ttl: {
+									access: subjectOpts?.ttl?.access ?? ttlAccess,
+									refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
+								}
+							});
+							await putDevice(authorization.device_code, {
+								...grant,
+								status: 'approved',
+								tokens: {
+									access: tokens.access,
+									refresh: tokens.refresh,
+									expiresIn: tokens.expiresIn
+								}
+							});
+							return ctx.text('You are signed in. You can close this page and go back to the app.');
+						}
 						if (authorization) {
 							if (authorization.response_type === 'token') {
 								const location = new URL(authorization.redirect_uri);
@@ -634,6 +700,86 @@ export function issuer<
 		},
 		storage
 	};
+
+	/**
+	 * What a device code is while nobody has answered for it yet.
+	 *
+	 * It lives in the same storage as the other short-lived grants rather than
+	 * in a table of its own: it is one of these, an authorization in flight,
+	 * and a code that outlives its own expiry is a bug in whatever swept the
+	 * table rather than something the storage forgets on its own.
+	 */
+	interface DeviceGrant {
+		userCode: string;
+		clientID: string;
+		status: 'pending' | 'approved' | 'denied';
+		/** Seconds the client is being told to wait between polls. Grows. */
+		interval: number;
+		/**
+		 * When the last poll that got a real answer arrived, in ms; `0` while
+		 * there has not been one. The first poll is never too early — the
+		 * client has no way to know how long the request itself took, and
+		 * charging it for that would make the first answer arbitrary.
+		 */
+		lastPolled: number;
+		/** When the code stops being usable, in ms. */
+		expires: number;
+		tokens?: {
+			access: string;
+			refresh: string;
+			expiresIn: number;
+		};
+	}
+
+	/**
+	 * The alphabet a user code is drawn from, which is not the whole one.
+	 *
+	 * Someone reads this off one screen and types it into another, so every
+	 * pair that looks or sounds alike is a support ticket: no vowels, so no
+	 * accidental words; no `0`/`O`, `1`/`I`, `5`/`S`, `2`/`Z`. What is left is
+	 * unambiguous read aloud over a phone. RFC 8628 §6.1 asks for exactly this
+	 * trade and the entropy lost is bought back by the length.
+	 */
+	const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRTVWXY346789';
+	const USER_CODE_LENGTH = 8;
+
+	/**
+	 * The code as stored, from the code as a person typed it.
+	 *
+	 * People retype what they see, which includes the separator that made it
+	 * readable and whatever case their keyboard was in. Neither carries
+	 * meaning, so neither is allowed to make a valid code fail.
+	 */
+	function canonicalUserCode(raw: string) {
+		return raw.replace(/[^0-9a-zA-Z]/g, '').toUpperCase();
+	}
+
+	function deviceKey(deviceCode: string) {
+		return ['oauth:device', deviceCode];
+	}
+
+	function userCodeKey(userCode: string) {
+		return ['oauth:device:user', userCode];
+	}
+
+	async function findDeviceByUserCode(raw: string) {
+		const userCode = canonicalUserCode(raw);
+		const pointer = await Storage.get<{ deviceCode: string }>(storage!, userCodeKey(userCode));
+		if (!pointer) return null;
+		const grant = await Storage.get<DeviceGrant>(storage!, deviceKey(pointer.deviceCode));
+		if (!grant) return null;
+		return { deviceCode: pointer.deviceCode, grant };
+	}
+
+	async function putDevice(deviceCode: string, grant: DeviceGrant) {
+		const ttl = Math.max(1, Math.ceil((grant.expires - Date.now()) / 1000));
+		await Storage.set(storage!, deviceKey(deviceCode), grant, ttl);
+	}
+
+	async function forgetDevice(deviceCode: string, grant: DeviceGrant) {
+		await Storage.remove(storage!, deviceKey(deviceCode));
+		await Storage.remove(storage!, userCodeKey(grant.userCode));
+	}
 
 	async function getAuthorization(ctx: Context) {
 		const match = (await auth.get(ctx, 'authorization')) || ctx.get('authorization');
@@ -786,8 +932,15 @@ export function issuer<
 				issuer: iss,
 				authorization_endpoint: `${iss}/authorize`,
 				token_endpoint: `${iss}/token`,
+				device_authorization_endpoint: `${iss}/device/authorize`,
 				jwks_uri: `${iss}/.well-known/jwks.json`,
-				response_types_supported: ['code', 'token']
+				response_types_supported: ['code', 'token'],
+				grant_types_supported: [
+					'authorization_code',
+					'refresh_token',
+					'client_credentials',
+					DEVICE_GRANT
+				]
 			});
 		}
 	);
@@ -948,6 +1101,79 @@ export function issuer<
 				});
 			}
 
+			if (grantType === DEVICE_GRANT) {
+				const deviceCode = form.get('device_code')?.toString();
+				if (!deviceCode)
+					return c.json(
+						{ error: 'invalid_request', error_description: 'Missing device_code' },
+						400
+					);
+				const grant = await Storage.get<DeviceGrant>(storage, deviceKey(deviceCode));
+
+				// A code nobody issued and a code that has aged out are the
+				// same answer on purpose: telling the two apart would let a
+				// caller learn which random strings were once real.
+				if (!grant || grant.expires <= Date.now()) {
+					if (grant) await forgetDevice(deviceCode, grant);
+					return c.json(
+						{ error: 'expired_token', error_description: 'The device code has expired' },
+						400
+					);
+				}
+
+				// Terminal answers come before the rate limit. Slowing down a
+				// client that has already been refused just means it takes
+				// longer to find out, and it has no reason to poll again.
+				if (grant.status === 'denied') {
+					await forgetDevice(deviceCode, grant);
+					return c.json(
+						{ error: 'access_denied', error_description: 'The request was denied' },
+						400
+					);
+				}
+
+				const now = Date.now();
+				if (now - grant.lastPolled < grant.interval * 1000) {
+					// RFC 8628 §3.5: every warning widens the interval for this
+					// and every later poll, so a client that ignores the answer
+					// is not simply told the same thing again. `lastPolled` is
+					// deliberately not moved — the window is measured from the
+					// last poll that got a real answer, so a burst of impatient
+					// polls costs one wait rather than compounding into one the
+					// client can never satisfy.
+					// Capped, because the interval only ever grows and a code
+					// that lives ten minutes must stay pollable for all of it.
+					// Uncapped, enough impatience early on makes the code
+					// unusable for the rest of its life.
+					await putDevice(deviceCode, {
+						...grant,
+						interval: Math.min(grant.interval + 5, DEVICE_MAX_INTERVAL)
+					});
+					return c.json({ error: 'slow_down', error_description: 'Polling too frequently' }, 400);
+				}
+
+				if (grant.status === 'approved' && grant.tokens) {
+					// One redemption. A device code that keeps working after it
+					// has produced tokens is a bearer token with none of a
+					// bearer token's expiry.
+					await forgetDevice(deviceCode, grant);
+					return c.json({
+						access_token: grant.tokens.access,
+						refresh_token: grant.tokens.refresh,
+						expires_in: grant.tokens.expiresIn
+					});
+				}
+
+				await putDevice(deviceCode, { ...grant, lastPolled: now });
+				return c.json(
+					{
+						error: 'authorization_pending',
+						error_description: 'The user has not finished signing in'
+					},
+					400
+				);
+			}
+
 			if (grantType === 'client_credentials') {
 				const provider = form.get('provider');
 				if (!provider) return c.json({ error: 'missing `provider` form value' }, 400);
@@ -994,6 +1220,123 @@ export function issuer<
 			throw new Error('Invalid grant_type');
 		}
 	);
+
+	// The machine half of RFC 8628. A program with no browser asks for a code
+	// here, shows it to whoever is sitting in front of it, and polls `/token`
+	// until somebody has answered for it on a device that does have one.
+	app.post(
+		'/device/authorize',
+		cors({
+			origin: '*',
+			allowHeaders: ['*'],
+			allowMethods: ['POST'],
+			credentials: false
+		}),
+		async (c) => {
+			const form = await c.req.formData().catch(() => null);
+			const clientID = form?.get('client_id')?.toString();
+			if (!clientID)
+				return c.json({ error: 'invalid_request', error_description: 'Missing client_id' }, 400);
+
+			const deviceCode = crypto.randomUUID();
+			// Retried rather than trusted to be unique: the alphabet is small
+			// on purpose, so a collision is likelier than it would be for the
+			// device code, and a collision here hands one person's sign-in to
+			// somebody else's machine.
+			let userCode = '';
+			for (let attempt = 0; attempt < 5; attempt++) {
+				const candidate = generateUnbiasedString(USER_CODE_ALPHABET, USER_CODE_LENGTH);
+				if (!(await Storage.get(storage, userCodeKey(candidate)))) {
+					userCode = candidate;
+					break;
+				}
+			}
+			if (!userCode)
+				return c.json(
+					{ error: 'server_error', error_description: 'Could not allocate a user code' },
+					500
+				);
+
+			const now = Date.now();
+			const grant: DeviceGrant = {
+				userCode,
+				clientID,
+				status: 'pending',
+				interval: deviceInterval,
+				lastPolled: 0,
+				expires: now + ttlDevice * 1000
+			};
+			await putDevice(deviceCode, grant);
+			await Storage.set(storage, userCodeKey(userCode), { deviceCode }, ttlDevice);
+
+			const iss = issuer(c);
+			return c.json({
+				device_code: deviceCode,
+				user_code: userCode,
+				verification_uri: `${iss}/device`,
+				verification_uri_complete: `${iss}/device?user_code=${userCode}`,
+				expires_in: ttlDevice,
+				interval: deviceInterval
+			});
+		}
+	);
+
+	// The browser half. Entering the code puts the flow into the same
+	// authorization state a redirect-based client would have set, so the
+	// providers below are reached by exactly one path either way.
+	app.get('/device', async (c) => {
+		const raw = c.req.query('user_code');
+		if (!raw) {
+			return c.html(
+				`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">` +
+					`<form method="get" action="/device">` +
+					`<label for="user_code">Enter the code shown in the app</label>` +
+					`<input id="user_code" name="user_code" autocomplete="off" autofocus>` +
+					`<button type="submit">Continue</button>` +
+					`</form>`
+			);
+		}
+
+		const found = await findDeviceByUserCode(raw);
+		if (!found || found.grant.status !== 'pending' || found.grant.expires <= Date.now()) {
+			return c.text('That code is not valid any more. Ask the app for a new one.', 400);
+		}
+
+		const authorization: AuthorizationState = {
+			response_type: 'device_code',
+			client_id: found.grant.clientID,
+			device_code: found.deviceCode
+		} as AuthorizationState;
+		await auth.set(c, 'authorization', ttlDevice, authorization);
+
+		const provider = c.req.query('provider');
+		if (provider) return c.redirect(`/${provider}/authorize`);
+		const providers = Object.keys(input.providers);
+		if (providers.length === 1) return c.redirect(`/${providers[0]}/authorize`);
+		return auth.forward(
+			c,
+			await select()(
+				Object.fromEntries(
+					Object.entries(input.providers).map(([key, value]) => [key, value.type])
+				),
+				c.req.raw
+			)
+		);
+	});
+
+	// Refusing is an answer, and the client has a screen for it. Without this
+	// a person who did not start the sign-in can only walk away, and the
+	// program on the other machine keeps polling until the code expires.
+	app.get('/device/deny', async (c) => {
+		const raw = c.req.query('user_code');
+		if (!raw) return c.text('Missing user_code', 400);
+		const found = await findDeviceByUserCode(raw);
+		if (!found || found.grant.expires <= Date.now()) {
+			return c.text('That code is not valid any more.', 400);
+		}
+		await putDevice(found.deviceCode, { ...found.grant, status: 'denied' });
+		return c.text('That sign-in request was refused.');
+	});
 
 	app.get('/authorize', async (c) => {
 		const provider = c.req.query('provider');
@@ -1125,6 +1468,13 @@ export function issuer<
 			return auth.forward(c, await error(err, c.req.raw));
 		}
 		const authorization = await getAuthorization(c);
+		// A device grant has no redirect to carry the error back on, so it is
+		// said here instead. Without this the reporting path throws on a URL
+		// built from `undefined` and the real failure is never printed.
+		if (!authorization.redirect_uri) {
+			const oauth = err instanceof OauthError ? err : new OauthError('server_error', err.message);
+			return c.text(oauth.description || oauth.error, 400);
+		}
 		const url = new URL(authorization.redirect_uri);
 		const oauth = err instanceof OauthError ? err : new OauthError('server_error', err.message);
 		url.searchParams.set('error', oauth.error);
