@@ -18,9 +18,11 @@
 //! requesting `A2B10G10R10` + `HDR10_ST2084` comes out `yuv420p10le`, full
 //! range, `bt2020nc` / `smpte2084` / `bt2020`.
 //!
-//! So the launch environment sets `PROTON_ENABLE_WAYLAND=1` (Proton renders
-//! through XWayland otherwise) and `DXVK_HDR=1` (DXVK's dxgi gates HDR exposure
-//! on it). Those two are what HDR needs.
+//! So the launch environment always sets `PROTON_ENABLE_WAYLAND=1` -- not as an
+//! HDR switch but as the way a Windows title reaches the compositor at all,
+//! since Proton renders through XWayland otherwise and XWayland is off by
+//! default. `--hdr` adds `DXVK_HDR=1` (DXVK's dxgi gates HDR exposure on it).
+//! Those two are what HDR needs.
 //!
 //! Mesa pairs the colour spaces it learns here with the pixel formats it
 //! derives from our `zwp_linux_dmabuf_v1` list, so both halves have to be

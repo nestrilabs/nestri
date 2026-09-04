@@ -25,7 +25,8 @@
 //! | Variable        | Effect                                        |
 //! |----------------|-----------------------------------------------|
 //! | `WAYLAND_DISPLAY` | Set by nescope before spawning the game      |
-//! | `DISPLAY`         | Set to the XWayland display (`:N`)           |
+//! | `DISPLAY`         | XWayland display (`:N`), only with `--xwayland` |
+//! | `PROTON_ENABLE_WAYLAND` | Set to `1` always, so Proton renders through Wayland |
 //! | `XCURSOR_THEME`   | XCursor theme name for the software cursor   |
 //! | `XCURSOR_SIZE`    | XCursor size in pixels                       |
 //! | `RUST_LOG`        | Tracing filter (e.g. `nescope=debug`)        |
@@ -467,18 +468,18 @@ fn main() {
                         cmd.env("DISPLAY", format!(":{xdisplay}"));
                     }
 
-                    if args.hdr {
-                        // HDR arrives over the Wayland colour-management
-                        // protocol, so the game has to be a Wayland client to
-                        // get it. Measured on this compositor: the Wayland
-                        // surface offers 21 formats including HDR10 over
-                        // A2B10G10R10, while the XWayland one offers two, both
-                        // 8-bit sRGB, and a client asking for HDR there is told
-                        // the surface offers no such format.
-                        //
-                        // Proton renders through XWayland unless this is set.
-                        cmd.env("PROTON_ENABLE_WAYLAND", "1");
+                    // Proton renders through XWayland unless this is set, and
+                    // XWayland is off by default -- so without this a Windows
+                    // title has no display at all. Unconditional for that
+                    // reason: it is how the game reaches the compositor, not
+                    // an HDR switch. It is also what makes HDR reachable, since
+                    // colour management only exists on the Wayland surface --
+                    // measured here, that surface offers 21 formats including
+                    // HDR10 over A2B10G10R10 while the XWayland one offers two,
+                    // both 8-bit sRGB.
+                    cmd.env("PROTON_ENABLE_WAYLAND", "1");
 
+                    if args.hdr {
                         // DXVK's dxgi.dll gates HDR colour space exposure on
                         // this. Without it neither DX11 nor DX12 (vkd3d-proton
                         // through DXVK's dxgi) sees HDR as available.
