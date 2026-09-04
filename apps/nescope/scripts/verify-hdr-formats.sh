@@ -65,13 +65,49 @@ echo "child_wayland_display=${WAYLAND_DISPLAY:-unset}"
 echo "child_display=${DISPLAY:-unset}"
 echo "child_enable_gamescope_wsi=${ENABLE_GAMESCOPE_WSI:-unset}"
 echo "---VULKANINFO---"
-vulkaninfo 2>/dev/null || true
+# Keep stderr. A Vulkan init failure and a missing HDR format both end up as
+# "no formats" otherwise, and only one of them is this script's business.
+if vulkaninfo 2>&1; then
+  echo "probe_vulkaninfo=ok"
+else
+  echo "probe_vulkaninfo=failed rc=$?"
+fi
 PROBE
 chmod +x "$WORK/probe.sh"
 
 echo "enumerating surface formats under nescope…"
+NESCOPE_RC=0
 timeout 60 "$ROOT/target/release/nescope" --hdr --width 1280 --height 720 \
-  -- "$WORK/probe.sh" > "$WORK/probe.out" 2>"$WORK/nescope.log" || true
+  -- "$WORK/probe.sh" > "$WORK/probe.out" 2>"$WORK/nescope.log" || NESCOPE_RC=$?
+
+# A compositor that died, or a probe that never got a Vulkan instance, is an
+# environment failure. Reporting it as missing HDR formats would be the exact
+# confusion this script exists to prevent, so say which one it was and show the
+# log rather than deleting it with the temp dir.
+if [ "$NESCOPE_RC" -eq 124 ]; then
+  echo
+  echo "FAIL — nescope did not exit within 60s; the run was killed." >&2
+  echo "This is an environment failure, not an HDR result. Last log lines:" >&2
+  tail -20 "$WORK/nescope.log" >&2
+  exit 2
+fi
+
+if grep -q "^probe_vulkaninfo=failed" "$WORK/probe.out"; then
+  echo
+  echo "FAIL — vulkaninfo failed inside the compositor." >&2
+  echo "This is an environment failure, not an HDR result:" >&2
+  sed -n "/---VULKANINFO---/,/probe_vulkaninfo=failed/p" "$WORK/probe.out" \
+    | grep -iE "error|cannot|failed|no such" | head -10 >&2
+  exit 2
+fi
+
+if ! grep -q "^probe_vulkaninfo=ok" "$WORK/probe.out"; then
+  echo
+  echo "FAIL — the probe did not run to completion (nescope rc=$NESCOPE_RC)." >&2
+  echo "This is an environment failure, not an HDR result. Last log lines:" >&2
+  tail -20 "$WORK/nescope.log" >&2
+  exit 2
+fi
 
 python3 - "$WORK/probe.out" "$MODE" <<'PY'
 import re, sys
@@ -93,9 +129,15 @@ print(f"ENABLE_GAMESCOPE_WSI:   {env.get('child_enable_gamescope_wsi', '?')}")
 # Keep the XCB and Wayland surfaces apart. Once the child has a DISPLAY it has
 # both, they carry different formats, and merging them would let one path's HDR
 # support stand in for the other's. The XCB list is the one a Proton game sees.
+# One adapter only, and named in the output. Appending every adapter's formats
+# into one list would let a second GPU satisfy the checks while the one the game
+# runs on lacks the formats entirely -- a pass that means nothing. There is no
+# way to ask vulkaninfo which adapter a game would pick, so this takes the first
+# hardware one and says which, leaving a multi-GPU host to be read rather than
+# guessed at.
 section = text.split("Presentable Surfaces", 1)
 by_path = {"xcb": [], "wayland": []}
-gpu, path = None, None
+gpu, path, chosen_gpu, other_gpus = None, None, None, []
 if len(section) > 1:
     block, cur_fmt = section[1], None
     for line in block.splitlines():
@@ -103,8 +145,15 @@ if len(section) > 1:
         if m:
             gpu, exts = m.group(1), m.group(2)
             path = "wayland" if "wayland_surface" in exts else "xcb"
+            if "llvmpipe" not in gpu:
+                if chosen_gpu is None:
+                    chosen_gpu = gpu
+                elif gpu != chosen_gpu and gpu not in other_gpus:
+                    other_gpus.append(gpu)
             continue
-        if gpu and "llvmpipe" in gpu:
+        # Skip the software rasteriser, and every hardware adapter after the
+        # first: their formats are not the ones under test.
+        if gpu is None or "llvmpipe" in gpu or gpu != chosen_gpu:
             continue
         m = re.match(r"\s*format\s*=\s*(\S+)", line)
         if m:
@@ -132,7 +181,11 @@ if not formats:
     fails.append("no surface formats enumerated at all — the probe never reached "
                  "a surface, so this run measured nothing")
 
-print(f"\npath under test:        {'XCB (XWayland)' if on_xwayland else 'native Wayland'}")
+print(f"\nadapter under test:     {chosen_gpu or '(none found)'}")
+if other_gpus:
+    print(f"  ignoring {len(other_gpus)} other adapter(s): {', '.join(other_gpus)}")
+    print("  a game may not pick the one above; check it is the render device")
+print(f"path under test:        {'XCB (XWayland)' if on_xwayland else 'native Wayland'}")
 if on_xwayland:
     print(f"  (native Wayland surface offers {len(by_path['wayland'])} formats, not under test)")
 print(f"\nsurface formats offered: {len(formats)}")
