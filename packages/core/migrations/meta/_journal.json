@@ -64,6 +64,13 @@
       "when": 1788547836146,
       "tag": "0008_session_one_active_run_per_box",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788555252186,
+      "tag": "0009_email_is_the_root_identity",
+      "breakpoints": true
     }
   ]
 }
