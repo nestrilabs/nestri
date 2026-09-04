@@ -112,7 +112,7 @@ if grep -q "^probe_vulkaninfo=failed" "$WORK/probe.out"; then
   echo "FAIL — vulkaninfo failed inside the compositor." >&2
   echo "This is an environment failure, not an HDR result:" >&2
   sed -n "/---VULKANINFO---/,/probe_vulkaninfo=failed/p" "$WORK/probe.out" \
-    | grep -iE "error|cannot|failed|no such" | head -10 >&2
+    | grep -iE "error|cannot|failed|no such" | head -10 >&2 || true
   exit 2
 fi
 
