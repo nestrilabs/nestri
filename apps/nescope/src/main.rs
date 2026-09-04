@@ -444,16 +444,39 @@ fn main() {
                         .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
 
                     if args.hdr {
+                        // HDR arrives over the Wayland colour-management
+                        // protocol, so the game has to be a Wayland client to
+                        // get it. Measured on this compositor: the Wayland
+                        // surface offers 21 formats including HDR10 over
+                        // A2B10G10R10, while the XWayland one offers two, both
+                        // 8-bit sRGB, and a client asking for HDR there is told
+                        // the surface offers no such format.
+                        //
+                        // Proton renders through XWayland unless this is set.
+                        cmd.env("PROTON_ENABLE_WAYLAND", "1");
+
+                        // DXVK's dxgi.dll gates HDR colour space exposure on
+                        // this. Without it neither DX11 nor DX12 (vkd3d-proton
+                        // through DXVK's dxgi) sees HDR as available.
+                        cmd.env("DXVK_HDR", "1");
+
+                        // Left set, but deliberately without ENABLE_GAMESCOPE_WSI
+                        // alongside it, so it is inert unless somebody opts in.
+                        //
+                        // That pair activates gamescope's WSI layer, which
+                        // predates Wayland colour management and works by
+                        // hiding HDR from the driver and reporting it to the
+                        // compositor out of band. We do not want it: it needs a
+                        // layer this image does not ship, it only helps the
+                        // XWayland path, and capture reads the colour space it
+                        // hides -- measured, a game asking for HDR10 through it
+                        // has its PQ samples encoded and tagged BT.709 SDR.
+                        // Enabling it would trade no HDR for wrong HDR.
                         tracing::debug!(
                             gamescope_wayland_socket,
-                            "Setting GAMESCOPE_WAYLAND_DISPLAY for application"
+                            "HDR: Wayland colour management; gamescope WSI not enabled"
                         );
                         cmd.env("GAMESCOPE_WAYLAND_DISPLAY", &gamescope_wayland_socket);
-                        cmd.env("ENABLE_GAMESCOPE_WSI", "1");
-                        // DXVK's dxgi.dll gates HDR color space exposure on this env var.
-                        // Without it, both DX11 (DXVK) and DX12 (vkd3d-proton via DXVK dxgi)
-                        // games will not see HDR as available.
-                        cmd.env("DXVK_HDR", "1");
                     }
 
                     // Detect GPU vendor from render device and set VK_DRIVER_FILES

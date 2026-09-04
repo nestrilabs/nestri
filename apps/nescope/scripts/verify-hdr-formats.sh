@@ -16,30 +16,41 @@
 # The two surfaces a client can be on need separate answers, so there are two
 # modes:
 #
-#   (default)       The native Wayland surface, which is what the compositor
-#                   itself controls. Guards both halves of it: the colour spaces
-#                   from wp_color_manager_v1, and the 10-bit and FP16 pixel
-#                   formats from the dmabuf list. Each is silently absent when
-#                   broken, and the colour space alone is what made an 8-bit
-#                   surface look like working HDR.
+#   (default)       The Wayland surface, which is where HDR actually comes
+#                   from: Mesa pairs the colour spaces it learns from
+#                   wp_color_manager_v1 with the pixel formats it derives from
+#                   the dmabuf list. Guards both halves. Each is silently
+#                   absent when broken, and the colour space alone is what made
+#                   an 8-bit surface look like working HDR.
 #
-#   --expect-layer  The XCB surface, which is where a Proton title presents.
-#                   Mesa offers no HDR colour space there at all, so the three
+#   --expect-layer  The XCB surface, for diagnosing the legacy route only.
+#                   Mesa offers no HDR colour space on XWayland at all, so the
 #                   HDR pairs can only come from a WSI layer inside the game's
-#                   process. Passes with one loaded and fails without, e.g.
+#                   process -- gamescope's approach, which predates Wayland
+#                   colour management. nescope does not ship such a layer and
+#                   does not enable one, because capture cannot see the colour
+#                   space it hides and would tag PQ samples as BT.709. This
+#                   mode passes only with a layer loaded, e.g.
 #
 #                     VK_ADD_IMPLICIT_LAYER_PATH=<dir> \
 #                       apps/nescope/scripts/verify-hdr-formats.sh --expect-layer
 #
-#                   nescope ships no such layer; gamescope's drives this
-#                   compositor unmodified. A failure here means no layer was
-#                   loaded, not that the formats are missing.
+#                   A failure here is the expected state, not a regression.
+#
+# Exit codes are distinct on purpose: 0 pass, 1 the formats are wrong, 2 the
+# environment or the probe failed and this run measured nothing.
 #
 # Usage: apps/nescope/scripts/verify-hdr-formats.sh [--expect-layer]
 set -euo pipefail
 
 MODE="baseline"
-[ "${1:-}" = "--expect-layer" ] && MODE="layer"
+if [ "${1:-}" = "--expect-layer" ]; then
+  MODE="layer"
+  # nescope no longer sets this, on purpose, so the legacy layer stays inert in
+  # normal use. This mode is the one place that wants it, so it opts in here
+  # rather than relying on the compositor to leave a switch flipped.
+  export ENABLE_GAMESCOPE_WSI=1
+fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 WORK="$(mktemp -d)"
