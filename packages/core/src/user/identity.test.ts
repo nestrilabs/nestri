@@ -1,7 +1,9 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 
+import { Actor } from '../actor.js';
 import { testDb } from '../db/test.js';
 import { Identifier } from '../id.js';
+import { Steam } from '../steam/index.js';
 import { Identity } from './identity.js';
 import { User } from './index.js';
 import { LinkedAccount } from './linked-account.js';
@@ -185,6 +187,27 @@ describe('Identity.linkSteam', () => {
 
 		expect(thrown).not.toBeNull();
 		expect(thrown.type).toBe('already_exists');
+	});
+
+	test('the cap holds on the path the settings screen uses', async () => {
+		const { userID } = await Identity.fromVerifiedEmail({ email: email(7) });
+		track(userID);
+		for (let n = 50; n < 54; n++) {
+			await Identity.linkSteam({ userId: userID, steamId: steamID(n) });
+		}
+
+		let thrown: any = null;
+		await Actor.with({ type: 'user', properties: { userID, linkedAccountID: '' } }, async () => {
+			try {
+				await Steam.link({ steamId: steamID(54) });
+			} catch (err) {
+				thrown = err;
+			}
+		});
+
+		expect(thrown).not.toBeNull();
+		expect(thrown.code).toBe('invalid_state');
+		expect(await Identity.listSteam(userID)).toHaveLength(Identity.MAX_STEAM_ACCOUNTS);
 	});
 
 	test('a legacy user is claimed by attaching an email, and keeps its Steam link', async () => {
