@@ -14,7 +14,7 @@ use nesprotocol::lifecycle::{Exec, Exit, Mount};
 
 use std::os::unix::process::CommandExt;
 
-use crate::reap::Waiters;
+use crate::reap::{Waiters, Watched};
 
 /// Why something could not be done, in the words the operating system used.
 ///
@@ -55,14 +55,17 @@ pub trait Workload {
 /// The workload as a local process.
 pub struct Process {
     waiters: Waiters,
-    pid: Option<i32>,
+    running: Option<Watched>,
 }
 
 impl Process {
     /// Started through the reaper's registry, because the reaper is the only
     /// thing in this component that may call `wait`.
     pub fn new(waiters: Waiters) -> Self {
-        Self { waiters, pid: None }
+        Self {
+            waiters,
+            running: None,
+        }
     }
 
     /// Send a signal to the workload and nothing else.
@@ -70,11 +73,18 @@ impl Process {
     /// Nothing here ever signals the process group or every process: the order
     /// a shutdown promises is only true if the workload can be stopped alone.
     pub fn signal(&self, signal: libc::c_int) {
-        let Some(pid) = self.pid else { return };
+        let Some(watched) = &self.running else { return };
+        // Nothing is signalled once the exit has been delivered. The pid was
+        // freed by the reap that produced it, and the kernel is entitled to
+        // give that number to something else — a stop or a kill aimed at it
+        // then lands on a process nobody meant.
+        if !watched.running() {
+            return;
+        }
         // SAFETY: two integers, and it cannot touch this process's memory. A
         // pid that has already gone fails with ESRCH, which is exactly the
         // idempotence the callers of this rely on.
-        unsafe { libc::kill(pid, signal) };
+        unsafe { libc::kill(watched.pid, signal) };
     }
 
     /// Wait up to `grace` for the workload to leave, without a runtime.
@@ -83,7 +93,13 @@ impl Process {
     /// one pid rather than for any child, so a slow service cannot be mistaken
     /// for the workload still running.
     pub fn await_exit(&self, grace: std::time::Duration) -> bool {
-        let Some(pid) = self.pid else { return true };
+        let Some(watched) = &self.running else {
+            return true;
+        };
+        if !watched.running() {
+            return true; // already reaped, and its exit already reported
+        }
+        let pid = watched.pid;
         let deadline = std::time::Instant::now() + grace;
         loop {
             let mut status: libc::c_int = 0;
@@ -151,21 +167,18 @@ impl Workload for Process {
             });
         }
 
-        let mut pid = None;
-        let exited = self
+        let mut watched = self
             .waiters
-            .watch(|| {
-                let child = command.spawn()?;
-                let started = child.id() as i32;
-                pid = Some(started);
-                Ok(started)
-            })
+            .watch(|| Ok(command.spawn()?.id() as i32))
             .map_err(|error| Failure::new(error.to_string()))?;
-        self.pid = pid;
+
+        // The caller gets the exit and reports it; this handle keeps the pid
+        // and whether that pid is still this child's.
+        let exit = watched.take_exit().expect("a new watch has its exit");
+        self.running = Some(watched);
 
         Ok(Box::pin(async move {
-            exited
-                .await
+            exit.await
                 .map_err(|_| io::Error::other("the workload's exit was not delivered"))
         }))
     }

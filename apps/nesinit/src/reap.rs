@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use nesprotocol::lifecycle::Exit;
@@ -83,7 +84,45 @@ pub fn refuse_oom_kill() -> io::Result<()> {
 /// component exists to report. So the reaper is the only waiter, and this is
 /// how it hands an exit to whoever asked for one.
 #[derive(Clone, Default)]
-pub struct Waiters(Arc<Mutex<HashMap<i32, oneshot::Sender<Exit>>>>);
+pub struct Waiters(Arc<Mutex<HashMap<i32, Watch>>>);
+
+/// The registry's half of one watched child.
+struct Watch {
+    exit: oneshot::Sender<Exit>,
+    running: Arc<AtomicBool>,
+}
+
+/// A child something is waiting for: its pid, its exit, and whether the pid
+/// still means what it meant.
+///
+/// The flag is the point. A pid is only a name for a process until that
+/// process is reaped, after which the kernel may hand the same number to
+/// something else — so a caller that kept a pid and signals it later can hit a
+/// process it has never heard of. Anything that signals asks here first.
+pub struct Watched {
+    pub pid: i32,
+    running: Arc<AtomicBool>,
+    exit: Option<oneshot::Receiver<Exit>>,
+}
+
+impl Watched {
+    /// The exit, which only one caller may hold — whoever takes it is the one
+    /// that reports it. What is left behind is the pid and whether it still
+    /// means this child, which is what a signaller needs.
+    pub fn take_exit(&mut self) -> Option<oneshot::Receiver<Exit>> {
+        self.exit.take()
+    }
+
+    /// Whether the pid is still this child's.
+    ///
+    /// False from the moment its exit is delivered. There is a window between
+    /// the reap and the delivery in which this still says true; closing it
+    /// entirely needs a handle the kernel keeps for us rather than a number,
+    /// and the number is what the rest of this component has.
+    pub fn running(&self) -> bool {
+        self.running.load(Ordering::SeqCst)
+    }
+}
 
 impl Waiters {
     pub fn new() -> Self {
@@ -96,29 +135,44 @@ impl Waiters {
     /// that exits immediately is reaped by a thread that has to take the same
     /// lock to deliver the exit, so it waits until the slot exists rather than
     /// finding none and dropping it.
-    pub fn watch<F>(&self, spawn: F) -> io::Result<oneshot::Receiver<Exit>>
+    pub fn watch<F>(&self, spawn: F) -> io::Result<Watched>
     where
         F: FnOnce() -> io::Result<i32>,
     {
         let mut waiting = self.lock();
         let pid = spawn()?;
         let (sender, receiver) = oneshot::channel();
-        waiting.insert(pid, sender);
-        Ok(receiver)
+        let running = Arc::new(AtomicBool::new(true));
+        waiting.insert(
+            pid,
+            Watch {
+                exit: sender,
+                running: running.clone(),
+            },
+        );
+        Ok(Watched {
+            pid,
+            running,
+            exit: Some(receiver),
+        })
     }
 
     /// Hand an exit to whoever is waiting for that pid. `false` if nobody is,
     /// which is the common case: most of what an init reaps is an orphan
     /// nothing asked about.
     pub fn deliver(&self, pid: i32, exit: Exit) -> bool {
-        let Some(sender) = self.lock().remove(&pid) else {
+        let Some(watch) = self.lock().remove(&pid) else {
             return false;
         };
+        // Before the exit goes anywhere: the pid has been reaped, so the
+        // number is free for the kernel to give to something else and nothing
+        // may signal it from here on.
+        watch.running.store(false, Ordering::SeqCst);
         // An error here means the caller stopped waiting, which is its right.
-        sender.send(exit).is_ok()
+        watch.exit.send(exit).is_ok()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<i32, oneshot::Sender<Exit>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<i32, Watch>> {
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())

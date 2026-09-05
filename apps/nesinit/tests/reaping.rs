@@ -115,9 +115,10 @@ fn an_exit_reaches_whoever_asked_for_it() {
     let _alone = alone();
     let waiters = Waiters::new();
 
-    let mut exited = waiters
+    let mut watched = waiters
         .watch(|| Ok(fork_child(|| unsafe { libc::_exit(9) })))
         .expect("the child never started");
+    let mut exited = watched.take_exit().unwrap();
 
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
@@ -154,7 +155,7 @@ fn an_exit_that_happens_before_the_caller_is_registered_is_not_lost() {
         }
     });
 
-    let mut exited = waiters
+    let mut watched = waiters
         .watch(|| {
             let pid = fork_child(|| unsafe { libc::_exit(5) });
             // Long enough for the child to exit and the reaper to reach it.
@@ -162,6 +163,7 @@ fn an_exit_that_happens_before_the_caller_is_registered_is_not_lost() {
             Ok(pid)
         })
         .expect("the child never started");
+    let mut exited = watched.take_exit().unwrap();
 
     let deadline = Instant::now() + Duration::from_secs(5);
     let exit = loop {
@@ -178,4 +180,38 @@ fn an_exit_that_happens_before_the_caller_is_registered_is_not_lost() {
 
     stop.store(true, Ordering::Relaxed);
     reaper.join().unwrap();
+}
+
+#[test]
+fn a_pid_stops_being_the_workload_the_moment_it_is_reaped() {
+    let _alone = alone();
+    let waiters = Waiters::new();
+
+    let mut watched = waiters
+        .watch(|| Ok(fork_child(|| unsafe { libc::_exit(0) })))
+        .expect("the child never started");
+    let mut exited = watched.take_exit().unwrap();
+    assert!(
+        watched.running(),
+        "a child that has not been reaped is still itself"
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        for (pid, exit) in reap_exited() {
+            waiters.deliver(pid, exit);
+        }
+        if exited.try_recv().is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    // The pid was freed by the reap that produced that exit, and the kernel is
+    // entitled to hand the number to something else. Signalling it after this
+    // point is signalling a stranger.
+    assert!(
+        !watched.running(),
+        "a reaped pid is still being treated as the workload's",
+    );
 }
