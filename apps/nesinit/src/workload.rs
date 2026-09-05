@@ -6,6 +6,7 @@
 // reported rather than acted on — is behaviour of the caller, which a double
 // can test without a VM, a share or a workload.
 
+use std::ffi::CString;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -119,16 +120,13 @@ impl Process {
 
 impl Workload for Process {
     fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure> {
-        if mounts.is_empty() {
-            return Ok(());
+        for share in mounts {
+            // Stops at the first failure rather than mounting what it can: a
+            // workload given some of its shares fails later, somewhere else,
+            // for a reason nobody can see from here.
+            mount_share(share)?;
         }
-        // Refused rather than ignored: a workload started without the shares
-        // it was promised fails later, somewhere else, for a reason nobody can
-        // see from here.
-        Err(Failure::new(format!(
-            "this build mounts nothing; {} share(s) were requested",
-            mounts.len()
-        )))
+        Ok(())
     }
 
     fn start(&mut self, exec: &Exec) -> Result<Exited, Failure> {
@@ -185,6 +183,146 @@ impl Workload for Process {
 
     fn signal_stop(&mut self) {
         self.signal(libc::SIGTERM);
+    }
+}
+
+/// Mount one share where the descriptor says to put it.
+///
+/// The tag names an export; nothing here is a path on the other side of the
+/// channel, so the guest still learns nothing about the filesystem it is being
+/// handed a piece of.
+fn mount_share(share: &Mount) -> Result<(), Failure> {
+    // Checked before anything is created: a descriptor this component cannot
+    // act on should leave no directory behind to confuse whoever reads the
+    // failure.
+    let (source, target, flags) = options(share)?;
+
+    // The mount point may not exist yet: a share can land anywhere the
+    // descriptor names, including a directory no image created.
+    std::fs::create_dir_all(&share.at).map_err(|error| failed(share, error))?;
+
+    // SAFETY: mount takes two paths, a filesystem name and a flag word, all
+    // of which outlive the call, and no options string.
+    let mounted = unsafe {
+        libc::mount(
+            source.as_ptr(),
+            target.as_ptr(),
+            FSTYPE.as_ptr(),
+            flags,
+            std::ptr::null(),
+        )
+    };
+    if mounted != 0 {
+        return Err(failed(share, io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+/// The shares arrive over a virtio transport, which is the only kind of
+/// filesystem this mounts. A descriptor cannot name another.
+const FSTYPE: &std::ffi::CStr = c"virtiofs";
+
+/// What the mount call is given, split out because this is the part worth
+/// asserting: mounting itself needs privileges a test does not have.
+fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> {
+    // nosuid and nodev on every share, whether or not it is writable. A share
+    // is data handed to the guest; a setuid binary or a device node appearing
+    // in one is not something a workload should be able to use, and no
+    // descriptor has a way to ask for it.
+    let mut flags = libc::MS_NOSUID | libc::MS_NODEV;
+    if share.ro {
+        flags |= libc::MS_RDONLY;
+    }
+    // A nul byte inside a tag or a path is a descriptor that cannot be carried
+    // out under any flags. Refused by name rather than silently emptied: an
+    // empty source turns up later as a mount failure about something else
+    // entirely, which is the wrong thing to go and look at.
+    let source = CString::new(share.tag.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the share tag contains a nul byte: {:?}",
+            share.tag
+        ))
+    })?;
+    let target = CString::new(share.at.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the mount point contains a nul byte: {:?}",
+            share.at
+        ))
+    })?;
+    Ok((source, target, flags))
+}
+
+/// A failure names the path, which is what makes it actionable: a permission
+/// error and the directory it happened on can be acted on, where "the share
+/// did not mount" cannot.
+fn failed(share: &Mount, error: io::Error) -> Failure {
+    Failure::new(format!("{}: {error}", share.at))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn share(ro: bool) -> Mount {
+        Mount {
+            tag: "user".into(),
+            at: "/mnt/user".into(),
+            ro,
+        }
+    }
+
+    #[test]
+    fn a_writable_share_is_still_mounted_without_devices_or_setuid() {
+        let (source, target, flags) = options(&share(false)).unwrap();
+        assert_eq!(
+            source.to_str().unwrap(),
+            "user",
+            "the tag is the source, never a path"
+        );
+        assert_eq!(target.to_str().unwrap(), "/mnt/user");
+        assert_eq!(flags & libc::MS_NOSUID, libc::MS_NOSUID);
+        assert_eq!(flags & libc::MS_NODEV, libc::MS_NODEV);
+        assert_eq!(flags & libc::MS_RDONLY, 0);
+    }
+
+    #[test]
+    fn a_read_only_share_is_mounted_read_only() {
+        let (_, _, flags) = options(&share(true)).unwrap();
+        assert_eq!(flags & libc::MS_RDONLY, libc::MS_RDONLY);
+    }
+
+    #[test]
+    fn a_descriptor_with_a_nul_byte_in_it_is_refused_by_name() {
+        let tagged = Mount {
+            tag: "us\0er".into(),
+            at: "/mnt/user".into(),
+            ro: false,
+        };
+        let failure = options(&tagged).expect_err("an empty source would have been mounted");
+        assert!(failure.reason.contains("tag"), "{}", failure.reason);
+
+        let placed = Mount {
+            tag: "user".into(),
+            at: "/mnt/us\0er".into(),
+            ro: false,
+        };
+        let failure = options(&placed).expect_err("an empty target would have been mounted");
+        assert!(failure.reason.contains("mount point"), "{}", failure.reason);
+    }
+
+    #[test]
+    fn a_failure_names_the_path_it_happened_on() {
+        let failure = failed(&share(false), io::Error::from_raw_os_error(libc::EACCES));
+        assert!(
+            failure.reason.starts_with("/mnt/user: "),
+            "{}",
+            failure.reason
+        );
+        assert!(
+            failure.reason.contains("ermission denied"),
+            "{}",
+            failure.reason
+        );
     }
 }
 

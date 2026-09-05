@@ -4,8 +4,10 @@
 // the workload the channel describes, and turn the end of either into an
 // ordered shutdown.
 
+use std::path::Path;
 use std::time::Duration;
 
+use nesinit::payload::{self, Ports};
 use nesinit::reap::{self, Waiters};
 use nesinit::session::{self, Outcome};
 use nesinit::shutdown::{self, Machine};
@@ -16,6 +18,12 @@ use tokio_vsock::{VMADDR_CID_HOST, VsockAddr, VsockStream};
 
 /// How long a process gets between being asked to stop and being made to.
 const GRACE: Duration = Duration::from_secs(10);
+
+/// How many envelopes may be in flight in one direction.
+///
+/// Small on purpose: what crosses this layer is re-sent when it changes, so a
+/// deep queue holds stale copies of it rather than protecting anything.
+const RELAY_DEPTH: usize = 8;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -75,8 +83,22 @@ async fn guest(waiters: &Waiters, workload: &mut Process) -> anyhow::Result<Outc
     // waiting will not fix.
     let channel = VsockStream::connect(address).await?;
 
+    // The relay is up before the workload is started, so a workload that
+    // dials in as its first act finds it there.
+    let (down_tx, down_rx) = tokio::sync::mpsc::channel(RELAY_DEPTH);
+    let (up_tx, up_rx) = tokio::sync::mpsc::channel(RELAY_DEPTH);
+    tokio::spawn(async move {
+        if let Err(error) = payload::serve(Path::new(payload::SOCKET), down_rx, up_tx).await {
+            tracing::error!(%error, "the relay is not running");
+        }
+    });
+    let mut ports = Ports {
+        to_workload: down_tx,
+        from_workload: up_rx,
+    };
+
     let outcome = tokio::select! {
-        outcome = session::run(channel, workload) => outcome?,
+        outcome = session::run(channel, workload, &mut ports) => outcome?,
         signal = asked_to_stop() => {
             signal?;
             tracing::info!("asked to stop");

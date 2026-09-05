@@ -146,11 +146,30 @@ impl Exit {
 pub enum GuestToHost {
     /// First line on the connection, before anything else is read or written.
     Ready { protocol_version: u32 },
+    /// Every share the descriptor named is where it said to put it.
+    Mounted,
+    /// A share could not be mounted, in the words the operating system used.
+    ///
+    /// Kept separate from `StartFailed` because the two want different things
+    /// looked at: a share that did not appear and a command that did not run
+    /// are not the same incident.
+    MountFailed { reason: String },
+    /// The command the descriptor named is running.
+    Started,
+    /// The command could not be run, in the words the operating system used.
+    StartFailed { reason: String },
     /// The workload the descriptor named has ended. Terminal or not is the
     /// descriptor's answer, not this message's.
     WorkloadExited {
         #[serde(flatten)]
         exit: Exit,
+    },
+    /// How a client reaches this box's media, once it is known.
+    Ticket { ticket: String },
+    /// Bytes from the workload, relayed. See [`Payload`].
+    Payload {
+        #[serde(flatten)]
+        payload: Payload,
     },
 }
 
@@ -167,6 +186,55 @@ pub enum HostToGuest {
     Stop,
     /// Shut the guest down.
     Shutdown,
+    /// Bytes for the workload, relayed. See [`Payload`].
+    Payload {
+        #[serde(flatten)]
+        payload: Payload,
+    },
+}
+
+/// The second layer of the channel: bytes the guest carries and never reads.
+///
+/// `body` is a string rather than nested JSON, and that is the structural part
+/// of it. A document the guest can index into is a document the guest can grow
+/// to depend on, and then this layer is no longer opaque and the boundary it
+/// exists to draw is gone.
+///
+/// **An envelope is never logged.** Not the body, not truncated, not at debug
+/// level. The channel name and the byte count are the whole of what may be
+/// said about one, because what crosses here includes credentials meant for
+/// the workload and nothing else. ref(d-0033)
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Payload {
+    /// Which conversation this belongs to. Loggable.
+    pub channel: String,
+    /// Opaque bytes. Never logged, never parsed, never inspected.
+    pub body: String,
+}
+
+impl Payload {
+    pub fn new(channel: impl Into<String>, body: impl Into<String>) -> Self {
+        Self {
+            channel: channel.into(),
+            body: body.into(),
+        }
+    }
+
+    /// What may be said about an envelope, and all of it.
+    pub fn summary(&self) -> String {
+        format!("{} ({} bytes)", self.channel, self.body.len())
+    }
+}
+
+/// Written by hand, and it is load-bearing: a derived `Debug` puts the body
+/// one careless `{:?}` away from a log line.
+impl std::fmt::Debug for Payload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Payload")
+            .field("channel", &self.channel)
+            .field("body", &format_args!("<{} bytes>", self.body.len()))
+            .finish()
+    }
 }
 
 /// Encode one message as a line, framing included.
@@ -250,6 +318,64 @@ mod tests {
         assert!(
             !clean.contains("signal"),
             "a clean exit was not signalled: {clean}"
+        );
+    }
+
+    #[test]
+    fn an_envelope_does_not_print_its_body() {
+        let payload = Payload::new("identity", "a-credential-nobody-should-read");
+        let printed = format!("{payload:?}");
+        assert!(
+            !printed.contains("a-credential"),
+            "the body reached a log line: {printed}"
+        );
+        assert!(
+            printed.contains("identity"),
+            "the channel name is loggable: {printed}"
+        );
+        assert_eq!(payload.summary(), "identity (31 bytes)");
+    }
+
+    #[test]
+    fn an_envelope_body_stays_a_string_in_both_directions() {
+        // Nested JSON in the body has to survive as text: the moment it
+        // arrives as structure, this layer is one field access from being
+        // parsed.
+        let body = r#"{"looks":"structured"}"#;
+        let line = to_line(&GuestToHost::Payload {
+            payload: Payload::new("identity", body),
+        })
+        .unwrap();
+        let back: GuestToHost = from_line(&line).unwrap();
+        let GuestToHost::Payload { payload } = back else {
+            panic!("not an envelope: {line}")
+        };
+        assert_eq!(payload.body, body);
+
+        let line = to_line(&HostToGuest::Payload {
+            payload: Payload::new("identity", body),
+        })
+        .unwrap();
+        let back: HostToGuest = from_line(&line).unwrap();
+        let HostToGuest::Payload { payload } = back else {
+            panic!("not an envelope: {line}")
+        };
+        assert_eq!(payload.body, body);
+    }
+
+    #[test]
+    fn a_mount_failure_keeps_its_reason_verbatim() {
+        let reason = "EACCES: /mnt/user";
+        let line = to_line(&GuestToHost::MountFailed {
+            reason: reason.into(),
+        })
+        .unwrap();
+        let back: GuestToHost = from_line(&line).unwrap();
+        assert_eq!(
+            back,
+            GuestToHost::MountFailed {
+                reason: reason.into()
+            }
         );
     }
 
