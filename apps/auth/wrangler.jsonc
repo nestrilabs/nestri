@@ -44,7 +44,7 @@
 		"sandbox": {
 			"name": "nestri-auth-sandbox",
 			"workers_dev": false,
-			"routes": [{ "pattern": "auth-sandbox.nestri.io", "custom_domain": true }],
+			"routes": [{ "pattern": "auth.sandbox.nestri.io", "custom_domain": true }],
 			"observability": { "enabled": true },
 			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<sandbox-hyperdrive-id>" }]
 		},

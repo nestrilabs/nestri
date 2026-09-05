@@ -114,6 +114,7 @@ sandboxes, one GPU" possible instead of one tenant per card.
 
 ```sh
 bun install
+cp .env.example .env         # compose reads every credential from here
 docker compose up postgres   # the database
 bun run db:migrate           # schema
 bun dev                      # control plane, local Cloudflare runtime

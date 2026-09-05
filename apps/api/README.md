@@ -39,7 +39,12 @@ test/                # Route tests
 
 ## Key details
 
-- Auth: `Authorization: Bearer <JWT>` verified against `@nestri/auth`; or the `x-nestri-admin-token` header (see `ADMIN_SHARED_SECRET`).
+- Auth: `Authorization: Bearer <JWT>` verified against `@nestri/auth`; or the `x-nestri-admin-token` header
+  carrying `ADMIN_SHARED_SECRET`, which bypasses JWT verification entirely and is required — it has no
+  default anywhere. It is what authenticates the callers that have no user identity to present:
+  `POST /pairing-code/claim` (a device being paired has no identity yet, which is the whole point),
+  `POST /games`, `POST /games/sync`, `POST /library/sync`, `GET /waitlist`, `POST /steam/link` on behalf
+  of another user, and `POST /games/download-state` when an operator is repairing state a box reported.
 - Errors: centralized `VisibleError` → typed JSON responses.
 - Settings arrive as bindings or as environment variables, and two of them have one spelling of
   each: Postgres is `HYPERDRIVE` or `DATABASE_URL`, and the route to the issuer is an `AUTH`

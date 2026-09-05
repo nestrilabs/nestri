@@ -44,11 +44,11 @@
 		"sandbox": {
 			"name": "nestri-api-sandbox",
 			"workers_dev": false,
-			"routes": [{ "pattern": "api-sandbox.nestri.io", "custom_domain": true }],
+			"routes": [{ "pattern": "api.sandbox.nestri.io", "custom_domain": true }],
 			"observability": { "enabled": true },
 			"services": [{ "binding": "AUTH", "service": "nestri-auth-sandbox" }],
 			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<sandbox-hyperdrive-id>" }],
-			"vars": { "AUTH_ISSUER_URL": "https://auth-sandbox.nestri.io" }
+			"vars": { "AUTH_ISSUER_URL": "https://auth.sandbox.nestri.io" }
 		},
 		"production": {
 			"name": "nestri-api",

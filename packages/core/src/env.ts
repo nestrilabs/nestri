@@ -8,8 +8,6 @@ export namespace Env {
 	export const Info = z.object({
 		NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-		STEAM_API_KEY: z.string().optional(),
-
 		AUTH_ISSUER_URL: z.string().optional(),
 
 		/**

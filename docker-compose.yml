@@ -5,27 +5,43 @@
 # stateless processes and a database, with a reverse proxy in front of them
 # terminating TLS. Nothing here knows about a hosting provider.
 #
+#   cp .env.example .env               # then fill it in
 #   docker compose up --build          everything, built from source
 #   docker compose up postgres         just the database, for `bun dev`
+#
+# **There are no credentials in this file, and none of them have defaults.**
+# Every one is read from `.env`, and compose refuses to start naming the
+# variable it wanted rather than falling back to something. A default is worth
+# less than it looks: the deployment that never set the variable is exactly the
+# one where the default is a publicly known value, and `ADMIN_SHARED_SECRET`
+# below bypasses authentication entirely.
 #
 # Migrations are not run for you — `bun run db:migrate` against DATABASE_URL,
 # because a container that migrates on boot races with the second copy of
 # itself and there is eventually a second copy.
+
+x-postgres-url: &postgres-url
+  DATABASE_URL: postgres://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:?set POSTGRES_DB in .env}
 
 services:
   postgres:
     image: docker.io/postgres:18-alpine
     container_name: nestri_postgres
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: nestri
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+    # Loopback, not every interface. `5432:5432` would publish the database to
+    # anything that can reach this host. The three services below talk to each
+    # other over the compose network and do not use this mapping at all; it is
+    # here only so `bun dev` and `bun run db:migrate` can reach the database
+    # from outside a container.
     ports:
-      - '5432:5432'
+      - '127.0.0.1:5432:5432'
     volumes:
       - nestri_data:/var/lib/postgresql
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d nestri']
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -33,7 +49,7 @@ services:
   auth:
     build:
       # The repository root, because the lockfile and the shared packages are
-      # there. Same reason for both images below.
+      # there. Same reason for the API below.
       context: .
       dockerfile: apps/auth/Dockerfile
     container_name: nestri_auth
@@ -41,13 +57,24 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/nestri
+      <<: *postgres-url
+      # Passed through rather than fixed here, so that setting them in `.env`
+      # is enough to make this deployment deliver mail. All three together or
+      # none of them: the issuer refuses to send when they are half configured.
+      EMAIL_SEND_URL: ${EMAIL_SEND_URL:-}
+      EMAIL_API_KEY: ${EMAIL_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
       # Printing a live sign-in code to the log is a thing you ask for by name,
-      # and this file is the local machine. Set the three EMAIL_* settings
-      # instead and codes are delivered rather than printed.
-      EMAIL_DEV_LOG: 'true'
+      # and it is asked for in `.env` — not defaulted to here. With mail
+      # unconfigured and this unset, the issuer refuses to send rather than
+      # logging codes, which is the failure a self-hoster should get.
+      EMAIL_DEV_LOG: ${EMAIL_DEV_LOG:-}
+    # Loopback. This listener speaks plain HTTP and sets no `Secure` on the
+    # cookies it issues, because it expects to be behind something that
+    # terminates TLS. Published on every interface it would be a way to reach
+    # the issuer *around* that proxy, with codes and tokens in clear text.
     ports:
-      - '1337:1337'
+      - '127.0.0.1:1337:1337'
 
   api:
     build:
@@ -60,17 +87,19 @@ services:
       auth:
         condition: service_started
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/nestri
+      <<: *postgres-url
       # The issuer's public URL, and not `http://auth:1337`. A token carries
       # the address it was minted through, and verification compares the two
       # literally — so the name a browser used is the only one that can appear
       # here. `AUTH_INTERNAL_URL` is how this container actually gets there.
-      AUTH_ISSUER_URL: http://localhost:1337
+      AUTH_ISSUER_URL: ${AUTH_ISSUER_URL:?set AUTH_ISSUER_URL in .env}
       AUTH_INTERNAL_URL: http://auth:1337
-      STEAM_API_KEY: ${STEAM_API_KEY:-}
-      ADMIN_SHARED_SECRET: ${ADMIN_SHARED_SECRET:-dev-admin-shared-secret-change-in-prod}
+      # A shared secret that turns any request carrying it into an operator.
+      # Required, with no default, for that reason.
+      ADMIN_SHARED_SECRET: ${ADMIN_SHARED_SECRET:?set ADMIN_SHARED_SECRET in .env to a value you generated}
+    # Loopback, for the same reason as the issuer above.
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
 
 volumes:
   nestri_data:

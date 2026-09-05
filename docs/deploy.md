@@ -23,6 +23,7 @@ Hostnames, and why they are shaped the way they are: [`dns.md`](dns.md).
 Three ways, in increasing order of how much they resemble a deployment.
 
 ```sh
+cp .env.example .env          # once; compose has no credentials of its own
 docker compose up postgres    # the database, for either of the next two
 bun dev                       # both apps under the Workers runtime
 bun run dev:server            # both apps as plain processes
@@ -90,9 +91,13 @@ bunx wrangler secret put EMAIL_API_KEY  --env production
 bunx wrangler secret put EMAIL_FROM     --env production
 
 cd ../api
-bunx wrangler secret put STEAM_API_KEY       --env production
 bunx wrangler secret put ADMIN_SHARED_SECRET --env production
 ```
+
+`ADMIN_SHARED_SECRET` turns any request carrying it into an operator, so
+generate it rather than choosing it — `openssl rand -hex 32` — and never give
+it a default anywhere. What it is for is listed in
+[`apps/api/README.md`](../apps/api/README.md).
 
 The issuer refuses to send a sign-in code with its mail settings half
 configured or absent, rather than falling back to printing codes to the log —
@@ -134,14 +139,16 @@ Both images are stateless and hold no configuration. What they need:
 | `AUTH_INTERNAL_URL` | — | only if that URL is unroutable from here |
 | `EMAIL_SEND_URL` `EMAIL_API_KEY` `EMAIL_FROM` | all three, or none | — |
 | `EMAIL_DEV_LOG` | `true` prints codes instead of sending | — |
-| `STEAM_API_KEY` | — | to link a Steam account |
-| `ADMIN_SHARED_SECRET` | — | operator access |
+| `ADMIN_SHARED_SECRET` | — | required; operator access |
 | `PORT` | default `1337` | default `3000` |
 
 [`docker-compose.yml`](../docker-compose.yml) at the root wires all of it
 together with a Postgres, and is the smallest complete answer to *"how do I run
 this myself"*.
 
-Neither image terminates TLS or serves a certificate. Put a reverse proxy in
-front of them, point the hostnames at it, and keep the origin unreachable
-except through it.
+Neither image terminates TLS or serves a certificate, and neither marks the
+cookies it sets `Secure`, because both expect to sit behind something that does
+terminate TLS. So put a reverse proxy in front of them and keep the origin
+unreachable except through it — `docker-compose.yml` publishes their ports on
+loopback only for exactly this reason, and changing that to `0.0.0.0` is a way
+to reach the issuer *around* the proxy with codes and tokens in clear text.

@@ -17,38 +17,61 @@ tools is how they drift.
 
 ## The rule
 
-**One label deep on `nestri.io`.** A certificate for `*.nestri.io` covers
-`api-sandbox.nestri.io` and does not cover `api.sandbox.nestri.io`, and that is
-the whole reason the sandbox names are hyphenated rather than nested. It costs
-nothing while these are Workers — a custom domain gets its own certificate for
-the exact hostname either way — and it is what lets any of these names become
-an ordinary proxied origin later without also needing a certificate ordered for
-it. A name should not have to change because the thing behind it did.
+**A domain gets one certificate, obtained once, and it covers that domain and
+nothing else.** Names are then grouped so that the grouping is the same shape
+as the certificate: production sits directly under `nestri.io`, and everything
+that is not production sits under `sandbox.nestri.io`.
+
+That is why the sandbox names are nested rather than hyphenated. `sandbox` is a
+domain, not a prefix — it holds whatever is not production, which today is the
+API and the issuer and later is more. Once the shape is a domain, a single
+certificate for `*.sandbox.nestri.io` covers all of it, including per-pull-
+request deployments at `pr-<id>.sandbox.nestri.io` if those ever arrive; those
+would be unbounded and unpredictable names, which is precisely the case that a
+name-by-name certificate cannot serve and a domain-wide one can.
+
+It also means a certificate that can be presented for a sandbox name cannot be
+presented for `api.nestri.io`. Leaning on the zone-wide `*.nestri.io` instead
+would have given every scratch deployment a certificate for production's own
+domain, which is the opposite of what a sandbox is for.
+
+Nothing extra is needed while these are Workers — a custom domain is issued its
+own certificate for the exact hostname, at any depth. The rule binds on the day
+they become origins, and it is written down now because that is the day it is
+expensive to have got wrong.
 
 ## `nestri.io`
 
-| Name                     | What it is                        | Answered today by       |
-| ------------------------ | --------------------------------- | ----------------------- |
-| `api.nestri.io`          | The API, production               | Worker custom domain    |
-| `auth.nestri.io`         | The issuer, production            | Worker custom domain    |
-| `api-sandbox.nestri.io`  | The API, sandbox                  | Worker custom domain    |
-| `auth-sandbox.nestri.io` | The issuer, sandbox               | Worker custom domain    |
-| `doctor.nestri.io`       | Where `nesdoctor` is downloaded   | Static site             |
-| `nestri.io`              | The website, and `ssh nestri.io`  | Website                 |
+| Name                     | What it is                       | Answered today by    |
+| ------------------------ | -------------------------------- | -------------------- |
+| `nestri.io`              | The website, and `ssh nestri.io` | Website              |
+| `api.nestri.io`          | The API, production              | Worker custom domain |
+| `auth.nestri.io`         | The issuer, production           | Worker custom domain |
+| `doctor.nestri.io`       | Where `nesdoctor` is downloaded  | Static site          |
 
-`auth.nestri.io` is the one name that cannot be changed casually. A token
-carries the address it was minted through in its `iss` claim, and every API
-request verifies that claim literally — so renaming the issuer invalidates
-every token in circulation at once, including the refresh tokens that would
-otherwise have recovered from it.
+## `sandbox.nestri.io`
+
+Everything that is not production, under one domain and one certificate.
+
+| Name                      | What it is         | Answered today by    |
+| ------------------------- | ------------------ | -------------------- |
+| `api.sandbox.nestri.io`   | The API, sandbox   | Worker custom domain |
+| `auth.sandbox.nestri.io`  | The issuer, sandbox| Worker custom domain |
+
+`auth.nestri.io` is the one name in either table that cannot be changed
+casually. A token carries the address it was minted through in its `iss` claim,
+and every API request verifies that claim literally — so renaming the issuer
+invalidates every token in circulation at once, including the refresh tokens
+that would otherwise have recovered from it. The sandbox issuer has the same
+property and none of the consequences, which is the point of having one.
 
 ## After the move off Workers
 
-Each of the first four becomes a proxied `A` record pointing at the host
-running the containers, and nothing else about them changes: same names, same
-certificates, same `iss` claim. Cloudflare keeps terminating public TLS, so
-there is no certificate on our own host to renew, and the origin is not
-addressable except through the proxy.
+Each of the four control-plane names becomes a proxied `A` record pointing at
+the host running the containers, and nothing else about them changes: same
+names, same `iss` claim. Cloudflare keeps terminating public TLS, so there is
+no certificate on our own host to renew, and the origin is not addressable
+except through the proxy.
 
 The order that matters, on the day: create the `A` records with the proxy on,
 confirm the containers answer through them, *then* remove the Worker routes.

@@ -123,7 +123,6 @@ export type ApiEnv = {
 	AUTH_INTERNAL_URL?: string;
 	HYPERDRIVE?: Hyperdrive;
 	DATABASE_URL?: string;
-	STEAM_API_KEY?: string;
 	ADMIN_SHARED_SECRET?: string;
 };
 
