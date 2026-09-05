@@ -10,7 +10,10 @@
 # exclude the whole TypeScript half, because the guest rootfs build was the
 # only Dockerfile here — that part now lives in `build/Dockerfile.dockerignore`,
 # beside the build it belongs to.
-FROM oven/bun:1.3.11-alpine AS deps
+# The registry host is part of the name on purpose: podman refuses a
+# short name that resolves to nothing, and a self-hoster is as likely to
+# have podman as docker.
+FROM docker.io/oven/bun:1.3.11-alpine AS deps
 
 WORKDIR /app
 
@@ -30,7 +33,7 @@ COPY packages/auth/package.json packages/auth/
 RUN bun install --frozen-lockfile --production
 
 
-FROM oven/bun:1.3.11-alpine AS runtime
+FROM docker.io/oven/bun:1.3.11-alpine AS runtime
 
 WORKDIR /app
 

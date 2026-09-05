@@ -19,8 +19,8 @@
 	},
 	"type": "module",
 	"scripts": {
-		"dev": "wrangler dev -c apps/auth/wrangler.jsonc -c apps/api/wrangler.jsonc",
-		"dev:server": "bun run --cwd apps/auth serve & bun run --cwd apps/api serve",
+		"dev": "wrangler dev -c apps/auth/wrangler.jsonc & issuer=$!; trap \"kill $issuer 2>/dev/null\" EXIT; wrangler dev -c apps/api/wrangler.jsonc",
+		"dev:server": "bun run --cwd apps/auth serve & issuer=$!; trap \"kill $issuer 2>/dev/null\" EXIT; bun run --cwd apps/api serve",
 		"dev:docker": "docker compose up --build",
 		"db:migrate": "bun run --cwd packages/core db:migrate",
 		"db:push": "bun run --cwd packages/core db:push",

@@ -67,9 +67,30 @@ export namespace Database {
 
 	const clients = new Map<string, Client>();
 
+	/**
+	 * Whether a pool may outlive the request that opened it.
+	 *
+	 * On a Worker it may not. An I/O object created while handling one request
+	 * cannot be touched while handling another — *"Cannot perform I/O on behalf
+	 * of a different request"* — so a kept socket is not a saving there, it is
+	 * an error thrown on the second request that reuses it, and the first
+	 * request always succeeds. That shape is why it went unnoticed: a single
+	 * call works, and a sign-in is two.
+	 *
+	 * A long-lived process has the opposite problem, which is what the cache
+	 * exists for — so the answer is not one rule but this test.
+	 */
+	const poolsOutliveRequests = !(
+		typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers'
+	);
+
 	export function client(): Client {
 		const url = Env.get().DATABASE_URL || process.env.DATABASE_URL;
 		const key = url ?? 'local:nestri';
+
+		if (!poolsOutliveRequests) {
+			return connect(url);
+		}
 
 		const cached = clients.get(key);
 		if (cached) {

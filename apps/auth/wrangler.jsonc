@@ -18,8 +18,18 @@
 	// second issuer as far as a token's `iss` claim is concerned, and every
 	// token minted through it is rejected by the API.
 	"workers_dev": false,
+	// `ip` is pinned rather than left to default. Wrangler otherwise binds
+	// whatever `localhost` resolves to, which is `::1` first on most systems
+	// — and a host with no IPv6 address on its loopback interface fails to
+	// start at all, with a bind error from deep inside the runtime rather
+	// than anything naming a port.
 	"dev": {
-		"port": 1337
+		"ip": "127.0.0.1",
+		"port": 1337,
+		// Distinct per app. Both dev servers run at once and the debugger
+		// port is not derived from the one above, so leaving it default
+		// meant the second to start died on an address already in use.
+		"inspector_port": 9229
 	},
 
 	// Local-only settings live in `.dev.vars` beside this file rather than in

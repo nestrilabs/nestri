@@ -9,6 +9,13 @@
 #   docker compose up --build          everything, built from source
 #   docker compose up postgres         just the database, for `bun dev`
 #
+# No service sets `container_name`. It reads like a nicety and behaves like a
+# global: the name is not scoped to the project, so a second checkout of this
+# repo — a worktree, a colleague's clone — gets the same three names, and
+# `docker compose down` in one of them stops the containers belonging to the
+# other. Compose names them per project on its own, which is what makes two
+# checkouts independent.
+#
 # **There are no credentials in this file, and none of them have defaults.**
 # Every one is read from `.env`, and compose refuses to start naming the
 # variable it wanted rather than falling back to something. A default is worth
@@ -26,7 +33,6 @@ x-postgres-url: &postgres-url
 services:
   postgres:
     image: docker.io/postgres:18-alpine
-    container_name: nestri_postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -52,7 +58,6 @@ services:
       # there. Same reason for the API below.
       context: .
       dockerfile: apps/auth/Dockerfile
-    container_name: nestri_auth
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,7 +85,6 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: nestri_api
     depends_on:
       postgres:
         condition: service_healthy
