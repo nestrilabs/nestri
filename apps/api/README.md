@@ -1,6 +1,7 @@
 # apps/api
 
-The public HTTP API for Nestri — a [Hono](https://hono.dev) app deployed as a Cloudflare Worker.
+The public HTTP API for Nestri — a [Hono](https://hono.dev) app. One handler, run either as a
+Cloudflare Worker or as an ordinary HTTP server.
 
 ## What it does
 
@@ -26,19 +27,32 @@ Routes:
 
 ```text
 app/
-  index.ts           # Hono entrypoint: middleware, routes, error handler, /doc
+  index.ts           # The handler: middleware, routes, error handler, /doc
+  server.ts          # The same handler behind a listening socket
   middleware/auth.ts # Bearer JWT + admin shared-secret auth → Actor
   routes/*.ts        # Thin route namespaces (UserApi, SteamApi, ...)
   utils/             # ErrorResponses, Result(), validator wrapping
-test/                # Route tests (Vitest/Bun)
+wrangler.jsonc       # Worker configuration, one environment per stage
+Dockerfile           # The container, built from the repository root
+test/                # Route tests
 ```
 
 ## Key details
 
 - Auth: `Authorization: Bearer <JWT>` verified against `@nestri/auth`; or the `x-nestri-admin-token` header (see `ADMIN_SHARED_SECRET`).
 - Errors: centralized `VisibleError` → typed JSON responses.
-- The API worker receives its bindings (`AUTH`, `HYPERDRIVE`, `STEAM_API_KEY`, `ADMIN_SHARED_SECRET`) from Alchemy — see `alchemy.run.ts` at the repo root.
+- Settings arrive as bindings or as environment variables, and two of them have one spelling of
+  each: Postgres is `HYPERDRIVE` or `DATABASE_URL`, and the route to the issuer is an `AUTH`
+  service binding or `AUTH_INTERNAL_URL`. Nothing here branches on which it got.
+- `AUTH_ISSUER_URL` is the issuer's **public** URL and never the internal one, because it is
+  compared literally against the `iss` claim on every token.
 
 ## Running
 
-Run via the root Alchemy setup (`bun alchemy.run.ts --dev`). Needs a Postgres database and an auth worker; see the root README for full dev setup.
+```sh
+bun run dev      # under the Workers runtime, on :3000
+bun run serve    # as a plain process, on $PORT (default 3000)
+```
+
+Needs a Postgres database and a reachable issuer. Full list and deployment steps:
+[`docs/deploy.md`](../../docs/deploy.md).

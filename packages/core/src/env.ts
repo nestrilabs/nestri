@@ -12,6 +12,23 @@ export namespace Env {
 
 		AUTH_ISSUER_URL: z.string().optional(),
 
+		/**
+		 * Where to *reach* the issuer, when that is not where it *lives*.
+		 *
+		 * `AUTH_ISSUER_URL` is an identity: a token carries the address it was
+		 * minted through and verification compares the two literally, so it is
+		 * the public name and can be nothing else. But the public name is
+		 * often not routable from inside a deployment — a container on a
+		 * private network, a host behind its own proxy — and one setting
+		 * cannot be both.
+		 *
+		 * So this one is the route and the other is the name, which is the
+		 * same split a service binding makes on its own: the binding is the
+		 * route, and the `iss` claim is still the name. Unset means they are
+		 * the same address, which is the ordinary case.
+		 */
+		AUTH_INTERNAL_URL: z.string().optional(),
+
 		SSH_AUTH_KEY: z.string().optional(),
 
 		ADMIN_SHARED_SECRET: z.string().optional(),

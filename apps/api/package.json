@@ -1,6 +1,11 @@
 {
 	"name": "api",
 	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"serve": "bun run app/server.ts",
+		"deploy": "wrangler deploy"
+	},
 	"dependencies": {
 		"@hono/zod-validator": "^0.9.0",
 		"@nestri/auth": "workspace:",

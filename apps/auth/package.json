@@ -2,7 +2,9 @@
 	"name": "auth",
 	"type": "module",
 	"scripts": {
-		"dev": "vite"
+		"dev": "wrangler dev",
+		"serve": "bun run src/server.ts",
+		"deploy": "wrangler deploy"
 	},
 	"dependencies": {
 		"@nestri/auth": "workspace:",

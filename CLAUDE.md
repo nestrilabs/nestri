@@ -13,7 +13,7 @@ apps/       what runs        api, auth (TS) · nescope, neswire, nescapture, nes
                             nesdoctor (Rust, runs on the user's own machine)
 crates/     shared Rust      nesprotocol
 packages/   shared TS        core, auth
-docs/       long-form        alchemy.md
+docs/       long-form        deploy.md · dns.md
 ```
 
 Both toolchains live at the root: `package.json` is the Bun workspace,
@@ -22,7 +22,7 @@ Both toolchains live at the root: `package.json` is the Bun workspace,
 | | |
 |---|---|
 | `bun install` | dependencies |
-| `bun dev` | local Cloudflare dev via Alchemy |
+| `bun dev` | both control-plane apps locally, under the Workers runtime |
 | `cargo build --workspace` · `cargo test --workspace` | the Rust half |
 | `bun run deploy:sandbox` | deploy a stage |
 
@@ -96,8 +96,11 @@ them there rather than duplicating them here.
   actor model, the error type, auth flow.
 - [`apps/api/CLAUDE.md`](apps/api/CLAUDE.md) — route modules, registration,
   `.meta()` vs `.openapi()`, error flow.
-- [`docs/alchemy.md`](docs/alchemy.md) — infrastructure: stages, bindings,
-  secrets, service bindings, the CLI.
+- [`docs/deploy.md`](docs/deploy.md) — the two ways each control-plane app
+  runs (Workers via `wrangler`, and a container), the settings each needs, and
+  what is shared between them.
+- [`docs/dns.md`](docs/dns.md) — every hostname, what it is for, and the one
+  rule about their shape.
 
 ## Things worth knowing before you start
 

@@ -38,9 +38,6 @@ dist
 .lunora-cache
 lunora/_generated
 
-# alchemy
-.alchemy
-
 #turbo
 .turbo
 

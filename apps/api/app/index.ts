@@ -1,6 +1,6 @@
+import type { Hyperdrive } from '@cloudflare/workers-types';
 import { Env } from '@nestri/core/env';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
-import type { InferEnv } from 'alchemy/Cloudflare';
 import { Hono } from 'hono';
 import { openAPISpecs } from 'hono-openapi';
 import { cors } from 'hono/cors';
@@ -8,7 +8,6 @@ import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 import { type ContentfulStatusCode } from 'hono/utils/http-status';
 
-import type { Api } from '../../../alchemy.run.ts';
 import { auth } from './middleware/auth.js';
 import { AccessTokenApi } from './routes/access-token.js';
 import { GameApi } from './routes/game.js';
@@ -103,8 +102,33 @@ app.get(
 	})
 );
 
+/**
+ * Everything this app is handed, from a binding or from the environment.
+ *
+ * Two things here arrive one of two ways, and neither is a special case.
+ * `HYPERDRIVE` carries a connection string on a platform that pools
+ * connections for us, and `DATABASE_URL` says the same thing where nothing
+ * does. An `AUTH` binding is a route to the issuer that skips the internet,
+ * and `AUTH_INTERNAL_URL` is that route written out. Each pair is two
+ * spellings of one fact rather than two deployments, which is why nothing
+ * below branches on the runtime it is under.
+ *
+ * `AUTH_ISSUER_URL` is not part of either pair. It is the issuer's public
+ * *name*, it is required, and it is the same value however the issuer is
+ * reached — because it is what every token's `iss` claim is checked against.
+ */
+export type ApiEnv = {
+	AUTH?: { fetch: typeof fetch };
+	AUTH_ISSUER_URL?: string;
+	AUTH_INTERNAL_URL?: string;
+	HYPERDRIVE?: Hyperdrive;
+	DATABASE_URL?: string;
+	STEAM_API_KEY?: string;
+	ADMIN_SHARED_SECRET?: string;
+};
+
 export default {
-	fetch(request: Request, env: InferEnv<typeof Api>, ctx: ExecutionContext) {
+	fetch(request: Request, env: ApiEnv, ctx?: ExecutionContext) {
 		Env.init(env as unknown as Record<string, unknown>);
 		return app.fetch(request, env, ctx);
 	}

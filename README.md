@@ -66,7 +66,7 @@ Source and the full story: [`apps/nesdoctor`](apps/nesdoctor).
 Two halves that meet over the network and share very little else, plus one
 thing that runs on your own machine.
 
-### The control plane — TypeScript, on Cloudflare Workers
+### The control plane — TypeScript
 
 | | |
 |---|---|
@@ -75,8 +75,10 @@ thing that runs on your own machine.
 | [`packages/core`](packages/core) | The domain: every table, every operation, no HTTP. |
 | [`packages/auth`](packages/auth) | Shared auth types and subjects. |
 
-Postgres for state, [Alchemy](https://alchemy.run) for infrastructure. See
-[`docs/alchemy.md`](docs/alchemy.md).
+Postgres for state. Both run on Cloudflare Workers today and as ordinary
+containers wherever you like — one handler each, no infrastructure-as-code, and
+a `Dockerfile` in each app. See [`docs/deploy.md`](docs/deploy.md) and
+[`docs/dns.md`](docs/dns.md).
 
 ### The guest — Rust, inside the box
 
@@ -112,7 +114,10 @@ sandboxes, one GPU" possible instead of one tenant per card.
 
 ```sh
 bun install
+docker compose up postgres   # the database
+bun run db:migrate           # schema
 bun dev                      # control plane, local Cloudflare runtime
+docker compose up --build    # or: the whole control plane as containers
 
 cargo build --workspace      # guest components
 cargo test --workspace

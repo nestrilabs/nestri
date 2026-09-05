@@ -1,0 +1,59 @@
+// The issuer, deployed as a Cloudflare Worker.
+//
+// The same `src/index.ts` also runs as an ordinary HTTP server — see
+// `src/server.ts` and the `Dockerfile` beside it. Nothing in the handler is
+// Workers-specific; what differs between the two is only where the settings
+// below come from, so this file and the container's environment are two
+// spellings of one list.
+//
+// Hostnames and the reasoning behind their shape: `docs/dns.md`.
+// Secrets, the Hyperdrive id, and how to deploy: `docs/deploy.md`.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "nestri-auth",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-05",
+	"compatibility_flags": ["nodejs_compat"],
+	// No `*.workers.dev` hostname. A second address that mints tokens is a
+	// second issuer as far as a token's `iss` claim is concerned, and every
+	// token minted through it is rejected by the API.
+	"workers_dev": false,
+	"dev": {
+		"port": 1337
+	},
+
+	// Local-only settings live in `.dev.vars` beside this file rather than in
+	// `vars` here. `wrangler dev` reads that file and `wrangler deploy` cannot
+	// upload it — which is the guarantee wanted for the one setting in it:
+	// printing a live sign-in code to the log is a thing you ask for by name,
+	// and no stage anybody else can reach may have it. Written as a `vars`
+	// entry it would be one forgotten override away from being deployed.
+
+	// The default environment is the local one. `localConnectionString` is what
+	// `wrangler dev` uses, so a checkout with `docker compose up postgres`
+	// running needs nothing else; `id` is only read on deploy, and the two
+	// named environments below carry their own.
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "0000000000000000000000000000dev0",
+			"localConnectionString": "postgres://postgres:postgres@localhost:5432/nestri"
+		}
+	],
+	"env": {
+		"sandbox": {
+			"name": "nestri-auth-sandbox",
+			"workers_dev": false,
+			"routes": [{ "pattern": "auth-sandbox.nestri.io", "custom_domain": true }],
+			"observability": { "enabled": true },
+			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<sandbox-hyperdrive-id>" }]
+		},
+		"production": {
+			"name": "nestri-auth",
+			"workers_dev": false,
+			"routes": [{ "pattern": "auth.nestri.io", "custom_domain": true }],
+			"observability": { "enabled": true },
+			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<production-hyperdrive-id>" }]
+		}
+	}
+}
