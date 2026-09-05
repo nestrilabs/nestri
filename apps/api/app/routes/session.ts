@@ -56,12 +56,24 @@ export namespace SessionApi {
 		return actor.properties.userID;
 	}
 
+	/**
+	 * The value that says which attempt is speaking.
+	 *
+	 * Described rather than explained. This description is served publicly, so
+	 * it says what to send and not what it defends against.
+	 */
+	const ClaimTokenField = Session.ClaimToken.meta({
+		description: 'The token this attempt claimed the run with',
+		example: Examples.Session.claimToken
+	});
+
 	const StateReport = z
 		.object({
 			state: Session.ReportableState.meta({
 				description: 'Where the run has got to',
 				example: 'starting'
 			}),
+			claimToken: ClaimTokenField,
 			errorMessage: z.string().max(1024).nullable().optional().meta({
 				description: 'Why it failed. Kept only for a run that did',
 				example: Examples.Session.errorMessage
@@ -281,6 +293,7 @@ export namespace SessionApi {
 					id: c.req.valid('param').id,
 					machineId: Actor.machineID,
 					state: body.state,
+					claimToken: body.claimToken,
 					errorMessage: body.errorMessage ?? null
 				});
 
@@ -289,6 +302,12 @@ export namespace SessionApi {
 						notYours();
 					case 'illegal':
 						conflict(`A run in state ${result.session?.state} cannot become ${body.state}`);
+					case 'notHolder':
+						// The same answer whatever the state, including the state the
+						// run is already in. A report from an attempt that does not
+						// hold the run is that attempt losing a race, and telling
+						// that apart from a retry is the entire job of the token.
+						conflict('Another attempt holds this run');
 					case 'lost':
 						conflict('Another caller moved this run first');
 					default:
@@ -324,7 +343,8 @@ export namespace SessionApi {
 						ticket: z.string().min(1).meta({
 							description: 'The current connect ticket',
 							example: Examples.Session.ticket
-						})
+						}),
+						claimToken: ClaimTokenField
 					})
 					.strict()
 			),
@@ -332,6 +352,7 @@ export namespace SessionApi {
 				const result = await Session.publishTicket({
 					id: c.req.valid('param').id,
 					machineId: Actor.machineID,
+					claimToken: c.req.valid('json').claimToken,
 					ticket: c.req.valid('json').ticket
 				});
 
@@ -340,6 +361,8 @@ export namespace SessionApi {
 						notYours();
 					case 'unclaimed':
 						conflict('Claim this run by reporting `starting` before publishing an address');
+					case 'notHolder':
+						conflict('Another attempt holds this run');
 					case 'closed':
 						conflict('That run has stopped, so it has no address to publish');
 					default:

@@ -250,6 +250,18 @@ export namespace Session {
 	 * `requested` is missing on purpose: it is written once, when the row is
 	 * created, and nothing may put a run back there.
 	 */
+	/**
+	 * The holder of a claim, as the agent minted it.
+	 *
+	 * Opaque here on purpose: this end never generates one, never parses one
+	 * and never shows one to anybody. The only property it needs is that two
+	 * attempts cannot present the same value, and no length check can prove
+	 * that — the floor exists to refuse something obviously degenerate, not to
+	 * measure entropy. 22 characters is 128 bits at the tightest encoding
+	 * anyone would reasonably use.
+	 */
+	export const ClaimToken = z.string().min(22).max(255);
+
 	export const ReportableState = z.enum(['starting', 'live', 'ended', 'failed']);
 
 	export type ReportableState = z.infer<typeof ReportableState>;
@@ -360,28 +372,40 @@ export namespace Session {
 		});
 	});
 
+	/**
+	 * The same run as {@link forMachine}, as the row rather than as the shape
+	 * that goes out.
+	 *
+	 * The claim holder is not in {@link Info} and must not be: `serialize` is
+	 * what every caller of this resource is answered with, a token in it would
+	 * reach the person's own `GET /session/:id`, and holding one permits
+	 * writing to a run. So the two callers that compare a holder read the row,
+	 * and nothing that leaves this file ever carries the column.
+	 */
+	const rowForMachine = async (id: string, machineId: string) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select({ session: SessionTable })
+				.from(SessionTable)
+				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+				.where(
+					and(
+						eq(SessionTable.id, id),
+						eq(BoxTable.machineId, machineId),
+						isNull(SessionTable.timeDeleted),
+						isNull(BoxTable.timeDeleted)
+					)
+				)
+				.then((rows) => rows.at(0)?.session ?? null);
+		});
+	};
+
 	/** One run, visible only to the host its box is placed on. */
 	export const forMachine = fn(
 		z.object({ id: Info.shape.id, machineId: z.string() }),
 		async (input) => {
-			return Database.use(async (tx) => {
-				return tx
-					.select({ session: SessionTable })
-					.from(SessionTable)
-					.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
-					.where(
-						and(
-							eq(SessionTable.id, input.id),
-							eq(BoxTable.machineId, input.machineId),
-							isNull(SessionTable.timeDeleted),
-							isNull(BoxTable.timeDeleted)
-						)
-					)
-					.then((rows) => {
-						const row = rows.at(0);
-						return row ? serialize(row.session) : null;
-					});
-			});
+			const row = await rowForMachine(input.id, input.machineId);
+			return row ? serialize(row) : null;
 		}
 	);
 
@@ -435,15 +459,25 @@ export namespace Session {
 			machineId: z.string(),
 			from: z.enum(SessionState.enumValues),
 			to: z.enum(SessionState.enumValues),
+			claimToken: ClaimToken,
 			errorMessage: Info.shape.errorMessage
 		}),
 		async (input) => {
 			const now = sql`now()`;
+			// The claim is the one transition that takes the holder rather than
+			// presenting it, and it is exactly this pair — derived rather than
+			// passed, because a flag that can disagree with the states either
+			// side of it is a flag that eventually will.
+			const isClaim = input.from === 'requested' && input.to === 'starting';
 			return Database.use(async (tx) => {
 				return tx
 					.update(SessionTable)
 					.set({
 						state: input.to,
+						// Taken on the claim and never written again: a terminal row
+						// still records which attempt ran it, and a holder that goes
+						// back to null lets a settled claim be replayed.
+						...(isClaim ? { claimToken: input.claimToken } : {}),
 						errorMessage: input.to === 'failed' ? (input.errorMessage ?? null) : null,
 						...(input.to === 'live'
 							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
@@ -464,6 +498,15 @@ export namespace Session {
 						and(
 							eq(SessionTable.id, input.id),
 							eq(SessionTable.state, input.from),
+							// The holder is in the write and not only in the read
+							// above it. Taking a claim requires there to be none;
+							// everything after requires this caller to hold it. Two
+							// agents that both read an unheld row still leave here
+							// with one winner, because the second one's `where` no
+							// longer matches.
+							isClaim
+								? isNull(SessionTable.claimToken)
+								: eq(SessionTable.claimToken, input.claimToken),
 							isNull(SessionTable.timeDeleted),
 							inArray(SessionTable.boxId, boxesOn(tx, input.machineId))
 						)
@@ -488,10 +531,23 @@ export namespace Session {
 	 * - `unchanged` — already in that state. A retry after a lost response is
 	 *   not a broken agent and must not be told it is.
 	 * - `illegal` — not a transition that exists. The row does not move.
+	 * - `notHolder` — a report from an attempt that does not hold this run,
+	 *   which is also what a second attempt to claim one looks like: taking
+	 *   the claim and leaving `requested` are a single write, so by the time
+	 *   a rival arrives the run is `starting` and held, and there is no
+	 *   separate answer to give it. Distinct from `lost` because only one of
+	 *   them is a race — this one is decided by the request, and is the answer
+	 *   whatever state the run is in, including the state being reported.
 	 * - `lost` — a legal transition that something else got to first.
 	 * - `moved` — it happened.
 	 */
-	export type TransitionOutcome = 'forbidden' | 'unchanged' | 'illegal' | 'lost' | 'moved';
+	export type TransitionOutcome =
+		| 'forbidden'
+		| 'unchanged'
+		| 'illegal'
+		| 'notHolder'
+		| 'lost'
+		| 'moved';
 
 	export interface TransitionResult {
 		outcome: TransitionOutcome;
@@ -536,6 +592,7 @@ export namespace Session {
 			id: Info.shape.id,
 			machineId: z.string(),
 			state: z.enum(SessionState.enumValues),
+			claimToken: ClaimToken,
 			errorMessage: Info.shape.errorMessage
 		}),
 		async (input): Promise<TransitionResult> => {
@@ -544,11 +601,34 @@ export namespace Session {
 			// first without the second is how a box gets stuck `running` with
 			// nothing running on it, and nothing here would ever correct it.
 			return Database.transaction(async (): Promise<TransitionResult> => {
-				const current = await forMachine({ id: input.id, machineId: input.machineId });
-				if (!current) return { outcome: 'forbidden', session: null };
-				if (current.state === input.state) return { outcome: 'unchanged', session: current };
-				if (!NEXT_STATES[current.state].includes(input.state)) {
-					return { outcome: 'illegal', session: current };
+				const row = await rowForMachine(input.id, input.machineId);
+				if (!row) return { outcome: 'forbidden', session: null };
+				const current = serialize(row);
+
+				const isClaim = current.state === 'requested' && input.state === 'starting';
+				if (isClaim) {
+					// A `requested` run has no holder, because the two are written
+					// together — so this is an invariant guard and not a case the
+					// endpoint can produce. A rival never sees `requested`; it sees
+					// `starting` and is answered below.
+					if (row.claimToken !== null) return { outcome: 'notHolder', session: current };
+				} else {
+					const same = current.state === input.state;
+					// Legality first, because it is a property of the run and not
+					// of the caller: `requested → live` is the same mistake whoever
+					// makes it, and answering it with the holder would hide from an
+					// agent that it skipped the claim entirely.
+					if (!same && !NEXT_STATES[current.state].includes(input.state)) {
+						return { outcome: 'illegal', session: current };
+					}
+					// Then the holder, and it comes before `unchanged` — that order
+					// is the whole point of the column. The same state reported by a
+					// different attempt is a lost race, not a retry, and nothing
+					// else in the request can tell those two apart.
+					if (row.claimToken !== input.claimToken) {
+						return { outcome: 'notHolder', session: current };
+					}
+					if (same) return { outcome: 'unchanged', session: current };
 				}
 
 				const moved = await compareAndSetState({
@@ -556,6 +636,7 @@ export namespace Session {
 					machineId: input.machineId,
 					from: current.state,
 					to: input.state,
+					claimToken: input.claimToken,
 					errorMessage: input.errorMessage
 				});
 				// The state read above is not the state written below, and the
@@ -575,7 +656,7 @@ export namespace Session {
 	);
 
 	export interface TicketResult {
-		outcome: 'forbidden' | 'unclaimed' | 'closed' | 'published';
+		outcome: 'forbidden' | 'unclaimed' | 'notHolder' | 'closed' | 'published';
 		session: Info | null;
 	}
 
@@ -599,17 +680,31 @@ export namespace Session {
 	 * refused, and the two refusals are separate answers because they are
 	 * different mistakes: a run not yet claimed is an agent that skipped a
 	 * step, and a run that stopped is one that has nothing left to reach.
+	 *
+	 * Held to the claim for a worse reason than the double start. A losing
+	 * attempt that could publish here would overwrite the winner's address
+	 * with its own; the client re-reads rather than caching, so it would take
+	 * the new one and connect, successfully, to a box nobody is running. Two
+	 * boxes started is waste, and it is visible. A working client pointed at
+	 * the wrong machine looks exactly like everything having worked.
 	 */
 	export const publishTicket = fn(
 		z.object({
 			id: Info.shape.id,
 			machineId: z.string(),
+			claimToken: ClaimToken,
 			ticket: z.string().min(1)
 		}),
 		async (input): Promise<TicketResult> => {
-			const current = await forMachine({ id: input.id, machineId: input.machineId });
-			if (!current) return { outcome: 'forbidden', session: null };
+			const row = await rowForMachine(input.id, input.machineId);
+			if (!row) return { outcome: 'forbidden', session: null };
+			const current = serialize(row);
+			// Before the holder, because a run nobody has claimed has no holder
+			// to fail against and "claim it first" is the answer that helps.
 			if (current.state === 'requested') return { outcome: 'unclaimed', session: current };
+			if (row.claimToken !== input.claimToken) {
+				return { outcome: 'notHolder', session: current };
+			}
 
 			return Database.use(async (tx) => {
 				return tx
@@ -618,10 +713,12 @@ export namespace Session {
 					.where(
 						and(
 							eq(SessionTable.id, input.id),
-							// The state is in the write and not only in the check
-							// above it, so a run that stops underneath this call
-							// does not acquire an address on the way out.
+							// The state and the holder are in the write and not only
+							// in the checks above it, so a run that stops underneath
+							// this call does not acquire an address on the way out,
+							// and neither does one whose claim moved.
 							inArray(SessionTable.state, [...ADDRESSABLE]),
+							eq(SessionTable.claimToken, input.claimToken),
 							isNull(SessionTable.timeDeleted),
 							inArray(SessionTable.boxId, boxesOn(tx, input.machineId))
 						)

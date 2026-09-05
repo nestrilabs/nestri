@@ -338,6 +338,13 @@ describe('POST /session', () => {
 	});
 });
 
+/**
+ * Two attempts. The rival exists so that "the holder" is a claim a test can
+ * actually fail, rather than a value every request in the file shares.
+ */
+const HOLDER = 'h'.repeat(32);
+const RIVAL = 'r'.repeat(32);
+
 describe('GET /session/:id', () => {
 	test('the owner reads their own run, ticket and all', async () => {
 		const s = await scene('route-read', 5510);
@@ -346,12 +353,12 @@ describe('GET /session/:id', () => {
 		await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 		await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ ticket: 'nodeaaa-one' })
+			body: JSON.stringify({ ticket: 'nodeaaa-one', claimToken: HOLDER })
 		});
 
 		const res = await app.request(`/session/${body.data.id}`, { headers: s.user });
@@ -444,13 +451,65 @@ describe('POST /session/:id/state', () => {
 		const res = await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 		expect(res.status).toBe(200);
 		expect(((await res.json()) as any).data.state).toBe('starting');
 
 		const jobs = await app.request('/machine/jobs', { headers: s.host });
 		expect(((await jobs.json()) as any).data).toEqual([]);
+	});
+
+	test('a report without a holder is refused before it reaches the run', async () => {
+		const s = await scene('route-claim-tokenless', 5532);
+		const { body } = await requestSession(s);
+
+		const res = await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting' })
+		});
+		expect(res.status).toBe(400);
+		// And the run did not move on the way to being refused.
+		expect((await Session.fromID(body.data.id))?.state).toBe('requested');
+	});
+
+	test('the same state from a second attempt is 409, not the retry’s 200', async () => {
+		const s = await scene('route-claim-rival', 5533);
+		const { body } = await requestSession(s);
+
+		const report = (claimToken: string) =>
+			app.request(`/session/${body.data.id}/state`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ state: 'starting', claimToken })
+			});
+
+		expect((await report(HOLDER)).status).toBe(200);
+		// Identical credentials, identical state, identical everything except
+		// the holder — which is the only thing that can separate an agent
+		// retrying a lost response from one that lost the race, and the reason
+		// this endpoint takes a token at all.
+		expect((await report(RIVAL)).status).toBe(409);
+		expect((await report(HOLDER)).status).toBe(200);
+	});
+
+	test('a run does not move for an attempt that does not hold it', async () => {
+		const s = await scene('route-claim-rival-move', 5534);
+		const { body } = await requestSession(s);
+		await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
+		});
+
+		const res = await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'live', claimToken: RIVAL })
+		});
+		expect(res.status).toBe(409);
+		expect((await Session.fromID(body.data.id))?.state).toBe('starting');
 	});
 
 	test('the same host re-reporting a state it already reported is fine', async () => {
@@ -461,7 +520,7 @@ describe('POST /session/:id/state', () => {
 			app.request(`/session/${body.data.id}/state`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ state: 'starting' })
+				body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 			});
 
 		expect((await report()).status).toBe(200);
@@ -480,12 +539,12 @@ describe('POST /session/:id/state', () => {
 		const other = await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: mine.host,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 		const unknown = await app.request(`/session/${Identifier.ascending('session')}/state`, {
 			method: 'POST',
 			headers: mine.host,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 
 		expect(other.status).toBe(403);
@@ -501,7 +560,7 @@ describe('POST /session/:id/state', () => {
 		const skipped = await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ state: 'live' })
+			body: JSON.stringify({ state: 'live', claimToken: HOLDER })
 		});
 		expect(skipped.status).toBe(409);
 		expect((await Session.fromID(body.data.id))?.state).toBe('requested');
@@ -514,7 +573,7 @@ describe('POST /session/:id/state', () => {
 			app.request(`/session/${body.data.id}/state`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ state, errorMessage })
+				body: JSON.stringify({ state, claimToken: HOLDER, errorMessage })
 			});
 
 		expect((await report('starting')).status).toBe(200);
@@ -533,7 +592,7 @@ describe('POST /session/:id/state', () => {
 			app.request(`/session/${body.data.id}/state`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ state })
+				body: JSON.stringify({ state, claimToken: HOLDER })
 			});
 
 		await report('starting');
@@ -550,7 +609,7 @@ describe('POST /session/:id/state', () => {
 		const res = await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ state: 'exploded' })
+			body: JSON.stringify({ state: 'exploded', claimToken: HOLDER })
 		});
 		expect(res.status).toBe(400);
 	});
@@ -561,7 +620,7 @@ describe('POST /session/:id/state', () => {
 		const res = await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.user,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 		// Terminal states are written by the agent alone; a person closing the
 		// app is not the same fact as a run that stopped.
@@ -576,14 +635,14 @@ describe('POST /session/:id/ticket', () => {
 		await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 
 		const publish = (ticket: string) =>
 			app.request(`/session/${body.data.id}/ticket`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ ticket })
+				body: JSON.stringify({ ticket, claimToken: HOLDER })
 			});
 
 		const first = await publish('nodeaaa-one');
@@ -595,6 +654,60 @@ describe('POST /session/:id/ticket', () => {
 		expect(await Session.listByBox(s.box.id)).toHaveLength(1);
 	});
 
+	test('a second attempt cannot publish an address over the first’s', async () => {
+		const s = await scene('route-ticket-rival', 5547);
+		const { body } = await requestSession(s);
+		await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
+		});
+
+		const publish = (ticket: string, claimToken: string) =>
+			app.request(`/session/${body.data.id}/ticket`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ ticket, claimToken })
+			});
+
+		expect((await publish('nodeaaa-winner', HOLDER)).status).toBe(200);
+		// The failure this prevents is quieter than a box started twice. The
+		// client re-reads the address rather than keeping the first one, so a
+		// ticket written here by the wrong attempt produces a client that
+		// connects, successfully, to a machine running nothing.
+		expect((await publish('nodeaaa-rival', RIVAL)).status).toBe(409);
+
+		const read = await app.request(`/session/${body.data.id}`, { headers: s.user });
+		expect(((await read.json()) as any).data.ticket).toBe('nodeaaa-winner');
+	});
+
+	test('the holder is not in what the person reading their run gets back', async () => {
+		const s = await scene('route-ticket-noleak', 5548);
+		const { body } = await requestSession(s);
+		await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
+		});
+
+		// Holding it permits writing to this run, and the owner is not the
+		// holder. This asserts the whole shape rather than the one field, so a
+		// column added later has to be added here too before it goes out.
+		const read = await app.request(`/session/${body.data.id}`, { headers: s.user });
+		const data = ((await read.json()) as any).data;
+		expect(Object.keys(data).sort()).toEqual([
+			'boxId',
+			'errorMessage',
+			'gameId',
+			'id',
+			'linkedAccountId',
+			'state',
+			'ticket',
+			'timeStarted',
+			'timeStopped'
+		]);
+	});
+
 	test('a run nobody has claimed has no address to publish', async () => {
 		const s = await scene('route-ticket-early', 5546);
 		const { body } = await requestSession(s);
@@ -602,7 +715,7 @@ describe('POST /session/:id/ticket', () => {
 		const early = await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ ticket: 'nodeaaa-too-soon' })
+			body: JSON.stringify({ ticket: 'nodeaaa-too-soon', claimToken: HOLDER })
 		});
 		// Publishing before reporting `starting` means the agent skipped the
 		// claim, which is the only mutual exclusion in the design.
@@ -612,12 +725,12 @@ describe('POST /session/:id/ticket', () => {
 		await app.request(`/session/${body.data.id}/state`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ state: 'starting' })
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 		const now = await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ ticket: 'nodeaaa-in-time' })
+			body: JSON.stringify({ ticket: 'nodeaaa-in-time', claimToken: HOLDER })
 		});
 		expect(now.status).toBe(200);
 	});
@@ -630,7 +743,7 @@ describe('POST /session/:id/ticket', () => {
 		const res = await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: mine.host,
-			body: JSON.stringify({ ticket: 'nodeaaa-stolen' })
+			body: JSON.stringify({ ticket: 'nodeaaa-stolen', claimToken: HOLDER })
 		});
 		expect(res.status).toBe(403);
 		expect((await Session.fromID(body.data.id))?.ticket).toBeNull();
@@ -643,7 +756,7 @@ describe('POST /session/:id/ticket', () => {
 			app.request(`/session/${body.data.id}/state`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ state })
+				body: JSON.stringify({ state, claimToken: HOLDER })
 			});
 		await report('starting');
 		await report('live');
@@ -652,7 +765,7 @@ describe('POST /session/:id/ticket', () => {
 		const res = await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ ticket: 'nodeaaa-late' })
+			body: JSON.stringify({ ticket: 'nodeaaa-late', claimToken: HOLDER })
 		});
 		expect(res.status).toBe(409);
 		expect((await Session.fromID(body.data.id))?.ticket).toBeNull();
@@ -665,14 +778,14 @@ describe('POST /session/:id/ticket', () => {
 			app.request(`/session/${body.data.id}/state`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ state })
+				body: JSON.stringify({ state, claimToken: HOLDER })
 			});
 		await report('starting');
 		await report('live');
 		const published = await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ ticket: 'nodeaaa-live' })
+			body: JSON.stringify({ ticket: 'nodeaaa-live', claimToken: HOLDER })
 		});
 		expect(((await published.json()) as any).data.ticket).toBe('nodeaaa-live');
 
@@ -693,7 +806,7 @@ describe('POST /session/:id/ticket', () => {
 		const res = await app.request(`/session/${body.data.id}/ticket`, {
 			method: 'POST',
 			headers: s.host,
-			body: JSON.stringify({ ticket: '' })
+			body: JSON.stringify({ ticket: '', claimToken: HOLDER })
 		});
 		expect(res.status).toBe(400);
 	});
@@ -707,7 +820,7 @@ describe('The box a run happens on', () => {
 			app.request(`/session/${body.data.id}/state`, {
 				method: 'POST',
 				headers: s.host,
-				body: JSON.stringify({ state, errorMessage })
+				body: JSON.stringify({ state, claimToken: HOLDER, errorMessage })
 			});
 
 		expect((await Box.fromID(s.box.id))?.state).toBe('created');
