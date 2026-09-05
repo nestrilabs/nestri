@@ -3,7 +3,6 @@ import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
 import { Depot } from '@nestri/core/game/depot';
 import { GameDownload } from '@nestri/core/game/download';
-import { GameDownloadStatus } from '@nestri/core/game/download.sql';
 import { Game } from '@nestri/core/game/index';
 import { Identifier } from '@nestri/core/id';
 import { Library } from '@nestri/core/user/library';
@@ -448,7 +447,7 @@ export namespace GameApi {
 						description: 'Steam application ID',
 						example: Examples.Game.steamAppId
 					}),
-					status: z.enum(GameDownloadStatus.enumValues).meta({
+					status: z.enum(GameDownload.Status).meta({
 						description: 'New download status',
 						example: Examples.GameDownload.status
 					}),

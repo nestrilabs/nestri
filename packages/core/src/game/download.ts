@@ -8,6 +8,18 @@ import { Identifier } from '../id.js';
 import { GameDownloadStatus, GameDownloadTable } from './download.sql.js';
 
 export namespace GameDownload {
+	/**
+	 * The statuses a download can be in, for callers that need the list.
+	 *
+	 * Re-exported from the schema so that nothing outside this module has to
+	 * import a `.sql` module to spell a status. That is the layering rule
+	 * everywhere here, and it also avoids a concrete hazard: a specifier
+	 * ending in `.sql` is claimed by the Workers bundler as a module of its
+	 * own, which emitted this file's source verbatim beside the bundle and
+	 * failed at startup with an export it could not find.
+	 */
+	export const Status = GameDownloadStatus.enumValues;
+
 	export const Info = z
 		.object({
 			id: z.string().meta({
@@ -22,7 +34,7 @@ export namespace GameDownload {
 				description: 'The game being downloaded',
 				example: Examples.GameDownload.gameId
 			}),
-			status: z.enum(GameDownloadStatus.enumValues).meta({
+			status: z.enum(Status).meta({
 				description: 'Current download status',
 				example: Examples.GameDownload.status
 			}),
