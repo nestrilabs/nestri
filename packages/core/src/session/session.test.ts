@@ -435,6 +435,100 @@ describe('Session claim', () => {
 		expect(second.session?.ticket).toBe('two');
 	});
 
+	test('two attempts claiming at once produce exactly one winner', async () => {
+		const { machineId, session } = await requested('ses-cas-race', 5446);
+
+		// Both launched before either has finished, so this is the case the
+		// sequential tests cannot reach: two attempts that may each read the
+		// run as unclaimed before either writes. Postgres holds the second
+		// update on the row lock until the first commits and then re-checks
+		// the predicate, so the loser matches nothing.
+		const [a, b] = await Promise.all([
+			Session.transition({
+				claimToken: HOLDER,
+				id: session.id,
+				machineId,
+				state: 'starting',
+				errorMessage: null
+			}),
+			Session.transition({
+				claimToken: RIVAL,
+				id: session.id,
+				machineId,
+				state: 'starting',
+				errorMessage: null
+			})
+		]);
+
+		const outcomes = [a.outcome, b.outcome];
+		// The assertion that matters, and the only one that would catch the
+		// predicate being weakened: not which one won, but that one did.
+		expect(outcomes.filter((o) => o === 'moved')).toHaveLength(1);
+		// Which refusal the loser gets depends on whether its read landed
+		// before or after the winner's commit, and that is timing. Both mean
+		// the same thing to an agent — stop, this run is not yours.
+		expect(['lost', 'notHolder']).toContain(outcomes.find((o) => o !== 'moved'));
+		expect((await Session.fromID(session.id))?.state).toBe('starting');
+
+		// And the row holds the winner, not merely somebody: the attempt that
+		// was told it moved can report again and the other still cannot.
+		const winner = a.outcome === 'moved' ? HOLDER : RIVAL;
+		const loser = winner === HOLDER ? RIVAL : HOLDER;
+		expect(
+			(
+				await Session.transition({
+					claimToken: winner,
+					id: session.id,
+					machineId,
+					state: 'starting',
+					errorMessage: null
+				})
+			).outcome
+		).toBe('unchanged');
+		expect(
+			(
+				await Session.transition({
+					claimToken: loser,
+					id: session.id,
+					machineId,
+					state: 'starting',
+					errorMessage: null
+				})
+			).outcome
+		).toBe('notHolder');
+	});
+
+	test('the guarded update alone refuses the second claim, without the read', async () => {
+		const { machineId, session } = await requested('ses-cas-race-raw', 5447);
+
+		// The test above depends on how two transactions interleave, so it can
+		// pass for the wrong reason on a run where one finishes first. This one
+		// cannot: it skips the read and fires both guarded updates, so the only
+		// thing that can refuse the second is the predicate in the `where`
+		// clause. Separating the check from the write would fail here.
+		const both = await Promise.all([
+			Session.compareAndSetState({
+				claimToken: HOLDER,
+				id: session.id,
+				machineId,
+				from: 'requested',
+				to: 'starting',
+				errorMessage: null
+			}),
+			Session.compareAndSetState({
+				claimToken: RIVAL,
+				id: session.id,
+				machineId,
+				from: 'requested',
+				to: 'starting',
+				errorMessage: null
+			})
+		]);
+
+		expect(both.filter((row) => row !== null)).toHaveLength(1);
+		expect((await Session.fromID(session.id))?.state).toBe('starting');
+	});
+
 	test('the claim writes a holder, and the holder never goes out', async () => {
 		const { machineId, session } = await requested('ses-holder', 5440);
 
