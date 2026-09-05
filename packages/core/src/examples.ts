@@ -146,6 +146,9 @@ export namespace Examples {
 		linkedAccountId: Id('linkedAccount'),
 		state: 'live' as const,
 		ticket: 'nodeaaqf…',
+		// Shaped like the real thing so the docs do not teach a shorter one,
+		// and obviously not one.
+		claimToken: '00000000000000000000000000000000',
 		timeStarted: '2026-07-28T12:00:00.000Z',
 		timeStopped: null,
 		errorMessage: null

@@ -70,6 +70,13 @@ async function requestedRun(label: string, steamAppId: number) {
 	return { ...s, session };
 }
 
+/**
+ * Two attempts, so a test that means "the holder" cannot pass by accident on a
+ * value that every caller in the file happens to share.
+ */
+const HOLDER = 'h'.repeat(32);
+const RIVAL = 'r'.repeat(32);
+
 describe('Session', () => {
 	test('a session starts requested, with no ticket and no times', async () => {
 		const { owner, box, gameId } = await scene('ses-defaults', 5400);
@@ -240,6 +247,7 @@ describe('Session jobs', () => {
 
 		expect(await Session.listJobsForMachine(machineId)).toHaveLength(1);
 		await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'starting',
@@ -265,6 +273,7 @@ describe('Session claim', () => {
 		const { machineId, session } = await requested('ses-cas', 5420);
 
 		const won = await Session.compareAndSetState({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			from: 'requested',
@@ -273,10 +282,12 @@ describe('Session claim', () => {
 		});
 		expect(won?.state).toBe('starting');
 
-		// The same attempt again. The row is no longer `requested`, so the
-		// update matches nothing — which is what stops two agents from both
-		// starting the same box. Updating on the id alone would succeed twice.
+		// A second attempt, with a token of its own. The row is no longer
+		// `requested` and it already has a holder, so the update matches
+		// nothing — which is what stops two agents from both starting the same
+		// box. Updating on the id alone would succeed twice.
 		const lost = await Session.compareAndSetState({
+			claimToken: RIVAL,
 			id: session.id,
 			machineId,
 			from: 'requested',
@@ -292,6 +303,7 @@ describe('Session claim', () => {
 		const other = await scene('ses-cas-other', 5422);
 
 		const result = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId: other.machineId,
 			state: 'starting',
@@ -304,6 +316,7 @@ describe('Session claim', () => {
 		// classification above it.
 		expect(
 			await Session.compareAndSetState({
+				claimToken: HOLDER,
 				id: session.id,
 				machineId: other.machineId,
 				from: 'requested',
@@ -316,6 +329,7 @@ describe('Session claim', () => {
 	test('a session that does not exist is refused the same way as one that is not yours', async () => {
 		const other = await scene('ses-cas-ghost', 5423);
 		const result = await Session.transition({
+			claimToken: HOLDER,
 			// A well-formed id for a row that was never written.
 			id: Identifier.ascending('session'),
 			machineId: other.machineId,
@@ -330,8 +344,9 @@ describe('Session claim', () => {
 	test('re-reporting the state you already reported changes nothing', async () => {
 		const { machineId, session } = await requested('ses-repeat', 5424);
 
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
 		const again = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'starting',
@@ -349,6 +364,7 @@ describe('Session claim', () => {
 		// is the only mutual exclusion here — so it is refused however tempting
 		// the shortcut looks.
 		const skipped = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'live',
@@ -357,11 +373,12 @@ describe('Session claim', () => {
 		expect(skipped.outcome).toBe('illegal');
 		expect((await Session.fromID(session.id))?.state).toBe('requested');
 
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'failed', errorMessage: 'no' });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'failed', errorMessage: 'no' });
 
 		// Terminal is terminal: a dead session cannot be resurrected.
 		const raised = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'live',
@@ -373,8 +390,9 @@ describe('Session claim', () => {
 
 	test('the timestamps survive a duplicate report, which is what billing rests on', async () => {
 		const { machineId, session } = await requested('ses-idempotent', 5426);
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
 		const live = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'live',
@@ -383,6 +401,7 @@ describe('Session claim', () => {
 		expect(live.session?.timeStarted).not.toBeNull();
 
 		const repeat = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'live',
@@ -395,9 +414,10 @@ describe('Session claim', () => {
 		const { machineId, session } = await requested('ses-ticket-scope', 5427);
 		const other = await scene('ses-ticket-other', 5428);
 
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
 
 		const refused = await Session.publishTicket({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId: other.machineId,
 			ticket: 'stolen'
@@ -406,22 +426,276 @@ describe('Session claim', () => {
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 
 		// A ticket may appear while the state is still `starting`.
-		const first = await Session.publishTicket({ id: session.id, machineId, ticket: 'one' });
+		const first = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'one' });
 		expect(first.outcome).toBe('published');
 		expect(first.session?.ticket).toBe('one');
 		expect(first.session?.state).toBe('starting');
 
-		const second = await Session.publishTicket({ id: session.id, machineId, ticket: 'two' });
+		const second = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'two' });
 		expect(second.session?.ticket).toBe('two');
+	});
+
+	test('two attempts claiming at once produce exactly one winner', async () => {
+		const { machineId, session } = await requested('ses-cas-race', 5446);
+
+		// Both launched before either has finished, so this is the case the
+		// sequential tests cannot reach: two attempts that may each read the
+		// run as unclaimed before either writes. Postgres holds the second
+		// update on the row lock until the first commits and then re-checks
+		// the predicate, so the loser matches nothing.
+		const [a, b] = await Promise.all([
+			Session.transition({
+				claimToken: HOLDER,
+				id: session.id,
+				machineId,
+				state: 'starting',
+				errorMessage: null
+			}),
+			Session.transition({
+				claimToken: RIVAL,
+				id: session.id,
+				machineId,
+				state: 'starting',
+				errorMessage: null
+			})
+		]);
+
+		const outcomes = [a.outcome, b.outcome];
+		// The assertion that matters, and the only one that would catch the
+		// predicate being weakened: not which one won, but that one did.
+		expect(outcomes.filter((o) => o === 'moved')).toHaveLength(1);
+		// Which refusal the loser gets depends on whether its read landed
+		// before or after the winner's commit, and that is timing. Both mean
+		// the same thing to an agent — stop, this run is not yours.
+		expect(['lost', 'notHolder']).toContain(outcomes.find((o) => o !== 'moved'));
+		expect((await Session.fromID(session.id))?.state).toBe('starting');
+
+		// And the row holds the winner, not merely somebody: the attempt that
+		// was told it moved can report again and the other still cannot.
+		const winner = a.outcome === 'moved' ? HOLDER : RIVAL;
+		const loser = winner === HOLDER ? RIVAL : HOLDER;
+		expect(
+			(
+				await Session.transition({
+					claimToken: winner,
+					id: session.id,
+					machineId,
+					state: 'starting',
+					errorMessage: null
+				})
+			).outcome
+		).toBe('unchanged');
+		expect(
+			(
+				await Session.transition({
+					claimToken: loser,
+					id: session.id,
+					machineId,
+					state: 'starting',
+					errorMessage: null
+				})
+			).outcome
+		).toBe('notHolder');
+	});
+
+	test('the guarded update alone refuses the second claim, without the read', async () => {
+		const { machineId, session } = await requested('ses-cas-race-raw', 5447);
+
+		// The test above depends on how two transactions interleave, so it can
+		// pass for the wrong reason on a run where one finishes first. This one
+		// cannot: it skips the read and fires both guarded updates, so the only
+		// thing that can refuse the second is the predicate in the `where`
+		// clause. Separating the check from the write would fail here.
+		const both = await Promise.all([
+			Session.compareAndSetState({
+				claimToken: HOLDER,
+				id: session.id,
+				machineId,
+				from: 'requested',
+				to: 'starting',
+				errorMessage: null
+			}),
+			Session.compareAndSetState({
+				claimToken: RIVAL,
+				id: session.id,
+				machineId,
+				from: 'requested',
+				to: 'starting',
+				errorMessage: null
+			})
+		]);
+
+		expect(both.filter((row) => row !== null)).toHaveLength(1);
+		expect((await Session.fromID(session.id))?.state).toBe('starting');
+	});
+
+	test('the claim writes a holder, and the holder never goes out', async () => {
+		const { machineId, session } = await requested('ses-holder', 5440);
+
+		const claimed = await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(claimed.outcome).toBe('moved');
+		// Holding one permits writing to a run, including publishing the
+		// address a client will dial. It is carried by nothing that is
+		// serialized, and this is the assertion that keeps it that way.
+		expect(claimed.session).not.toHaveProperty('claimToken');
+		expect(await Session.fromID(session.id)).not.toHaveProperty('claimToken');
+	});
+
+	test('a rival claiming the same run is refused, and sees only that it is held', async () => {
+		const { machineId, session } = await requested('ses-held', 5441);
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+
+		// Taking the claim and leaving `requested` are one write, so a rival
+		// polling the same job never finds a `requested` run with a holder —
+		// it finds a `starting` one it does not hold. There is no second
+		// answer to give it, and this is the only one.
+		const second = await Session.transition({
+			claimToken: RIVAL,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(second.outcome).toBe('notHolder');
+	});
+
+	test('the same state from a different attempt is a lost race and not a retry', async () => {
+		const { machineId, session } = await requested('ses-rival-same', 5442);
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+
+		// Same machine, same credentials, same state the run is already in.
+		// The holder is the only thing separating this call from the one below
+		// it, and without the column both would be answered the same way.
+		const rival = await Session.transition({
+			claimToken: RIVAL,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(rival.outcome).toBe('notHolder');
+
+		const retry = await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		expect(retry.outcome).toBe('unchanged');
+	});
+
+	test('a run does not move onwards for an attempt that does not hold it', async () => {
+		const { machineId, session } = await requested('ses-rival-move', 5443);
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+
+		const stolen = await Session.transition({
+			claimToken: RIVAL,
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		expect(stolen.outcome).toBe('notHolder');
+		expect((await Session.fromID(session.id))?.state).toBe('starting');
+	});
+
+	test('the holder outlives the run, so a settled claim cannot be replayed', async () => {
+		const { machineId, session } = await requested('ses-holder-kept', 5444);
+		for (const state of ['starting', 'live', 'ended'] as const) {
+			await Session.transition({
+				claimToken: HOLDER,
+				id: session.id,
+				machineId,
+				state,
+				errorMessage: null
+			});
+		}
+
+		// Reported at the state the run is already in, so the answer turns on
+		// the holder and on nothing else. Were the column cleared on a terminal
+		// state, the rival would match a null holder and be told `unchanged` —
+		// a dead claim answered as though it were the live one.
+		const replay = await Session.transition({
+			claimToken: RIVAL,
+			id: session.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
+		expect(replay.outcome).toBe('notHolder');
+
+		const holder = await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
+		expect(holder.outcome).toBe('unchanged');
+	});
+
+	test('a losing attempt cannot publish an address over the winner’s', async () => {
+		const { machineId, session } = await requested('ses-ticket-holder', 5445);
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'the-winner'
+		});
+
+		// The same machine, so the scope check passes and lets this through to
+		// the holder. Without that check the write would land, the client would
+		// re-read it rather than keeping the first, and it would connect —
+		// successfully — to a box nobody is running.
+		const stolen = await Session.publishTicket({
+			claimToken: RIVAL,
+			id: session.id,
+			machineId,
+			ticket: 'the-wrong-machine'
+		});
+		expect(stolen.outcome).toBe('notHolder');
+		expect((await Session.fromID(session.id))?.ticket).toBe('the-winner');
 	});
 
 	test('a stopped session has no address to publish', async () => {
 		const { machineId, session } = await requested('ses-ticket-dead', 5429);
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'ended', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'ended', errorMessage: null });
 
-		const result = await Session.publishTicket({ id: session.id, machineId, ticket: 'late' });
+		const result = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'late' });
 		expect(result.outcome).toBe('closed');
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 	});
@@ -465,9 +739,9 @@ describe('Session one active run per box', () => {
 			});
 
 		const first = await mk();
-		await Session.transition({ id: first.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ id: first.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ id: first.id, machineId, state: 'ended', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: first.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: first.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: first.id, machineId, state: 'ended', errorMessage: null });
 
 		// The index is partial for exactly this reason: a box is a durable
 		// thing and playing twice is the ordinary case, so a stopped run must
@@ -481,14 +755,15 @@ describe('Session one active run per box', () => {
 describe('Session tickets and the end of a run', () => {
 	test('stopping a run takes its address away', async () => {
 		const { machineId, session } = await requestedRun('ses-ticket-cleared', 5452);
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
 		expect(
-			(await Session.publishTicket({ id: session.id, machineId, ticket: 'live-address' })).session
+			(await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'live-address' })).session
 				?.ticket
 		).toBe('live-address');
 
 		const ended = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'ended',
@@ -504,10 +779,11 @@ describe('Session tickets and the end of a run', () => {
 
 	test('a run that failed does not keep an address either', async () => {
 		const { machineId, session } = await requestedRun('ses-ticket-cleared-fail', 5453);
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.publishTicket({ id: session.id, machineId, ticket: 'starting-address' });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'starting-address' });
 
 		const failed = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'failed',
@@ -538,12 +814,12 @@ describe('Session and the box underneath it', () => {
 		// `created` while a run on it was `live`.
 		expect((await Box.fromID(box.id))?.state).toBe('created');
 
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
 		// `starting` is deliberately not a box state: that transition is
 		// synchronous from the agent's side, so nothing would ever write it.
 		expect((await Box.fromID(box.id))?.state).toBe('created');
 
-		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
 		const running = await Box.fromID(box.id);
 		expect(running?.state).toBe('running');
 		expect(running?.stopReason).toBeNull();
@@ -552,9 +828,9 @@ describe('Session and the box underneath it', () => {
 
 	test('a run that ends stops its box, cleanly', async () => {
 		const { machineId, box, session } = await requestedRun('ses-box-ended', 5461);
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'ended', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'ended', errorMessage: null });
 
 		const stopped = await Box.fromID(box.id);
 		expect(stopped?.state).toBe('stopped');
@@ -564,8 +840,9 @@ describe('Session and the box underneath it', () => {
 
 	test('a run that fails stops its box in the words the agent used', async () => {
 		const { machineId, box, session } = await requestedRun('ses-box-failed', 5462);
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
 		await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'failed',
@@ -585,6 +862,7 @@ describe('Session and the box underneath it', () => {
 		const other = await scene('ses-box-otherhost', 5464);
 
 		const refused = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId: other.machineId,
 			state: 'starting',
@@ -595,6 +873,7 @@ describe('Session and the box underneath it', () => {
 		// An illegal transition does not move the run, so it must not move the
 		// box either — otherwise the box records a run that never happened.
 		const illegal = await Session.transition({
+			claimToken: HOLDER,
 			id: session.id,
 			machineId,
 			state: 'live',
@@ -612,24 +891,24 @@ describe('Session tickets need a claim first', () => {
 		// A ticket is the address of something being brought up, so publishing
 		// one for a `requested` run means the agent skipped the claim — the
 		// step that is the only mutual exclusion in the design.
-		const early = await Session.publishTicket({ id: session.id, machineId, ticket: 'too-soon' });
+		const early = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'too-soon' });
 		expect(early.outcome).toBe('unclaimed');
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		const now = await Session.publishTicket({ id: session.id, machineId, ticket: 'in-time' });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		const now = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'in-time' });
 		expect(now.outcome).toBe('published');
 		expect(now.session?.ticket).toBe('in-time');
 	});
 
 	test('the two refusals are different answers, because they are different mistakes', async () => {
 		const { machineId, session } = await requestedRun('ses-ticket-refusals', 5466);
-		const unclaimed = await Session.publishTicket({ id: session.id, machineId, ticket: 'a' });
+		const unclaimed = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'a' });
 
-		await Session.transition({ id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ id: session.id, machineId, state: 'ended', errorMessage: null });
-		const closed = await Session.publishTicket({ id: session.id, machineId, ticket: 'b' });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'ended', errorMessage: null });
+		const closed = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'b' });
 
 		// One is an agent that has not claimed the work; the other is a run
 		// with nothing left to reach. Collapsing them would tell an agent
