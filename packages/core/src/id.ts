@@ -20,7 +20,11 @@ export namespace Identifier {
 		gameDepot: 'gdp',
 		gameDownload: 'gdl',
 		waitlistEntry: 'wle',
-		deviceGrant: 'dvg'
+		deviceGrant: 'dvg',
+		authKv: 'akv',
+		authKey: 'aky',
+		authorizationCode: 'acd',
+		refreshToken: 'rft'
 	} as const;
 
 	export function schema(prefix: keyof typeof prefixes) {

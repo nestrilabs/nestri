@@ -54,3 +54,15 @@ export function lazy<T>(fn: () => T): () => T {
 		return value;
 	};
 }
+
+/**
+ * The SHA-256 of a string, hex encoded.
+ *
+ * Used wherever a bearer credential has to be recognised later without being
+ * kept in a form that could be presented. Whoever can read the store learns
+ * that a token existed and not what it was.
+ */
+export async function sha256hex(value: string): Promise<string> {
+	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}

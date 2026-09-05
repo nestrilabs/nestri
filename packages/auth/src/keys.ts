@@ -9,19 +9,12 @@ import {
 	KeyLike
 } from 'jose';
 
-import { Storage, StorageAdapter } from './storage/storage.js';
+import type { KeyKind, KeyStore, StoredKey } from './key.js';
 
-const signingAlg = 'ES256';
-const encryptionAlg = 'RSA-OAEP-512';
-
-interface SerializedKeyPair {
-	id: string;
-	publicKey: string;
-	privateKey: string;
-	created: number;
-	alg: string;
-	expired?: number;
-}
+const alg: Record<KeyKind, string> = {
+	signing: 'ES256',
+	encryption: 'RSA-OAEP-512'
+};
 
 export interface KeyPair {
 	id: string;
@@ -33,104 +26,58 @@ export interface KeyPair {
 	jwk: JWK;
 }
 
+async function toKeyPair(kind: KeyKind, stored: StoredKey): Promise<KeyPair> {
+	// The algorithm is read off the record rather than assumed, because a key
+	// outlives the decision that produced it: rotating to a new algorithm has
+	// to leave the old keys verifiable until the tokens they signed expire.
+	const publicKey = await importSPKI(stored.publicKey, stored.alg, { extractable: true });
+	const privateKey = await importPKCS8(stored.privateKey, stored.alg);
+	const jwk = await exportJWK(publicKey);
+	jwk.kid = stored.id;
+	if (kind === 'signing') jwk.use = 'sig';
+	return {
+		id: stored.id,
+		alg: alg[kind],
+		created: new Date(stored.created),
+		expired: stored.expired ? new Date(stored.expired) : undefined,
+		public: publicKey,
+		private: privateKey,
+		jwk
+	};
+}
+
 /**
- * @deprecated use `signingKeys` instead
+ * Every key of a kind, newest first, creating one if none is usable.
+ *
+ * Expired keys are returned alongside live ones and sorted after them: the
+ * first entry is what signs, and the rest are what still verifies. Retiring a
+ * key therefore does not invalidate the tokens it signed — they age out on
+ * their own — which is the only way a rotation is not also a mass sign-out.
  */
-export async function legacySigningKeys(storage: StorageAdapter): Promise<KeyPair[]> {
-	const alg = 'RS512';
-	const results = [] as KeyPair[];
-	const scanner = Storage.scan<SerializedKeyPair>(storage, ['oauth:key']);
-	for await (const [_key, value] of scanner) {
-		const publicKey = await importSPKI(value.publicKey, alg, {
-			extractable: true
-		});
-		const privateKey = await importPKCS8(value.privateKey, alg);
-		const jwk = await exportJWK(publicKey);
-		jwk.kid = value.id;
-		results.push({
-			id: value.id,
-			alg,
-			created: new Date(value.created),
-			public: publicKey,
-			private: privateKey,
-			expired: new Date(1735858114000),
-			jwk
-		});
-	}
-	return results;
-}
-
-export async function signingKeys(storage: StorageAdapter): Promise<KeyPair[]> {
-	const results = [] as KeyPair[];
-	const scanner = Storage.scan<SerializedKeyPair>(storage, ['signing:key']);
-	for await (const [_key, value] of scanner) {
-		const publicKey = await importSPKI(value.publicKey, value.alg, {
-			extractable: true
-		});
-		const privateKey = await importPKCS8(value.privateKey, value.alg);
-		const jwk = await exportJWK(publicKey);
-		jwk.kid = value.id;
-		jwk.use = 'sig';
-		results.push({
-			id: value.id,
-			alg: signingAlg,
-			created: new Date(value.created),
-			expired: value.expired ? new Date(value.expired) : undefined,
-			public: publicKey,
-			private: privateKey,
-			jwk
-		});
-	}
+async function keysOf(store: KeyStore, kind: KeyKind): Promise<KeyPair[]> {
+	const stored = await store.list(kind);
+	const results = await Promise.all(stored.map((k) => toKeyPair(kind, k)));
 	results.sort((a, b) => b.created.getTime() - a.created.getTime());
-	if (results.filter((item) => !item.expired).length) return results;
+	if (results.some((item) => !item.expired)) return results;
 
-	const key = await generateKeyPair(signingAlg, {
-		extractable: true
-	});
-	const serialized: SerializedKeyPair = {
+	const key = await generateKeyPair(alg[kind], { extractable: true });
+	const created: StoredKey = {
 		id: crypto.randomUUID(),
 		publicKey: await exportSPKI(key.publicKey),
 		privateKey: await exportPKCS8(key.privateKey),
 		created: Date.now(),
-		alg: signingAlg
+		alg: alg[kind]
 	};
-	await Storage.set(storage, ['signing:key', serialized.id], serialized);
-	return signingKeys(storage);
+	await store.create(kind, created);
+	// Read back rather than returning what was just built, so that two issuers
+	// starting at once converge on whichever key the store actually kept.
+	return keysOf(store, kind);
 }
 
-export async function encryptionKeys(storage: StorageAdapter): Promise<KeyPair[]> {
-	const results = [] as KeyPair[];
-	const scanner = Storage.scan<SerializedKeyPair>(storage, ['encryption:key']);
-	for await (const [_key, value] of scanner) {
-		const publicKey = await importSPKI(value.publicKey, value.alg, {
-			extractable: true
-		});
-		const privateKey = await importPKCS8(value.privateKey, value.alg);
-		const jwk = await exportJWK(publicKey);
-		jwk.kid = value.id;
-		results.push({
-			id: value.id,
-			alg: encryptionAlg,
-			created: new Date(value.created),
-			expired: value.expired ? new Date(value.expired) : undefined,
-			public: publicKey,
-			private: privateKey,
-			jwk
-		});
-	}
-	results.sort((a, b) => b.created.getTime() - a.created.getTime());
-	if (results.filter((item) => !item.expired).length) return results;
+export function signingKeys(store: KeyStore): Promise<KeyPair[]> {
+	return keysOf(store, 'signing');
+}
 
-	const key = await generateKeyPair(encryptionAlg, {
-		extractable: true
-	});
-	const serialized: SerializedKeyPair = {
-		id: crypto.randomUUID(),
-		publicKey: await exportSPKI(key.publicKey),
-		privateKey: await exportPKCS8(key.privateKey),
-		created: Date.now(),
-		alg: encryptionAlg
-	};
-	await Storage.set(storage, ['encryption:key', serialized.id], serialized);
-	return encryptionKeys(storage);
+export function encryptionKeys(store: KeyStore): Promise<KeyPair[]> {
+	return keysOf(store, 'encryption');
 }

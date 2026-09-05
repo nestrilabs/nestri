@@ -59,8 +59,6 @@ function mailEnv(stage: string) {
 	};
 }
 
-const AuthStorage = Cloudflare.KV.Namespace('auth-storage');
-
 const Database = Effect.gen(function* () {
 	const { stage } = yield* Alchemy.Stack;
 	const database = stage === 'production' ? 'defaultdb' : 'sandbox';
@@ -95,7 +93,6 @@ export const Auth = Effect.gen(function* () {
 		// the email one. Linking a Steam account is `apps/api`'s job and its
 		// key is bound there.
 		env: {
-			AuthStorage,
 			HYPERDRIVE: Database,
 			...mailEnv(stage)
 		},
