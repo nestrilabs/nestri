@@ -65,6 +65,19 @@ Both directions. Inside the guest an envelope crosses a unix socket at
 That socket is a mechanism and expected to change; the envelope is the boundary
 and is not.
 
+Nothing is held for a workload that is not on the relay, and nothing waits on
+one that is slow to read. An envelope that arrives with nobody connected is
+dropped, and so is one that arrives faster than the workload reads: what
+crosses this layer is re-sent when it changes, so a queued copy is a stale copy
+— and the queue that would hold it is on the same loop that carries stop,
+shutdown and the workload's exit, none of which may wait behind it.
+
+A frame is capped at 64 KiB. The workload is on the other end of that socket
+and can write for as long as it likes without ever sending a newline; the
+process assembling it is the one the kernel has been told not to kill, so an
+unbounded buffer there comes out of everything else in the guest. Past the cap
+the connection is dropped and the relay waits for the next one.
+
 `body` is a string rather than nested JSON, deliberately. A document nesinit
 can index into is a document nesinit can grow to depend on, and then the layer
 is no longer opaque and the boundary it exists to draw is gone.

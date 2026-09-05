@@ -183,7 +183,7 @@ where
                     }
                 }
             }
-            HostToGuest::Payload { payload: envelope } => hand_over(payload, envelope).await,
+            HostToGuest::Payload { payload: envelope } => hand_over(payload, envelope),
             HostToGuest::Stop => workload.signal_stop(),
             HostToGuest::Shutdown => return Ok(Outcome::Shutdown),
         }
@@ -199,13 +199,24 @@ enum Event {
 
 /// Hand an envelope to the relay, and treat a relay that is not there as the
 /// caller's problem rather than a failure of this session.
-async fn hand_over(ports: &mut Ports, envelope: Payload) {
-    tracing::debug!(envelope = %envelope.summary(), "handing an envelope over");
-    if ports.to_workload.send(envelope).await.is_err() {
-        // The workload is not on the relay. Dropped rather than queued: what
-        // crosses here is re-sent when it changes, so a held copy is a stale
-        // copy.
-        tracing::warn!("dropped an envelope: nothing is on the relay");
+///
+/// It never waits. This loop also carries stop, shutdown and the workload's
+/// exit, and none of those may be held up by a workload that is slow to read
+/// its own mail — or by one that never connected at all. What crosses this
+/// layer is re-sent when it changes, so a dropped copy costs less than a
+/// stalled session.
+fn hand_over(ports: &mut Ports, envelope: Payload) {
+    use tokio::sync::mpsc::error::TrySendError;
+
+    let summary = envelope.summary();
+    match ports.to_workload.try_send(envelope) {
+        Ok(()) => tracing::debug!(envelope = %summary, "handed an envelope over"),
+        Err(TrySendError::Full(_)) => {
+            tracing::warn!(envelope = %summary, "dropped an envelope: the relay is behind")
+        }
+        Err(TrySendError::Closed(_)) => {
+            tracing::warn!(envelope = %summary, "dropped an envelope: the relay is gone")
+        }
     }
 }
 
@@ -645,6 +656,57 @@ mod tests {
                 payload: Payload::new("identity", "dropped"),
             })
             .await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+        caller.expect_started().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        assert_eq!(session.await.unwrap(), Outcome::Shutdown);
+    }
+
+    #[tokio::test]
+    async fn a_relay_that_is_not_draining_does_not_stall_the_session() {
+        // Bounded, because the failure is a session that stops rather than one
+        // that answers wrongly.
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            a_backed_up_relay().await
+        })
+        .await
+        .expect("the session stalled on the relay");
+    }
+
+    async fn a_backed_up_relay() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (down_tx, down_rx) = mpsc::channel(1);
+        let (_up_tx, up_rx) = mpsc::channel::<Payload>(1);
+        // Held and never read: a workload that is slow to read its own mail,
+        // or one that connected and stopped.
+        let _backed_up = down_rx;
+
+        let session = tokio::spawn(async move {
+            let mut ports = Ports {
+                to_workload: down_tx,
+                from_workload: up_rx,
+            };
+            let mut workload = Double::exits_when_stopped(Exit::code(0));
+            run(guest, &mut workload, &mut ports).await.unwrap()
+        });
+
+        assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
+        for _ in 0..8 {
+            caller
+                .say(&HostToGuest::Payload {
+                    payload: Payload::new("identity", "backlog"),
+                })
+                .await;
+        }
+
+        // The lifecycle layer still moves: stop, shutdown and an exit are on
+        // this loop too, and none of them may wait on the relay.
         caller
             .say(&HostToGuest::Boot {
                 descriptor: Box::new(descriptor()),

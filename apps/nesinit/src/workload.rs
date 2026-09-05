@@ -192,11 +192,15 @@ impl Workload for Process {
 /// channel, so the guest still learns nothing about the filesystem it is being
 /// handed a piece of.
 fn mount_share(share: &Mount) -> Result<(), Failure> {
+    // Checked before anything is created: a descriptor this component cannot
+    // act on should leave no directory behind to confuse whoever reads the
+    // failure.
+    let (source, target, flags) = options(share)?;
+
     // The mount point may not exist yet: a share can land anywhere the
     // descriptor names, including a directory no image created.
     std::fs::create_dir_all(&share.at).map_err(|error| failed(share, error))?;
 
-    let (source, target, flags) = options(share);
     // SAFETY: mount takes two paths, a filesystem name and a flag word, all
     // of which outlive the call, and no options string.
     let mounted = unsafe {
@@ -220,7 +224,7 @@ const FSTYPE: &std::ffi::CStr = c"virtiofs";
 
 /// What the mount call is given, split out because this is the part worth
 /// asserting: mounting itself needs privileges a test does not have.
-fn options(share: &Mount) -> (CString, CString, libc::c_ulong) {
+fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> {
     // nosuid and nodev on every share, whether or not it is writable. A share
     // is data handed to the guest; a setuid binary or a device node appearing
     // in one is not something a workload should be able to use, and no
@@ -229,11 +233,23 @@ fn options(share: &Mount) -> (CString, CString, libc::c_ulong) {
     if share.ro {
         flags |= libc::MS_RDONLY;
     }
-    // Interior nul bytes are the caller's mistake; a path with one cannot be
-    // mounted under any flags.
-    let source = CString::new(share.tag.as_str()).unwrap_or_default();
-    let target = CString::new(share.at.as_str()).unwrap_or_default();
-    (source, target, flags)
+    // A nul byte inside a tag or a path is a descriptor that cannot be carried
+    // out under any flags. Refused by name rather than silently emptied: an
+    // empty source turns up later as a mount failure about something else
+    // entirely, which is the wrong thing to go and look at.
+    let source = CString::new(share.tag.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the share tag contains a nul byte: {:?}",
+            share.tag
+        ))
+    })?;
+    let target = CString::new(share.at.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the mount point contains a nul byte: {:?}",
+            share.at
+        ))
+    })?;
+    Ok((source, target, flags))
 }
 
 /// A failure names the path, which is what makes it actionable: a permission
@@ -257,7 +273,7 @@ mod tests {
 
     #[test]
     fn a_writable_share_is_still_mounted_without_devices_or_setuid() {
-        let (source, target, flags) = options(&share(false));
+        let (source, target, flags) = options(&share(false)).unwrap();
         assert_eq!(
             source.to_str().unwrap(),
             "user",
@@ -271,8 +287,27 @@ mod tests {
 
     #[test]
     fn a_read_only_share_is_mounted_read_only() {
-        let (_, _, flags) = options(&share(true));
+        let (_, _, flags) = options(&share(true)).unwrap();
         assert_eq!(flags & libc::MS_RDONLY, libc::MS_RDONLY);
+    }
+
+    #[test]
+    fn a_descriptor_with_a_nul_byte_in_it_is_refused_by_name() {
+        let tagged = Mount {
+            tag: "us\0er".into(),
+            at: "/mnt/user".into(),
+            ro: false,
+        };
+        let failure = options(&tagged).expect_err("an empty source would have been mounted");
+        assert!(failure.reason.contains("tag"), "{}", failure.reason);
+
+        let placed = Mount {
+            tag: "user".into(),
+            at: "/mnt/us\0er".into(),
+            ro: false,
+        };
+        let failure = options(&placed).expect_err("an empty target would have been mounted");
+        assert!(failure.reason.contains("mount point"), "{}", failure.reason);
     }
 
     #[test]
