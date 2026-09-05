@@ -5,7 +5,6 @@ import { Redacted } from 'effect';
 import * as Effect from 'effect/Effect';
 
 const steamApiKey = Redacted.make(process.env.STEAM_API_KEY!);
-const sshAuthKey = process.env.SSH_AUTH_KEY || 'dev-ssh-auth-key-change-in-prod';
 const adminSharedSecret =
 	process.env.ADMIN_SHARED_SECRET || 'dev-admin-shared-secret-change-in-prod';
 
@@ -41,11 +40,12 @@ export const Auth = Effect.gen(function* () {
 	return yield* Cloudflare.Worker('auth', {
 		main: 'apps/auth/src/index.ts',
 		compatibility: { flags: ['nodejs_compat'] },
+		// No Steam or SSH settings: the issuer serves one provider, and it is
+		// the email one. Linking a Steam account is `apps/api`'s job and its
+		// key is bound there.
 		env: {
 			AuthStorage,
-			HYPERDRIVE: Database,
-			STEAM_API_KEY: steamApiKey,
-			SSH_AUTH_KEY: sshAuthKey
+			HYPERDRIVE: Database
 		},
 		...(isPermanent ? { observability: { enabled: true } } : {})
 	});
