@@ -21,6 +21,7 @@ const auth = issuer({
 	subjects,
 	allow: async () => true,
 	allowDeviceClient: async (clientID) => clientID !== 'banned',
+	deviceVerification: { guessLimit: 3, guessWindow: 60 },
 	providers: {
 		dummy: {
 			type: 'dummy',
@@ -266,7 +267,11 @@ describe('approval', () => {
 	});
 
 	test('an unknown user code does not start a provider flow', async () => {
-		const response = await auth.request(`${ORIGIN}/device?user_code=ZZZZZZZZ`);
+		// Its own address, so the budget it spends is its own — the shared
+		// bucket for callers with no address is asserted on further down.
+		const response = await auth.request(`${ORIGIN}/device?user_code=ZZZZZZZZ`, {
+			headers: { 'cf-connecting-ip': '198.51.100.9' }
+		});
 		expect(response.status).toBe(400);
 	});
 
@@ -409,5 +414,75 @@ describe('when both halves move at once', () => {
 			deviceStore.consume(hash, 'desktop')
 		]);
 		expect([a, b].filter(Boolean)).toHaveLength(1);
+	});
+});
+
+/**
+ * Working through the code space, and what stops it.
+ *
+ * A user code is eight characters from an alphabet of twenty-five, so guessing
+ * one is not cheap — but it is a fixed cost, and the endpoint that checks them
+ * had no opinion about how often you asked. RFC 8628 §5.2 asks for one.
+ */
+describe('guessing at user codes', () => {
+	/** A caller with an address of its own, so budgets do not run together. */
+	function from(address: string) {
+		return (userCode: string) =>
+			auth.request(`${ORIGIN}/device?user_code=${encodeURIComponent(userCode)}`, {
+				headers: { 'cf-connecting-ip': address }
+			});
+	}
+
+	test('a caller runs out of tries', async () => {
+		const tries = from('198.51.100.1');
+
+		expect((await tries('ZZZZZZZZ')).status).toBe(400);
+		expect((await tries('ZZZZZZZY')).status).toBe(400);
+		expect((await tries('ZZZZZZZX')).status).toBe(400);
+		expect((await tries('ZZZZZZZW')).status).toBe(429);
+	});
+
+	test('one caller running out does not lock out another', async () => {
+		const noisy = from('198.51.100.2');
+		for (let i = 0; i < 4; i++) await noisy(`ZZZZZZZ${'ABCD'[i]}`);
+		expect((await noisy('ZZZZZZZZ')).status).toBe(429);
+
+		const grant = await started();
+		const quiet = await auth.request(
+			`${ORIGIN}/device?user_code=${encodeURIComponent(grant.user_code)}`,
+			{ headers: { 'cf-connecting-ip': '198.51.100.3' } }
+		);
+		expect(quiet.status).toBe(302);
+	});
+
+	test('getting one right is not charged for', async () => {
+		const address = '198.51.100.4';
+		const tries = from(address);
+		expect((await tries('ZZZZZZZZ')).status).toBe(400);
+		expect((await tries('ZZZZZZZY')).status).toBe(400);
+
+		// Two wrong out of a budget of three. A correct code in between must
+		// not be what tips the next wrong one over.
+		const grant = await started();
+		const right = await auth.request(
+			`${ORIGIN}/device?user_code=${encodeURIComponent(grant.user_code)}`,
+			{ headers: { 'cf-connecting-ip': address } }
+		);
+		expect(right.status).toBe(302);
+
+		expect((await tries('ZZZZZZZX')).status).toBe(400);
+		expect((await tries('ZZZZZZZW')).status).toBe(429);
+	});
+
+	// A caller who strips the headers that say where they are lands in one
+	// shared bucket. That is deliberate: it makes hiding cost a smaller budget
+	// rather than buying an unlimited one.
+	test('a caller with no address still has a budget', async () => {
+		for (let i = 0; i < 3; i++) {
+			expect((await auth.request(`${ORIGIN}/device?user_code=ZZZZZZZ${'ABC'[i]}`)).status).toBe(
+				400
+			);
+		}
+		expect((await auth.request(`${ORIGIN}/device?user_code=ZZZZZZZD`)).status).toBe(429);
 	});
 });

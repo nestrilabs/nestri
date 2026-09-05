@@ -398,6 +398,31 @@ export interface IssuerInput<
 	 */
 	deviceStore?: DeviceStore;
 	/**
+	 * How hard a caller may guess at user codes before `/device` stops
+	 * answering them.
+	 *
+	 * A user code is short so that a person can read it off one screen and type
+	 * it into another, and short means guessable given enough tries. RFC 8628
+	 * §5.2 asks for a limit on the verification endpoint for exactly this
+	 * reason. Counted per caller address over a rolling window; a caller who
+	 * gets one right is not charged for it.
+	 */
+	deviceVerification?: {
+		/** Wrong codes allowed per window. @default 10 */
+		guessLimit?: number;
+		/** Length of the window, in seconds. @default 600 */
+		guessWindow?: number;
+		/**
+		 * Which caller a guess is charged to.
+		 *
+		 * Defaults to the usual forwarded-address headers. Returning undefined
+		 * puts the request in one shared bucket, which is the right answer for
+		 * a caller whose address cannot be established: it means stripping the
+		 * headers buys a smaller budget rather than an unlimited one.
+		 */
+		address?(req: Request): string | undefined;
+	};
+	/**
 	 * Whether a client may start a device authorization grant.
 	 *
 	 * `/device/authorize` takes no secret — that is what the grant is for — so
@@ -529,6 +554,15 @@ export function issuer<
 	const ttlDevice = input.ttl?.device ?? 60 * 10;
 	const deviceInterval = input.ttl?.deviceInterval ?? 5;
 	const deviceStore = input.deviceStore ?? MemoryDeviceStore();
+	const deviceGuessLimit = input.deviceVerification?.guessLimit ?? 10;
+	const deviceGuessWindow = input.deviceVerification?.guessWindow ?? 600;
+	const deviceAddress =
+		input.deviceVerification?.address ??
+		((req: Request) =>
+			req.headers.get('cf-connecting-ip') ??
+			req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+			req.headers.get('x-real-ip') ??
+			undefined);
 	if (input.theme) {
 		setTheme(input.theme);
 	}
@@ -767,6 +801,44 @@ export function issuer<
 		clientID: string;
 		csrf: string;
 		subject: DeviceGrantSubject;
+	}
+
+	/**
+	 * How many user codes this caller has got wrong lately.
+	 *
+	 * Kept in the general-purpose store rather than with the grants, because it
+	 * is a counter and not a grant, and because being approximate is fine here:
+	 * the number that matters is whether somebody is working through the code
+	 * space, and a handful either way does not change the answer. A caller
+	 * spread across several addresses gets a budget per address, which is what
+	 * makes the limit worth having rather than a way to lock one person out.
+	 */
+	async function chargeGuess(req: Request): Promise<boolean> {
+		const who = deviceAddress(req) ?? 'unknown';
+		const key = ['oauth:device:guess', who];
+		const now = Date.now();
+		const bucket = await Storage.get<{ count: number; resetAt: number }>(storage!, key);
+		const next =
+			bucket && bucket.resetAt > now
+				? { count: bucket.count + 1, resetAt: bucket.resetAt }
+				: { count: 1, resetAt: now + deviceGuessWindow * 1000 };
+		await Storage.set(
+			storage!,
+			key,
+			next,
+			Math.max(1, Math.ceil((next.resetAt - now) / 1000))
+		);
+		return next.count <= deviceGuessLimit;
+	}
+
+	async function guessesLeft(req: Request): Promise<boolean> {
+		const who = deviceAddress(req) ?? 'unknown';
+		const bucket = await Storage.get<{ count: number; resetAt: number }>(storage!, [
+			'oauth:device:guess',
+			who
+		]);
+		if (!bucket || bucket.resetAt <= Date.now()) return true;
+		return bucket.count < deviceGuessLimit;
 	}
 
 	/**
@@ -1390,8 +1462,16 @@ export function issuer<
 			);
 		}
 
+		if (!(await guessesLeft(c.req.raw))) {
+			return c.text('Too many codes tried. Wait a while and start again from the app.', 429);
+		}
+
 		const found = await deviceStore.byUserCode(canonicalUserCode(raw));
 		if (!found || found.status !== 'pending' || found.expires <= Date.now()) {
+			// Charged only when the code was wrong. Getting one right costs
+			// nothing, so a person mistyping once and then succeeding is not
+			// walking towards a lockout.
+			await chargeGuess(c.req.raw);
 			return c.text('That code is not valid any more. Ask the app for a new one.', 400);
 		}
 
