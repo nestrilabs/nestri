@@ -95,8 +95,14 @@ function jar() {
 	};
 }
 
-/** Ask for a code, redeem it, and come back holding tokens. */
-async function signIn() {
+/**
+ * Ask for a code, redeem it, and come back holding tokens.
+ *
+ * The address is a parameter because codes to one mailbox are rate limited, and
+ * two sign-ins in the same second are exactly what that limit is for. Each
+ * caller uses its own.
+ */
+async function signIn(email: string) {
 	const client = createClient({
 		issuer: 'https://auth.internal',
 		clientID: 'api',
@@ -115,7 +121,7 @@ async function signIn() {
 	const requested = await auth.request('https://auth.internal/code/authorize', {
 		method: 'POST',
 		headers: { cookie: cookies.header(), 'content-type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams({ action: 'request', email: 'ada@example.com' })
+		body: new URLSearchParams({ action: 'request', email })
 	});
 	cookies.absorb(requested);
 	expect(lastCode).not.toBe('');
@@ -142,7 +148,7 @@ async function signIn() {
 
 describe('signing in with an email address', () => {
 	test('a redeemed code becomes tokens that verify', async () => {
-		const { client, tokens } = await signIn();
+		const { client, tokens } = await signIn('ada@example.com');
 
 		expect(tokens.access).toBeString();
 		expect(tokens.refresh).toBeString();
@@ -161,7 +167,7 @@ describe('signing in with an email address', () => {
 
 describe('User info', () => {
 	test('returns subject properties for valid access token', async () => {
-		const { tokens } = await signIn();
+		const { tokens } = await signIn('grace@example.com');
 
 		const infoRes = await auth.request('https://auth.internal/userinfo', {
 			headers: { Authorization: `Bearer ${tokens.access}` }
