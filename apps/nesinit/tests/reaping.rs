@@ -3,10 +3,11 @@
 // Its own test binary on purpose: the reaper waits on any child, so it would
 // collect processes another test in the same binary was waiting for.
 
-use std::sync::{Mutex, MutexGuard};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use nesinit::reap::{become_subreaper, reap_exited};
+use nesinit::reap::{Waiters, become_subreaper, reap_exited};
 
 /// Reaping is process-wide: `waitpid(-1, ...)` collects any child, so two of
 /// these tests running at once would each reap the other's. One at a time.
@@ -107,4 +108,74 @@ fn pipe() -> (i32, i32) {
     let mut fds = [0i32; 2];
     assert_eq!(unsafe { libc::pipe(fds.as_mut_ptr()) }, 0);
     (fds[0], fds[1])
+}
+
+#[test]
+fn an_exit_reaches_whoever_asked_for_it() {
+    let _alone = alone();
+    let waiters = Waiters::new();
+
+    let mut exited = waiters
+        .watch(|| Ok(fork_child(|| unsafe { libc::_exit(9) })))
+        .expect("the child never started");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        for (pid, exit) in reap_exited() {
+            waiters.deliver(pid, exit);
+        }
+        if let Ok(exit) = exited.try_recv() {
+            assert_eq!(exit.exit_code, Some(9));
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the exit was reaped by the reaper and never handed on");
+}
+
+#[test]
+fn an_exit_that_happens_before_the_caller_is_registered_is_not_lost() {
+    let _alone = alone();
+    let waiters = Waiters::new();
+
+    // A reaper already running, as it is in the guest: it will collect this
+    // child before `watch` has finished registering interest in it.
+    let stop = Arc::new(AtomicBool::new(false));
+    let reaper = std::thread::spawn({
+        let waiters = waiters.clone();
+        let stop = stop.clone();
+        move || {
+            while !stop.load(Ordering::Relaxed) {
+                for (pid, exit) in reap_exited() {
+                    waiters.deliver(pid, exit);
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+    });
+
+    let mut exited = waiters
+        .watch(|| {
+            let pid = fork_child(|| unsafe { libc::_exit(5) });
+            // Long enough for the child to exit and the reaper to reach it.
+            std::thread::sleep(Duration::from_millis(200));
+            Ok(pid)
+        })
+        .expect("the child never started");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let exit = loop {
+        if let Ok(exit) = exited.try_recv() {
+            break exit;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the exit was dropped on the way through"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    assert_eq!(exit.exit_code, Some(5));
+
+    stop.store(true, Ordering::Relaxed);
+    reaper.join().unwrap();
 }

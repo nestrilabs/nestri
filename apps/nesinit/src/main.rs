@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use nesinit::reap;
+use nesinit::reap::{self, Waiters};
 use nesinit::session::{self, Outcome};
 use nesinit::shutdown::{self, Machine};
 use nesinit::workload::{Process, Workload};
@@ -40,26 +40,34 @@ fn main() -> anyhow::Result<()> {
         tracing::warn!(pid, "not PID 1: the kernel will reparent orphans elsewhere");
     }
 
+    let waiters = Waiters::new();
+    let mut workload = Process::new(waiters.clone());
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
-    let outcome = runtime.block_on(guest());
+    let outcome = runtime.block_on(guest(&waiters, &mut workload));
     match &outcome {
         Ok(outcome) => tracing::info!(?outcome, "the session ended"),
         Err(error) => tracing::error!(%error, "the session failed"),
     }
 
+    // Before anything below waits on a pid: the reaper runs on this runtime's
+    // threads, and two things calling `wait` is what the registry exists to
+    // prevent.
+    drop(runtime);
+
     // Reached however the session ended, including an error: an init that
     // returns leaves the guest running with nothing in it.
-    let mut machine = Guest::new();
+    let mut machine = Guest { workload };
     shutdown::ordered(&mut machine, GRACE);
     unreachable!("power_off does not return");
 }
 
-async fn guest() -> anyhow::Result<Outcome> {
+async fn guest(waiters: &Waiters, workload: &mut Process) -> anyhow::Result<Outcome> {
     // Reaping runs for as long as the guest does. A workload that leaks
     // orphans leaks them while it is running, not when it stops.
-    tokio::spawn(reaper());
+    tokio::spawn(reaper(waiters.clone()));
 
     let address = VsockAddr::new(VMADDR_CID_HOST, CONTROL_PORT);
     // Dialled once, with no retry: the far end is listening before this
@@ -67,9 +75,8 @@ async fn guest() -> anyhow::Result<Outcome> {
     // waiting will not fix.
     let channel = VsockStream::connect(address).await?;
 
-    let mut workload = Process::new();
     let outcome = tokio::select! {
-        outcome = session::run(channel, &mut workload) => outcome?,
+        outcome = session::run(channel, workload) => outcome?,
         signal = asked_to_stop() => {
             signal?;
             tracing::info!("asked to stop");
@@ -79,8 +86,9 @@ async fn guest() -> anyhow::Result<Outcome> {
     Ok(outcome)
 }
 
-/// Drain exited children whenever the kernel says there are some.
-async fn reaper() {
+/// Drain exited children whenever the kernel says there are some, and hand
+/// each exit to whoever is waiting for it.
+async fn reaper(waiters: Waiters) {
     let mut children = match signal(SignalKind::child()) {
         Ok(children) => children,
         Err(error) => {
@@ -91,7 +99,10 @@ async fn reaper() {
     loop {
         children.recv().await;
         for (pid, exit) in reap::reap_exited() {
-            tracing::debug!(pid, ?exit, "reaped");
+            if !waiters.deliver(pid, exit) {
+                // An orphan nothing asked about, which is most of them.
+                tracing::debug!(pid, ?exit, "reaped");
+            }
         }
     }
 }
@@ -112,14 +123,6 @@ struct Guest {
     workload: Process,
 }
 
-impl Guest {
-    fn new() -> Self {
-        Self {
-            workload: Process::new(),
-        }
-    }
-}
-
 impl Machine for Guest {
     fn signal_workload(&mut self) {
         self.workload.signal_stop();
@@ -127,18 +130,23 @@ impl Machine for Guest {
 
     fn await_workload(&mut self, grace: Duration) -> bool {
         // The session already reported the exit if there was one; this is the
-        // window for a workload that was asked to stop on the way down.
-        wait_for_quiet(grace)
+        // window for a workload that was asked to stop on the way down. It
+        // waits for that pid and no other, or the first service to leave would
+        // look like the workload leaving.
+        self.workload.await_exit(grace)
     }
 
     fn kill_workload(&mut self) {
-        // SAFETY: two integers, and the kernel refuses to signal init itself.
-        unsafe { libc::kill(-1, libc::SIGKILL) };
+        // The workload alone. Everything else in the guest is still expected
+        // to get the ordered stop below, and a kill to every process here
+        // would take the services with it.
+        self.workload.signal(libc::SIGKILL);
+        self.workload.await_exit(Duration::from_secs(1));
     }
 
     fn signal_rest(&mut self, grace: Duration) {
         // -1 is every process this one may signal, which as PID 1 is all of
-        // them but itself.
+        // them but itself. The workload has already stopped by here.
         unsafe { libc::kill(-1, libc::SIGTERM) };
         wait_for_quiet(grace);
     }

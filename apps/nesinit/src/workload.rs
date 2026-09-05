@@ -12,6 +12,10 @@ use std::pin::Pin;
 
 use nesprotocol::lifecycle::{Exec, Exit, Mount};
 
+use std::os::unix::process::CommandExt;
+
+use crate::reap::Waiters;
+
 /// Why something could not be done, in the words the operating system used.
 ///
 /// The reason is passed through verbatim on purpose: `EACCES` and a path can
@@ -50,18 +54,50 @@ pub trait Workload {
 
 /// The workload as a local process.
 pub struct Process {
+    waiters: Waiters,
     pid: Option<i32>,
 }
 
 impl Process {
-    pub fn new() -> Self {
-        Self { pid: None }
+    /// Started through the reaper's registry, because the reaper is the only
+    /// thing in this component that may call `wait`.
+    pub fn new(waiters: Waiters) -> Self {
+        Self { waiters, pid: None }
     }
-}
 
-impl Default for Process {
-    fn default() -> Self {
-        Self::new()
+    /// Send a signal to the workload and nothing else.
+    ///
+    /// Nothing here ever signals the process group or every process: the order
+    /// a shutdown promises is only true if the workload can be stopped alone.
+    pub fn signal(&self, signal: libc::c_int) {
+        let Some(pid) = self.pid else { return };
+        // SAFETY: two integers, and it cannot touch this process's memory. A
+        // pid that has already gone fails with ESRCH, which is exactly the
+        // idempotence the callers of this rely on.
+        unsafe { libc::kill(pid, signal) };
+    }
+
+    /// Wait up to `grace` for the workload to leave, without a runtime.
+    ///
+    /// Used on the way down, after the reaper has stopped: it polls for the
+    /// one pid rather than for any child, so a slow service cannot be mistaken
+    /// for the workload still running.
+    pub fn await_exit(&self, grace: std::time::Duration) -> bool {
+        let Some(pid) = self.pid else { return true };
+        let deadline = std::time::Instant::now() + grace;
+        loop {
+            let mut status: libc::c_int = 0;
+            // SAFETY: waitpid writes only into `status`.
+            let seen = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            // -1 is ECHILD: already reaped, which is also gone.
+            if seen == pid || seen == -1 {
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
 
@@ -84,7 +120,10 @@ impl Workload for Process {
             return Err(Failure::new("the command is empty"));
         };
 
-        let mut command = tokio::process::Command::new(program);
+        // The standard library's process rather than the runtime's: the
+        // runtime reaps the children it spawns, and in this component reaping
+        // belongs to one place. See `reap::Waiters`.
+        let mut command = std::process::Command::new(program);
         command.args(args);
         // Cleared rather than inherited: init's environment is the kernel's
         // and says nothing a workload should read.
@@ -112,34 +151,27 @@ impl Workload for Process {
             });
         }
 
-        let mut child = command.spawn().map_err(|e| Failure::new(e.to_string()))?;
-        self.pid = child.id().map(|pid| pid as i32);
-        let waiter = async move {
-            let status = child.wait().await?;
-            Ok(exit_of(status))
-        };
-        Ok(Box::pin(waiter))
+        let mut pid = None;
+        let exited = self
+            .waiters
+            .watch(|| {
+                let child = command.spawn()?;
+                let started = child.id() as i32;
+                pid = Some(started);
+                Ok(started)
+            })
+            .map_err(|error| Failure::new(error.to_string()))?;
+        self.pid = pid;
+
+        Ok(Box::pin(async move {
+            exited
+                .await
+                .map_err(|_| io::Error::other("the workload's exit was not delivered"))
+        }))
     }
 
     fn signal_stop(&mut self) {
-        if let Some(pid) = self.pid {
-            // SAFETY: kill takes two integers and cannot touch this process's
-            // memory. A pid that has already exited fails with ESRCH, which is
-            // exactly the idempotence this method promises.
-            unsafe { libc::kill(pid, libc::SIGTERM) };
-        }
-    }
-}
-
-/// Read a finished process's status as an exit.
-fn exit_of(status: std::process::ExitStatus) -> Exit {
-    use std::os::unix::process::ExitStatusExt;
-    match (status.code(), status.signal()) {
-        (Some(code), _) => Exit::code(code),
-        (None, Some(signal)) => Exit::signal(signal),
-        // Neither: nothing on this platform produces it, and inventing a zero
-        // would report a clean run.
-        (None, None) => Exit::signal(0),
+        self.signal(libc::SIGTERM);
     }
 }
 
