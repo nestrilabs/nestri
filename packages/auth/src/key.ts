@@ -42,6 +42,23 @@ export interface StoredKey {
 export interface KeyStore {
 	/** Every key of a kind, expired ones included. Order does not matter. */
 	list(kind: KeyKind): Promise<StoredKey[]>;
+
+	/**
+	 * Add a key, unless the kind already has a live one.
+	 *
+	 * A store that lets two live keys of one kind exist at the same time
+	 * breaks things that are hard to see. Two issuers starting against an empty
+	 * store both find nothing, both generate a key, and from then on each signs
+	 * and encrypts with its own: a session cookie written by one is
+	 * undecryptable to the other, and an access token minted by one is rejected
+	 * by the other as invalid — because both reach for a single key rather than
+	 * trying the published set. Losing the second write is the whole point, so
+	 * this is not an error and reports nothing; the caller reads the list again
+	 * and uses whichever key survived.
+	 *
+	 * Retiring a key and creating its replacement therefore have to happen
+	 * together, so that the kind never has two live keys and never has none.
+	 */
 	create(kind: KeyKind, key: StoredKey): Promise<void>;
 }
 
@@ -56,6 +73,13 @@ function prefix(kind: KeyKind): string {
  * The default, and what every deployment used before `keyStore` existed — the
  * keys are read and written under exactly the prefixes they always were, so an
  * issuer that does not pass a store keeps finding the keys it already had.
+ *
+ * It cannot honour the one-live-key rule `create` asks for: through get and
+ * set there is no way to make "write unless one exists" a single operation.
+ * Two issuers bootstrapping against an empty store at the same moment will
+ * therefore end up with a key each, with the consequences described above. A
+ * store that can express a conditional write does not have this problem, and
+ * is what a deployment running more than one instance wants.
  */
 export function StorageKeyStore(storage: StorageAdapter): KeyStore {
 	return {

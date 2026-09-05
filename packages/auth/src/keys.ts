@@ -37,7 +37,7 @@ async function toKeyPair(kind: KeyKind, stored: StoredKey): Promise<KeyPair> {
 	if (kind === 'signing') jwk.use = 'sig';
 	return {
 		id: stored.id,
-		alg: alg[kind],
+		alg: stored.alg,
 		created: new Date(stored.created),
 		expired: stored.expired ? new Date(stored.expired) : undefined,
 		public: publicKey,
@@ -49,16 +49,29 @@ async function toKeyPair(kind: KeyKind, stored: StoredKey): Promise<KeyPair> {
 /**
  * Every key of a kind, newest first, creating one if none is usable.
  *
- * Expired keys are returned alongside live ones and sorted after them: the
- * first entry is what signs, and the rest are what still verifies. Retiring a
- * key therefore does not invalidate the tokens it signed — they age out on
- * their own — which is the only way a rotation is not also a mass sign-out.
+ * Expired keys are returned alongside live ones and sorted after them, so the
+ * first entry is the one that signs. Publishing the rest is what lets a
+ * verifier reading the JWKS still check a token signed before a rotation.
+ *
+ * A store may refuse the write, and is expected to when another issuer has
+ * already created a key for this kind — see the note on {@link KeyStore.create}
+ * about why two live keys of one kind is not a state this can be left in. So
+ * the created key is never returned directly: the list is read again, and
+ * whichever key the store actually kept is the one everybody uses.
  */
-async function keysOf(store: KeyStore, kind: KeyKind): Promise<KeyPair[]> {
+async function keysOf(store: KeyStore, kind: KeyKind, bootstrapped = false): Promise<KeyPair[]> {
 	const stored = await store.list(kind);
 	const results = await Promise.all(stored.map((k) => toKeyPair(kind, k)));
 	results.sort((a, b) => b.created.getTime() - a.created.getTime());
 	if (results.some((item) => !item.expired)) return results;
+
+	// One attempt, and then an error rather than another try. A store that
+	// accepts neither the write nor another issuer's would otherwise spin here
+	// forever, and a request that hangs is a worse way to learn about it than
+	// a request that fails.
+	if (bootstrapped) {
+		throw new Error(`Unable to create a ${kind} key: the store reports none after writing one.`);
+	}
 
 	const key = await generateKeyPair(alg[kind], { extractable: true });
 	const created: StoredKey = {
@@ -69,9 +82,7 @@ async function keysOf(store: KeyStore, kind: KeyKind): Promise<KeyPair[]> {
 		alg: alg[kind]
 	};
 	await store.create(kind, created);
-	// Read back rather than returning what was just built, so that two issuers
-	// starting at once converge on whichever key the store actually kept.
-	return keysOf(store, kind);
+	return keysOf(store, kind, true);
 }
 
 export function signingKeys(store: KeyStore): Promise<KeyPair[]> {

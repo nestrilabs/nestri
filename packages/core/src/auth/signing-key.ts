@@ -21,11 +21,15 @@ function toStored(row: Row): StoredKey {
 /**
  * The issuer's signing and encryption keys, in Postgres.
  *
- * Two issuers starting against an empty table both generate a key and both
- * insert one, and that is fine: each is valid, both are published in the JWKS,
- * so a token signed by either verifies against either issuer. The conflict
- * clause is not for that race — a key id is a fresh UUID and cannot collide
- * with another issuer's — it is so that a retried write is not an error.
+ * `create` drops its write when the kind already has a live key, which is what
+ * the interface asks for and what keeps two workers bootstrapping at the same
+ * moment from ending up with a key each. Which of them wins does not matter.
+ * That they end up agreeing does — a key each means cookies one worker writes
+ * are unreadable to the other, and tokens one mints are rejected by the other.
+ *
+ * The conflict clause names no target on purpose: both unique indexes on this
+ * table mean the same thing here, that the row we wanted already exists in some
+ * form, and the answer to either is to keep what is there and read it back.
  */
 export function PostgresKeyStore(): KeyStore {
 	return {
@@ -52,7 +56,7 @@ export function PostgresKeyStore(): KeyStore {
 						privateKey: key.privateKey,
 						expiredAt: key.expired ? new Date(key.expired) : null
 					})
-					.onConflictDoNothing({ target: AuthKeyTable.keyId });
+					.onConflictDoNothing();
 			});
 		}
 	};

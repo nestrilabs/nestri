@@ -1,5 +1,5 @@
 {
-  "id": "e2a5e726-9f05-4bf0-9bd9-27cb7501f26e",
+  "id": "6fdda454-c7ee-42c1-931b-fa595385aac0",
   "prevId": "8915fb5b-8f0d-4f6f-a808-27b19bb4604a",
   "version": "7",
   "dialect": "postgresql",
@@ -525,6 +525,22 @@
             }
           ],
           "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "auth_key_one_live_per_kind": {
+          "name": "auth_key_one_live_per_kind",
+          "columns": [
+            {
+              "expression": "kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"auth_key\".\"expired_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}

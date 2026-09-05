@@ -71,4 +71,36 @@ describe('PostgresKeyStore', () => {
 
 		expect(await store.list('signing')).toHaveLength(1);
 	});
+
+	test('a kind cannot end up with two live keys', async () => {
+		await store.create('signing', key());
+		// Dropped rather than refused: the caller reads the list again and uses
+		// whichever key is there, so losing this write is the intended outcome.
+		await store.create('signing', key());
+
+		expect(await store.list('signing')).toHaveLength(1);
+	});
+
+	/**
+	 * The bootstrap race, which is what the constraint is for. Two workers
+	 * starting against an empty table would otherwise end up with a key each,
+	 * and from then on neither can read what the other wrote.
+	 */
+	test('simultaneous bootstraps converge on one key', async () => {
+		await Promise.all(Array.from({ length: 5 }, () => store.create('signing', key())));
+
+		expect(await store.list('signing')).toHaveLength(1);
+	});
+
+	test('a replacement is allowed once the previous key is retired', async () => {
+		const first = key();
+		await store.create('signing', first);
+		await sql`update auth_key set expired_at = now() where key_id = ${first.id}`;
+
+		await store.create('signing', key());
+
+		const all = await store.list('signing');
+		expect(all).toHaveLength(2);
+		expect(all.filter((k) => !k.expired)).toHaveLength(1);
+	});
 });

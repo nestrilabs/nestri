@@ -14,11 +14,22 @@
 -- `update ... where time_used is null returning *`, so exactly one caller is
 -- told it went first.
 --
--- `auth_key` is different: nothing races for it. It is here because it is the
--- one record whose loss ends every session at once, and a cache is a place
--- things are allowed to be evicted from. Keys are retired by setting
--- `expired_at`, never deleted, so the tokens they signed stay verifiable until
--- they expire on their own.
+-- `auth_key` is here for a different reason: it is the one record whose loss
+-- ends every session at once, and a cache is a place things are allowed to be
+-- evicted from. It gets a conditional write too, though. At most one key of a
+-- kind may be live, which `auth_key_one_live_per_kind` enforces rather than
+-- leaving to convention — without it, two workers starting against an empty
+-- table both find no key, both insert one, and each then signs and encrypts
+-- with its own. A session cookie written by one is undecryptable to the other
+-- and a token minted by one is rejected by the other, because both reach for a
+-- single key rather than trying the whole published set. The split is silent
+-- until someone cannot sign in. With the index the second insert is dropped and
+-- both workers use the key that won.
+--
+-- Keys are retired by setting `expired_at`, never deleted, so a verifier
+-- reading the published JWKS can still check a token signed before a rotation.
+-- Retiring one and creating its replacement have to happen together, so the
+-- kind never has two live keys and never has none.
 --
 -- Both credential tables store a hash and never the credential. An
 -- authorization code travels in a query string and a refresh token resumes a
@@ -85,4 +96,5 @@ CREATE UNIQUE INDEX "authorization_code_hash_unique" ON "authorization_code" USI
 CREATE UNIQUE INDEX "refresh_token_hash_unique" ON "refresh_token" USING btree ("token_hash");--> statement-breakpoint
 CREATE INDEX "refresh_token_subject_idx" ON "refresh_token" USING btree ("subject");--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_key_key_id_unique" ON "auth_key" USING btree ("key_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "auth_key_one_live_per_kind" ON "auth_key" USING btree ("kind") WHERE "auth_key"."expired_at" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "auth_kv_key_unique" ON "auth_kv" USING btree ("key");
