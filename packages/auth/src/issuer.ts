@@ -205,7 +205,20 @@ import {
 	UnauthorizedClientError,
 	UnknownStateError
 } from './error.js';
-import { encryptionKeys, legacySigningKeys, signingKeys } from './keys.js';
+import { encryptionKeys, signingKeys } from './keys.js';
+import { type KeyStore, StorageKeyStore } from './key.js';
+import {
+	type AuthorizationCodeRecord,
+	type CodeStore,
+	hashAuthorizationCode,
+	StorageCodeStore
+} from './authorization-code.js';
+import {
+	hashRefreshToken,
+	type RefreshRecord,
+	type RefreshStore,
+	StorageRefreshStore
+} from './refresh.js';
 import {
 	type DeviceGrant,
 	type DeviceGrantSubject,
@@ -397,6 +410,33 @@ export interface IssuerInput<
 	 * store can make each transition a single operation.
 	 */
 	deviceStore?: DeviceStore;
+	/**
+	 * Where the issuer's signing and encryption keys are kept.
+	 *
+	 * Defaults to the generic {@link storage} adapter, under the prefixes it
+	 * has always used, so an issuer that does not set this keeps the keys it
+	 * already had. Setting it moves the one piece of state here whose loss
+	 * invalidates every session at once into somewhere a deployment controls.
+	 */
+	keyStore?: KeyStore;
+	/**
+	 * Where authorization codes are kept between the redirect and the exchange.
+	 *
+	 * Defaults to the generic {@link storage} adapter, which cannot promise a
+	 * code is redeemable only once — it reads and removes in two steps, so two
+	 * exchanges arriving together are both answered, and each mints a session.
+	 * A store that can delete and return in one operation closes that.
+	 */
+	codeStore?: CodeStore;
+	/**
+	 * Where refresh tokens are kept.
+	 *
+	 * Defaults to the generic {@link storage} adapter, with the same weakness:
+	 * reuse detection depends on recording when a token was first spent, and
+	 * through get and set that record happens after the check rather than as
+	 * part of it, so two refreshes arriving together both look like the first.
+	 */
+	refreshStore?: RefreshStore;
 	/**
 	 * How hard a caller may guess at user codes before `/device` stops
 	 * answering them.
@@ -599,10 +639,12 @@ export function issuer<
 		throw new Error(
 			'Store is not configured. Either set the `storage` option or set `OPENAUTH_STORAGE` environment variable.'
 		);
-	const allSigning = lazy(() =>
-		Promise.all([signingKeys(storage), legacySigningKeys(storage)]).then(([a, b]) => [...a, ...b])
-	);
-	const allEncryption = lazy(() => encryptionKeys(storage));
+	const keyStore = input.keyStore ?? StorageKeyStore(storage);
+	const codeStore = input.codeStore ?? StorageCodeStore(storage);
+	const refreshStore = input.refreshStore ?? StorageRefreshStore(storage);
+
+	const allSigning = lazy(() => signingKeys(keyStore));
+	const allEncryption = lazy(() => encryptionKeys(keyStore));
 	const signingKey = lazy(() => allSigning().then((all) => all[0]));
 	const encryptionKey = lazy(() => allEncryption().then((all) => all[0]));
 
@@ -684,9 +726,8 @@ export function issuer<
 							}
 							if (authorization.response_type === 'code') {
 								const code = crypto.randomUUID();
-								await Storage.set(
-									storage,
-									['oauth:code', code],
+								await codeStore.create(
+									await hashAuthorizationCode(code),
 									{
 										type,
 										properties,
@@ -762,11 +803,7 @@ export function issuer<
 			deleteCookie(ctx, key);
 		},
 		async invalidate(subject: string) {
-			// Resolve the scan in case modifications interfere with iteration
-			const keys = await Array.fromAsync(Storage.scan(this.storage, ['oauth:refresh', subject]));
-			for (const [key] of keys) {
-				await Storage.remove(this.storage, key);
-			}
+			await refreshStore.removeSubject(subject);
 		},
 		storage
 	};
@@ -939,14 +976,14 @@ export function issuer<
 			 * Similar treatment should be given to any other values that may have race conditions,
 			 * for example if a jti claim was added to the access token.
 			 */
-			const refreshValue = {
+			const refreshValue: RefreshRecord = {
 				...value,
 				nextToken: crypto.randomUUID()
 			};
 			delete refreshValue.timeUsed;
-			await Storage.set(
-				storage!,
-				['oauth:refresh', value.subject, refreshToken],
+			await refreshStore.create(
+				value.subject,
+				await hashRefreshToken(refreshToken),
 				refreshValue,
 				value.ttl.refresh
 			);
@@ -1077,19 +1114,17 @@ export function issuer<
 						},
 						400
 					);
-				const key = ['oauth:code', code.toString()];
-				const payload = await Storage.get<{
-					type: string;
-					properties: any;
-					clientID: string;
-					redirectURI: string;
-					subject: string;
-					ttl: {
-						access: number;
-						refresh: number;
-					};
-					pkce?: AuthorizationState['pkce'];
-				}>(storage, key);
+				// Taken away before anything is checked, and deliberately not
+				// after. A code is redeemable once, so the operation that
+				// decides which caller gets it has to be the one that removes
+				// it — checking first and removing at the end lets two
+				// exchanges of the same code both pass every check. It also
+				// means a code that fails a check below is spent rather than
+				// left to be tried again, which is what RFC 6749 §4.1.2 asks
+				// for.
+				const payload: AuthorizationCodeRecord | null = await codeStore.consume(
+					await hashAuthorizationCode(code.toString())
+				);
 				if (!payload) {
 					return c.json(
 						{
@@ -1140,7 +1175,6 @@ export function issuer<
 					}
 				}
 				const tokens = await generateTokens(c, payload);
-				await Storage.remove(storage, key);
 				return c.json({
 					access_token: tokens.access,
 					expires_in: tokens.expiresIn,
@@ -1161,20 +1195,19 @@ export function issuer<
 				const splits = refreshToken.toString().split(':');
 				const token = splits.pop()!;
 				const subject = splits.join(':');
-				const key = ['oauth:refresh', subject, token];
-				const payload = await Storage.get<{
-					type: string;
-					properties: any;
-					clientID: string;
-					subject: string;
-					ttl: {
-						access: number;
-						refresh: number;
-					};
-					nextToken: string;
-					timeUsed?: number;
-				}>(storage, key);
-				if (!payload) {
+				const at = Date.now();
+				// Spending the token and finding out whether it had already
+				// been spent are one operation. Split into a read and a write
+				// they are the race that reuse detection exists to catch: two
+				// refreshes arriving together both read an unspent token, both
+				// mint a session, and neither is ever reported.
+				const claim = await refreshStore.claim(
+					subject,
+					await hashRefreshToken(token),
+					at,
+					ttlRefreshReuse <= 0 ? 0 : ttlRefreshReuse + ttlRefreshRetention
+				);
+				if (claim.status === 'missing') {
 					return c.json(
 						{
 							error: 'invalid_grant',
@@ -1183,15 +1216,12 @@ export function issuer<
 						400
 					);
 				}
-				const generateRefreshToken = !payload.timeUsed;
-				if (ttlRefreshReuse <= 0) {
-					// no reuse interval, remove the refresh token immediately
-					await Storage.remove(storage, key);
-				} else if (!payload.timeUsed) {
-					payload.timeUsed = Date.now();
-					await Storage.set(storage, key, payload, ttlRefreshReuse + ttlRefreshRetention);
-				} else if (Date.now() > payload.timeUsed + ttlRefreshReuse * 1000) {
-					// token was reused past the allowed interval
+				// Reuse inside the window is tolerated so that a client that
+				// fired two refreshes at once gets the same answer twice
+				// instead of losing its session. Past it, the only explanation
+				// left is that someone else has the token, so every session the
+				// subject has goes.
+				if (claim.status === 'reused' && at > claim.timeUsed + ttlRefreshReuse * 1000) {
 					await auth.invalidate(subject);
 					return c.json(
 						{
@@ -1201,8 +1231,16 @@ export function issuer<
 						400
 					);
 				}
+				// The access token is dated from when the refresh token was
+				// first spent, not from now — so the second answer inside the
+				// reuse window is the same session, and not a quietly extended
+				// one.
+				const payload: RefreshRecord = {
+					...claim.record,
+					timeUsed: claim.status === 'fresh' ? at : claim.timeUsed
+				};
 				const tokens = await generateTokens(c, payload, {
-					generateRefreshToken
+					generateRefreshToken: claim.status === 'fresh'
 				});
 				return c.json({
 					access_token: tokens.access,

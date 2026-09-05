@@ -1,10 +1,13 @@
-import type { Hyperdrive, KVNamespace } from '@cloudflare/workers-types';
+import type { Hyperdrive } from '@cloudflare/workers-types';
 import { issuer } from '@nestri/auth/index';
 import { CodeProvider } from '@nestri/auth/provider/code';
-import { CloudflareStorage } from '@nestri/auth/storage/cloudflare';
 import { CodeUI } from '@nestri/auth/ui/code';
 import { Actor } from '@nestri/core/actor';
+import { PostgresCodeStore } from '@nestri/core/auth/authorization-code';
 import { PostgresDeviceStore } from '@nestri/core/auth/device-grant';
+import { PostgresRefreshStore } from '@nestri/core/auth/refresh-token';
+import { PostgresKeyStore } from '@nestri/core/auth/signing-key';
+import { PostgresStorage } from '@nestri/core/auth/storage';
 import { subjects } from '@nestri/core/auth/subjects';
 import { Env } from '@nestri/core/env';
 import { Team } from '@nestri/core/team/index';
@@ -14,7 +17,6 @@ import { LinkedAccount } from '@nestri/core/user/linked-account';
 import { sendVerificationCode } from './email.js';
 
 type Env = {
-	AuthStorage: KVNamespace;
 	HYPERDRIVE: Hyperdrive;
 	EMAIL_SEND_URL?: string;
 	EMAIL_API_KEY?: string;
@@ -61,15 +63,21 @@ export default {
 		Env.init(env as unknown as Record<string, unknown>);
 		const inner = issuer({
 			subjects,
-			storage: CloudflareStorage({
-				namespace: env.AuthStorage
-			}),
-			// Not the KV store the rest of this uses, and the difference
-			// matters. A device grant is answered by a browser and collected by
-			// a program polling at the same time, so approving it and redeeming
-			// it each have to be one operation that either happens or does not.
-			// A store that reads and writes whole records lets those two undo
-			// each other; a conditional update does not.
+			// One database behind all of it, and nothing that only exists on
+			// one hosting provider. What is left in the generic store is the
+			// rate-limit counters — the only records here that are allowed to
+			// be approximate, and the only ones whose shape is not worth a
+			// migration.
+			storage: PostgresStorage(),
+			// The rest each got an interface of their own because each has a
+			// transition that must happen exactly once while two parties are
+			// touching the same record: a code is redeemed once, a refresh
+			// token is spent once, a grant is approved once. A store that reads
+			// and writes whole records cannot promise that — the second caller
+			// overwrites what the first decided. A conditional update can.
+			keyStore: PostgresKeyStore(),
+			codeStore: PostgresCodeStore(),
+			refreshStore: PostgresRefreshStore(),
 			deviceStore: PostgresDeviceStore(),
 			allowDeviceClient: async (clientID) => DEVICE_CLIENTS.has(clientID),
 			// One provider, on purpose.

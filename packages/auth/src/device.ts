@@ -13,6 +13,8 @@
  * @packageDocumentation
  */
 
+import { sha256hex } from './util.js';
+
 /** How far a grant has got. Terminal in both directions once it leaves pending. */
 export type DeviceGrantStatus = 'pending' | 'approved' | 'denied';
 
@@ -93,8 +95,7 @@ export interface DeviceStore {
  * not enough to present it.
  */
 export async function hashDeviceCode(deviceCode: string): Promise<string> {
-	const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(deviceCode));
-	return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+	return sha256hex(deviceCode);
 }
 
 /**
