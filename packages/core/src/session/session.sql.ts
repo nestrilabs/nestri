@@ -62,7 +62,17 @@ export const SessionTable = pgTable(
 		timeStarted: utc('time_started'),
 		timeStopped: utc('time_stopped'),
 		/** Why it ended badly, when it did. */
-		errorMessage: text('error_message')
+		errorMessage: text('error_message'),
+		/**
+		 * Which attempt holds this run. Null until an agent claims it, and never
+		 * cleared afterwards — a terminal row still records who ran it, and a
+		 * token that goes back to null lets a dead claim be replayed.
+		 *
+		 * Nothing writes it yet. It is declared here so the schema, the snapshot
+		 * and the database agree; without it the next generated migration adds a
+		 * column that already exists and fails wherever it has run once.
+		 */
+		claimToken: text('claim_token')
 	},
 	(t) => [
 		index('session_box_idx').on(t.boxId),

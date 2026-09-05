@@ -6,6 +6,7 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
 import { Fingerprint } from '../user/fingerprint.js';
+import { Identity } from '../user/identity.js';
 import { User } from '../user/index.js';
 import { LinkedAccount } from '../user/linked-account.js';
 
@@ -163,6 +164,15 @@ async function resolveSshIdentityOnce(
 }
 
 export namespace Steam {
+	/**
+	 * Connect a Steam account to whoever is asking.
+	 *
+	 * Works out who that is and then hands over to the one place the rules
+	 * live. It used to write the row itself, which meant the cap on how many
+	 * accounts one person may connect held on the sign-in path and not on
+	 * this one — and this is the path a settings screen uses, so it is the
+	 * one that would have been over the limit.
+	 */
 	export const link = fn(
 		z.object({
 			steamId: z.string(),
@@ -170,34 +180,21 @@ export namespace Steam {
 			userId: z.string().optional()
 		}),
 		async (input) => {
-			return Database.transaction(async () => {
-				const existing = await LinkedAccount.findByProvider({
-					provider: 'steam',
-					providerAccountId: input.steamId
-				});
-				if (existing) {
-					return existing.id;
-				}
-				const actor = Actor.use();
-				const uid =
-					input.userId ??
-					(actor.type === 'user' || actor.type === 'member' ? actor.properties.userID : undefined);
-				if (!uid) {
-					throw new VisibleError(
-						'forbidden',
-						ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
-						'Cannot link Steam account without a user ID'
-					);
-				}
-				const id = Identifier.ascending('linkedAccount');
-				await LinkedAccount.create({
-					id,
-					userId: uid,
-					provider: 'steam',
-					providerAccountId: input.steamId,
-					profile: input.profile ?? null
-				});
-				return id;
+			const actor = Actor.use();
+			const uid =
+				input.userId ??
+				(actor.type === 'user' || actor.type === 'member' ? actor.properties.userID : undefined);
+			if (!uid) {
+				throw new VisibleError(
+					'forbidden',
+					ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
+					'Cannot link Steam account without a user ID'
+				);
+			}
+			return Identity.linkSteam({
+				userId: uid,
+				steamId: input.steamId,
+				profile: input.profile
 			});
 		}
 	);

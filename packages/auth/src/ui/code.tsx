@@ -69,7 +69,13 @@ const DEFAULT_COPY = {
 	/**
 	 * Copy for the resend button.
 	 */
-	code_resend: 'Resend'
+	code_resend: 'Resend',
+	/**
+	 * Error message when too many codes have been asked for, or too many
+	 * guesses made. Deliberately one message for both: which of the two it was
+	 * is a fact about somebody else's mailbox.
+	 */
+	rate_limited: 'Too many attempts. Wait a moment and start again.'
 };
 
 export type CodeUICopy = typeof DEFAULT_COPY;
@@ -124,6 +130,7 @@ export function CodeUI(props: CodeUIOptions): CodeProviderOptions {
 					<Layout>
 						<form data-component="form" method="post">
 							{error?.type === 'invalid_claim' && <FormAlert message={copy.email_invalid} />}
+						{error?.type === 'rate_limit' && <FormAlert message={copy.rate_limited} />}
 							<input type="hidden" name="action" value="request" />
 							<input
 								data-component="input"
@@ -151,6 +158,7 @@ export function CodeUI(props: CodeUIOptions): CodeProviderOptions {
 					<Layout>
 						<form data-component="form" class="form" method="post">
 							{error?.type === 'invalid_code' && <FormAlert message={copy.code_invalid} />}
+						{error?.type === 'rate_limit' && <FormAlert message={copy.rate_limited} />}
 							{state.type === 'code' && (
 								<FormAlert
 									message={(state.resend ? copy.code_resent : copy.code_sent) + state.claims.email}

@@ -175,6 +175,17 @@ export interface AuthorizationState {
 		challenge: string;
 		method: 'S256';
 	};
+	/**
+	 * Set when the browser half of a device authorization grant is running.
+	 * There is no `redirect_uri` in that case: the thing waiting for the answer
+	 * is a program on another machine polling the token endpoint, so the
+	 * result is recorded against the grant instead of into a redirect.
+	 *
+	 * This is the *hash* of the device code. The browser half never sees the
+	 * code itself — it arrives holding a user code, and the code that redeems
+	 * tokens stays with the program that asked for it.
+	 */
+	device_code?: string;
 }
 
 /**
@@ -195,7 +206,15 @@ import {
 	UnknownStateError
 } from './error.js';
 import { encryptionKeys, legacySigningKeys, signingKeys } from './keys.js';
+import {
+	type DeviceGrant,
+	type DeviceGrantSubject,
+	type DeviceStore,
+	hashDeviceCode,
+	MemoryDeviceStore
+} from './device.js';
 import { validatePKCE } from './pkce.js';
+import { generateUnbiasedString, timingSafeCompare } from './random.js';
 import { DynamoStorage } from './storage/dynamo.js';
 import { MemoryStorage } from './storage/memory.js';
 import { Storage, StorageAdapter } from './storage/storage.js';
@@ -205,6 +224,12 @@ import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
 
 /** @internal */
 export const aws = awsHandle;
+
+/** RFC 8628's grant type, spelled out because it is a URN and not a word. */
+const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code';
+
+/** The longest a device is ever told to wait between polls, in seconds. */
+const DEVICE_MAX_INTERVAL = 60;
 
 export interface IssuerInput<
 	Providers extends Record<string, Provider<any>>,
@@ -348,7 +373,67 @@ export interface IssuerInput<
 		 * @default 0s
 		 */
 		retention?: number;
+		/**
+		 * Interval in seconds a device code stays usable before the user has to
+		 * start again.
+		 * @default 600s
+		 */
+		device?: number;
+		/**
+		 * Slowest a device may poll the token endpoint without being told to
+		 * slow down, in seconds.
+		 * @default 5s
+		 */
+		deviceInterval?: number;
 	};
+	/**
+	 * Where device authorization grants are kept.
+	 *
+	 * Defaults to one held in this process's memory, which is right for tests
+	 * and for a single local process and wrong for anything else — a grant
+	 * created by one instance has to be findable by whichever instance the
+	 * browser and the polling client happen to reach. A real deployment passes
+	 * a store backed by something shared, and the interface is written so that
+	 * store can make each transition a single operation.
+	 */
+	deviceStore?: DeviceStore;
+	/**
+	 * How hard a caller may guess at user codes before `/device` stops
+	 * answering them.
+	 *
+	 * A user code is short so that a person can read it off one screen and type
+	 * it into another, and short means guessable given enough tries. RFC 8628
+	 * §5.2 asks for a limit on the verification endpoint for exactly this
+	 * reason. Counted per caller address over a rolling window; a caller who
+	 * gets one right is not charged for it.
+	 */
+	deviceVerification?: {
+		/** Wrong codes allowed per window. @default 10 */
+		guessLimit?: number;
+		/** Length of the window, in seconds. @default 600 */
+		guessWindow?: number;
+		/**
+		 * Which caller a guess is charged to.
+		 *
+		 * Defaults to the usual forwarded-address headers. Returning undefined
+		 * puts the request in one shared bucket, which is the right answer for
+		 * a caller whose address cannot be established: it means stripping the
+		 * headers buys a smaller budget rather than an unlimited one.
+		 */
+		address?(req: Request): string | undefined;
+	};
+	/**
+	 * Whether a client may start a device authorization grant.
+	 *
+	 * `/device/authorize` takes no secret — that is what the grant is for — so
+	 * without this any caller can mint a grant naming any client identifier,
+	 * and that identifier is what the issued token ends up carrying. Returning
+	 * false refuses the request.
+	 *
+	 * Defaults to allowing everything, which preserves the behaviour of an
+	 * issuer that has not thought about it, and is worth thinking about.
+	 */
+	allowDeviceClient?(clientID: string, req: Request): Promise<boolean>;
 	/**
 	 * Optionally, configure the UI that's displayed when the user visits the root URL of the
 	 * of the OpenAuth server.
@@ -466,6 +551,18 @@ export function issuer<
 	const ttlRefresh = input.ttl?.refresh ?? 60 * 60 * 24 * 365;
 	const ttlRefreshReuse = input.ttl?.reuse ?? 60;
 	const ttlRefreshRetention = input.ttl?.retention ?? 0;
+	const ttlDevice = input.ttl?.device ?? 60 * 10;
+	const deviceInterval = input.ttl?.deviceInterval ?? 5;
+	const deviceStore = input.deviceStore ?? MemoryDeviceStore();
+	const deviceGuessLimit = input.deviceVerification?.guessLimit ?? 10;
+	const deviceGuessWindow = input.deviceVerification?.guessWindow ?? 600;
+	const deviceAddress =
+		input.deviceVerification?.address ??
+		((req: Request) =>
+			req.headers.get('cf-connecting-ip') ??
+			req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+			req.headers.get('x-real-ip') ??
+			undefined);
 	if (input.theme) {
 		setTheme(input.theme);
 	}
@@ -525,6 +622,45 @@ export function issuer<
 							? subjectOpts.subject
 							: await resolveSubject(type, properties);
 						await successOpts?.invalidate?.(await resolveSubject(type, properties));
+						if (authorization?.device_code) {
+							// A device grant has nowhere to redirect to, and it is
+							// also not finished. Signing in says who this browser
+							// is; it does not say that the person meant to hand an
+							// account to whatever program is holding the other half
+							// of this code. Those are two different questions and
+							// only the second one authorizes anything, so what
+							// happens here is a page that asks it.
+							await auth.unset(ctx, 'authorization');
+							const grant = await deviceStore.byDeviceCode(authorization.device_code);
+							if (!grant || grant.status !== 'pending' || grant.expires <= Date.now()) {
+								return ctx.text(
+									'That sign-in request has expired. Start it again from the app.',
+									400
+								);
+							}
+
+							// Carried in an encrypted cookie rather than written to
+							// the grant, so that a request nobody has confirmed
+							// leaves nothing on the record a later poll could
+							// mistake for an answer.
+							const confirmation: DeviceConfirmation = {
+								deviceCode: authorization.device_code,
+								userCode: grant.userCode,
+								clientID: grant.clientID,
+								csrf: generateUnbiasedString(CSRF_ALPHABET, 32),
+								subject: {
+									subject,
+									type: type as string,
+									properties,
+									ttl: {
+										access: subjectOpts?.ttl?.access ?? ttlAccess,
+										refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
+									}
+								}
+							};
+							await auth.set(ctx, 'device_confirm', ttlDevice, confirmation);
+							return ctx.html(deviceConfirmPage(confirmation));
+						}
 						if (authorization) {
 							if (authorization.response_type === 'token') {
 								const location = new URL(authorization.redirect_uri);
@@ -635,7 +771,127 @@ export function issuer<
 		storage
 	};
 
-	async function getAuthorization(ctx: Context) {
+	/**
+	 * The alphabet a user code is drawn from, which is not the whole one.
+	 *
+	 * Someone reads this off one screen and types it into another, so every
+	 * pair that looks or sounds alike is a support ticket: no vowels, so no
+	 * accidental words; no `0`/`O`, `1`/`I`, `5`/`S`, `2`/`Z`. What is left is
+	 * unambiguous read aloud over a phone. RFC 8628 §6.1 asks for exactly this
+	 * trade and the entropy lost is bought back by the length.
+	 */
+	const USER_CODE_ALPHABET = 'BCDFGHJKLMNPQRTVWXY346789';
+	const USER_CODE_LENGTH = 8;
+
+	/** Nothing a person reads, so the whole alphabet is available. */
+	const CSRF_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+	/**
+	 * What is known after signing in and before confirming.
+	 *
+	 * This is the half of the flow that has no answer yet: a browser that has
+	 * proved who it belongs to, holding a code it has not said yes to. It is
+	 * kept in an encrypted cookie rather than on the grant so that a person who
+	 * closes the tab at this point has authorized nothing.
+	 */
+	interface DeviceConfirmation {
+		/** The hash, which is all this side of the flow ever sees. */
+		deviceCode: string;
+		userCode: string;
+		clientID: string;
+		csrf: string;
+		subject: DeviceGrantSubject;
+	}
+
+	/**
+	 * How many user codes this caller has got wrong lately.
+	 *
+	 * Kept in the general-purpose store rather than with the grants, because it
+	 * is a counter and not a grant, and because being approximate is fine here:
+	 * the number that matters is whether somebody is working through the code
+	 * space, and a handful either way does not change the answer. A caller
+	 * spread across several addresses gets a budget per address, which is what
+	 * makes the limit worth having rather than a way to lock one person out.
+	 */
+	async function chargeGuess(req: Request): Promise<boolean> {
+		const who = deviceAddress(req) ?? 'unknown';
+		const key = ['oauth:device:guess', who];
+		const now = Date.now();
+		const bucket = await Storage.get<{ count: number; resetAt: number }>(storage!, key);
+		const next =
+			bucket && bucket.resetAt > now
+				? { count: bucket.count + 1, resetAt: bucket.resetAt }
+				: { count: 1, resetAt: now + deviceGuessWindow * 1000 };
+		await Storage.set(
+			storage!,
+			key,
+			next,
+			Math.max(1, Math.ceil((next.resetAt - now) / 1000))
+		);
+		return next.count <= deviceGuessLimit;
+	}
+
+	async function guessesLeft(req: Request): Promise<boolean> {
+		const who = deviceAddress(req) ?? 'unknown';
+		const bucket = await Storage.get<{ count: number; resetAt: number }>(storage!, [
+			'oauth:device:guess',
+			who
+		]);
+		if (!bucket || bucket.resetAt <= Date.now()) return true;
+		return bucket.count < deviceGuessLimit;
+	}
+
+	/**
+	 * The code as stored, from the code as a person typed it.
+	 *
+	 * People retype what they see, which includes the separator that made it
+	 * readable and whatever case their keyboard was in. Neither carries
+	 * meaning, so neither is allowed to make a valid code fail.
+	 */
+	function canonicalUserCode(raw: string) {
+		return raw.replace(/[^0-9a-zA-Z]/g, '').toUpperCase();
+	}
+
+	/** Enough escaping to put an attacker-chosen client name on a page safely. */
+	function escapeHtml(raw: string) {
+		return raw
+			.replaceAll('&', '&amp;')
+			.replaceAll('<', '&lt;')
+			.replaceAll('>', '&gt;')
+			.replaceAll('"', '&quot;')
+			.replaceAll("'", '&#39;');
+	}
+
+	/**
+	 * The page that asks the only question that authorizes anything.
+	 *
+	 * It shows the code back, because that is the check a person can actually
+	 * perform: the code here and the code on the device in front of them either
+	 * match or they do not, and if they do not then somebody else sent this
+	 * link. Approving is a POST carrying a value that was put in the cookie
+	 * alongside it, so a page on another site cannot submit it on their behalf.
+	 */
+	function deviceConfirmPage(confirmation: DeviceConfirmation) {
+		const code = escapeHtml(confirmation.userCode);
+		const client = escapeHtml(confirmation.clientID);
+		return (
+			`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">` +
+			`<title>Confirm sign-in</title>` +
+			`<h1>Is this you?</h1>` +
+			`<p><strong>${client}</strong> is asking to sign in to your account.</p>` +
+			`<p>The code it is showing you should be:</p>` +
+			`<p><code style="font-size:2em;letter-spacing:.2em">${code.slice(0, 4)}-${code.slice(4)}</code></p>` +
+			`<p>If those do not match, or you did not start this on a device of your own, ` +
+			`choose Deny. Nobody can sign in as you unless you approve here.</p>` +
+			`<form method="post" action="/device/confirm">` +
+			`<input type="hidden" name="csrf" value="${escapeHtml(confirmation.csrf)}">` +
+			`<button type="submit" name="action" value="approve">Approve</button> ` +
+			`<button type="submit" name="action" value="deny">Deny</button>` +
+			`</form>`
+		);
+	}
+
+		async function getAuthorization(ctx: Context) {
 		const match = (await auth.get(ctx, 'authorization')) || ctx.get('authorization');
 		if (!match) throw new UnknownStateError();
 		return match as AuthorizationState;
@@ -786,8 +1042,15 @@ export function issuer<
 				issuer: iss,
 				authorization_endpoint: `${iss}/authorize`,
 				token_endpoint: `${iss}/token`,
+				device_authorization_endpoint: `${iss}/device/authorize`,
 				jwks_uri: `${iss}/.well-known/jwks.json`,
-				response_types_supported: ['code', 'token']
+				response_types_supported: ['code', 'token'],
+				grant_types_supported: [
+					'authorization_code',
+					'refresh_token',
+					'client_credentials',
+					DEVICE_GRANT
+				]
 			});
 		}
 	);
@@ -948,6 +1211,122 @@ export function issuer<
 				});
 			}
 
+			if (grantType === DEVICE_GRANT) {
+				const deviceCode = form.get('device_code')?.toString();
+				const clientID = form.get('client_id')?.toString();
+				if (!deviceCode)
+					return c.json(
+						{ error: 'invalid_request', error_description: 'Missing device_code' },
+						400
+					);
+				if (!clientID)
+					return c.json(
+						{ error: 'invalid_request', error_description: 'Missing client_id' },
+						400
+					);
+
+				const hash = await hashDeviceCode(deviceCode);
+				const grant = await deviceStore.byDeviceCode(hash);
+
+				// A code nobody issued and a code that has aged out are the
+				// same answer on purpose: telling the two apart would let a
+				// caller learn which random strings were once real.
+				if (!grant || grant.expires <= Date.now()) {
+					if (grant) await deviceStore.remove(hash);
+					return c.json(
+						{ error: 'expired_token', error_description: 'The device code has expired' },
+						400
+					);
+				}
+
+				// The code belongs to the program that asked for it. Without
+				// this, a code leaked to anybody at all is redeemable by
+				// anybody at all, and the client identifier the token ends up
+				// carrying is whatever the last caller claimed.
+				if (grant.clientID !== clientID) {
+					return c.json(
+						{ error: 'invalid_grant', error_description: 'That device code belongs to another client' },
+						400
+					);
+				}
+
+				// Terminal answers come before the rate limit. Slowing down a
+				// client that has already been refused just means it takes
+				// longer to find out, and it has no reason to poll again.
+				if (grant.status === 'denied') {
+					await deviceStore.remove(hash);
+					return c.json(
+						{ error: 'access_denied', error_description: 'The request was denied' },
+						400
+					);
+				}
+
+				const now = Date.now();
+				if (now - grant.lastPolled < grant.interval * 1000) {
+					// RFC 8628 §3.5: every warning widens the interval for this
+					// and every later poll, so a client that ignores the answer
+					// is not simply told the same thing again. `lastPolled` is
+					// deliberately not moved — the window is measured from the
+					// last poll that got a real answer, so a burst of impatient
+					// polls costs one wait rather than compounding into one the
+					// client can never satisfy.
+					// Capped, because the interval only ever grows and a code
+					// that lives ten minutes must stay pollable for all of it.
+					// Uncapped, enough impatience early on makes the code
+					// unusable for the rest of its life.
+					await deviceStore.recordPoll(
+						hash,
+						grant.lastPolled,
+						Math.min(grant.interval + 5, DEVICE_MAX_INTERVAL)
+					);
+					return c.json({ error: 'slow_down', error_description: 'Polling too frequently' }, 400);
+				}
+
+				if (grant.status === 'approved') {
+					// One redemption, and the store is what enforces it: taking
+					// the grant away and reading it are the same operation, so
+					// two polls arriving together cannot both be served. A
+					// device code that keeps working after it has produced
+					// tokens is a bearer token with none of a bearer token's
+					// expiry.
+					const claimed = await deviceStore.consume(hash, clientID);
+					if (!claimed?.subject) {
+						return c.json(
+							{ error: 'expired_token', error_description: 'The device code has expired' },
+							400
+						);
+					}
+
+					// Minted now rather than at approval, so the lifetime the
+					// client is told about starts when it receives them. Tokens
+					// made when the person clicked would already have been
+					// ageing for however long the next poll took, and a grant
+					// nobody ever collects would have left a usable refresh
+					// token lying in the store.
+					const tokens = await generateTokens(c, {
+						subject: claimed.subject.subject,
+						type: claimed.subject.type,
+						properties: claimed.subject.properties,
+						clientID: claimed.clientID,
+						ttl: claimed.subject.ttl
+					});
+					return c.json({
+						access_token: tokens.access,
+						refresh_token: tokens.refresh,
+						expires_in: tokens.expiresIn
+					});
+				}
+
+				await deviceStore.recordPoll(hash, now, grant.interval);
+				return c.json(
+					{
+						error: 'authorization_pending',
+						error_description: 'The user has not finished signing in'
+					},
+					400
+				);
+			}
+
 			if (grantType === 'client_credentials') {
 				const provider = form.get('provider');
 				if (!provider) return c.json({ error: 'missing `provider` form value' }, 400);
@@ -995,7 +1374,169 @@ export function issuer<
 		}
 	);
 
-	app.get('/authorize', async (c) => {
+	// The machine half of RFC 8628. A program with no browser asks for a code
+	// here, shows it to whoever is sitting in front of it, and polls `/token`
+	// until somebody has answered for it on a device that does have one.
+	app.post(
+		'/device/authorize',
+		cors({
+			origin: '*',
+			allowHeaders: ['*'],
+			allowMethods: ['POST'],
+			credentials: false
+		}),
+		async (c) => {
+			const form = await c.req.formData().catch(() => null);
+			const clientID = form?.get('client_id')?.toString();
+			if (!clientID)
+				return c.json({ error: 'invalid_request', error_description: 'Missing client_id' }, 400);
+			if (input.allowDeviceClient && !(await input.allowDeviceClient(clientID, c.req.raw)))
+				return c.json(
+					{ error: 'invalid_client', error_description: 'Unknown client_id' },
+					400
+				);
+
+			// Not `randomUUID`: a device code is the credential the tokens are
+			// handed to, so it gets the same treatment as one — full-width
+			// randomness, and only its hash is written down.
+			const deviceCode = generateUnbiasedString(CSRF_ALPHABET, 43);
+			const deviceCodeHash = await hashDeviceCode(deviceCode);
+
+			// Retried rather than trusted to be unique: the alphabet is small
+			// on purpose, so a collision is likelier than it would be for the
+			// device code, and a collision here hands one person's sign-in to
+			// somebody else's machine.
+			let userCode = '';
+			for (let attempt = 0; attempt < 5; attempt++) {
+				const candidate = generateUnbiasedString(USER_CODE_ALPHABET, USER_CODE_LENGTH);
+				if (!(await deviceStore.byUserCode(candidate))) {
+					userCode = candidate;
+					break;
+				}
+			}
+			if (!userCode)
+				return c.json(
+					{ error: 'server_error', error_description: 'Could not allocate a user code' },
+					500
+				);
+
+			await deviceStore.create({
+				deviceCodeHash,
+				userCode,
+				clientID,
+				status: 'pending',
+				interval: deviceInterval,
+				lastPolled: 0,
+				expires: Date.now() + ttlDevice * 1000
+			});
+
+			const iss = issuer(c);
+			return c.json({
+				device_code: deviceCode,
+				user_code: userCode,
+				verification_uri: `${iss}/device`,
+				verification_uri_complete: `${iss}/device?user_code=${userCode}`,
+				expires_in: ttlDevice,
+				interval: deviceInterval
+			});
+		}
+	);
+
+	// The browser half. Entering the code puts the flow into the same
+	// authorization state a redirect-based client would have set, so the
+	// providers below are reached by exactly one path either way.
+	//
+	// Reaching this page authorizes nothing. It starts a sign-in, and the
+	// sign-in ends at a confirmation page — see `/device/confirm`.
+	app.get('/device', async (c) => {
+		const raw = c.req.query('user_code');
+		if (!raw) {
+			return c.html(
+				`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">` +
+					`<title>Sign in to a device</title>` +
+					`<form method="get" action="/device">` +
+					`<label for="user_code">Enter the code shown in the app</label>` +
+					`<input id="user_code" name="user_code" autocomplete="off" autofocus>` +
+					`<button type="submit">Continue</button>` +
+					`</form>`
+			);
+		}
+
+		if (!(await guessesLeft(c.req.raw))) {
+			return c.text('Too many codes tried. Wait a while and start again from the app.', 429);
+		}
+
+		const found = await deviceStore.byUserCode(canonicalUserCode(raw));
+		if (!found || found.status !== 'pending' || found.expires <= Date.now()) {
+			// Charged only when the code was wrong. Getting one right costs
+			// nothing, so a person mistyping once and then succeeding is not
+			// walking towards a lockout.
+			await chargeGuess(c.req.raw);
+			return c.text('That code is not valid any more. Ask the app for a new one.', 400);
+		}
+
+		const authorization: AuthorizationState = {
+			response_type: 'device_code',
+			client_id: found.clientID,
+			device_code: found.deviceCodeHash
+		} as AuthorizationState;
+		await auth.set(c, 'authorization', ttlDevice, authorization);
+
+		const provider = c.req.query('provider');
+		if (provider) return c.redirect(`/${provider}/authorize`);
+		const providers = Object.keys(input.providers);
+		if (providers.length === 1) return c.redirect(`/${providers[0]}/authorize`);
+		return auth.forward(
+			c,
+			await select()(
+				Object.fromEntries(
+					Object.entries(input.providers).map(([key, value]) => [key, value.type])
+				),
+				c.req.raw
+			)
+		);
+	});
+
+	// The step that actually authorizes, and the reason there is one.
+	//
+	// Anybody at all can ask for a device code and be handed a link with the
+	// user code already filled in. If following that link and signing in were
+	// enough, then sending it to somebody would be enough: they would sign in
+	// to what looks like an ordinary prompt, and whoever kept the device code
+	// would poll and collect their tokens. What stops that is not the sign-in,
+	// which the victim performs perfectly well — it is being shown the code and
+	// the program asking, and having to say yes to *that*.
+	//
+	// A POST, because it changes something. Carrying a value from the cookie,
+	// so another site cannot post it on the person's behalf.
+	app.post('/device/confirm', async (c) => {
+		const confirmation = (await auth.get(c, 'device_confirm')) as DeviceConfirmation | undefined;
+		if (!confirmation) {
+			return c.text('That sign-in request has expired. Start it again from the app.', 400);
+		}
+		await auth.unset(c, 'device_confirm');
+
+		const form = await c.req.formData().catch(() => null);
+		const csrf = form?.get('csrf')?.toString() ?? '';
+		if (!timingSafeCompare(confirmation.csrf, csrf)) {
+			return c.text('That form was not the one we sent. Start again from the app.', 400);
+		}
+
+		if (form?.get('action')?.toString() === 'deny') {
+			await deviceStore.deny(confirmation.deviceCode);
+			return c.text('That sign-in request was refused. You can close this page.');
+		}
+
+		// The store decides, not this code. If a refusal got here first the
+		// answer is already given and an approval must not overwrite it.
+		const approved = await deviceStore.approve(confirmation.deviceCode, confirmation.subject);
+		if (!approved) {
+			return c.text('That sign-in request has already been answered.', 400);
+		}
+		return c.text('You are signed in. You can close this page and go back to the app.');
+	});
+
+		app.get('/authorize', async (c) => {
 		const provider = c.req.query('provider');
 		const response_type = c.req.query('response_type');
 		const redirect_uri = c.req.query('redirect_uri');
@@ -1125,6 +1666,13 @@ export function issuer<
 			return auth.forward(c, await error(err, c.req.raw));
 		}
 		const authorization = await getAuthorization(c);
+		// A device grant has no redirect to carry the error back on, so it is
+		// said here instead. Without this the reporting path throws on a URL
+		// built from `undefined` and the real failure is never printed.
+		if (!authorization.redirect_uri) {
+			const oauth = err instanceof OauthError ? err : new OauthError('server_error', err.message);
+			return c.text(oauth.description || oauth.error, 400);
+		}
 		const url = new URL(authorization.redirect_uri);
 		const oauth = err instanceof OauthError ? err : new OauthError('server_error', err.message);
 		url.searchParams.set('error', oauth.error);

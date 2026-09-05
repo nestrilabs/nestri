@@ -7,6 +7,10 @@
 	"type": "module",
 	"sideEffects": false,
 	"exports": {
+		"./ui/code": {
+			"types": "./src/ui/code.tsx",
+			"import": "./src/ui/code.tsx"
+		},
 		"./*": {
 			"types": "./src/*.ts",
 			"import": "./src/*.ts"
