@@ -221,3 +221,73 @@ describe('Identity.linkSteam', () => {
 		expect(resolved.userID).toBe(legacy.userID);
 	});
 });
+
+/**
+ * The same call, several times at once, against a real database.
+ *
+ * Every one of these holds a rule that is enforced across two statements — a
+ * lookup and then a write — which means the rule is only as good as whatever
+ * stops the two from interleaving. Run one at a time they all pass whether or
+ * not that protection exists, which is exactly why they are written this way.
+ */
+describe('the same thing happening twice at once', () => {
+	beforeEach(cleanup);
+
+	test('the cap holds when the links arrive together', async () => {
+		const { userID } = await Identity.fromVerifiedEmail({ email: email(8) });
+		track(userID);
+
+		const wanted = Identity.MAX_STEAM_ACCOUNTS + 2;
+		const results = await Promise.allSettled(
+			Array.from({ length: wanted }, (_, i) =>
+				Identity.linkSteam({ userId: userID, steamId: steamID(60 + i) })
+			)
+		);
+
+		expect(await Identity.listSteam(userID)).toHaveLength(Identity.MAX_STEAM_ACCOUNTS);
+		expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(
+			Identity.MAX_STEAM_ACCOUNTS
+		);
+		for (const rejected of results.filter((r) => r.status === 'rejected')) {
+			expect((rejected as PromiseRejectedResult).reason.code).toBe('invalid_state');
+		}
+	});
+
+	test('several sign-ins for one new address make one account', async () => {
+		const address = email(9);
+
+		const results = await Promise.all([
+			Identity.fromVerifiedEmail({ email: address }),
+			Identity.fromVerifiedEmail({ email: address }),
+			Identity.fromVerifiedEmail({ email: address })
+		]);
+		results.forEach((r) => track(r.userID));
+
+		expect(new Set(results.map((r) => r.userID)).size).toBe(1);
+		expect(results.filter((r) => r.created)).toHaveLength(1);
+
+		const rows = await sql`
+			select count(*)::int as n from "user"
+			where email = ${address} and time_deleted is null
+		`;
+		expect(rows[0]!.n).toBe(1);
+	});
+
+	test('two accounts claiming one address get an answer rather than a driver error', async () => {
+		const first = await legacySteamUser(70);
+		const second = await legacySteamUser(71);
+		const address = email(10);
+
+		const results = await Promise.allSettled([
+			Identity.claimWithEmail({ userId: first.userID, email: address }),
+			Identity.claimWithEmail({ userId: second.userID, email: address })
+		]);
+
+		const rejected = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+		expect(rejected).toHaveLength(1);
+		// The point of the assertion: a sentence a screen can render, and not
+		// whatever text the driver puts on a constraint violation.
+		expect(rejected[0]!.reason.type).toBe('already_exists');
+		expect(rejected[0]!.reason.message).toMatch(/another account/);
+	});
+});

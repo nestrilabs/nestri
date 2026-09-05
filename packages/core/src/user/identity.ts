@@ -6,10 +6,37 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
 import { User } from './index.js';
+import { UserTable } from './user.sql.js';
 import { LinkedAccount } from './linked-account.js';
 import { LinkedAccountTable } from './linked-account.sql.js';
 
 const STEAM_ID_RE = /^\d{17}$/;
+
+/** The partial unique index on a live account's address, named by the migration. */
+const EMAIL_UNIQUE = 'user_email_unique';
+
+/**
+ * Whether a failure is the database refusing a duplicate.
+ *
+ * Every read-then-write below has a window between the read and the write, and
+ * the index is what actually closes it. Recognising the refusal is how the
+ * loser of a race turns a raw driver error into the answer it was asking for —
+ * so the constraint is the mechanism and this is how the code hears from it.
+ */
+function isUniqueViolation(err: unknown, constraint: string): boolean {
+	// Walked rather than read off the top, because the query builder wraps what
+	// the driver threw: the outer error carries the SQL and the parameters, and
+	// the code and the constraint name are on the cause underneath it.
+	for (let e: unknown = err, depth = 0; e && depth < 8; depth++) {
+		if (typeof e !== 'object') break;
+		const candidate = e as { code?: unknown; constraint_name?: unknown; cause?: unknown };
+		if (String(candidate.code) === '23505' && candidate.constraint_name === constraint) {
+			return true;
+		}
+		e = candidate.cause;
+	}
+	return false;
+}
 
 /**
  * Email is the root of an account, so two spellings of one address must not be
@@ -51,27 +78,48 @@ export namespace Identity {
 		z.object({ email: Email, name: z.string().optional() }),
 		async (input) => {
 			const email = input.email;
-			return Database.transaction(async () => {
-				const existing = await User.fromEmail(email);
-				if (existing) {
-					// An address that was attached but never confirmed is
-					// confirmed now: getting here means a code was redeemed.
-					if (!existing.emailVerified) {
-						await User.setEmail({ id: existing.id, email, emailVerified: true });
-					}
-					return { userID: existing.id, created: false };
-				}
 
-				const userID = Identifier.ascending('user');
-				await User.create({
-					id: userID,
-					name: input.name?.trim() || email.split('@')[0]!,
-					email,
-					emailVerified: true,
-					image: null
+			async function attempt() {
+				return Database.transaction(async () => {
+					const existing = await User.fromEmail(email);
+					if (existing) {
+						// An address that was attached but never confirmed is
+						// confirmed now: getting here means a code was redeemed.
+						if (!existing.emailVerified) {
+							await User.setEmail({ id: existing.id, email, emailVerified: true });
+						}
+						return { userID: existing.id, created: false };
+					}
+
+					const userID = Identifier.ascending('user');
+					await User.create({
+						id: userID,
+						name: input.name?.trim() || email.split('@')[0]!,
+						email,
+						emailVerified: true,
+						image: null
+					});
+					return { userID, created: true };
 				});
-				return { userID, created: true };
-			});
+			}
+
+			try {
+				return await attempt();
+			} catch (err) {
+				if (!isUniqueViolation(err, EMAIL_UNIQUE)) throw err;
+
+				// Somebody else finished the same sign-in first.
+				//
+				// Two people redeeming a code for one address is one person
+				// with two tabs, and the answer they both want is the account
+				// that now exists. The lookup and the insert cannot be made one
+				// statement here — the row is built from an id this process
+				// generates — so the index arbitrates and the loser reads back
+				// what the winner wrote. Retried once and not in a loop: a
+				// second refusal means the row is gone again, which is a
+				// deletion racing a sign-in and not something to spin on.
+				return await attempt();
+			}
 		}
 	);
 
@@ -86,29 +134,43 @@ export namespace Identity {
 		z.object({ userId: z.string(), email: Email }),
 		async (input) => {
 			const email = input.email;
-			return Database.transaction(async () => {
-				const holder = await User.fromEmail(email);
-				if (holder && holder.id !== input.userId) {
-					throw new VisibleError(
-						'already_exists',
-						ErrorCodes.Validation.ALREADY_EXISTS,
-						'That email address already belongs to another account'
-					);
-				}
-				const updated = await User.setEmail({
-					id: input.userId,
-					email,
-					emailVerified: true
+			try {
+				return await Database.transaction(async () => {
+					const holder = await User.fromEmail(email);
+					if (holder && holder.id !== input.userId) {
+						throw new VisibleError(
+							'already_exists',
+							ErrorCodes.Validation.ALREADY_EXISTS,
+							'That email address already belongs to another account'
+						);
+					}
+					const updated = await User.setEmail({
+						id: input.userId,
+						email,
+						emailVerified: true
+					});
+					if (!updated) {
+						throw new VisibleError(
+							'not_found',
+							ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+							'No such account'
+						);
+					}
+					return updated;
 				});
-				if (!updated) {
-					throw new VisibleError(
-						'not_found',
-						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
-						'No such account'
-					);
-				}
-				return updated;
-			});
+			} catch (err) {
+				// The check above and the update below are two statements, so
+				// two accounts claiming one address can both find it free. The
+				// index refuses the second, and the person deserves the same
+				// sentence they would have got a moment earlier rather than a
+				// driver's error text.
+				if (!isUniqueViolation(err, EMAIL_UNIQUE)) throw err;
+				throw new VisibleError(
+					'already_exists',
+					ErrorCodes.Validation.ALREADY_EXISTS,
+					'That email address already belongs to another account'
+				);
+			}
 		}
 	);
 
@@ -143,8 +205,8 @@ export namespace Identity {
 	 * Hang a Steam account off a user, up to {@link MAX_STEAM_ACCOUNTS}.
 	 *
 	 * The count and the insert are one transaction because they are one
-	 * decision: read the four, then write the fifth, and two concurrent calls
-	 * each see four.
+	 * decision, and the transaction takes the account's own row first so that
+	 * two callers cannot each count four and each write a fifth.
 	 */
 	export const linkSteam = fn(
 		z.object({
@@ -154,6 +216,30 @@ export namespace Identity {
 		}),
 		async (input) => {
 			return Database.transaction(async (tx) => {
+				// Take the account's own row first, and hold it.
+				//
+				// The cap is a count, and a count only means something if it
+				// is taken while nothing can change it. Locking the
+				// connections instead locks nothing at all when there are
+				// none: there are no gap locks under read committed, so
+				// `for update` over an empty result set is an empty set of
+				// locks, and several simultaneous first-time links all read
+				// zero and all insert. The account's own row is the one thing
+				// every caller for it is guaranteed to contend on, so it is
+				// what serializes them.
+				const [owner] = await tx
+					.select({ id: UserTable.id })
+					.from(UserTable)
+					.where(and(eq(UserTable.id, input.userId), isNull(UserTable.timeDeleted)))
+					.for('update');
+				if (!owner) {
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'No such account'
+					);
+				}
+
 				const existing = await LinkedAccount.findByProvider({
 					provider: 'steam',
 					providerAccountId: input.steamId
@@ -172,8 +258,8 @@ export namespace Identity {
 					return existing.id;
 				}
 
-				// `for update` on the rows already there, so a second caller
-				// holding at the cap waits rather than counting alongside.
+				// Counted under the lock taken above, so what is counted is
+				// what is still there at the insert.
 				const held = await tx
 					.select({ id: LinkedAccountTable.id })
 					.from(LinkedAccountTable)
@@ -183,8 +269,7 @@ export namespace Identity {
 							eq(LinkedAccountTable.provider, 'steam'),
 							isNull(LinkedAccountTable.timeDeleted)
 						)
-					)
-					.for('update');
+					);
 
 				if (held.length >= MAX_STEAM_ACCOUNTS) {
 					throw new VisibleError(
