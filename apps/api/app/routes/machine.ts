@@ -1,10 +1,11 @@
 import { Actor } from '@nestri/core/actor';
+import { Box } from '@nestri/core/box/index';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
-import { Member } from '@nestri/core/team/member';
 import { Team } from '@nestri/core/team/index';
+import { Member } from '@nestri/core/team/member';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { z } from 'zod';
@@ -258,6 +259,82 @@ export namespace MachineApi {
 						intervalSeconds: Machine.HEARTBEAT_SECONDS
 					}
 				});
+			}
+		)
+		.post(
+			'/report',
+			machineOnly,
+			describeRoute({
+				tags: ['Machine'],
+				summary: 'Say what the host is running',
+				description:
+					'Records one full snapshot of the boxes on the calling host. Separate from the beat because the two have different loss tolerance: a dropped report is corrected by the next one, where a dropped beat moves a host towards offline. Send one when a box changes lifecycle, and send one anyway every so often so a single lost snapshot cannot leave this record permanently wrong. Never send a delta — a retrying agent cannot promise ordering, and out-of-order deltas describe a host that never existed.',
+				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Box.ReportOutcome) } },
+						description: 'The snapshot was recorded'
+					},
+					400: ErrorResponses[400],
+					403: ErrorResponses[403],
+					404: ErrorResponses[404]
+				}
+			}),
+			validator(
+				'json',
+				z
+					.object({
+						agentPid: z.number().int().meta({
+							description: 'The reporting agent’s own process id, in its own namespace'
+						}),
+						boxesKnown: z.number().int().meta({ description: 'How many boxes the host holds' }),
+						boxesRunning: z.number().int().meta({
+							description: 'How many of them are running'
+						}),
+						boxes: z.array(Box.Reported).meta({
+							description: 'Every box the host holds. A full snapshot, never a delta'
+						})
+					})
+					// Strict, so a field this cannot act on is a validation error a
+					// host operator sees rather than one quietly dropped. Capacity
+					// belongs here eventually and it has no honest fields yet;
+					// refusing the ones nobody measures is how it stays that way.
+					.strict()
+			),
+			async (c) => {
+				const machine = await Machine.fromID(Actor.machineID);
+				if (!machine) {
+					// Same answer as the beat gives, for the same reason: the
+					// credentials authenticated but the row is gone, and a host
+					// must re-register rather than keep reporting into nothing.
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'This machine no longer exists'
+					);
+				}
+
+				const { boxes } = c.req.valid('json');
+				const outcome = await Box.applyHostReport({ machineId: Actor.machineID, boxes });
+
+				// `agentPid`, `boxesKnown` and `boxesRunning` are read and not
+				// stored. They are a summary of the list that follows them, and a
+				// stored copy is a second answer to a question the list already
+				// answers — one that goes stale the first time the two disagree.
+				// They stay on the wire because a host that cannot enumerate its
+				// boxes can still say how many it has.
+				if (outcome.unknown.length > 0) {
+					// Loudly, per the contract this endpoint is built to: a host
+					// holding boxes nobody placed there is a bug to surface, not a
+					// state to reconcile quietly. Nothing is created for them.
+					// eslint-disable-next-line no-console
+					console.warn(
+						'host report named boxes that are not placed here:',
+						Actor.machineID,
+						outcome.unknown.join(', ')
+					);
+				}
+
+				return c.json({ data: outcome });
 			}
 		)
 		.get(

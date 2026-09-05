@@ -139,3 +139,137 @@ describe('Box', () => {
 		expect((await Box.listByMachine(machineB)).map((b) => b.label)).toEqual(['b1']);
 	});
 });
+
+describe('Box.applyHostReport', () => {
+	async function placed(label: string, count: number) {
+		const owner = await newOwner(label);
+		const machineId = await Fixtures.machine(owner);
+		const boxes = [];
+		for (let i = 0; i < count; i++) {
+			boxes.push(
+				await Box.create({
+					id: Identifier.ascending('box'),
+					userId: owner.userId,
+					machineId,
+					label: `${label}-${i}`,
+					tier: 'sm'
+				})
+			);
+		}
+		return { owner, machineId, boxes };
+	}
+
+	test('a snapshot moves the boxes it names', async () => {
+		const { machineId, boxes } = await placed('report-moves', 2);
+
+		const outcome = await Box.applyHostReport({
+			machineId,
+			boxes: [
+				{ boxId: boxes[0]!.id, tier: 'sm', state: 'running', pid: 1234, uptimeS: 45 },
+				{ boxId: boxes[1]!.id, tier: 'sm', state: 'stopped', reason: 'guest exited 0', clean: true }
+			]
+		});
+
+		expect(outcome.recorded).toBe(2);
+		expect(outcome.unknown).toEqual([]);
+		expect(outcome.markedStopped).toEqual([]);
+
+		expect((await Box.fromID(boxes[0]!.id))!.state).toBe('running');
+		const stopped = (await Box.fromID(boxes[1]!.id))!;
+		expect(stopped.state).toBe('stopped');
+		expect(stopped.stopReason).toBe('guest exited 0');
+		expect(stopped.stopClean).toBe(true);
+	});
+
+	test('pid and uptime are accepted and not stored', async () => {
+		const { machineId, boxes } = await placed('report-drops', 1);
+
+		await Box.applyHostReport({
+			machineId,
+			boxes: [{ boxId: boxes[0]!.id, tier: 'sm', state: 'running', pid: 4711, uptimeS: 900 }]
+		});
+
+		// The columns do not exist, so what this pins is that the row is still
+		// readable and carries nothing invented in the two nullable columns it
+		// does have.
+		const row = (await Box.fromID(boxes[0]!.id))!;
+		expect(row.state).toBe('running');
+		expect(row.stopReason).toBeNull();
+		expect(row.stopClean).toBeNull();
+	});
+
+	test('a running box the snapshot omits is stopped, and says why', async () => {
+		const { machineId, boxes } = await placed('report-omits', 2);
+		await Box.setState({ id: boxes[0]!.id, state: 'running' });
+		await Box.setState({ id: boxes[1]!.id, state: 'running' });
+
+		const outcome = await Box.applyHostReport({
+			machineId,
+			boxes: [{ boxId: boxes[0]!.id, tier: 'sm', state: 'running', uptimeS: 5 }]
+		});
+
+		expect(outcome.markedStopped).toEqual([boxes[1]!.id]);
+		const gone = (await Box.fromID(boxes[1]!.id))!;
+		expect(gone.state).toBe('stopped');
+		expect(gone.stopReason).toBe(Box.OMITTED_FROM_REPORT);
+		expect(gone.stopClean).toBe(false);
+	});
+
+	test('a created box the snapshot omits is left alone', async () => {
+		// The ordinary path, not a divergence: a person creates a box here before
+		// its host has been told anything about it.
+		const { machineId, boxes } = await placed('report-created', 1);
+
+		const outcome = await Box.applyHostReport({ machineId, boxes: [] });
+
+		expect(outcome.markedStopped).toEqual([]);
+		expect((await Box.fromID(boxes[0]!.id))!.state).toBe('created');
+	});
+
+	test('an empty snapshot from a host holding nothing stops only what was running', async () => {
+		const { machineId, boxes } = await placed('report-empty', 2);
+		await Box.setState({ id: boxes[0]!.id, state: 'running' });
+
+		const outcome = await Box.applyHostReport({ machineId, boxes: [] });
+
+		expect(outcome.recorded).toBe(0);
+		expect(outcome.markedStopped).toEqual([boxes[0]!.id]);
+		expect((await Box.fromID(boxes[1]!.id))!.state).toBe('created');
+	});
+
+	test('a box the snapshot names that is not placed here is never created', async () => {
+		const { machineId } = await placed('report-unknown', 0);
+		const invented = Identifier.ascending('box');
+
+		const outcome = await Box.applyHostReport({
+			machineId,
+			boxes: [{ boxId: invented, tier: 'lg', state: 'running', uptimeS: 1 }]
+		});
+
+		expect(outcome.unknown).toEqual([invented]);
+		expect(outcome.recorded).toBe(0);
+		expect(await Box.fromID(invented)).toBeNull();
+	});
+
+	test('a snapshot cannot move a box placed on another host', async () => {
+		const mine = await placed('report-mine', 1);
+		const theirs = await placed('report-theirs', 1);
+		await Box.setState({ id: theirs.boxes[0]!.id, state: 'running' });
+
+		const outcome = await Box.applyHostReport({
+			machineId: mine.machineId,
+			boxes: [
+				{
+					boxId: theirs.boxes[0]!.id,
+					tier: 'sm',
+					state: 'stopped',
+					reason: 'mine now',
+					clean: false
+				}
+			]
+		});
+
+		expect(outcome.unknown).toEqual([theirs.boxes[0]!.id]);
+		expect((await Box.fromID(theirs.boxes[0]!.id))!.state).toBe('running');
+	});
+});

@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Database } from '../db/index.js';
@@ -189,9 +189,156 @@ export namespace Box {
 
 	export const remove = fn(Info.shape.id, async (id) => {
 		await Database.use(async (tx) => {
-			await tx.update(BoxTable).set({ timeDeleted: sql`now()` }).where(eq(BoxTable.id, id));
+			await tx
+				.update(BoxTable)
+				.set({ timeDeleted: sql`now()` })
+				.where(eq(BoxTable.id, id));
 		});
 	});
+
+	/**
+	 * What a host says about one box, in the shape the wire carries.
+	 *
+	 * Flat rather than nested: the agent's own type is an internally-tagged
+	 * enum, and flattening it here is what lets one box be one object on both
+	 * sides. `pid` and `uptimeS` are accepted and deliberately not stored —
+	 * a pid is a number in another machine's namespace and means nothing here,
+	 * and uptime is derivable from the run's `timeStarted`, which is already
+	 * kept and already trustworthy. Storing a plausible number instead of a
+	 * measured one is how a scheduler learns to trust a field nobody produced.
+	 */
+	export const Reported = z.discriminatedUnion('state', [
+		z.object({
+			boxId: z.string(),
+			tier: z.enum(BoxTier.enumValues),
+			state: z.literal('created')
+		}),
+		z.object({
+			boxId: z.string(),
+			tier: z.enum(BoxTier.enumValues),
+			state: z.literal('running'),
+			pid: z.number().int().optional(),
+			uptimeS: z.number().int()
+		}),
+		z.object({
+			boxId: z.string(),
+			tier: z.enum(BoxTier.enumValues),
+			state: z.literal('stopped'),
+			reason: z.string(),
+			clean: z.boolean()
+		})
+	]);
+
+	export type Reported = z.infer<typeof Reported>;
+
+	/** What a snapshot changed, and what it disagreed with us about. */
+	export const ReportOutcome = z.object({
+		recorded: z.number().meta({ description: 'Boxes in the snapshot that we know and updated' }),
+		unknown: z.array(z.string()).meta({
+			description: 'Boxes the host is holding that are not placed here. Recorded, never created'
+		}),
+		markedStopped: z.array(z.string()).meta({
+			description: 'Boxes placed here that the snapshot did not mention, and are now stopped'
+		})
+	});
+
+	export type ReportOutcome = z.infer<typeof ReportOutcome>;
+
+	/**
+	 * Written on a box its host did not mention.
+	 *
+	 * A sentence rather than a code because it is read by whoever is looking at
+	 * a box that stopped for no reason they can see, and "the host stopped
+	 * mentioning it" is the fact they need.
+	 */
+	export const OMITTED_FROM_REPORT = 'not in its host’s last report';
+
+	/**
+	 * Record one full snapshot of what a host is running.
+	 *
+	 * Scoped to the calling machine in the `where` clause and not by trusting
+	 * the ids in the body: a machine credential is a long-lived secret on
+	 * hardware in somebody's living room, and a snapshot naming another host's
+	 * boxes must move nothing.
+	 *
+	 * Three rules, and the second two are why this is one function rather than
+	 * a loop of `setState` in a route:
+	 *
+	 * - A box we know, that the snapshot names, takes the reported state.
+	 * - A box we know, that the snapshot omits, is stopped — absence inside a
+	 *   received snapshot is information. (Silence from the host is not, and is
+	 *   not this function's input at all: no report means this is never called.)
+	 * - A box the snapshot names that is not placed here is **not created**. An
+	 *   agent that can conjure a row is an agent that can mint owned resources,
+	 *   and a box belongs to somebody this snapshot cannot name. It is returned
+	 *   as a divergence to be surfaced loudly instead.
+	 *
+	 * One transaction, because a snapshot is one observation: applying half of
+	 * it leaves a state the host was never in.
+	 */
+	export const applyHostReport = fn(
+		z.object({ machineId: Info.shape.machineId, boxes: z.array(Reported) }),
+		async (input): Promise<ReportOutcome> => {
+			return Database.transaction(async (tx) => {
+				const placed = await tx
+					.select({ id: BoxTable.id })
+					.from(BoxTable)
+					.where(and(eq(BoxTable.machineId, input.machineId), isNull(BoxTable.timeDeleted)))
+					.then((rows) => new Set(rows.map((row) => row.id)));
+
+				const seen: string[] = [];
+				const unknown: string[] = [];
+				for (const box of input.boxes) {
+					if (!placed.has(box.boxId)) {
+						unknown.push(box.boxId);
+						continue;
+					}
+					seen.push(box.boxId);
+					const stopped = box.state === 'stopped';
+					await tx
+						.update(BoxTable)
+						.set({
+							state: box.state,
+							stopReason: stopped ? box.reason : null,
+							stopClean: stopped ? box.clean : null
+						})
+						.where(and(eq(BoxTable.id, box.boxId), eq(BoxTable.machineId, input.machineId)));
+				}
+
+				// Everything placed here that the snapshot did not mention, and
+				// that we believed was running.
+				//
+				// **`running` and not "anything not stopped"**, which is narrower
+				// than it first looks it should be. A box is created here, by a
+				// person, before its host has ever been told about it — so between
+				// creation and the job that starts it there is a `created` box the
+				// host correctly does not mention, and stopping it on that basis
+				// would break the ordinary path rather than catch a divergence. A
+				// box we were told was running and that has since vanished from its
+				// host's own inventory is the real disagreement, and it is the one
+				// that leaves a person looking at a box nothing is running.
+				//
+				// `notInArray` on an empty list matches nothing in SQL rather than
+				// everything, so the empty snapshot — a host that has just come up
+				// holding no boxes — is spelt out instead of relying on that.
+				const missing = await tx
+					.update(BoxTable)
+					.set({ state: 'stopped', stopReason: OMITTED_FROM_REPORT, stopClean: false })
+					.where(
+						and(
+							eq(BoxTable.machineId, input.machineId),
+							isNull(BoxTable.timeDeleted),
+							eq(BoxTable.state, 'running'),
+							seen.length > 0 ? notInArray(BoxTable.id, seen) : undefined
+						)
+					)
+					.returning({ id: BoxTable.id })
+					.then((rows) => rows.map((row) => row.id));
+
+				return { recorded: seen.length, unknown, markedStopped: missing };
+			});
+		}
+	);
 
 	export function serialize(input: typeof BoxTable.$inferSelect): z.infer<typeof Info> {
 		return {
