@@ -3,11 +3,17 @@ import postgres from 'postgres';
 /**
  * Fail-closed test database connection.
  *
- * Tests must never silently fall back to an ad-hoc localhost database, so
- * this throws unless an explicit `TEST_DATABASE_URL` is set. Use an isolated
- * database for tests, e.g.:
+ * Tests must never silently fall back to an ad-hoc localhost database, so this
+ * throws unless an explicit `TEST_DATABASE_URL` is set. Use a database you do
+ * not mind losing, migrated fresh:
  *
  *   TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/nestri
+ *
+ * **The same database `DATABASE_URL` names, not a second one.** Route tests
+ * reach the database through the app, which reads `DATABASE_URL`; core tests
+ * reach it through here. Two different values put the fixtures in one database
+ * and the assertions in the other, and the suite then fails in neither half's
+ * own code with nothing in the output naming the cause.
  */
 export function testDb() {
 	const url = process.env.TEST_DATABASE_URL;

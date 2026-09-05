@@ -220,7 +220,6 @@ import {
 	StorageRefreshStore
 } from './refresh.js';
 import {
-	type DeviceGrant,
 	type DeviceGrantSubject,
 	type DeviceStore,
 	hashDeviceCode,
