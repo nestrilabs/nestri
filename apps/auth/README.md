@@ -1,7 +1,8 @@
 # apps/auth
 
-The authentication worker for Nestri — a Cloudflare Worker built on
-[`@nestri/auth`](../../packages/auth/README.md) (OpenAuth-style issuer).
+The authentication service for Nestri, built on
+[`@nestri/auth`](../../packages/auth/README.md) (OpenAuth-style issuer). One
+handler, run either as a Cloudflare Worker or as an ordinary HTTP server.
 
 ## What it does
 
@@ -26,17 +27,28 @@ Hosts the OAuth issuer and the sign-in UI:
 - Authorization codes, refresh tokens and device codes are stored as hashes. Each is a bearer
   credential, so what is kept is enough to recognise one and not enough to present it.
 - JWT subjects are defined in `@nestri/core/auth/subjects`.
-- The API worker verifies tokens against this issuer through `AUTH_ISSUER_URL`.
+- The API verifies tokens against this issuer through `AUTH_ISSUER_URL`, which must be this
+  service's **public** URL: a token carries the address it was minted through and the check is
+  literal.
 
 ## Structure
 
 ```text
-src/index.ts      # Worker entrypoint: issuer config, stores, success callback
+src/index.ts      # The handler: issuer config, stores, success callback
+src/server.ts     # The same handler behind a listening socket
 src/email.ts      # Verification code delivery
-test/             # Worker tests
+wrangler.jsonc    # Worker configuration, one environment per stage
+Dockerfile        # The container, built from the repository root
+test/
 ```
 
 ## Running
 
-Deployed through Alchemy (`apps/auth` worker in `alchemy.run.ts` at the repo root). Its only
-stateful binding is `HYPERDRIVE` (Postgres), alongside the mail settings.
+```sh
+bun run dev      # under the Workers runtime, on :1337
+bun run serve    # as a plain process, on $PORT (default 1337)
+```
+
+Its only stateful dependency is Postgres — as a `HYPERDRIVE` binding on Workers, or as
+`DATABASE_URL` anywhere else — alongside the mail settings. Full list and deployment steps:
+[`docs/deploy.md`](../../docs/deploy.md).

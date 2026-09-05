@@ -1,0 +1,29 @@
+# The guest rootfs build's context.
+#
+# A `<Dockerfile>.dockerignore` *replaces* the repository-wide `.dockerignore`
+# rather than adding to it, so the first block below is that file repeated. The
+# second is what only this build excludes.
+#
+# This build's context is the repository root (see `Makefile`), and it COPYs
+# the workspace manifests plus the Rust members and nothing else. The
+# TypeScript half is therefore dead weight in the context — a few megabytes
+# sent to the daemon versus the whole tree.
+.git
+node_modules
+target
+build/output
+.env
+.env.*
+.wrangler
+dist
+.output
+
+docs
+apps/api
+apps/auth
+packages
+*.md
+deno.lock
+bun.lock
+.zed
+.github

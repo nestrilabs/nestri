@@ -16,8 +16,18 @@ import { LinkedAccount } from '@nestri/core/user/linked-account';
 
 import { sendVerificationCode } from './email.js';
 
+/**
+ * Everything this issuer is handed, from a binding or from the environment.
+ *
+ * The database arrives one of two ways and neither is a special case:
+ * `HYPERDRIVE` carries a connection string on a platform that pools
+ * connections for us, `DATABASE_URL` says the same thing where nothing does.
+ * Both are optional here so that a deployment is free to supply either, and
+ * `@nestri/core`'s `Env` resolves the pair into one.
+ */
 type Env = {
-	HYPERDRIVE: Hyperdrive;
+	HYPERDRIVE?: Hyperdrive;
+	DATABASE_URL?: string;
 	EMAIL_SEND_URL?: string;
 	EMAIL_API_KEY?: string;
 	EMAIL_FROM?: string;
@@ -59,7 +69,7 @@ async function firstSteamLink(userID: string): Promise<string> {
 }
 
 export default {
-	async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+	async fetch(request: Request, env: Env, ctx?: ExecutionContext) {
 		Env.init(env as unknown as Record<string, unknown>);
 		const inner = issuer({
 			subjects,

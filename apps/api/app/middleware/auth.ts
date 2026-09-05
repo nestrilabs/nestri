@@ -9,30 +9,55 @@ import { Member } from '@nestri/core/team/member';
 import type { MiddlewareHandler } from 'hono';
 
 /**
- * Reaches the auth worker over its service binding.
+ * Reaches the issuer, over a binding where the platform offers one.
  *
- * The origin has to survive. A binding routes by binding rather than by
- * hostname, so the host is arbitrary — but `new Request` still demands an
- * absolute URL, and stripping down to a bare path threw `Invalid URL` before
- * the token was even looked at.
+ * A binding routes by binding rather than by hostname, which saves a trip out
+ * to the internet and back for a call this middleware makes on nearly every
+ * request. The host in the URL is then arbitrary — but `new Request` still
+ * demands an absolute URL, and stripping down to a bare path threw
+ * `Invalid URL` before the token was even looked at.
+ *
+ * Where there is no such binding the issuer is an ordinary HTTP origin at
+ * `AUTH_ISSUER_URL` and plain `fetch` is the whole of it. Nothing else here
+ * changes, because the URL being fetched is the same one either way.
  */
-function bindingFetch(env: Record<string, unknown>) {
+function issuerFetch(env: Record<string, unknown>, issuer: string) {
+	const binding = env?.AUTH as { fetch: typeof fetch } | undefined;
+	if (typeof binding?.fetch === 'function') {
+		return (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = asUrl(input);
+			return binding.fetch(new Request(url, init));
+		};
+	}
+
+	// The same split the binding makes, spelled out: `AUTH_INTERNAL_URL` is
+	// the route and `issuer` stays the name. The client builds its URLs from
+	// the name, so the swap happens here, on the way out, and every claim
+	// checked afterwards is still checked against the name.
+	const internal = Env.get().AUTH_INTERNAL_URL?.replace(/\/+$/, '');
+	if (!internal || internal === issuer) {
+		return (input: RequestInfo | URL, init?: RequestInit) => fetch(asUrl(input), init);
+	}
 	return (input: RequestInfo | URL, init?: RequestInit) => {
-		const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-		return (env.AUTH as { fetch: typeof fetch }).fetch(new Request(url, init));
+		const url = asUrl(input);
+		return fetch(url.startsWith(issuer) ? internal + url.slice(issuer.length) : url, init);
 	};
 }
 
+function asUrl(input: RequestInfo | URL): string {
+	return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+}
+
 /**
- * The issuer must be the auth worker's **public** URL.
+ * The issuer must be its **public** URL.
  *
  * `verify` checks a token's `iss` claim against the issuer the client was
- * built with, and the auth worker derives what it advertises from the URL it
- * was reached on. Tokens are minted through the public URL, so they carry it.
- * A placeholder like `https://auth.internal` addresses the binding perfectly
- * well — the hostname is ignored there — and then disagrees with every real
- * token. Discovery through the binding does not help: it answers with the
- * placeholder too, because that is the host it was asked on.
+ * built with, and the issuer derives what it advertises from the URL it was
+ * reached on. Tokens are minted through the public URL, so they carry it. A
+ * placeholder like `https://auth.internal` addresses a binding perfectly well
+ * — the hostname is ignored there — and then disagrees with every real token.
+ * Discovery through the binding does not help: it answers with the placeholder
+ * too, because that is the host it was asked on.
  *
  * The failure is silent by nature. A rejected claim is reported as `err`,
  * which is indistinguishable from an expired or forged token, so the whole
@@ -55,7 +80,7 @@ function getClient(env: Record<string, unknown>) {
 	return createClient({
 		issuer,
 		clientID: 'api',
-		fetch: bindingFetch(env)
+		fetch: issuerFetch(env, issuer)
 	});
 }
 

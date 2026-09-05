@@ -1,0 +1,63 @@
+// The public API, deployed as a Cloudflare Worker.
+//
+// The same `app/index.ts` also runs as an ordinary HTTP server — see
+// `app/server.ts` and the `Dockerfile` beside it.
+//
+// Hostnames and the reasoning behind their shape: `docs/dns.md`.
+// Secrets, the Hyperdrive id, and how to deploy: `docs/deploy.md`.
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "nestri-api",
+	"main": "app/index.ts",
+	"compatibility_date": "2026-09-05",
+	"compatibility_flags": ["nodejs_compat"],
+	"workers_dev": false,
+	"dev": {
+		"port": 3000
+	},
+
+	// `AUTH` routes by binding rather than by hostname, so it is one hop
+	// shorter than a request over the internet and needs no public address.
+	// It is an optimisation and not a requirement: with no such binding the
+	// middleware reaches the issuer over plain HTTP at `AUTH_ISSUER_URL`,
+	// which is what the container path does.
+	//
+	// `wrangler dev` discovers a sibling session serving the same script name,
+	// so running both dev servers wires this up locally.
+	"services": [{ "binding": "AUTH", "service": "nestri-auth" }],
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "0000000000000000000000000000dev0",
+			"localConnectionString": "postgres://postgres:postgres@localhost:5432/nestri"
+		}
+	],
+	"vars": {
+		// The issuer's **public** URL, always. A token's `iss` claim carries
+		// the address it was minted through, and verification compares the two
+		// literally — so naming the binding here instead would reject every
+		// real token, and report it as an ordinary 401.
+		"AUTH_ISSUER_URL": "http://localhost:1337"
+	},
+
+	"env": {
+		"sandbox": {
+			"name": "nestri-api-sandbox",
+			"workers_dev": false,
+			"routes": [{ "pattern": "api.sandbox.nestri.io", "custom_domain": true }],
+			"observability": { "enabled": true },
+			"services": [{ "binding": "AUTH", "service": "nestri-auth-sandbox" }],
+			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<sandbox-hyperdrive-id>" }],
+			"vars": { "AUTH_ISSUER_URL": "https://auth.sandbox.nestri.io" }
+		},
+		"production": {
+			"name": "nestri-api",
+			"workers_dev": false,
+			"routes": [{ "pattern": "api.nestri.io", "custom_domain": true }],
+			"observability": { "enabled": true },
+			"services": [{ "binding": "AUTH", "service": "nestri-auth" }],
+			"hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<production-hyperdrive-id>" }],
+			"vars": { "AUTH_ISSUER_URL": "https://auth.nestri.io" }
+		}
+	}
+}

@@ -401,7 +401,6 @@ export namespace Env {
 	export const Info = z.object({
 		NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 		FRONTEND_URL: z.string().optional(),
-		STEAM_API_KEY: z.string().optional(),
 		AUTH_ISSUER_URL: z.string().optional() // used by API auth middleware to verify tokens
 	});
 	export type Info = z.infer<typeof Info>;
@@ -577,7 +576,7 @@ A Cloudflare Worker using `@nestri/auth` (OpenAuth). Entry point is the `success
 
 Server-to-server calls can authenticate as an `admin` actor by setting the `x-nestri-admin-token` header to the value of `ADMIN_SHARED_SECRET`. This bypasses JWT auth entirely and grants a system-level actor with no user scope — useful for operations like adding games to the DB, syncing data, or other admin tasks.
 
-Configure `ADMIN_SHARED_SECRET` in `.env`; defaults to the same value as `SSH_AUTH_KEY` in dev (`dev-ssh-auth-key-change-in-prod`).
+Configure `ADMIN_SHARED_SECRET` in `.env`. It has no default anywhere — a known value here is an authentication bypass, so nothing falls back to one.
 
 ### Auth Middleware (`apps/api/app/middleware/auth.ts`)
 

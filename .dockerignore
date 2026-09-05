@@ -1,18 +1,18 @@
-# build/Dockerfile's context is the repo root (see build/Makefile), so this
-# keeps the daemon-side context transfer to what it actually COPYs: the
-# workspace manifests plus the five Rust members. Everything else here is
-# TypeScript/tooling the guest rootfs build never touches.
+# What no image in this repo ever wants: history, and build output produced
+# outside the container.
+#
+# This file used to also exclude the TypeScript half, because the guest rootfs
+# build was the only Dockerfile here. There are three now, and two of them are
+# the TypeScript half — so what is specific to one build moved next to that
+# build, as `<Dockerfile>.dockerignore`. Getting that wrong here is expensive
+# in a way that is hard to see: an excluded path is not an error, it is a
+# `COPY` that silently lands nothing.
 .git
 node_modules
 target
 build/output
-docs
-apps/api
-apps/auth
-packages
-*.md
-deno.lock
-bun.lock
-.env*
-.zed
-.github
+.env
+.env.*
+.wrangler
+dist
+.output
