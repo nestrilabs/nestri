@@ -91,11 +91,23 @@ export interface CodeProviderConfig<
 	 */
 	maxAttempts?: number;
 	/**
-	 * How many codes one attempt at signing in may ask for.
+	 * How many codes may be sent to one claim inside {@link sendWindow}.
 	 *
-	 * @default 3
+	 * Counted against the mailbox and not against the browser asking. A budget
+	 * held per sign-in attempt bounds nothing: the caller chooses how many
+	 * attempts to start, and starting a new one costs them a discarded cookie.
+	 * The thing being protected is the address, so the address is what carries
+	 * the count.
+	 *
+	 * @default 5
 	 */
 	maxSends?: number;
+	/**
+	 * The window {@link maxSends} is counted over, in seconds.
+	 *
+	 * @default 3600
+	 */
+	sendWindow?: number;
 	/**
 	 * Seconds between one code and the next for the same claim.
 	 *
@@ -198,7 +210,8 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 	const length = config.length || 6;
 	const ttl = config.ttl ?? 60 * 10;
 	const maxAttempts = config.maxAttempts ?? 5;
-	const maxSends = config.maxSends ?? 3;
+	const maxSends = config.maxSends ?? 5;
+	const sendWindow = config.sendWindow ?? 60 * 60;
 	const resendInterval = config.resendInterval ?? 30;
 
 	function generate() {
@@ -260,42 +273,53 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 					const claims = Object.fromEntries(fd) as Claims;
 					delete claims.action;
 
-					// Asked for too soon, or too many times for one attempt.
+					// Asked for too soon, or too many times for this mailbox.
 					// Both answers are the same on purpose: saying which would
 					// tell a caller whether the address they typed has had a
 					// code sent to it lately, which is a fact about somebody
 					// else's mailbox.
-					const sentAt = await Storage.get<{ at: number }>(ctx.storage, claimKey(claims));
-					if (sentAt && Date.now() - sentAt.at < resendInterval * 1000) {
+					const now = Date.now();
+					const sent = await Storage.get<{ at: number; count: number; since: number }>(
+						ctx.storage,
+						claimKey(claims)
+					);
+					const open = sent && now - sent.since < sendWindow * 1000;
+					if (sent && now - sent.at < resendInterval * 1000) {
 						return transition(c, state ?? { type: 'start' }, fd, { type: 'rate_limit' });
 					}
-					if (action === 'resend' && state?.type === 'code') {
-						const record = await Storage.get<{ attempts: number; sends: number }>(
-							ctx.storage,
-							attemptKey(state.flow)
-						);
-						if ((record?.sends ?? 1) >= maxSends) {
-							return transition(c, state, fd, { type: 'rate_limit' });
-						}
+					if (open && sent.count >= maxSends) {
+						return transition(c, state ?? { type: 'start' }, fd, { type: 'rate_limit' });
 					}
 
 					const code = generate();
 					const err = await config.sendCode(claims, code);
 					if (err) return transition(c, { type: 'start' }, fd, err);
 
+					// The code that was live until a moment ago stops being
+					// live now. Leaving it usable would mean each resend added
+					// a working code and another budget of guesses to spend on
+					// it, so asking for a new code would be how you bought more
+					// chances at the old one.
+					if (state?.type === 'code') {
+						await Storage.remove(ctx.storage, attemptKey(state.flow));
+					}
+
 					// A new code means a new flow, which means a fresh budget
 					// of guesses — and, more to the point, that the budget
 					// attached to the previous code is now unreachable rather
 					// than reset.
 					const flow = generateUnbiasedString(FLOW_ALPHABET, 32);
-					const sends =
-						action === 'resend' && state?.type === 'code'
-							? ((
-									await Storage.get<{ sends: number }>(ctx.storage, attemptKey(state.flow))
-								)?.sends ?? 1) + 1
-							: 1;
-					await Storage.set(ctx.storage, attemptKey(flow), { attempts: 0, sends }, ttl);
-					await Storage.set(ctx.storage, claimKey(claims), { at: Date.now() }, resendInterval);
+					await Storage.set(ctx.storage, attemptKey(flow), { attempts: 0 }, ttl);
+					await Storage.set(
+						ctx.storage,
+						claimKey(claims),
+						{
+							at: now,
+							count: open ? sent.count + 1 : 1,
+							since: open ? sent.since : now
+						},
+						sendWindow
+					);
 
 					return transition(
 						c,
@@ -320,7 +344,7 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 					// Counted before the comparison, so a guess costs whether or
 					// not it is right. Counted on the server, so the caller
 					// holding the cookie cannot wind it back.
-					const record = await Storage.get<{ attempts: number; sends: number }>(
+					const record = await Storage.get<{ attempts: number }>(
 						ctx.storage,
 						attemptKey(state.flow)
 					);

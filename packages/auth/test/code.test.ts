@@ -19,6 +19,7 @@ const auth = issuer({
 		code: CodeProvider({
 			maxAttempts: 3,
 			maxSends: 2,
+			sendWindow: 3600,
 			resendInterval: 0,
 			request: async (_req, _state, _form, error) =>
 				new Response(JSON.stringify({ error: error?.type ?? null }), {
@@ -83,7 +84,7 @@ async function begin() {
 }
 
 /** Start a sign-in and ask for a code, coming back with the cookies and the code. */
-async function ask(email = 'ada@example.com') {
+async function ask(email: string) {
 	const cookies = await begin();
 	await post(cookies, { action: 'request', email });
 	return { cookies, code: sent.at(-1)! };
@@ -100,13 +101,13 @@ beforeEach(() => {
 
 describe('signing in with a code', () => {
 	test('the right code signs you in', async () => {
-		const { cookies, code } = await ask();
+		const { cookies, code } = await ask('right@example.com');
 		const response = await post(cookies, { action: 'verify', code });
 		expect(response.status).toBe(302);
 	});
 
 	test('a wrong code is refused and says so', async () => {
-		const { cookies, code } = await ask();
+		const { cookies, code } = await ask('wrong@example.com');
 		const response = await post(cookies, { action: 'verify', code: code === '000000' ? '111111' : '000000' });
 		expect(response.status).toBe(200);
 		expect(await errorOf(response)).toBe('invalid_code');
@@ -124,7 +125,7 @@ describe('signing in with a code', () => {
  */
 describe('guessing the code', () => {
 	test('runs out of guesses long before it runs out of codes', async () => {
-		const { cookies, code } = await ask();
+		const { cookies, code } = await ask('budget@example.com');
 		const wrong = code === '000000' ? '111111' : '000000';
 
 		expect(await errorOf(await post(cookies, { action: 'verify', code: wrong }))).toBe(
@@ -144,7 +145,7 @@ describe('guessing the code', () => {
 	});
 
 	test('the real code stops working once the guesses are spent', async () => {
-		const { cookies, code } = await ask();
+		const { cookies, code } = await ask('spent@example.com');
 		const wrong = code === '000000' ? '111111' : '000000';
 		for (let i = 0; i < 3; i++) await post(cookies, { action: 'verify', code: wrong });
 
@@ -157,7 +158,7 @@ describe('guessing the code', () => {
 	// replays the cookie from before any guess was made, which is the cheapest
 	// way to wind back anything held in one.
 	test('replaying an earlier cookie does not hand back the spent guesses', async () => {
-		const { cookies, code } = await ask();
+		const { cookies, code } = await ask('replay@example.com');
 		const untouched = cookies.header();
 		const wrong = code === '000000' ? '111111' : '000000';
 		for (let i = 0; i < 3; i++) await post(cookies, { action: 'verify', code: wrong });
@@ -171,7 +172,7 @@ describe('guessing the code', () => {
 	});
 
 	test('a code is spent when it is used, so its guesses do not carry over', async () => {
-		const { cookies, code } = await ask();
+		const { cookies, code } = await ask('once@example.com');
 		expect((await post(cookies, { action: 'verify', code })).status).toBe(302);
 
 		const again = await post(cookies, { action: 'verify', code });
@@ -181,7 +182,7 @@ describe('guessing the code', () => {
 
 describe('asking for codes', () => {
 	test('a fresh code comes with a fresh budget of guesses', async () => {
-		const first = await ask();
+		const first = await ask('fresh-a@example.com');
 		const wrong = '000000' === first.code ? '111111' : '000000';
 		for (let i = 0; i < 3; i++) await post(first.cookies, { action: 'verify', code: wrong });
 		expect(await errorOf(await post(first.cookies, { action: 'verify', code: wrong }))).toBe(
@@ -190,20 +191,68 @@ describe('asking for codes', () => {
 
 		// Starting over is allowed. It costs a code sent to the mailbox being
 		// aimed at, which is where somebody would notice.
-		const second = await ask();
+		const second = await ask('fresh-b@example.com');
 		expect(second.code).not.toBe(first.code);
 		expect((await post(second.cookies, { action: 'verify', code: second.code })).status).toBe(302);
 	});
 
-	test('one sign-in cannot ask for codes forever', async () => {
-		const { cookies } = await ask();
-		expect(await errorOf(await post(cookies, { action: 'resend', email: 'ada@example.com' }))).toBe(
-			null
-		);
-		expect(await errorOf(await post(cookies, { action: 'resend', email: 'ada@example.com' }))).toBe(
-			'rate_limit'
-		);
+	test('a mailbox cannot be sent codes forever', async () => {
+		const email = 'flood@example.com';
+		const { cookies } = await ask(email);
+		expect(await errorOf(await post(cookies, { action: 'resend', email }))).toBe(null);
+		expect(await errorOf(await post(cookies, { action: 'resend', email }))).toBe('rate_limit');
 		expect(sent).toHaveLength(2);
+	});
+
+	// The budget was once held per sign-in attempt, which bounded nothing: the
+	// caller decides how many attempts to start, and starting one costs a
+	// discarded cookie. Both of these walk around a per-attempt budget and land
+	// on the mailbox anyway, which is why the count lives there.
+	test('replaying an earlier cookie does not buy more codes', async () => {
+		const email = 'replay-send@example.com';
+		const { cookies } = await ask(email);
+		const untouched = cookies.header();
+		await post(cookies, { action: 'resend', email });
+		expect(sent).toHaveLength(2);
+
+		const replayed = await auth.request(`${ORIGIN}/code/authorize`, {
+			method: 'POST',
+			headers: { cookie: untouched, 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ action: 'resend', email })
+		});
+		expect(await errorOf(replayed)).toBe('rate_limit');
+		expect(sent).toHaveLength(2);
+	});
+
+	test('starting over does not buy more codes either', async () => {
+		const email = 'restart-send@example.com';
+		await ask(email);
+		await ask(email);
+		expect(sent).toHaveLength(2);
+
+		const third = await begin();
+		expect(await errorOf(await post(third, { action: 'request', email }))).toBe('rate_limit');
+		expect(sent).toHaveLength(2);
+	});
+
+	// Each resend used to leave the code before it live, with a budget of
+	// guesses of its own. Five resends meant five working codes and five times
+	// the chances, so asking for a new code was how you bought more tries at
+	// the old one.
+	test('a resend retires the code before it', async () => {
+		const email = 'retire@example.com';
+		const { cookies, code: first } = await ask(email);
+		const untouched = cookies.header();
+		await post(cookies, { action: 'resend', email });
+		expect(sent.at(-1)).not.toBe(first);
+
+		const withOldCode = await auth.request(`${ORIGIN}/code/authorize`, {
+			method: 'POST',
+			headers: { cookie: untouched, 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({ action: 'verify', code: first })
+		});
+		expect(withOldCode.status).toBe(200);
+		expect(await errorOf(withOldCode)).toBe('rate_limit');
 	});
 
 	test('a bad address still gets told it is a bad address', async () => {
