@@ -3,14 +3,34 @@ import { describe, expect, test } from 'bun:test';
 import { sendVerificationCode } from '../src/email.js';
 
 describe('sending a sign-in code', () => {
-	test('with nothing configured outside production, it does not block a sign-in', async () => {
-		await sendVerificationCode({ NODE_ENV: 'development' }, 'ada@example.com', '123456');
+	test('printing the code to the log has to be asked for by name', async () => {
+		await sendVerificationCode({ EMAIL_DEV_LOG: 'true' }, 'ada@example.com', '123456');
 	});
 
-	test('with nothing configured in production, it says so instead of pretending', async () => {
+	// The regression this holds: the previous rule was "throw only when the
+	// environment says production", which meant a deployment that set no
+	// marker at all — which is what the real one did — took the developer
+	// branch and logged live codes. Absence is now a refusal.
+	test('nothing configured and nothing asked for is a refusal, not a log', async () => {
+		await expect(sendVerificationCode({}, 'ada@example.com', '123456')).rejects.toThrow(
+			/not configured/
+		);
+	});
+
+	test('a variable left holding something other than true does not switch logging on', async () => {
 		await expect(
-			sendVerificationCode({ NODE_ENV: 'production' }, 'ada@example.com', '123456')
+			sendVerificationCode({ EMAIL_DEV_LOG: 'false' }, 'ada@example.com', '123456')
 		).rejects.toThrow(/not configured/);
+	});
+
+	test('half a mailer is an error rather than a fallback', async () => {
+		await expect(
+			sendVerificationCode(
+				{ EMAIL_SEND_URL: 'https://mail.example.com/send', EMAIL_DEV_LOG: 'true' },
+				'ada@example.com',
+				'123456'
+			)
+		).rejects.toThrow(/half configured/);
 	});
 
 	test('a configured mailer is called with the address and the code', async () => {
@@ -28,7 +48,6 @@ describe('sending a sign-in code', () => {
 		try {
 			await sendVerificationCode(
 				{
-					NODE_ENV: 'production',
 					EMAIL_SEND_URL: 'https://mail.example.com/send',
 					EMAIL_API_KEY: 'key',
 					EMAIL_FROM: 'hello@nestri.io'
@@ -45,6 +64,32 @@ describe('sending a sign-in code', () => {
 		expect(seen!.body.to).toEqual(['ada@example.com']);
 		expect(seen!.body.from).toBe('hello@nestri.io');
 		expect(seen!.body.text).toContain('123456');
+	});
+
+	test('a configured mailer sends even when dev logging is on', async () => {
+		let called = false;
+		const original = globalThis.fetch;
+		globalThis.fetch = (async () => {
+			called = true;
+			return new Response('{}', { status: 200 });
+		}) as unknown as typeof fetch;
+
+		try {
+			await sendVerificationCode(
+				{
+					EMAIL_SEND_URL: 'https://mail.example.com/send',
+					EMAIL_API_KEY: 'key',
+					EMAIL_FROM: 'hello@nestri.io',
+					EMAIL_DEV_LOG: 'true'
+				},
+				'ada@example.com',
+				'123456'
+			);
+		} finally {
+			globalThis.fetch = original;
+		}
+
+		expect(called).toBe(true);
 	});
 
 	test('a refusal from the mailer is not swallowed', async () => {

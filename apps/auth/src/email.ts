@@ -3,38 +3,60 @@
  *
  * Deliberately not tied to one mail vendor: it posts a small JSON body to
  * whatever endpoint is configured, so swapping providers is configuration and
- * not a code change. Three settings, all optional except in production —
- * `EMAIL_SEND_URL`, `EMAIL_API_KEY`, `EMAIL_FROM`.
+ * not a code change. Three settings — `EMAIL_SEND_URL`, `EMAIL_API_KEY`,
+ * `EMAIL_FROM` — and a fourth, `EMAIL_DEV_LOG`, that asks for the code to be
+ * printed instead of sent.
  */
 export interface MailerConfig {
 	EMAIL_SEND_URL?: string;
 	EMAIL_API_KEY?: string;
 	EMAIL_FROM?: string;
-	NODE_ENV?: string;
+	/**
+	 * Print the code to the log rather than sending it. `'true'` and nothing
+	 * else, so a variable left holding `'false'` or `'0'` cannot switch it on.
+	 */
+	EMAIL_DEV_LOG?: string;
 }
 
 /**
- * Send the code, or fail loudly.
+ * Send the code, or refuse.
  *
- * With no mailer configured this logs the code and carries on, which is what
- * makes a local sign-in possible without a mail account. In production the
- * same situation throws instead: a signup screen that says "check your email"
- * when nothing was sent is worse than one that says it is broken, because the
- * person waits instead of telling anybody.
+ * The rule is that printing a live sign-in code to a log is something you ask
+ * for by name, and that anything else is an error. It reads that way round
+ * because the alternative — treat an unconfigured mailer as "must be a
+ * developer" — fails *open*: the deployment that forgets its mail settings is
+ * exactly the deployment with no marker saying it is a real one, so it takes
+ * the developer branch, logs every recipient and every usable code to a
+ * retained log, and reports success while nobody receives anything.
+ *
+ * Configuration is also all-or-nothing. Two settings out of three is somebody
+ * halfway through wiring a provider up, and quietly falling back would hide
+ * the half that is missing.
  */
 export async function sendVerificationCode(
 	config: MailerConfig,
 	email: string,
 	code: string
 ): Promise<void> {
-	const configured = config.EMAIL_SEND_URL && config.EMAIL_API_KEY && config.EMAIL_FROM;
+	const present = [config.EMAIL_SEND_URL, config.EMAIL_API_KEY, config.EMAIL_FROM].filter(Boolean);
 
-	if (!configured) {
-		if (config.NODE_ENV === 'production') {
-			throw new Error('Email delivery is not configured, so no sign-in code can be sent');
+	if (present.length === 0) {
+		if (config.EMAIL_DEV_LOG === 'true') {
+			console.log(`[auth] sign-in code for ${email}: ${code}`);
+			return;
 		}
-		console.log(`[auth] sign-in code for ${email}: ${code}`);
-		return;
+		throw new Error(
+			'Email delivery is not configured, so no sign-in code can be sent. ' +
+				'Set EMAIL_SEND_URL, EMAIL_API_KEY and EMAIL_FROM, or set EMAIL_DEV_LOG=true ' +
+				'to print codes to the log instead.'
+		);
+	}
+
+	if (present.length < 3) {
+		throw new Error(
+			'Email delivery is half configured: EMAIL_SEND_URL, EMAIL_API_KEY and EMAIL_FROM ' +
+				'are needed together.'
+		);
 	}
 
 	const response = await fetch(config.EMAIL_SEND_URL!, {

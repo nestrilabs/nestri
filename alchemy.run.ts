@@ -8,6 +8,57 @@ const steamApiKey = Redacted.make(process.env.STEAM_API_KEY!);
 const adminSharedSecret =
 	process.env.ADMIN_SHARED_SECRET || 'dev-admin-shared-secret-change-in-prod';
 
+/**
+ * Stages where a missing setting is a deploy failure rather than a default.
+ *
+ * A stage somebody else can reach has to be configured; a throwaway one a
+ * developer made this morning does not. The list is the same one that decides
+ * observability and DNS below, named once so the two cannot drift apart.
+ */
+const PERMANENT_STAGES = ['production', 'sandbox', 'dev'];
+
+/**
+ * Mail settings, refused rather than defaulted when a stage needs them.
+ *
+ * Verifying an address is the only way to sign in, so a worker that cannot
+ * send mail cannot sign anybody in — and the failure to catch is the one where
+ * that is discovered by a person staring at a screen that says "check your
+ * email". Checking here turns it into a deploy that stops with the name of the
+ * variable it wanted.
+ */
+function mailEnv(stage: string) {
+	const url = process.env.EMAIL_SEND_URL;
+	const key = process.env.EMAIL_API_KEY;
+	const from = process.env.EMAIL_FROM;
+
+	if (PERMANENT_STAGES.includes(stage)) {
+		const missing = [
+			['EMAIL_SEND_URL', url],
+			['EMAIL_API_KEY', key],
+			['EMAIL_FROM', from]
+		]
+			.filter(([, value]) => !value)
+			.map(([name]) => name);
+		if (missing.length > 0) {
+			throw new Error(
+				`Stage "${stage}" serves sign-in, so it needs mail delivery configured. ` +
+					`Missing: ${missing.join(', ')}.`
+			);
+		}
+	}
+
+	return {
+		...(url ? { EMAIL_SEND_URL: url } : {}),
+		...(key ? { EMAIL_API_KEY: Redacted.make(key) } : {}),
+		...(from ? { EMAIL_FROM: from } : {}),
+		// Printing a live sign-in code to the log is a thing you ask for by
+		// name. It is never set on a stage anyone else can reach, and the
+		// worker refuses to send without either this or real settings, so an
+		// unconfigured deploy fails loudly instead of quietly logging codes.
+		...(PERMANENT_STAGES.includes(stage) ? {} : { EMAIL_DEV_LOG: 'true' })
+	};
+}
+
 const AuthStorage = Cloudflare.KV.Namespace('auth-storage');
 
 const Database = Effect.gen(function* () {
@@ -36,7 +87,7 @@ const Database = Effect.gen(function* () {
 
 export const Auth = Effect.gen(function* () {
 	const { stage } = yield* Alchemy.Stack;
-	const isPermanent = ['production', 'sandbox', 'dev'].includes(stage);
+	const isPermanent = PERMANENT_STAGES.includes(stage);
 	return yield* Cloudflare.Worker('auth', {
 		main: 'apps/auth/src/index.ts',
 		compatibility: { flags: ['nodejs_compat'] },
@@ -45,7 +96,8 @@ export const Auth = Effect.gen(function* () {
 		// key is bound there.
 		env: {
 			AuthStorage,
-			HYPERDRIVE: Database
+			HYPERDRIVE: Database,
+			...mailEnv(stage)
 		},
 		...(isPermanent ? { observability: { enabled: true } } : {})
 	});
@@ -53,7 +105,7 @@ export const Auth = Effect.gen(function* () {
 
 export const Api = Effect.gen(function* () {
 	const { stage } = yield* Alchemy.Stack;
-	const isPermanent = ['production', 'sandbox', 'dev'].includes(stage);
+	const isPermanent = PERMANENT_STAGES.includes(stage);
 	const prefix = stage === 'production' ? '' : `${stage}.`;
 	const authDomain = ['production', 'sandbox'].includes(stage)
 		? `${prefix}auth.nestri.io`
