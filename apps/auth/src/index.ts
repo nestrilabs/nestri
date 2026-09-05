@@ -4,6 +4,7 @@ import { CodeProvider } from '@nestri/auth/provider/code';
 import { CloudflareStorage } from '@nestri/auth/storage/cloudflare';
 import { CodeUI } from '@nestri/auth/ui/code';
 import { Actor } from '@nestri/core/actor';
+import { PostgresDeviceStore } from '@nestri/core/auth/device-grant';
 import { subjects } from '@nestri/core/auth/subjects';
 import { Env } from '@nestri/core/env';
 import { Team } from '@nestri/core/team/index';
@@ -20,6 +21,17 @@ type Env = {
 	EMAIL_FROM?: string;
 	EMAIL_DEV_LOG?: string;
 };
+
+/**
+ * The programs allowed to start a device authorization grant.
+ *
+ * That endpoint takes no secret — a program with no browser has nowhere to keep
+ * one, which is the whole reason the grant exists — so the identifier is a
+ * claim and not a proof. What the list buys is that the claim has to be one of
+ * ours: the identifier ends up on the issued token, and without this anything
+ * on the internet could mint a grant naming anything at all.
+ */
+const DEVICE_CLIENTS = new Set(['desktop']);
 
 /**
  * Enough of an address to be worth trying to deliver to.
@@ -52,6 +64,14 @@ export default {
 			storage: CloudflareStorage({
 				namespace: env.AuthStorage
 			}),
+			// Not the KV store the rest of this uses, and the difference
+			// matters. A device grant is answered by a browser and collected by
+			// a program polling at the same time, so approving it and redeeming
+			// it each have to be one operation that either happens or does not.
+			// A store that reads and writes whole records lets those two undo
+			// each other; a conditional update does not.
+			deviceStore: PostgresDeviceStore(),
+			allowDeviceClient: async (clientID) => DEVICE_CLIENTS.has(clientID),
 			// One provider, on purpose.
 			//
 			// Verifying an email address is the only thing that brings an

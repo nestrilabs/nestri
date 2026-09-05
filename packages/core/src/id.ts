@@ -19,7 +19,8 @@ export namespace Identifier {
 		userLibrary: 'ulb',
 		gameDepot: 'gdp',
 		gameDownload: 'gdl',
-		waitlistEntry: 'wle'
+		waitlistEntry: 'wle',
+		deviceGrant: 'dvg'
 	} as const;
 
 	export function schema(prefix: keyof typeof prefixes) {

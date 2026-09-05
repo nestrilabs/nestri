@@ -71,6 +71,13 @@
       "when": 1788555252186,
       "tag": "0009_email_is_the_root_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1788590292860,
+      "tag": "0010_device_authorization_grant",
+      "breakpoints": true
     }
   ]
 }
