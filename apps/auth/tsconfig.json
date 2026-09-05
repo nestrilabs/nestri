@@ -4,8 +4,14 @@
 	"compilerOptions": {
 		"module": "ESNext",
 		"moduleResolution": "bundler",
-		"jsx": "preserve",
-		"jsxImportSource": "react",
+		// The sign-in screens are `hono/jsx`, and there is no React in this
+		// repository at all. Naming React here was left over from an earlier
+		// scaffold and only bit when something transpiled from this directory:
+		// `bun run serve` resolved `react/jsx-dev-runtime` from a component in
+		// `packages/auth` and stopped before the server bound a port. The
+		// package holding the components already says this; so does the root.
+		"jsx": "react-jsx",
+		"jsxImportSource": "hono/jsx",
 		"types": ["@cloudflare/workers-types", "node", "bun"]
 	}
 }
