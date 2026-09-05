@@ -1,0 +1,28 @@
+[package]
+name = "nesinit"
+version = "0.1.0"
+description = "PID 1 inside a box: reaps, shuts down in order, and runs the workload it is handed"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "nesinit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nesinit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+libc.workspace = true
+tokio.workspace = true
+tokio-vsock.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+nesprotocol = { path = "../../crates/nesprotocol", features = ["lifecycle"] }
+
+[dev-dependencies]
+tokio = { workspace = true }

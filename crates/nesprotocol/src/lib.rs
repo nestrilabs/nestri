@@ -4,6 +4,8 @@
 
 pub mod datagram;
 pub mod input;
+#[cfg(feature = "lifecycle")]
+pub mod lifecycle;
 pub mod reliable;
 pub mod stats;
 

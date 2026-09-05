@@ -17,6 +17,7 @@ members = [
   "apps/nescope",
   "apps/nesdoctor",
   "apps/neshub",
+  "apps/nesinit",
   "apps/neswire",
   "crates/nesprotocol",
 ]
@@ -31,6 +32,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
+tokio-vsock = "0.7"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
