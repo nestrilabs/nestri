@@ -2,6 +2,7 @@ import type { Hyperdrive } from '@cloudflare/workers-types';
 import { issuer } from '@nestri/auth/index';
 import { CodeProvider } from '@nestri/auth/provider/code';
 import { CodeUI } from '@nestri/auth/ui/code';
+import { isDomainMatch } from '@nestri/auth/util';
 import { Actor } from '@nestri/core/actor';
 import { PostgresCodeStore } from '@nestri/core/auth/authorization-code';
 import { PostgresDeviceStore } from '@nestri/core/auth/device-grant';
@@ -46,6 +47,72 @@ type Env = {
 const DEVICE_CLIENTS = new Set(['desktop']);
 
 /**
+ * The zone every user-owned host is reached under, and the one path on it that
+ * may receive an authorization code.
+ *
+ * A host is reached at `<id>.<zone>` through a proxy that authenticates
+ * browsers on its behalf. That proxy cannot be handed a session from here: a
+ * `__Host-` cookie is host-only by definition, so one set on this hostname is
+ * never sent to a different one, and a first request to a host's own name
+ * therefore arrives with no cookie whether or not the person is signed in.
+ *
+ * The proxy closes that by being an ordinary OAuth client — one per hostname —
+ * and exchanging a code for a session it can set on the hostname the browser is
+ * actually standing on. This is the rule that lets it: **the client id must be
+ * the hostname, and the redirect must be that same hostname at the reserved
+ * path below.**
+ *
+ * Making the client id the hostname is not a naming convention. A token is
+ * minted with its audience set to the client id, so it binds the session to the
+ * host it will live on — a cookie lifted off one host is not a credential on
+ * another, and it is not a credential here either. ref(d-0056)
+ */
+const HOST_ZONE = 'nestri.link';
+const HOST_CALLBACK_PATH = '/__nestri/callback';
+
+/**
+ * Whether `clientID` names a single host under {@link HOST_ZONE} and
+ * `redirectURI` is that same host's reserved callback.
+ *
+ * Every clause is load-bearing, because what is being decided is where this
+ * issuer will send an authorization code:
+ *
+ * - **`https` only.** A code is a one-time credential and belongs on a channel
+ *   that cannot be read.
+ * - **The host must equal the client id exactly**, so a client can only ever
+ *   receive a code at its own name.
+ * - **One label under the zone.** `a.b.<zone>` is not a host id, and must not
+ *   be treated as one because `b.<zone>` might be.
+ * - **The path must be exactly the reserved one**, with no query and no
+ *   fragment. A caller-chosen return address on a wildcard of hostnames is an
+ *   open redirector on every one of them, and this is the parameter that would
+ *   be it.
+ */
+function isHostCallback(clientID: string, redirectURI: string): boolean {
+	let url: URL;
+	try {
+		url = new URL(redirectURI);
+	} catch {
+		return false;
+	}
+
+	const label = clientID.toLowerCase().endsWith(`.${HOST_ZONE}`)
+		? clientID.toLowerCase().slice(0, -`.${HOST_ZONE}`.length)
+		: null;
+	if (!label || label.length === 0 || label.includes('.')) {
+		return false;
+	}
+
+	return (
+		url.protocol === 'https:' &&
+		url.host === clientID.toLowerCase() &&
+		url.pathname === HOST_CALLBACK_PATH &&
+		url.search === '' &&
+		url.hash === ''
+	);
+}
+
+/**
  * Enough of an address to be worth trying to deliver to.
  *
  * Deliberately loose: the only test that settles whether an address is real is
@@ -67,6 +134,40 @@ async function firstSteamLink(userID: string): Promise<string> {
 	const link = await LinkedAccount.findSteamByUser(userID);
 	return link?.id ?? '';
 }
+
+/**
+ * Which clients may start a flow here.
+ *
+ * The default rule allows a redirect back to whatever hostname the request
+ * arrived on, which is right for a site served beside this one and refuses the
+ * proxy in front of user-owned hosts — it redirects to a different registrable
+ * domain on purpose, so that no host's cookie can ever reach this one. That
+ * case is named here; everything else keeps the behaviour it had.
+ *
+ * Exported so it can be tested against a real `/authorize` request rather than
+ * by reading it.
+ */
+export const allowClient = async (
+	input: { clientID: string; redirectURI: string },
+	req: Request
+): Promise<boolean> => {
+	if (isHostCallback(input.clientID, input.redirectURI)) {
+		return true;
+	}
+
+	let redirect: string;
+	try {
+		redirect = new URL(input.redirectURI).hostname;
+	} catch {
+		return false;
+	}
+	if (redirect === 'localhost' || redirect === '127.0.0.1') {
+		return true;
+	}
+	const forwarded = req.headers.get('x-forwarded-host');
+	const host = forwarded ? new URL(`https://${forwarded}`).hostname : new URL(req.url).hostname;
+	return isDomainMatch(redirect, host);
+};
 
 export default {
 	async fetch(request: Request, env: Env, ctx?: ExecutionContext) {
@@ -90,6 +191,15 @@ export default {
 			refreshStore: PostgresRefreshStore(),
 			deviceStore: PostgresDeviceStore(),
 			allowDeviceClient: async (clientID) => DEVICE_CLIENTS.has(clientID),
+			// The default rule allows a redirect back to whatever hostname the
+			// request arrived on, which is right for a site served beside this
+			// one and refuses the proxy in front of user-owned hosts — it
+			// redirects to a different registrable domain on purpose, so that
+			// no host's cookie can ever reach this one.
+			//
+			// So that case is named, and everything else keeps the behaviour it
+			// had.
+			allow: allowClient,
 			// One provider, on purpose.
 			//
 			// Verifying an email address is the only thing that brings an

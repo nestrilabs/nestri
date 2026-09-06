@@ -1702,6 +1702,16 @@ export function issuer<
 		if (err instanceof UnknownStateError) {
 			return auth.forward(c, await error(err, c.req.raw));
 		}
+		// A refused client does not get to choose where the refusal is delivered.
+		// Everything below reports an error by redirecting to the `redirect_uri`
+		// the caller supplied, which is correct once that URI has been approved
+		// and is an open redirector before it has: the check that approves it is
+		// the one that just failed, so honouring it here would turn every
+		// refusal into a redirect to anywhere at all — no sign-in required, on
+		// the hostname people are told to trust with a password.
+		if (err instanceof UnauthorizedClientError) {
+			return c.text(err.description || err.error, 400);
+		}
 		const authorization = await getAuthorization(c);
 		// A device grant has no redirect to carry the error back on, so it is
 		// said here instead. Without this the reporting path throws on a URL
