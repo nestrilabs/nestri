@@ -14,6 +14,7 @@ use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader
 
 use crate::payload::Ports;
 use crate::workload::{Exited, Failure, Workload};
+use tokio::sync::mpsc::Receiver;
 
 /// How a session ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,12 +40,13 @@ pub async fn run<C, W>(
     channel: C,
     workload: &mut W,
     payload: &mut Ports,
+    addresses: &mut Receiver<String>,
 ) -> std::io::Result<Outcome>
 where
     C: AsyncRead + AsyncWrite,
     W: Workload,
 {
-    match converse(channel, workload, payload).await {
+    match converse(channel, workload, payload, addresses).await {
         Err(error) if channel_gone(&error) => {
             // A caller that has stopped reading has also stopped being able to
             // tell us to stop, which is the same situation as the channel
@@ -70,6 +72,7 @@ async fn converse<C, W>(
     channel: C,
     workload: &mut W,
     payload: &mut Ports,
+    addresses: &mut Receiver<String>,
 ) -> std::io::Result<Outcome>
 where
     C: AsyncRead + AsyncWrite,
@@ -91,6 +94,7 @@ where
 
     let mut running: Option<Exited> = None;
     let mut relay_open = true;
+    let mut carrier_open = true;
 
     loop {
         let event = match running.as_mut() {
@@ -98,10 +102,12 @@ where
                 ended = exited => Event::Ended(ended?),
                 line = lines.next_line() => Event::Line(line?),
                 up = payload.from_workload.recv(), if relay_open => Event::FromWorkload(up),
+                found = addresses.recv(), if carrier_open => Event::Address(found),
             },
             None => tokio::select! {
                 line = lines.next_line() => Event::Line(line?),
                 up = payload.from_workload.recv(), if relay_open => Event::FromWorkload(up),
+                found = addresses.recv(), if carrier_open => Event::Address(found),
             },
         };
 
@@ -113,6 +119,20 @@ where
             Event::FromWorkload(Some(payload)) => {
                 tracing::debug!(envelope = %payload.summary(), "sending an envelope on");
                 send(&mut writer, &GuestToHost::Payload { payload }).await?;
+                continue;
+            }
+            Event::Address(Some(ticket)) => {
+                // Sent whenever a better one is found, not only the first time:
+                // a caller that keeps the first address it is given works on a
+                // local network and fails from anywhere else.
+                send(&mut writer, &GuestToHost::Ticket { ticket }).await?;
+                continue;
+            }
+            Event::Address(None) => {
+                // Nothing will look for an address again. Not an ending: the
+                // session has whatever it was already told, and the workload
+                // still has to be stopped and its exit reported.
+                carrier_open = false;
                 continue;
             }
             Event::FromWorkload(None) => {
@@ -195,6 +215,7 @@ enum Event {
     Line(Option<String>),
     Ended(Exit),
     FromWorkload(Option<Payload>),
+    Address(Option<String>),
 }
 
 /// Hand an envelope to the relay, and treat a relay that is not there as the
@@ -276,6 +297,17 @@ mod tests {
         )
     }
 
+    /// A carrier that never finds an address, for the tests that are not
+    /// about one. Held open rather than closed: a closed channel is itself a
+    /// case, and it is tested on purpose below.
+    fn nowhere() -> mpsc::Receiver<String> {
+        let (tx, rx) = mpsc::channel(1);
+        // Kept alive for the process, so `recv` pends rather than resolving
+        // `None` and taking a branch these tests are not exercising.
+        Box::leak(Box::new(tx));
+        rx
+    }
+
     /// The other end of the channel, as a caller would drive it.
     struct Caller {
         lines: tokio::io::Lines<BufReader<DuplexStream>>,
@@ -322,7 +354,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -339,6 +373,87 @@ mod tests {
         assert_eq!(outcome, Outcome::Shutdown);
     }
 
+    /// The address goes up the channel as it is found. This is the only way
+    /// out: standard output here is a log file inside a VM and the person who
+    /// needs the address is outside it.
+    #[tokio::test]
+    async fn an_address_that_is_found_is_reported_to_the_caller() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (found_tx, mut found_rx) = mpsc::channel(4);
+
+        let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
+            let mut workload = Double::exits_when_stopped(Exit::code(0));
+            run(guest, &mut workload, &mut ports, &mut found_rx)
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::Ready {
+                protocol_version: 2
+            }
+        );
+
+        found_tx
+            .send("nestri:local-only".to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::Ticket {
+                ticket: "nestri:local-only".into()
+            }
+        );
+
+        // And a better one replaces it rather than being the caller's problem
+        // to have missed.
+        found_tx
+            .send("nestri:with-relays".to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::Ticket {
+                ticket: "nestri:with-relays".into()
+            }
+        );
+
+        caller.say(&HostToGuest::Shutdown).await;
+        assert_eq!(session.await.unwrap(), Outcome::Shutdown);
+    }
+
+    /// Nothing looking for an address any more is not an ending. The session
+    /// keeps whatever it was already told and still has to report an exit.
+    #[tokio::test]
+    async fn a_carrier_that_stops_does_not_end_the_session() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (found_tx, mut found_rx) = mpsc::channel(4);
+
+        let session = tokio::spawn(async move {
+            let (mut ports, _to_workload, _from_workload) = ports();
+            let mut workload = Double::exits_when_stopped(Exit::code(0));
+            run(guest, &mut workload, &mut ports, &mut found_rx)
+                .await
+                .unwrap()
+        });
+
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::Ready {
+                protocol_version: 2
+            }
+        );
+        drop(found_tx);
+
+        // Still answering, which is the whole assertion.
+        caller.say(&HostToGuest::Shutdown).await;
+        assert_eq!(session.await.unwrap(), Outcome::Shutdown);
+    }
+
     #[tokio::test]
     async fn the_descriptor_mounts_and_starts_what_it_names() {
         let (guest, host) = tokio::io::duplex(4096);
@@ -347,7 +462,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -373,7 +490,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(3));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -409,7 +528,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::signal(9));
-            run(guest, &mut workload, &mut ports).await.unwrap()
+            run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -440,7 +561,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -466,7 +589,9 @@ mod tests {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(0));
             workload.mount_failure = Some(Failure::new("EACCES: /mnt/user"));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -501,7 +626,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports).await.unwrap()
+            run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -524,7 +651,9 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -556,7 +685,9 @@ mod tests {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(0));
             workload.start_failure = Some(Failure::new("ENOENT: /usr/bin/workload"));
-            let outcome = run(guest, &mut workload, &mut ports).await.unwrap();
+            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap();
             (outcome, workload)
         });
 
@@ -598,7 +729,9 @@ mod tests {
                 from_workload: up_rx,
             };
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports).await.unwrap()
+            run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap()
         });
         let mut to_relay = down_rx;
 
@@ -647,7 +780,9 @@ mod tests {
                 from_workload: up_rx,
             };
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports).await.unwrap()
+            run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -693,7 +828,9 @@ mod tests {
                 from_workload: up_rx,
             };
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports).await.unwrap()
+            run(guest, &mut workload, &mut ports, &mut nowhere())
+                .await
+                .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));

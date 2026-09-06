@@ -12,4 +12,5 @@ pub mod payload;
 pub mod reap;
 pub mod session;
 pub mod shutdown;
+pub mod ticket;
 pub mod workload;
