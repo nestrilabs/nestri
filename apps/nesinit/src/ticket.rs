@@ -41,6 +41,15 @@ pub const SOCKET: &str = "/tmp/nestri-ticket.sock";
 /// connection to a unix socket per interval.
 const EVERY: Duration = Duration::from_secs(2);
 
+/// How long one look is given before it is abandoned.
+///
+/// A cap on time, next to the cap on size below and for the same reason: the
+/// far end can accept a connection and then write nothing at all, and a read
+/// with no deadline turns that into a poll loop that never runs again. The
+/// address it already forwarded stays correct; the better one that arrives
+/// later never would.
+const PATIENCE: Duration = Duration::from_secs(5);
+
 /// The longest address this will read.
 ///
 /// One line of text. A cap rather than a preference: the process on the other
@@ -57,7 +66,7 @@ const LONGEST: u64 = 8 * 1024;
 pub async fn carry(path: PathBuf, out: Sender<String>) {
     let mut sent: Option<String> = None;
     loop {
-        match read(&path).await {
+        match look(&path).await {
             Ok(current) if Some(&current) != sent.as_ref() => {
                 // The address itself is not logged. It is a capability to reach
                 // this session, and a log inside the guest is the one place it
@@ -82,6 +91,17 @@ pub async fn carry(path: PathBuf, out: Sender<String>) {
             }
         }
         tokio::time::sleep(EVERY).await;
+    }
+}
+
+/// One look at the socket, abandoned if it takes longer than [`PATIENCE`].
+async fn look(path: &Path) -> io::Result<String> {
+    match tokio::time::timeout(PATIENCE, read(path)).await {
+        Ok(result) => result,
+        Err(_) => Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "the socket accepted a connection and did not answer",
+        )),
     }
 }
 
@@ -201,6 +221,45 @@ mod tests {
             .expect("an address that arrived late was never picked up")
             .expect("the channel closed");
         assert_eq!(first, "nestri:late");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A server that accepts and then says nothing must not take the poll loop
+    /// with it. Without a deadline on the read this hangs forever, and the
+    /// address that arrives afterwards is never seen.
+    #[tokio::test]
+    async fn a_server_that_answers_nothing_does_not_stop_the_search() {
+        let path = scratch("mute");
+        let listener = UnixListener::bind(&path).unwrap();
+        let held = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
+        {
+            let held = held.clone();
+            tokio::spawn(async move {
+                // Accepted and kept open, deliberately unanswered, which is
+                // what a wedged producer looks like from here.
+                let mut answered = false;
+                loop {
+                    let Ok((mut stream, _)) = listener.accept().await else {
+                        return;
+                    };
+                    if answered {
+                        let _ = stream.write_all(b"nestri:eventually\n").await;
+                    } else {
+                        answered = true;
+                        held.lock().await.push(stream);
+                    }
+                }
+            });
+        }
+
+        let (tx, mut rx) = mpsc::channel(4);
+        tokio::spawn(carry(path.clone(), tx));
+
+        let first = tokio::time::timeout(PATIENCE + EVERY * 4, rx.recv())
+            .await
+            .expect("the carrier never got past a server that would not answer")
+            .expect("the channel closed");
+        assert_eq!(first, "nestri:eventually");
         let _ = std::fs::remove_file(&path);
     }
 
