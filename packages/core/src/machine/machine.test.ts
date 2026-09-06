@@ -142,7 +142,13 @@ describe('Machine heartbeat', () => {
 		// Two rows claiming one endpoint id would send a request addressed to
 		// one machine to another machine's agent, and the authorisation in
 		// front of it cannot catch that.
-		expect(Machine.touchLastSeen({ id: second, endpointId })).rejects.toThrow();
+		//
+		// A conflict rather than a fault, and that distinction is the test: the
+		// database refusing is the *expected* way to find out, so it must not
+		// reach a host as "your beat broke the server".
+		await expect(Machine.touchLastSeen({ id: second, endpointId })).rejects.toMatchObject({
+			type: 'already_exists'
+		});
 	});
 
 	test('online is derived from the last beat, not stored', async () => {

@@ -239,7 +239,8 @@ export namespace MachineApi {
 					},
 					400: ErrorResponses[400],
 					403: ErrorResponses[403],
-					404: ErrorResponses[404]
+					404: ErrorResponses[404],
+					409: ErrorResponses[409]
 				}
 			}),
 			validator(

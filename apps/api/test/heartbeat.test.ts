@@ -157,6 +157,31 @@ describe('POST /machine/heartbeat', () => {
 		expect((await Machine.fromID(host.id))?.lastSeen).not.toBeNull();
 	});
 
+	test('claiming another host’s endpoint id is a conflict, not a fault', async () => {
+		const first = await registeredHost('beat-endpoint-taken-a');
+		const second = await registeredHost('beat-endpoint-taken-b');
+		const endpointId = 'f'.repeat(64);
+
+		await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...first.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId })
+		});
+
+		const res = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...second.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId })
+		});
+
+		// The unique index is the invariant, so the database refusing is the
+		// expected way to find out — and an expected refusal reaching a host as
+		// a 500 tells it the server broke rather than that the id is taken.
+		expect(res.status).toBe(409);
+		expect((await res.json()) as any).toMatchObject({ type: 'already_exists' });
+		expect((await Machine.fromID(second.id))?.endpointId).toBeNull();
+	});
+
 	test('a user session cannot beat on a host’s behalf', async () => {
 		// A box holds credentials but is not its owner, and the reverse holds
 		// too: `machineOnly` exists so a route written for a host cannot be

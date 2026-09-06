@@ -4,6 +4,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Database } from '../db/index.js';
+import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { Member } from '../team/member.js';
@@ -81,6 +82,12 @@ export namespace Machine {
 		return Array.from(new Uint8Array(digest))
 			.map((b) => b.toString(16).padStart(2, '0'))
 			.join('');
+	}
+
+	/** Postgres refusing a second row for the same key. */
+	function isUniqueViolation(err: unknown): boolean {
+		const e = err as { code?: string; cause?: { code?: string } };
+		return e?.code === '23505' || e?.cause?.code === '23505';
 	}
 
 	/** Length-independent, content-constant comparison of two hex digests. */
@@ -224,21 +231,43 @@ export namespace Machine {
 	export const touchLastSeen = fn(
 		Info.pick({ id: true }).extend({ endpointId: EndpointId.optional() }),
 		async (input) => {
-			return Database.use(async (tx) => {
-				return tx
-					.update(MachineTable)
-					.set({
-						lastSeen: sql`now()`,
-						// Omitted rather than nulled when it is absent: a caller
-						// that does not mention where it is has not moved, and
-						// clearing the column would deregister a working host
-						// from every route that reads it.
-						...(input.endpointId ? { endpointId: input.endpointId } : {})
-					})
-					.where(eq(MachineTable.id, input.id))
-					.returning({ lastSeen: MachineTable.lastSeen })
-					.then((rows) => rows.at(0)?.lastSeen ?? null);
-			});
+			try {
+				return await Database.use(async (tx) => {
+					return tx
+						.update(MachineTable)
+						.set({
+							lastSeen: sql`now()`,
+							// Omitted rather than nulled when it is absent: a caller
+							// that does not mention where it is has not moved, and
+							// clearing the column would deregister a working host
+							// from every route that reads it.
+							...(input.endpointId ? { endpointId: input.endpointId } : {})
+						})
+						.where(eq(MachineTable.id, input.id))
+						.returning({ lastSeen: MachineTable.lastSeen })
+						.then((rows) => rows.at(0)?.lastSeen ?? null);
+				});
+			} catch (err) {
+				// Another host already holds this endpoint id. That is a
+				// conflict rather than a fault: the unique index is the
+				// invariant, so the database refusing is the expected way to
+				// find out, and letting it surface as a 500 would tell a host
+				// its beat broke the server.
+				//
+				// Checked-then-written would be worse rather than better. Two
+				// hosts reporting the same id in the same instant both read
+				// "nobody holds it" and both write, which is precisely what the
+				// index is for — so the read would add a query and remove
+				// nothing.
+				if (isUniqueViolation(err)) {
+					throw new VisibleError(
+						'already_exists',
+						ErrorCodes.Validation.ALREADY_EXISTS,
+						'Another machine is already reachable at that endpoint id'
+					);
+				}
+				throw err;
+			}
 		}
 	);
 
