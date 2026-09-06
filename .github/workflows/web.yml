@@ -1,12 +1,35 @@
-name: CI
+# The TypeScript half: the control-plane apps and the packages they share.
+#
+# Split from the Rust half rather than being two jobs in one workflow, because
+# a job cannot carry its own `paths` filter — only a workflow can. Two files is
+# what "run this only when its own code changes" costs, and the alternative
+# spends a runner on every pull request deciding it has nothing to do.
+name: web
 
 on:
   push:
     branches: [main]
   pull_request:
+    paths:
+      # Every TypeScript workspace member. `packages/` is entirely TypeScript
+      # so it is taken whole; `apps/` is mostly Rust, so its two members are
+      # named. **Adding a TypeScript app means adding it here** — nothing
+      # detects that on its own, and the failure is silent: the tests do not
+      # run and the pull request goes green.
+      - "apps/api/**"
+      - "apps/auth/**"
+      - "packages/**"
+      # The workspace itself. A lockfile change reaches every member, and the
+      # linter and compiler settings decide whether any of it passes.
+      - "package.json"
+      - "bun.lock"
+      - "tsconfig.json"
+      - "oxlintrc.json"
+      # This file. A change to how the tests run is a change worth running.
+      - ".github/workflows/web.yml"
 
 jobs:
-  web:
+  test:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -42,28 +65,3 @@ jobs:
         run: bun test
         env:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/nestri
-
-  # Scoped to `nesdoctor` deliberately. The rest of the Rust half has never
-  # been under CI, so widening this to `--workspace` would turn every PR red
-  # for reasons unrelated to the PR. Widen it one member at a time, as each is
-  # made to pass.
-  nesdoctor:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rust toolchain
-        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: ". -> target"
-      - name: Format
-        run: cargo fmt -p nesdoctor -- --check
-      - name: Clippy
-        run: cargo clippy -p nesdoctor --all-targets -- -D warnings
-      - name: Test
-        run: cargo test -p nesdoctor
-      # Runs without touching the network, so this stays fast and cannot fail
-      # on a runner's egress rules. The network path is exercised by the
-      # release workflow's smoke test, where it belongs.
-      - name: Runs at all
-        run: cargo run -p nesdoctor -- --quiet --no-net --no-steam --json "$RUNNER_TEMP/nd.json" < /dev/null
