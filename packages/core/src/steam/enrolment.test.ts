@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 
 import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
+import { Identifier } from '../id.js';
 import { Enrolment } from './enrolment.js';
 
 const sql = testDb();
@@ -121,6 +122,22 @@ describe('Enrolment.markStale', () => {
 	});
 });
 
+describe('the user foreign key has its own index', () => {
+	test('deleting a user, and asking by user, do not scan the table', async () => {
+		// The primary key starts with the machine, so neither of the two things
+		// that read by user alone can use it: the cascade behind a user
+		// deletion, and the question "which hosts hold a token for me".
+		const indexes = await sql<{ indexdef: string }[]>`
+			select indexdef from pg_indexes
+			where schemaname = 'public'
+			  and tablename = 'steam_enrolment'
+			  and indexname = 'steam_enrolment_user_idx'
+		`;
+		expect(indexes).toHaveLength(1);
+		expect(indexes[0]!.indexdef).toContain('user_id');
+	});
+});
+
 describe('Enrolment.listByMachine', () => {
 	test('every enrolment for one host, oldest first', async () => {
 		const h = await host('core-list');
@@ -140,6 +157,6 @@ describe('Enrolment.listByMachine', () => {
 	});
 
 	test('an unknown host has no enrolments rather than an error', async () => {
-		expect(await Enrolment.listByMachine('mch_nosuchmachine')).toEqual([]);
+		expect(await Enrolment.listByMachine(Identifier.ascending('machine'))).toEqual([]);
 	});
 });

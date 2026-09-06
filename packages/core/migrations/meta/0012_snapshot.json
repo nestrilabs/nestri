@@ -1,5 +1,5 @@
 {
-  "id": "5c6f5a6c-74ff-4b9d-95ac-bef2c2603273",
+  "id": "d519bc2f-25f8-46e1-b7df-67bf6b5a927a",
   "prevId": "6fdda454-c7ee-42c1-931b-fa595385aac0",
   "version": "7",
   "dialect": "postgresql",
@@ -1860,7 +1860,23 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "steam_enrolment_user_idx": {
+          "name": "steam_enrolment_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "steam_enrolment_machine_id_machine_id_fk": {
           "name": "steam_enrolment_machine_id_machine_id_fk",

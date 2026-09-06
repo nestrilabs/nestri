@@ -25,6 +25,12 @@
 -- itself only goes away when the machine or the user does, which the foreign
 -- keys already do.
 --
+-- The key begins with the machine, so it answers "what does this host hold" and
+-- nothing else. `user_id` gets its own index because the two things that read
+-- by user cannot use the key: deleting a user cascades into this table by that
+-- column alone, and asking which hosts hold a token for one person is the
+-- obvious next reader.
+--
 -- `last_ok_at` has no writer yet. A successful logon happens inside the
 -- workload, which holds no control-plane credential, so the report has to come
 -- back out through the host and nothing carries it today. The column exists
@@ -44,4 +50,5 @@ CREATE TABLE "steam_enrolment" (
 );
 --> statement-breakpoint
 ALTER TABLE "steam_enrolment" ADD CONSTRAINT "steam_enrolment_machine_id_machine_id_fk" FOREIGN KEY ("machine_id") REFERENCES "public"."machine"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "steam_enrolment" ADD CONSTRAINT "steam_enrolment_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "steam_enrolment" ADD CONSTRAINT "steam_enrolment_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "steam_enrolment_user_idx" ON "steam_enrolment" USING btree ("user_id");

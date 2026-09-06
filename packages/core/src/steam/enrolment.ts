@@ -5,6 +5,7 @@ import { Database } from '../db/index.js';
 import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
+import { Identifier } from '../id.js';
 import { SteamEnrolmentState, SteamEnrolmentTable } from './enrolment.sql.js';
 import { STEAM_ID_RE } from './index.js';
 
@@ -31,11 +32,15 @@ function isForeignKeyViolation(err: unknown): boolean {
 export namespace Enrolment {
 	export const Info = z
 		.object({
-			machineId: z.string().meta({
+			// Shaped, not merely non-empty. Both are foreign keys into
+			// fixed-width columns, so a string of the wrong width is rejected
+			// by the database itself — and a database refusal reaches a caller
+			// as a server fault rather than as the bad input it is.
+			machineId: Identifier.schema('machine').meta({
 				description: 'The host that holds a token for this user',
 				example: Examples.SteamEnrolment.machineId
 			}),
-			userId: z.string().meta({
+			userId: Identifier.schema('user').meta({
 				description: 'The person the host signed in as',
 				example: Examples.SteamEnrolment.userId
 			}),

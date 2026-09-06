@@ -149,10 +149,31 @@ describe('POST /machine/enrolment', () => {
 
 	test('a user nobody has heard of is refused rather than crashing', async () => {
 		const host = await registeredHost('enrol-ghost');
-		const res = await enrol(host, { userId: 'usr_nosuchuseratall', steamId: steamId(6) });
+		// Well-formed and simply absent, which is the case the foreign key
+		// catches. A malformed one never reaches the database at all.
+		const res = await enrol(host, {
+			userId: Identifier.ascending('user'),
+			steamId: steamId(6)
+		});
 		expect(res.status).toBe(404);
 		const body = (await res.json()) as any;
 		expect(body.type).toBe('not_found');
+	});
+
+	test('a userId of the wrong shape is bad input, not a server fault', async () => {
+		// Ids live in a fixed-width column, so an overlong one is refused by
+		// the database rather than merely not found — and that refusal used to
+		// reach the host as a 500, which tells it to retry something that can
+		// never succeed. The width is checked where the input arrives.
+		const host = await registeredHost('enrol-misshapen');
+		const malformed = [`usr_${'a'.repeat(40)}`, 'usr_short', `mch_${'a'.repeat(26)}`, 'nonsense'];
+		for (const userId of malformed) {
+			// eslint-disable-next-line no-await-in-loop
+			const res = await enrol(host, { userId, steamId: steamId(15) });
+			expect(res.status).toBe(400);
+			// eslint-disable-next-line no-await-in-loop
+			expect(((await res.json()) as any).type).toBe('validation');
+		}
 	});
 
 	test('a Steam id has to look like one', async () => {
@@ -165,7 +186,7 @@ describe('POST /machine/enrolment', () => {
 		const res = await app.request('/machine/enrolment', {
 			method: 'POST',
 			headers: { 'x-nestri-admin-token': TEST_ADMIN_SECRET, 'content-type': 'application/json' },
-			body: JSON.stringify({ userId: 'usr_x', steamId: steamId(7) })
+			body: JSON.stringify({ userId: Identifier.ascending('user'), steamId: steamId(7) })
 		});
 		expect(res.status).toBe(403);
 		expect(((await res.json()) as any).message).toContain('Machine credentials');
@@ -220,7 +241,7 @@ describe('POST /machine/enrolment/stale', () => {
 		const res = await app.request('/machine/enrolment/stale', {
 			method: 'POST',
 			headers: { 'x-nestri-admin-token': TEST_ADMIN_SECRET, 'content-type': 'application/json' },
-			body: JSON.stringify({ userId: 'usr_x' })
+			body: JSON.stringify({ userId: Identifier.ascending('user') })
 		});
 		expect(res.status).toBe(403);
 	});

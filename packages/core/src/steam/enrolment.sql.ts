@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, primaryKey, text } from 'drizzle-orm/pg-core';
+import { index, pgEnum, pgTable, primaryKey, text } from 'drizzle-orm/pg-core';
 
 import { ulid, utc } from '../db/types.js';
 import { MachineTable } from '../machine/machine.sql.js';
@@ -61,5 +61,12 @@ export const SteamEnrolmentTable = pgTable(
 		lastOkAt: utc('last_ok_at'),
 		revokedAt: utc('revoked_at')
 	},
-	(t) => [primaryKey({ columns: [t.machineId, t.userId] })]
+	(t) => [
+		primaryKey({ columns: [t.machineId, t.userId] }),
+		// The key starts with the machine, which answers "what does this host
+		// hold" and nothing else. Deleting a user cascades into this table by
+		// `user_id` alone, and asking which hosts hold a token for one person
+		// is the obvious next reader — neither can use the key.
+		index('steam_enrolment_user_idx').on(t.userId)
+	]
 );
