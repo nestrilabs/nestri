@@ -22,10 +22,11 @@ src/<parent>/
 | `user/library.*`        | `Library`       | User's owned games with playtime      |
 | `team/member.*`         | `Member`        | Team membership with role             |
 | `game/depot.*`          | `Depot`         | Platform-specific game content depots |
+| `steam/enrolment.*`     | `Enrolment`     | Which host holds a Steam token for whom |
 
 Existing top-level modules: `user/`, `team/`, `game/`, `pairing-code/`, `steam/`, `auth/`, `db/`.
 
-Modules that don't own their own table (like `steam/`) only need a single `index.ts` exposing reusable `fn()` functions — no `.sql.ts` file.
+A parent may own no table of its own and still have sub-modules that do: `steam/index.ts` is reusable `fn()` functions with no `.sql.ts` beside it, while `steam/enrolment.*` is a full pair.
 
 ## Pattern: `.sql.ts` (Drizzle Table)
 

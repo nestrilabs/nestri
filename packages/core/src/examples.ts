@@ -128,6 +128,16 @@ export namespace Examples {
 		lastSeen: '2026-07-28T12:00:00.000Z'
 	};
 
+	export const SteamEnrolment = {
+		machineId: Id('machine'),
+		userId: Id('user'),
+		steamId: '76561197960287930',
+		state: 'enrolled' as const,
+		enrolledAt: '2026-07-28T12:00:00.000Z',
+		lastOkAt: null,
+		revokedAt: null
+	};
+
 	export const Box = {
 		id: Id('box'),
 		userId: Id('user'),
