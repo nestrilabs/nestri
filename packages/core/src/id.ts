@@ -47,7 +47,14 @@ export namespace Identifier {
 			.length(prefixes[prefix].length + 1 + LENGTH);
 	}
 
-	const LENGTH = 26;
+	/**
+	 * How many characters follow the prefix and separator.
+	 *
+	 * Exported because three things have to agree on it and two of them are
+	 * not the generator: the column is fixed-width, {@link schema} refuses
+	 * anything else, and the documented examples have to be values that pass.
+	 */
+	export const LENGTH = 26;
 
 	let lastTimestamp = 0;
 	let counter = 0;

@@ -1,8 +1,12 @@
 import { Identifier } from './id.js';
 
 export namespace Examples {
+	// The width is taken from the generator rather than typed out. Counting
+	// twenty-six of anything by eye is a thing people get wrong once and then
+	// never look at again — this was one short, which made every documented id
+	// a value the schema that published it would reject.
 	export const Id = (prefix: keyof typeof Identifier.prefixes) =>
-		`${Identifier.prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
+		`${Identifier.prefixes[prefix]}_${'X'.repeat(Identifier.LENGTH)}`;
 
 	export const User = {
 		id: Id('user'),

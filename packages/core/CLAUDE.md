@@ -378,7 +378,7 @@ The IDs are 30-char strings: `{prefix}_{26 base62 chars}`. They are monotonicall
 ```ts
 export namespace Examples {
   export const Id = (prefix: keyof typeof Identifier.prefixes) =>
-    `${Identifier.prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
+    `${Identifier.prefixes[prefix]}_${'X'.repeat(Identifier.LENGTH)}`;
 
   export const User = { id: Id('user'), name: '…', email: '…', … };
   export const LinkedAccount = { id: Id('linkedAccount'), provider: 'steam', … };
