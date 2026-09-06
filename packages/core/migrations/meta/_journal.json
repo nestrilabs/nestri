@@ -85,6 +85,13 @@
       "when": 1788607804606,
       "tag": "0011_auth_state_in_postgres",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788691753961,
+      "tag": "0012_steam_enrolment_without_a_token",
+      "breakpoints": true
     }
   ]
 }

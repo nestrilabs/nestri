@@ -10,7 +10,8 @@ import { Identity } from '../user/identity.js';
 import { User } from '../user/index.js';
 import { LinkedAccount } from '../user/linked-account.js';
 
-const STEAM_ID_RE = /^\d{17}$/;
+/** An individual Steam account id: 17 digits, always. */
+export const STEAM_ID_RE = /^\d{17}$/;
 
 function isUniqueViolation(err: unknown): boolean {
 	const e = err as { code?: string; cause?: { code?: string } };

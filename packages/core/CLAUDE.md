@@ -22,10 +22,11 @@ src/<parent>/
 | `user/library.*`        | `Library`       | User's owned games with playtime      |
 | `team/member.*`         | `Member`        | Team membership with role             |
 | `game/depot.*`          | `Depot`         | Platform-specific game content depots |
+| `steam/enrolment.*`     | `Enrolment`     | Which host holds a Steam token for whom |
 
 Existing top-level modules: `user/`, `team/`, `game/`, `pairing-code/`, `steam/`, `auth/`, `db/`.
 
-Modules that don't own their own table (like `steam/`) only need a single `index.ts` exposing reusable `fn()` functions — no `.sql.ts` file.
+A parent may own no table of its own and still have sub-modules that do: `steam/index.ts` is reusable `fn()` functions with no `.sql.ts` beside it, while `steam/enrolment.*` is a full pair.
 
 ## Pattern: `.sql.ts` (Drizzle Table)
 
@@ -377,7 +378,7 @@ The IDs are 30-char strings: `{prefix}_{26 base62 chars}`. They are monotonicall
 ```ts
 export namespace Examples {
   export const Id = (prefix: keyof typeof Identifier.prefixes) =>
-    `${Identifier.prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
+    `${Identifier.prefixes[prefix]}_${'X'.repeat(Identifier.LENGTH)}`;
 
   export const User = { id: Id('user'), name: '…', email: '…', … };
   export const LinkedAccount = { id: Id('linkedAccount'), provider: 'steam', … };

@@ -27,11 +27,34 @@ export namespace Identifier {
 		refreshToken: 'rft'
 	} as const;
 
+	/**
+	 * An id as this control plane issues them: the right prefix, and the exact
+	 * width the column has.
+	 *
+	 * The width is the half that matters at an API boundary. Ids are stored in
+	 * a fixed-width column, so an overlong string is *refused by the database*
+	 * rather than simply not matching anything — which surfaces to the caller
+	 * as a server fault instead of the validation error it actually is.
+	 * Checking it where the input arrives is what keeps the two apart.
+	 *
+	 * The separator is part of the prefix check for the same reason: without
+	 * it, `usrsomething` reads as a user id.
+	 */
 	export function schema(prefix: keyof typeof prefixes) {
-		return z.string().startsWith(prefixes[prefix]);
+		return z
+			.string()
+			.startsWith(`${prefixes[prefix]}_`)
+			.length(prefixes[prefix].length + 1 + LENGTH);
 	}
 
-	const LENGTH = 26;
+	/**
+	 * How many characters follow the prefix and separator.
+	 *
+	 * Exported because three things have to agree on it and two of them are
+	 * not the generator: the column is fixed-width, {@link schema} refuses
+	 * anything else, and the documented examples have to be values that pass.
+	 */
+	export const LENGTH = 26;
 
 	let lastTimestamp = 0;
 	let counter = 0;

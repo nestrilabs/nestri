@@ -1,8 +1,12 @@
 import { Identifier } from './id.js';
 
 export namespace Examples {
+	// The width is taken from the generator rather than typed out. Counting
+	// twenty-six of anything by eye is a thing people get wrong once and then
+	// never look at again — this was one short, which made every documented id
+	// a value the schema that published it would reject.
 	export const Id = (prefix: keyof typeof Identifier.prefixes) =>
-		`${Identifier.prefixes[prefix]}_XXXXXXXXXXXXXXXXXXXXXXXXX`;
+		`${Identifier.prefixes[prefix]}_${'X'.repeat(Identifier.LENGTH)}`;
 
 	export const User = {
 		id: Id('user'),
@@ -126,6 +130,16 @@ export namespace Examples {
 		teamId: Id('team'),
 		label: 'living-room-box',
 		lastSeen: '2026-07-28T12:00:00.000Z'
+	};
+
+	export const SteamEnrolment = {
+		machineId: Id('machine'),
+		userId: Id('user'),
+		steamId: '76561197960287930',
+		state: 'enrolled' as const,
+		enrolledAt: '2026-07-28T12:00:00.000Z',
+		lastOkAt: null,
+		revokedAt: null
 	};
 
 	export const Box = {
