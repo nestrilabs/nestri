@@ -16,6 +16,14 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{Receiver, Sender};
 
+/// The directory the relay's socket lives in.
+///
+/// Named separately because it is mounted before it is used: the guest's root
+/// is read-only, so this is a tmpfs that `filesystems` puts there, and a
+/// rename here that did not reach the mount table would take the relay down
+/// with an `EROFS` that looks like nothing to do with a path.
+pub const DIRECTORY: &str = "/nestri";
+
 /// Where the workload finds the relay.
 pub const SOCKET: &str = "/nestri/payload.sock";
 

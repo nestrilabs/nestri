@@ -40,6 +40,11 @@ fn main() -> anyhow::Result<()> {
         )
         .init();
 
+    // Before everything, including the two below: the root is read-only and
+    // nothing else in this guest is an init system, so until this runs there
+    // is no `/proc` to score this process in and nowhere to put a socket.
+    nesinit::filesystems::establish();
+
     // Both before anything is started, so nothing can be orphaned or scored
     // in the window where neither is true yet.
     if let Err(error) = reap::become_subreaper() {
