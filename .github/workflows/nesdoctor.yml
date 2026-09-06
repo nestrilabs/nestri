@@ -1,0 +1,48 @@
+# `nesdoctor`, and deliberately nothing else in the Rust workspace.
+#
+# The rest of the Rust half has never been under CI, so widening this to
+# `--workspace` would turn every pull request red for reasons unrelated to the
+# pull request. Widen it one member at a time, as each is made to pass — and
+# give each one its own `paths` filter when you do.
+name: nesdoctor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "apps/nesdoctor/**"
+      # The workspace root pins every dependency version and owns the build
+      # profiles, so a change to either reaches this binary even though nothing
+      # under `apps/nesdoctor` moved. `Cargo.lock` is the resolved answer to
+      # the same question.
+      #
+      # No other member is listed because `nesdoctor` depends on no other
+      # member: its dependency tree is part of what it asks to be trusted on,
+      # and it is four external crates deep. If that ever stops being true,
+      # the crate it takes belongs here.
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/nesdoctor.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+      - name: Format
+        run: cargo fmt -p nesdoctor -- --check
+      - name: Clippy
+        run: cargo clippy -p nesdoctor --all-targets -- -D warnings
+      - name: Test
+        run: cargo test -p nesdoctor
+      # Runs without touching the network, so this stays fast and cannot fail
+      # on a runner's egress rules. The network path is exercised by the
+      # release workflow's smoke test, where it belongs.
+      - name: Runs at all
+        run: cargo run -p nesdoctor -- --quiet --no-net --no-steam --json "$RUNNER_TEMP/nd.json" < /dev/null
