@@ -94,6 +94,94 @@ describe('POST /machine/heartbeat', () => {
 		expect((await Machine.fromID(host.id))?.lastSeen).toBeNull();
 	});
 
+	test('a host says where it is on the beat it already sends', async () => {
+		const host = await registeredHost('beat-endpoint');
+		const endpointId = 'd'.repeat(64);
+
+		// A beat carrying no body is what every agent shipped before this field
+		// sends, and it must still be a beat.
+		const bare = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: host.headers
+		});
+		expect(bare.status).toBe(200);
+		expect((await Machine.fromID(host.id))?.endpointId).toBeNull();
+
+		const res = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...host.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId })
+		});
+		expect(res.status).toBe(200);
+		expect((await Machine.fromID(host.id))?.endpointId).toBe(endpointId);
+
+		// And a later beat that says nothing does not take the host off the map.
+		await app.request('/machine/heartbeat', { method: 'POST', headers: host.headers });
+		expect((await Machine.fromID(host.id))?.endpointId).toBe(endpointId);
+	});
+
+	test('a host cannot report where somebody else is', async () => {
+		// The report is authenticated as the machine it is about, and there is
+		// no field naming a different one. This is the assertion that keeps it
+		// that way: a body that tries anyway changes nothing.
+		const host = await registeredHost('beat-endpoint-other');
+		const victim = await registeredHost('beat-endpoint-victim');
+		const endpointId = 'e'.repeat(64);
+
+		const res = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...host.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId, machineId: victim.id, id: victim.id })
+		});
+
+		expect(res.status).toBe(200);
+		expect((await Machine.fromID(host.id))?.endpointId).toBe(endpointId);
+		expect((await Machine.fromID(victim.id))?.endpointId).toBeNull();
+	});
+
+	test('an endpoint id that cannot be one is refused', async () => {
+		const host = await registeredHost('beat-endpoint-shape');
+
+		const res = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...host.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId: 'not-an-endpoint-id' })
+		});
+
+		expect(res.status).toBe(400);
+		expect((await Machine.fromID(host.id))?.endpointId).toBeNull();
+		// Liveness is still recorded, and that is not a half-applied write:
+		// authenticating as this machine is itself proof it is alive, and the
+		// middleware records it before any route runs. What the refusal keeps
+		// out is the value that failed the check.
+		expect((await Machine.fromID(host.id))?.lastSeen).not.toBeNull();
+	});
+
+	test('claiming another host’s endpoint id is a conflict, not a fault', async () => {
+		const first = await registeredHost('beat-endpoint-taken-a');
+		const second = await registeredHost('beat-endpoint-taken-b');
+		const endpointId = 'f'.repeat(64);
+
+		await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...first.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId })
+		});
+
+		const res = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: { ...second.headers, 'content-type': 'application/json' },
+			body: JSON.stringify({ endpointId })
+		});
+
+		// The unique index is the invariant, so the database refusing is the
+		// expected way to find out — and an expected refusal reaching a host as
+		// a 500 tells it the server broke rather than that the id is taken.
+		expect(res.status).toBe(409);
+		expect((await res.json()) as any).toMatchObject({ type: 'already_exists' });
+		expect((await Machine.fromID(second.id))?.endpointId).toBeNull();
+	});
+
 	test('a user session cannot beat on a host’s behalf', async () => {
 		// A box holds credentials but is not its owner, and the reverse holds
 		// too: `machineOnly` exists so a route written for a host cannot be

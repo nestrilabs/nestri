@@ -87,17 +87,68 @@ describe('Machine heartbeat', () => {
 
 		expect((await Machine.fromID(machineId))?.lastSeen).toBeNull();
 
-		const first = await Machine.touchLastSeen(machineId);
+		const first = await Machine.touchLastSeen({ id: machineId });
 		expect(first).not.toBeNull();
 
-		const second = await Machine.touchLastSeen(machineId);
+		const second = await Machine.touchLastSeen({ id: machineId });
 		expect(second!.getTime()).toBeGreaterThanOrEqual(first!.getTime());
 	});
 
 	test('beating for a machine that is gone reports nothing rather than pretending', async () => {
 		// A host deleted mid-beat must be told to re-register, so this returns
 		// null and the route turns that into a 404.
-		expect(await Machine.touchLastSeen('mch_deletedmiddeletedmid___')).toBeNull();
+		expect(await Machine.touchLastSeen({ id: 'mch_deletedmiddeletedmid___' })).toBeNull();
+	});
+
+	test('a host reports where it is, and a beat that says nothing leaves it alone', async () => {
+		const owner = await newOwner('mch-endpoint');
+		const machineId = await Fixtures.machine(owner);
+		const endpointId = 'b'.repeat(64);
+
+		// Nothing assigns this. Until the host says so, there is nowhere to
+		// send a request that was authorised for it.
+		expect((await Machine.fromID(machineId))?.endpointId).toBeNull();
+
+		await Machine.touchLastSeen({ id: machineId, endpointId });
+		expect((await Machine.fromID(machineId))?.endpointId).toBe(endpointId);
+
+		// The regression this guards: an agent that beats without the field —
+		// every agent shipped before it existed — must not clear the column and
+		// take a working host off every route that reads it.
+		await Machine.touchLastSeen({ id: machineId });
+		expect((await Machine.fromID(machineId))?.endpointId).toBe(endpointId);
+	});
+
+	test('an endpoint id that cannot be one is refused before it is stored', async () => {
+		const owner = await newOwner('mch-endpoint-shape');
+		const machineId = await Fixtures.machine(owner);
+
+		// Truncated, upper-cased, and carrying an encoding that is not this
+		// one. Each would be written happily by a text column and would fail
+		// far away, at whoever tried to dial it.
+		for (const bad of ['abc', 'A'.repeat(64), `${'a'.repeat(63)}z`, `0x${'a'.repeat(64)}`]) {
+			expect(() => Machine.touchLastSeen({ id: machineId, endpointId: bad })).toThrow();
+		}
+	});
+
+	test('two machines cannot claim the same endpoint id', async () => {
+		const owner = await newOwner('mch-endpoint-unique');
+		const first = await Fixtures.machine(owner);
+		const second = await Fixtures.machine(owner);
+		const endpointId = 'c'.repeat(64);
+
+		await Machine.touchLastSeen({ id: first, endpointId });
+
+		// Two rows claiming one endpoint id would send a request addressed to
+		// one machine to another machine's agent, and the authorisation in
+		// front of it cannot catch that.
+		//
+		// A conflict rather than a fault, and that distinction is the test: the
+		// database refusing is the *expected* way to find out, so it must not
+		// reach a host as "your beat broke the server".
+		await expect(Machine.touchLastSeen({ id: second, endpointId })).rejects.toMatchObject({
+			type: 'already_exists'
+		});
 	});
 
 	test('online is derived from the last beat, not stored', async () => {
