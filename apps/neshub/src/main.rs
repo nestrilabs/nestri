@@ -207,7 +207,10 @@ async fn main() -> Result<()> {
 
     // ── Accept mode: generate ticket, wait for desktop-app to connect ─────
     let stream_name = ticket::generate_stream_name();
-    let ticket = NestriTicket::new(endpoint_addr, stream_name);
+    // For the log line below only. What a reader of the socket gets is built
+    // per read from the endpoint itself, because the addresses this can be
+    // reached at are not all known yet.
+    let ticket = NestriTicket::new(endpoint_addr, stream_name.clone());
 
     tracing::info!("╔═══════════════╗");
     tracing::info!("║ NESTRI TICKET ║");
@@ -245,7 +248,12 @@ async fn main() -> Result<()> {
 
     let ticket_ipc = args.ticket_ipc.clone();
     tokio::spawn({
-        async move { ipc_listener::run_ticket_ipc_listener(ticket_ipc, ticket).await }
+        // The endpoint rather than a ticket made from it: the addresses it can
+        // be reached at are not all known yet, and whoever reads this socket
+        // re-reads it so that a better one can replace the first.
+        let endpoint = endpoint.clone();
+        let stream_name = stream_name.clone();
+        async move { ipc_listener::run_ticket_ipc_listener(ticket_ipc, endpoint, stream_name).await }
     });
 
     // Accept loop

@@ -114,10 +114,18 @@ async fn guest(waiters: &Waiters, workload: &mut Process) -> anyhow::Result<Outc
     // whatever serves the address may bind the moment it comes up, and nothing
     // here should be the reason a session waits to be reachable.
     let (found_tx, mut found_rx) = tokio::sync::mpsc::channel(ADDRESS_DEPTH);
-    tokio::spawn(ticket::carry(PathBuf::from(ticket::SOCKET), found_tx));
+    // Which user the carrier must not accept an address from. Empty until the
+    // descriptor names it, which is also when the workload that could abuse it
+    // is started -- so there is nothing to refuse before it is filled in.
+    let untrusted = ticket::Untrusted::unknown();
+    tokio::spawn(ticket::carry(
+        PathBuf::from(ticket::SOCKET),
+        found_tx,
+        untrusted.clone(),
+    ));
 
     let outcome = tokio::select! {
-        outcome = session::run(channel, workload, &mut ports, &mut found_rx) => outcome?,
+        outcome = session::run(channel, workload, &mut ports, &mut found_rx, &untrusted) => outcome?,
         signal = asked_to_stop() => {
             signal?;
             tracing::info!("asked to stop");

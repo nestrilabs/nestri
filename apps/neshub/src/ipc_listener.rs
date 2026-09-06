@@ -292,7 +292,24 @@ pub async fn run_stats_ipc_listener(
     tracing::info!("stats IPC listener exited");
 }
 
-pub async fn run_ticket_ipc_listener(socket_path: PathBuf, ticket: crate::NestriTicket) {
+/// Serve the address a client needs, rebuilt on every read.
+///
+/// **The ticket is built per connection and not once at startup.** An endpoint
+/// does not know all of its own addresses when it binds: a direct one is there
+/// immediately, and a relayed or hole-punched one becomes known seconds later.
+/// A ticket captured once therefore carries only the address that was available
+/// first, which is the one that works on the same network and fails from
+/// anywhere else — and whoever reads this polls precisely so that a better
+/// answer can replace it. Serving a snapshot made that polling pointless: every
+/// read returned the same local-only address forever.
+///
+/// The stream name is generated once and kept, because it identifies this
+/// session rather than describing how to reach it. Only the addresses change.
+pub async fn run_ticket_ipc_listener(
+    socket_path: PathBuf,
+    endpoint: iroh::Endpoint,
+    stream_name: String,
+) {
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
     }
@@ -319,6 +336,9 @@ pub async fn run_ticket_ipc_listener(socket_path: PathBuf, ticket: crate::Nestri
     loop {
         match listener.accept().await {
             Ok((mut stream, _)) => {
+                // Asked of the endpoint now, so an address it has learned since
+                // the last read is in this answer.
+                let ticket = crate::NestriTicket::new(endpoint.addr(), stream_name.clone());
                 if let Err(e) = stream.write_all(format!("{ticket}\n").as_bytes()).await {
                     tracing::warn!("could not write ticket to IPC: {e}");
                 }

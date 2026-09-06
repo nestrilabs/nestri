@@ -22,8 +22,24 @@
 // long-lived one. Dialling also means a server that has not bound yet is an
 // error this retries, rather than a connection that has to be waited for
 // without knowing whether it is coming.
+//
+// # Who is allowed to answer
+//
+// Dialling a path means trusting whoever is behind it, and an address is the
+// capability to reach this session — so the wrong answer here does not break a
+// session, it hands one to somebody else. The workload runs arbitrary code, and
+// on a writable directory it can unlink whatever bound the socket and bind a
+// replacement; every read after that returns an address of its choosing, and
+// the client outside connects there instead.
+//
+// So the peer's credentials are checked and an answer from the workload's own
+// user is refused. That check is only as good as the workload having a user of
+// its own: run it as the same user as the process serving the address and
+// nothing can tell the two apart, which is [`Peer::indistinguishable`] and is
+// said out loud at boot rather than discovered later.
 
 use std::io;
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -57,16 +73,66 @@ const PATIENCE: Duration = Duration::from_secs(5);
 /// buffer is the one the kernel has been told not to kill.
 const LONGEST: u64 = 8 * 1024;
 
+/// Who may not serve this session's address.
+///
+/// The workload's user, and nothing else is excluded — this is not an allow
+/// list of trusted uids, because init does not know which user an image happens
+/// to run its media components as, and inventing one here would be a second
+/// place for that to be configured wrongly.
+///
+/// Shared and filled in later, because the carrier starts before the descriptor
+/// that names the user arrives. That leaves no gap: a workload cannot serve
+/// anything before it is started, and it is started from the same descriptor,
+/// which sets this first.
+#[derive(Clone, Debug, Default)]
+pub struct Untrusted(std::sync::Arc<std::sync::atomic::AtomicU32>);
+
+/// No workload has been started, so there is no untrusted user yet.
+const NOBODY: u32 = u32::MAX;
+
+impl Untrusted {
+    pub fn unknown() -> Self {
+        Self(std::sync::Arc::new(std::sync::atomic::AtomicU32::new(
+            NOBODY,
+        )))
+    }
+
+    /// Name the user the workload runs as. Called before it is started.
+    pub fn is(&self, uid: u32) {
+        self.0.store(uid, std::sync::atomic::Ordering::Release);
+        if uid == 0 {
+            tracing::warn!(
+                "the workload runs as root, so an address it serves cannot be \
+                 told apart from a real one. Give it a user of its own."
+            );
+        }
+    }
+
+    /// The uid to refuse, or `None` when refusing anything would be wrong.
+    ///
+    /// `None` covers two cases that want the same answer for different reasons:
+    /// nothing has been started yet, so no peer can be the workload; and the
+    /// workload runs as `root`, which is every user at once — refusing root
+    /// would refuse whatever legitimately serves the address as well. The uid
+    /// being shared is the thing an operator has to fix, and `is` says so.
+    fn refuse(&self) -> Option<u32> {
+        match self.0.load(std::sync::atomic::Ordering::Acquire) {
+            NOBODY | 0 => None,
+            uid => Some(uid),
+        }
+    }
+}
+
 /// Forward every new address for as long as the session lasts.
 ///
 /// Never returns on its own. A server that is not there yet, or has gone away,
 /// is retried at the next interval — there is nothing here worth ending a
 /// running session over, and an address that stops being re-offered does not
 /// stop being correct.
-pub async fn carry(path: PathBuf, out: Sender<String>) {
+pub async fn carry(path: PathBuf, out: Sender<String>, untrusted: Untrusted) {
     let mut sent: Option<String> = None;
     loop {
-        match look(&path).await {
+        match look(&path, &untrusted).await {
             Ok(current) if Some(&current) != sent.as_ref() => {
                 // The address itself is not logged. It is a capability to reach
                 // this session, and a log inside the guest is the one place it
@@ -82,6 +148,14 @@ pub async fn carry(path: PathBuf, out: Sender<String>) {
                 sent = Some(current);
             }
             Ok(_) => {}
+            // Not the same as no address yet, and it must not be logged as
+            // though it were: this says something *is* serving an address and
+            // it is the one thing that may not. A session with no address at
+            // all is a legible failure; a session pointed somewhere else is
+            // not, so this is the line that has to be found afterwards.
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                tracing::error!(%error, "refusing an address for this session");
+            }
             Err(error) => {
                 // Expected until whatever serves the address has bound, so it
                 // is not a warning the first several times. It stays at this
@@ -95,8 +169,8 @@ pub async fn carry(path: PathBuf, out: Sender<String>) {
 }
 
 /// One look at the socket, abandoned if it takes longer than [`PATIENCE`].
-async fn look(path: &Path) -> io::Result<String> {
-    match tokio::time::timeout(PATIENCE, read(path)).await {
+async fn look(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
+    match tokio::time::timeout(PATIENCE, read(path, untrusted)).await {
         Ok(result) => result,
         Err(_) => Err(io::Error::new(
             io::ErrorKind::TimedOut,
@@ -106,8 +180,22 @@ async fn look(path: &Path) -> io::Result<String> {
 }
 
 /// One line from the socket, which is the whole protocol.
-async fn read(path: &Path) -> io::Result<String> {
+async fn read(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
     let stream = UnixStream::connect(path).await?;
+
+    // Before a byte is read. The kernel answers this about the socket's peer
+    // rather than about the path, so it cannot be spoofed by whoever holds the
+    // path — which is the whole reason the check is worth anything.
+    if let Some(refuse) = untrusted.refuse()
+        && peer_uid(&stream)? == refuse
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "the workload is serving this session's address, which would point \
+             a client at whatever it chose",
+        ));
+    }
+
     let mut line = String::new();
     BufReader::new(stream.take(LONGEST))
         .read_line(&mut line)
@@ -120,6 +208,35 @@ async fn read(path: &Path) -> io::Result<String> {
         ));
     }
     Ok(line)
+}
+
+/// The uid of the process on the other end of a connected unix socket.
+///
+/// From the kernel, at connect time, and not from anything the peer says about
+/// itself. `SO_PEERCRED` records who held the other end when it connected, so a
+/// process cannot claim a uid it does not have.
+fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
+    let mut credentials = libc::ucred {
+        pid: 0,
+        uid: u32::MAX,
+        gid: u32::MAX,
+    };
+    let mut length = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
+    // SAFETY: a connected socket this function borrows, and an out-parameter of
+    // exactly the length being passed.
+    let rc = unsafe {
+        libc::getsockopt(
+            stream.as_raw_fd(),
+            libc::SOL_SOCKET,
+            libc::SO_PEERCRED,
+            (&raw mut credentials).cast::<libc::c_void>(),
+            &raw mut length,
+        )
+    };
+    if rc != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(credentials.uid)
 }
 
 #[cfg(test)]
@@ -160,7 +277,7 @@ mod tests {
         serve(path.clone(), vec![Some("nestri:abc".into())]);
 
         let (tx, mut rx) = mpsc::channel(4);
-        tokio::spawn(carry(path.clone(), tx));
+        tokio::spawn(carry(path.clone(), tx, Untrusted::unknown()));
 
         let first = tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await
@@ -191,7 +308,7 @@ mod tests {
         );
 
         let (tx, mut rx) = mpsc::channel(4);
-        tokio::spawn(carry(path.clone(), tx));
+        tokio::spawn(carry(path.clone(), tx, Untrusted::unknown()));
 
         let mut seen = Vec::new();
         while seen.len() < 2 {
@@ -205,13 +322,68 @@ mod tests {
         let _ = std::fs::remove_file(&path);
     }
 
+    /// The peer's user decides whether an address is trusted, and this process
+    /// is the peer in a test — so naming *it* as the workload is a real refusal
+    /// of a real connection, not a stubbed one.
+    ///
+    /// The attack this closes: the workload unlinks whatever bound the socket,
+    /// binds its own, and every read afterwards hands the client an address of
+    /// the workload's choosing.
+    #[tokio::test]
+    async fn an_address_served_by_the_workload_is_refused() {
+        let path = scratch("hostile");
+        serve(path.clone(), vec![Some("nestri:attacker".into())]);
+
+        // SAFETY: reading this process's own uid cannot fail.
+        let ours = unsafe { libc::getuid() };
+        let untrusted = Untrusted::unknown();
+        untrusted.is(ours);
+
+        let error = look(&path, &untrusted)
+            .await
+            .expect_err("an address from the workload's own user was accepted");
+        assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+
+        // And the same socket is read happily once the workload is somebody
+        // else, which is what shows the refusal is about the peer and not about
+        // the socket.
+        let elsewhere = Untrusted::unknown();
+        elsewhere.is(ours + 1);
+        assert_eq!(look(&path, &elsewhere).await.unwrap(), "nestri:attacker");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Before a workload is started there is nothing to refuse, and refusing
+    /// anything then would mean no session ever got an address.
+    #[tokio::test]
+    async fn nothing_is_refused_before_a_workload_exists() {
+        let path = scratch("early");
+        serve(path.clone(), vec![Some("nestri:real".into())]);
+        let untrusted = Untrusted::unknown();
+        assert_eq!(untrusted.refuse(), None);
+        assert_eq!(look(&path, &untrusted).await.unwrap(), "nestri:real");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A workload running as root is every user at once, so refusing root would
+    /// refuse whatever legitimately serves the address too. The check stands
+    /// down and `is` warns instead — the uid being shared is the operator's to
+    /// fix and this is not the place to fail closed over it.
+    #[tokio::test]
+    async fn a_root_workload_leaves_nothing_to_tell_apart() {
+        let untrusted = Untrusted::unknown();
+        untrusted.is(0);
+        assert_eq!(untrusted.refuse(), None);
+    }
+
     /// Nothing serving the socket yet is the ordinary case at boot, not a
     /// failure: this starts before whatever binds it.
     #[tokio::test]
     async fn a_socket_that_is_not_there_yet_is_waited_out_rather_than_failed() {
         let path = scratch("late");
         let (tx, mut rx) = mpsc::channel(4);
-        tokio::spawn(carry(path.clone(), tx));
+        tokio::spawn(carry(path.clone(), tx, Untrusted::unknown()));
 
         tokio::time::sleep(EVERY * 2).await;
         serve(path.clone(), vec![Some("nestri:late".into())]);
@@ -253,7 +425,7 @@ mod tests {
         }
 
         let (tx, mut rx) = mpsc::channel(4);
-        tokio::spawn(carry(path.clone(), tx));
+        tokio::spawn(carry(path.clone(), tx, Untrusted::unknown()));
 
         let first = tokio::time::timeout(PATIENCE + EVERY * 4, rx.recv())
             .await
@@ -271,7 +443,7 @@ mod tests {
         serve(path.clone(), vec![None, Some("nestri:real".into())]);
 
         let (tx, mut rx) = mpsc::channel(4);
-        tokio::spawn(carry(path.clone(), tx));
+        tokio::spawn(carry(path.clone(), tx, Untrusted::unknown()));
 
         let first = tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await

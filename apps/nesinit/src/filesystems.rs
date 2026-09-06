@@ -63,14 +63,42 @@ const EARLY: &[Early] = &[
         cost: "whatever serves this session's address cannot bind its socket, \
                so the session never gets one",
     },
+    // `/run` before anything under it, for the same reason `/proc` comes first:
+    // a directory cannot be created inside a mount that is not there, and the
+    // root it would otherwise land on is read-only.
+    Early {
+        source: "tmpfs",
+        target: "/run",
+        fstype: "tmpfs",
+        flags: NOSUID_NODEV,
+        // Octal, and without a leading zero on purpose: the kernel parses a
+        // tmpfs mode as octal either way, and this is the spelling `mount`
+        // itself documents.
+        data: "mode=755",
+        cost: "there is nowhere for a runtime socket to live, so neither the \
+               payload relay nor this session's address can be served",
+    },
+    // The relay's own directory, and it is deliberately **not** in the tree the
+    // session's shares live in.
+    //
+    // It was, and that was wrong in a way no test here would have caught: a
+    // fresh tmpfs over the share tree hides every directory the image prepared
+    // underneath it — the install, the user state, the work directory, and the
+    // mount point the log share is attached to from `fstab`. The box then has a
+    // socket and none of the places its workload expects to find its files, and
+    // the exact-path check below cannot notice, because what `fstab` mounts is
+    // a directory *inside* that tree rather than the tree itself.
+    //
+    // Owned by this process and writable by nothing else, which is what makes
+    // the socket in it unreplaceable. The workload reaches it because the
+    // directory is traversable and the socket itself is not restricted; see
+    // `payload::serve`.
     Early {
         source: "tmpfs",
         target: crate::payload::DIRECTORY,
         fstype: "tmpfs",
         flags: NOSUID_NODEV | libc::MS_NOEXEC,
-        // Only this process and the workload it starts, and they are the only
-        // two that ever have business here.
-        data: "mode=0770",
+        data: "mode=755",
         cost: "the payload relay cannot bind, so nothing reaches the workload \
                over the channel",
     },
@@ -196,6 +224,39 @@ mod tests {
     #[test]
     fn proc_is_the_first_entry() {
         assert_eq!(EARLY[0].target, "/proc");
+    }
+
+    /// A mount has to come after whatever it lives inside, or it is a
+    /// directory created on a read-only root and the mount fails.
+    #[test]
+    fn nothing_is_mounted_before_the_mount_it_lives_inside() {
+        for (i, early) in EARLY.iter().enumerate() {
+            for other in &EARLY[i + 1..] {
+                assert!(
+                    !early.target.starts_with(&format!("{}/", other.target)),
+                    "{} is mounted before {}, which contains it",
+                    early.target,
+                    other.target
+                );
+            }
+        }
+    }
+
+    /// **Nothing here may be mounted over the tree the session's shares live
+    /// in.** A fresh tmpfs there hides every directory the image prepared
+    /// underneath — the install, the user state, the work directory, and the
+    /// mount point the log share attaches to — and the exact-path check cannot
+    /// notice, because what is mounted from `fstab` is a directory inside that
+    /// tree rather than the tree itself. So a box would come up with a socket
+    /// and without any of the places its workload looks for its files.
+    #[test]
+    fn the_share_tree_is_never_mounted_over() {
+        for early in EARLY {
+            assert_ne!(
+                early.target, "/nestri",
+                "this hides the directories the image prepared for a session"
+            );
+        }
     }
 
     /// The relay's directory is the one this cannot hardcode: it belongs to

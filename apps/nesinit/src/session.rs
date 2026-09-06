@@ -41,12 +41,13 @@ pub async fn run<C, W>(
     workload: &mut W,
     payload: &mut Ports,
     addresses: &mut Receiver<String>,
+    untrusted: &crate::ticket::Untrusted,
 ) -> std::io::Result<Outcome>
 where
     C: AsyncRead + AsyncWrite,
     W: Workload,
 {
-    match converse(channel, workload, payload, addresses).await {
+    match converse(channel, workload, payload, addresses, untrusted).await {
         Err(error) if channel_gone(&error) => {
             // A caller that has stopped reading has also stopped being able to
             // tell us to stop, which is the same situation as the channel
@@ -73,6 +74,7 @@ async fn converse<C, W>(
     workload: &mut W,
     payload: &mut Ports,
     addresses: &mut Receiver<String>,
+    untrusted: &crate::ticket::Untrusted,
 ) -> std::io::Result<Outcome>
 where
     C: AsyncRead + AsyncWrite,
@@ -185,6 +187,11 @@ where
                         return Ok(Outcome::Refused(failure));
                     }
                 }
+
+                // Before the workload exists, so there is no window in which
+                // it is running and something else would still be trusted to
+                // serve this session's address.
+                untrusted.is(descriptor.exec.uid);
 
                 match workload.start(&descriptor.exec) {
                     Ok(exited) => {
@@ -354,9 +361,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -385,9 +398,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports, &mut found_rx)
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut found_rx,
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
 
         assert_eq!(
@@ -436,9 +455,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports, &mut found_rx)
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut found_rx,
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
 
         assert_eq!(
@@ -462,9 +487,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -490,9 +521,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(3));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -528,9 +565,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::signal(9));
-            run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -561,9 +604,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -589,9 +638,15 @@ mod tests {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(0));
             workload.mount_failure = Some(Failure::new("EACCES: /mnt/user"));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -626,9 +681,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -651,9 +712,15 @@ mod tests {
         let session = tokio::spawn(async move {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -685,9 +752,15 @@ mod tests {
             let (mut ports, _to_workload, _from_workload) = ports();
             let mut workload = Double::exits_at_once(Exit::code(0));
             workload.start_failure = Some(Failure::new("ENOENT: /usr/bin/workload"));
-            let outcome = run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap();
+            let outcome = run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap();
             (outcome, workload)
         });
 
@@ -729,9 +802,15 @@ mod tests {
                 from_workload: up_rx,
             };
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
         let mut to_relay = down_rx;
 
@@ -780,9 +859,15 @@ mod tests {
                 from_workload: up_rx,
             };
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
@@ -828,9 +913,15 @@ mod tests {
                 from_workload: up_rx,
             };
             let mut workload = Double::exits_when_stopped(Exit::code(0));
-            run(guest, &mut workload, &mut ports, &mut nowhere())
-                .await
-                .unwrap()
+            run(
+                guest,
+                &mut workload,
+                &mut ports,
+                &mut nowhere(),
+                &crate::ticket::Untrusted::unknown(),
+            )
+            .await
+            .unwrap()
         });
 
         assert!(matches!(caller.expect().await, GuestToHost::Ready { .. }));
