@@ -4,13 +4,14 @@
 // the workload the channel describes, and turn the end of either into an
 // ordered shutdown.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use nesinit::payload::{self, Ports};
 use nesinit::reap::{self, Waiters};
 use nesinit::session::{self, Outcome};
 use nesinit::shutdown::{self, Machine};
+use nesinit::ticket;
 use nesinit::workload::{Process, Workload};
 use nesprotocol::lifecycle::CONTROL_PORT;
 use tokio::signal::unix::{SignalKind, signal};
@@ -25,12 +26,24 @@ const GRACE: Duration = Duration::from_secs(10);
 /// deep queue holds stale copies of it rather than protecting anything.
 const RELAY_DEPTH: usize = 8;
 
+/// How many addresses may be waiting to be forwarded.
+///
+/// Two, because only the newest one matters: an address is superseded by the
+/// next one rather than added to, so a deeper queue holds stale copies of it
+/// and delays the one that is current.
+const ADDRESS_DEPTH: usize = 2;
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
+
+    // Before everything, including the two below: the root is read-only and
+    // nothing else in this guest is an init system, so until this runs there
+    // is no `/proc` to score this process in and nowhere to put a socket.
+    nesinit::filesystems::establish();
 
     // Both before anything is started, so nothing can be orphaned or scored
     // in the window where neither is true yet.
@@ -97,8 +110,22 @@ async fn guest(waiters: &Waiters, workload: &mut Process) -> anyhow::Result<Outc
         from_workload: up_rx,
     };
 
+    // Started before the workload, like the relay, and for the same reason:
+    // whatever serves the address may bind the moment it comes up, and nothing
+    // here should be the reason a session waits to be reachable.
+    let (found_tx, mut found_rx) = tokio::sync::mpsc::channel(ADDRESS_DEPTH);
+    // Which user the carrier must not accept an address from. Empty until the
+    // descriptor names it, which is also when the workload that could abuse it
+    // is started -- so there is nothing to refuse before it is filled in.
+    let untrusted = ticket::Untrusted::unknown();
+    tokio::spawn(ticket::carry(
+        PathBuf::from(ticket::SOCKET),
+        found_tx,
+        untrusted.clone(),
+    ));
+
     let outcome = tokio::select! {
-        outcome = session::run(channel, workload, &mut ports) => outcome?,
+        outcome = session::run(channel, workload, &mut ports, &mut found_rx, &untrusted) => outcome?,
         signal = asked_to_stop() => {
             signal?;
             tracing::info!("asked to stop");

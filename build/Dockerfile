@@ -145,9 +145,23 @@ RUN pacman -Syu --noconfirm --needed \
 
 # groupadd -f so this is idempotent whether or not udev's rules already
 # created these.
+#
+# **Two users, and they must stay two.** `nestri` runs the services that come
+# with this image; `nesplay` is who a workload runs as. Sharing one user between
+# them is what lets workload code impersonate a service — it can replace the
+# socket a service listens on and answer in its place, and the answer that
+# matters is the address a client is told to connect to. Init refuses an address
+# served by the workload's own user, so a single shared user does not merely
+# weaken that check, it makes every session fail it.
+#
+# The uid a workload actually runs as is chosen by whoever asks for the box, not
+# here; this account exists so that the number has a home, a shell and a name in
+# `ps`, and so the separation has somewhere to be written down.
 RUN groupadd -f audio && groupadd -f video && groupadd -f input && groupadd -f render && \
     useradd -m -u 1000 -s /bin/bash nestri && \
-    for g in audio video input render; do gpasswd -a nestri "$g" >/dev/null; done
+    for g in audio video input render; do gpasswd -a nestri "$g" >/dev/null; done && \
+    useradd -m -u 1001 -s /bin/bash nesplay && \
+    for g in audio video input render; do gpasswd -a nesplay "$g" >/dev/null; done
 
 
 # ───────────────────────────────────────────────────────────

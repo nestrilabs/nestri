@@ -9,6 +9,7 @@
 // anything above it.
 
 use std::io;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use nesprotocol::lifecycle::{Payload, from_line, to_line};
@@ -16,8 +17,24 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc::{Receiver, Sender};
 
+/// The directory the relay's socket lives in.
+///
+/// Named separately because it is mounted before it is used: the guest's root
+/// is read-only, so this is a tmpfs that `filesystems` puts there, and a
+/// rename here that did not reach the mount table would take the relay down
+/// with an `EROFS` that looks like nothing to do with a path.
+///
+/// **Under `/run` rather than in the tree the session's shares live in**, and
+/// that was a correction. Putting a fresh tmpfs on the share tree hid every
+/// directory the image had prepared underneath it — the install, the user
+/// state, the work directory and the log share's own mount point — so a box
+/// gained a socket and lost the places its workload was supposed to find its
+/// files. `/run` is where a runtime socket belongs, it is a tmpfs already, and
+/// nothing else is mounted inside it.
+pub const DIRECTORY: &str = "/run/nestri";
+
 /// Where the workload finds the relay.
-pub const SOCKET: &str = "/nestri/payload.sock";
+pub const SOCKET: &str = "/run/nestri/payload.sock";
 
 /// The longest envelope this will assemble before giving up on the connection.
 ///
@@ -54,6 +71,17 @@ pub async fn serve(
     // durable lives in the guest, so there is nothing here to preserve.
     let _ = std::fs::remove_file(path);
     let listener = UnixListener::bind(path)?;
+
+    // The workload does not run as this process does, and it has to be able to
+    // connect. It reaches the socket through a directory this process owns and
+    // nothing else may write to, so the permission that matters is on the
+    // socket rather than on the path: the directory is what stops anybody
+    // replacing this listener, and this is what lets the workload talk to it.
+    //
+    // Without it the workload gets `EACCES` on connect and the payload layer
+    // is dead in both directions, silently, because nothing in the guest is
+    // waiting to be told about a relay it cannot reach.
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o666))?;
 
     loop {
         let stream = tokio::select! {

@@ -8,8 +8,10 @@
 // and what an exit means, and it carries that out; a field that only makes
 // sense for one kind of workload cannot reach it. ref(d-0033)
 
+pub mod filesystems;
 pub mod payload;
 pub mod reap;
 pub mod session;
 pub mod shutdown;
+pub mod ticket;
 pub mod workload;
