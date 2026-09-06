@@ -216,7 +216,7 @@ export namespace MachineApi {
 				tags: ['Machine'],
 				summary: 'Say the host is alive',
 				description:
-					'Records liveness for the calling machine and returns how often it should call back. The interval comes from the server on purpose: a fleet whose cadence can only change by shipping a new agent is a fleet whose cadence never changes. Takes no body — what a host is *running* is reported separately, and reporting a shape we cannot yet act on would be worse than reporting nothing.',
+					'Records liveness for the calling machine and returns how often it should call back. The interval comes from the server on purpose: a fleet whose cadence can only change by shipping a new agent is a fleet whose cadence never changes. The body carries one optional fact — where this host can be reached — because only a host can say that about itself and this is the call it already makes as itself. What a host is *running* is reported separately.',
 				responses: {
 					200: {
 						content: {
@@ -237,12 +237,31 @@ export namespace MachineApi {
 						},
 						description: 'The beat was recorded'
 					},
+					400: ErrorResponses[400],
 					403: ErrorResponses[403],
 					404: ErrorResponses[404]
 				}
 			}),
+			validator(
+				'json',
+				z
+					.object({
+						endpointId: Machine.EndpointId.optional().meta({
+							description:
+								'Where this host can be reached, as its own endpoint id. Omit it and the stored value is left alone — a host that does not mention where it is has not moved, and an absent field must never read as "nowhere"',
+							example: Examples.Machine.endpointId
+						})
+					})
+					// A host that has nothing to add sends no body at all, which
+					// is what every agent shipped before this field did.
+					.optional()
+			),
 			async (c) => {
-				const lastSeen = await Machine.touchLastSeen(Actor.machineID);
+				const body = c.req.valid('json');
+				const lastSeen = await Machine.touchLastSeen({
+					id: Actor.machineID,
+					endpointId: body?.endpointId
+				});
 				if (!lastSeen) {
 					// The credentials authenticated but the row is gone — a host
 					// deleted mid-beat. It must re-register rather than keep

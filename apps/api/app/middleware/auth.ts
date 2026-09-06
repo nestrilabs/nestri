@@ -98,7 +98,7 @@ export const auth: MiddlewareHandler = async (c, next) => {
 	if (machineId && machineSecret) {
 		const machine = await Machine.authenticate({ id: machineId, secret: machineSecret });
 		if (machine) {
-			await Machine.touchLastSeen(machine.id);
+			await Machine.touchLastSeen({ id: machine.id });
 			return Actor.with(
 				{
 					type: 'machine',

@@ -92,6 +92,13 @@
       "when": 1788691753961,
       "tag": "0012_steam_enrolment_without_a_token",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1788725541386,
+      "tag": "0013_machine_endpoint_id",
+      "breakpoints": true
     }
   ]
 }

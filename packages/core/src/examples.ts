@@ -129,7 +129,8 @@ export namespace Examples {
 		ownerUserId: Id('user'),
 		teamId: Id('team'),
 		label: 'living-room-box',
-		lastSeen: '2026-07-28T12:00:00.000Z'
+		lastSeen: '2026-07-28T12:00:00.000Z',
+		endpointId: 'a'.repeat(64)
 	};
 
 	export const SteamEnrolment = {

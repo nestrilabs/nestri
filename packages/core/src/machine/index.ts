@@ -22,6 +22,19 @@ export namespace Machine {
 	/** Length in bytes before base64url encoding. */
 	const SECRET_BYTES = 32;
 
+	/**
+	 * A host's endpoint id: 32 bytes of public key, lowercase hex.
+	 *
+	 * Checked for shape and nothing else. What it addresses is meaningless
+	 * here — this is a string the control plane stores and hands back — so the
+	 * only thing worth refusing is a value that cannot possibly be one, which
+	 * is what keeps a truncated or double-encoded id from being written and
+	 * then failing far away, at whoever tries to dial it.
+	 */
+	export const EndpointId = z.string().regex(/^[0-9a-f]{64}$/, {
+		message: 'An endpoint id is 64 lowercase hex characters'
+	});
+
 	export const Info = z
 		.object({
 			id: z.string().meta({
@@ -44,6 +57,11 @@ export namespace Machine {
 			lastSeen: z.iso.datetime().optional().nullable().meta({
 				description: 'When this machine last authenticated',
 				example: Examples.Machine.lastSeen
+			}),
+			endpointId: EndpointId.optional().nullable().meta({
+				description:
+					'Where this host can be reached, as its own endpoint id. Null until the host has reported one — it holds the secret half of this identity, so it is the only thing that can say what the public half is',
+				example: Examples.Machine.endpointId
 			})
 		})
 		.meta({
@@ -195,17 +213,34 @@ export namespace Machine {
 	 * Returns the stored timestamp rather than void so a caller can hand it
 	 * straight back to the host — which is what lets a heartbeat be one round
 	 * trip instead of a write followed by a read.
+	 *
+	 * `endpointId` rides along for the same reason. Where a host is reachable
+	 * is a fact about the host, it changes when the agent's identity does, and
+	 * a caller that has just proved it is that host is the only one who can
+	 * report it — so it is written by the call that already says "still here",
+	 * in the same statement, rather than by a second one that could succeed
+	 * alone and leave the two facts disagreeing.
 	 */
-	export const touchLastSeen = fn(Info.shape.id, async (id) => {
-		return Database.use(async (tx) => {
-			return tx
-				.update(MachineTable)
-				.set({ lastSeen: sql`now()` })
-				.where(eq(MachineTable.id, id))
-				.returning({ lastSeen: MachineTable.lastSeen })
-				.then((rows) => rows.at(0)?.lastSeen ?? null);
-		});
-	});
+	export const touchLastSeen = fn(
+		Info.pick({ id: true }).extend({ endpointId: EndpointId.optional() }),
+		async (input) => {
+			return Database.use(async (tx) => {
+				return tx
+					.update(MachineTable)
+					.set({
+						lastSeen: sql`now()`,
+						// Omitted rather than nulled when it is absent: a caller
+						// that does not mention where it is has not moved, and
+						// clearing the column would deregister a working host
+						// from every route that reads it.
+						...(input.endpointId ? { endpointId: input.endpointId } : {})
+					})
+					.where(eq(MachineTable.id, input.id))
+					.returning({ lastSeen: MachineTable.lastSeen })
+					.then((rows) => rows.at(0)?.lastSeen ?? null);
+			});
+		}
+	);
 
 	/**
 	 * Whether a host has beaten recently enough to place work on.
@@ -306,7 +341,8 @@ export namespace Machine {
 			ownerUserId: input.ownerUserId,
 			teamId: input.teamId,
 			label: input.label,
-			lastSeen: input.lastSeen?.toISOString() ?? null
+			lastSeen: input.lastSeen?.toISOString() ?? null,
+			endpointId: input.endpointId
 		};
 	}
 }
