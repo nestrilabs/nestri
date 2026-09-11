@@ -193,9 +193,7 @@ fn machine_id() {
         }
     };
     if let Err(error) = std::fs::write(TARGET, format!("{id}\n")) {
-        tracing::warn!(
-            "could not write this box's id, so the system bus will not start: {error}"
-        );
+        tracing::warn!("could not write this box's id, so the system bus will not start: {error}");
     }
 }
 
@@ -209,7 +207,11 @@ fn machine_id() {
 /// `CONFIG_IP_PNP` and exists to configure an NFS root, and a prefix makes it
 /// obvious whose parameter this is.
 fn network() {
-    run("ip", &["link", "set", "lo", "up"], "nothing in the box can reach a service on its own loopback");
+    run(
+        "ip",
+        &["link", "set", "lo", "up"],
+        "nothing in the box can reach a service on its own loopback",
+    );
 
     // A box may have been started with no network device at all, which is a
     // perfectly good configuration for one that only talks over vsock.
@@ -233,7 +235,11 @@ fn network() {
         "configuring the box's address"
     );
 
-    run("ip", &["link", "set", IFACE, "up"], "the box has no address, so no client can reach it");
+    run(
+        "ip",
+        &["link", "set", IFACE, "up"],
+        "the box has no address, so no client can reach it",
+    );
     // `replace` rather than `add`, so doing this twice is not an error.
     run(
         "ip",
@@ -329,11 +335,7 @@ mod tests {
     #[test]
     fn every_directory_says_what_its_absence_costs() {
         for directory in DIRECTORIES {
-            assert!(
-                !directory.cost.is_empty(),
-                "{} has no cost",
-                directory.path
-            );
+            assert!(!directory.cost.is_empty(), "{} has no cost", directory.path);
             assert!(
                 directory.path.starts_with('/'),
                 "{} is not an absolute path",

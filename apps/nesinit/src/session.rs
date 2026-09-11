@@ -313,8 +313,7 @@ where
                     continue;
                 }
                 if let Some(current) = &running {
-                    let reason =
-                        format!("this box is already running a launch: {}", current.id);
+                    let reason = format!("this box is already running a launch: {}", current.id);
                     refuse(&mut writer, id, &reason).await?;
                     continue;
                 }
@@ -340,7 +339,12 @@ where
                 // so this cannot be a launch in disguise: the caller has the
                 // command and can send it.
                 _ => {
-                    refuse(&mut writer, id, "nothing with that id is running to restart").await?;
+                    refuse(
+                        &mut writer,
+                        id,
+                        "nothing with that id is running to restart",
+                    )
+                    .await?;
                 }
             },
             HostToGuest::Payload { payload: envelope } => hand_over(payload, envelope),
@@ -756,7 +760,10 @@ mod tests {
             LaunchId::new("l-2"),
             "the refusal names the launch that is running rather than the one refused"
         );
-        assert!(reason.contains("l-1"), "the refusal does not say why: {reason}");
+        assert!(
+            reason.contains("l-1"),
+            "the refusal does not say why: {reason}"
+        );
 
         caller.say(&HostToGuest::Shutdown).await;
         let (_, workload, _) = session.await.unwrap();
@@ -1228,9 +1235,7 @@ mod tests {
             .write_all(br#"{"type":"from_a_later_version"}"#)
             .await
             .unwrap();
-        caller.lines.get_mut().write_all(b"\n")
-            .await
-            .unwrap();
+        caller.lines.get_mut().write_all(b"\n").await.unwrap();
         caller.say(&HostToGuest::Shutdown).await;
 
         assert_eq!(session.await.unwrap().0, Outcome::Shutdown);

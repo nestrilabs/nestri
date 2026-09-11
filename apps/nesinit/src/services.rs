@@ -111,7 +111,12 @@ pub const RUNTIME_DIR: &str = "/run/user/1000";
 pub const STACK: &[Service] = &[
     Service {
         name: "dbus-system",
-        argv: &["/usr/bin/dbus-daemon", "--system", "--nofork", "--nopidfile"],
+        argv: &[
+            "/usr/bin/dbus-daemon",
+            "--system",
+            "--nofork",
+            "--nopidfile",
+        ],
         env: &[],
         user: None,
         cost: "nothing that speaks on the system bus can find it",
@@ -136,10 +141,7 @@ pub const STACK: &[Service] = &[
         argv: &["/usr/bin/pipewire"],
         env: &[
             ("XDG_RUNTIME_DIR", RUNTIME_DIR),
-            (
-                "DBUS_SESSION_BUS_ADDRESS",
-                "unix:path=/run/user/1000/bus",
-            ),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
         ],
         user: Some((SERVICE_UID, SERVICE_GID)),
         cost: "the session has no audio at all",
@@ -150,10 +152,7 @@ pub const STACK: &[Service] = &[
         argv: &["/usr/bin/wireplumber"],
         env: &[
             ("XDG_RUNTIME_DIR", RUNTIME_DIR),
-            (
-                "DBUS_SESSION_BUS_ADDRESS",
-                "unix:path=/run/user/1000/bus",
-            ),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
         ],
         user: Some((SERVICE_UID, SERVICE_GID)),
         // Optional on purpose: pipewire runs without a session manager, so a
@@ -167,10 +166,7 @@ pub const STACK: &[Service] = &[
         argv: &["/usr/bin/neswire"],
         env: &[
             ("XDG_RUNTIME_DIR", RUNTIME_DIR),
-            (
-                "DBUS_SESSION_BUS_ADDRESS",
-                "unix:path=/run/user/1000/bus",
-            ),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
         ],
         user: Some((SERVICE_UID, SERVICE_GID)),
         cost: "the client gets pictures and no sound",
@@ -220,7 +216,10 @@ impl Stack {
 
     fn spawn(&mut self, service: &'static Service) -> Result<(), Failure> {
         let Some((program, args)) = service.argv.split_first() else {
-            return Err(Failure::new(format!("{}: the command is empty", service.name)));
+            return Err(Failure::new(format!(
+                "{}: the command is empty",
+                service.name
+            )));
         };
 
         // The standard library's process rather than the runtime's: the runtime
@@ -383,11 +382,7 @@ mod tests {
     fn every_service_can_be_started_and_says_what_it_costs() {
         for service in STACK {
             assert!(!service.name.is_empty(), "a service with no name");
-            assert!(
-                !service.argv.is_empty(),
-                "{}: nothing to run",
-                service.name
-            );
+            assert!(!service.argv.is_empty(), "{}: nothing to run", service.name);
             assert!(
                 service.argv[0].starts_with('/'),
                 "{}: not an absolute path, so it depends on a PATH init does not set",
