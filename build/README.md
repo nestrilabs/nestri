@@ -25,6 +25,9 @@ make build          # docker build --target runtime_prod   → ghcr.io/nestrilab
 make build-debug    # docker build --target runtime_debug  → ghcr.io/nestrilabs/nestri/base:debug
 make image          # + pack into output/rootfs.ext4
 make image-debug    # + pack into output/rootfs-debug.ext4
+
+make proton-image   # build Proton from source — hours
+make proton-push    # build it and publish it
 ```
 
 ## Design notes
@@ -88,6 +91,44 @@ and also the shared foundation other builds start from: nesbox's jail image
 the virtio-gpu native-context protocol never drift apart. Only Mesa —
 `virglrenderer` is the host half of that protocol and nesbox builds its own,
 patched, from `nesbox/patches/`; nothing in this image carries it.
+
+## Proton has its own cadence, and its own Containerfile
+
+`make build` **pulls** Proton by tag; it does not build it. Building it takes
+hours and it changes only when its tag moves, so it is one image published
+once and copied into every guest image after that. `Containerfile.proton` is
+that build, and it lives here so the published tag stays reproducible from
+this tree rather than from somebody's laptop.
+
+```sh
+make proton-image                              # the current tag
+make PROTON_TAG=cachyos-11.1-20261115-native proton-image
+```
+
+**`PROTON_TAG` is the only thing to change.** The published version is derived
+from it in the `Makefile` rather than written a second time, because the two
+are the same number in two spellings — and an image whose name does not say
+which Proton is inside it is worse than no image. The `Containerfile`'s own
+`PROTON_IMAGE` default is a fallback for a bare container build; going through
+`make` is what keeps them in step.
+
+Its **context is `build/`**, not the repository root the guest build uses. All
+it needs is the two scripts beside it, and `Containerfile.proton.containerignore`
+keeps `output/` out of that context — a build context is copied before the
+first instruction runs, so without it every Proton build would begin by moving
+the last rootfs image it produced.
+
+Two things in the recipe are worth knowing before changing it:
+
+- **Fetch and build are separate layers on purpose.** The submodule checkout
+  runs well past ten minutes, and a build that fails on a flag or a missing
+  tool must not pay for that again. Keep anything that can fail *fast* in
+  `proton-build.sh`.
+- **`widl` is built by hand from the mingw-w64 release.** Without it autoconf
+  quietly sets `HAVE_WIDL` to false, vkd3d's public headers are never
+  generated, and the build dies an hour later on a missing header. Arch ships
+  `widl` only inside `wine`, which wants multilib — which is the thing
+  `--enable-wow64` exists to avoid.
 
 ## There is no init system in here, and that is the design
 
