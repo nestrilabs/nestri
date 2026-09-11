@@ -42,7 +42,7 @@ PROTON_VERSION := $(PROTON_TAG:cachyos-%-native=%)
 PROTON_IMAGE   ?= ghcr.io/nestrilabs/proton-cachyos-native-wow64
 PROTON_REF     := $(PROTON_IMAGE):$(PROTON_VERSION)
 OUTPUT_DIR   := output
-ROOTFS_SIZE  ?= 4G
+ROOTFS_SIZE  ?= 3G
 FORCE_REBUILD ?=
 
 build:

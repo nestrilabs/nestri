@@ -14,13 +14,10 @@ if [ "$(id -u)" = "1000" ]; then
     export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
     export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-nestri}"
 
-    # Ensure proper VAAPI driver is used
-    #export LIBVA_DRIVER_NAME="radeonsi"
-
     # Force zink usage for OpenGL -> Vulkan translation
-    #export __GLX_VENDOR_LIBRARY_NAME=mesa
-    #export MESA_LOADER_DRIVER_OVERRIDE=zink
-    #export GALLIUM_DRIVER=zink
+    export __GLX_VENDOR_LIBRARY_NAME=mesa
+    export MESA_LOADER_DRIVER_OVERRIDE=zink
+    export GALLIUM_DRIVER=zink
 
     # Ensure standard XDG dirs exist
     mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}" "${XDG_STATE_HOME}" 2>/dev/null || true

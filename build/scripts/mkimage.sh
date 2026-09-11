@@ -15,7 +15,7 @@ set -euo pipefail
 
 IMAGE="${1:?usage: mkimage.sh <image-tag> <output-path> [size]}"
 OUT="${2:?usage: mkimage.sh <image-tag> <output-path> [size]}"
-SIZE="${3:-5G}"
+SIZE="${3:-3G}"
 
 if [[ "$(id -u)" -eq 0 ]]; then
     echo "mkimage.sh should run as yourself, not root/sudo — see the comment at the top of this script" >&2

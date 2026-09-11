@@ -73,7 +73,7 @@ ENV ARTIFACTS=/artifacts
 FROM builder AS mesa-build
 
 ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
-ARG MESA_COMMIT=12b7b819edb4ddd3580e7e5ffe384610ae726c90
+ARG MESA_COMMIT=b316485dd75ca6ab6c16c113480fb94c57d86c95
 ARG JOBS=
 
 RUN test -n "$JOBS" || JOBS=$(nproc) && \
@@ -82,18 +82,18 @@ RUN test -n "$JOBS" || JOBS=$(nproc) && \
     meson setup builddir \
         -Dprefix=/usr \
         -Dbuildtype=release \
-        -Dplatforms=wayland,x11 \
-        -Dgallium-drivers=zink,radeonsi,iris \
+        -Dplatforms=wayland \
+        -Dgallium-drivers=zink \
         -Dvulkan-drivers=amd,intel \
         -Damdgpu-virtio=true \
         -Dintel-virtio-experimental=true \
         -Dvideo-codecs=all \
         -Degl=enabled \
-        -Dglx=dri \
-        -Dgles1=enabled \
-        -Dgles2=enabled \
+        -Dglx=disabled \
+        -Dgles1=disabled \
+        -Dgles2=disabled \
         -Dgbm=enabled \
-        -Dgallium-va=enabled \
+        -Dgallium-va=disabled \
         -Db_ndebug=true && \
     ninja -C builddir -j${JOBS:-$(nproc)} && \
     DESTDIR=/artifacts/mesa ninja -C builddir install && \
@@ -429,7 +429,7 @@ RUN missing=""; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
              /usr/lib/libnescapture_layer.so \
              /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
-             /usr/lib/libgallium-*.so /usr/lib/libGLX_mesa.so.0 /usr/lib/libEGL_mesa.so.0 \
+             /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so; do \
         [ -e "$f" ] || continue; \
         if ldd "$f" 2>/dev/null | grep -q "not found"; then \
