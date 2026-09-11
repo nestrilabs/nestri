@@ -1,14 +1,34 @@
 // The lifecycle layer of the control channel between a box and whatever runs
-// it: the boot descriptor the guest is handed, and what the guest says back
-// about carrying it out.
+// it: the document describing the box, the commands that run things inside it,
+// and what the guest says back about carrying either out.
 //
 // It lives beside the media types for the same reason they live here — one
 // definition, so the two ends cannot drift from each other silently.
 //
-// Nothing in this module describes *what* the guest runs. A command line, a
-// set of share tags, an output geometry, and what an exit means: that is the
-// whole vocabulary, and a field that only makes sense for one kind of workload
-// does not belong in it. ref(d-0033)
+// Nothing in this module describes *what* the guest runs. A set of share tags,
+// a command line, and what an exit means: that is the whole vocabulary, and a
+// field that only makes sense for one kind of workload does not belong in it.
+// ref(d-0033)
+//
+// # The box outlives what runs in it
+//
+// The guest init is resident: it mounts what the descriptor names, brings up
+// the box's service stack, says so, and then takes commands for as long as the
+// box lives. So the descriptor describes the *box* — which shares are mounted
+// where — and a command describes an occupant. A box may be launched into many
+// times. ref(d-0063)
+//
+// That is why every launch carries an id and every event about a launch carries
+// it back. Without one, a second launch's exit is indistinguishable from the
+// first's, which reads as an ended session that keeps billing or a running one
+// reported as stopped.
+//
+// # What is deliberately absent
+//
+// **Output geometry.** The compositor wraps the workload rather than running as
+// a service, so it is started by a launch with that launch's geometry in its own
+// argv, and the numbers appear nowhere else. Two sources of truth for one number
+// is a worse failure than either choice, because the wrong one is used silently.
 //
 // The channel also carries a second layer, which the guest relays as opaque
 // bytes and never parses. Those types land with the relay that needs them.
@@ -34,7 +54,12 @@ pub const CONTROL_PORT: u32 = 7000;
 ///
 /// Adding a variant or a field does not need a bump; removing or renaming one
 /// does.
-pub const CONTROL_VERSION: u32 = 2;
+///
+/// Version 3 took three fields off the descriptor and put an id on three
+/// messages, so a version-2 peer and a version-3 peer do not talk at all.
+/// There is deliberately no shim: nothing is deployed, and a shim would be the
+/// second definition of this wire that one shared crate exists to prevent.
+pub const CONTROL_VERSION: u32 = 3;
 
 /// The command to run, and who runs it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,14 +101,32 @@ pub struct Mount {
     pub ro: bool,
 }
 
-/// The output the compositor should produce.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Geometry {
-    pub width: u32,
-    pub height: u32,
-    pub fps: u32,
-    #[serde(default)]
-    pub hdr: bool,
+/// Names one launch, for as long as anything has something to say about it.
+///
+/// Minted by the caller and only ever echoed by the guest. A guest that
+/// generated these would be naming things the caller then has to correlate
+/// against something else.
+///
+/// Opaque on purpose: nothing in this layer parses it, and a caller that wants
+/// meaning in it can put meaning in it without this crate having an opinion.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct LaunchId(pub String);
+
+impl LaunchId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for LaunchId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// What the workload exiting means for the session.
@@ -95,21 +138,33 @@ pub struct OnExit {
     /// reports the exit and stops, and starting something again is a new
     /// command from the caller — the only end that can see whether restarting
     /// is repair or a loop. ref(d-0033)
+    ///
+    /// It rides on the launch rather than on the descriptor, because a box that
+    /// can be launched into repeatedly cannot have one answer to this fixed at
+    /// boot. ref(d-0063)
     pub terminal: bool,
 }
 
-/// Everything the guest is told at boot, in one document.
+/// What the box *is*, in one document: the shares it has and where they land.
 ///
 /// Sent once, immediately after the handshake, and read once. Deliberately not
-/// a conversation: boot configuration is a document, and a document cannot
-/// half-arrive.
+/// a conversation: this much is a document, and a document cannot half-arrive.
+/// What runs *in* the box is a conversation, and a separate one — see
+/// [`HostToGuest::Launch`]. ref(d-0063)
+///
+/// An empty `mounts` is legitimate. A box with nothing mounted still boots and
+/// still brings up its services.
+///
+/// `deny_unknown_fields` is load-bearing rather than strictness for its own
+/// sake. A descriptor still carrying a command line is a caller that has not
+/// been updated, and the default behaviour — ignore what it does not recognise —
+/// would mount the shares, silently drop the command, and leave a box that came
+/// up correctly and runs nothing. Refusing it says so instead.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BootDescriptor {
-    pub exec: Exec,
     #[serde(default)]
     pub mounts: Vec<Mount>,
-    pub geometry: Geometry,
-    pub on_exit: OnExit,
 }
 
 /// How a workload ended.
@@ -145,6 +200,12 @@ impl Exit {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum GuestToHost {
     /// First line on the connection, before anything else is read or written.
+    ///
+    /// **This is the handshake, not readiness.** It says a connection exists
+    /// and both ends speak the same version. Whether anything in the box works
+    /// is [`GuestToHost::Initialized`], which is a different fact and must not
+    /// be merged with this one — a caller that treats this as readiness has a
+    /// wait stage that succeeds before the guest has started anything.
     Ready { protocol_version: u32 },
     /// Every share the descriptor named is where it said to put it.
     Mounted,
@@ -154,13 +215,45 @@ pub enum GuestToHost {
     /// looked at: a share that did not appear and a command that did not run
     /// are not the same incident.
     MountFailed { reason: String },
-    /// The command the descriptor named is running.
-    Started,
-    /// The command could not be run, in the words the operating system used.
-    StartFailed { reason: String },
-    /// The workload the descriptor named has ended. Terminal or not is the
-    /// descriptor's answer, not this message's.
+    /// The box's own services are up and it will accept launches.
+    ///
+    /// The one fact a caller waits on before it may launch anything. It names
+    /// what came up, so a log says which — an empty list is a box with no
+    /// service stack, which is legitimate and worth being able to see.
+    Initialized {
+        #[serde(default)]
+        services: Vec<String>,
+    },
+    /// The box's services could not be brought up, in the words of whatever
+    /// refused.
+    ///
+    /// Kept separate from [`GuestToHost::MountFailed`] and
+    /// [`GuestToHost::StartFailed`] for the reason those two are separate from
+    /// each other: a share that did not appear, a box that could not be made,
+    /// and a command that did not run are three incidents that want three
+    /// different things looked at. A box in this state cannot be launched into
+    /// at all, which is what distinguishes it from a refused launch.
+    InitFailed { reason: String },
+    /// A service in the box's own stack exited.
+    ///
+    /// **Reported, never repaired.** Nothing else in the guest is watching
+    /// these, so a death that is not said here is a box that looks healthy and
+    /// cannot work. Restarting one is a decision for whoever can see whether
+    /// restarting is repair or a loop, and that is not this end. ref(d-0063)
+    ServiceDied {
+        name: String,
+        #[serde(flatten)]
+        exit: Exit,
+    },
+    /// The launch with this id is running.
+    Started { id: LaunchId },
+    /// The launch with this id could not be run, in the words the operating
+    /// system used.
+    StartFailed { id: LaunchId, reason: String },
+    /// The launch with this id has ended. Terminal or not is the launch's own
+    /// answer, not this message's.
     WorkloadExited {
+        id: LaunchId,
         #[serde(flatten)]
         exit: Exit,
     },
@@ -182,8 +275,26 @@ pub enum HostToGuest {
         #[serde(flatten)]
         descriptor: Box<BootDescriptor>,
     },
-    /// Stop the workload. Idempotent, and does not end the session.
-    Stop,
+    /// Run something in the box. Any number of times, after `initialized`.
+    ///
+    /// The caller mints `id` and every message about this launch carries it
+    /// back. `on_exit` belongs here rather than on the descriptor because a box
+    /// that can be launched into repeatedly has one answer per launch, not one
+    /// per boot. ref(d-0063)
+    Launch {
+        id: LaunchId,
+        exec: Exec,
+        on_exit: OnExit,
+    },
+    /// Stop one launch. Idempotent, and does not end the session.
+    Stop { id: LaunchId },
+    /// Stop one launch and start it again with the same command.
+    ///
+    /// **Defined as a kill followed by a launch of the same `Exec`, and nothing
+    /// more.** No retry, no backoff, no policy of any kind in the guest — it
+    /// exists as one message only because a caller sending two has the same
+    /// effect with a worse race in it. The relaunch keeps the id. ref(d-0063)
+    Restart { id: LaunchId },
     /// Shut the guest down.
     Shutdown,
     /// Bytes for the workload, relayed. See [`Payload`].
@@ -260,25 +371,21 @@ mod tests {
 
     fn descriptor() -> BootDescriptor {
         BootDescriptor {
-            exec: Exec {
-                argv: vec!["/usr/bin/true".into()],
-                env: BTreeMap::from([("HOME".to_string(), "/mnt/user".to_string())]),
-                cwd: Some("/mnt/user".into()),
-                uid: 1000,
-                gid: 1000,
-            },
             mounts: vec![Mount {
                 tag: "install".into(),
                 at: "/mnt/install".into(),
                 ro: true,
             }],
-            geometry: Geometry {
-                width: 1920,
-                height: 1080,
-                fps: 60,
-                hdr: false,
-            },
-            on_exit: OnExit { terminal: true },
+        }
+    }
+
+    fn exec() -> Exec {
+        Exec {
+            argv: vec!["/usr/bin/true".into()],
+            env: BTreeMap::from([("HOME".to_string(), "/mnt/user".to_string())]),
+            cwd: Some("/mnt/user".into()),
+            uid: 1000,
+            gid: 1000,
         }
     }
 
@@ -301,8 +408,121 @@ mod tests {
     }
 
     #[test]
+    fn a_launch_round_trips_with_its_id() {
+        let launch = HostToGuest::Launch {
+            id: LaunchId::new("l-1"),
+            exec: exec(),
+            on_exit: OnExit { terminal: true },
+        };
+        let back: HostToGuest = from_line(&to_line(&launch).unwrap()).unwrap();
+        assert_eq!(back, launch);
+    }
+
+    /// The reason ids exist: a caller has to be able to tell which launch it is
+    /// being told about, or the second one's exit overwrites the first's record.
+    #[test]
+    fn every_event_about_a_launch_carries_the_launch_it_is_about() {
+        let first = LaunchId::new("l-1");
+        let second = LaunchId::new("l-2");
+
+        let events = [
+            GuestToHost::Started { id: first.clone() },
+            GuestToHost::StartFailed {
+                id: first.clone(),
+                reason: "ENOENT".into(),
+            },
+            GuestToHost::WorkloadExited {
+                id: first.clone(),
+                exit: Exit::code(0),
+            },
+        ];
+
+        for event in events {
+            let line = to_line(&event).unwrap();
+            assert!(
+                line.contains(first.as_str()) && !line.contains(second.as_str()),
+                "an event does not say which launch it is about: {line}"
+            );
+            let back: GuestToHost = from_line(&line).unwrap();
+            assert_eq!(back, event);
+        }
+    }
+
+    /// The descriptor describes the box. A caller still sending a command in it
+    /// has not been updated, and the cost of accepting one quietly is a box that
+    /// mounts, comes up, and runs nothing.
+    #[test]
+    fn a_descriptor_carrying_a_command_is_refused_rather_than_ignored() {
+        let stale = r#"{"exec":{"argv":["/bin/sh"],"uid":1000,"gid":1000},
+                        "mounts":[],
+                        "geometry":{"width":1280,"height":720,"fps":60},
+                        "on_exit":{"terminal":true}}"#;
+        let parsed: Result<BootDescriptor, _> = from_line(stale);
+        assert!(
+            parsed.is_err(),
+            "a descriptor with a command in it parsed: {parsed:?}"
+        );
+    }
+
+    /// Geometry is in the launched argv and nowhere else, so there is no field
+    /// here for it to disagree with.
+    #[test]
+    fn geometry_is_not_on_this_layer() {
+        let line = to_line(&HostToGuest::Boot {
+            descriptor: Box::new(descriptor()),
+        })
+        .unwrap();
+        for named in ["width", "height", "fps", "hdr", "geometry"] {
+            assert!(
+                !line.contains(named),
+                "the descriptor names {named}, which belongs in the launch: {line}"
+            );
+        }
+    }
+
+    /// A dead service is not a dead workload: they are different incidents and
+    /// want different things looked at.
+    #[test]
+    fn a_dead_service_says_which_one_and_how() {
+        let died = GuestToHost::ServiceDied {
+            name: "pipewire".into(),
+            exit: Exit::signal(9),
+        };
+        let line = to_line(&died).unwrap();
+        assert!(line.contains("pipewire"), "no service name: {line}");
+        assert!(
+            !line.contains("exit_code"),
+            "a signalled service has no exit code: {line}"
+        );
+        let back: GuestToHost = from_line(&line).unwrap();
+        assert_eq!(back, died);
+    }
+
+    /// `ready` is the handshake and `initialized` is the box working. A caller
+    /// waiting on the wrong one succeeds before anything has started.
+    #[test]
+    fn readiness_and_initialisation_are_two_messages() {
+        let ready = to_line(&GuestToHost::Ready {
+            protocol_version: CONTROL_VERSION,
+        })
+        .unwrap();
+        let initialized = to_line(&GuestToHost::Initialized {
+            services: vec!["dbus".into(), "pipewire".into()],
+        })
+        .unwrap();
+        assert_ne!(ready, initialized);
+
+        // An empty stack is legitimate and has to survive the round trip, or a
+        // box with no services looks like a box that never came up.
+        let empty = GuestToHost::Initialized { services: vec![] };
+        let back: GuestToHost = from_line(&to_line(&empty).unwrap()).unwrap();
+        assert_eq!(back, empty);
+    }
+
+    #[test]
     fn a_signalled_exit_is_not_a_zero_exit() {
         let signalled = to_line(&GuestToHost::WorkloadExited {
+            id: LaunchId::new("l-1"),
             exit: Exit::signal(9),
         })
         .unwrap();
@@ -312,6 +532,7 @@ mod tests {
         );
 
         let clean = to_line(&GuestToHost::WorkloadExited {
+            id: LaunchId::new("l-1"),
             exit: Exit::code(0),
         })
         .unwrap();
@@ -381,13 +602,19 @@ mod tests {
 
     #[test]
     fn defaults_cover_what_a_caller_may_leave_out() {
-        let json = r#"{"exec":{"argv":["/bin/sh"],"uid":1000,"gid":1000},
-                       "geometry":{"width":1280,"height":720,"fps":30},
-                       "on_exit":{"terminal":false}}"#;
-        let parsed: BootDescriptor = from_line(json).unwrap();
+        // A box with nothing mounted is a legitimate box.
+        let parsed: BootDescriptor = from_line("{}").unwrap();
         assert!(parsed.mounts.is_empty());
-        assert!(parsed.exec.env.is_empty());
-        assert_eq!(parsed.exec.cwd, None);
-        assert!(!parsed.geometry.hdr);
+
+        let launch = r#"{"type":"launch","id":"l-1",
+                         "exec":{"argv":["/bin/sh"],"uid":1000,"gid":1000},
+                         "on_exit":{"terminal":false}}"#;
+        let HostToGuest::Launch { id, exec, on_exit } = from_line(launch).unwrap() else {
+            panic!("not a launch: {launch}")
+        };
+        assert_eq!(id, LaunchId::new("l-1"));
+        assert!(exec.env.is_empty());
+        assert_eq!(exec.cwd, None);
+        assert!(!on_exit.terminal);
     }
 }

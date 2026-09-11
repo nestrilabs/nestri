@@ -2,8 +2,9 @@
 
 PID 1 inside a box.
 
-A microVM has no init unless something is it. Three of the jobs are nobody
-else's, and this is all of them:
+A microVM has no init unless something is it, and in a box nothing else is:
+there is no service manager in the image and no init scripts. Four jobs, and
+this is all of them:
 
 - **Reaping.** A process whose parent dies is reparented to PID 1. Without a
   reaper, every orphan the workload leaves behind holds a pid and a slot in the
@@ -11,24 +12,45 @@ else's, and this is all of them:
 - **Ordered shutdown.** The workload stops first and alone, then everything
   else, then the disks are flushed and the machine is powered off. An init that
   returns leaves a guest running with nothing in it.
+- **The box's own services.** The bus, audio, and the transport that carries a
+  session out, started in order from a table compiled into this binary. There
+  is no unit format and no directory of files to read: the services in a box
+  are fixed, and running on any distribution comes from depending on none of
+  their init scripts rather than from being configurable.
 - **The guest end of the control channel.** One vsock connection out, carrying
   what to run in and what happened back.
 
-It does not know what it is running. It is handed a command line, a set of
-shares and what an exit means; there is no code path here that branches on
-which workload it started, and there is not meant to be.
+It does not know what it is running. It is handed a set of shares, and then
+commands naming what to run and what an exit means; there is no code path here
+that branches on which workload it started, and there is not meant to be.
+
+**A box outlives what runs in it.** Init mounts, brings the services up, says
+it is ready, and then takes commands for as long as the box lives — so this
+image on its own runs nothing at all, and a box may be launched into more than
+once.
 
 ### The channel
 
 The guest dials out on a fixed vsock port and speaks first:
 
 ```
-guest → { "type": "ready", "protocol_version": 2 }
-guest ← { "type": "boot", "exec": {...}, "mounts": [...], "geometry": {...}, "on_exit": {...} }
+guest → { "type": "ready", "protocol_version": 3 }
+guest ← { "type": "boot", "mounts": [...] }
 guest → { "type": "mounted" }
-guest → { "type": "started" }
-guest → { "type": "workload_exited", "exit_code": 0 }
+guest → { "type": "initialized", "services": ["dbus-system", ...] }
+guest ← { "type": "launch", "id": "…", "exec": {...}, "on_exit": {...} }
+guest → { "type": "started", "id": "…" }
+guest → { "type": "workload_exited", "id": "…", "exit_code": 0 }
 ```
+
+`ready` is the handshake and `initialized` is the box working. They are two
+facts and must not be treated as one: a caller that waits on the first has a
+wait that succeeds before anything in the guest has started.
+
+Every launch carries an id and every message about a launch carries it back.
+Without one, a second launch's exit is indistinguishable from the first's —
+which reads at the far end as a finished session still running, or a running
+one reported as stopped.
 
 Newline-delimited JSON. Dialling out rather than being connected to is worth
 keeping for two reasons: the listener is up before the VM starts, so nothing
@@ -109,19 +131,40 @@ later for no visible reason.
 
 ### It reports; it does not supervise
 
-When the workload ends, the exit goes up the channel and the session is over.
-`on_exit` says what that exit *means* — whether it ends the session — and
-nothing here restarts anything. Starting something again is a decision for the
-end that can see whether restarting is repair or a loop.
+When a launch ends, the exit goes up the channel. `on_exit` says what that exit
+*means* — whether it ends the session or leaves the box up to be launched into
+again — and nothing here restarts anything of its own accord. Starting
+something again is a decision for the end that can see whether restarting is
+repair or a loop.
+
+`restart` exists as one message and is defined as exactly that: a kill followed
+by a launch of the same command, keeping the id, with no retry and no backoff.
+It is one message rather than two only because a caller sending two has the
+same effect with a worse race in it.
+
+The same rule covers the box's own services. One that dies is **reported and
+left dead** — nothing else in the guest is watching them, so a death that is
+not said here is a box that looks healthy and cannot work.
+
+**One launch at a time.** A launch arriving while one is running is refused,
+carrying the id it was asked for, rather than queued or silently replacing it:
+a box has one screen, so a second concurrent launch has nowhere to draw.
 
 A signalled workload is reported as signalled, with no exit code. Reporting
 `0` for a killed process would make a kill look like a clean run.
 
 ### What is not here yet
 
-`geometry` is carried and parsed but nothing consumes it: nesinit does not
-start the guest's own services yet. `ticket` exists as a message with no
-producer wired to it.
+**It has never been PID 1 of anything.** Every line of this is written for a
+box and all of it has been tested outside one. It runs perfectly well as an
+ordinary process — it warns rather than fails when it is not PID 1 — which is
+how most of it is exercised, and is also how a guest that will not boot gets
+debugged: `init=/bin/bash` on the kernel command line, then run this by hand
+and watch it fail.
+
+Output geometry is deliberately absent from this layer. The compositor is
+started by a launch, with that launch's geometry in its own arguments, so the
+numbers appear in one place rather than two that can disagree.
 
 ### Testing
 

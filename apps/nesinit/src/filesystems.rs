@@ -31,6 +31,12 @@ struct Early {
 /// so a device node or a setuid bit appearing in one did not come from us.
 const NOSUID_NODEV: libc::c_ulong = libc::MS_NOSUID | libc::MS_NODEV;
 
+// Every tmpfs below is capped, and the caps are load-bearing rather than
+// tidiness. A tmpfs with no `size=` may grow to half of RAM, and the RAM in
+// question is the box's whole allowance — so an uncapped `/tmp` is a workload
+// that can OOM the box it runs in by writing files. The numbers are carried
+// over from the mount table this replaced, where they were already considered.
+
 const EARLY: &[Early] = &[
     Early {
         source: "proc",
@@ -40,6 +46,38 @@ const EARLY: &[Early] = &[
         data: "",
         cost: "this process cannot make itself ineligible for the OOM killer, \
                and nothing in the guest can read its own state",
+    },
+    // Usually already there: a kernel built with `CONFIG_DEVTMPFS_MOUNT` mounts
+    // this before init runs. Listed anyway because the check below skips what
+    // is already mounted, so the entry costs nothing when the kernel did it and
+    // is the difference between a working box and one with no device nodes when
+    // it did not. Without `nodev`, obviously — device nodes are the point.
+    Early {
+        source: "devtmpfs",
+        target: "/dev",
+        fstype: "devtmpfs",
+        flags: libc::MS_NOSUID,
+        data: "mode=755",
+        cost: "there are no device nodes at all, so nothing can open the GPU",
+    },
+    Early {
+        source: "devpts",
+        target: "/dev/pts",
+        fstype: "devpts",
+        flags: NOSUID_NODEV | libc::MS_NOEXEC,
+        data: "mode=620,gid=5,ptmxmode=666",
+        cost: "nothing that wants a terminal can allocate one",
+    },
+    // The image creates this directory, and the mode is the load-bearing part:
+    // a workload and the box's own services are different users, and shared
+    // memory between them is how a Vulkan client hands buffers around.
+    Early {
+        source: "tmpfs",
+        target: "/dev/shm",
+        fstype: "tmpfs",
+        flags: NOSUID_NODEV,
+        data: "mode=1777,size=256m",
+        cost: "anything using shared memory fails, which includes most graphics",
     },
     Early {
         source: "sysfs",
@@ -59,7 +97,7 @@ const EARLY: &[Early] = &[
         flags: NOSUID_NODEV,
         // The sticky bit, because the workload does not run as this process
         // does and what it binds here is its own.
-        data: "mode=1777",
+        data: "mode=1777,size=64m",
         cost: "whatever serves this session's address cannot bind its socket, \
                so the session never gets one",
     },
@@ -74,7 +112,7 @@ const EARLY: &[Early] = &[
         // Octal, and without a leading zero on purpose: the kernel parses a
         // tmpfs mode as octal either way, and this is the spelling `mount`
         // itself documents.
-        data: "mode=755",
+        data: "mode=755,size=32m",
         cost: "there is nowhere for a runtime socket to live, so neither the \
                payload relay nor this session's address can be served",
     },
@@ -83,11 +121,11 @@ const EARLY: &[Early] = &[
     //
     // It was, and that was wrong in a way no test here would have caught: a
     // fresh tmpfs over the share tree hides every directory the image prepared
-    // underneath it — the install, the user state, the work directory, and the
-    // mount point the log share is attached to from `fstab`. The box then has a
-    // socket and none of the places its workload expects to find its files, and
-    // the exact-path check below cannot notice, because what `fstab` mounts is
-    // a directory *inside* that tree rather than the tree itself.
+    // underneath it — the install, the user state, the work directory, and any
+    // mount point a share is attached to. The box then has a socket and none of
+    // the places its workload expects to find its files, and the exact-path
+    // check below cannot notice, because a share lands on a directory *inside*
+    // that tree rather than on the tree itself.
     //
     // Owned by this process and writable by nothing else, which is what makes
     // the socket in it unreplaceable. The workload reaches it because the
@@ -98,9 +136,21 @@ const EARLY: &[Early] = &[
         target: crate::payload::DIRECTORY,
         fstype: "tmpfs",
         flags: NOSUID_NODEV | libc::MS_NOEXEC,
-        data: "mode=755",
+        // One socket lives here, so this is as small as a tmpfs usefully gets.
+        data: "mode=755,size=1m",
         cost: "the payload relay cannot bind, so nothing reaches the workload \
                over the channel",
+    },
+    // The root is read-only and some things write here whether or not anything
+    // reads it back. A box's real logs leave over the control channel; this is
+    // so that a library writing a file does not fail on `EROFS` instead.
+    Early {
+        source: "tmpfs",
+        target: "/var/log",
+        fstype: "tmpfs",
+        flags: NOSUID_NODEV | libc::MS_NOEXEC,
+        data: "mode=755,size=16m",
+        cost: "anything that writes a log file fails on a read-only root",
     },
 ];
 
@@ -217,6 +267,25 @@ mod tests {
             assert!(CString::new(early.fstype).is_ok(), "{}", early.target);
             assert!(CString::new(early.data).is_ok(), "{}", early.target);
             assert!(!early.cost.is_empty(), "{} has no cost", early.target);
+        }
+    }
+
+    /// **Every tmpfs is capped.** One without a `size=` may grow to half of RAM,
+    /// and the RAM in question is the whole box's — so an uncapped `/tmp` hands
+    /// a workload a way to OOM the box it is running in by writing files. The
+    /// failure looks like a box that died under load rather than like a missing
+    /// mount option, which is why this is a test.
+    #[test]
+    fn no_tmpfs_is_unbounded() {
+        for early in EARLY {
+            if early.fstype != "tmpfs" {
+                continue;
+            }
+            assert!(
+                early.data.contains("size="),
+                "{} is an uncapped tmpfs",
+                early.target
+            );
         }
     }
 

@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use nesinit::payload::{self, Ports};
 use nesinit::reap::{self, Waiters};
+use nesinit::services::Stack;
 use nesinit::session::{self, Outcome};
 use nesinit::shutdown::{self, Machine};
 use nesinit::ticket;
@@ -44,6 +45,13 @@ fn main() -> anyhow::Result<()> {
     // nothing else in this guest is an init system, so until this runs there
     // is no `/proc` to score this process in and nowhere to put a socket.
     nesinit::filesystems::establish();
+
+    // Everything a distribution's init scripts used to do, and nothing else is
+    // going to: a hostname, the box's address, the directories a session's
+    // sockets live in, and device nodes something is allowed to open. Before
+    // the runtime, so the few processes it starts are waited for directly
+    // rather than racing the reaper into existence. ref(d-0063)
+    nesinit::system::prepare();
 
     // Both before anything is started, so nothing can be orphaned or scored
     // in the window where neither is true yet.
@@ -124,8 +132,13 @@ async fn guest(waiters: &Waiters, workload: &mut Process) -> anyhow::Result<Outc
         untrusted.clone(),
     ));
 
+    // The box's own services. Nothing is started here: bring-up happens once
+    // the descriptor has been carried out, because a box whose shares are not
+    // where they belong is not a box worth starting a stack in.
+    let mut services = Stack::new(waiters.clone());
+
     let outcome = tokio::select! {
-        outcome = session::run(channel, workload, &mut ports, &mut found_rx, &untrusted) => outcome?,
+        outcome = session::run(channel, workload, &mut services, &mut ports, &mut found_rx, &untrusted) => outcome?,
         signal = asked_to_stop() => {
             signal?;
             tracing::info!("asked to stop");
