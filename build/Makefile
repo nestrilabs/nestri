@@ -6,7 +6,7 @@ ifeq ($(CONTAINER_RT),)
 $(error "Neither docker nor podman found in PATH")
 endif
 
-# The Dockerfile COPYs from apps/ and crates/, so the build context is the
+# The Containerfile COPYs from apps/ and crates/, so the build context is the
 # repo root, not this directory — same reason borealis's build/ *is* its own
 # context: here the guest source lives one level up instead of inside build/.
 CONTEXT      := ..
@@ -33,11 +33,11 @@ FORCE_REBUILD ?=
 
 build:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
-		-f Dockerfile -t $(IMAGE_NAME):latest --target runtime_prod $(CONTEXT)
+		-f Containerfile -t $(IMAGE_NAME):latest --target runtime_prod $(CONTEXT)
 
 build-debug:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
-		-f Dockerfile -t $(IMAGE_NAME):debug --target runtime_debug $(CONTEXT)
+		-f Containerfile -t $(IMAGE_NAME):debug --target runtime_debug $(CONTEXT)
 
 # Not `sudo make image`/sudo'd in here: mkimage.sh runs as you and escalates
 # only the specific commands that need root. Under rootless Podman, `make
