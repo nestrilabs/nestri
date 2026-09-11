@@ -22,7 +22,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
     exit 1
 fi
 
-CONTAINER_RT="$(command -v docker || command -v podman || true)"
+CONTAINER_RT="$(command -v podman || command -v docker || true)"
 [[ -n "$CONTAINER_RT" ]] || { echo "Neither docker nor podman found in PATH" >&2; exit 1; }
 
 sudo -v   # cache credentials once, rather than prompting mid-pipeline

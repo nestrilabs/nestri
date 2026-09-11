@@ -63,9 +63,11 @@ ENV ARTIFACTS=/artifacts
 FROM builder AS mesa-build
 
 ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
-ARG MESA_COMMIT=b78fc73dd898a7dfa87448a4b5ff4459a870e21a
+ARG MESA_COMMIT=12b7b819edb4ddd3580e7e5ffe384610ae726c90
+ARG JOBS=
 
-RUN git clone --depth=1 --revision="${MESA_COMMIT}" "${MESA_GIT}" /build/mesa-src && \
+RUN test -n "$JOBS" || JOBS=$(nproc) && \
+    git clone --depth=1 --revision="${MESA_COMMIT}" "${MESA_GIT}" /build/mesa-src && \
     cd /build/mesa-src && \
     meson setup builddir \
         -Dprefix=/usr \
@@ -83,7 +85,7 @@ RUN git clone --depth=1 --revision="${MESA_COMMIT}" "${MESA_GIT}" /build/mesa-sr
         -Dgbm=enabled \
         -Dgallium-va=enabled \
         -Db_ndebug=true && \
-    ninja -C builddir && \
+    ninja -C builddir -j${JOBS:-$(nproc)} && \
     DESTDIR=/artifacts/mesa ninja -C builddir install && \
     rm -rf /build/mesa-src && \
     find /artifacts/mesa -type f -printf '/%P\n' > /artifacts/mesa/.manifest
