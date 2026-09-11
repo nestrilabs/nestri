@@ -1,9 +1,10 @@
 # build/ — the guest rootfs
 
-Builds a bootable Artix/OpenRC image for the box's virtio-blk root: Mesa
-(virtio-gpu native context) plus the four open guest components —
-[`nescope`](../apps/nescope), [`neshub`](../apps/neshub),
-[`neswire`](../apps/neswire), [`nescapture`](../apps/nescapture) — laid out
+Builds a bootable Arch image for the box's virtio-blk root: Mesa (virtio-gpu
+native context) plus the five open guest components —
+[`nesinit`](../apps/nesinit), [`nescope`](../apps/nescope),
+[`neshub`](../apps/neshub), [`neswire`](../apps/neswire),
+[`nescapture`](../apps/nescapture) — laid out
 the way [borealis](https://chromium.googlesource.com/chromiumos/overlays/board-overlays/+/main/project-borealis)
 lays out its `build/`: one big multi-stage `Dockerfile`, `--target` picks the
 flavor, `etc/` holds the files that get overlaid onto the image verbatim.
@@ -33,10 +34,10 @@ Three things worth knowing about how this is put together:
 1. **No privileged host chroot.** A bare `chroot` into a hand-extracted
    rootfs needs `/proc`, `/sys`, `/dev` bind-mounted in first — they don't
    exist inside a chroot target until something puts them there. `os-base`
-   here is `FROM artixlinux/artixlinux:base-openrc` directly, with
-   `pacman -S` as plain `RUN` steps — a Docker build step already runs
-   inside a real container with its own `/proc`, `/sys`, `/dev`, so that
-   whole bind-mount mechanism has nothing to do.
+   here is `FROM archlinux:base` directly, with `pacman -S` as plain `RUN`
+   steps — a Docker build step already runs inside a real container with its
+   own `/proc`, `/sys`, `/dev`, so that whole bind-mount mechanism has nothing
+   to do.
 
 2. **No host-side ownership bug to guard against.** `COPY --from=` runs as
    root inside the build with no host user in the loop, so there's no
@@ -65,29 +66,73 @@ Whatever layers Proton and the Steam client on top of it is a closed build
 outside this repo, by design — not something this repo names, links to, or
 depends on.
 
-## The nesinit gap
+## There is no init system in here, and that is the design
 
-Nothing in this image starts a payload. The old `nestri-guest-hub` did that
-— per its own commit message, the open `neshub` *"loses `--proton`,
-`--steamclient-so`, `--root` and the game uid/gid, and no longer ends by
-handing the process to a controller... Deciding when the box is finished
-belongs to `nesinit`."* `nesinit` — the guest init/session-supervisor that
-would actually launch `nescope -- <payload>` and power the box down — is
-referenced in commit messages and `nesbox/PROGRESS.md` but does not exist as
-open code in either repo.
+`nesinit` is PID 1. The image carries **no service manager, no init scripts,
+no `udev` and no systemd** — `systemd-libs` stays, because `dbus-daemon` and
+`wireplumber` link `libsystemd.so.0`, but nothing in the image can be PID 1
+except `nesinit`, and the build fails if anything that could be turns up.
 
-So `/etc/init.d/nescope` here starts nescope in **plain-compositor mode**
-(no command after `--`): it comes up, provides the Wayland/X11 environment,
-and waits for something to connect. That makes the image genuinely bootable
-and testable — `neshub`, `neswire`, `nescope` all come up under OpenRC and
-you get a real Wayland socket to point a client at — but running an actual
-game is still nesinit's job, and nesinit isn't part of this build. Whoever
-picks that up next should read `apps/neshub/README.md`'s "What it does not
-do" section first.
+That is why this is plain Arch. The image used to be Artix, chosen for OpenRC,
+and every cost of that choice — no `eudev`, no `agetty-openrc`, `udev` being
+systemd's anyway, a runlevel edit not stopping a service another one still
+needs — was paid for an init system that is no longer here.
+
+**What replaced fourteen `rc-update` lines and nine init scripts:**
+
+| was | now |
+|---|---|
+| `devfs`, `dmesg`, `udev`, `udev-trigger` | `devtmpfs` makes the nodes; init sets the two modes that matter. The compositor takes input through Wayland and opens nothing `udev` provides |
+| `guest-net`, `hostname`, `xdg-runtime`, `cgroups` | init, before it dials out |
+| `dbus`, `dbus-session`, `pipewire`, `wireplumber`, `neshub`, `neswire` | a table compiled into `nesinit` |
+| `nescope` in the `default` runlevel | **not a service.** It wraps the workload and is started by a launch, with that launch's geometry, and dies with it |
+| `agetty` on `hvc0` | nothing. See below |
+| `/etc/fstab` | init's own mounts, and shares named in the boot descriptor |
+
+**A box is launched into, not booted into something.** Init mounts what the
+descriptor names, brings the table up, says it is ready, and then takes
+commands — so an image on its own runs nothing at all, which is the point:
+this image is payload-independent and there is no payload in it.
+
+### Getting into a guest that will not boot
+
+`init=/bin/bash` on the kernel command line. Nothing in the image offers a
+login prompt — there is no getty in either flavour — and that is cheaper than
+carrying one: `nesinit` is an ordinary program, so from that shell you can run
+it by hand and watch it fail. `make build-debug` adds `vulkaninfo` and friends
+and gives root a password for `su`; it does not add a console.
+
+The one thing this does not reach is a failure *before* the shell. If that
+happens the evidence is on `console=hvc0` and nowhere else.
+
+### Two build-time checks worth knowing about
+
+Both exist because the failure they catch is invisible at runtime rather than
+loud, which is the same reason the old build checked its `conf.d` files:
+
+- **No hook may point at a program that is not in the image.** Removing
+  systemd removes the script `dbus-reload.hook` calls, and a leftover hook
+  produces `error: command failed to execute correctly` on every future pacman
+  transaction — indistinguishable, in a log, from something that matters.
+- **Nothing `nesinit` will look for may be missing.** Its service table is
+  compiled in, so an absent `dbus-daemon` is not a build error by itself; it
+  is a service that does not come up in a box somebody is waiting on.
 
 ## Network defaults
 
-`/etc/init.d/guest-net` reads `nestri.ip=`/`nestri.gw=` off the kernel
-command line, falling back to `172.30.0.2/24` via `172.30.0.1` if neither is
-set — nesbox's own default tap addressing. Keep these in step if that
-changes on the nesbox side.
+`nesinit` reads `nestri.ip=`/`nestri.gw=` off the kernel command line,
+falling back to `172.30.0.2/24` via `172.30.0.1` if neither is set — the
+host's own default tap addressing. Keep these in step if that changes on the
+host side. A box started with no network device at all is a valid box and
+boots without one.
+
+The address is a per-boot parameter rather than an image setting because the
+alternative makes every box built from this image the same host on the
+network, and two of them collide the moment they run together. Same reasoning
+for `/etc/machine-id`, which is a symlink into a tmpfs that init fills at
+boot — the previous image baked one in, so every box built from it was the
+same machine to anything that asked.
+
+This is also the one thing in the image that keeps `iproute2` installed:
+init runs `ip` rather than talking netlink, which is a hundred lines of
+`unsafe` saved for an interface configured once.
