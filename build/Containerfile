@@ -19,7 +19,7 @@
 #  outside this repo — see build/README.md.
 #
 #  Build from the repo root, not from build/:
-#    docker build -f build/Dockerfile --target runtime_prod -t nestri-guest .
+#    docker build -f build/Containerfile --target runtime_prod -t nestri-guest .
 #  (`make build` in this directory does exactly that.)
 # ═══════════════════════════════════════════════════════════
 
@@ -148,7 +148,7 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 #  `FROM archlinux:base` directly, and `pacman -S` as plain RUN steps — not a
 #  privileged host `chroot` into a hand-extracted tarball, which would need
 #  /proc, /sys and /dev bind-mounted in first (they don't exist inside a chroot
-#  target until something puts them there). A Dockerfile RUN step already
+#  target until something puts them there). A Containerfile RUN step already
 #  executes inside a real container with its own /proc, /sys, /dev, so there is
 #  no bind-mount step to write at all.
 #
@@ -260,7 +260,7 @@ FROM os-base AS runtime
 # This is what GHCR actually uses to connect a pushed image back to its
 # repo — not a setting to toggle after the fact, a label the image has to
 # carry. Without it a manually-pushed image shows no "used by" repo on its
-# package page even though this Dockerfile is exactly what built it.
+# package page even though this Containerfile is exactly what built it.
 LABEL org.opencontainers.image.source="https://github.com/nestrilabs/nestri"
 
 # Our own builds, overlaid on the distro's mesa. The distro package landed

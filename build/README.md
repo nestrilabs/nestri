@@ -6,12 +6,12 @@ native context) plus the five open guest components —
 [`neshub`](../apps/neshub), [`neswire`](../apps/neswire),
 [`nescapture`](../apps/nescapture) — laid out
 the way [borealis](https://chromium.googlesource.com/chromiumos/overlays/board-overlays/+/main/project-borealis)
-lays out its `build/`: one big multi-stage `Dockerfile`, `--target` picks the
+lays out its `build/`: one big multi-stage `Containerfile`, `--target` picks the
 flavor, `etc/` holds the files that get overlaid onto the image verbatim.
 
 ```
 build/
-├── Dockerfile         everything, in stages: mesa-build, nestri-build,
+├── Containerfile       everything, in stages: mesa-build, nestri-build,
 │                       os-base, runtime, runtime_prod, runtime_debug
 ├── etc/                overlaid onto the image's /etc as-is
 ├── scripts/
@@ -54,7 +54,7 @@ Three things worth knowing about how this is put together:
 **What is deliberately not here: Proton, and Valve's `steamclient.so`.**
 `nestri/CLAUDE.md` is explicit — *"Nothing closed may enter this repo. Not
 source, not a dependency, not a directory that 'looked convenient'."* Both
-are closed. `runtime_prod` from this Dockerfile — tagged
+are closed. `runtime_prod` from this Containerfile — tagged
 `ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable, Steam-less guest image,
 and also the shared foundation other builds start from: nesbox's jail image
 (see `nesbox/build/`) extracts **Mesa** from it so the guest and host sides of
