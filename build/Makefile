@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .PHONY: build build-debug image image-debug clean help
 
-CONTAINER_RT := $(shell command -v docker 2>/dev/null || command -v podman 2>/dev/null)
+CONTAINER_RT := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 ifeq ($(CONTAINER_RT),)
 $(error "Neither docker nor podman found in PATH")
 endif
