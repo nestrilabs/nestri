@@ -1,0 +1,40 @@
+# The guest rootfs build's context.
+#
+# The name is load-bearing and it is not `.containerignore`. Podman looks for
+# an ignore file *adjacent to the Containerfile and named after it* — here,
+# `Containerfile.containerignore` — before falling back to one at the root of
+# the build context. The context is the repository root, so a bare
+# `build/.containerignore` sits in neither place and is silently read by
+# nothing: the build still works, it just sends the whole tree.
+#
+# Docker looks for the `.dockerignore` suffix only, so a docker build reads the
+# repository-root file instead of this one and sends more than it needs. That
+# is the cost of the container-agnostic name and it is only a cost in bytes.
+#
+# This file *replaces* the repository-wide ignore file rather than adding to
+# it, so the first block below is that file repeated. The second is what only
+# this build excludes.
+#
+# This build's context is the repository root (see `Makefile`), and it COPYs
+# the workspace manifests plus the Rust members and nothing else. The
+# TypeScript half is therefore dead weight in the context — a few megabytes
+# sent to the daemon versus the whole tree.
+.git
+node_modules
+target
+build/output
+.env
+.env.*
+.wrangler
+dist
+.output
+
+docs
+apps/api
+apps/auth
+packages
+*.md
+deno.lock
+bun.lock
+.zed
+.github

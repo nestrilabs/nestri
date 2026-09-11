@@ -13,15 +13,25 @@
 #  this image is plain Arch rather than a distribution chosen for its init.
 #  ref(d-0063)
 #
-#  What is deliberately NOT here: Proton, Valve's steamclient.so, or anything
-#  else closed. nestri/CLAUDE.md is explicit that nothing closed enters this
-#  repo. Whatever layers those on top of runtime_prod is a closed build
-#  outside this repo — see build/README.md.
+#  Proton is here, and it is not a closed component: it is proton-cachyos built
+#  from source with --enable-wow64, which is what removes the need for a whole
+#  32-bit host stack. Valve's steamclient.so is a different thing and is NOT
+#  here — that one is closed, and nestri/CLAUDE.md is explicit that nothing
+#  closed enters this repo. Whatever layers it on top of runtime_prod is a
+#  closed build outside this repo — see build/README.md.
 #
 #  Build from the repo root, not from build/:
 #    docker build -f build/Containerfile --target runtime_prod -t nestri-guest .
 #  (`make build` in this directory does exactly that.)
 # ═══════════════════════════════════════════════════════════
+
+
+# Declared here and not beside the stage that uses it, because an ARG a FROM
+# expands has to precede the *first* FROM in the file. Anywhere else it is
+# scoped to one stage instead, `FROM ${PROTON_IMAGE}` expands to nothing, and
+# the build fails with "no FROM statement found" — which says nothing about
+# the actual mistake. See the Proton stage below for what this is.
+ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-cachyos-native-wow64:11.0-20260703
 
 
 # ───────────────────────────────────────────────────────────
@@ -142,6 +152,28 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
     install -Dm644 apps/nescapture/manifest/VK_LAYER_nescapture.json \
         /artifacts/nestri/usr/share/vulkan/implicit_layer.d/VK_LAYER_nescapture.json && \
     find /artifacts/nestri -type f -printf '/%P\n' > /artifacts/nestri/.manifest
+
+
+# ───────────────────────────────────────────────────────────
+#  Proton — pulled, not built here
+#
+#  Building it takes hours and it changes only when its own tag moves, so it
+#  has a cadence of its own and an image of its own. The published image is
+#  `FROM scratch` over the tree, so its root *is* the tree and there is nothing
+#  in it to run — only something to copy from.
+#
+#  Built with `--enable-wow64`, which is the whole reason it is a build of ours
+#  rather than the distribution's package. wow64 runs 32-bit Windows code
+#  inside a 64-bit unix process, so a box needs no lib32 anything: no 32-bit
+#  glibc, no second Mesa for i686, and — the one that matters most here — no
+#  second capture layer, because the game is a 64-bit process and loads the
+#  64-bit Vulkan loader the existing layer already sits in. The distribution's
+#  package is built without the flag, which is exactly why it depends on
+#  lib32-*.
+#
+#  Override to build it yourself; the tag is a version and moves deliberately.
+# ───────────────────────────────────────────────────────────
+FROM ${PROTON_IMAGE} AS proton
 
 
 # ───────────────────────────────────────────────────────────
@@ -279,6 +311,17 @@ RUN cat /tmp/mesa.manifest /tmp/nestri.manifest > /tmp/.strip-manifest && \
     rm -f /tmp/mesa.manifest /tmp/nestri.manifest
 COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
+
+# The Proton tree, whose image root is the tree, so this lands it at
+# /usr/share/steam/compatibilitytools.d/proton-cachyos.
+#
+# Deliberately not in the strip manifest above: that list is our own build
+# output, and the two stripping decisions are not the same one. Proton ships
+# a Windows toolchain's worth of PE binaries that `strip` has no business
+# touching, and its unix side is already built the way its own packaging
+# builds it.
+COPY --from=proton / /
+
 RUN ldconfig
 
 COPY build/etc/ /etc/
@@ -336,7 +379,8 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # on, reported over the control channel and read hours later. Checking here
 # turns that into a failed build.
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
-                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip; do \
+                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
+                    /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
 

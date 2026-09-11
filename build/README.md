@@ -51,20 +51,43 @@ Three things worth knowing about how this is put together:
    own incremental compiler per-crate isolation without needing a separate
    Docker stage (and a separate full rebuild of `nesprotocol`) per binary.
 
-**What is deliberately not here: Proton, and Valve's `steamclient.so`.**
+**What is deliberately not here: Valve's `steamclient.so`.**
 `nestri/CLAUDE.md` is explicit — *"Nothing closed may enter this repo. Not
-source, not a dependency, not a directory that 'looked convenient'."* Both
-are closed. `runtime_prod` from this Containerfile — tagged
-`ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable, Steam-less guest image,
+source, not a dependency, not a directory that 'looked convenient'."* That one
+is closed, so whatever layers it on top is a build outside this repo — not
+something this repo names, links to, or depends on.
+
+**Proton is here, and this paragraph used to say it was not.** The old wording
+put Proton and `steamclient.so` together and called both closed, which is
+wrong about Proton: it is compiled from source, which is not a thing you can
+do with closed software. Keeping it out cost a box the only way it has to run
+a Windows title, for a rule that did not apply to it.
+
+What it is: **proton-cachyos built with `--enable-wow64`**, pulled by tag as a
+published image rather than rebuilt here, because it takes hours and moves
+only when its own tag does. `PROTON_IMAGE` overrides the tag, and it has to be
+declared before the first `FROM` — an `ARG` a `FROM` expands is global or it
+is nothing, and getting that wrong fails with `no FROM statement found`, which
+says nothing about the actual mistake. wow64 is the whole reason it is a build of ours
+and not the distribution's package — it runs 32-bit Windows code inside a
+64-bit unix process, so a box needs no lib32 glibc, no second Mesa for i686,
+and no second capture layer for 32-bit titles to be captured. The
+distribution's package is built without the flag, which is exactly why it
+depends on `lib32-*`.
+
+It costs about 1.4 GB of image, and it is the one thing in here that is
+payload-shaped: a compatibility layer for Windows games in an image that is
+otherwise indifferent to what it runs. The guest components stay indifferent
+regardless — none of them branches on it, and the init does not know it
+exists. What names it is the command a caller sends.
+
+`runtime_prod` from this Containerfile — tagged
+`ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable guest image,
 and also the shared foundation other builds start from: nesbox's jail image
 (see `nesbox/build/`) extracts **Mesa** from it so the guest and host sides of
 the virtio-gpu native-context protocol never drift apart. Only Mesa —
 `virglrenderer` is the host half of that protocol and nesbox builds its own,
 patched, from `nesbox/patches/`; nothing in this image carries it.
-
-Whatever layers Proton and the Steam client on top of it is a closed build
-outside this repo, by design — not something this repo names, links to, or
-depends on.
 
 ## There is no init system in here, and that is the design
 
