@@ -116,16 +116,47 @@ const EARLY: &[Early] = &[
         cost: "there is nowhere for a runtime socket to live, so neither the \
                payload relay nor this session's address can be served",
     },
+    // The tree a session's shares are mounted into.
+    //
+    // A share's target is named by the descriptor and may be any path under
+    // here, so something has to create directories on a root that is read-only
+    // by design. That is what this is: `workload::mount` calls `create_dir_all`
+    // on each target, which fails with `EROFS` unless the tree it is creating
+    // in is writable.
+    //
+    // **This entry used to be forbidden, and the reason it was forbidden is
+    // gone.** A test here asserted that `/nestri` must never be mounted over,
+    // because a fresh tmpfs would hide the install, the user state and the work
+    // directory that the image had prepared underneath. That was true of the
+    // image that shipped those directories and an `fstab` that mounted into
+    // them. The image prepares nothing here now — the host names every share
+    // and every target — so there is nothing left to hide, and the rule had
+    // become a guard on a hazard that was deleted with the image that had it.
+    // ref(d-0063)
+    //
+    // Small on purpose. Everything real is mounted *over* this, so what remains
+    // is a handful of empty directories; the cap matters for the case where a
+    // share fails to mount and a workload writes to the bare mount point
+    // instead, which would otherwise be RAM the box cannot get back.
+    Early {
+        source: "tmpfs",
+        target: "/nestri",
+        fstype: "tmpfs",
+        flags: NOSUID_NODEV,
+        data: "mode=755,size=4m",
+        cost: "no share can be mounted, because its target cannot be created                on a read-only root",
+    },
     // The relay's own directory, and it is deliberately **not** in the tree the
     // session's shares live in.
     //
-    // It was, and that was wrong in a way no test here would have caught: a
-    // fresh tmpfs over the share tree hides every directory the image prepared
-    // underneath it — the install, the user state, the work directory, and any
-    // mount point a share is attached to. The box then has a socket and none of
-    // the places its workload expects to find its files, and the exact-path
-    // check below cannot notice, because a share lands on a directory *inside*
-    // that tree rather than on the tree itself.
+    // It was, and moving it out stays right for a reason that outlived the one
+    // originally given. The first reason was that a tmpfs over the share tree
+    // would hide what the image had prepared there; that image is gone and the
+    // entry above now mounts that tree deliberately. The reason that remains is
+    // ownership: this directory is written by this process and by nothing else,
+    // which is what makes the socket in it unreplaceable. The share tree is
+    // mounted into by the host's own shares, so a relay socket living there
+    // would sit in a tree a workload's own share can be attached over.
     //
     // Owned by this process and writable by nothing else, which is what makes
     // the socket in it unreplaceable. The workload reaches it because the
@@ -312,20 +343,32 @@ mod tests {
     }
 
     /// **Nothing here may be mounted over the tree the session's shares live
-    /// in.** A fresh tmpfs there hides every directory the image prepared
-    /// underneath — the install, the user state, the work directory, and the
-    /// mount point the log share attaches to — and the exact-path check cannot
-    /// notice, because what is mounted from `fstab` is a directory inside that
-    /// tree rather than the tree itself. So a box would come up with a socket
-    /// and without any of the places its workload looks for its files.
+    /// in**, and the share tree itself is mounted so that targets under it can
+    /// be created at all.
+    ///
+    /// This replaces a test that asserted the exact opposite — that `/nestri`
+    /// must never be mounted over — on the grounds that a tmpfs there would
+    /// hide the install, the user state and the work directory the image had
+    /// prepared. The image that prepared them no longer exists; the host names
+    /// every share and every target now, and a read-only root cannot have a
+    /// directory created on it. Measured 2026-09-11: without this entry the
+    /// first real boot refused its own descriptor with
+    /// `/nestri/payload: Read-only file system`.
     #[test]
-    fn the_share_tree_is_never_mounted_over() {
-        for early in EARLY {
-            assert_ne!(
-                early.target, "/nestri",
-                "this hides the directories the image prepared for a session"
-            );
-        }
+    fn the_share_tree_is_writable_and_the_relay_is_not_inside_it() {
+        let tree = EARLY
+            .iter()
+            .find(|e| e.target == "/nestri")
+            .expect("a share's target cannot be created without this");
+        assert_eq!(tree.fstype, "tmpfs");
+        assert!(
+            tree.data.contains("size="),
+            "an uncapped tmpfs here is RAM a box cannot get back"
+        );
+        assert!(
+            !crate::payload::DIRECTORY.starts_with("/nestri/"),
+            "the relay's socket would sit in a tree a share can be mounted over"
+        );
     }
 
     /// The relay's directory is the one this cannot hardcode: it belongs to
