@@ -92,6 +92,19 @@ the virtio-gpu native-context protocol never drift apart. Only Mesa —
 `virglrenderer` is the host half of that protocol and nesbox builds its own,
 patched, from `nesbox/patches/`; nothing in this image carries it.
 
+## Two packages that look droppable and are not
+
+`llvm-libs` is 164 MB, the largest single thing in the image after Proton, and
+`lm_sensors` is only there because something links `libsensors`. Both look like
+leftovers of a Mesa configuration that has since been trimmed, and both have
+been checked rather than reasoned about: **`libgbm` links them**, and the
+compositor needs GBM. Trimming the Mesa build does not reach them.
+
+`lm_sensors` in particular was found the hard way. It used to arrive as a
+dependency of the distribution's Mesa package, and dropping that package took
+it away — leaving our own Mesa unable to resolve `libsensors.so.5`. Nothing in
+a package list says that; the check below is what said it.
+
 ## Proton has its own cadence, and its own Containerfile
 
 `make build` **pulls** Proton by tag; it does not build it. Building it takes
