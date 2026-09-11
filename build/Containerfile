@@ -222,11 +222,41 @@ RUN pacman-key --init
 # `logrotate` is also gone, and that one is not about the init system: a box
 # keeps no logs to rotate. What is worth reading leaves over the control
 # channel, and `/var/log` is a small tmpfs that is discarded with the box.
+# `mesa` is not in this list, and the two `--assume-installed` flags are why.
+#
+# The distribution's Mesa used to be installed so that every runtime dependency
+# of *a* Mesa was present and correctly versioned, and ours was then overlaid
+# on top. That worked for the unversioned filenames and not for the versioned
+# one: `libgallium-<version>.so` from the package sat beside ours, 53 MB of it,
+# referenced by nothing. Installing it to overwrite most of it was always the
+# roundabout way round; telling pacman the dependency is already satisfied is
+# the direct one.
+#
+# Exactly two flags are needed and both were checked by dropping each in turn:
+# `mesa` is the name two packages depend on, and `opengl-driver` is a virtual
+# provide `libglvnd` requires that only a real driver package satisfies. The
+# other three names Mesa provides — `mesa-libgl`, `libva-driver`,
+# `libva-mesa-driver` — change nothing here, so they are not listed.
+#
+# What makes this safe is that our Mesa is a superset for this image's
+# purposes: it builds the drivers a box can actually use and the package's
+# other ones (apple, asahi, armada, d3d12) are for hardware no box has. What it
+# does *not* build is a software rasteriser, so there is no llvmpipe fallback —
+# a box with no working GPU path now fails instead of rendering slowly, which
+# is the honest outcome for something that exists to stream frames.
+#
+# Two packages below are explicit *because* Mesa is gone, and both used to
+# arrive as its dependencies: `llvm-libs`, which the radeonsi driver links for
+# shader compilation, and `lm_sensors`, which it links for `libsensors.so.5`.
+# The second was found by the check further down rather than by reading the
+# list — dropping a package takes its dependency tree with it, and the part of
+# that tree something else was quietly using is not visible from here.
 RUN pacman -Syu --noconfirm --needed \
+        --assume-installed mesa --assume-installed opengl-driver \
         dbus \
         iptables iproute2 \
-        mesa libglvnd libdrm libepoxy libxxf86vm libinput wayland \
-        expat zlib llvm-libs elfutils libva shaderc vulkan-icd-loader \
+        libglvnd libdrm libepoxy libxxf86vm libinput wayland \
+        expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
         pipewire pipewire-audio wireplumber opus \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
@@ -378,6 +408,36 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # error — it is a service that does not come up in a box somebody is waiting
 # on, reported over the control channel and read hours later. Checking here
 # turns that into a failed build.
+# Everything this image promises must resolve the libraries it links.
+#
+# This is the check the Mesa change needs: dropping a package that provided
+# libraries is how a binary ends up resolving nothing, and the symptom is not a
+# build failure — it is a service that will not start in a box somebody is
+# waiting on, or a render path that is missing rather than slow. It caught
+# exactly that on the first run, and the missing library was two levels down a
+# dependency tree nobody had reason to read.
+#
+# **Named rather than swept, and that is deliberate.** A sweep over everything
+# in /usr/lib fails on a stock image: a distribution ships optional plugins
+# whose optional dependencies are not installed — pinentry's Qt build, mpg123's
+# JACK output, libdecor's GTK backend — and every one of those was already
+# unresolved before this stage existed. A check that reports a dozen things
+# nobody intends to load is a check the next person deletes. This list is what
+# the image is *for*: the components, the services init starts, and the chain
+# between a workload and the GPU.
+RUN missing=""; \
+    for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
+             /usr/lib/libnescapture_layer.so \
+             /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
+             /usr/lib/libgallium-*.so /usr/lib/libGLX_mesa.so.0 /usr/lib/libEGL_mesa.so.0 \
+             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so; do \
+        [ -e "$f" ] || continue; \
+        if ldd "$f" 2>/dev/null | grep -q "not found"; then \
+            missing="$missing $f($(ldd "$f" 2>/dev/null | grep 'not found' | tr -s ' ' | cut -d' ' -f2 | tr '\n' ',' ))"; \
+        fi; \
+    done; \
+    [ -z "$missing" ] || { echo "unresolved shared libraries:$missing" >&2; exit 1; }
+
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
                     /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
@@ -402,7 +462,9 @@ RUN while IFS= read -r f; do \
     done < /tmp/.strip-manifest; \
     rm -rf /tmp/.strip-manifest /var/cache/pacman/pkg/* /tmp/* /root/.cache \
         /usr/share/man /usr/share/doc /usr/share/locale \
-        /usr/lib/cmake /usr/lib/pkgconfig /usr/share/pkgconfig /usr/include
+        /usr/lib/cmake /usr/lib/pkgconfig /usr/share/pkgconfig /usr/include \
+        /usr/share/gir-1.0 /usr/lib/udev; \
+    find /usr/lib -name '*.a' -delete
 
 RUN echo "NESTRI_STAGE=runtime_prod" >> /etc/os-release
 
