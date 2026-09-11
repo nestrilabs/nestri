@@ -166,6 +166,38 @@ carrying one: `nesinit` is an ordinary program, so from that shell you can run
 it by hand and watch it fail. `make build-debug` adds `vulkaninfo` and friends
 and gives root a password for `su`; it does not add a console.
 
+**A shell is not a booted box, and the difference bites immediately.** Nothing
+the init does has happened: the root is read-only, `/run` and `/tmp` are still
+directories on it rather than tmpfs, `/run/user/1000` is unwritable, and the
+hostname is `(none)` rather than `nesbox` — which is the quickest way to tell
+the two states apart. A compositor started in that shell fails on its own
+socket, and the error names the runtime directory rather than the cause.
+
+So run `nesinit` first. It mounts, prepares the directories, brings the
+services up, then fails to reach a control channel that is not there and
+exits — **leaving everything it prepared behind**, which is exactly what makes
+the hand-run useful. Then start what you came to debug.
+
+It is safe to run outside a box, and that took fixing: the shutdown path signals
+every process it may signal and then powers the machine off, which is right for
+PID 1 of a box and catastrophic anywhere else. Both steps are refused when it is
+not PID 1, and it says so rather than doing it quietly.
+
+If you would rather not run it at all, the two mounts it does that a compositor
+needs are:
+
+```sh
+mount -t tmpfs -o mode=1777,size=64m tmpfs /tmp
+mount -t tmpfs -o mode=755,size=32m  tmpfs /run
+mkdir -p /run/user/1000 && chown 1000:1000 /run/user/1000 && chmod 0700 /run/user/1000
+```
+
+Making `/run/user/1000` writable in the *image* does not help, and is worth
+saying because it is the obvious first thing to try: before the init runs, the
+directory is on a read-only root, so its ownership is not what stops a write;
+after the init runs, a fresh tmpfs is mounted over `/run` and the image's copy
+of the directory is hidden underneath it.
+
 The one thing this does not reach is a failure *before* the shell. If that
 happens the evidence is on `console=hvc0` and nowhere else.
 
