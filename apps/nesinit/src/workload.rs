@@ -378,8 +378,6 @@ mod tests {
         assert_eq!(chosen.last(), Some(&"something-else"));
     }
 
-    use super::*;
-
     fn share(ro: bool) -> Mount {
         Mount {
             tag: "user".into(),
