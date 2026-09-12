@@ -87,6 +87,25 @@ const DIRECTORIES: &[Directory] = &[
         owner: Some((SERVICE_UID, SERVICE_GID)),
         cost: "the box's own services have nowhere to keep their sockets",
     },
+    // The system bus binds `/run/dbus/system_bus_socket` and will not create
+    // the directory itself. `/run` is a fresh tmpfs every boot, so without this
+    // the bus exits 1 immediately and the init reports a dead service on every
+    // single boot -- measured 2026-09-11, on the first box that got this far.
+    //
+    // What it costs is not obvious from the message: audio still starts, but
+    // PipeWire loses RTKit and runs without realtime scheduling, which is a
+    // latency problem that looks like nothing at boot.
+    //
+    // Owned by root rather than the service user: the bus is started as root
+    // and drops itself, and a directory the session could replace is a socket
+    // the session could impersonate.
+    Directory {
+        path: "/run/dbus",
+        mode: 0o755,
+        owner: None,
+        cost: "the system bus cannot bind, so it dies at boot and audio runs \
+               without realtime scheduling",
+    },
     // Both sticky and world-writable, which is what the toolkits looking for
     // them expect. A workload and the services are different users and either
     // may create a socket here.
@@ -251,6 +270,57 @@ fn network() {
         &["route", "replace", "default", "via", &gateway, "dev", IFACE],
         "the box can be reached on its own subnet and nowhere else",
     );
+
+    resolver(&cmdline);
+}
+
+/// Give the box a resolver, or say that it has none.
+///
+/// # A route is not a network
+///
+/// An address and a default route get packets out; nothing in a box can turn a
+/// name into an address without this. Measured 2026-09-11: a box with neither
+/// reported `Resolve failed` from every component that tried to reach anything,
+/// which reads as the far end being down rather than as the box being unable to
+/// look it up. Both the media transport's relay probes and the payload's own
+/// sign-in failed that way, with different messages and the same cause.
+///
+/// # Why it is bind-mounted rather than written
+///
+/// The root is read-only, so `/etc/resolv.conf` cannot be edited in place. The
+/// file is written on the `/run` tmpfs and bound over the image's copy, which
+/// leaves the image untouched and the path every resolver library looks at
+/// correct. It needs `/etc/resolv.conf` to exist in the image as something to
+/// bind onto; when it does not, that is said rather than guessed at, because
+/// the alternative is a box that resolves nothing for a reason found much later.
+fn resolver(cmdline: &str) {
+    const TARGET: &str = "/etc/resolv.conf";
+    const STAGED: &str = "/run/resolv.conf";
+
+    let Some(server) = parameter(cmdline, "dns") else {
+        // Not a failure. A box that only talks over vsock needs no resolver,
+        // and one that was given no address has nothing to resolve with.
+        tracing::info!("no nestri.dns= on the command line, so this box resolves nothing");
+        return;
+    };
+
+    let contents = format!("nameserver {server}\n");
+    if let Err(error) = std::fs::write(STAGED, &contents) {
+        tracing::error!(%error, "could not stage a resolver, so this box resolves nothing");
+        return;
+    }
+    if !Path::new(TARGET).exists() {
+        tracing::error!(
+            "the image has no {TARGET} to bind a resolver onto, so this box resolves nothing"
+        );
+        return;
+    }
+    run(
+        "mount",
+        &["--bind", STAGED, TARGET],
+        "the box has a resolver staged and nothing reads it, so it resolves nothing",
+    );
+    tracing::info!(%server, "the box resolves through this");
 }
 
 /// Read one `nestri.<key>=<value>` from a kernel command line.
@@ -314,6 +384,37 @@ mod tests {
     #[test]
     fn an_empty_value_is_not_a_value() {
         assert_eq!(parameter("nestri.ip= nestri.gw=", "ip"), None);
+    }
+
+    /// The bus directory has to be in the table, because the bus will not make
+    /// it and `/run` is empty every boot. Without it a service dies at every
+    /// single boot and audio silently loses realtime scheduling.
+    #[test]
+    fn the_system_bus_has_somewhere_to_bind() {
+        let dbus = DIRECTORIES
+            .iter()
+            .find(|d| d.path == "/run/dbus")
+            .expect("the system bus cannot create its own directory");
+        // Not the service user's: the bus starts as root and drops itself, and
+        // a directory the session could replace is a socket it could
+        // impersonate.
+        assert_eq!(dbus.owner, None);
+    }
+
+    /// A resolver is only written when one was asked for. A box with no
+    /// network is a supported configuration, not a degraded one.
+    #[test]
+    fn a_box_with_no_dns_parameter_asks_for_no_resolver() {
+        assert_eq!(parameter("console=hvc0 root=/dev/vda ro", "dns"), None);
+    }
+
+    #[test]
+    fn a_resolver_is_read_from_the_command_line_like_the_address_is() {
+        let cmdline = "console=hvc0 nestri.ip=172.30.0.2/24 nestri.gw=172.30.0.1 \
+                       nestri.dns=1.1.1.1";
+        assert_eq!(parameter(cmdline, "dns").as_deref(), Some("1.1.1.1"));
+        assert_eq!(parameter(cmdline, "ip").as_deref(), Some("172.30.0.2/24"));
+        assert_eq!(parameter(cmdline, "gw").as_deref(), Some("172.30.0.1"));
     }
 
     /// The kernel's own parameter is a different one and must not be read as
