@@ -88,11 +88,11 @@ RUN test -n "$JOBS" || JOBS=$(nproc) && \
         -Damdgpu-virtio=true \
         -Dintel-virtio-experimental=true \
         -Dvideo-codecs=all \
-        -Degl=enabled \
+        -Degl=disabled \
         -Dglx=disabled \
         -Dgles1=disabled \
         -Dgles2=disabled \
-        -Dgbm=enabled \
+        -Dgbm=disabled \
         -Dgallium-va=disabled \
         -Db_ndebug=true && \
     ninja -C builddir -j${JOBS:-$(nproc)} && \

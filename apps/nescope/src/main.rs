@@ -60,15 +60,15 @@ use smithay::reexports::wayland_server::Display;
 use smithay::wayland::socket::ListeningSocketSource;
 
 mod focus;
-mod gpu_readback;
+//mod gpu_readback;
 mod handlers;
 mod hdr;
 mod input;
 mod input_ipc;
 mod libinput_backend;
 mod protocols;
-mod screenshot_ipc;
-mod screenshot_wire;
+//mod screenshot_ipc;
+//mod screenshot_wire;
 mod state;
 mod xwm;
 
@@ -317,13 +317,13 @@ fn main() {
     // The GPU to import dmabufs on for screenshots. Same device the game is
     // pointed at, because a buffer the game produced can only be imported on
     // the device that made it.
-    gpu_readback::set_render_device(args.render_device.clone());
+    //gpu_readback::set_render_device(args.render_device.clone());
 
     // ── Screenshot IPC source ────────────────────────────────────────────
     // Same dial-out shape as the input socket below, so the hub is the
     // listener and there is no race against a socket that does not exist yet.
     // Absent means the feature is off, which is the normal case for a game.
-    if let Some(path) = args.screenshot_ipc.clone() {
+    /*if let Some(path) = args.screenshot_ipc.clone() {
         match screenshot_ipc::ScreenshotIpcSource::connect(&path) {
             Ok(source) => match source.try_clone_writer() {
                 Ok(mut writer) => {
@@ -357,7 +357,7 @@ fn main() {
             },
             Err(e) => tracing::warn!("Failed to connect to screenshot IPC socket {path}: {e}"),
         }
-    }
+    }*/
 
     // ── Input IPC source ─────────────────────────────────────────────────
     // Connect to the neshub input socket and feed events into the
