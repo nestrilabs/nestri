@@ -259,9 +259,17 @@ RUN pacman -Syu --noconfirm --needed \
         expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
         pipewire pipewire-audio wireplumber opus \
+        python \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
     && pacman -Scc --noconfirm
+
+# `python` is not a build dependency here -- the builder stage has its own for
+# Mesa -- it is a *runtime* one. The compatibility tool's entry point is a
+# Python script, so a box without an interpreter starts a game and the launch
+# ends with `env: 'python3': No such file or directory` and an exit status that
+# reads like an ordinary finish. Found 2026-09-12, on the first session that
+# got as far as launching one.
 
 # `dbus-reload.hook` is deleted above, before the removal rather than after,
 # and it is the whole reason that line is there: the hook runs
@@ -440,8 +448,31 @@ RUN missing=""; \
 
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
+                    /usr/bin/python3 \
                     /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
+    done
+
+# An entry point that is executable is not an entry point that runs.
+#
+# The check above passed on an image whose compatibility tool was a Python
+# script with no interpreter behind it: `test -x` says the file may be
+# executed, and the kernel then fails to find what the shebang names. A session
+# got as far as launching a game and ended with
+# `env: 'python3': No such file or directory`.
+#
+# So every script this image promises resolves its own interpreter. `env` is
+# unwrapped where it is used, because a shebang of `#!/usr/bin/env python3`
+# names `env` and the thing that is actually missing is the argument.
+RUN for script in /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+        head -c 2 "$script" | grep -q '#!' || continue; \
+        shebang="$(head -1 "$script" | sed 's/^#!//')"; \
+        interpreter="${shebang%% *}"; \
+        case "$interpreter" in \
+            */env) argument="${shebang#* }"; interpreter="$(command -v "${argument%% *}" || true)";; \
+        esac; \
+        test -n "$interpreter" && test -x "$interpreter" \
+            || { echo "$script needs an interpreter the image does not have: $shebang" >&2; exit 1; }; \
     done
 
 
