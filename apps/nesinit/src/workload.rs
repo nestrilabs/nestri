@@ -272,6 +272,11 @@ const GRAPHICS: &[(&str, &str)] = &[
     // other GPU. Measured 2026-09-12 on an Arc A310: without it, capture
     // produced no output at all.
     ("ANV_DEBUG", "video-encode,video-decode"),
+    // **Audio is not under this user's runtime directory.** The services that
+    // serve it run as somebody else, so the socket lives somewhere both can
+    // reach and both are told where. Without this a game renders and plays
+    // silently, having looked under its own uid and found nothing.
+    ("PIPEWIRE_RUNTIME_DIR", crate::services::AUDIO_DIR),
 ];
 
 /// Mount one share where the descriptor says to put it.

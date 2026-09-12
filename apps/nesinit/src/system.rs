@@ -99,6 +99,19 @@ const DIRECTORIES: &[Directory] = &[
     // Owned by root rather than the service user: the bus is started as root
     // and drops itself, and a directory the session could replace is a socket
     // the session could impersonate.
+    // Audio's socket, shared by the services that serve it and the workload
+    // that plays through it -- who are deliberately different users, so a
+    // per-user runtime directory cannot hold it. See `services::AUDIO_DIR`.
+    //
+    // Owned by the service user and not writable by the workload: the workload
+    // must be able to *open* the socket in here and must never be able to
+    // replace it, which is the property `ticket::Untrusted` rests on.
+    Directory {
+        path: crate::services::AUDIO_DIR,
+        mode: 0o755,
+        owner: Some((SERVICE_UID, SERVICE_GID)),
+        cost: "audio has nowhere to put its socket, so the session is silent",
+    },
     Directory {
         path: "/run/dbus",
         mode: 0o755,

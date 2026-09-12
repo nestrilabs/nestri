@@ -89,6 +89,19 @@ pub struct Service {
     /// launching into it would get a session that comes up and does not work.
     /// An optional one is reported and stepped over.
     pub required: bool,
+    /// The umask to exec under, when the default one is wrong.
+    ///
+    /// Only audio sets this, and only because of who has to reach it. A unix
+    /// socket is created `0777` masked by the umask, so the inherited `022`
+    /// gives `0755` -- and connecting to a socket needs *write*, so every user
+    /// but the owner is refused. The services run as one user and a workload
+    /// runs as another, so that is the workload: it finds the socket, cannot
+    /// open it, and plays silently.
+    ///
+    /// `0` rather than a mode in PipeWire's own configuration because the
+    /// socket list lives inside a module's arguments, and a drop-in that
+    /// re-declares that module loads it twice.
+    pub umask: Option<u32>,
 }
 
 /// The user the box's own services run as.
@@ -98,6 +111,25 @@ pub struct Service {
 /// them listens on and answer in its place — and the answer that matters is the
 /// address a client is told to connect to. See `ticket::Untrusted`.
 pub const SERVICE_UID: u32 = 1000;
+
+/// Where audio's socket lives, for both the services and the workload.
+///
+/// # Why not the runtime directory
+///
+/// The services run as one user and a workload runs as another, on purpose
+/// (see [`SERVICE_UID`]). A per-user runtime directory is `0700` and named
+/// after its own uid, so a socket in the services' one is in a directory the
+/// workload may not enter, at a path it would not look in anyway.
+///
+/// Measured 2026-09-12: the game rendered and had no sound, because it looked
+/// for audio under its own uid and found nothing. Nothing failed -- a game with
+/// no audio server plays silently.
+///
+/// So audio gets a directory of its own that both users share, named to both
+/// through `PIPEWIRE_RUNTIME_DIR`. The workload still cannot replace a socket
+/// here: the directory belongs to the service user and is not writable by the
+/// workload, which is the property [`crate::ticket::Untrusted`] depends on.
+pub const AUDIO_DIR: &str = "/run/pipewire";
 pub const SERVICE_GID: u32 = 1000;
 
 /// Where a service's runtime sockets live.
@@ -130,6 +162,7 @@ pub const RUNTIME_DIR: &str = "/run/user/1000";
 const WRITABLE: &[(&str, &str)] = &[
     ("HOME", "/home/nestri"),
     ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+    ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
     ("XDG_CACHE_HOME", "/run/user/1000/cache"),
     ("XDG_STATE_HOME", "/run/user/1000/state"),
     ("XDG_CONFIG_HOME", "/run/user/1000/config"),
@@ -154,6 +187,7 @@ pub const STACK: &[Service] = &[
         user: None,
         cost: "nothing that speaks on the system bus can find it",
         required: true,
+        umask: None,
     },
     Service {
         name: "dbus-session",
@@ -168,23 +202,28 @@ pub const STACK: &[Service] = &[
         user: Some((SERVICE_UID, SERVICE_GID)),
         cost: "audio and anything else expecting a session bus will not start",
         required: true,
+        umask: None,
     },
     Service {
         name: "pipewire",
         argv: &["/usr/bin/pipewire"],
         env: &[
             ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+            ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
             ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
         ],
         user: Some((SERVICE_UID, SERVICE_GID)),
         cost: "the session has no audio at all",
         required: true,
+        // So the workload, which is not this user, can open the socket.
+        umask: Some(0),
     },
     Service {
         name: "wireplumber",
         argv: &["/usr/bin/wireplumber"],
         env: &[
             ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+            ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
             ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
         ],
         user: Some((SERVICE_UID, SERVICE_GID)),
@@ -193,17 +232,20 @@ pub const STACK: &[Service] = &[
         // which is a degraded session rather than no session.
         cost: "audio devices exist but nothing routes them",
         required: false,
+        umask: None,
     },
     Service {
         name: "neswire",
         argv: &["/usr/bin/neswire"],
         env: &[
             ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+            ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
             ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
         ],
         user: Some((SERVICE_UID, SERVICE_GID)),
         cost: "the client gets pictures and no sound",
         required: false,
+        umask: None,
     },
     Service {
         name: "neshub",
@@ -214,6 +256,7 @@ pub const STACK: &[Service] = &[
         // without it the session has no address and nothing can reach the box.
         cost: "the session has no address, so no client can reach it",
         required: true,
+        umask: None,
     },
 ];
 
@@ -266,12 +309,18 @@ impl Stack {
         // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
 
+        let mask = service.umask;
         if let Some((uid, gid)) = service.user {
             // SAFETY: the closure runs between fork and exec in the child,
             // where only async-signal-safe calls are allowed. These two are,
             // and it allocates nothing.
             unsafe {
                 command.pre_exec(move || {
+                    if let Some(mask) = mask {
+                        // SAFETY: `umask` cannot fail and touches only this
+                        // child, between fork and exec.
+                        libc::umask(mask as libc::mode_t);
+                    }
                     // gid first: dropping the uid first would lose the
                     // privilege needed to set the gid at all.
                     if libc::setgid(gid) != 0 {
@@ -411,6 +460,54 @@ pub mod double {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The services and the workload have to look in the same place, and it
+    /// cannot be either one's runtime directory: those are 0700 and named
+    /// after a uid, and these are deliberately two different users.
+    #[test]
+    fn audio_is_somewhere_both_users_can_reach() {
+        assert!(
+            !AUDIO_DIR.starts_with("/run/user/"),
+            "a per-user runtime directory is 0700 and the other user is not in it"
+        );
+        let audio: Vec<&Service> = STACK
+            .iter()
+            .filter(|s| s.env.iter().any(|(k, _)| *k == "PIPEWIRE_RUNTIME_DIR"))
+            .collect();
+        assert!(
+            !audio.is_empty(),
+            "no service was told where audio lives, so none of them agree"
+        );
+        for service in audio {
+            let told = service
+                .env
+                .iter()
+                .find(|(k, _)| *k == "PIPEWIRE_RUNTIME_DIR")
+                .map(|(_, v)| *v);
+            assert_eq!(
+                told,
+                Some(AUDIO_DIR),
+                "{} looks somewhere else",
+                service.name
+            );
+        }
+    }
+
+    /// A unix socket is created 0777 masked by the umask, and connecting to
+    /// one needs write. The inherited 022 therefore refuses every user but the
+    /// owner -- and the workload is not the owner.
+    #[test]
+    fn the_audio_socket_is_reachable_by_a_user_who_does_not_own_it() {
+        let pipewire = STACK
+            .iter()
+            .find(|s| s.name == "pipewire")
+            .expect("audio is in the table");
+        assert_eq!(
+            pipewire.umask,
+            Some(0),
+            "with any other umask the game finds the socket and cannot open it"
+        );
+    }
 
     /// The two that failed on a real boot, and the reason each matters.
     #[test]
