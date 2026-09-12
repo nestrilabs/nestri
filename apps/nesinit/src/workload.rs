@@ -142,7 +142,7 @@ impl Workload for Process {
         // Cleared rather than inherited: init's environment is the kernel's
         // and says nothing a workload should read.
         command.env_clear();
-        command.envs(&exec.env);
+        command.envs(environment(exec));
         if let Some(cwd) = &exec.cwd {
             command.current_dir(cwd);
         }
@@ -202,6 +202,24 @@ impl Workload for Process {
     fn signal_stop(&mut self) {
         self.signal(libc::SIGTERM);
     }
+}
+
+/// Everything a launch is started with, in the order that decides ties.
+///
+/// The image's own graphics settings first and the caller's environment last,
+/// so a host can override anything here. A host that knows better than this
+/// image about this box is unlikely, but it should not have to patch an image
+/// to say so.
+///
+/// A function rather than two calls on the command, because the two calls
+/// could be -- and for one commit were -- reduced to one by an edit that
+/// dropped the first. The only thing that noticed was a dead-code warning.
+fn environment(exec: &Exec) -> Vec<(String, String)> {
+    GRAPHICS
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .chain(exec.env.iter().map(|(k, v)| (k.clone(), v.clone())))
+        .collect()
 }
 
 /// What the image's own graphics stack needs said out loud.
@@ -315,17 +333,49 @@ mod tests {
     /// The driver override has to reach the workload, because nothing else
     /// carries it: the image's profile script never runs for an exec'd
     /// process. Without it a game's OpenGL finds no driver at all.
+    fn exec_with(env: &[(&str, &str)]) -> Exec {
+        Exec {
+            argv: vec!["/bin/true".into()],
+            env: env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            cwd: None,
+            uid: 1001,
+            gid: 1001,
+        }
+    }
+
+    /// The override has to reach the launch, and asserting that it is in a
+    /// table is not asserting that. A commit once defined the table and never
+    /// applied it; the tests passed and a dead-code warning was the only sign.
     #[test]
     fn the_launch_is_told_which_gallium_driver_to_use() {
-        let names: Vec<&str> = GRAPHICS.iter().map(|(k, _)| *k).collect();
-        assert!(names.contains(&"MESA_LOADER_DRIVER_OVERRIDE"));
-        assert!(names.contains(&"GALLIUM_DRIVER"));
-        for (_, value) in GRAPHICS {
-            if *value == "zink" {
-                return;
-            }
-        }
-        panic!("nothing names zink, so GL would reach a native driver and be captured as nothing");
+        let env = environment(&exec_with(&[]));
+        let driver = env
+            .iter()
+            .find(|(k, _)| k == "MESA_LOADER_DRIVER_OVERRIDE")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(
+            driver,
+            Some("zink"),
+            "without this a game's GL reaches a native driver, renders \
+             correctly, and is captured as nothing"
+        );
+    }
+
+    /// Last wins, so a host can override what the image assumes.
+    #[test]
+    fn the_callers_own_environment_beats_the_images() {
+        let env = environment(&exec_with(&[("GALLIUM_DRIVER", "something-else")]));
+        let chosen: Vec<&str> = env
+            .iter()
+            .filter(|(k, _)| k == "GALLIUM_DRIVER")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        // Both are present; `envs` applies in order, so the last is the one
+        // the process gets.
+        assert_eq!(chosen.last(), Some(&"something-else"));
     }
 
     use super::*;
