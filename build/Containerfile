@@ -447,7 +447,15 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # in it. The unix-side `.so`s and the `bin/` programs are the parts that have
 # to resolve; the Windows-side DLLs beside them are not ELF and are skipped by
 # `ldd` on their own.
-RUN missing=""; \
+# The output is one file per line with its own missing libraries under it, and
+# then every missing library once at the end. That last list is what somebody
+# acts on -- it is the set of packages to add -- and forty files each naming the
+# same two libraries is not that list. An earlier version printed one
+# comma-joined line and cut the wrong field out of `ldd`, so it named no
+# libraries at all: `ldd` indents with a tab, which `tr -s ' '` does not
+# collapse, so the second space-separated field is `=>`.
+RUN failed=0; \
+    : > /tmp/missing-libs; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
              /usr/lib/libnescapture_layer.so \
              /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
@@ -456,11 +464,19 @@ RUN missing=""; \
              /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
              /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/*.so; do \
         [ -e "$f" ] || continue; \
-        if ldd "$f" 2>/dev/null | grep -q "not found"; then \
-            missing="$missing $f($(ldd "$f" 2>/dev/null | grep 'not found' | tr -s ' ' | cut -d' ' -f2 | tr '\n' ',' ))"; \
-        fi; \
+        libs="$(ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
+        [ -n "$libs" ] || continue; \
+        failed=1; \
+        printf '  %s\n' "$f" >&2; \
+        printf '      %s\n' $libs >&2; \
+        printf '%s\n' $libs >> /tmp/missing-libs; \
     done; \
-    [ -z "$missing" ] || { echo "unresolved shared libraries:$missing" >&2; exit 1; }
+    if [ "$failed" != 0 ]; then \
+        echo "" >&2; \
+        echo "  every library above, once each -- this is the list to install:" >&2; \
+        sort -u /tmp/missing-libs | sed 's/^/      /' >&2; \
+        exit 1; \
+    fi
 
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
