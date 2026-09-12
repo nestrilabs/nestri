@@ -186,7 +186,18 @@ impl Workload for Process {
         let mut watched = self
             .waiters
             .watch(|| Ok(command.spawn()?.id() as i32))
-            .map_err(|error| Failure::new(error.to_string()))?;
+            .map_err(|error| {
+                // The program, the user, and what the system said.
+                //
+                // `Permission denied` on its own is the least useful true
+                // sentence available here: it is equally consistent with a
+                // share the caller exported without letting this user read it,
+                // a binary that is not executable, and a mount that forbids
+                // execution. The one thing a reader needs is which file, and
+                // as whom. Measured 2026-09-12: a launch refused with the bare
+                // message cost a search of three machines' permissions.
+                Failure::new(format!("{program} as {}:{}: {error}", exec.uid, exec.gid))
+            })?;
 
         // The caller gets the exit and reports it; this handle keeps the pid
         // and whether that pid is still this child's.
