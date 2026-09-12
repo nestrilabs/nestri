@@ -103,6 +103,39 @@ pub const SERVICE_GID: u32 = 1000;
 /// Where a service's runtime sockets live.
 pub const RUNTIME_DIR: &str = "/run/user/1000";
 
+/// Somewhere every service may write.
+///
+/// # The service user's home is on a read-only root
+///
+/// `useradd -m` made `/home/nestri` in the image, and the image is mounted
+/// read-only, so every library that follows XDG conventions to a default under
+/// `$HOME` fails there. Measured 2026-09-12: the session manager could not
+/// write its state on any boot, and anything asking Mesa for a shader cache was
+/// told it was disabled.
+///
+/// The second one is not a warning. Mesa with no writable cache recompiles
+/// every shader on every run, and the symptom a person sees is a black screen
+/// or a frozen game rather than a slow one.
+///
+/// # Under the runtime directory rather than a tmpfs over the home
+///
+/// Mounting a tmpfs at `/home/nestri` would work and would hide the shell
+/// files the image put there, which is how a debug shell loses its prompt and
+/// its history for no stated reason. The runtime directory is already a tmpfs,
+/// already owned by this user, and already made before any service starts.
+///
+/// Per boot, which is correct for these: a service's cache is not state anybody
+/// wants to keep. A *workload's* cache is, and it is pointed at the writable
+/// share it was given instead.
+const WRITABLE: &[(&str, &str)] = &[
+    ("HOME", "/home/nestri"),
+    ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+    ("XDG_CACHE_HOME", "/run/user/1000/cache"),
+    ("XDG_STATE_HOME", "/run/user/1000/state"),
+    ("XDG_CONFIG_HOME", "/run/user/1000/config"),
+    ("XDG_DATA_HOME", "/run/user/1000/data"),
+];
+
 /// The stack, in the order it comes up.
 ///
 /// Ported from the nine init scripts this replaces, and the ordering is theirs:
@@ -228,6 +261,9 @@ impl Stack {
         let mut command = std::process::Command::new(program);
         command.args(args);
         command.env_clear();
+        command.envs(WRITABLE.iter().copied());
+        // The service's own entry last, so a service that states one of these
+        // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
 
         if let Some((uid, gid)) = service.user {
@@ -375,6 +411,27 @@ pub mod double {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two that failed on a real boot, and the reason each matters.
+    #[test]
+    fn every_service_has_somewhere_to_write() {
+        let names: Vec<&str> = WRITABLE.iter().map(|(k, _)| *k).collect();
+        assert!(
+            names.contains(&"XDG_STATE_HOME"),
+            "the session manager could not write its state on any boot"
+        );
+        assert!(
+            names.contains(&"XDG_CACHE_HOME"),
+            "no shader cache means recompiling every shader every run, and \
+             what that looks like is a black screen rather than a slow one"
+        );
+        for (_, path) in WRITABLE {
+            if path.starts_with("/run/") || *path == "/home/nestri" {
+                continue;
+            }
+            panic!("{path} is not somewhere a read-only root lets a service write");
+        }
+    }
 
     /// The table is data, and the things that make it wrong are checkable
     /// without running any of it.
