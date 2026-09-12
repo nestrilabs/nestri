@@ -18,13 +18,11 @@ smithay = { version = "0.7", default-features = false, features = [
     "backend_drm",
     "desktop",
     "backend_libinput",
-    "renderer_pixman",    # needed for on_commit_buffer_handler
+    #"renderer_pixman",    # needed for on_commit_buffer_handler
     # Reading a dmabuf back to the CPU. nescope still does not composite or
     # present anything -- this is import-and-copy only, so a client that
     # renders on the GPU can be screenshotted like any other.
-    "renderer_gl",
-    "backend_egl",
-    "backend_gbm",
+    #"backend_gbm",
 ] }
 
 # Wayland client – connects to the host compositor to forward buffers.

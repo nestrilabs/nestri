@@ -1,0 +1,573 @@
+# ═══════════════════════════════════════════════════════════
+#  nestri guest rootfs — the open half
+#
+#  Builds a bootable Arch image containing Mesa (virtio-gpu native context)
+#  and the five open guest components: nesinit, nescope, neshub, neswire,
+#  nescapture. Two leaf targets, selected with `--target`:
+#
+#    runtime_prod    stripped, root locked          (default: `make build`)
+#    runtime_debug    debug tools, autologin root    (`make build-debug`)
+#
+#  There is no service manager, no init scripts and no udev. `nesinit` is PID 1
+#  and brings the box's services up from a table compiled into it, which is why
+#  this image is plain Arch rather than a distribution chosen for its init.
+#  ref(d-0063)
+#
+#  Proton is here, and it is not a closed component: it is proton-cachyos built
+#  from source with --enable-wow64, which is what removes the need for a whole
+#  32-bit host stack. Valve's steamclient.so is a different thing and is NOT
+#  here — that one is closed, and nestri/CLAUDE.md is explicit that nothing
+#  closed enters this repo. Whatever layers it on top of runtime_prod is a
+#  closed build outside this repo — see build/README.md.
+#
+#  Build from the repo root, not from build/:
+#    docker build -f build/Containerfile --target runtime_prod -t nestri-guest .
+#  (`make build` in this directory does exactly that.)
+# ═══════════════════════════════════════════════════════════
+
+
+# Declared here and not beside the stage that uses it, because an ARG a FROM
+# expands has to precede the *first* FROM in the file. Anywhere else it is
+# scoped to one stage instead, `FROM ${PROTON_IMAGE}` expands to nothing, and
+# the build fails with "no FROM statement found" — which says nothing about
+# the actual mistake. See the Proton stage below for what this is.
+ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-cachyos-native-wow64:11.0-20260703
+
+
+# ───────────────────────────────────────────────────────────
+#  initial / builder
+#
+#  The same distribution the guest is now, which it did not use to be: the
+#  guest was Artix, chosen for an init system this image no longer contains.
+#  Only build artifacts leave these stages.
+# ───────────────────────────────────────────────────────────
+FROM docker.io/archlinux:base-devel AS initial
+RUN pacman -Syu --noconfirm
+
+FROM initial AS builder
+RUN pacman -S --noconfirm --needed \
+        cmake meson ninja git pkgconf \
+        python python-mako python-yaml python-packaging python-ply \
+        bison flex \
+        libpciaccess libepoxy libglvnd \
+        libx11 libxext libxrandr libxshmfence libxfixes libxxf86vm libxcb \
+        xcb-util-keysyms xorgproto \
+        wayland wayland-protocols \
+        expat zlib zstd libxml2 lm_sensors \
+        llvm clang libclc spirv-tools spirv-llvm-translator glslang \
+        elfutils libva libdrm directx-headers \
+        rust rust-bindgen cbindgen \
+        curl openssl \
+        pixman libxkbcommon \
+        vulkan-headers vulkan-icd-loader \
+        pipewire shaderc opus \
+        libinput \
+    && pacman -Scc --noconfirm
+WORKDIR /build
+ENV ARTIFACTS=/artifacts
+
+
+# ───────────────────────────────────────────────────────────
+#  Mesa — the only piece still fetched from outside this tree
+# ───────────────────────────────────────────────────────────
+FROM builder AS mesa-build
+
+ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
+ARG MESA_COMMIT=b316485dd75ca6ab6c16c113480fb94c57d86c95
+ARG JOBS=
+
+RUN test -n "$JOBS" || JOBS=$(nproc) && \
+    git clone --depth=1 --revision="${MESA_COMMIT}" "${MESA_GIT}" /build/mesa-src && \
+    cd /build/mesa-src && \
+    meson setup builddir \
+        -Dprefix=/usr \
+        -Dbuildtype=release \
+        -Dplatforms=wayland \
+        -Dgallium-drivers=zink \
+        -Dvulkan-drivers=amd,intel \
+        -Damdgpu-virtio=true \
+        -Dintel-virtio-experimental=true \
+        -Dvideo-codecs=all \
+        -Degl=disabled \
+        -Dglx=disabled \
+        -Dgles1=disabled \
+        -Dgles2=disabled \
+        -Dgbm=disabled \
+        -Dgallium-va=disabled \
+        -Db_ndebug=true && \
+    ninja -C builddir -j${JOBS:-$(nproc)} && \
+    DESTDIR=/artifacts/mesa ninja -C builddir install && \
+    rm -rf /build/mesa-src && \
+    find /artifacts/mesa -type f -printf '/%P\n' > /artifacts/mesa/.manifest
+
+
+# ───────────────────────────────────────────────────────────
+#  nestri workspace — same repo now, so this is COPY, not a private clone
+#
+#  One `cargo build --release` over the guest members rather than one stage per
+#  binary:
+#  that per-repo splitting existed because nescope/neswire/nescapture/the hub
+#  were four separate private repos and a stage boundary was the only way to
+#  stop bumping one from invalidating the others' build cache. They are one
+#  Cargo workspace with one Cargo.lock now, so a BuildKit cache mount on
+#  target/ gives the same isolation — cargo's own incremental compiler
+#  already knows nescope changing does not touch nesprotocol's .rlib — without
+#  four copies of every shared dependency getting compiled once per stage.
+#
+#  The members are named rather than `--workspace`, because the workspace holds
+#  one crate that is not part of a guest — `nesdoctor` runs on a stranger's own
+#  machine — and building it here would compile something this image will never
+#  contain. Naming them also means adding a member does not silently add a
+#  binary to the image.
+# ───────────────────────────────────────────────────────────
+FROM builder AS nestri-src
+WORKDIR /build/nestri
+COPY Cargo.toml Cargo.lock ./
+COPY crates/nesprotocol crates/nesprotocol
+# Not a guest component and not installed below — it runs on a stranger's own
+# machine. It is here because `cargo` loads every workspace member's manifest
+# before it builds anything, so a member missing from the context fails the
+# build outright with `failed to read .../Cargo.toml`. Copying it costs a few
+# files; the member list is the thing that decides, not this build.
+COPY apps/nesdoctor apps/nesdoctor
+COPY apps/nesinit apps/nesinit
+COPY apps/nescope apps/nescope
+COPY apps/neshub apps/neshub
+COPY apps/neswire apps/neswire
+COPY apps/nescapture apps/nescapture
+
+FROM nestri-src AS nestri-build
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    --mount=type=cache,target=/build/nestri/target \
+    cargo build --release \
+        -p nesinit -p nescope -p neshub -p neswire -p nescapture && \
+    mkdir -p /artifacts/nestri/usr/bin /artifacts/nestri/usr/lib \
+             /artifacts/nestri/usr/share/vulkan/implicit_layer.d && \
+    install -Dm755 target/release/nesinit  /artifacts/nestri/usr/bin/nesinit && \
+    install -Dm755 target/release/nescope  /artifacts/nestri/usr/bin/nescope && \
+    install -Dm755 target/release/neshub   /artifacts/nestri/usr/bin/neshub && \
+    install -Dm755 target/release/neswire  /artifacts/nestri/usr/bin/neswire && \
+    install -Dm755 target/release/libnescapture_layer.so \
+        /artifacts/nestri/usr/lib/libnescapture_layer.so && \
+    install -Dm644 apps/nescapture/manifest/VK_LAYER_nescapture.json \
+        /artifacts/nestri/usr/share/vulkan/implicit_layer.d/VK_LAYER_nescapture.json && \
+    find /artifacts/nestri -type f -printf '/%P\n' > /artifacts/nestri/.manifest
+
+
+# ───────────────────────────────────────────────────────────
+#  Proton — pulled, not built here
+#
+#  Building it takes hours and it changes only when its own tag moves, so it
+#  has a cadence of its own and an image of its own. The published image is
+#  `FROM scratch` over the tree, so its root *is* the tree and there is nothing
+#  in it to run — only something to copy from.
+#
+#  Built with `--enable-wow64`, which is the whole reason it is a build of ours
+#  rather than the distribution's package. wow64 runs 32-bit Windows code
+#  inside a 64-bit unix process, so a box needs no lib32 anything: no 32-bit
+#  glibc, no second Mesa for i686, and — the one that matters most here — no
+#  second capture layer, because the game is a 64-bit process and loads the
+#  64-bit Vulkan loader the existing layer already sits in. The distribution's
+#  package is built without the flag, which is exactly why it depends on
+#  lib32-*.
+#
+#  Override to build it yourself; the tag is a version and moves deliberately.
+# ───────────────────────────────────────────────────────────
+FROM ${PROTON_IMAGE} AS proton
+
+
+# ───────────────────────────────────────────────────────────
+#  os-base — the Arch rootfs itself
+#
+#  `FROM archlinux:base` directly, and `pacman -S` as plain RUN steps — not a
+#  privileged host `chroot` into a hand-extracted tarball, which would need
+#  /proc, /sys and /dev bind-mounted in first (they don't exist inside a chroot
+#  target until something puts them there). A Containerfile RUN step already
+#  executes inside a real container with its own /proc, /sys, /dev, so there is
+#  no bind-mount step to write at all.
+#
+#  # systemd goes; systemd-libs stays
+#
+#  Nothing in the package list below depends on `systemd`, and two things in it
+#  — dbus-daemon and wireplumber — link `libsystemd.so.0`, which comes from the
+#  separate `systemd-libs` package. So the removal is `-Rdd` of `systemd` and
+#  `systemd-sysvcompat` only, which is normal rather than a compromise: keeping
+#  the library while having no PID 1 from it is exactly how a distribution
+#  without systemd ships these same programs.
+#
+#  Removing the package also removes its pacman hooks, which is the point. The
+#  hooks call `systemd-tmpfiles`, `systemd-sysusers` and `udevadm`; leaving them
+#  behind while deleting what they call is how a later transaction fails
+#  obscurely, and a previous attempt at this image lost two services to exactly
+#  that.
+# ───────────────────────────────────────────────────────────
+FROM docker.io/archlinux:base AS os-base
+
+# The base image ships an unsigned local keyring, so upgrading
+# `archlinux-keyring` runs a hook that reports `There is no secret key
+# available to sign with` and then `error: command failed to execute
+# correctly`. It is cosmetic and it is also every Arch container's build log.
+# One line fixes it, and it is worth the seconds: a build that always prints an
+# error is a build nobody reads an error out of.
+RUN pacman-key --init
+
+# Installed first and removed second, so every dependency resolves normally
+# before anything is taken out from under it.
+#
+# Gone with the init system: `openrc`, `udev`, `dbus-openrc`. `udev` is not
+# replaced by anything — `devtmpfs` creates the nodes and init sets the two
+# modes that matter, because the compositor takes input through Wayland and
+# opens nothing udev provides. ref(d-0063)
+#
+# `logrotate` is also gone, and that one is not about the init system: a box
+# keeps no logs to rotate. What is worth reading leaves over the control
+# channel, and `/var/log` is a small tmpfs that is discarded with the box.
+# `mesa` is not in this list, and the two `--assume-installed` flags are why.
+#
+# The distribution's Mesa used to be installed so that every runtime dependency
+# of *a* Mesa was present and correctly versioned, and ours was then overlaid
+# on top. That worked for the unversioned filenames and not for the versioned
+# one: `libgallium-<version>.so` from the package sat beside ours, 53 MB of it,
+# referenced by nothing. Installing it to overwrite most of it was always the
+# roundabout way round; telling pacman the dependency is already satisfied is
+# the direct one.
+#
+# Exactly two flags are needed and both were checked by dropping each in turn:
+# `mesa` is the name two packages depend on, and `opengl-driver` is a virtual
+# provide `libglvnd` requires that only a real driver package satisfies. The
+# other three names Mesa provides — `mesa-libgl`, `libva-driver`,
+# `libva-mesa-driver` — change nothing here, so they are not listed.
+#
+# What makes this safe is that our Mesa is a superset for this image's
+# purposes: it builds the drivers a box can actually use and the package's
+# other ones (apple, asahi, armada, d3d12) are for hardware no box has. What it
+# does *not* build is a software rasteriser, so there is no llvmpipe fallback —
+# a box with no working GPU path now fails instead of rendering slowly, which
+# is the honest outcome for something that exists to stream frames.
+#
+# Two packages below are explicit *because* Mesa is gone, and both used to
+# arrive as its dependencies: `llvm-libs`, which the radeonsi driver links for
+# shader compilation, and `lm_sensors`, which it links for `libsensors.so.5`.
+# The second was found by the check further down rather than by reading the
+# list — dropping a package takes its dependency tree with it, and the part of
+# that tree something else was quietly using is not visible from here.
+RUN pacman -Syu --noconfirm --needed \
+        --assume-installed mesa --assume-installed opengl-driver \
+        dbus \
+        iptables iproute2 \
+        libglvnd libdrm libepoxy libxxf86vm libinput wayland \
+        expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
+        pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
+        pipewire pipewire-audio wireplumber opus \
+        python libunwind \
+    && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
+    && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
+    && pacman -Scc --noconfirm
+
+# `libunwind` is Wine's, not ours. `ntdll.so` links it, so without it every
+# process Wine starts dies at `could not load ntdll.so`, which is the first
+# thing it loads and reads like Wine itself being broken. Found 2026-09-12,
+# after the prefix had already been created -- so the session got past every
+# check that Proton was present and usable.
+#
+# `python` is not a build dependency here -- the builder stage has its own for
+# Mesa -- it is a *runtime* one. The compatibility tool's entry point is a
+# Python script, so a box without an interpreter starts a game and the launch
+# ends with `env: 'python3': No such file or directory` and an exit status that
+# reads like an ordinary finish. Found 2026-09-12, on the first session that
+# got as far as launching one.
+
+# `dbus-reload.hook` is deleted above, before the removal rather than after,
+# and it is the whole reason that line is there: the hook runs
+# `/usr/share/libalpm/scripts/systemd-hook`, which systemd owns, so the
+# transaction that removes systemd trips its own leftover on the way out —
+# `call to execv failed`, then `error: command failed to execute correctly`.
+# pacman treats a post-transaction hook failure as non-fatal, so the build
+# survives it and the image is fine; what it leaves is an error message in
+# every future transaction and a reader with no way to tell it from a real
+# one. Removing the hook first means the error never happens.
+
+# Nothing left may point at a program that is not here.
+#
+# The specific case above is fixed; this is the general one, and it exists
+# because a hook calling a deleted binary is the exact shape of the failure
+# that took two services off a previous version of this image. A build error
+# is a much better place to find the next one than a log.
+RUN for hook in /usr/share/libalpm/hooks/*.hook; do \
+        exec_line="$(awk -F'= *' '/^Exec/ { print $2; exit }' "$hook")"; \
+        program="${exec_line%% *}"; \
+        case "$program" in /*) ;; *) continue ;; esac; \
+        test -e "$program" \
+            || { echo "$(basename "$hook") runs $program, which is not in the image" >&2; exit 1; }; \
+    done
+
+# The check, because the removal above is the kind of thing a later `pacman
+# -Syu` undoes quietly. A box with systemd's PID 1 back in it boots something
+# other than `nesinit`, and the symptom is a guest that never dials out.
+RUN test ! -e /usr/lib/systemd/systemd \
+    || { echo "systemd's PID 1 is back in the image" >&2; exit 1; }
+
+# `groupadd -f`, because some of these already exist in the base image and the
+# rest have to. Nothing creates them at runtime any more: udev's rules did that
+# for device nodes, and with udev gone init sets the two modes that matter
+# directly. ref(d-0063)
+#
+# **Two users, and they must stay two.** `nestri` runs the services that come
+# with this image; `nesplay` is who a workload runs as. Sharing one user between
+# them is what lets workload code impersonate a service — it can replace the
+# socket a service listens on and answer in its place, and the answer that
+# matters is the address a client is told to connect to. Init refuses an address
+# served by the workload's own user, so a single shared user does not merely
+# weaken that check, it makes every session fail it.
+#
+# The uid a workload actually runs as is chosen by whoever asks for the box, not
+# here; this account exists so that the number has a home, a shell and a name in
+# `ps`, and so the separation has somewhere to be written down.
+RUN groupadd -f audio && groupadd -f video && groupadd -f input && groupadd -f render && \
+    useradd -m -u 1000 -s /bin/bash nestri && \
+    for g in audio video input render; do gpasswd -a nestri "$g" >/dev/null; done && \
+    useradd -m -u 1001 -s /bin/bash nesplay && \
+    for g in audio video input render; do gpasswd -a nesplay "$g" >/dev/null; done
+
+
+# ───────────────────────────────────────────────────────────
+#  runtime — everything common to debug and prod
+# ───────────────────────────────────────────────────────────
+FROM os-base AS runtime
+
+# This is what GHCR actually uses to connect a pushed image back to its
+# repo — not a setting to toggle after the fact, a label the image has to
+# carry. Without it a manually-pushed image shows no "used by" repo on its
+# package page even though this Containerfile is exactly what built it.
+LABEL org.opencontainers.image.source="https://github.com/nestrilabs/nestri"
+
+# Our own builds, overlaid on the distro's mesa. The distro package landed
+# first (above) so every runtime dependency of *a* Mesa is present and
+# correctly versioned; this overwrites its .so files with ours.
+#
+# COPY --from runs as root inside this build with no invoking-user uid to
+# stamp onto / or /usr/bin, unlike a host-side `podman cp` + `cp -a` — so
+# there is no ownership-sanity-check to write here. Nothing to catch, on
+# purpose, not an oversight.
+COPY --from=mesa-build   /artifacts/mesa/.manifest   /tmp/mesa.manifest
+COPY --from=nestri-build /artifacts/nestri/.manifest /tmp/nestri.manifest
+RUN cat /tmp/mesa.manifest /tmp/nestri.manifest > /tmp/.strip-manifest && \
+    rm -f /tmp/mesa.manifest /tmp/nestri.manifest
+COPY --from=mesa-build   /artifacts/mesa   /
+COPY --from=nestri-build /artifacts/nestri /
+
+# The Proton tree, whose image root is the tree, so this lands it at
+# /usr/share/steam/compatibilitytools.d/proton-cachyos.
+#
+# Deliberately not in the strip manifest above: that list is our own build
+# output, and the two stripping decisions are not the same one. Proton ships
+# a Windows toolchain's worth of PE binaries that `strip` has no business
+# touching, and its unix side is already built the way its own packaging
+# builds it.
+COPY --from=proton / /
+
+RUN ldconfig
+
+COPY build/etc/ /etc/
+
+# `nesinit` is PID 1, and `/usr/bin/init` is the fallback for a kernel started
+# without an explicit `init=`. `systemd-sysvcompat` used to own that path and
+# was removed with the rest of systemd, so nothing else claims it.
+RUN ln -sf nesinit /usr/bin/init
+
+# One id per boot, not one per image.
+#
+# `dbus-uuidgen --ensure=/etc/machine-id` used to run here, which baked one id
+# into the image and made every box built from it the same machine. Init writes
+# a fresh one to /run at boot instead, so both of these are symlinks into a
+# tmpfs — which is also the only place they could be, with a read-only root.
+RUN rm -f /etc/machine-id /var/lib/dbus/machine-id && \
+    mkdir -p /var/lib/dbus && \
+    ln -sf /run/machine-id /etc/machine-id && \
+    ln -sf /run/machine-id /var/lib/dbus/machine-id
+
+# Session mount points. The guest root is read-only at runtime, so a runtime
+# mkdir gets EROFS and takes a service down before it starts — these have to
+# already exist in the image.
+#
+# `/nestri/logs` is a mount point and nothing mounts it from in here any more:
+# a share arrives because the caller named it in the boot descriptor, which is
+# the same rule every other share follows. The directory stays so that naming
+# it works.
+RUN mkdir -p /nestri/install /nestri/user /nestri/work /nestri/game /nestri/logs && \
+    chmod 0755 /nestri /nestri/install /nestri/user /nestri/work /nestri/game /nestri/logs && \
+    mkdir -p /dev/shm && chmod 1777 /dev/shm && \
+    mkdir -p /run/user/1000 /var/log && \
+    # The distribution's own empty `fstab` goes with ours. Nothing in a box
+    # reads either: init mounts what a box always needs, and every share comes
+    # from the boot descriptor. A file that looks like it configures mounts and
+    # is read by nothing is a file somebody edits expecting an effect.
+    rm -f /etc/network/interfaces /etc/inittab /etc/fstab
+
+# Nothing in this image may be an init system except `nesinit`.
+#
+# A service manager arriving as a dependency of something innocuous is the
+# failure this catches, and it is silent otherwise: the extra init does not run
+# — the kernel is told which one to start — it just sits there with its own
+# ideas about what the box should be doing, waiting for somebody to wire it in.
+RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-init \
+                    /sbin/runit-init /usr/bin/runit-init /sbin/dinit /usr/bin/dinit; do \
+        test ! -e "$intruder" || { echo "a second init is in the image: $intruder" >&2; exit 1; }; \
+    done
+
+# What `nesinit` will look for at runtime, checked while there is somebody to
+# read the failure.
+#
+# It is a table compiled into a binary, so a missing program is not a build
+# error — it is a service that does not come up in a box somebody is waiting
+# on, reported over the control channel and read hours later. Checking here
+# turns that into a failed build.
+# Everything this image promises must resolve the libraries it links.
+#
+# This is the check the Mesa change needs: dropping a package that provided
+# libraries is how a binary ends up resolving nothing, and the symptom is not a
+# build failure — it is a service that will not start in a box somebody is
+# waiting on, or a render path that is missing rather than slow. It caught
+# exactly that on the first run, and the missing library was two levels down a
+# dependency tree nobody had reason to read.
+#
+# **Named rather than swept, and that is deliberate.** A sweep over everything
+# in /usr/lib fails on a stock image: a distribution ships optional plugins
+# whose optional dependencies are not installed — pinentry's Qt build, mpg123's
+# JACK output, libdecor's GTK backend — and every one of those was already
+# unresolved before this stage existed. A check that reports a dozen things
+# nobody intends to load is a check the next person deletes. This list is what
+# the image is *for*: the components, the services init starts, the chain
+# between a workload and the GPU, and Wine's own core.
+#
+# **Wine was added after it was missed**, and then narrowed twice, which is
+# worth recording so nobody widens it again.
+#
+# It was missed because the list covered everything this image ships *of ours*
+# and nothing of the compatibility tool's, so an unresolved `libunwind.so.8`
+# behind `ntdll.so` survived a build whose whole purpose is catching that, and
+# surfaced as a session that created a prefix and could not start one process
+# in it.
+#
+# The obvious fix -- sweep every `*-unix/*.so` -- is wrong in both directions.
+# It is noisy: those objects are Wine's optional backends, and their
+# dependencies are a camera library, a media stack, a VR loader, a smartcard
+# daemon and OpenCL, none of which belong in a box. And it cannot see what it
+# is checking: Wine's unix objects **link each other by soname** and are
+# resolved by Wine's own loader rather than by `ld.so`, so `ldd` reports
+# `ntdll.so` and `win32u.so` themselves as missing while they sit in the same
+# directory. Forty files, every one a false positive, hiding the one real
+# entry.
+#
+# So: the programs in `bin/`, which are ordinary ELF and resolve normally, and
+# `ntdll.so`, which is the first thing Wine loads and the one that linked the
+# missing library. That is exactly the failure that got through, with none of
+# the noise. The Windows-side DLLs beside them are not ELF and `ldd` skips them
+# anyway.
+# The output is one file per line with its own missing libraries under it, and
+# then every missing library once at the end. That last list is what somebody
+# acts on -- it is the set of packages to add -- and forty files each naming the
+# same two libraries is not that list. An earlier version printed one
+# comma-joined line and cut the wrong field out of `ldd`, so it named no
+# libraries at all: `ldd` indents with a tab, which `tr -s ' '` does not
+# collapse, so the second space-separated field is `=>`.
+RUN failed=0; \
+    : > /tmp/missing-libs; \
+    for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
+             /usr/lib/libnescapture_layer.so \
+             /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
+             /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
+             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/ntdll.so; do \
+        [ -e "$f" ] || continue; \
+        libs="$(ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
+        [ -n "$libs" ] || continue; \
+        failed=1; \
+        printf '  %s\n' "$f" >&2; \
+        printf '      %s\n' $libs >&2; \
+        printf '%s\n' $libs >> /tmp/missing-libs; \
+    done; \
+    if [ "$failed" != 0 ]; then \
+        echo "" >&2; \
+        echo "  every library above, once each -- this is the list to install:" >&2; \
+        sort -u /tmp/missing-libs | sed 's/^/      /' >&2; \
+        exit 1; \
+    fi
+
+RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
+                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
+                    /usr/bin/python3 \
+                    /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+        test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
+    done
+
+# An entry point that is executable is not an entry point that runs.
+#
+# The check above passed on an image whose compatibility tool was a Python
+# script with no interpreter behind it: `test -x` says the file may be
+# executed, and the kernel then fails to find what the shebang names. A session
+# got as far as launching a game and ended with
+# `env: 'python3': No such file or directory`.
+#
+# So every script this image promises resolves its own interpreter. `env` is
+# unwrapped where it is used, because a shebang of `#!/usr/bin/env python3`
+# names `env` and the thing that is actually missing is the argument.
+RUN for script in /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+        head -c 2 "$script" | grep -q '#!' || continue; \
+        shebang="$(head -1 "$script" | sed 's/^#!//')"; \
+        interpreter="${shebang%% *}"; \
+        case "$interpreter" in \
+            */env) argument="${shebang#* }"; interpreter="$(command -v "${argument%% *}" || true)";; \
+        esac; \
+        test -n "$interpreter" && test -x "$interpreter" \
+            || { echo "$script needs an interpreter the image does not have: $shebang" >&2; exit 1; }; \
+    done
+
+
+# ───────────────────────────────────────────────────────────
+#  runtime_prod — the default: `make build`
+# ───────────────────────────────────────────────────────────
+FROM runtime AS runtime_prod
+
+# No console is offered by either flavour: `nesinit` spawns no getty, because
+# the way into a guest that will not boot is `init=/bin/bash` on the kernel
+# command line, which needs nothing from the image but a shell. So the locked
+# root account is belt and braces rather than the only thing standing between
+# a box and a login prompt.
+RUN passwd -l root
+
+RUN while IFS= read -r f; do \
+        [ -f "$f" ] && strip --strip-unneeded "$f" 2>/dev/null || true; \
+    done < /tmp/.strip-manifest; \
+    rm -rf /tmp/.strip-manifest /var/cache/pacman/pkg/* /tmp/* /root/.cache \
+        /usr/share/man /usr/share/doc /usr/share/locale \
+        /usr/lib/cmake /usr/lib/pkgconfig /usr/share/pkgconfig /usr/include \
+        /usr/share/gir-1.0 /usr/lib/udev; \
+    find /usr/lib -name '*.a' -delete
+
+RUN echo "NESTRI_STAGE=runtime_prod" >> /etc/os-release
+
+
+# ───────────────────────────────────────────────────────────
+#  runtime_debug — `make build-debug`
+# ───────────────────────────────────────────────────────────
+FROM runtime AS runtime_debug
+
+# `-Sy` and not `-Syu`: a full upgrade here can pull a package back in as
+# somebody's dependency, and the one that matters is systemd. The check below
+# catches it either way, but a debug image that fails to build is worse than
+# one that is a few days behind on versions it only uses for `vulkaninfo`.
+RUN pacman -Sy --noconfirm --needed vulkan-tools mesa-utils libva-utils && \
+    pacman -Scc --noconfirm
+
+# The same guard as the runtime stage, because the transaction above is exactly
+# the kind that quietly reinstates an init system.
+RUN test ! -e /usr/lib/systemd/systemd \
+    || { echo "systemd's PID 1 came back with the debug tools" >&2; exit 1; }
+
+# Root has a password here and nothing offers a login prompt to type it into.
+# It is for `su` from an `init=/bin/bash` shell, which is the whole debug route.
+RUN echo 'root:nestri' | chpasswd
+
+RUN echo "NESTRI_STAGE=runtime_debug" >> /etc/os-release

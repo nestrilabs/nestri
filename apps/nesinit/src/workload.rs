@@ -142,12 +142,30 @@ impl Workload for Process {
         // Cleared rather than inherited: init's environment is the kernel's
         // and says nothing a workload should read.
         command.env_clear();
-        command.envs(&exec.env);
+        command.envs(environment(exec));
         if let Some(cwd) = &exec.cwd {
             command.current_dir(cwd);
         }
 
         let (uid, gid) = (exec.uid, exec.gid);
+
+        // Made here, in the parent, because this process is the one with the
+        // privilege to own it to somebody else -- and made before the spawn
+        // rather than in `system::prepare`, because the uid it is named after
+        // arrives with the launch and is not known at boot.
+        //
+        // A warning rather than a refusal: a workload that draws nothing needs
+        // no runtime directory, and refusing the launch would turn "audio has
+        // nowhere to put a socket" into "the box does not start".
+        match crate::system::runtime_dir(uid, gid) {
+            Ok(path) => tracing::info!(%path, uid, "the launch has a runtime directory"),
+            Err(error) => tracing::warn!(
+                uid,
+                "no runtime directory for this launch, so anything reading \
+                 XDG_RUNTIME_DIR fails on it: {error}"
+            ),
+        }
+
         // SAFETY: the closure runs between fork and exec in the child, where
         // only async-signal-safe calls are allowed. These two are, and it
         // allocates nothing.
@@ -168,7 +186,18 @@ impl Workload for Process {
         let mut watched = self
             .waiters
             .watch(|| Ok(command.spawn()?.id() as i32))
-            .map_err(|error| Failure::new(error.to_string()))?;
+            .map_err(|error| {
+                // The program, the user, and what the system said.
+                //
+                // `Permission denied` on its own is the least useful true
+                // sentence available here: it is equally consistent with a
+                // share the caller exported without letting this user read it,
+                // a binary that is not executable, and a mount that forbids
+                // execution. The one thing a reader needs is which file, and
+                // as whom. Measured 2026-09-12: a launch refused with the bare
+                // message cost a search of three machines' permissions.
+                Failure::new(format!("{program} as {}:{}: {error}", exec.uid, exec.gid))
+            })?;
 
         // The caller gets the exit and reports it; this handle keeps the pid
         // and whether that pid is still this child's.
@@ -185,6 +214,70 @@ impl Workload for Process {
         self.signal(libc::SIGTERM);
     }
 }
+
+/// Everything a launch is started with, in the order that decides ties.
+///
+/// The image's own graphics settings first and the caller's environment last,
+/// so a host can override anything here. A host that knows better than this
+/// image about this box is unlikely, but it should not have to patch an image
+/// to say so.
+///
+/// A function rather than two calls on the command, because the two calls
+/// could be -- and for one commit were -- reduced to one by an edit that
+/// dropped the first. The only thing that noticed was a dead-code warning.
+fn environment(exec: &Exec) -> Vec<(String, String)> {
+    GRAPHICS
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .chain(exec.env.iter().map(|(k, v)| (k.clone(), v.clone())))
+        .collect()
+}
+
+/// What the image's own graphics stack needs said out loud.
+///
+/// # Why this is here and not in a profile script
+///
+/// There is one in the image, and it has never run: every process in a box is
+/// exec'd by this component with `env_clear`, and nothing starts a login
+/// shell. A `profile.d` file is for a person who logged in, and nobody does.
+///
+/// # Why it has to be said at all
+///
+/// The image ships a Mesa with exactly one gallium driver, `zink`, on purpose:
+/// OpenGL is translated to Vulkan so that the capture layer -- which is a
+/// Vulkan layer -- sees the frames of a game that draws in GL. A game whose GL
+/// reached a native driver would render correctly and be captured as nothing,
+/// which is the worst shape a failure can have here.
+///
+/// But the loader picks a driver by the *kernel device's* name. It looks for
+/// one called `virtio_gpu`, finds that the only driver built is `zink`, and
+/// gives up with `virtio_gpu: driver missing`. It does not fall back, and
+/// `zink` is never chosen for an arbitrary device on its own. So it is named.
+///
+/// Measured 2026-09-12: without these, every process that touched the GPU
+/// failed to create an EGL screen, in a box whose Vulkan drivers were both
+/// present and loadable.
+const GRAPHICS: &[(&str, &str)] = &[
+    ("MESA_LOADER_DRIVER_OVERRIDE", "zink"),
+    ("GALLIUM_DRIVER", "zink"),
+    // For anything that goes through libglvnd. Harmless where nothing does.
+    ("__GLX_VENDOR_LIBRARY_NAME", "mesa"),
+    // **Intel's Vulkan Video is off unless asked for.** Its driver gates the
+    // video encode and decode extensions behind this, so on an Intel host the
+    // capture layer finds no encode support, produces nothing, and says
+    // nothing about why -- a box that streams a black screen while every
+    // component reports success.
+    //
+    // Read only by Intel's driver, so it costs nothing on a host with any
+    // other GPU. Measured 2026-09-12 on an Arc A310: without it, capture
+    // produced no output at all.
+    ("ANV_DEBUG", "video-encode,video-decode"),
+    // **Audio is not under this user's runtime directory.** The services that
+    // serve it run as somebody else, so the socket lives somewhere both can
+    // reach and both are told where. Without this a game renders and plays
+    // silently, having looked under its own uid and found nothing.
+    ("PIPEWIRE_RUNTIME_DIR", crate::services::AUDIO_DIR),
+];
 
 /// Mount one share where the descriptor says to put it.
 ///
@@ -262,6 +355,75 @@ fn failed(share: &Mount, error: io::Error) -> Failure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The driver override has to reach the workload, because nothing else
+    /// carries it: the image's profile script never runs for an exec'd
+    /// process. Without it a game's OpenGL finds no driver at all.
+    fn exec_with(env: &[(&str, &str)]) -> Exec {
+        Exec {
+            argv: vec!["/bin/true".into()],
+            env: env
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            cwd: None,
+            uid: 1001,
+            gid: 1001,
+        }
+    }
+
+    /// The override has to reach the launch, and asserting that it is in a
+    /// table is not asserting that. A commit once defined the table and never
+    /// applied it; the tests passed and a dead-code warning was the only sign.
+    #[test]
+    fn the_launch_is_told_which_gallium_driver_to_use() {
+        let env = environment(&exec_with(&[]));
+        let driver = env
+            .iter()
+            .find(|(k, _)| k == "MESA_LOADER_DRIVER_OVERRIDE")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(
+            driver,
+            Some("zink"),
+            "without this a game's GL reaches a native driver, renders \
+             correctly, and is captured as nothing"
+        );
+    }
+
+    /// Intel's driver hides Vulkan Video behind a debug variable, and the
+    /// capture layer needs video encode.
+    ///
+    /// Without it the layer loads, finds no encode support, produces nothing,
+    /// and reports nothing -- so the box streams a black screen while every
+    /// component says it is working. It cost an evening to find once.
+    #[test]
+    fn intels_vulkan_video_is_asked_for() {
+        let env = environment(&exec_with(&[]));
+        let debug = env
+            .iter()
+            .find(|(k, _)| k == "ANV_DEBUG")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or_default();
+        assert!(
+            debug.contains("video-encode"),
+            "on an Intel host this is the difference between a stream and a \
+             black screen, and neither says which: {debug:?}"
+        );
+    }
+
+    /// Last wins, so a host can override what the image assumes.
+    #[test]
+    fn the_callers_own_environment_beats_the_images() {
+        let env = environment(&exec_with(&[("GALLIUM_DRIVER", "something-else")]));
+        let chosen: Vec<&str> = env
+            .iter()
+            .filter(|(k, _)| k == "GALLIUM_DRIVER")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        // Both are present; `envs` applies in order, so the last is the one
+        // the process gets.
+        assert_eq!(chosen.last(), Some(&"something-else"));
+    }
 
     fn share(ro: bool) -> Mount {
         Mount {

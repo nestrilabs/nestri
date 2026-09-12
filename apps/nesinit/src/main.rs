@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use nesinit::payload::{self, Ports};
 use nesinit::reap::{self, Waiters};
+use nesinit::services::Stack;
 use nesinit::session::{self, Outcome};
 use nesinit::shutdown::{self, Machine};
 use nesinit::ticket;
@@ -45,6 +46,13 @@ fn main() -> anyhow::Result<()> {
     // is no `/proc` to score this process in and nowhere to put a socket.
     nesinit::filesystems::establish();
 
+    // Everything a distribution's init scripts used to do, and nothing else is
+    // going to: a hostname, the box's address, the directories a session's
+    // sockets live in, and device nodes something is allowed to open. Before
+    // the runtime, so the few processes it starts are waited for directly
+    // rather than racing the reaper into existence. ref(d-0063)
+    nesinit::system::prepare();
+
     // Both before anything is started, so nothing can be orphaned or scored
     // in the window where neither is true yet.
     if let Err(error) = reap::become_subreaper() {
@@ -80,7 +88,18 @@ fn main() -> anyhow::Result<()> {
 
     // Reached however the session ended, including an error: an init that
     // returns leaves the guest running with nothing in it.
-    let mut machine = Guest { workload };
+    //
+    // `is_init` is what makes that safe to say. The three machine-wide steps
+    // below — signal everything, kill everything, power off — are correct for
+    // PID 1 of a box and catastrophic anywhere else, and this program is meant
+    // to be runnable by hand: that is how most of it is tested and it is the
+    // documented way to debug a guest that will not boot. Run as root outside a
+    // box, the old path reached `kill(-1)` and `reboot` the moment the control
+    // channel could not be dialled.
+    let mut machine = Guest {
+        workload,
+        is_init: pid == 1,
+    };
     shutdown::ordered(&mut machine, GRACE);
     unreachable!("power_off does not return");
 }
@@ -124,8 +143,13 @@ async fn guest(waiters: &Waiters, workload: &mut Process) -> anyhow::Result<Outc
         untrusted.clone(),
     ));
 
+    // The box's own services. Nothing is started here: bring-up happens once
+    // the descriptor has been carried out, because a box whose shares are not
+    // where they belong is not a box worth starting a stack in.
+    let mut services = Stack::new(waiters.clone());
+
     let outcome = tokio::select! {
-        outcome = session::run(channel, workload, &mut ports, &mut found_rx, &untrusted) => outcome?,
+        outcome = session::run(channel, workload, &mut services, &mut ports, &mut found_rx, &untrusted) => outcome?,
         signal = asked_to_stop() => {
             signal?;
             tracing::info!("asked to stop");
@@ -170,6 +194,9 @@ async fn asked_to_stop() -> std::io::Result<()> {
 /// The machine, for real.
 struct Guest {
     workload: Process,
+    /// Whether this process is PID 1, and therefore whether the steps that act
+    /// on *the machine* rather than on our own children may be taken at all.
+    is_init: bool,
 }
 
 impl Machine for Guest {
@@ -194,6 +221,13 @@ impl Machine for Guest {
     }
 
     fn signal_rest(&mut self, grace: Duration) {
+        if !self.is_init {
+            tracing::warn!(
+                "not PID 1, so not signalling every process: outside a box that \
+                 is this machine's processes, not this box's"
+            );
+            return;
+        }
         // -1 is every process this one may signal, which as PID 1 is all of
         // them but itself. The workload has already stopped by here.
         unsafe { libc::kill(-1, libc::SIGTERM) };
@@ -201,15 +235,31 @@ impl Machine for Guest {
     }
 
     fn kill_rest(&mut self) {
+        if !self.is_init {
+            return;
+        }
         unsafe { libc::kill(-1, libc::SIGKILL) };
         wait_for_quiet(Duration::from_secs(1));
     }
 
     fn flush_disks(&mut self) {
+        // Harmless anywhere, so it is not guarded: the worst it does outside a
+        // box is flush somebody's page cache.
         unsafe { libc::sync() };
     }
 
     fn power_off(&mut self) {
+        if !self.is_init {
+            // Everything this process started has been stopped by here, which
+            // is the whole of what it may take responsibility for when it is
+            // not the machine's init. What it prepared — the mounts, the
+            // runtime directories — is deliberately left behind, because that
+            // is exactly what makes a hand-run useful: run it, watch it fail to
+            // reach a control channel that is not there, and then poke at a
+            // guest that is otherwise set up.
+            tracing::warn!("not PID 1, so not powering the machine off");
+            std::process::exit(1);
+        }
         // SAFETY: reboot is the only way out of a guest whose init is done.
         unsafe { libc::reboot(libc::RB_POWER_OFF) };
         // Reached only if the guest refused to power off, which no caller can

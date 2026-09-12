@@ -14,14 +14,22 @@ if [ "$(id -u)" = "1000" ]; then
     export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
     export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-nestri}"
 
-    # Ensure proper VAAPI driver is used
-    #export LIBVA_DRIVER_NAME="radeonsi"
-
-    # Force zink usage for OpenGL -> Vulkan translation
-    #export __GLX_VENDOR_LIBRARY_NAME=mesa
-    #export MESA_LOADER_DRIVER_OVERRIDE=zink
-    #export GALLIUM_DRIVER=zink
 
     # Ensure standard XDG dirs exist
     mkdir -p "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_CACHE_HOME}" "${XDG_STATE_HOME}" 2>/dev/null || true
 fi
+
+# OpenGL -> Vulkan, for anybody who reaches a shell in here.
+#
+# Outside the uid test above on purpose, and duplicated from the init on
+# purpose. This file is only ever read by a person who got a shell in a box --
+# nothing a box runs is started from a login, so every service and every
+# workload is exec'd with a cleared environment and never sees this. The init
+# sets the same three for what it starts.
+#
+# It is here so that a debug shell renders the way a session does. A shell that
+# silently has no GL driver is how somebody concludes the image is broken while
+# the image is fine.
+export __GLX_VENDOR_LIBRARY_NAME=mesa
+export MESA_LOADER_DRIVER_OVERRIDE=zink
+export GALLIUM_DRIVER=zink

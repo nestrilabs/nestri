@@ -1,0 +1,88 @@
+# ═══════════════════════════════════════════════════════════
+#  proton-cachyos, built wow64-only
+#
+#  Separate from the guest Containerfile because it is a separate cadence:
+#  hours to build, and only when PROTON_TAG moves. The guest image pulls the
+#  result from a registry instead of rebuilding it, which is why this file is
+#  not part of that build and is not reached by `make build`.
+#
+#  The final stage is FROM scratch, so the image *is* the Proton tree — nothing
+#  to run, only something to COPY --from.
+#
+#  Build and publish with `make proton-image` / `make proton-push`. **Its
+#  context is this directory**, not the repository root the guest build uses:
+#  all it needs is the two scripts beside it, and a context of the whole tree
+#  would hand it a multi-gigabyte `output/` for no reason.
+#
+#  `PROTON_TAG` is the one thing to change, and the Makefile derives the
+#  published image's version from it. They are the same number in two
+#  spellings, and an image whose name does not say which Proton is inside it
+#  is worse than no image.
+# ═══════════════════════════════════════════════════════════
+FROM docker.io/archlinux:base-devel AS builder
+
+# proton-cachyos-native's makedepends, minus every lib32-* (that is the whole
+# point of --enable-wow64), with two substitutions Arch requires: ocl-icd
+# provides opencl-icd-loader, and mesa-libgl is folded into libglvnd.
+#
+# glib2-devel is the one that is easy to miss — it carries glib-mkenums, which
+# libsoup's meson looks up through glib-2.0's pkg-config variables and fails on
+# obscurely. unzip and zip are for the xalia dist step. afdko is not packaged at
+# all, and the fonts submodule needs it, so it comes from PyPI.
+RUN pacman -Syu --noconfirm --needed \
+        alsa-lib clang cmake curl ffmpeg fontforge giflib git glib2-devel \
+        glslang gnutls gtk3 libgphoto2 libglvnd libpulse libva libxcomposite \
+        libxinerama libxxf86vm lld mesa meson ninja nasm \
+        opencl-headers ocl-icd pcsclite perl perl-json python python-pip \
+        python-pefile python-setuptools-scm rsync rust samba unixodbc \
+        unzip zip v4l-utils vulkan-headers vulkan-icd-loader wayland \
+        wayland-protocols wget xorg-util-macros \
+        mingw-w64-gcc mingw-w64-binutils mingw-w64-crt mingw-w64-headers \
+        mingw-w64-winpthreads \
+    && pip install --break-system-packages --no-cache-dir afdko \
+    && pacman -Scc --noconfirm
+
+# widl generates vkd3d's public headers. Without it autoconf sets HAVE_WIDL to
+# false, the headers are silently not generated, and the build dies an hour
+# later on a missing vkd3d_d3dx9shader.h. Arch ships widl only inside `wine`,
+# which requires multilib; the AUR's mingw-w64-tools builds it standalone, so do
+# the same.
+ARG MINGW_W64_VER=14.0.0
+RUN curl -fL --retry 3 -o /tmp/mingw-w64.tar.bz2 \
+        "https://sourceforge.net/projects/mingw-w64/files/mingw-w64/mingw-w64-release/mingw-w64-v${MINGW_W64_VER}.tar.bz2/download" \
+    && tar xf /tmp/mingw-w64.tar.bz2 -C /tmp \
+    && for arch in i686-w64-mingw32 x86_64-w64-mingw32; do \
+           mkdir -p "/tmp/widl-${arch}" && cd "/tmp/widl-${arch}" \
+           && "/tmp/mingw-w64-v${MINGW_W64_VER}/mingw-w64-tools/widl/configure" \
+                --prefix=/usr --target="${arch}" --program-prefix="${arch}-" \
+           && make -j"$(nproc)" && make install; \
+       done \
+    && rm -rf /tmp/mingw-w64* /tmp/widl-*
+
+WORKDIR /build
+
+ARG PROTON_GIT=https://github.com/CachyOS/proton-cachyos.git
+ARG PROTON_TAG=cachyos-11.0-20260703-native
+ARG GECKO_VER=2.47.4
+ARG MONO_VER=11.2.0
+ARG XALIA_VER=0.4.9
+ARG JOBS=
+
+# Fetch and build are separate layers on purpose: the submodule checkout runs
+# well past ten minutes, and a build that fails on a flag or a missing tool must
+# not pay for it again.
+COPY scripts/proton-fetch.sh /build/proton-fetch.sh
+RUN PROTON_GIT="${PROTON_GIT}" PROTON_TAG="${PROTON_TAG}" \
+    GECKO_VER="${GECKO_VER}" MONO_VER="${MONO_VER}" XALIA_VER="${XALIA_VER}" \
+    bash /build/proton-fetch.sh
+
+COPY scripts/proton-build.sh /build/proton-build.sh
+RUN GECKO_VER="${GECKO_VER}" MONO_VER="${MONO_VER}" JOBS="${JOBS}" \
+    bash /build/proton-build.sh
+
+
+# ═══════════════════════════════════════════════════════════
+#  The publishable artifact: the Proton tree and nothing else
+# ═══════════════════════════════════════════════════════════
+FROM scratch
+COPY --from=builder /artifacts/proton/ /
