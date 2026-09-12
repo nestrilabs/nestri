@@ -204,6 +204,37 @@ impl Workload for Process {
     }
 }
 
+/// What the image's own graphics stack needs said out loud.
+///
+/// # Why this is here and not in a profile script
+///
+/// There is one in the image, and it has never run: every process in a box is
+/// exec'd by this component with `env_clear`, and nothing starts a login
+/// shell. A `profile.d` file is for a person who logged in, and nobody does.
+///
+/// # Why it has to be said at all
+///
+/// The image ships a Mesa with exactly one gallium driver, `zink`, on purpose:
+/// OpenGL is translated to Vulkan so that the capture layer -- which is a
+/// Vulkan layer -- sees the frames of a game that draws in GL. A game whose GL
+/// reached a native driver would render correctly and be captured as nothing,
+/// which is the worst shape a failure can have here.
+///
+/// But the loader picks a driver by the *kernel device's* name. It looks for
+/// one called `virtio_gpu`, finds that the only driver built is `zink`, and
+/// gives up with `virtio_gpu: driver missing`. It does not fall back, and
+/// `zink` is never chosen for an arbitrary device on its own. So it is named.
+///
+/// Measured 2026-09-12: without these, every process that touched the GPU
+/// failed to create an EGL screen, in a box whose Vulkan drivers were both
+/// present and loadable.
+const GRAPHICS: &[(&str, &str)] = &[
+    ("MESA_LOADER_DRIVER_OVERRIDE", "zink"),
+    ("GALLIUM_DRIVER", "zink"),
+    // For anything that goes through libglvnd. Harmless where nothing does.
+    ("__GLX_VENDOR_LIBRARY_NAME", "mesa"),
+];
+
 /// Mount one share where the descriptor says to put it.
 ///
 /// The tag names an export; nothing here is a path on the other side of the
@@ -279,6 +310,24 @@ fn failed(share: &Mount, error: io::Error) -> Failure {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    /// The driver override has to reach the workload, because nothing else
+    /// carries it: the image's profile script never runs for an exec'd
+    /// process. Without it a game's OpenGL finds no driver at all.
+    #[test]
+    fn the_launch_is_told_which_gallium_driver_to_use() {
+        let names: Vec<&str> = GRAPHICS.iter().map(|(k, _)| *k).collect();
+        assert!(names.contains(&"MESA_LOADER_DRIVER_OVERRIDE"));
+        assert!(names.contains(&"GALLIUM_DRIVER"));
+        for (_, value) in GRAPHICS {
+            if *value == "zink" {
+                return;
+            }
+        }
+        panic!("nothing names zink, so GL would reach a native driver and be captured as nothing");
+    }
+
     use super::*;
 
     fn share(ro: bool) -> Mount {
