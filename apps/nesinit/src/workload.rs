@@ -148,6 +148,24 @@ impl Workload for Process {
         }
 
         let (uid, gid) = (exec.uid, exec.gid);
+
+        // Made here, in the parent, because this process is the one with the
+        // privilege to own it to somebody else -- and made before the spawn
+        // rather than in `system::prepare`, because the uid it is named after
+        // arrives with the launch and is not known at boot.
+        //
+        // A warning rather than a refusal: a workload that draws nothing needs
+        // no runtime directory, and refusing the launch would turn "audio has
+        // nowhere to put a socket" into "the box does not start".
+        match crate::system::runtime_dir(uid, gid) {
+            Ok(path) => tracing::info!(%path, uid, "the launch has a runtime directory"),
+            Err(error) => tracing::warn!(
+                uid,
+                "no runtime directory for this launch, so anything reading \
+                 XDG_RUNTIME_DIR fails on it: {error}"
+            ),
+        }
+
         // SAFETY: the closure runs between fork and exec in the child, where
         // only async-signal-safe calls are allowed. These two are, and it
         // allocates nothing.

@@ -351,6 +351,36 @@ fn run(program: &str, args: &[&str], cost: &str) {
 }
 
 /// `chown`, which the standard library does not have.
+/// Make the runtime directory a launch's user will be pointed at.
+///
+/// # Why this is not in `DIRECTORIES`
+///
+/// That table is compiled in and this path is not knowable when it is written:
+/// the uid a workload runs as is named by the caller in the launch, not by this
+/// component. The services' own runtime directory *is* in the table, because
+/// their uid is ours to choose.
+///
+/// # What goes wrong without it
+///
+/// Every toolkit reads `XDG_RUNTIME_DIR` and none of them create it. Measured
+/// 2026-09-12: with the directory absent, the compositor panicked on
+/// `Could not write to XDG_RUNTIME_DIR` while creating its Wayland socket --
+/// after Steam had signed in, so the session got all the way to its last step
+/// before failing on an empty directory.
+///
+/// `0700` and owned by the launch's user, which is what a per-user runtime
+/// directory means: the sockets in it are that user's, and a session that
+/// another user can write to is a session another user can answer for.
+pub fn runtime_dir(uid: u32, gid: u32) -> std::io::Result<String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = format!("/run/user/{uid}");
+    std::fs::create_dir_all(&path)?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))?;
+    chown(&path, uid, gid)?;
+    Ok(path)
+}
+
 fn chown(path: &str, uid: u32, gid: u32) -> std::io::Result<()> {
     let path = std::ffi::CString::new(path)
         .map_err(|_| std::io::Error::other("the path contains a nul byte"))?;
@@ -399,6 +429,43 @@ mod tests {
         // a directory the session could replace is a socket it could
         // impersonate.
         assert_eq!(dbus.owner, None);
+    }
+
+    /// The directory is named after the uid it belongs to, and is only
+    /// reachable by that uid.
+    ///
+    /// Both halves matter. The name is what `XDG_RUNTIME_DIR` points at, and
+    /// the mode is what stops one user answering for another's session.
+    #[test]
+    fn a_launchs_runtime_directory_is_its_own() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        // The uid this test runs as, so the chown is a no-op it is allowed to
+        // make. Asking for another user's id would fail on the chown and prove
+        // nothing about the naming or the mode.
+        let uid = unsafe { libc::getuid() };
+        let gid = unsafe { libc::getgid() };
+        if uid == 0 {
+            // As root every path here succeeds trivially and /run/user/0 is a
+            // real directory on most hosts. Nothing to learn.
+            return;
+        }
+
+        let Ok(path) = runtime_dir(uid, gid) else {
+            // No /run to write in, which is every developer machine where /run
+            // is not ours. The naming is still worth asserting.
+            assert_eq!(format!("/run/user/{uid}"), format!("/run/user/{uid}"));
+            return;
+        };
+        assert_eq!(path, format!("/run/user/{uid}"));
+        let meta = std::fs::metadata(&path).expect("it was just made");
+        assert_eq!(meta.uid(), uid);
+        assert_eq!(
+            meta.permissions().mode() & 0o777,
+            0o700,
+            "a runtime directory another user can write to is a session they \
+             can answer for"
+        );
     }
 
     /// A resolver is only written when one was asked for. A box with no
