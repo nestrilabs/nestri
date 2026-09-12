@@ -251,6 +251,16 @@ const GRAPHICS: &[(&str, &str)] = &[
     ("GALLIUM_DRIVER", "zink"),
     // For anything that goes through libglvnd. Harmless where nothing does.
     ("__GLX_VENDOR_LIBRARY_NAME", "mesa"),
+    // **Intel's Vulkan Video is off unless asked for.** Its driver gates the
+    // video encode and decode extensions behind this, so on an Intel host the
+    // capture layer finds no encode support, produces nothing, and says
+    // nothing about why -- a box that streams a black screen while every
+    // component reports success.
+    //
+    // Read only by Intel's driver, so it costs nothing on a host with any
+    // other GPU. Measured 2026-09-12 on an Arc A310: without it, capture
+    // produced no output at all.
+    ("ANV_DEBUG", "video-encode,video-decode"),
 ];
 
 /// Mount one share where the descriptor says to put it.
@@ -361,6 +371,27 @@ mod tests {
             Some("zink"),
             "without this a game's GL reaches a native driver, renders \
              correctly, and is captured as nothing"
+        );
+    }
+
+    /// Intel's driver hides Vulkan Video behind a debug variable, and the
+    /// capture layer needs video encode.
+    ///
+    /// Without it the layer loads, finds no encode support, produces nothing,
+    /// and reports nothing -- so the box streams a black screen while every
+    /// component says it is working. It cost an evening to find once.
+    #[test]
+    fn intels_vulkan_video_is_asked_for() {
+        let env = environment(&exec_with(&[]));
+        let debug = env
+            .iter()
+            .find(|(k, _)| k == "ANV_DEBUG")
+            .map(|(_, v)| v.as_str())
+            .unwrap_or_default();
+        assert!(
+            debug.contains("video-encode"),
+            "on an Intel host this is the difference between a stream and a \
+             black screen, and neither says which: {debug:?}"
         );
     }
 
