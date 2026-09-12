@@ -259,11 +259,17 @@ RUN pacman -Syu --noconfirm --needed \
         expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
         pipewire pipewire-audio wireplumber opus \
-        python \
+        python libunwind \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
     && pacman -Scc --noconfirm
 
+# `libunwind` is Wine's, not ours. `ntdll.so` links it, so without it every
+# process Wine starts dies at `could not load ntdll.so`, which is the first
+# thing it loads and reads like Wine itself being broken. Found 2026-09-12,
+# after the prefix had already been created -- so the session got past every
+# check that Proton was present and usable.
+#
 # `python` is not a build dependency here -- the builder stage has its own for
 # Mesa -- it is a *runtime* one. The compatibility tool's entry point is a
 # Python script, so a box without an interpreter starts a game and the launch
@@ -431,14 +437,24 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # JACK output, libdecor's GTK backend — and every one of those was already
 # unresolved before this stage existed. A check that reports a dozen things
 # nobody intends to load is a check the next person deletes. This list is what
-# the image is *for*: the components, the services init starts, and the chain
-# between a workload and the GPU.
+# the image is *for*: the components, the services init starts, the chain
+# between a workload and the GPU, and Wine's own core.
+#
+# **Wine was added after it was missed.** The list covered everything this
+# image ships *of ours* and nothing of the compatibility tool's, so an
+# unresolved `libunwind.so.8` behind `ntdll.so` survived the build and surfaced
+# as a session that created a prefix and then could not start a single process
+# in it. The unix-side `.so`s and the `bin/` programs are the parts that have
+# to resolve; the Windows-side DLLs beside them are not ELF and are skipped by
+# `ldd` on their own.
 RUN missing=""; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
              /usr/lib/libnescapture_layer.so \
              /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
-             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so; do \
+             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/*.so; do \
         [ -e "$f" ] || continue; \
         if ldd "$f" 2>/dev/null | grep -q "not found"; then \
             missing="$missing $f($(ldd "$f" 2>/dev/null | grep 'not found' | tr -s ' ' | cut -d' ' -f2 | tr '\n' ',' ))"; \
