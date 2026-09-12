@@ -440,13 +440,30 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # the image is *for*: the components, the services init starts, the chain
 # between a workload and the GPU, and Wine's own core.
 #
-# **Wine was added after it was missed.** The list covered everything this
-# image ships *of ours* and nothing of the compatibility tool's, so an
-# unresolved `libunwind.so.8` behind `ntdll.so` survived the build and surfaced
-# as a session that created a prefix and then could not start a single process
-# in it. The unix-side `.so`s and the `bin/` programs are the parts that have
-# to resolve; the Windows-side DLLs beside them are not ELF and are skipped by
-# `ldd` on their own.
+# **Wine was added after it was missed**, and then narrowed twice, which is
+# worth recording so nobody widens it again.
+#
+# It was missed because the list covered everything this image ships *of ours*
+# and nothing of the compatibility tool's, so an unresolved `libunwind.so.8`
+# behind `ntdll.so` survived a build whose whole purpose is catching that, and
+# surfaced as a session that created a prefix and could not start one process
+# in it.
+#
+# The obvious fix -- sweep every `*-unix/*.so` -- is wrong in both directions.
+# It is noisy: those objects are Wine's optional backends, and their
+# dependencies are a camera library, a media stack, a VR loader, a smartcard
+# daemon and OpenCL, none of which belong in a box. And it cannot see what it
+# is checking: Wine's unix objects **link each other by soname** and are
+# resolved by Wine's own loader rather than by `ld.so`, so `ldd` reports
+# `ntdll.so` and `win32u.so` themselves as missing while they sit in the same
+# directory. Forty files, every one a false positive, hiding the one real
+# entry.
+#
+# So: the programs in `bin/`, which are ordinary ELF and resolve normally, and
+# `ntdll.so`, which is the first thing Wine loads and the one that linked the
+# missing library. That is exactly the failure that got through, with none of
+# the noise. The Windows-side DLLs beside them are not ELF and `ldd` skips them
+# anyway.
 # The output is one file per line with its own missing libraries under it, and
 # then every missing library once at the end. That last list is what somebody
 # acts on -- it is the set of packages to add -- and forty files each naming the
@@ -462,7 +479,7 @@ RUN failed=0; \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
              /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/*.so; do \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/ntdll.so; do \
         [ -e "$f" ] || continue; \
         libs="$(ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
         [ -n "$libs" ] || continue; \
