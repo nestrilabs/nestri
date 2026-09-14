@@ -21,10 +21,18 @@
 // **Restarting.** A service that dies is reported up the channel and left dead.
 // Whether restarting it is repair or a loop is not visible from inside the box.
 //
-// **Readiness beyond "it is running".** Nothing here waits for a socket to
-// answer or a bus name to appear. If a service ever needs that, this stops
-// being a table and becomes a supervisor, and that is worth noticing rather
-// than absorbing — see the decision's own falsification list.
+// **Readiness beyond "its socket exists".** A service that names a socket is
+// waited for until that socket is there; nothing here asks it a question or
+// waits for a bus name. That much was in the init scripts this replaced and
+// leaving it out was a regression: `spawn` returns at fork, so without it the
+// bus's client is started before the bus is listening and audio comes up
+// against nothing. It races rather than failing — which is the shape this
+// component is least able to see — and the cost of losing the race is a box
+// that boots, reports itself ready, and has no sound.
+//
+// That is as far as it goes. Health checks, restarts and readiness that is not
+// a file on a path would make this a supervisor; see the decision's own
+// falsification list.
 
 use std::os::unix::process::CommandExt;
 
@@ -62,11 +70,13 @@ pub trait Services {
     fn deaths(&mut self) -> &mut Receiver<Died>;
 }
 
-// There is deliberately no `stop_all`. On the way down this process is PID 1
-// and the ordered shutdown already signals every process it may signal, which
-// is all of them — so a second, politer path would be a duplicate that only the
-// tests exercise. Reverse-order stopping buys nothing on a machine that is
-// about to be powered off.
+// There is deliberately no ordered `stop_all`, and reverse-order stopping buys
+// nothing on a machine that is about to be powered off. What there is instead
+// is a `Drop` that signals the children this stack started — because the
+// argument for having nothing at all was "this process is PID 1 and the ordered
+// shutdown signals every process", and that is true of a box and false of the
+// way this program is run by hand to debug one. Outside PID 1 the old path left
+// a bus, an audio server and a hub running with sockets nobody was serving.
 
 /// One service, and everything about starting it.
 ///
@@ -102,7 +112,27 @@ pub struct Service {
     /// socket list lives inside a module's arguments, and a drop-in that
     /// re-declares that module loads it twice.
     pub umask: Option<u32>,
+    /// A path that exists once this service can be talked to.
+    ///
+    /// `None` means "started is ready", which is true of anything nothing else
+    /// in the table connects to. Where something does connect, the path is the
+    /// socket it connects to: `spawn` returns when the child has been forked,
+    /// which is before that child has bound anything, so the next service in
+    /// the table would otherwise be started against a socket that is not there.
+    ///
+    /// Existence only. Whether the thing behind the socket answers correctly is
+    /// not knowable from here, and a box is not the place to find out.
+    pub ready: Option<&'static str>,
 }
+
+/// How long a service gets to bind its socket before the box gives up on it.
+///
+/// Long enough that a cold boot on a slow disk is not cut short, short enough
+/// that a service which will never bind does not hold the box for a minute
+/// before saying so. What actually happens is that the wait ends in single-
+/// digit milliseconds, because the child binds before its parent gets back to
+/// this loop.
+const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// The user the box's own services run as.
 ///
@@ -188,6 +218,7 @@ pub const STACK: &[Service] = &[
         cost: "nothing that speaks on the system bus can find it",
         required: true,
         umask: None,
+        ready: None,
     },
     Service {
         name: "dbus-session",
@@ -203,6 +234,10 @@ pub const STACK: &[Service] = &[
         cost: "audio and anything else expecting a session bus will not start",
         required: true,
         umask: None,
+        // Every service after this one is handed this path as its bus address,
+        // and a bus address that is not bound yet is a service that starts,
+        // finds nothing, and carries on without a bus.
+        ready: Some("/run/user/1000/bus"),
     },
     Service {
         name: "pipewire",
@@ -217,6 +252,9 @@ pub const STACK: &[Service] = &[
         required: true,
         // So the workload, which is not this user, can open the socket.
         umask: Some(0),
+        // Both the session manager and the sender connect here, and so does
+        // the workload once it starts.
+        ready: Some("/run/pipewire/pipewire-0"),
     },
     Service {
         name: "wireplumber",
@@ -233,6 +271,7 @@ pub const STACK: &[Service] = &[
         cost: "audio devices exist but nothing routes them",
         required: false,
         umask: None,
+        ready: None,
     },
     Service {
         name: "neswire",
@@ -246,6 +285,7 @@ pub const STACK: &[Service] = &[
         cost: "the client gets pictures and no sound",
         required: false,
         umask: None,
+        ready: None,
     },
     Service {
         name: "neshub",
@@ -257,6 +297,7 @@ pub const STACK: &[Service] = &[
         cost: "the session has no address, so no client can reach it",
         required: true,
         umask: None,
+        ready: None,
     },
 ];
 
@@ -288,6 +329,13 @@ impl Stack {
             deaths,
             reported,
         }
+    }
+
+    /// The pids of what is running, for a test that has to ask the kernel
+    /// whether they are still there. Nothing in the program uses it: signalling
+    /// happens in `Drop`, where the pids are already to hand.
+    pub fn pids(&self) -> Vec<i32> {
+        self.running.iter().map(|(_, w)| w.pid).collect()
     }
 
     fn spawn(&mut self, service: &'static Service) -> Result<(), Failure> {
@@ -372,7 +420,7 @@ impl Services for Stack {
         // start it is asking for.
         let table = self.table;
         for service in table {
-            match self.spawn(service) {
+            match self.spawn(service).and_then(|()| await_ready(service)) {
                 Ok(()) => {
                     tracing::info!(service = service.name, "started");
                     up.push(service.name.to_string());
@@ -399,6 +447,70 @@ impl Services for Stack {
 
     fn deaths(&mut self) -> &mut Receiver<Died> {
         &mut self.deaths
+    }
+}
+
+impl Drop for Stack {
+    /// Ask everything this stack started to stop.
+    ///
+    /// The stack owns these processes and nothing else does, so its going away
+    /// is the last moment anything knows their pids. As PID 1 the ordered
+    /// shutdown would reach them anyway and a second SIGTERM costs nothing;
+    /// run by hand it is the only thing that reaches them at all.
+    ///
+    /// Asked, not waited for: this runs while the runtime is going down, so
+    /// there is nothing left to reap them with. A signalled child that outlives
+    /// this process is reparented and dies on its own, which is the outcome we
+    /// wanted; an unsignalled one keeps its sockets.
+    fn drop(&mut self) {
+        for (name, watched) in &self.running {
+            // The same rule as everywhere else that signals: a pid that has
+            // been reaped may already belong to something else.
+            if !watched.running() {
+                continue;
+            }
+            tracing::debug!(service = name, pid = watched.pid, "stopping");
+            // SAFETY: two integers, and a pid that has gone fails with ESRCH.
+            unsafe { libc::kill(watched.pid, libc::SIGTERM) };
+        }
+    }
+}
+
+/// Wait for a service to bind the socket it said it would.
+///
+/// Blocking, on a worker of a multi-threaded runtime: bring-up is a sequence
+/// and there is nothing else for this task to do while it waits. Polling rather
+/// than an inotify watch because the directory may not exist yet either, and a
+/// watch that has to handle that is more machinery than 15 seconds of `stat`.
+///
+/// A failure is the same shape as a failure to start, so the required/optional
+/// rule above decides what it costs: a required service that never binds refuses
+/// the box, an optional one is stepped over.
+fn await_ready(service: &Service) -> Result<(), Failure> {
+    let Some(path) = service.ready else {
+        return Ok(());
+    };
+    await_path(service.name, path, READY_TIMEOUT)
+}
+
+/// The waiting itself, with the deadline passed in so a test can assert the
+/// giving-up without waiting out a real one.
+fn await_path(name: &str, path: &str, timeout: std::time::Duration) -> Result<(), Failure> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if std::fs::metadata(path).is_ok() {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            // The path, because that is the actionable half: a service that
+            // binds somewhere else is indistinguishable from one that never
+            // bound, and only one of those is fixed by looking at the service.
+            return Err(Failure::new(format!(
+                "{name}: {path} did not appear within {}s of starting it",
+                timeout.as_secs()
+            )));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
 }
 
@@ -491,6 +603,86 @@ mod tests {
                 service.name
             );
         }
+    }
+
+    /// A service others connect to is waited for, and the path waited on is
+    /// the path they are given.
+    ///
+    /// Two constants that have to agree and are written in two places is how
+    /// three of the four crossings in ref(d-0064) broke, so they are compared
+    /// here rather than trusted to stay in step.
+    #[test]
+    fn what_is_waited_for_is_where_the_others_are_told_to_look() {
+        let bus = STACK
+            .iter()
+            .find(|s| s.name == "dbus-session")
+            .expect("the session bus is in the table");
+        let waited = bus.ready.expect(
+            "without this, everything handed this bus address is started before \
+             anything is listening on it",
+        );
+        let address = format!("unix:path={waited}");
+        let clients: Vec<&Service> = STACK
+            .iter()
+            .filter(|s| s.env.iter().any(|(k, _)| *k == "DBUS_SESSION_BUS_ADDRESS"))
+            .collect();
+        assert!(!clients.is_empty(), "nothing was told where the bus is");
+        for client in clients {
+            let told = client
+                .env
+                .iter()
+                .find(|(k, _)| *k == "DBUS_SESSION_BUS_ADDRESS")
+                .map(|(_, v)| *v);
+            assert_eq!(
+                told,
+                Some(address.as_str()),
+                "{} connects somewhere the box never waited for",
+                client.name
+            );
+        }
+
+        let pipewire = STACK
+            .iter()
+            .find(|s| s.name == "pipewire")
+            .expect("audio is in the table");
+        let waited = pipewire.ready.expect("audio is connected to by everything");
+        assert!(
+            waited.starts_with(AUDIO_DIR),
+            "audio is waited for at {waited} and served from {AUDIO_DIR}"
+        );
+    }
+
+    /// A service that names no socket is ready when it has been started, and
+    /// the wait has to be free in that case: most of the table is like this.
+    #[test]
+    fn a_service_that_names_no_socket_is_not_waited_for() {
+        let hub = STACK
+            .iter()
+            .find(|s| s.name == "neshub")
+            .expect("the hub is in the table");
+        assert!(hub.ready.is_none());
+        await_ready(hub).expect("a service with nothing to wait for waited anyway");
+    }
+
+    /// A socket that never appears is a failure, not a wait that ends quietly.
+    ///
+    /// The distinction matters because the required/optional rule above acts on
+    /// it: a required service that never binds has to refuse the box rather
+    /// than let one boot that reports itself ready and does not work.
+    #[test]
+    fn a_socket_that_never_appears_is_a_failure_that_names_it() {
+        let failure = await_path(
+            "pipewire",
+            "/nonexistent/pipewire-0",
+            std::time::Duration::from_millis(50),
+        )
+        .expect_err("a socket that is not there was treated as ready");
+        assert!(failure.reason.contains("pipewire"), "{}", failure.reason);
+        assert!(
+            failure.reason.contains("/nonexistent/pipewire-0"),
+            "{}",
+            failure.reason
+        );
     }
 
     /// A unix socket is created 0777 masked by the umask, and connecting to
