@@ -36,6 +36,21 @@ done
 echo "building…"
 cargo build --release -p nescope -p nescapture --manifest-path "$ROOT/Cargo.toml" >/dev/null
 
+# The whole method here is two independent instruments on the same frames, and
+# the second one is the compositor's own readback. While nescope's screenshot
+# path is commented out there is no second instrument, so this script cannot
+# make the comparison it exists for. Said here rather than fifty lines later as
+# "compositor readback produced no frames", which reads like a capture bug.
+#
+# Asked of the binary rather than hard-coded, so this comes back by itself on
+# the commit that brings the path back.
+if ! "$ROOT/target/release/nescope" --help 2>&1 | grep -q -- --screenshot-ipc; then
+  echo "this nescope has no --screenshot-ipc, so there is no readback to compare" >&2
+  echo "the encoded frames against; the GPU readback path in nescope is" >&2
+  echo "commented out. See apps/nescope/src/main.rs." >&2
+  exit 1
+fi
+
 LAYER="$ROOT/target/release/libnescapture_layer.so"
 MANIFEST_DIR="$WORK/implicit_layer.d"
 mkdir -p "$MANIFEST_DIR"

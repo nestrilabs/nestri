@@ -125,14 +125,11 @@ struct Args {
     )]
     input_ipc: String,
 
-    /// Path to the hub's screenshot IPC socket (nescope connects as client).
-    ///
-    /// Optional, and absent means the feature is simply off: it exists for
-    /// clients that are not games — a Steam login screen has no Vulkan frames
-    /// for `nescapture` to take, so its pixels can only come from here.
-    #[arg(long, env = "NESCOPE_SCREENSHOT_IPC")]
-    screenshot_ipc: Option<String>,
-
+    // There is no `--screenshot-ipc`. The path it named is commented out below,
+    // and an option that is accepted and does nothing is worse than one that is
+    // refused: a caller passing it gets no error, no capture, and nothing to
+    // read that says which. It comes back with the code, or not at all.
+    //
     /// GPU render device (e.g. /dev/dri/renderD128). Sets VK_DRIVER_FILES
     /// for the game so it uses the same GPU.
     #[arg(long, env = "NESCOPE_RENDER_DEVICE")]
