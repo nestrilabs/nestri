@@ -180,6 +180,10 @@ pub struct CapturedFrame {
     pub height: u32,
     pub vk_format: u32,
     pub vk_colorspace: u32,
+    /// Reserves the capture ring slot this frame's DMA-BUF lives in. Dropping
+    /// the frame — encoded, skipped, or abandoned — returns the slot, so the
+    /// present hook can never blit over a buffer the encoder is still reading.
+    pub slot: Option<crate::slots::SlotGuard>,
 }
 
 pub enum FrameSource {
@@ -739,6 +743,12 @@ fn encoder_thread(
             state.encoder.request_idr();
         }
 
+        // Each ring slot is a distinct DMA-BUF, so the importer caches an
+        // imported image per slot. Importing every frame under index 0 would
+        // have handed the encoder whichever buffer happened to be imported
+        // first, for every frame after it.
+        let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
+
         let result = match &mut raw.source {
             FrameSource::DmaBuf {
                 fd,
@@ -759,6 +769,7 @@ fn encoder_thread(
                         raw.height,
                         raw.vk_format,
                         frame_number,
+                        buffer_index,
                     ),
                     None => {
                         unsafe { libc::close(owned_fd) };
@@ -918,6 +929,7 @@ fn gpu_encode_frame(
     height: u32,
     vk_format: u32,
     frame_number: u32,
+    buffer_index: usize,
 ) -> Result<EncodeFuture> {
     use ash::vk;
 
@@ -931,7 +943,7 @@ fn gpu_encode_frame(
     };
 
     let (imported_image, needs_layout_transition) = importer
-        .import_or_reuse(0, width, height, bgra_vk_fmt, &[plane])
+        .import_or_reuse(buffer_index, width, height, bgra_vk_fmt, &[plane])
         .map_err(|e| anyhow::anyhow!("DmaBufImporter: {e}"))?;
 
     unsafe { libc::close(fd) };

@@ -209,6 +209,16 @@ pub type PFN_vkCreateFence = unsafe extern "system" fn(
 pub type PFN_vkDestroyFence =
     unsafe extern "system" fn(vk::Device, vk::Fence, *const vk::AllocationCallbacks);
 
+pub type PFN_vkCreateSemaphore = unsafe extern "system" fn(
+    vk::Device,
+    *const vk::SemaphoreCreateInfo,
+    *const vk::AllocationCallbacks,
+    *mut vk::Semaphore,
+) -> vk::Result;
+
+pub type PFN_vkDestroySemaphore =
+    unsafe extern "system" fn(vk::Device, vk::Semaphore, *const vk::AllocationCallbacks);
+
 pub type PFN_vkCreateCommandPool = unsafe extern "system" fn(
     vk::Device,
     *const vk::CommandPoolCreateInfo,
@@ -337,6 +347,10 @@ pub struct NextDeviceFn {
     // Phase 4 — synchronisation
     pub create_fence: PFN_vkCreateFence,
     pub destroy_fence: PFN_vkDestroyFence,
+    /// Core since 1.0, but loaded optionally so a driver that somehow fails to
+    /// resolve it degrades to no capture rather than to a null-pointer call.
+    pub create_semaphore: Option<PFN_vkCreateSemaphore>,
+    pub destroy_semaphore: Option<PFN_vkDestroySemaphore>,
     pub create_command_pool: PFN_vkCreateCommandPool,
     pub destroy_command_pool: PFN_vkDestroyCommandPool,
     pub reset_command_pool: PFN_vkResetCommandPool,

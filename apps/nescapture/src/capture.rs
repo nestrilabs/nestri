@@ -1,19 +1,17 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  capture.rs — Frame capture helpers
 //
-//  final_image is allocated with VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
+//  Each ring slot is allocated with VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
 //  so that after the GPU blit we can export an fd and import it into pixelforge's
 //  separate VkDevice for zero-copy hardware encoding via DmaBufImporter.
 //
-//  After ensure_final_image allocates (or re-allocates) the image, we query
-//  its SubresourceLayout and cache the row stride in DeviceState::final_stride.
-//  The stride is needed by the encoder to correctly import the LINEAR image.
+//  The row stride comes from the image's SubresourceLayout, queried once at
+//  allocation; the encoder needs it to import the LINEAR image correctly.
 // ─────────────────────────────────────────────────────────────────────────────
 
-use crate::state::{CB_STATE, CaptureResources, DEVICE_STATE};
+use crate::state::{CB_STATE, CAPTURE_SLOTS, CaptureRing, CaptureSlot, DEVICE_STATE};
 use ash::vk::{self, Handle};
 use std::os::raw::c_int;
-use std::sync::atomic::Ordering;
 
 fn make_subresource_range() -> vk::ImageSubresourceRange {
     vk::ImageSubresourceRange {
@@ -216,12 +214,8 @@ unsafe fn alloc_image(
 
 // ── Stride query ──────────────────────────────────────────────────────────────
 
-/// Query and cache the row stride of final_image.
-/// Returns stride in bytes; 0 on failure.
-pub unsafe fn query_and_cache_final_stride(
-    ds: &crate::state::DeviceState,
-    image: vk::Image,
-) -> u32 {
+/// Row stride in bytes of a LINEAR image, or 0 on failure.
+pub unsafe fn query_stride(ds: &crate::state::DeviceState, image: vk::Image) -> u32 {
     let subresource = vk::ImageSubresource {
         aspect_mask: vk::ImageAspectFlags::COLOR,
         mip_level: 0,
@@ -235,9 +229,7 @@ pub unsafe fn query_and_cache_final_stride(
         depth_pitch: 0,
     };
     unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &subresource, &mut layout) };
-    let stride = layout.row_pitch as u32;
-    ds.final_stride.store(stride, Ordering::Relaxed);
-    stride
+    layout.row_pitch as u32
 }
 
 // ── DMA-BUF fd export ─────────────────────────────────────────────────────────
@@ -296,28 +288,181 @@ pub unsafe fn ensure_hudless_image(ds: &crate::state::DeviceState, w: u32, h: u3
     }
 }
 
-pub unsafe fn ensure_final_image(ds: &crate::state::DeviceState, w: u32, h: u32, f: vk::Format) {
-    let mut ig = ds.final_image.lock().unwrap();
-    let mut mg = ds.final_memory.lock().unwrap();
-    let mut sg = ds.final_size.lock().unwrap();
-    if let (Some(i), Some(m)) = (*ig, *mg) {
-        let (ew, eh, ef) = *sg;
-        if ew >= w && eh >= h && ef == f {
-            return;
+// ── Capture ring lifecycle ────────────────────────────────────────────────────
+
+/// Bring `ring` up to a ring able to hold `w`x`h` `f` frames, building or
+/// rebuilding it as needed. Returns false when the caller should skip this
+/// frame.
+///
+/// A rebuild destroys images the encoder may still be reading, so it only
+/// happens when every slot has come back. Resolution changes are rare and one
+/// dropped frame at a resize is not worth a use-after-free.
+unsafe fn ensure_capture_ring(
+    ds: &crate::state::DeviceState,
+    ring: &mut Option<CaptureRing>,
+    w: u32,
+    h: u32,
+    f: vk::Format,
+    queue_family: u32,
+) -> bool {
+    if let Some(existing) = ring.as_ref() {
+        let (ew, eh, ef) = existing.size;
+        if ew >= w && eh >= h && ef == f && existing.queue_family == queue_family {
+            return true;
         }
-        unsafe { (ds.fp.destroy_image)(ds.raw, i, std::ptr::null()) };
-        unsafe { (ds.fp.free_memory)(ds.raw, m, std::ptr::null()) };
-        *ig = None;
-        *mg = None;
-        ds.final_stride.store(0, Ordering::Relaxed);
+        if !ds.capture_slots.all_free() {
+            return false;
+        }
+        if let Some(old) = ring.take() {
+            unsafe { destroy_capture_ring(ds, old) };
+        }
     }
-    if let Some((i, m)) = unsafe { allocate_dmabuf_image(ds, w, h, f, "final") } {
-        // Query stride immediately after allocation so it's available on first frame.
-        unsafe { query_and_cache_final_stride(ds, i) };
-        *ig = Some(i);
-        *mg = Some(m);
-        *sg = (w, h, f);
+    match unsafe { create_capture_ring(ds, w, h, f, queue_family) } {
+        Some(fresh) => {
+            *ring = Some(fresh);
+            true
+        }
+        None => false,
     }
+}
+
+unsafe fn create_capture_ring(
+    ds: &crate::state::DeviceState,
+    w: u32,
+    h: u32,
+    f: vk::Format,
+    queue_family: u32,
+) -> Option<CaptureRing> {
+    let pci = vk::CommandPoolCreateInfo {
+        s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
+        // Was hard-coded to family 0, which is only correct when the game
+        // happens to present on family 0.
+        queue_family_index: queue_family,
+        _marker: std::marker::PhantomData,
+    };
+    let mut command_pool = vk::CommandPool::null();
+    if unsafe { (ds.fp.create_command_pool)(ds.raw, &pci, std::ptr::null(), &mut command_pool) }
+        != vk::Result::SUCCESS
+    {
+        return None;
+    }
+
+    let ai = vk::CommandBufferAllocateInfo {
+        s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+        p_next: std::ptr::null(),
+        command_pool,
+        level: vk::CommandBufferLevel::PRIMARY,
+        command_buffer_count: CAPTURE_SLOTS as u32,
+        _marker: std::marker::PhantomData,
+    };
+    let mut cbs = [vk::CommandBuffer::null(); CAPTURE_SLOTS];
+    if unsafe { (ds.fp.allocate_command_buffers)(ds.raw, &ai, cbs.as_mut_ptr()) }
+        != vk::Result::SUCCESS
+    {
+        unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
+        return None;
+    }
+
+    // Pre-signalled: the first wait on a fresh slot must return immediately.
+    let fci = vk::FenceCreateInfo {
+        s_type: vk::StructureType::FENCE_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::FenceCreateFlags::SIGNALED,
+        _marker: std::marker::PhantomData,
+    };
+
+    let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
+    for (i, &command_buffer) in cbs.iter().enumerate() {
+        let Some((image, memory)) = (unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") })
+        else {
+            unsafe { destroy_partial_ring(ds, command_pool, slots) };
+            return None;
+        };
+        let mut fence = vk::Fence::null();
+        if unsafe { (ds.fp.create_fence)(ds.raw, &fci, std::ptr::null(), &mut fence) }
+            != vk::Result::SUCCESS
+        {
+            unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+            unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+            unsafe { destroy_partial_ring(ds, command_pool, slots) };
+            return None;
+        }
+        let stride = unsafe { query_stride(ds, image) };
+        // Export once. Each frame hands the encoder a dup of this fd, which
+        // costs a file-descriptor clone instead of a kernel export per frame.
+        let dmabuf_fd = unsafe { get_dmabuf_fd(ds, memory) }.unwrap_or(-1);
+        if dmabuf_fd < 0 {
+            log::warn!("capture slot {i}: no DMA-BUF export, falling back to CPU readback");
+        }
+        slots.push(CaptureSlot {
+            image,
+            memory,
+            dmabuf_fd,
+            stride,
+            command_buffer,
+            fence,
+        });
+    }
+
+    log::info!(
+        "capture ring: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}",
+        f.as_raw()
+    );
+    Some(CaptureRing {
+        command_pool,
+        slots,
+        size: (w, h, f),
+        queue_family,
+        present_wait: Vec::new(),
+        retired: Vec::new(),
+    })
+}
+
+unsafe fn destroy_partial_ring(
+    ds: &crate::state::DeviceState,
+    command_pool: vk::CommandPool,
+    slots: Vec<CaptureSlot>,
+) {
+    unsafe {
+        for slot in slots {
+            (ds.fp.destroy_fence)(ds.raw, slot.fence, std::ptr::null());
+            (ds.fp.destroy_image)(ds.raw, slot.image, std::ptr::null());
+            (ds.fp.free_memory)(ds.raw, slot.memory, std::ptr::null());
+            if slot.dmabuf_fd >= 0 {
+                libc::close(slot.dmabuf_fd);
+            }
+        }
+        (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null());
+    }
+}
+
+/// Tear a ring down. The caller must have established that no slot is in
+/// flight; the fence wait here only covers work already submitted.
+pub unsafe fn destroy_capture_ring(ds: &crate::state::DeviceState, ring: CaptureRing) {
+    let fences: Vec<vk::Fence> = ring.slots.iter().map(|s| s.fence).collect();
+    if !fences.is_empty() {
+        unsafe {
+            let _ = (ds.fp.wait_for_fences)(
+                ds.raw,
+                fences.len() as u32,
+                fences.as_ptr(),
+                vk::TRUE,
+                5_000_000_000,
+            );
+        }
+    }
+    unsafe {
+        if let Some(destroy) = ds.fp.destroy_semaphore {
+            for &sem in ring.present_wait.iter().chain(ring.retired.iter()) {
+                if sem != vk::Semaphore::null() {
+                    destroy(ds.raw, sem, std::ptr::null());
+                }
+            }
+        }
+    }
+    unsafe { destroy_partial_ring(ds, ring.command_pool, ring.slots) };
 }
 
 // ── HUDless command injection ─────────────────────────────────────────────────
@@ -451,57 +596,85 @@ pub unsafe fn inject_hudless_copy(cb: vk::CommandBuffer, dk: usize) {
     }
 }
 
-// ── Final frame GPU blit (swapchain → final_image) ────────────────────────────
+// ── Final frame GPU blit (swapchain → capture slot) ──────────────────────────
 
-pub unsafe fn capture_final_frame(
+/// What a successful capture hands back to the present hook.
+pub struct CaptureSubmission {
+    /// Keeps the ring slot reserved until the encoder is finished with it.
+    pub slot: crate::slots::SlotGuard,
+    /// The semaphore the present must now wait on. The application's own wait
+    /// semaphores were consumed by the blit submission, so presenting on them
+    /// again would be a double wait.
+    pub present_wait: vk::Semaphore,
+}
+
+/// Blit the presented swapchain image into a ring slot, ahead of the present.
+///
+/// Two orderings have to hold and neither did before.
+///
+/// The blit must not read the swapchain image before the game has finished
+/// rendering into it. The game signals that with the semaphores it attached to
+/// `VkPresentInfoKHR`, so the blit waits on exactly those.
+///
+/// The game must not render into that image again before the blit has read it.
+/// Presentation is what releases the image back to the application, so the
+/// present is made to wait on a semaphore the blit signals. The old code
+/// submitted the blit from a worker thread after `vkQueuePresentKHR` had
+/// already returned, which guaranteed neither.
+///
+/// Returns `None` when the frame cannot be captured, in which case the caller
+/// must present unmodified — the application's semaphores have not been touched.
+pub unsafe fn capture_present_frame(
     ds: &crate::state::DeviceState,
     queue: vk::Queue,
     si: vk::Image,
     fmt: vk::Format,
     ext: vk::Extent2D,
-    _frame: u64,
-) {
+    image_index: usize,
+    app_waits: &[vk::Semaphore],
+) -> Option<CaptureSubmission> {
     if ext.width == 0 || ext.height == 0 {
-        return;
+        return None;
     }
-    unsafe { ensure_final_image(ds, ext.width, ext.height, fmt) };
-    let fi = match *ds.final_image.lock().unwrap() {
-        Some(i) => i,
-        None => return,
-    };
+    if !ds
+        .swapchain_transfer_src
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return None;
+    }
 
-    // ── Lazy-init reusable capture resources ──────────────────────
-    let mut res_guard = ds.capture_resources.lock().unwrap();
-    let res = match res_guard.as_mut() {
-        Some(r) => r,
-        None => match unsafe { create_capture_resources(ds) } {
-            Some(r) => {
-                *res_guard = Some(r);
-                res_guard.as_mut().unwrap()
-            }
-            None => return,
-        },
-    };
+    // A command buffer may only be submitted to the family its pool was created
+    // for. An unknown queue means one the layer never saw through
+    // vkGetDeviceQueue, so there is nothing safe to assume about it.
+    let queue_family = *crate::state::QUEUE_TO_FAMILY.get(&queue.as_raw())?;
 
-    let idx = res.current;
-    let cb = res.command_buffers[idx];
-    let fence = res.fences[idx];
+    let mut ring_guard = ds.capture_ring.lock().ok()?;
+    if !unsafe {
+        ensure_capture_ring(ds, &mut ring_guard, ext.width, ext.height, fmt, queue_family)
+    } {
+        return None;
+    }
+    let ring = ring_guard.as_mut()?;
 
-    // Wait for THIS slot's previous use to finish (not the other slot).
-    // Use a short timeout — if the GPU is busy with game rendering, skip
-    // this capture instead of stalling the game's render loop.
+    let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
+
+    // Never blocks: a frame with no free slot is one the encoder has not caught
+    // up with, and stalling the game's present to wait for it would be worse
+    // than skipping it.
+    let guard = ds.capture_slots.try_acquire()?;
+    let slot = ring.slots.get(guard.index())?;
+    let cb = slot.command_buffer;
+    let fence = slot.fence;
+    let fi = slot.image;
+
+    // A free slot's fence is already signalled — the capture worker waits on it
+    // before the encoder ever sees the frame. This covers the paths that
+    // abandon a frame and return the slot without that wait.
     unsafe {
-        let result = (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000); // 1ms timeout
-        if result != vk::Result::SUCCESS {
-            // GPU not ready — skip this capture, try next slot
-            res.current = (idx + 1) % 4;
-            return;
+        if (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 2_000_000) != vk::Result::SUCCESS {
+            return None;
         }
         let _ = (ds.fp.reset_fences)(ds.raw, 1, &fence);
-    }
-
-    // Reset and re-record
-    unsafe {
         let _ = (ds.fp.reset_command_buffer)(cb, vk::CommandBufferResetFlags::empty());
     }
 
@@ -513,7 +686,7 @@ pub unsafe fn capture_final_frame(
         _marker: std::marker::PhantomData,
     };
     if unsafe { (ds.fp.begin_command_buffer)(cb, &bi) } != vk::Result::SUCCESS {
-        return;
+        return None;
     }
 
     let b1 = image_barrier!(
@@ -591,7 +764,7 @@ pub unsafe fn capture_final_frame(
         (ds.fp.cmd_pipeline_barrier)(
             cb,
             vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::TOP_OF_PIPE,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
             vk::DependencyFlags::empty(),
             0,
             std::ptr::null(),
@@ -603,87 +776,113 @@ pub unsafe fn capture_final_frame(
     }
 
     if unsafe { (ds.fp.end_command_buffer)(cb) } != vk::Result::SUCCESS {
-        return;
+        return None;
     }
 
+    let wait_stages = vec![vk::PipelineStageFlags::TRANSFER; app_waits.len()];
     let subi = vk::SubmitInfo {
         s_type: vk::StructureType::SUBMIT_INFO,
         p_next: std::ptr::null(),
-        wait_semaphore_count: 0,
-        p_wait_semaphores: std::ptr::null(),
-        p_wait_dst_stage_mask: std::ptr::null(),
+        wait_semaphore_count: app_waits.len() as u32,
+        p_wait_semaphores: if app_waits.is_empty() {
+            std::ptr::null()
+        } else {
+            app_waits.as_ptr()
+        },
+        p_wait_dst_stage_mask: if wait_stages.is_empty() {
+            std::ptr::null()
+        } else {
+            wait_stages.as_ptr()
+        },
         command_buffer_count: 1,
         p_command_buffers: &cb,
-        signal_semaphore_count: 0,
-        p_signal_semaphores: std::ptr::null(),
+        signal_semaphore_count: 1,
+        p_signal_semaphores: &present_wait,
         _marker: std::marker::PhantomData,
     };
 
     unsafe {
         if (ds.fp.queue_submit)(queue, 1, &subi, fence) != vk::Result::SUCCESS {
             log::warn!("capture queue_submit failed — frame skipped");
+            // The submit never happened, so nothing waited on the application's
+            // semaphores and nothing will signal ours. Re-signal the fence by
+            // hand so the slot is reusable, and let the caller present as the
+            // application intended.
             let _ = (ds.fp.reset_fences)(ds.raw, 1, &fence);
-            return;
-        }
-    }
-
-    // Toggle to the next slot
-    res.current = (idx + 1) % 4;
-}
-
-unsafe fn create_capture_resources(ds: &crate::state::DeviceState) -> Option<CaptureResources> {
-    let pci = vk::CommandPoolCreateInfo {
-        s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
-        p_next: std::ptr::null(),
-        flags: vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER, // allow per-cb reset
-        queue_family_index: 0,
-        _marker: std::marker::PhantomData,
-    };
-    let mut cp = vk::CommandPool::null();
-    if unsafe { (ds.fp.create_command_pool)(ds.raw, &pci, std::ptr::null(), &mut cp) }
-        != vk::Result::SUCCESS
-    {
-        return None;
-    }
-
-    let ai = vk::CommandBufferAllocateInfo {
-        s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
-        p_next: std::ptr::null(),
-        command_pool: cp,
-        level: vk::CommandBufferLevel::PRIMARY,
-        command_buffer_count: 4,
-        _marker: std::marker::PhantomData,
-    };
-    let mut cbs = [vk::CommandBuffer::null(); 4];
-    if unsafe { (ds.fp.allocate_command_buffers)(ds.raw, &ai, cbs.as_mut_ptr()) }
-        != vk::Result::SUCCESS
-    {
-        unsafe { (ds.fp.destroy_command_pool)(ds.raw, cp, std::ptr::null()) };
-        return None;
-    }
-
-    // Create fences PRE-SIGNALED so the first wait_for_fences returns immediately
-    let fci = vk::FenceCreateInfo {
-        s_type: vk::StructureType::FENCE_CREATE_INFO,
-        p_next: std::ptr::null(),
-        flags: vk::FenceCreateFlags::SIGNALED,
-        _marker: std::marker::PhantomData,
-    };
-    let mut fences = [vk::Fence::null(); 4];
-    for f in &mut fences {
-        if unsafe { (ds.fp.create_fence)(ds.raw, &fci, std::ptr::null(), f) } != vk::Result::SUCCESS
-        {
-            unsafe { (ds.fp.destroy_command_pool)(ds.raw, cp, std::ptr::null()) };
             return None;
         }
     }
 
-    Some(CaptureResources {
-        command_pool: cp,
-        command_buffers: cbs,
-        fences,
-        current: 0,
+    Some(CaptureSubmission {
+        slot: guard,
+        present_wait,
     })
+}
+
+/// Set aside the semaphore a failed present was given.
+///
+/// A present that returns an error may or may not have waited on it, so it can
+/// neither be signalled again nor destroyed while it might still be pending.
+/// The next capture for that image index creates a fresh one.
+pub fn retire_present_semaphore(ds: &crate::state::DeviceState, image_index: usize) {
+    let Ok(mut ring_guard) = ds.capture_ring.lock() else {
+        return;
+    };
+    let Some(ring) = ring_guard.as_mut() else {
+        return;
+    };
+    if let Some(slot) = ring.present_wait.get_mut(image_index) {
+        let sem = std::mem::replace(slot, vk::Semaphore::null());
+        if sem != vk::Semaphore::null() {
+            ring.retired.push(sem);
+        }
+    }
+}
+
+/// Set aside every per-image semaphore, for a swapchain that is going away.
+pub fn retire_all_present_semaphores(ds: &crate::state::DeviceState) {
+    let Ok(mut ring_guard) = ds.capture_ring.lock() else {
+        return;
+    };
+    let Some(ring) = ring_guard.as_mut() else {
+        return;
+    };
+    for sem in std::mem::take(&mut ring.present_wait) {
+        if sem != vk::Semaphore::null() {
+            ring.retired.push(sem);
+        }
+    }
+}
+
+/// The semaphore for `image_index`, created on first use.
+///
+/// One per swapchain image rather than one per ring slot: a binary semaphore
+/// cannot be signalled again until its previous wait has completed, and the
+/// application reacquiring the image is the only evidence of that available
+/// from inside the layer.
+unsafe fn ensure_present_semaphore(
+    ds: &crate::state::DeviceState,
+    ring: &mut CaptureRing,
+    image_index: usize,
+) -> Option<vk::Semaphore> {
+    let create = ds.fp.create_semaphore?;
+    if ring.present_wait.len() <= image_index {
+        ring.present_wait.resize(image_index + 1, vk::Semaphore::null());
+    }
+    if ring.present_wait[image_index] == vk::Semaphore::null() {
+        let ci = vk::SemaphoreCreateInfo {
+            s_type: vk::StructureType::SEMAPHORE_CREATE_INFO,
+            p_next: std::ptr::null(),
+            flags: vk::SemaphoreCreateFlags::empty(),
+            _marker: std::marker::PhantomData,
+        };
+        let mut sem = vk::Semaphore::null();
+        if unsafe { create(ds.raw, &ci, std::ptr::null(), &mut sem) } != vk::Result::SUCCESS {
+            return None;
+        }
+        ring.present_wait[image_index] = sem;
+    }
+    Some(ring.present_wait[image_index])
 }
 
 // ── CPU pixel readback (fallback when DMA-BUF unavailable) ───────────────────

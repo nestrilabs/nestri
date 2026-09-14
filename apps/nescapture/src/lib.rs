@@ -35,6 +35,7 @@ mod pacing;
 mod pipeline;
 mod present;
 mod shader;
+mod slots;
 mod state;
 mod swapchain;
 
