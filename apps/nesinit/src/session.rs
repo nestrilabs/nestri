@@ -369,6 +369,30 @@ where
     W: Workload,
     Wr: AsyncWrite + Unpin,
 {
+    // **A workload may not be the services' user.** Two things break at once if
+    // it is. The workload could replace a socket one of the services listens
+    // on and answer in its place -- which for the address a client is told to
+    // connect to means answering for the session. And the refusal below is by
+    // uid, so marking the workload untrusted marks the real hub untrusted too,
+    // and the session becomes unreachable by its own defence.
+    //
+    // Refused rather than silently moved to another uid: a launch that runs as
+    // somebody other than who it named is a launch whose files land in the
+    // wrong place, which is a worse day than a launch that did not start.
+    if exec.uid == crate::services::SERVICE_UID {
+        refuse(
+            writer,
+            id,
+            &format!(
+                "a launch may not run as uid {}: that is the box's own service \
+                 user, and a workload sharing it can answer for the session",
+                crate::services::SERVICE_UID
+            ),
+        )
+        .await?;
+        return Ok(None);
+    }
+
     // Before the workload exists, so there is no window in which it is running
     // and something else would still be trusted to serve this session's
     // address.
@@ -988,6 +1012,58 @@ mod tests {
         // Still answering, which is the assertion.
         caller.say(&HostToGuest::Shutdown).await;
         assert_eq!(session.await.unwrap().0, Outcome::Shutdown);
+    }
+
+    /// The one uid a launch may not ask for is the one the box's own services
+    /// hold. A workload running as them can replace a socket they listen on and
+    /// answer for the session; and because the carrier refuses peers by uid,
+    /// marking the workload untrusted marks the real hub untrusted with it.
+    ///
+    /// Refused, and nothing is started: a launch moved quietly to another user
+    /// writes its files somewhere nobody asked for.
+    #[tokio::test]
+    async fn a_launch_may_not_run_as_the_services_own_user() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+        caller.expect_booted().await;
+
+        let HostToGuest::Launch { id, mut exec, .. } = launch("l-1") else {
+            unreachable!()
+        };
+        exec.uid = crate::services::SERVICE_UID;
+        exec.gid = crate::services::SERVICE_GID;
+        caller
+            .say(&HostToGuest::Launch {
+                id,
+                exec,
+                on_exit: OnExit { terminal: true },
+            })
+            .await;
+
+        let GuestToHost::StartFailed { id, reason } = caller.expect().await else {
+            panic!("a launch as the service user was accepted")
+        };
+        assert_eq!(id, LaunchId::new("l-1"));
+        assert!(
+            reason.contains(&crate::services::SERVICE_UID.to_string()),
+            "the refusal names the uid it is about: {reason}"
+        );
+
+        caller.say(&HostToGuest::Shutdown).await;
+        let (outcome, workload, _) = session.await.unwrap();
+        assert_eq!(outcome, Outcome::Shutdown, "the refusal ended the box");
+        assert!(
+            workload.started.is_empty(),
+            "the workload was started anyway"
+        );
     }
 
     #[tokio::test]
