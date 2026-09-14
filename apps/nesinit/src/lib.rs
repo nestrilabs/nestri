@@ -10,7 +10,7 @@
 // ref(d-0033)
 //
 // It is also the box's only init: there is no service manager in the image, so
-// the box's own services come up from a table in this binary. ref(d-0063)
+// the box's own services come up from a table in this binary. ref(d-0064)
 
 pub mod filesystems;
 pub mod payload;

@@ -16,7 +16,7 @@
 // the box's service stack, says so, and then takes commands for as long as the
 // box lives. So the descriptor describes the *box* — which shares are mounted
 // where — and a command describes an occupant. A box may be launched into many
-// times. ref(d-0063)
+// times. ref(d-0064)
 //
 // That is why every launch carries an id and every event about a launch carries
 // it back. Without one, a second launch's exit is indistinguishable from the
@@ -141,7 +141,7 @@ pub struct OnExit {
     ///
     /// It rides on the launch rather than on the descriptor, because a box that
     /// can be launched into repeatedly cannot have one answer to this fixed at
-    /// boot. ref(d-0063)
+    /// boot. ref(d-0064)
     pub terminal: bool,
 }
 
@@ -150,7 +150,7 @@ pub struct OnExit {
 /// Sent once, immediately after the handshake, and read once. Deliberately not
 /// a conversation: this much is a document, and a document cannot half-arrive.
 /// What runs *in* the box is a conversation, and a separate one — see
-/// [`HostToGuest::Launch`]. ref(d-0063)
+/// [`HostToGuest::Launch`]. ref(d-0064)
 ///
 /// An empty `mounts` is legitimate. A box with nothing mounted still boots and
 /// still brings up its services.
@@ -239,7 +239,7 @@ pub enum GuestToHost {
     /// **Reported, never repaired.** Nothing else in the guest is watching
     /// these, so a death that is not said here is a box that looks healthy and
     /// cannot work. Restarting one is a decision for whoever can see whether
-    /// restarting is repair or a loop, and that is not this end. ref(d-0063)
+    /// restarting is repair or a loop, and that is not this end. ref(d-0064)
     ServiceDied {
         name: String,
         #[serde(flatten)]
@@ -280,7 +280,7 @@ pub enum HostToGuest {
     /// The caller mints `id` and every message about this launch carries it
     /// back. `on_exit` belongs here rather than on the descriptor because a box
     /// that can be launched into repeatedly has one answer per launch, not one
-    /// per boot. ref(d-0063)
+    /// per boot. ref(d-0064)
     Launch {
         id: LaunchId,
         exec: Exec,
@@ -293,7 +293,7 @@ pub enum HostToGuest {
     /// **Defined as a kill followed by a launch of the same `Exec`, and nothing
     /// more.** No retry, no backoff, no policy of any kind in the guest — it
     /// exists as one message only because a caller sending two has the same
-    /// effect with a worse race in it. The relaunch keeps the id. ref(d-0063)
+    /// effect with a worse race in it. The relaunch keeps the id. ref(d-0064)
     Restart { id: LaunchId },
     /// Shut the guest down.
     Shutdown,

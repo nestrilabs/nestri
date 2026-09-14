@@ -132,7 +132,7 @@ const EARLY: &[Early] = &[
     // them. The image prepares nothing here now — the host names every share
     // and every target — so there is nothing left to hide, and the rule had
     // become a guard on a hazard that was deleted with the image that had it.
-    // ref(d-0063)
+    // ref(d-0064)
     //
     // Small on purpose. Everything real is mounted *over* this, so what remains
     // is a handful of empty directories; the cap matters for the case where a

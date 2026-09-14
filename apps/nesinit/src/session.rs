@@ -3,7 +3,7 @@
 // The shape of the exchange, and none of it is negotiable from this side: the
 // guest speaks first with its version, is handed one document describing the
 // box, brings the box's own services up, says so — and then takes commands for
-// as long as the box lives. ref(d-0063)
+// as long as the box lives. ref(d-0064)
 //
 // It is not a supervisor. Nothing here restarts anything of its own accord: a
 // workload's exit is reported, a service's death is reported, and starting
@@ -190,7 +190,7 @@ where
                 // Terminal is the launch's own answer, not this end's. A
                 // non-terminal exit leaves the box up and waiting to be
                 // launched into again, which is the whole point of the box
-                // outliving what runs in it. ref(d-0063)
+                // outliving what runs in it. ref(d-0064)
                 if ended.on_exit.terminal {
                     return Ok(Outcome::WorkloadExited(exit));
                 }
@@ -200,7 +200,7 @@ where
             Event::ServiceDied(Some(Died { name, exit })) => {
                 // Reported, never repaired. Nothing else in this guest is
                 // watching these, so a death that is not said here is a box
-                // that looks healthy and cannot work. ref(d-0063)
+                // that looks healthy and cannot work. ref(d-0064)
                 tracing::error!(service = %name, ?exit, "a service died");
                 send(&mut writer, &GuestToHost::ServiceDied { name, exit }).await?;
                 continue;

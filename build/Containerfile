@@ -11,7 +11,7 @@
 #  There is no service manager, no init scripts and no udev. `nesinit` is PID 1
 #  and brings the box's services up from a table compiled into it, which is why
 #  this image is plain Arch rather than a distribution chosen for its init.
-#  ref(d-0063)
+#  ref(d-0064)
 #
 #  Proton is here, and it is not a closed component: it is proton-cachyos built
 #  from source with --enable-wow64, which is what removes the need for a whole
@@ -217,7 +217,7 @@ RUN pacman-key --init
 # Gone with the init system: `openrc`, `udev`, `dbus-openrc`. `udev` is not
 # replaced by anything — `devtmpfs` creates the nodes and init sets the two
 # modes that matter, because the compositor takes input through Wayland and
-# opens nothing udev provides. ref(d-0063)
+# opens nothing udev provides. ref(d-0064)
 #
 # `logrotate` is also gone, and that one is not about the init system: a box
 # keeps no logs to rotate. What is worth reading leaves over the control
@@ -310,7 +310,7 @@ RUN test ! -e /usr/lib/systemd/systemd \
 # `groupadd -f`, because some of these already exist in the base image and the
 # rest have to. Nothing creates them at runtime any more: udev's rules did that
 # for device nodes, and with udev gone init sets the two modes that matter
-# directly. ref(d-0063)
+# directly. ref(d-0064)
 #
 # **Two users, and they must stay two.** `nestri` runs the services that come
 # with this image; `nesplay` is who a workload runs as. Sharing one user between

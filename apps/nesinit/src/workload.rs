@@ -238,7 +238,7 @@ impl Workload for Process {
 /// it, and every toolkit that wants one reads `XDG_RUNTIME_DIR`. A client that
 /// finds the variable unset does not fail loudly -- the compositor here falls
 /// back to `/tmp` -- so the sockets land somewhere world-writable and shared
-/// with every other user, and everything reports success. ref(d-0064)
+/// with every other user, and everything reports success. ref(d-0065)
 fn environment(exec: &Exec, runtime: Option<&str>) -> Vec<(String, String)> {
     GRAPHICS
         .iter()
@@ -432,7 +432,7 @@ mod tests {
     /// the environment is cleared, so a workload inherits no path to it. The
     /// compositor in this image falls back to `/tmp` rather than failing, which
     /// means the whole session comes up, works, and puts one user's sockets in
-    /// a directory every other user can write. ref(d-0064)
+    /// a directory every other user can write. ref(d-0065)
     #[test]
     fn the_launch_is_told_where_its_runtime_directory_is() {
         let env = environment(&exec_with(&[]), Some("/run/user/1001"));

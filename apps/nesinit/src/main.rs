@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     // going to: a hostname, the box's address, the directories a session's
     // sockets live in, and device nodes something is allowed to open. Before
     // the runtime, so the few processes it starts are waited for directly
-    // rather than racing the reaper into existence. ref(d-0063)
+    // rather than racing the reaper into existence. ref(d-0064)
     nesinit::system::prepare();
 
     // Both before anything is started, so nothing can be orphaned or scored

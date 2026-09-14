@@ -2,7 +2,7 @@
 // before anything is launched into it.
 //
 // There is no service manager in a box and no init scripts, so this is what
-// replaces them. ref(d-0063)
+// replaces them. ref(d-0064)
 //
 // # Why the table is in the binary
 //
@@ -609,7 +609,7 @@ mod tests {
     /// the path they are given.
     ///
     /// Two constants that have to agree and are written in two places is how
-    /// three of the four crossings in ref(d-0064) broke, so they are compared
+    /// three of the four crossings in ref(d-0065) broke, so they are compared
     /// here rather than trusted to stay in step.
     #[test]
     fn what_is_waited_for_is_where_the_others_are_told_to_look() {
