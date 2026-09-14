@@ -15,14 +15,14 @@ set -euo pipefail
 
 IMAGE="${1:?usage: mkimage.sh <image-tag> <output-path> [size]}"
 OUT="${2:?usage: mkimage.sh <image-tag> <output-path> [size]}"
-SIZE="${3:-5G}"
+SIZE="${3:-3G}"
 
 if [[ "$(id -u)" -eq 0 ]]; then
     echo "mkimage.sh should run as yourself, not root/sudo — see the comment at the top of this script" >&2
     exit 1
 fi
 
-CONTAINER_RT="$(command -v docker || command -v podman || true)"
+CONTAINER_RT="$(command -v podman || command -v docker || true)"
 [[ -n "$CONTAINER_RT" ]] || { echo "Neither docker nor podman found in PATH" >&2; exit 1; }
 
 sudo -v   # cache credentials once, rather than prompting mid-pipeline

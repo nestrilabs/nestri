@@ -1,0 +1,15 @@
+# This build's context is `build/`, not the repository root, because all it
+# needs is the two scripts beside the Containerfile.
+#
+# `output/` is the reason this file exists. It holds packed rootfs images —
+# multiple gigabytes each — and a build context is copied before the first
+# instruction runs, so without this line every Proton build starts by moving
+# the last one it produced.
+output
+
+# Nothing else here is an input to this build.
+etc
+README.md
+Makefile
+Containerfile
+Containerfile.containerignore

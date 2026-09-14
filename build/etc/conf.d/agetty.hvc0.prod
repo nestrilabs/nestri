@@ -1,3 +1,0 @@
-baud="115200"
-term_type="vt100"
-agetty_options="--noclear"

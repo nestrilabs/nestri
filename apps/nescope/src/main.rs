@@ -60,15 +60,15 @@ use smithay::reexports::wayland_server::Display;
 use smithay::wayland::socket::ListeningSocketSource;
 
 mod focus;
-mod gpu_readback;
+//mod gpu_readback;
 mod handlers;
 mod hdr;
 mod input;
 mod input_ipc;
 mod libinput_backend;
 mod protocols;
-mod screenshot_ipc;
-mod screenshot_wire;
+//mod screenshot_ipc;
+//mod screenshot_wire;
 mod state;
 mod xwm;
 
@@ -125,14 +125,11 @@ struct Args {
     )]
     input_ipc: String,
 
-    /// Path to the hub's screenshot IPC socket (nescope connects as client).
-    ///
-    /// Optional, and absent means the feature is simply off: it exists for
-    /// clients that are not games — a Steam login screen has no Vulkan frames
-    /// for `nescapture` to take, so its pixels can only come from here.
-    #[arg(long, env = "NESCOPE_SCREENSHOT_IPC")]
-    screenshot_ipc: Option<String>,
-
+    // There is no `--screenshot-ipc`. The path it named is commented out below,
+    // and an option that is accepted and does nothing is worse than one that is
+    // refused: a caller passing it gets no error, no capture, and nothing to
+    // read that says which. It comes back with the code, or not at all.
+    //
     /// GPU render device (e.g. /dev/dri/renderD128). Sets VK_DRIVER_FILES
     /// for the game so it uses the same GPU.
     #[arg(long, env = "NESCOPE_RENDER_DEVICE")]
@@ -317,13 +314,13 @@ fn main() {
     // The GPU to import dmabufs on for screenshots. Same device the game is
     // pointed at, because a buffer the game produced can only be imported on
     // the device that made it.
-    gpu_readback::set_render_device(args.render_device.clone());
+    //gpu_readback::set_render_device(args.render_device.clone());
 
     // ── Screenshot IPC source ────────────────────────────────────────────
     // Same dial-out shape as the input socket below, so the hub is the
     // listener and there is no race against a socket that does not exist yet.
     // Absent means the feature is off, which is the normal case for a game.
-    if let Some(path) = args.screenshot_ipc.clone() {
+    /*if let Some(path) = args.screenshot_ipc.clone() {
         match screenshot_ipc::ScreenshotIpcSource::connect(&path) {
             Ok(source) => match source.try_clone_writer() {
                 Ok(mut writer) => {
@@ -357,7 +354,7 @@ fn main() {
             },
             Err(e) => tracing::warn!("Failed to connect to screenshot IPC socket {path}: {e}"),
         }
-    }
+    }*/
 
     // ── Input IPC source ─────────────────────────────────────────────────
     // Connect to the neshub input socket and feed events into the
