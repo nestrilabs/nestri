@@ -47,9 +47,23 @@ RUN pacman -Syu --noconfirm --needed \
 # later on a missing vkd3d_d3dx9shader.h. Arch ships widl only inside `wine`,
 # which requires multilib; the AUR's mingw-w64-tools builds it standalone, so do
 # the same.
+#
+# The digest is not a formality. What is extracted here has its `configure` and
+# its makefiles run as root in this builder, and what they produce is copied
+# into the image a box runs -- so whoever can change these bytes can change what
+# runs on every host. SourceForge hands the request to whichever mirror it
+# likes, over a connection this builder does not pin, and the project publishes
+# no signature. The digest is the only thing that makes the mirror not matter.
+#
+# Taken 2026-09-14 from two different mirrors of v14.0.0, which agreed. A
+# mismatch here is not a thing to paper over by taking the new digest: it means
+# the bytes behind this exact version string changed, and that wants looking at
+# before it wants fixing.
 ARG MINGW_W64_VER=14.0.0
+ARG MINGW_W64_SHA256=6eaf921d9eb987d3820b364ea9775bc19b965ec81490b6fdd716526c28e1995c
 RUN curl -fL --retry 3 -o /tmp/mingw-w64.tar.bz2 \
         "https://sourceforge.net/projects/mingw-w64/files/mingw-w64/mingw-w64-release/mingw-w64-v${MINGW_W64_VER}.tar.bz2/download" \
+    && echo "${MINGW_W64_SHA256}  /tmp/mingw-w64.tar.bz2" | sha256sum -c - \
     && tar xf /tmp/mingw-w64.tar.bz2 -C /tmp \
     && for arch in i686-w64-mingw32 x86_64-w64-mingw32; do \
            mkdir -p "/tmp/widl-${arch}" && cd "/tmp/widl-${arch}" \
