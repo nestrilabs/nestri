@@ -338,6 +338,32 @@ impl Stack {
         self.running.iter().map(|(_, w)| w.pid).collect()
     }
 
+    /// Wait for a service to bind the socket it said it would.
+    ///
+    /// Blocking, on a worker of a multi-threaded runtime: bring-up is a sequence
+    /// and there is nothing else for this task to do while it waits. Polling rather
+    /// than an inotify watch because the directory may not exist yet either, and a
+    /// watch that has to handle that is more machinery than 15 seconds of `stat`.
+    ///
+    /// A failure is the same shape as a failure to start, so the required/optional
+    /// rule above decides what it costs: a required service that never binds refuses
+    /// the box, an optional one is stepped over.
+    fn await_ready(&self, service: &Service, before: Option<Identity>) -> Result<(), Failure> {
+        let Some(path) = service.ready else {
+            return Ok(());
+        };
+        // The watch for what was just started, so a service that dies during its
+        // own bring-up is not waited out for the full timeout.
+        let started = self.running.last().map(|(_, watched)| watched.pid);
+        await_path(
+            service.name,
+            path,
+            before,
+            &|| started.is_none_or(is_alive),
+            READY_TIMEOUT,
+        )
+    }
+
     fn spawn(&mut self, service: &'static Service) -> Result<(), Failure> {
         let Some((program, args)) = service.argv.split_first() else {
             return Err(Failure::new(format!(
@@ -420,7 +446,14 @@ impl Services for Stack {
         // start it is asking for.
         let table = self.table;
         for service in table {
-            match self.spawn(service).and_then(|()| await_ready(service)) {
+            // Taken before the service is started, because what makes a
+            // socket this service's is that it was not there -- or was a
+            // different file -- a moment ago.
+            let before = service.ready.and_then(identity_of);
+            match self
+                .spawn(service)
+                .and_then(|()| self.await_ready(service, before))
+            {
                 Ok(()) => {
                     tracing::info!(service = service.name, "started");
                     up.push(service.name.to_string());
@@ -476,37 +509,75 @@ impl Drop for Stack {
     }
 }
 
-/// Wait for a service to bind the socket it said it would.
+/// Which file is at a path, as the kernel tells them apart.
 ///
-/// Blocking, on a worker of a multi-threaded runtime: bring-up is a sequence
-/// and there is nothing else for this task to do while it waits. Polling rather
-/// than an inotify watch because the directory may not exist yet either, and a
-/// watch that has to handle that is more machinery than 15 seconds of `stat`.
+/// Device and inode rather than a modification time: a socket rebound in the
+/// same second has the same mtime, and `dbus-daemon` and `pipewire` both unlink
+/// and bind afresh, which is a new inode every time.
+type Identity = (u64, u64);
+
+fn identity_of(path: &str) -> Option<Identity> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).ok().map(|at| (at.dev(), at.ino()))
+}
+
+/// Whether a pid is still a process at all.
 ///
-/// A failure is the same shape as a failure to start, so the required/optional
-/// rule above decides what it costs: a required service that never binds refuses
-/// the box, an optional one is stepped over.
-fn await_ready(service: &Service) -> Result<(), Failure> {
-    let Some(path) = service.ready else {
-        return Ok(());
-    };
-    await_path(service.name, path, READY_TIMEOUT)
+/// Signal 0 sends nothing and only asks. A child that has exited and not yet
+/// been reaped still answers, which is why this is a second opinion rather than
+/// the only one -- the watch's own record is the first.
+fn is_alive(pid: i32) -> bool {
+    // SAFETY: two integers; a pid that has gone fails with ESRCH.
+    unsafe { libc::kill(pid, 0) == 0 }
 }
 
 /// The waiting itself, with the deadline passed in so a test can assert the
 /// giving-up without waiting out a real one.
-fn await_path(name: &str, path: &str, timeout: std::time::Duration) -> Result<(), Failure> {
+fn await_path(
+    name: &str,
+    path: &str,
+    before: Option<Identity>,
+    alive: &dyn Fn() -> bool,
+    timeout: std::time::Duration,
+) -> Result<(), Failure> {
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        if std::fs::metadata(path).is_ok() {
+        // A *different* file than the one that was there before it started.
+        //
+        // Existence alone is not readiness, because `/run` is not always empty
+        // when this starts. In a box it is a fresh tmpfs and anything at these
+        // paths is ours; run by hand -- how a guest that will not boot is
+        // debugged -- the host's own `/run` is underneath, and a socket left by
+        // a previous run, or the developer's own session bus, is sitting at
+        // exactly the path being waited on. Taking that as proof would start
+        // everything downstream against a socket with nothing behind it, and
+        // report the box initialized.
+        //
+        // Compared rather than deleted. Unlinking first would be the obvious
+        // fix and it is the dangerous one: outside a box that path can belong
+        // to something else that is alive and using it.
+        let now = identity_of(path);
+        if now.is_some() && now != before {
             return Ok(());
+        }
+        // A service that has already left will not bind anything, and waiting
+        // out the full timeout for it buys nothing but a slower failure.
+        if !alive() {
+            return Err(Failure::new(format!(
+                "{name} exited before it bound {path}"
+            )));
         }
         if std::time::Instant::now() >= deadline {
             // The path, because that is the actionable half: a service that
             // binds somewhere else is indistinguishable from one that never
             // bound, and only one of those is fixed by looking at the service.
+            let stale = if before.is_some() {
+                ", and what is there is the file that was there before it started"
+            } else {
+                ""
+            };
             return Err(Failure::new(format!(
-                "{name}: {path} did not appear within {}s of starting it",
+                "{name}: {path} did not appear within {}s of starting it{stale}",
                 timeout.as_secs()
             )));
         }
@@ -661,7 +732,86 @@ mod tests {
             .find(|s| s.name == "neshub")
             .expect("the hub is in the table");
         assert!(hub.ready.is_none());
-        await_ready(hub).expect("a service with nothing to wait for waited anyway");
+        let stack = Stack::from_table(Waiters::new(), STACK);
+        stack
+            .await_ready(hub, None)
+            .expect("a service with nothing to wait for waited anyway");
+    }
+
+    /// A file that was already there is not this service's socket.
+    ///
+    /// In a box `/run` is a fresh tmpfs and anything at these paths is ours.
+    /// Run by hand -- which is how a guest that will not boot is debugged --
+    /// the host's own `/run` is underneath, and a socket from a previous run or
+    /// the developer's own session bus sits at exactly the path being waited
+    /// on. Taking it as proof starts everything downstream against a socket
+    /// with nothing behind it and reports the box initialized.
+    #[test]
+    fn a_file_that_was_there_before_is_not_proof_that_anything_started() {
+        let dir = std::env::temp_dir().join(format!("nesinit-stale-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a directory to put a stale socket in");
+        let path = dir.join("bus");
+        std::fs::write(&path, b"a socket from a previous run").expect("the stale file");
+        let at = path.to_str().expect("a path");
+
+        let before = identity_of(at);
+        assert!(before.is_some(), "the stale file is there to be found");
+
+        let failure = await_path(
+            "dbus-session",
+            at,
+            before,
+            &|| true,
+            std::time::Duration::from_millis(50),
+        )
+        .expect_err("a file from before was taken as this service's socket");
+        assert!(
+            failure.reason.contains("before it started"),
+            "the reason has to say which of the two failures this is: {}",
+            failure.reason
+        );
+
+        // Replaced, which is what binding a unix socket does: both daemons
+        // here unlink and bind afresh, so the inode is new.
+        std::fs::remove_file(&path).expect("removing the stale file");
+        std::fs::write(&path, b"the new one").expect("the new file");
+        await_path(
+            "dbus-session",
+            at,
+            before,
+            &|| true,
+            std::time::Duration::from_millis(50),
+        )
+        .expect("a different file at the path is this service's socket");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A service that died during its own bring-up is not waited out.
+    ///
+    /// The timeout is fifteen seconds and a dead service will never bind, so
+    /// the box would take that long to say something it already knew -- once
+    /// per service, in order.
+    #[test]
+    fn a_service_that_has_already_left_is_not_waited_for() {
+        let began = std::time::Instant::now();
+        let failure = await_path(
+            "pipewire",
+            "/nonexistent/pipewire-0",
+            None,
+            &|| false,
+            std::time::Duration::from_secs(15),
+        )
+        .expect_err("a dead service was treated as ready");
+        assert!(
+            failure.reason.contains("exited before it bound"),
+            "{}",
+            failure.reason
+        );
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(1),
+            "it waited out the timeout for a service that had already gone"
+        );
     }
 
     /// A socket that never appears is a failure, not a wait that ends quietly.
@@ -674,6 +824,8 @@ mod tests {
         let failure = await_path(
             "pipewire",
             "/nonexistent/pipewire-0",
+            None,
+            &|| true,
             std::time::Duration::from_millis(50),
         )
         .expect_err("a socket that is not there was treated as ready");
