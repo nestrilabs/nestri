@@ -399,6 +399,7 @@ impl PipelineHandle {
             width: config.width as u16,
             height: config.height as u16,
             encode_ms: encode_avg_ms.clone(),
+            idr_requested: idr_requested.clone(),
         };
         thread::Builder::new()
             .name("nescapture-ipc".into())
@@ -782,7 +783,17 @@ fn encoder_thread(
         match result {
             Err(e) => log::warn!("encode frame {frame_number}: {e}"),
             Ok(future) => {
-                let _ = encoded_tx.try_send(future);
+                // Blocking, deliberately. Dropping an encoded frame does not
+                // just waste the encode — it breaks the reference chain. The
+                // encoder's DPB believes the frame exists and codes later
+                // frames against it, so a decoder that never receives it shows
+                // corruption until the next IDR. Blocking here pushes back
+                // through `frame_rx` to `push_frame`, where a drop is free:
+                // that frame never entered the encoder and no later frame
+                // refers to it.
+                if encoded_tx.send(future).is_err() {
+                    break;
+                }
             }
         }
 
@@ -1042,6 +1053,8 @@ struct IpcConfig {
     width: u16,
     height: u16,
     encode_ms: Arc<AtomicU32>,
+    /// Shared with the encoder thread, which honours it on the next frame.
+    idr_requested: Arc<AtomicBool>,
 }
 
 fn ipc_send_thread(
@@ -1149,7 +1162,11 @@ fn ipc_send_thread(
                     log::warn!("IPC send failed ({} frames dropped): {e}", error_count);
                     last_warn = Instant::now();
                 }
-                // Socket disconnected — reconnect
+                // Socket disconnected — reconnect. The frames lost while it
+                // was down are gone from the reference chain, so ask for an
+                // IDR rather than resuming into a stream the receiver cannot
+                // reconstruct.
+                cfg.idr_requested.store(true, Ordering::Relaxed);
                 log::warn!("IPC disconnected, reconnecting...");
                 break;
             }
