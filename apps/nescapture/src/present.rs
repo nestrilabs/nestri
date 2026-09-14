@@ -293,6 +293,7 @@ pub fn start_capture_worker(ds_key: usize, capture_rx: mpsc::Receiver<CaptureJob
                         height: job.height,
                         vk_format: job.sc_fmt.as_raw() as u32,
                         vk_colorspace: ds.swapchain_colorspace.load(Ordering::Relaxed),
+                        present_time: job.present_time,
                         slot: Some(job.slot),
                     });
                 }

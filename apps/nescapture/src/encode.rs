@@ -180,10 +180,19 @@ pub struct CapturedFrame {
     pub height: u32,
     pub vk_format: u32,
     pub vk_colorspace: u32,
+    /// When the game presented this frame. Carried all the way to the wire so
+    /// the timestamp describes the frame rather than the encoder's backlog.
+    pub present_time: Instant,
     /// Reserves the capture ring slot this frame's DMA-BUF lives in. Dropping
     /// the frame — encoded, skipped, or abandoned — returns the slot, so the
     /// present hook can never blit over a buffer the encoder is still reading.
     pub slot: Option<crate::slots::SlotGuard>,
+}
+
+/// An encode in flight, with the time of the present it came from.
+struct EncodedFrame {
+    future: EncodeFuture,
+    present_time: Instant,
 }
 
 pub enum FrameSource {
@@ -357,7 +366,7 @@ impl PipelineHandle {
             .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
 
         let (frame_tx, frame_rx) = mpsc::sync_channel::<CapturedFrame>(2);
-        let (encoded_tx, encoded_rx) = mpsc::sync_channel::<EncodeFuture>(2);
+        let (encoded_tx, encoded_rx) = mpsc::sync_channel::<EncodedFrame>(2);
         let (reconfig_tx, reconfig_rx) = mpsc::channel::<EncodeSettingsChange>();
         let shutdown = Arc::new(AtomicBool::new(false));
         let idr_requested = Arc::new(AtomicBool::new(false));
@@ -404,6 +413,7 @@ impl PipelineHandle {
             height: config.height as u16,
             encode_ms: encode_avg_ms.clone(),
             idr_requested: idr_requested.clone(),
+            epoch: Instant::now(),
         };
         thread::Builder::new()
             .name("nescapture-ipc".into())
@@ -601,7 +611,7 @@ pub struct EncodeSettingsChange {
 fn encoder_thread(
     mut cfg: EncoderConfig,
     frame_rx: mpsc::Receiver<CapturedFrame>,
-    encoded_tx: mpsc::SyncSender<EncodeFuture>,
+    encoded_tx: mpsc::SyncSender<EncodedFrame>,
     shutdown: Arc<AtomicBool>,
 ) {
     let ctx = cfg.ctx;
@@ -802,7 +812,11 @@ fn encoder_thread(
                 // through `frame_rx` to `push_frame`, where a drop is free:
                 // that frame never entered the encoder and no later frame
                 // refers to it.
-                if encoded_tx.send(future).is_err() {
+                let pending = EncodedFrame {
+                    future,
+                    present_time: raw.present_time,
+                };
+                if encoded_tx.send(pending).is_err() {
                     break;
                 }
             }
@@ -1067,11 +1081,13 @@ struct IpcConfig {
     encode_ms: Arc<AtomicU32>,
     /// Shared with the encoder thread, which honours it on the next frame.
     idr_requested: Arc<AtomicBool>,
+    /// Zero point for wire timestamps.
+    epoch: Instant,
 }
 
 fn ipc_send_thread(
     cfg: IpcConfig,
-    encoded_rx: mpsc::Receiver<EncodeFuture>,
+    encoded_rx: mpsc::Receiver<EncodedFrame>,
     shutdown: Arc<AtomicBool>,
 ) {
     let socket = match UnixDatagram::unbound() {
@@ -1094,7 +1110,9 @@ fn ipc_send_thread(
         }
     };
 
-    let start_time = Instant::now();
+    // Fixed before the first frame arrives, so every timestamp shares an epoch
+    // even though frames are stamped from their own present.
+    let start_time = cfg.epoch;
     let mut frame_count: u64 = 0;
 
     'outer: loop {
@@ -1130,11 +1148,12 @@ fn ipc_send_thread(
             if shutdown.load(Ordering::Relaxed) {
                 break 'outer;
             }
-            let result = match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                Ok(p) => pollster::block_on(p),
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break 'outer,
-            };
+            let (result, present_time) =
+                match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(p) => (pollster::block_on(p.future), p.present_time),
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break 'outer,
+                };
             let pkt = match result {
                 Ok(p) => p,
                 Err(e) => {
@@ -1149,7 +1168,11 @@ fn ipc_send_thread(
                 cfg.encode_ms.store(enc_ms.to_bits(), Ordering::Relaxed);
             }
 
-            let timestamp_ms = start_time.elapsed().as_millis() as u32;
+            // From the present, not from here. Stamping at send time folded
+            // however long the frame spent queued for the encoder into the
+            // timestamp, so the receiver could not tell capture time from
+            // backlog and had nothing honest to pace on.
+            let timestamp_ms = present_time.saturating_duration_since(start_time).as_millis() as u32;
             let mut flags = if pkt.is_key_frame { FLAG_KEYFRAME } else { 0 };
             // Set FLAG_RECONFIG on the first frame after an encoder reconfig.
             // Clear it after setting so only the first frame is marked.
