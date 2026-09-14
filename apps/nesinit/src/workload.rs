@@ -142,7 +142,6 @@ impl Workload for Process {
         // Cleared rather than inherited: init's environment is the kernel's
         // and says nothing a workload should read.
         command.env_clear();
-        command.envs(environment(exec));
         if let Some(cwd) = &exec.cwd {
             command.current_dir(cwd);
         }
@@ -157,14 +156,21 @@ impl Workload for Process {
         // A warning rather than a refusal: a workload that draws nothing needs
         // no runtime directory, and refusing the launch would turn "audio has
         // nowhere to put a socket" into "the box does not start".
-        match crate::system::runtime_dir(uid, gid) {
-            Ok(path) => tracing::info!(%path, uid, "the launch has a runtime directory"),
-            Err(error) => tracing::warn!(
-                uid,
-                "no runtime directory for this launch, so anything reading \
-                 XDG_RUNTIME_DIR fails on it: {error}"
-            ),
-        }
+        let runtime = match crate::system::runtime_dir(uid, gid) {
+            Ok(path) => {
+                tracing::info!(%path, uid, "the launch has a runtime directory");
+                Some(path)
+            }
+            Err(error) => {
+                tracing::warn!(
+                    uid,
+                    "no runtime directory for this launch, so anything reading \
+                     XDG_RUNTIME_DIR fails on it: {error}"
+                );
+                None
+            }
+        };
+        command.envs(environment(exec, runtime.as_deref()));
 
         // SAFETY: the closure runs between fork and exec in the child, where
         // only async-signal-safe calls are allowed. These two are, and it
@@ -225,10 +231,19 @@ impl Workload for Process {
 /// A function rather than two calls on the command, because the two calls
 /// could be -- and for one commit were -- reduced to one by an edit that
 /// dropped the first. The only thing that noticed was a dead-code warning.
-fn environment(exec: &Exec) -> Vec<(String, String)> {
+///
+/// `runtime` is the directory made for this launch's user, or `None` when it
+/// could not be made. **Making it and not naming it is the same as not making
+/// it**: the environment is cleared, so nothing a workload inherits points at
+/// it, and every toolkit that wants one reads `XDG_RUNTIME_DIR`. A client that
+/// finds the variable unset does not fail loudly -- the compositor here falls
+/// back to `/tmp` -- so the sockets land somewhere world-writable and shared
+/// with every other user, and everything reports success. ref(d-0064)
+fn environment(exec: &Exec, runtime: Option<&str>) -> Vec<(String, String)> {
     GRAPHICS
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
+        .chain(runtime.map(|path| ("XDG_RUNTIME_DIR".to_string(), path.to_string())))
         .chain(exec.env.iter().map(|(k, v)| (k.clone(), v.clone())))
         .collect()
 }
@@ -377,7 +392,7 @@ mod tests {
     /// applied it; the tests passed and a dead-code warning was the only sign.
     #[test]
     fn the_launch_is_told_which_gallium_driver_to_use() {
-        let env = environment(&exec_with(&[]));
+        let env = environment(&exec_with(&[]), None);
         let driver = env
             .iter()
             .find(|(k, _)| k == "MESA_LOADER_DRIVER_OVERRIDE")
@@ -398,7 +413,7 @@ mod tests {
     /// component says it is working. It cost an evening to find once.
     #[test]
     fn intels_vulkan_video_is_asked_for() {
-        let env = environment(&exec_with(&[]));
+        let env = environment(&exec_with(&[]), None);
         let debug = env
             .iter()
             .find(|(k, _)| k == "ANV_DEBUG")
@@ -411,10 +426,38 @@ mod tests {
         );
     }
 
+    /// The directory made for the launch has to be named to the launch.
+    ///
+    /// Making it and saying nothing is indistinguishable from not making it:
+    /// the environment is cleared, so a workload inherits no path to it. The
+    /// compositor in this image falls back to `/tmp` rather than failing, which
+    /// means the whole session comes up, works, and puts one user's sockets in
+    /// a directory every other user can write. ref(d-0064)
+    #[test]
+    fn the_launch_is_told_where_its_runtime_directory_is() {
+        let env = environment(&exec_with(&[]), Some("/run/user/1001"));
+        let runtime = env
+            .iter()
+            .find(|(k, _)| k == "XDG_RUNTIME_DIR")
+            .map(|(_, v)| v.as_str());
+        assert_eq!(runtime, Some("/run/user/1001"));
+    }
+
+    /// A directory that could not be made is not claimed to exist.
+    ///
+    /// Pointing a workload at a path that is not there is worse than leaving it
+    /// unset: unset is a case every toolkit handles, and a bad path is one they
+    /// report as something else.
+    #[test]
+    fn a_launch_without_a_runtime_directory_is_told_nothing() {
+        let env = environment(&exec_with(&[]), None);
+        assert!(!env.iter().any(|(k, _)| k == "XDG_RUNTIME_DIR"));
+    }
+
     /// Last wins, so a host can override what the image assumes.
     #[test]
     fn the_callers_own_environment_beats_the_images() {
-        let env = environment(&exec_with(&[("GALLIUM_DRIVER", "something-else")]));
+        let env = environment(&exec_with(&[("GALLIUM_DRIVER", "something-else")]), None);
         let chosen: Vec<&str> = env
             .iter()
             .filter(|(k, _)| k == "GALLIUM_DRIVER")
