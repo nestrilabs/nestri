@@ -13,6 +13,9 @@ pub struct CaptureJob {
     pub sc_ext: vk::Extent2D,
     pub frame: u64,
     pub ds_key: usize,
+    /// When the game handed this frame to `vkQueuePresentKHR`. The only honest
+    /// capture time — everything downstream is queued behind something.
+    pub present_time: std::time::Instant,
 }
 
 #[unsafe(no_mangle)]
@@ -64,8 +67,15 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         };
 
         if let Some(sc_image) = sc_image {
-            // No time-based throttle — let the encoder channel provide natural backpressure
-            let should = true;
+            // Gate before any GPU work is queued. A game presenting faster than
+            // the target would otherwise pay a full blit and DMA-BUF export for
+            // frames the encoder channel throws away moments later.
+            let present_time = std::time::Instant::now();
+            let should = match ds.frame_gate.lock() {
+                Ok(mut gate) => gate.admit(present_time),
+                // A poisoned gate must not stop the stream; capture everything.
+                Err(_) => true,
+            };
 
             if should {
                 if let Ok(enc) = ds.encoder.lock() {
@@ -91,6 +101,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
                     sc_ext,
                     frame,
                     ds_key: unsafe { crate::dispatch_key(ds.raw.as_raw() as *const c_void) },
+                    present_time,
                 };
                 if let Ok(capture_tx) = ds.capture_tx.lock() {
                     let _ = capture_tx.as_ref().unwrap().send(job);
@@ -154,7 +165,6 @@ pub fn start_capture_worker(ds_key: usize, capture_rx: mpsc::Receiver<CaptureJob
                         let mut enc = ds.encoder.lock().unwrap();
                         if enc.is_none() {
                             if let Some(cfg) = PipelineConfig::from_env(w, h) {
-                                ds.target_fps.store(cfg.fps, Ordering::Relaxed);
                                 match PipelineHandle::new(cfg) {
                                     Ok(h) => *enc = Some(h),
                                     Err(e) => panic!("{e}"),

@@ -31,6 +31,7 @@ mod dmabuf_import;
 mod encode;
 mod framebuffer;
 mod instance;
+mod pacing;
 mod pipeline;
 mod present;
 mod shader;

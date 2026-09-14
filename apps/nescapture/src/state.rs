@@ -110,10 +110,10 @@ pub struct DeviceState {
     pub cached_dmabuf_fd: std::sync::atomic::AtomicI32,
 
     // ── Frame-rate throttle ───────────────────────────────────────────
-    /// Target FPS for capture throttling (set from HUDLESS_FPS on pipeline init).
-    pub target_fps: std::sync::atomic::AtomicU32,
-    /// Timestamp of last captured frame (for rate limiting).
-    pub last_capture_time: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Decides which presented frames are worth capturing. Consulted in the
+    /// present hook, before any GPU work is queued, so a dropped frame costs
+    /// nothing beyond the comparison.
+    pub frame_gate: std::sync::Mutex<crate::pacing::FrameGate>,
     /// Channel for threaded capture worker (present → worker).
     pub capture_tx: std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::present::CaptureJob>>>,
 }

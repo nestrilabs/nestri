@@ -331,8 +331,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         acquire_dummy_cb: std::sync::Mutex::new(vk::CommandBuffer::null()),
         cached_dmabuf_fd: std::sync::atomic::AtomicI32::new(-1),
 
-        target_fps: std::sync::atomic::AtomicU32::new(0),
-        last_capture_time: std::sync::Mutex::new(None),
+        frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
         capture_tx: std::sync::Mutex::new(None),
     });
 
