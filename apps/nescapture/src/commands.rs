@@ -228,18 +228,6 @@ pub unsafe extern "system" fn vkCmdEndRenderPass(command_buffer: vk::CommandBuff
         None => return,
     };
 
-    // Phase 4: track the largest extent we've seen (main framebuffer)
-    let current_extent = CB_STATE
-        .get(&cb_key)
-        .map(|r| r.current_image_extent)
-        .unwrap_or(None);
-    if let Some(ext) = current_extent {
-        let mut largest = ds.largest_extent.lock().unwrap();
-        if ext.width * ext.height > largest.width * largest.height {
-            *largest = ext;
-        }
-    }
-
     // Phase 4: check if we need to inject a HUDless capture copy (device-level)
     let needs_hudless_capture = ds
         .pending_capture_frame

@@ -94,32 +94,17 @@ pub unsafe extern "system" fn vkCreateDevice(
         }
     }
 
-    // ── Bump queue count for dedicated capture queue ──────────────────
-    // Add one extra queue to the first queue family so capture
-    // submissions don't compete with game rendering.
-    let mut capture_queue_index = 0u32;
-    let queue_infos: Vec<vk::DeviceQueueCreateInfo> = if ci.queue_create_info_count > 0
-        && !ci.p_queue_create_infos.is_null()
-    {
-        let slice = unsafe {
-            std::slice::from_raw_parts(ci.p_queue_create_infos, ci.queue_create_info_count as usize)
-        };
-        let mut qis = slice.to_vec();
-        if let Some(first) = qis.first_mut() {
-            capture_queue_index = first.queue_count; // use the NEXT index
-            first.queue_count += 1;
-        }
-        qis
-    } else {
-        Vec::new()
-    };
-
     // Try with injected extensions first.
+    //
+    // The device's queue create info is passed through unchanged. An earlier
+    // version bumped the first family's queue count by one to get a dedicated
+    // capture queue, which was then never used — and could not be: the capture
+    // blit has to be submitted to the queue the game presents on, or it gains
+    // no ordering against the present. All the bump did was risk exceeding the
+    // family's available queue count on the way in.
     let mut modified_ci = *ci;
     modified_ci.enabled_extension_count = extended.len() as u32;
     modified_ci.pp_enabled_extension_names = extended.as_ptr();
-    modified_ci.queue_create_info_count = queue_infos.len() as u32;
-    modified_ci.p_queue_create_infos = queue_infos.as_ptr();
 
     let mut dmabuf_available = true;
     let result =
@@ -149,8 +134,6 @@ pub unsafe extern "system" fn vkCreateDevice(
     let device = unsafe { *p_device };
 
     // Cache physical device memory properties
-    let mut mem_props = vk::PhysicalDeviceMemoryProperties::default();
-    unsafe { (istate.get_physical_device_memory_properties)(physical_device, &mut mem_props) };
 
     macro_rules! load {
         ($name:literal) => {
@@ -232,28 +215,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         cmd_draw_indexed_indirect_count: try_load!(b"vkCmdDrawIndexedIndirectCount\0"),
     };
 
-    // ── Retrieve capture queue from the bumped slot ───────────────────
-    let mut capture_queue = vk::Queue::null();
-    if queue_infos
-        .first()
-        .map(|q| q.queue_count > 1)
-        .unwrap_or(false)
-    {
-        let qi = &queue_infos[0];
-        unsafe {
-            (fp.get_device_queue)(
-                device,
-                qi.queue_family_index,
-                capture_queue_index,
-                &mut capture_queue,
-            );
-        }
-        log::info!(
-            "capture queue: family={} index={capture_queue_index}",
-            qi.queue_family_index
-        );
-    }
-
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
 
     // Phase 3: load shader hash config
@@ -303,10 +264,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         }),
         swapchain_colorspace: std::sync::atomic::AtomicU32::new(0),
         frame_counter: std::sync::atomic::AtomicU64::new(0),
-        largest_extent: std::sync::Mutex::new(vk::Extent2D {
-            width: 0,
-            height: 0,
-        }),
 
         hud_detected_frame: std::sync::atomic::AtomicBool::new(false),
         pending_capture_frame: std::sync::atomic::AtomicBool::new(false),
@@ -315,19 +272,6 @@ pub unsafe extern "system" fn vkCreateDevice(
 
         encoder: std::sync::Mutex::new(None),
 
-        capture_queue: std::sync::Mutex::new(capture_queue),
-        fake_images: std::sync::Mutex::new(Vec::new()),
-        fake_memories: std::sync::Mutex::new(Vec::new()),
-        fake_fds: std::sync::Mutex::new(Vec::new()),
-        fake_strides: std::sync::Mutex::new(Vec::new()),
-        fake_available: std::sync::Mutex::new(Vec::new()),
-        fake_image_count: std::sync::atomic::AtomicU32::new(0),
-        fake_swapchain: std::sync::Mutex::new(None),
-        signal_queue: std::sync::Mutex::new(vk::Queue::null()),
-        next_acquire: std::sync::atomic::AtomicU32::new(0),
-        memory_properties: std::sync::Mutex::new(mem_props),
-        acquire_dummy_pool: std::sync::Mutex::new(vk::CommandPool::null()),
-        acquire_dummy_cb: std::sync::Mutex::new(vk::CommandBuffer::null()),
 
         frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
         capture_tx: std::sync::Mutex::new(None),
@@ -435,11 +379,6 @@ pub unsafe extern "system" fn vkGetDeviceQueue(
         let queue = unsafe { *p_queue };
         QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
         crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), queue_family_index);
-        // Store first queue for acquire semaphore signaling
-        let mut sq = ds.signal_queue.lock().unwrap();
-        if *sq == vk::Queue::null() {
-            *sq = queue;
-        }
     }
 }
 

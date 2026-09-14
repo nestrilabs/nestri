@@ -127,7 +127,6 @@ pub struct DeviceState {
     pub swapchain_transfer_src: std::sync::atomic::AtomicBool,
 
     pub frame_counter: std::sync::atomic::AtomicU64,
-    pub largest_extent: std::sync::Mutex<vk::Extent2D>,
 
     // Phase 3/4: per-frame HUD detection flags
     pub hud_detected_frame: std::sync::atomic::AtomicBool,
@@ -138,21 +137,6 @@ pub struct DeviceState {
     // Phase 7: encode + IPC pipeline (lazy-init on first frame)
     pub encoder: std::sync::Mutex<Option<PipelineHandle>>,
 
-    /// Dedicated queue for capture submissions (separate from game rendering).
-    pub capture_queue: std::sync::Mutex<vk::Queue>,
-    // Fake swapchain pool (headless — no real present)
-    pub fake_images: std::sync::Mutex<Vec<vk::Image>>,
-    pub fake_memories: std::sync::Mutex<Vec<vk::DeviceMemory>>,
-    pub fake_fds: std::sync::Mutex<Vec<std::os::raw::c_int>>,
-    pub fake_strides: std::sync::Mutex<Vec<u32>>,
-    pub fake_available: std::sync::Mutex<Vec<bool>>,
-    pub fake_image_count: std::sync::atomic::AtomicU32,
-    pub fake_swapchain: std::sync::Mutex<Option<vk::SwapchainKHR>>,
-    pub signal_queue: std::sync::Mutex<vk::Queue>,
-    pub next_acquire: std::sync::atomic::AtomicU32,
-    pub memory_properties: std::sync::Mutex<vk::PhysicalDeviceMemoryProperties>,
-    pub acquire_dummy_pool: std::sync::Mutex<vk::CommandPool>,
-    pub acquire_dummy_cb: std::sync::Mutex<vk::CommandBuffer>,
 
     // ── Frame-rate throttle ───────────────────────────────────────────
     /// Decides which presented frames are worth capturing. Consulted in the
