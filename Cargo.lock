@@ -165,8 +165,8 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
 name = "ash"
-version = "0.38.0+1.4.329"
-source = "git+https://github.com/ash-rs/ash?rev=55dd56906bbb5760e9e9e6c56f45be67f67e0649#55dd56906bbb5760e9e9e6c56f45be67f67e0649"
+version = "0.38.0+1.4.352"
+source = "git+https://github.com/ash-rs/ash?rev=f4c2ca3e4f6b998d5254ad101a32f024d87cdec2#f4c2ca3e4f6b998d5254ad101a32f024d87cdec2"
 dependencies = [
  "libloading",
 ]
@@ -3095,10 +3095,11 @@ dependencies = [
 [[package]]
 name = "pixelforge"
 version = "0.9.1"
-source = "git+https://github.com/hgaiser/pixelforge.git?rev=2ee4d7ac6e470cc34270e48d6e9d6f3fc1d7c379#2ee4d7ac6e470cc34270e48d6e9d6f3fc1d7c379"
+source = "git+https://github.com/hgaiser/pixelforge.git?rev=936d412e1a73917e0e108c4ab18bf5208b1681ac#936d412e1a73917e0e108c4ab18bf5208b1681ac"
 dependencies = [
  "ash",
  "futures-channel",
+ "futures-core",
  "thiserror 2.0.20",
  "tracing",
 ]
@@ -3148,9 +3149,9 @@ dependencies = [
 
 [[package]]
 name = "pollster"
-version = "0.4.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
 
 [[package]]
 name = "polyval"

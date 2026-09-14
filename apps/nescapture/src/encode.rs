@@ -65,7 +65,6 @@ const VK_COLOR_SPACE_HDR10_ST2084_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::
 const VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT: u32 =
     colorspace(ash::vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT);
 const VK_COLOR_SPACE_BT2020_LINEAR_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::BT2020_LINEAR_EXT);
-const VK_COLOR_SPACE_DOLBYVISION_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::DOLBYVISION_EXT);
 const VK_COLOR_SPACE_HDR10_HLG_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::HDR10_HLG_EXT);
 
 /// The converter input format for a swapchain's `VkFormat`, or `None` when
@@ -94,9 +93,7 @@ pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
 
 pub fn vk_colorspace_to_color_space(vk_colorspace: u32) -> ColorSpace {
     match vk_colorspace {
-        VK_COLOR_SPACE_HDR10_ST2084_EXT
-        | VK_COLOR_SPACE_DOLBYVISION_EXT
-        | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpace::Bt2020,
+        VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpace::Bt2020,
 
         // Both are linear, so the inverse sRGB EOTF that `SrgbToBt2020Pq` applies
         // would decode data that was never encoded. `Bt709LinearToBt2020Pq` is
@@ -1172,7 +1169,9 @@ fn ipc_send_thread(
             // however long the frame spent queued for the encoder into the
             // timestamp, so the receiver could not tell capture time from
             // backlog and had nothing honest to pace on.
-            let timestamp_ms = present_time.saturating_duration_since(start_time).as_millis() as u32;
+            let timestamp_ms = present_time
+                .saturating_duration_since(start_time)
+                .as_millis() as u32;
             let mut flags = if pkt.is_key_frame { FLAG_KEYFRAME } else { 0 };
             // Set FLAG_RECONFIG on the first frame after an encoder reconfig.
             // Clear it after setting so only the first frame is marked.
@@ -1336,7 +1335,7 @@ mod tests {
 
     #[test]
     fn hdr_colour_spaces_select_the_hdr_arm() {
-        for cs in [Cs::HDR10_ST2084_EXT, Cs::DOLBYVISION_EXT, Cs::HDR10_HLG_EXT] {
+        for cs in [Cs::HDR10_ST2084_EXT, Cs::HDR10_HLG_EXT] {
             let raw = cs.as_raw() as u32;
             assert_eq!(
                 vk_colorspace_to_color_space(raw),
@@ -1388,7 +1387,6 @@ mod tests {
             Cs::SRGB_NONLINEAR,
             Cs::PASS_THROUGH_EXT,
             Cs::HDR10_ST2084_EXT,
-            Cs::DOLBYVISION_EXT,
             Cs::HDR10_HLG_EXT,
             Cs::EXTENDED_SRGB_LINEAR_EXT,
             Cs::BT2020_LINEAR_EXT,
@@ -1461,7 +1459,6 @@ mod tests {
         for cs in [
             Cs::SRGB_NONLINEAR,
             Cs::HDR10_ST2084_EXT,
-            Cs::DOLBYVISION_EXT,
             Cs::HDR10_HLG_EXT,
             Cs::EXTENDED_SRGB_LINEAR_EXT,
             Cs::PASS_THROUGH_EXT,
