@@ -74,7 +74,13 @@ impl FrameGate {
         let burst = if interval.is_zero() {
             0.0
         } else {
-            Self::BURST_WINDOW.as_secs_f64() / interval.as_secs_f64()
+            // Never below one whole frame. The window is a duration, so below
+            // four frames a second it works out at less than a single token —
+            // and since credit is capped at it, the bucket could then never
+            // hold enough to admit anything at all. At `NESCAPTURE_FPS=1` that
+            // is a layer that captures nothing, builds no encoder, opens no
+            // sockets, and says none of it.
+            (Self::BURST_WINDOW.as_secs_f64() / interval.as_secs_f64()).max(1.0)
         };
         Self {
             interval,
@@ -92,10 +98,20 @@ impl FrameGate {
 
     /// Read the target from the environment. `0` disables the gate.
     pub fn from_env() -> Self {
-        let fps = std::env::var("NESCAPTURE_FPS")
+        let raw = std::env::var("NESCAPTURE_FPS");
+        let fps = raw
+            .as_deref()
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(60);
+        // Said out loud, because every other symptom of getting this wrong is
+        // silence. A layer capturing at the wrong rate, or at a rate somebody
+        // thought they had overridden and had not, looks exactly like a layer
+        // working.
+        match raw.as_deref() {
+            Ok(value) => log::info!("capture rate: {fps} fps (NESCAPTURE_FPS={value})"),
+            Err(_) => log::info!("capture rate: {fps} fps (NESCAPTURE_FPS unset)"),
+        }
         Self::new(fps)
     }
 
@@ -300,6 +316,29 @@ mod tests {
             rate < 66.0,
             "admitted {admitted} frames, about {rate:.0}/s, from a gate set to 60"
         );
+    }
+
+    /// A target low enough that a quarter-second window is less than one
+    /// frame. The burst is a duration, so at 1 fps it works out at 0.25 of a
+    /// token — and with credit capped at the burst, the bucket could never hold
+    /// the whole token an admission costs. The gate admitted nothing, ever.
+    ///
+    /// What that looked like was not a slow stream. Nothing is captured, so the
+    /// encode pipeline is never built, no IPC socket is opened and no stats are
+    /// logged: the layer loads, reports a swapchain, and goes quiet.
+    #[test]
+    fn a_target_below_the_burst_window_still_admits_frames() {
+        for fps in [1, 2, 3, 4, 5] {
+            let mut g = FrameGate::new(fps);
+            let t0 = Instant::now();
+            let interval = Duration::from_secs(1) / fps;
+            let admitted = (0..20).filter(|i| g.admit(t0 + interval * *i)).count();
+            assert!(
+                admitted >= 19,
+                "at {fps} fps a game presenting at exactly that rate had \
+                 {admitted} of 20 frames taken"
+            );
+        }
     }
 
     #[test]
