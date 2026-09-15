@@ -51,20 +51,23 @@ macro_rules! image_barrier {
 
 // ── Memory helper ─────────────────────────────────────────────────────────────
 
-unsafe fn find_host_coherent_mt(ds: &crate::state::DeviceState, bits: u32) -> u32 {
+unsafe fn find_memory_type(
+    ds: &crate::state::DeviceState,
+    bits: u32,
+    want: crate::memory::Want,
+) -> Option<u32> {
     let mut mp = vk::PhysicalDeviceMemoryProperties::default();
     let k = unsafe { crate::dispatch_key(ds.physical_device.as_raw() as *const std::ffi::c_void) };
     if let Some(i) = crate::state::INSTANCE_STATE.get(&k) {
         unsafe { (i.get_physical_device_memory_properties)(ds.physical_device, &mut mp) };
     }
-    (0..mp.memory_type_count)
-        .find(|&i| {
-            (bits & (1 << i)) != 0
-                && mp.memory_types[i as usize].property_flags.contains(
-                    vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-                )
+    let types: Vec<crate::memory::MemoryType> = mp.memory_types[..mp.memory_type_count as usize]
+        .iter()
+        .map(|t| crate::memory::MemoryType {
+            flags: t.property_flags,
         })
-        .unwrap_or(0)
+        .collect();
+    crate::memory::pick_memory_type(&types, bits, want)
 }
 
 // ── Image allocators ──────────────────────────────────────────────────────────
@@ -177,7 +180,24 @@ unsafe fn alloc_image(
         memory_type_bits: 0,
     };
     unsafe { (ds.fp.get_image_memory_requirements)(ds.raw, image, &mut mr) };
-    let mt = unsafe { find_host_coherent_mt(ds, mr.memory_type_bits) };
+    // An exported image is written by this device and read by pixelforge's,
+    // both on the same GPU. Nothing maps it, so host-visible memory buys
+    // nothing and on a discrete card costs a full frame across the bus each
+    // way. Only the readback fallback has to be mappable.
+    let want = match export {
+        Some(_) => crate::memory::Want::DeviceLocal,
+        None => crate::memory::Want::HostCoherent,
+    };
+    let mt = match unsafe { find_memory_type(ds, mr.memory_type_bits, want) } {
+        Some(mt) => mt,
+        None => {
+            // Index zero used to be the fallback here, which binds the image
+            // to a memory type its own requirements may forbid.
+            log::warn!("no {want:?} memory type for '{label}' - not allocating");
+            unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+            return None;
+        }
+    };
     let p_next: *const _ = match export {
         Some(e) => e as *const _ as *const _,
         None => std::ptr::null(),
