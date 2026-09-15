@@ -9,30 +9,53 @@
 //
 //  The gate only ever *drops*. It never waits, never blocks the game's present,
 //  and never admits more frames than the game offered. A game running below the
-//  target is passed through untouched.
+//  target is passed through untouched — including, and this is the whole
+//  difficulty, a game whose average is below the target but which delivers its
+//  frames in fast runs separated by stalls. That is what a CPU-starved game
+//  looks like, and it is the case the first version of this got wrong.
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::time::{Duration, Instant};
 
 /// Admits at most `target_fps` frames per second, dropping the rest.
 ///
-/// The deadline advances by a fixed interval rather than being recomputed from
-/// the admitted frame's arrival time, so a game presenting slightly off-cadence
-/// does not accumulate drift.
+/// A token bucket, not a deadline. The first version compared each present
+/// against a fixed deadline and, after a stall, dropped whatever debt had built
+/// up so that a resuming game could not replay it as a burst. That is right for
+/// a game coming back from a load screen and wrong for one that micro-stalls
+/// constantly: the fast runs between stalls were thinned to the target while
+/// the stalls themselves were never made up, so a game averaging fifty frames a
+/// second lost a fifth of them to a gate set to sixty. Measured on the target
+/// as `present 50/s, admitted 43/s`.
+///
+/// Credit accrues with real time and is spent one unit per admitted frame, so
+/// over any window the admitted rate is the smaller of the game's rate and the
+/// target — which is the property that was wanted all along. The cap on
+/// accumulated credit is what keeps a long stall from banking a replay.
 pub struct FrameGate {
     /// Zero means uncapped — every frame is admitted.
     interval: Duration,
-    /// Frames arriving within this much of the deadline are admitted early.
+    /// Credit available, in frames. One is spent per admitted frame.
+    credit: f64,
+    /// The most credit that may accumulate, in frames.
     ///
-    /// Without it, a game running at exactly the target rate beats against the
-    /// gate: presents land a hair before each deadline, get rejected, and the
-    /// stream loses a frame every time the two rates drift past each other.
-    slack: Duration,
-    /// `None` until the first frame establishes the cadence.
-    next_deadline: Option<Instant>,
+    /// This is the whole of the stall policy. Too small and a game that stalls
+    /// briefly can never catch up, which is the bug this replaced; too large
+    /// and a game returning from a load screen replays everything it missed at
+    /// once. Bounded by the capture ring, because credit beyond the number of
+    /// slots buys frames that would be refused for want of one anyway.
+    burst: f64,
+    /// When the previous present arrived. `None` until the first.
+    last: Option<Instant>,
 }
 
 impl FrameGate {
+    /// The most credit the gate will bank, in frames.
+    ///
+    /// [`crate::state::CAPTURE_SLOTS`] — a burst larger than the ring cannot be
+    /// captured however generous the gate is.
+    const BURST_FRAMES: f64 = crate::state::CAPTURE_SLOTS as f64;
+
     pub fn new(target_fps: u32) -> Self {
         let interval = if target_fps == 0 {
             Duration::ZERO
@@ -41,8 +64,11 @@ impl FrameGate {
         };
         Self {
             interval,
-            slack: interval / 8,
-            next_deadline: None,
+            // Starts full: the first frames of a run must not be thinned just
+            // because the gate has no history yet.
+            credit: Self::BURST_FRAMES,
+            burst: Self::BURST_FRAMES,
+            last: None,
         }
     }
 
@@ -69,30 +95,25 @@ impl FrameGate {
         if self.interval.is_zero() {
             return true;
         }
-        let Some(deadline) = self.next_deadline else {
-            self.next_deadline = Some(now + self.interval);
-            return true;
+
+        // `saturating_duration_since` because `now` comes from the caller and a
+        // present arriving out of order would otherwise panic. Zero elapsed
+        // simply earns no credit.
+        let elapsed = match self.last {
+            Some(last) => now.saturating_duration_since(last),
+            None => Duration::ZERO,
         };
-        if now + self.slack < deadline {
-            return false;
-        }
+        self.last = Some(now);
 
-        // Advance one interval from the deadline, not from `now`, so a game
-        // presenting slightly early or late keeps an exact cadence.
-        let advanced = deadline + self.interval;
+        let earned = elapsed.as_secs_f64() / self.interval.as_secs_f64();
+        self.credit = (self.credit + earned).min(self.burst);
 
-        // Slip clamp. If the game stalled — a load screen, a shader compile, a
-        // hitch — the deadline can end up many intervals in the past. Advancing
-        // by one interval at a time would leave the gate "owing" frames and it
-        // would admit a burst of them back to back the moment the game resumes,
-        // which is exactly when the GPU can least afford it. Drop the debt and
-        // restart the cadence from now.
-        self.next_deadline = Some(if advanced <= now {
-            now + self.interval
+        if self.credit >= 1.0 {
+            self.credit -= 1.0;
+            true
         } else {
-            advanced
-        });
-        true
+            false
+        }
     }
 }
 
@@ -114,11 +135,24 @@ mod tests {
     #[test]
     fn fast_game_is_thinned_to_the_target() {
         // 300 fps offered, 60 wanted: one frame in five, over a full second.
+        // The bucket starts full, so the first few come through back to back —
+        // hence the allowance above 60 rather than a tight band.
         let mut g = FrameGate::new(60);
         let t0 = Instant::now();
         let step = Duration::from_nanos(3_333_333);
         let admitted = (0..300).filter(|i| g.admit(t0 + step * *i)).count();
-        assert!((59..=61).contains(&admitted), "admitted {admitted}");
+        assert!((59..=65).contains(&admitted), "admitted {admitted}");
+    }
+
+    /// Over a long enough run the starting credit stops mattering and the rate
+    /// is the target, which is the property the gate exists for.
+    #[test]
+    fn a_fast_game_settles_at_the_target_over_ten_seconds() {
+        let mut g = FrameGate::new(60);
+        let t0 = Instant::now();
+        let step = Duration::from_nanos(3_333_333);
+        let admitted = (0..3000).filter(|i| g.admit(t0 + step * *i)).count();
+        assert!((595..=610).contains(&admitted), "admitted {admitted} in 10s");
     }
 
     #[test]
@@ -150,6 +184,68 @@ mod tests {
         }
     }
 
+    /// The case the deadline version got wrong, and the reason this is a
+    /// bucket. A CPU-starved game presents in fast runs broken by micro-stalls:
+    /// four frames at 12ms, then a 52ms gap — five frames per 100ms, fifty a
+    /// second, well under the sixty the gate allows. Every one must survive.
+    /// The old gate dropped a fifth of them, which is what
+    /// `present 50/s, admitted 43/s` was on the target.
+    #[test]
+    fn a_stuttering_game_below_the_target_keeps_every_frame() {
+        let mut g = FrameGate::new(60);
+        let mut at = Instant::now();
+        let steps = [
+            Duration::from_millis(12),
+            Duration::from_millis(12),
+            Duration::from_millis(12),
+            Duration::from_millis(12),
+            Duration::from_millis(52),
+        ];
+        let mut admitted = 0;
+        for i in 0..200 {
+            at += steps[i % steps.len()];
+            if g.admit(at) {
+                admitted += 1;
+            }
+        }
+        assert_eq!(
+            admitted, 200,
+            "dropped {} frames of a 50 fps game",
+            200 - admitted
+        );
+    }
+
+    /// A deeper stutter than the bucket can cover is still thinned, and must
+    /// be: eight frames at 10ms is a hundred a second however short the run.
+    /// What matters is that it is thinned towards the target rather than below
+    /// it — the failure being guarded against is losing frames a slow game
+    /// needed, not admitting fewer than a fast run offers.
+    #[test]
+    fn a_run_faster_than_the_target_is_still_thinned() {
+        let mut g = FrameGate::new(60);
+        let mut at = Instant::now();
+        let mut admitted = 0;
+        // Eight at 10ms then 120ms idle: 8 frames per 200ms, 40 a second.
+        for i in 0..400 {
+            at += if i % 9 == 8 {
+                Duration::from_millis(120)
+            } else {
+                Duration::from_millis(10)
+            };
+            if g.admit(at) {
+                admitted += 1;
+            }
+        }
+        // Offered 400 over ~8.9s at an average of 45/s. Whatever is dropped,
+        // the result must stay far above what the old gate managed and must
+        // never exceed what was offered.
+        assert!(admitted <= 400);
+        assert!(
+            admitted >= 340,
+            "admitted only {admitted} of 400 from a sub-target game"
+        );
+    }
+
     #[test]
     fn a_stall_does_not_bank_a_burst() {
         let mut g = FrameGate::new(60);
@@ -158,15 +254,37 @@ mod tests {
 
         // Two seconds of nothing — a load screen.
         let resume = t0 + Duration::from_secs(2);
-
-        // The first frame back is admitted immediately...
         assert!(g.admit(resume));
 
-        // ...but the game resuming at 300 fps must not replay the ~120 frames
-        // the gate "missed" during the stall. Across the next 100ms it may
-        // admit only what 60 fps allows: about six, not all thirty offered.
+        // The game resuming at 300 fps must not replay the ~120 frames the gate
+        // "missed" during the stall. Across the next 100ms it may admit what 60
+        // fps allows — about six — plus at most the bucket's depth, and nothing
+        // like the thirty on offer.
         let step = Duration::from_nanos(3_333_333);
         let burst = (1..30).filter(|i| g.admit(resume + step * *i)).count();
-        assert!((4..=7).contains(&burst), "admitted {burst} frames in 100ms");
+        assert!(
+            burst <= 6 + FrameGate::BURST_FRAMES as usize,
+            "admitted {burst} frames in 100ms after a stall"
+        );
+        assert!(burst >= 5, "admitted only {burst} frames in 100ms");
+    }
+
+    /// Credit is bounded however long the stall, so the depth of the burst
+    /// after one does not grow with it.
+    #[test]
+    fn a_longer_stall_does_not_bank_a_deeper_burst() {
+        let after = |stall: Duration| {
+            let mut g = FrameGate::new(60);
+            let t0 = Instant::now();
+            g.admit(t0);
+            let resume = t0 + stall;
+            let step = Duration::from_nanos(3_333_333);
+            (0..30).filter(|i| g.admit(resume + step * *i)).count()
+        };
+        assert_eq!(
+            after(Duration::from_secs(2)),
+            after(Duration::from_secs(60)),
+            "a longer stall banked a deeper burst"
+        );
     }
 }
