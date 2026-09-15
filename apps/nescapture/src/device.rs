@@ -274,7 +274,7 @@ pub unsafe extern "system" fn vkCreateDevice(
 
 
         frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
-        capture_tx: std::sync::Mutex::new(None),
+        encoder_starting: std::sync::atomic::AtomicBool::new(false),
     });
 
     DEVICE_STATE.insert(key, dev_state);

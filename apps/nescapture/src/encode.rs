@@ -172,7 +172,12 @@ pub fn output_format(pixel_fmt: PixelFormat, bit_depth: EncodeBitDepth) -> Outpu
 // ── Captured frame (sent from present.rs to encoder thread) ──────────────────
 
 pub struct CapturedFrame {
-    pub source: FrameSource,
+    /// Which device this frame's slot belongs to.
+    ///
+    /// The encoder thread needs it to reach the fence and the exported fd: it
+    /// now does the waiting that a separate capture thread used to do, and that
+    /// work is per-device.
+    pub ds_key: usize,
     pub width: u32,
     pub height: u32,
     pub vk_format: u32,
@@ -362,7 +367,10 @@ impl PipelineHandle {
         let (codec, ctx) = resolve_codec(config.codec_request.as_deref())
             .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
 
-        let (frame_tx, frame_rx) = mpsc::sync_channel::<CapturedFrame>(2);
+        // One deep. The frame in it is now an unwaited blit rather than an
+        // exported buffer, and the ring's four slots are already the
+        // backpressure — a second layer of queue only adds latency.
+        let (frame_tx, frame_rx) = mpsc::sync_channel::<CapturedFrame>(1);
         let (encoded_tx, encoded_rx) = mpsc::sync_channel::<EncodedFrame>(2);
         let (reconfig_tx, reconfig_rx) = mpsc::channel::<EncodeSettingsChange>();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -395,6 +403,7 @@ impl PipelineHandle {
             current_codec: current_codec.clone(),
             wanted_depth_override: None,
             needs_reconfig_flag: needs_reconfig_flag.clone(),
+            capture_ms: capture_ms.clone(),
         };
         thread::Builder::new()
             .name("nescapture-encoder".into())
@@ -598,6 +607,9 @@ struct EncoderConfig {
     current_codec: Arc<AtomicU8>,
     wanted_depth_override: Option<EncodeBitDepth>,
     needs_reconfig_flag: Arc<AtomicBool>,
+    /// Present-to-encoder latency in milliseconds, as `f32` bits. Written here
+    /// now that this thread is the one doing the waiting.
+    capture_ms: Arc<AtomicU32>,
 }
 
 struct EncodedPacket {
@@ -685,11 +697,29 @@ fn encoder_thread(
             cfg.idr_requested.store(true, Ordering::Relaxed);
         }
 
-        let mut raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        let raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(frame) => frame,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+
+        // Wait for the blit and export the buffer. This used to be a thread of
+        // its own between the present hook and here; it is cheaper on this one,
+        // because the blit it waits for was submitted a frame earlier and has
+        // already completed, and every frame saves a channel and a wakeup.
+        let Some(ds) = crate::state::DEVICE_STATE.get(&raw.ds_key).map(|s| s.clone()) else {
+            log::error!("encoder: device state gone");
+            break;
+        };
+        let Some(mut source) = crate::present::resolve_source(&ds, &raw) else {
+            continue;
+        };
+
+        // Measured from the game's present, not from the top of this iteration:
+        // the wait above is part of what capture costs.
+        let capture_elapsed = raw.present_time.elapsed().as_secs_f32() * 1000.0;
+        cfg.capture_ms
+            .store(capture_elapsed.to_bits(), Ordering::Relaxed);
 
         let Some(input_fmt) = vk_format_to_input_format(raw.vk_format) else {
             // Drop the frame rather than encode it wrongly. Logged once per
@@ -765,7 +795,7 @@ fn encoder_thread(
         // first, for every frame after it.
         let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
 
-        let result = match &mut raw.source {
+        let result = match &mut source {
             FrameSource::DmaBuf {
                 fd,
                 stride,
@@ -800,7 +830,7 @@ fn encoder_thread(
             FrameSource::Pixels(pixels) => cpu_encode_frame(
                 &ctx,
                 &mut state.encoder,
-                pixels,
+                pixels.as_slice(),
                 raw.width,
                 raw.height,
                 raw.vk_format,

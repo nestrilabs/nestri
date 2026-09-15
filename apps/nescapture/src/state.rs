@@ -219,8 +219,11 @@ pub struct DeviceState {
     /// present hook, before any GPU work is queued, so a dropped frame costs
     /// nothing beyond the comparison.
     pub frame_gate: std::sync::Mutex<crate::pacing::FrameGate>,
-    /// Channel for threaded capture worker (present → worker).
-    pub capture_tx: std::sync::Mutex<Option<std::sync::mpsc::Sender<crate::present::CaptureJob>>>,
+    /// Whether a thread has already been started to build the encode pipeline.
+    ///
+    /// The build is slow and happens once; without this latch every present
+    /// arriving before it finishes would start another one.
+    pub encoder_starting: std::sync::atomic::AtomicBool,
 }
 
 // ── Per-command-buffer state ──────────────────────────────────────────────────
