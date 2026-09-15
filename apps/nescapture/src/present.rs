@@ -260,11 +260,11 @@ pub fn resolve_source(
 
     // Copy the handles out and drop the ring lock before waiting: the present
     // hook needs that lock every frame and must not queue behind a GPU wait.
-    let (fence, dmabuf_fd, stride, image, memory) = {
+    let (fence, dmabuf_fd, stride, modifier, image, memory) = {
         let ring = ds.capture_ring.lock().ok()?;
         ring.as_ref()
             .and_then(|r| r.slots.get(slot_index))
-            .map(|s| (s.fence, s.dmabuf_fd, s.stride, s.image, s.memory))?
+            .map(|s| (s.fence, s.dmabuf_fd, s.stride, s.modifier, s.image, s.memory))?
     };
 
     let waited = unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000) };
@@ -282,7 +282,9 @@ pub fn resolve_source(
         return Some(FrameSource::DmaBuf {
             fd: duped,
             stride,
-            modifier: 0,
+            // The slot's own modifier. This was hard-coded to zero, which was
+            // true only because the producer could not ask for anything else.
+            modifier,
         });
     }
 

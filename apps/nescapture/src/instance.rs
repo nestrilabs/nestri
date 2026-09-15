@@ -60,6 +60,13 @@ pub unsafe extern "system" fn vkCreateInstance(
                 b"vkGetPhysicalDeviceMemoryProperties\0",
             )
         },
+        get_physical_device_format_properties2: unsafe {
+            crate::try_load_instance_fn(
+                next_gipa,
+                instance,
+                b"vkGetPhysicalDeviceFormatProperties2\0",
+            )
+        },
         create_device: unsafe { load_instance_fn(next_gipa, instance, b"vkCreateDevice\0") },
     });
 

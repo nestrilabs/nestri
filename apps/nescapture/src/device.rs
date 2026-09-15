@@ -75,11 +75,16 @@ pub unsafe extern "system" fn vkCreateDevice(
     const EXT_EXTERNAL_MEMORY: &[u8] = b"VK_KHR_external_memory\0";
     const EXT_EXTERNAL_MEMORY_FD: &[u8] = b"VK_KHR_external_memory_fd\0";
     const EXT_EXTERNAL_MEMORY_DMABUF: &[u8] = b"VK_EXT_external_memory_dma_buf\0";
+    // Lets the capture ring be allocated tiled. The importer has always created
+    // its side with DRM_FORMAT_MODIFIER_EXT tiling; without this the producer
+    // can only offer it a linear buffer.
+    const EXT_IMAGE_DRM_FORMAT_MODIFIER: &[u8] = b"VK_EXT_image_drm_format_modifier\0";
 
     let needed: &[&[u8]] = &[
         EXT_EXTERNAL_MEMORY,
         EXT_EXTERNAL_MEMORY_FD,
         EXT_EXTERNAL_MEMORY_DMABUF,
+        EXT_IMAGE_DRM_FORMAT_MODIFIER,
     ];
 
     // Build extended list: original + any of ours not already present.
@@ -185,6 +190,9 @@ pub unsafe extern "system" fn vkCreateDevice(
         cmd_copy_image: load!(b"vkCmdCopyImage\0"),
         get_image_subresource_layout: load!(b"vkGetImageSubresourceLayout\0"),
         get_memory_fd_khr: try_load!(b"vkGetMemoryFdKHR\0"),
+        get_image_drm_format_modifier_properties_ext: try_load!(
+            b"vkGetImageDrmFormatModifierPropertiesEXT\0"
+        ),
 
         // Phase 4 — synchronisation
         create_fence: load!(b"vkCreateFence\0"),

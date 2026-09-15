@@ -5,8 +5,11 @@
 //  so that after the GPU blit we can export an fd and import it into pixelforge's
 //  separate VkDevice for zero-copy hardware encoding via DmaBufImporter.
 //
-//  The row stride comes from the image's SubresourceLayout, queried once at
-//  allocation; the encoder needs it to import the LINEAR image correctly.
+//  The ring is allocated tiled where the driver offers a single-plane DRM
+//  format modifier, and linear where it does not. The stride and the chosen
+//  modifier come from the image itself, queried once at allocation, and both
+//  travel with every frame: the importer creates its side with that exact
+//  modifier, and a wrong value there is a correctly sized frame of nonsense.
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::state::{CB_STATE, CAPTURE_SLOTS, CaptureRing, CaptureSlot, DEVICE_STATE};
@@ -70,6 +73,72 @@ unsafe fn find_memory_type(
     crate::memory::pick_memory_type(&types, bits, want)
 }
 
+/// Modifiers the device can both receive a transfer into and have sampled from,
+/// for `fmt`.
+///
+/// Both feature bits matter and for different sides: the layer writes the image
+/// with `vkCmdCopyImage`, and pixelforge samples it in the colour-conversion
+/// compute shader after importing it. A modifier that supports only one of
+/// those is no use to this ring.
+unsafe fn supported_modifiers(
+    ds: &crate::state::DeviceState,
+    fmt: vk::Format,
+) -> Vec<crate::modifiers::ModifierProps> {
+    let k = unsafe { crate::dispatch_key(ds.physical_device.as_raw() as *const std::ffi::c_void) };
+    let Some(istate) = crate::state::INSTANCE_STATE.get(&k) else {
+        return Vec::new();
+    };
+    let Some(get_props2) = istate.get_physical_device_format_properties2 else {
+        return Vec::new();
+    };
+
+    // Two calls: the first to learn the count, the second to fill the list.
+    let mut list = vk::DrmFormatModifierPropertiesListEXT::default();
+    let mut props2 = vk::FormatProperties2 {
+        p_next: &mut list as *mut _ as *mut std::ffi::c_void,
+        ..Default::default()
+    };
+    unsafe { get_props2(ds.physical_device, fmt, &mut props2) };
+
+    let count = list.drm_format_modifier_count as usize;
+    if count == 0 {
+        return Vec::new();
+    }
+    let mut entries = vec![vk::DrmFormatModifierPropertiesEXT::default(); count];
+    list.p_drm_format_modifier_properties = entries.as_mut_ptr();
+    let mut props2 = vk::FormatProperties2 {
+        p_next: &mut list as *mut _ as *mut std::ffi::c_void,
+        ..Default::default()
+    };
+    unsafe { get_props2(ds.physical_device, fmt, &mut props2) };
+
+    let needed =
+        vk::FormatFeatureFlags::TRANSFER_DST | vk::FormatFeatureFlags::SAMPLED_IMAGE;
+    entries
+        .iter()
+        .filter(|e| e.drm_format_modifier_tiling_features.contains(needed))
+        .map(|e| crate::modifiers::ModifierProps {
+            modifier: e.drm_format_modifier,
+            plane_count: e.drm_format_modifier_plane_count,
+        })
+        .collect()
+}
+
+/// Which modifier the driver actually gave an image.
+///
+/// The image is created from a list of acceptable modifiers and the driver
+/// chooses; the importer needs the one it chose, not the list. `None` when the
+/// extension is absent or the call fails, which sends the caller back to the
+/// linear path rather than letting it guess.
+unsafe fn image_modifier(ds: &crate::state::DeviceState, image: vk::Image) -> Option<u64> {
+    let get = ds.fp.get_image_drm_format_modifier_properties_ext?;
+    let mut props = vk::ImageDrmFormatModifierPropertiesEXT::default();
+    if unsafe { get(ds.raw, image, &mut props) } != vk::Result::SUCCESS {
+        return None;
+    }
+    Some(props.drm_format_modifier)
+}
+
 // ── Image allocators ──────────────────────────────────────────────────────────
 
 /// Plain HOST_VISIBLE image (nescapture capture — no cross-device sharing needed).
@@ -116,7 +185,90 @@ unsafe fn allocate_dmabuf_image(
     h: u32,
     fmt: vk::Format,
     label: &str,
-) -> Option<(vk::Image, vk::DeviceMemory)> {
+) -> Option<(vk::Image, vk::DeviceMemory, u64)> {
+    let export_ai = vk::ExportMemoryAllocateInfo {
+        s_type: vk::StructureType::EXPORT_MEMORY_ALLOCATE_INFO,
+        p_next: std::ptr::null_mut(),
+        handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
+        _marker: std::marker::PhantomData,
+    };
+
+    // Tiled first. A linear destination means the copy detiles a whole frame on
+    // the way in and the encoder samples a linear image on the way out; the
+    // importer has always been able to take a tiled buffer, and only this side
+    // was ever linear.
+    let candidates = unsafe { supported_modifiers(ds, fmt) };
+    if let Some(chosen) = crate::modifiers::pick_modifier(&candidates)
+        && chosen.modifier != crate::modifiers::LINEAR
+    {
+        let mut ext_img = vk::ExternalMemoryImageCreateInfo {
+            s_type: vk::StructureType::EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+            p_next: std::ptr::null_mut(),
+            handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
+            _marker: std::marker::PhantomData,
+        };
+        let modifiers = [chosen.modifier];
+        let mut mod_list = vk::ImageDrmFormatModifierListCreateInfoEXT::default()
+            .drm_format_modifiers(&modifiers);
+        mod_list.p_next = &mut ext_img as *mut _ as *mut std::ffi::c_void;
+
+        let ci = vk::ImageCreateInfo {
+            s_type: vk::StructureType::IMAGE_CREATE_INFO,
+            p_next: &mod_list as *const _ as *const _,
+            flags: vk::ImageCreateFlags::empty(),
+            image_type: vk::ImageType::TYPE_2D,
+            format: fmt,
+            extent: vk::Extent3D {
+                width: w,
+                height: h,
+                depth: 1,
+            },
+            mip_levels: 1,
+            array_layers: 1,
+            samples: vk::SampleCountFlags::TYPE_1,
+            tiling: vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT,
+            usage: vk::ImageUsageFlags::TRANSFER_DST,
+            sharing_mode: vk::SharingMode::EXCLUSIVE,
+            queue_family_index_count: 0,
+            p_queue_family_indices: std::ptr::null(),
+            initial_layout: vk::ImageLayout::UNDEFINED,
+            _marker: std::marker::PhantomData,
+        };
+        if let Some((image, memory)) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
+            // Ask which one it took rather than assuming the one offered: the
+            // importer is given an explicit modifier and a wrong value there is
+            // a correctly sized frame full of nonsense.
+            match unsafe { image_modifier(ds, image) } {
+                Some(actual) => {
+                    log::info!(
+                        "capture '{label}': tiled, modifier {actual:#018x} \
+                         (offered {:#018x}, {} candidate(s))",
+                        chosen.modifier,
+                        candidates.len()
+                    );
+                    return Some((image, memory, actual));
+                }
+                None => {
+                    log::warn!(
+                        "capture '{label}': the driver would not report the modifier it \
+                         chose — falling back to linear rather than importing a guess"
+                    );
+                    unsafe {
+                        (ds.fp.destroy_image)(ds.raw, image, std::ptr::null());
+                        (ds.fp.free_memory)(ds.raw, memory, std::ptr::null());
+                    }
+                }
+            }
+        } else {
+            log::warn!("capture '{label}': tiled allocation refused — falling back to linear");
+        }
+    } else {
+        log::info!(
+            "capture '{label}': no tiled modifier offered ({} candidate(s)) — linear",
+            candidates.len()
+        );
+    }
+
     let ext_img = vk::ExternalMemoryImageCreateInfo {
         s_type: vk::StructureType::EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
         p_next: std::ptr::null_mut(),
@@ -145,14 +297,8 @@ unsafe fn allocate_dmabuf_image(
         initial_layout: vk::ImageLayout::UNDEFINED,
         _marker: std::marker::PhantomData,
     };
-    let export_ai = vk::ExportMemoryAllocateInfo {
-        s_type: vk::StructureType::EXPORT_MEMORY_ALLOCATE_INFO,
-        p_next: std::ptr::null_mut(),
-        handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
-    };
-    if let Some(r) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
-        return Some(r);
+    if let Some((image, memory)) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
+        return Some((image, memory, crate::modifiers::LINEAR));
     }
     log::warn!(
         "DMA-BUF alloc failed for '{}' — using plain host image. \
@@ -160,6 +306,7 @@ unsafe fn allocate_dmabuf_image(
         label
     );
     unsafe { allocate_host_image(ds, w, h, fmt, label) }
+        .map(|(i, m)| (i, m, crate::modifiers::LINEAR))
 }
 
 unsafe fn alloc_image(
@@ -235,20 +382,23 @@ unsafe fn alloc_image(
 // ── Stride query ──────────────────────────────────────────────────────────────
 
 /// Row stride in bytes of a LINEAR image, or 0 on failure.
-pub unsafe fn query_stride(ds: &crate::state::DeviceState, image: vk::Image) -> u32 {
-    let subresource = vk::ImageSubresource {
-        aspect_mask: vk::ImageAspectFlags::COLOR,
+pub unsafe fn query_stride(ds: &crate::state::DeviceState, image: vk::Image, modifier: u64) -> u32 {
+    // A DRM_FORMAT_MODIFIER image is laid out in memory planes, not colour
+    // planes, and asking it for COLOR is invalid — the aspect has to name the
+    // memory plane. Single-plane is all `pick_modifier` will accept, so plane
+    // zero is the whole image.
+    let aspect_mask = if modifier == crate::modifiers::LINEAR {
+        vk::ImageAspectFlags::COLOR
+    } else {
+        vk::ImageAspectFlags::MEMORY_PLANE_0_EXT
+    };
+    let sub = vk::ImageSubresource {
+        aspect_mask,
         mip_level: 0,
         array_layer: 0,
     };
-    let mut layout = vk::SubresourceLayout {
-        offset: 0,
-        size: 0,
-        row_pitch: 0,
-        array_pitch: 0,
-        depth_pitch: 0,
-    };
-    unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &subresource, &mut layout) };
+    let mut layout = vk::SubresourceLayout::default();
+    unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &sub, &mut layout) };
     layout.row_pitch as u32
 }
 
@@ -410,7 +560,8 @@ unsafe fn create_capture_ring(
 
     let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
     for i in 0..CAPTURE_SLOTS {
-        let Some((image, memory)) = (unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") })
+        let Some((image, memory, modifier)) =
+            (unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") })
         else {
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
@@ -424,7 +575,7 @@ unsafe fn create_capture_ring(
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
         }
-        let stride = unsafe { query_stride(ds, image) };
+        let stride = unsafe { query_stride(ds, image, modifier) };
         // Export once. Each frame hands the encoder a dup of this fd, which
         // costs a file-descriptor clone instead of a kernel export per frame.
         let dmabuf_fd = unsafe { get_dmabuf_fd(ds, memory) }.unwrap_or(-1);
@@ -436,6 +587,7 @@ unsafe fn create_capture_ring(
             memory,
             dmabuf_fd,
             stride,
+            modifier,
             fence,
         });
     }

@@ -32,6 +32,7 @@ mod encode;
 mod framebuffer;
 mod instance;
 mod memory;
+mod modifiers;
 mod pacing;
 mod pipeline;
 mod present;
@@ -152,6 +153,17 @@ pub(crate) unsafe fn try_load_device_fn<T>(
     name: &[u8],
 ) -> Option<T> {
     let raw = unsafe { get(device, name.as_ptr() as *const c_char) }?;
+    Some(unsafe { std::mem::transmute_copy(&raw) })
+}
+
+/// Like [`load_instance_fn`], but `None` rather than a panic when the entry
+/// point is absent. For instance functions the layer can do without.
+pub(crate) unsafe fn try_load_instance_fn<T>(
+    get: PFN_vkGetInstanceProcAddr,
+    instance: vk::Instance,
+    name: &[u8],
+) -> Option<T> {
+    let raw = unsafe { get(instance, name.as_ptr() as *const c_char) }?;
     Some(unsafe { std::mem::transmute_copy(&raw) })
 }
 

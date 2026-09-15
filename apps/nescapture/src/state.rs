@@ -29,6 +29,13 @@ pub struct CaptureSlot {
     /// failed, which sends that frame down the CPU readback path instead.
     pub dmabuf_fd: std::os::raw::c_int,
     pub stride: u32,
+    /// The DRM format modifier the driver gave this slot's image.
+    ///
+    /// Carried per slot rather than assumed, and passed to the importer, which
+    /// creates its side with this exact value. It used to be hard-coded to
+    /// `DRM_FORMAT_MOD_LINEAR` on both sides — true at the time, because the
+    /// producer only ever asked for linear.
+    pub modifier: u64,
     /// Signalled when this slot's blit has finished reading the swapchain and
     /// writing the slot. The capture worker waits on it before handing the
     /// DMA-BUF to the encoder, which reads it from a different VkDevice and so
