@@ -547,12 +547,21 @@ impl PipelineHandle {
     }
 
     pub fn push_frame(&self, frame: CapturedFrame) -> bool {
-        self.capture_fps.fetch_add(1, Ordering::Relaxed);
-        let ok = self.frame_tx.try_send(frame).is_ok();
-        if !ok {
-            self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+        // Counted on success only. It used to be incremented before the send,
+        // so a frame the channel refused was reported both as captured and as
+        // dropped, and the capture rate read as the rate the ring offered
+        // rather than the rate the encoder accepted — which is the number
+        // anyone reading it wants.
+        match self.frame_tx.try_send(frame) {
+            Ok(()) => {
+                self.capture_fps.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(_) => {
+                self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                false
+            }
         }
-        ok
     }
 
     pub fn shutdown(&self) {
