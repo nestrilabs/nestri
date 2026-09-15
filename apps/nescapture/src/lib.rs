@@ -39,6 +39,7 @@ mod present;
 mod shader;
 mod slots;
 mod state;
+mod timing;
 mod swapchain;
 
 use commands::{

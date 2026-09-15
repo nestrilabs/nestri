@@ -226,6 +226,12 @@ pub struct DeviceState {
     /// present hook, before any GPU work is queued, so a dropped frame costs
     /// nothing beyond the comparison.
     pub frame_gate: std::sync::Mutex<crate::pacing::FrameGate>,
+    /// When the previous `vkQueuePresentKHR` returned to the game.
+    ///
+    /// The base for the `gap` span: time from here to the next present's
+    /// arrival is the game's own, with nothing this layer does inside it.
+    pub last_present_return: std::sync::Mutex<Option<std::time::Instant>>,
+
     /// Whether a thread has already been started to build the encode pipeline.
     ///
     /// The build is slow and happens once; without this latch every present

@@ -28,15 +28,25 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         None => return vk::Result::ERROR_DEVICE_LOST,
     };
 
+    // Entry. `gap` is measured from where the previous present *returned*, so
+    // it is the game's own frame time with this layer's cost excluded — the
+    // three spans then partition the wall clock between presents exactly.
+    let entered = std::time::Instant::now();
+
     ds.frame_counter.fetch_add(1, Ordering::Relaxed);
     ds.hud_detected_frame.store(false, Ordering::Relaxed);
     ds.pending_capture_frame.store(false, Ordering::Relaxed);
     ds.capture_injected_frame.store(false, Ordering::Relaxed);
     ds.skipped_draws_frame.store(0, Ordering::Relaxed);
 
-    if let Ok(enc) = ds.encoder.lock() {
-        if let Some(ref h) = *enc {
-            h.present_attempts.fetch_add(1, Ordering::Relaxed);
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.present_attempts.fetch_add(1, Ordering::Relaxed);
+        if let Ok(prev) = ds.last_present_return.lock()
+            && let Some(prev) = *prev
+        {
+            h.timing.record_gap(entered.saturating_duration_since(prev));
         }
     }
 
@@ -55,13 +65,21 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         None
     };
 
+    let down_us = std::cell::Cell::new(std::time::Duration::ZERO);
     let call_down = |info: *const vk::PresentInfoKHR| match ds.fp.queue_present_khr {
-        Some(f) => unsafe { f(queue, info) },
+        Some(f) => {
+            let t = std::time::Instant::now();
+            let r = unsafe { f(queue, info) };
+            down_us.set(t.elapsed());
+            r
+        }
         None => vk::Result::ERROR_EXTENSION_NOT_PRESENT,
     };
 
     let Some(submission) = submission else {
-        return call_down(p_present_info);
+        let r = call_down(p_present_info);
+        finish(&ds, entered, down_us.get());
+        return r;
     };
 
     // The blit consumed the application's wait semaphores, so the present waits
@@ -93,7 +111,32 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         capture::retire_present_semaphore(&ds, image_index);
     }
 
+    finish(&ds, entered, down_us.get());
     result
+}
+
+/// Close out a present: record what this layer cost and stamp the return.
+///
+/// `layer` is everything in this hook that is not the down-call, both sides of
+/// it added together, so `gap + layer + down` accounts for the wall clock
+/// between one present and the next with nothing unattributed.
+fn finish(
+    ds: &crate::state::DeviceState,
+    entered: std::time::Instant,
+    down: std::time::Duration,
+) {
+    let now = std::time::Instant::now();
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.timing
+            .layer
+            .record(now.saturating_duration_since(entered).saturating_sub(down));
+        h.timing.down.record(down);
+    }
+    if let Ok(mut last) = ds.last_present_return.lock() {
+        *last = Some(now);
+    }
 }
 
 /// Everything the present hook needs to carry from the blit to the worker.

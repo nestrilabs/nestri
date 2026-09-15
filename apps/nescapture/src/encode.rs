@@ -360,6 +360,8 @@ pub struct PipelineHandle {
     pub dropped_frames: Arc<AtomicU32>,
     pub present_attempts: Arc<AtomicU32>,
     pub capture_attempts: Arc<AtomicU32>,
+    /// Where each present's time went, split three ways. Diagnostic.
+    pub timing: Arc<crate::timing::PresentTiming>,
 }
 
 impl PipelineHandle {
@@ -381,6 +383,7 @@ impl PipelineHandle {
         let dropped_frames = Arc::new(AtomicU32::new(0));
         let present_attempts = Arc::new(AtomicU32::new(0));
         let capture_attempts = Arc::new(AtomicU32::new(0));
+        let timing = Arc::new(crate::timing::PresentTiming::default());
         let current_codec = Arc::new(AtomicU8::new(codec.to_protocol_codec()));
         let needs_reconfig_flag = Arc::new(AtomicBool::new(false));
 
@@ -435,6 +438,7 @@ impl PipelineHandle {
         let stats_shutdown = shutdown.clone();
         let pa = present_attempts.clone();
         let ca = capture_attempts.clone();
+        let stats_timing = timing.clone();
         thread::Builder::new()
             .name("nescapture-stats".into())
             .spawn(move || {
@@ -445,6 +449,7 @@ impl PipelineHandle {
                     stats_drop,
                     pa,
                     ca,
+                    stats_timing,
                     stats_ipc,
                     stats_shutdown,
                 )
@@ -552,6 +557,7 @@ impl PipelineHandle {
             dropped_frames,
             present_attempts,
             capture_attempts,
+            timing,
         })
     }
 
@@ -1261,6 +1267,7 @@ fn stats_sender_thread(
     dropped_frames: Arc<AtomicU32>,
     present_attempts: Arc<AtomicU32>,
     capture_attempts: Arc<AtomicU32>,
+    timing: Arc<crate::timing::PresentTiming>,
     ipc_path: std::path::PathBuf,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -1311,10 +1318,24 @@ fn stats_sender_thread(
         // the bottleneck and nothing here can help it; `admitted` above
         // `encoded` with `starved` non-zero means the encoder is not returning
         // slots fast enough and the capture rate follows it down.
+        // Where the present path's time went, for the second just ended. A
+        // hitch lands in exactly one of these three and that names its owner:
+        // `gap` is the game's own frame time with this layer excluded, `layer`
+        // is this layer's code on both sides of the down-call, `down` is the
+        // driver, WSI and compositor.
+        let (gap_avg, gap_max) = timing.gap.take();
+        let (layer_avg, layer_max) = timing.layer.take();
+        let (down_avg, down_max) = timing.down.take();
+        let long_gaps = timing.take_long_gaps();
+
         log::info!(
             "present {pa}/s, admitted {ca}/s, encoded {raw_fps}/s, \
              starved {starved}, dropped {dropped}, capture {cap_ms:.1}ms, \
              encode {enc_ms:.1}ms"
+        );
+        log::info!(
+            "  gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
+             down {down_avg:.2}/{down_max:.2}ms (avg/max), hitches {long_gaps}"
         );
 
         if let Some(ref socket) = socket {
