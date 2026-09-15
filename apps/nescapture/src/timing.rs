@@ -8,7 +8,8 @@
 //  belong to the game, to the driver, or to this layer is the whole question,
 //  and nothing measured so far distinguishes them.
 //
-//  Three spans per present, all on the game's own thread:
+//  Three spans per present, all on the game's own thread, which together
+//  partition the wall clock between one present and the next:
 //
 //    gap    — previous present returning to this one arriving. The game's own
 //             frame time, everything this layer does excluded.
@@ -16,6 +17,12 @@
 //    down   — the down-call: driver, WSI, compositor.
 //
 //  A hitch shows up in exactly one of them and that names the culprit.
+//
+//  A fourth, blit, is not part of that partition. It is GPU execution time for
+//  the capture copy, which runs alongside the game rather than in front of it,
+//  and answers a different question: what the capture takes from the device the
+//  game is rendering on. CPU time in the hook says nothing about it — the hook
+//  submits the blit and returns without waiting.
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -58,6 +65,13 @@ pub struct PresentTiming {
     pub gap: Span,
     pub layer: Span,
     pub down: Span,
+    /// GPU execution time of the capture blit, from timestamps in its own
+    /// command buffer.
+    ///
+    /// Not part of the `gap`/`layer`/`down` partition — those three account for
+    /// the game's thread, and this is the GPU, which runs alongside it. It is
+    /// the share of the device the capture takes from whatever is rendering.
+    pub blit: Span,
     /// Gaps longer than [`LONG_GAP`]. A steady handful per second is a
     /// periodic stall; zero means the frame time is merely uneven.
     long_gaps: AtomicU32,

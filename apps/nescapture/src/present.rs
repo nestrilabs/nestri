@@ -316,6 +316,14 @@ pub fn resolve_source(
         return None;
     }
 
+    // After the fence, so the queries have landed and `WAIT` returns at once.
+    if let Some(ns) = unsafe { capture::blit_gpu_time_ns(ds, slot_index) }
+        && let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.timing.blit.record(std::time::Duration::from_nanos(ns));
+    }
+
     if dmabuf_fd >= 0 {
         let duped = unsafe { libc::dup(dmabuf_fd) };
         if duped < 0 {

@@ -193,6 +193,11 @@ pub unsafe extern "system" fn vkCreateDevice(
         get_image_drm_format_modifier_properties_ext: try_load!(
             b"vkGetImageDrmFormatModifierPropertiesEXT\0"
         ),
+        create_query_pool: try_load!(b"vkCreateQueryPool\0"),
+        destroy_query_pool: try_load!(b"vkDestroyQueryPool\0"),
+        cmd_reset_query_pool: try_load!(b"vkCmdResetQueryPool\0"),
+        cmd_write_timestamp: try_load!(b"vkCmdWriteTimestamp\0"),
+        get_query_pool_results: try_load!(b"vkGetQueryPoolResults\0"),
 
         // Phase 4 — synchronisation
         create_fence: load!(b"vkCreateFence\0"),

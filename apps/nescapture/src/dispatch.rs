@@ -204,6 +204,48 @@ pub type PFN_vkGetImageDrmFormatModifierPropertiesEXT = unsafe extern "system" f
     *mut vk::ImageDrmFormatModifierPropertiesEXT<'_>,
 ) -> vk::Result;
 
+// Timestamp queries around the capture blit. All optional: without them the
+// blit's GPU cost is simply not reported.
+pub type PFN_vkGetPhysicalDeviceProperties =
+    unsafe extern "system" fn(vk::PhysicalDevice, *mut vk::PhysicalDeviceProperties);
+
+pub type PFN_vkGetPhysicalDeviceQueueFamilyProperties =
+    unsafe extern "system" fn(vk::PhysicalDevice, *mut u32, *mut vk::QueueFamilyProperties);
+
+pub type PFN_vkCreateQueryPool = unsafe extern "system" fn(
+    vk::Device,
+    *const vk::QueryPoolCreateInfo<'_>,
+    *const vk::AllocationCallbacks,
+    *mut vk::QueryPool,
+) -> vk::Result;
+
+pub type PFN_vkDestroyQueryPool = unsafe extern "system" fn(
+    vk::Device,
+    vk::QueryPool,
+    *const vk::AllocationCallbacks,
+);
+
+pub type PFN_vkCmdResetQueryPool =
+    unsafe extern "system" fn(vk::CommandBuffer, vk::QueryPool, u32, u32);
+
+pub type PFN_vkCmdWriteTimestamp = unsafe extern "system" fn(
+    vk::CommandBuffer,
+    vk::PipelineStageFlags,
+    vk::QueryPool,
+    u32,
+);
+
+pub type PFN_vkGetQueryPoolResults = unsafe extern "system" fn(
+    vk::Device,
+    vk::QueryPool,
+    u32,
+    u32,
+    usize,
+    *mut std::ffi::c_void,
+    vk::DeviceSize,
+    vk::QueryResultFlags,
+) -> vk::Result;
+
 // DMA-BUF fd export (used to share final_image with pixelforge zero-copy)
 pub type PFN_vkGetMemoryFdKHR = unsafe extern "system" fn(
     vk::Device,
@@ -316,6 +358,12 @@ pub struct NextInstanceFn {
     /// `VK_KHR_get_physical_device_properties2`. Without it the modifier list
     /// cannot be queried and the capture ring stays linear.
     pub get_physical_device_format_properties2: Option<PFN_vkGetPhysicalDeviceFormatProperties2>,
+    /// Needed for `timestampPeriod`, which turns device ticks into nanoseconds.
+    pub get_physical_device_properties: Option<PFN_vkGetPhysicalDeviceProperties>,
+    /// Needed for a queue family's `timestampValidBits`. A family reporting
+    /// zero makes `vkCmdWriteTimestamp` illegal on it, so it has to be asked.
+    pub get_physical_device_queue_family_properties:
+        Option<PFN_vkGetPhysicalDeviceQueueFamilyProperties>,
     pub create_device: PFN_vkCreateDevice,
 }
 
@@ -367,6 +415,14 @@ pub struct NextDeviceFn {
     /// exact value, not the list.
     pub get_image_drm_format_modifier_properties_ext:
         Option<PFN_vkGetImageDrmFormatModifierPropertiesEXT>,
+
+    // Phase 4 — blit timing. All-or-nothing: the ring only times the blit when
+    // every one of these loaded and the presenting queue family can timestamp.
+    pub create_query_pool: Option<PFN_vkCreateQueryPool>,
+    pub destroy_query_pool: Option<PFN_vkDestroyQueryPool>,
+    pub cmd_reset_query_pool: Option<PFN_vkCmdResetQueryPool>,
+    pub cmd_write_timestamp: Option<PFN_vkCmdWriteTimestamp>,
+    pub get_query_pool_results: Option<PFN_vkGetQueryPoolResults>,
 
     // Phase 4 — synchronisation
     pub create_fence: PFN_vkCreateFence,

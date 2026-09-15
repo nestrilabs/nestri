@@ -64,6 +64,15 @@ pub struct CaptureRing {
     pub blits_recorded: Vec<bool>,
     /// How many swapchain images the ring allocated command buffers for.
     pub image_count: usize,
+    /// Two timestamps per slot, bracketing that slot's blit, or null where the
+    /// presenting queue family cannot timestamp.
+    ///
+    /// Per slot rather than per (image, slot) pair because only one blit per
+    /// slot is ever in flight — the `SlotGuard` guarantees it — and the query
+    /// index has to be baked into a command buffer recorded once.
+    pub timestamp_pool: vk::QueryPool,
+    /// Nanoseconds per device tick, for turning the pair into a duration.
+    pub timestamp_period: f32,
     /// The extent `blits` were recorded for.
     ///
     /// The ring is kept when the swapchain shrinks — `ensure_capture_ring`

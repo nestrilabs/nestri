@@ -558,6 +558,9 @@ unsafe fn create_capture_ring(
         _marker: std::marker::PhantomData,
     };
 
+    let (timestamp_pool, timestamp_period) =
+        unsafe { create_timestamp_pool(ds, queue_family) };
+
     let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
     for i in 0..CAPTURE_SLOTS {
         let Some((image, memory, modifier)) =
@@ -602,6 +605,8 @@ unsafe fn create_capture_ring(
         blits,
         blits_recorded: vec![false; blit_count],
         image_count: image_count.max(1),
+        timestamp_pool,
+        timestamp_period,
         size: (w, h, f),
         queue_family,
         // Zero so the first frame always records: no real extent equals it, so
@@ -656,6 +661,13 @@ pub unsafe fn destroy_capture_ring(ds: &crate::state::DeviceState, ring: Capture
                     destroy(ds.raw, sem, std::ptr::null());
                 }
             }
+        }
+    }
+    unsafe {
+        if !ring.timestamp_pool.is_null()
+            && let Some(destroy) = ds.fp.destroy_query_pool
+        {
+            destroy(ds.raw, ring.timestamp_pool, std::ptr::null());
         }
     }
     unsafe { destroy_partial_ring(ds, ring.command_pool, ring.slots) };
@@ -804,6 +816,113 @@ pub struct CaptureSubmission {
     pub present_wait: vk::Semaphore,
 }
 
+/// Create the blit timestamp pool, or a null handle where it cannot be used.
+///
+/// Null is the normal, expected outcome on some hardware — RADV's video-encode
+/// family reports `timestampValidBits == 0`, and a graphics family could too —
+/// and it costs nothing but the measurement. `vkCmdWriteTimestamp` on a family
+/// reporting zero is a validation error
+/// (VUID-vkCmdWriteTimestamp-timestampValidBits-00829), so it has to be asked
+/// rather than assumed.
+unsafe fn create_timestamp_pool(
+    ds: &crate::state::DeviceState,
+    queue_family: u32,
+) -> (vk::QueryPool, f32) {
+    let none = (vk::QueryPool::null(), 0.0);
+
+    let (Some(create), Some(_), Some(_), Some(_)) = (
+        ds.fp.create_query_pool,
+        ds.fp.cmd_reset_query_pool,
+        ds.fp.cmd_write_timestamp,
+        ds.fp.get_query_pool_results,
+    ) else {
+        return none;
+    };
+
+    let k = unsafe { crate::dispatch_key(ds.physical_device.as_raw() as *const std::ffi::c_void) };
+    let Some(istate) = crate::state::INSTANCE_STATE.get(&k) else {
+        return none;
+    };
+    let (Some(get_props), Some(get_families)) = (
+        istate.get_physical_device_properties,
+        istate.get_physical_device_queue_family_properties,
+    ) else {
+        return none;
+    };
+
+    let mut props = vk::PhysicalDeviceProperties::default();
+    unsafe { get_props(ds.physical_device, &mut props) };
+    let period = props.limits.timestamp_period;
+    if period <= 0.0 {
+        return none;
+    }
+
+    let mut count = 0u32;
+    unsafe { get_families(ds.physical_device, &mut count, std::ptr::null_mut()) };
+    let mut families = vec![vk::QueueFamilyProperties::default(); count as usize];
+    unsafe { get_families(ds.physical_device, &mut count, families.as_mut_ptr()) };
+    match families.get(queue_family as usize) {
+        Some(f) if f.timestamp_valid_bits > 0 => {}
+        _ => {
+            log::info!(
+                "queue family {queue_family} reports timestampValidBits=0; \
+                 blit GPU timing disabled"
+            );
+            return none;
+        }
+    }
+
+    let ci = vk::QueryPoolCreateInfo {
+        s_type: vk::StructureType::QUERY_POOL_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::QueryPoolCreateFlags::empty(),
+        query_type: vk::QueryType::TIMESTAMP,
+        // Two per slot. Per slot and not per (image, slot) pair because only
+        // one blit per slot is ever in flight.
+        query_count: (CAPTURE_SLOTS * 2) as u32,
+        pipeline_statistics: vk::QueryPipelineStatisticFlags::empty(),
+        _marker: std::marker::PhantomData,
+    };
+    let mut pool = vk::QueryPool::null();
+    if unsafe { create(ds.raw, &ci, std::ptr::null(), &mut pool) } != vk::Result::SUCCESS {
+        log::warn!("blit timestamp pool could not be created; GPU timing disabled");
+        return none;
+    }
+    (pool, period)
+}
+
+/// GPU nanoseconds the last blit into `slot` took.
+///
+/// Call only after that slot's fence has signalled, so the results are there
+/// and the `WAIT` flag returns immediately. `None` when timing is off, when the
+/// driver refuses the results, or when the counter wrapped between the pair.
+pub unsafe fn blit_gpu_time_ns(ds: &crate::state::DeviceState, slot: usize) -> Option<u64> {
+    let ring_guard = ds.capture_ring.lock().ok()?;
+    let ring = ring_guard.as_ref()?;
+    if ring.timestamp_pool.is_null() {
+        return None;
+    }
+    let get = ds.fp.get_query_pool_results?;
+    let mut ticks = [0u64; 2];
+    let result = unsafe {
+        get(
+            ds.raw,
+            ring.timestamp_pool,
+            (slot * 2) as u32,
+            2,
+            std::mem::size_of_val(&ticks),
+            ticks.as_mut_ptr() as *mut std::ffi::c_void,
+            std::mem::size_of::<u64>() as vk::DeviceSize,
+            vk::QueryResultFlags::WAIT | vk::QueryResultFlags::TYPE_64,
+        )
+    };
+    if result != vk::Result::SUCCESS {
+        return None;
+    }
+    let elapsed = ticks[1].checked_sub(ticks[0])?;
+    Some((elapsed as f64 * f64::from(ring.timestamp_period)) as u64)
+}
+
 /// Record the blit from one swapchain image into one ring slot.
 ///
 /// Called once per (image, slot) pair and then never again while the swapchain
@@ -817,6 +936,8 @@ unsafe fn record_blit(
     si: vk::Image,
     fi: vk::Image,
     ext: vk::Extent2D,
+    timestamp_pool: vk::QueryPool,
+    slot_index: usize,
 ) -> bool {
     let begin = vk::CommandBufferBeginInfo {
         s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
@@ -830,6 +951,26 @@ unsafe fn record_blit(
     };
     if unsafe { (ds.fp.begin_command_buffer)(cb, &begin) } != vk::Result::SUCCESS {
         return false;
+    }
+
+    // Bracket the barriers as well as the copy: the layout transitions on the
+    // swapchain image are part of what this costs the GPU, and the first of
+    // them is a full flush. Recorded once with the rest of the buffer; the
+    // reset runs on every submission, which is what makes the pair reusable.
+    let timed = !timestamp_pool.is_null()
+        && ds.fp.cmd_reset_query_pool.is_some()
+        && ds.fp.cmd_write_timestamp.is_some();
+    if timed {
+        let first = (slot_index * 2) as u32;
+        unsafe {
+            (ds.fp.cmd_reset_query_pool.unwrap())(cb, timestamp_pool, first, 2);
+            (ds.fp.cmd_write_timestamp.unwrap())(
+                cb,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                timestamp_pool,
+                first,
+            );
+        }
     }
 
     let b1 = image_barrier!(
@@ -916,6 +1057,17 @@ unsafe fn record_blit(
             1,
             &b3,
         );
+    }
+
+    if timed {
+        unsafe {
+            (ds.fp.cmd_write_timestamp.unwrap())(
+                cb,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                timestamp_pool,
+                (slot_index * 2 + 1) as u32,
+            );
+        }
     }
 
     if unsafe { (ds.fp.end_command_buffer)(cb) } != vk::Result::SUCCESS {
@@ -1014,7 +1166,8 @@ pub unsafe fn capture_present_frame(
     let blit = crate::state::blit_index(image_index, slot_index, ring.image_count)?;
     let cb = *ring.blits.get(blit)?;
     if !ring.blits_recorded[blit] {
-        if !unsafe { record_blit(ds, cb, si, fi, ext) } {
+        let pool = ring.timestamp_pool;
+        if !unsafe { record_blit(ds, cb, si, fi, ext, pool, slot_index) } {
             return None;
         }
         ring.blits_recorded[blit] = true;
