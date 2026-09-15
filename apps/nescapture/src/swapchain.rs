@@ -61,6 +61,14 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     // outgoing swapchain, so they are set aside rather than reused.
     crate::capture::retire_all_present_semaphores(&ds);
 
+    // Those fresh images also make every recorded blit invalid: a recording
+    // names its source image by handle, and the handles behind these indices
+    // now belong to a destroyed swapchain. The extent check in
+    // `capture_present_frame` catches a resize on its own, but a swapchain
+    // recreated at the same size — which is the common case, on a format or
+    // present-mode change — looks identical to it.
+    crate::capture::invalidate_recorded_blits(&ds);
+
     *ds.swapchain.lock().unwrap() = Some(unsafe { *p_swapchain });
     *ds.swapchain_format.lock().unwrap() = ci.image_format;
     *ds.swapchain_extent.lock().unwrap() = ci.image_extent;

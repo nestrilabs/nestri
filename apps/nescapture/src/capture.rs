@@ -324,10 +324,20 @@ unsafe fn ensure_capture_ring(
     h: u32,
     f: vk::Format,
     queue_family: u32,
+    image_count: usize,
 ) -> bool {
     if let Some(existing) = ring.as_ref() {
         let (ew, eh, ef) = existing.size;
-        if ew >= w && eh >= h && ef == f && existing.queue_family == queue_family {
+        // `image_count` joins the identity because the blit buffers are
+        // allocated one per (image, slot) pair. A swapchain that gained an
+        // image needs more of them, and a ring that kept the old count would
+        // silently stop capturing whenever that image came round.
+        if ew >= w
+            && eh >= h
+            && ef == f
+            && existing.queue_family == queue_family
+            && existing.image_count == image_count
+        {
             return true;
         }
         if !ds.capture_slots.all_free() {
@@ -337,7 +347,7 @@ unsafe fn ensure_capture_ring(
             unsafe { destroy_capture_ring(ds, old) };
         }
     }
-    match unsafe { create_capture_ring(ds, w, h, f, queue_family) } {
+    match unsafe { create_capture_ring(ds, w, h, f, queue_family, image_count) } {
         Some(fresh) => {
             *ring = Some(fresh);
             true
@@ -352,6 +362,7 @@ unsafe fn create_capture_ring(
     h: u32,
     f: vk::Format,
     queue_family: u32,
+    image_count: usize,
 ) -> Option<CaptureRing> {
     let pci = vk::CommandPoolCreateInfo {
         s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
@@ -369,16 +380,20 @@ unsafe fn create_capture_ring(
         return None;
     }
 
+    // One per (swapchain image, slot) pair, so each can be recorded once and
+    // re-submitted. Typically twelve to sixteen buffers; they hold a barrier
+    // pair and a copy each and are never re-recorded in steady state.
+    let blit_count = image_count.max(1) * CAPTURE_SLOTS;
     let ai = vk::CommandBufferAllocateInfo {
         s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
         p_next: std::ptr::null(),
         command_pool,
         level: vk::CommandBufferLevel::PRIMARY,
-        command_buffer_count: CAPTURE_SLOTS as u32,
+        command_buffer_count: blit_count as u32,
         _marker: std::marker::PhantomData,
     };
-    let mut cbs = [vk::CommandBuffer::null(); CAPTURE_SLOTS];
-    if unsafe { (ds.fp.allocate_command_buffers)(ds.raw, &ai, cbs.as_mut_ptr()) }
+    let mut blits = vec![vk::CommandBuffer::null(); blit_count];
+    if unsafe { (ds.fp.allocate_command_buffers)(ds.raw, &ai, blits.as_mut_ptr()) }
         != vk::Result::SUCCESS
     {
         unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
@@ -394,7 +409,7 @@ unsafe fn create_capture_ring(
     };
 
     let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
-    for (i, &command_buffer) in cbs.iter().enumerate() {
+    for i in 0..CAPTURE_SLOTS {
         let Some((image, memory)) = (unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") })
         else {
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
@@ -421,7 +436,6 @@ unsafe fn create_capture_ring(
             memory,
             dmabuf_fd,
             stride,
-            command_buffer,
             fence,
         });
     }
@@ -433,8 +447,18 @@ unsafe fn create_capture_ring(
     Some(CaptureRing {
         command_pool,
         slots,
+        blits,
+        blits_recorded: vec![false; blit_count],
+        image_count: image_count.max(1),
         size: (w, h, f),
         queue_family,
+        // Zero so the first frame always records: no real extent equals it, so
+        // the invalidation check in `capture_present_frame` fires once and then
+        // never again until something actually changes.
+        blit_extent: vk::Extent2D {
+            width: 0,
+            height: 0,
+        },
         present_wait: Vec::new(),
         retired: Vec::new(),
     })
@@ -628,85 +652,32 @@ pub struct CaptureSubmission {
     pub present_wait: vk::Semaphore,
 }
 
-/// Blit the presented swapchain image into a ring slot, ahead of the present.
+/// Record the blit from one swapchain image into one ring slot.
 ///
-/// Two orderings have to hold and neither did before.
-///
-/// The blit must not read the swapchain image before the game has finished
-/// rendering into it. The game signals that with the semaphores it attached to
-/// `VkPresentInfoKHR`, so the blit waits on exactly those.
-///
-/// The game must not render into that image again before the blit has read it.
-/// Presentation is what releases the image back to the application, so the
-/// present is made to wait on a semaphore the blit signals. The old code
-/// submitted the blit from a worker thread after `vkQueuePresentKHR` had
-/// already returned, which guaranteed neither.
-///
-/// Returns `None` when the frame cannot be captured, in which case the caller
-/// must present unmodified — the application's semaphores have not been touched.
-pub unsafe fn capture_present_frame(
+/// Called once per (image, slot) pair and then never again while the swapchain
+/// and the extent hold. No `ONE_TIME_SUBMIT`: this buffer is submitted many
+/// times. It is never submitted twice concurrently, because the slot it writes
+/// is held by a `SlotGuard` for the whole life of the frame, so the previous
+/// submission has completed before that slot is handed out again.
+unsafe fn record_blit(
     ds: &crate::state::DeviceState,
-    queue: vk::Queue,
+    cb: vk::CommandBuffer,
     si: vk::Image,
-    fmt: vk::Format,
+    fi: vk::Image,
     ext: vk::Extent2D,
-    image_index: usize,
-    app_waits: &[vk::Semaphore],
-) -> Option<CaptureSubmission> {
-    if ext.width == 0 || ext.height == 0 {
-        return None;
-    }
-    if !ds
-        .swapchain_transfer_src
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
-        return None;
-    }
-
-    // A command buffer may only be submitted to the family its pool was created
-    // for. An unknown queue means one the layer never saw through
-    // vkGetDeviceQueue, so there is nothing safe to assume about it.
-    let queue_family = *crate::state::QUEUE_TO_FAMILY.get(&queue.as_raw())?;
-
-    let mut ring_guard = ds.capture_ring.lock().ok()?;
-    if !unsafe {
-        ensure_capture_ring(ds, &mut ring_guard, ext.width, ext.height, fmt, queue_family)
-    } {
-        return None;
-    }
-    let ring = ring_guard.as_mut()?;
-
-    let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
-
-    // Never blocks: a frame with no free slot is one the encoder has not caught
-    // up with, and stalling the game's present to wait for it would be worse
-    // than skipping it.
-    let guard = ds.capture_slots.try_acquire()?;
-    let slot = ring.slots.get(guard.index())?;
-    let cb = slot.command_buffer;
-    let fence = slot.fence;
-    let fi = slot.image;
-
-    // A free slot's fence is already signalled — the capture worker waits on it
-    // before the encoder ever sees the frame. This covers the paths that
-    // abandon a frame and return the slot without that wait.
-    unsafe {
-        if (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 2_000_000) != vk::Result::SUCCESS {
-            return None;
-        }
-        let _ = (ds.fp.reset_fences)(ds.raw, 1, &fence);
-        let _ = (ds.fp.reset_command_buffer)(cb, vk::CommandBufferResetFlags::empty());
-    }
-
-    let bi = vk::CommandBufferBeginInfo {
+) -> bool {
+    let begin = vk::CommandBufferBeginInfo {
         s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
         p_next: std::ptr::null(),
-        flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+        // The pool carries RESET_COMMAND_BUFFER, so beginning an already
+        // recorded buffer implicitly resets it. That is the re-record path,
+        // taken after a swapchain recreation or an extent change.
+        flags: vk::CommandBufferUsageFlags::empty(),
         p_inheritance_info: std::ptr::null(),
         _marker: std::marker::PhantomData,
     };
-    if unsafe { (ds.fp.begin_command_buffer)(cb, &bi) } != vk::Result::SUCCESS {
-        return None;
+    if unsafe { (ds.fp.begin_command_buffer)(cb, &begin) } != vk::Result::SUCCESS {
+        return false;
     }
 
     let b1 = image_barrier!(
@@ -796,8 +767,107 @@ pub unsafe fn capture_present_frame(
     }
 
     if unsafe { (ds.fp.end_command_buffer)(cb) } != vk::Result::SUCCESS {
+        return false;
+    }
+
+    true
+}
+
+/// Blit the presented swapchain image into a ring slot, ahead of the present.
+///
+/// Two orderings have to hold and neither did before.
+///
+/// The blit must not read the swapchain image before the game has finished
+/// rendering into it. The game signals that with the semaphores it attached to
+/// `VkPresentInfoKHR`, so the blit waits on exactly those.
+///
+/// The game must not render into that image again before the blit has read it.
+/// Presentation is what releases the image back to the application, so the
+/// present is made to wait on a semaphore the blit signals. The old code
+/// submitted the blit from a worker thread after `vkQueuePresentKHR` had
+/// already returned, which guaranteed neither.
+///
+/// Returns `None` when the frame cannot be captured, in which case the caller
+/// must present unmodified — the application's semaphores have not been touched.
+pub unsafe fn capture_present_frame(
+    ds: &crate::state::DeviceState,
+    queue: vk::Queue,
+    si: vk::Image,
+    fmt: vk::Format,
+    ext: vk::Extent2D,
+    image_index: usize,
+    image_count: usize,
+    app_waits: &[vk::Semaphore],
+) -> Option<CaptureSubmission> {
+    if ext.width == 0 || ext.height == 0 {
         return None;
     }
+    if !ds
+        .swapchain_transfer_src
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return None;
+    }
+
+    // A command buffer may only be submitted to the family its pool was created
+    // for. An unknown queue means one the layer never saw through
+    // vkGetDeviceQueue, so there is nothing safe to assume about it.
+    let queue_family = *crate::state::QUEUE_TO_FAMILY.get(&queue.as_raw())?;
+
+    let mut ring_guard = ds.capture_ring.lock().ok()?;
+    if !unsafe {
+        ensure_capture_ring(
+            ds,
+            &mut ring_guard,
+            ext.width,
+            ext.height,
+            fmt,
+            queue_family,
+            image_count,
+        )
+    } {
+        return None;
+    }
+    let ring = ring_guard.as_mut()?;
+
+    let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
+
+    // Never blocks: a frame with no free slot is one the encoder has not caught
+    // up with, and stalling the game's present to wait for it would be worse
+    // than skipping it.
+    let guard = ds.capture_slots.try_acquire()?;
+    let slot_index = guard.index();
+    let slot = ring.slots.get(slot_index)?;
+    let fence = slot.fence;
+    let fi = slot.image;
+
+    // A free slot's fence is already signalled — the encoder side waits on it
+    // before it ever reads the slot. This covers the paths that abandon a frame
+    // and return the slot without that wait.
+    unsafe {
+        if (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 2_000_000) != vk::Result::SUCCESS {
+            return None;
+        }
+        let _ = (ds.fp.reset_fences)(ds.raw, 1, &fence);
+    }
+
+    // The recording depends on the source image, the destination image and the
+    // extent. A ring survives the swapchain shrinking, so the extent can move
+    // under recordings whose images are still valid — invalidate on it here
+    // rather than trusting every caller to have noticed.
+    if ring.blit_extent != ext {
+        ring.blits_recorded.iter_mut().for_each(|r| *r = false);
+        ring.blit_extent = ext;
+    }
+    let blit = crate::state::blit_index(image_index, slot_index, ring.image_count)?;
+    let cb = *ring.blits.get(blit)?;
+    if !ring.blits_recorded[blit] {
+        if !unsafe { record_blit(ds, cb, si, fi, ext) } {
+            return None;
+        }
+        ring.blits_recorded[blit] = true;
+    }
+
 
     let wait_stages = vec![vk::PipelineStageFlags::TRANSFER; app_waits.len()];
     let subi = vk::SubmitInfo {
@@ -860,6 +930,21 @@ pub fn retire_present_semaphore(ds: &crate::state::DeviceState, image_index: usi
 }
 
 /// Set aside every per-image semaphore, for a swapchain that is going away.
+/// Mark every recorded blit as needing re-recording.
+///
+/// Called when the swapchain is recreated. Each recording names a specific
+/// source `VkImage`, and a recreated swapchain's images are new objects even
+/// when the indices and the extent are unchanged — so submitting a recording
+/// made against the old ones reads destroyed images.
+pub fn invalidate_recorded_blits(ds: &crate::state::DeviceState) {
+    let Ok(mut ring_guard) = ds.capture_ring.lock() else {
+        return;
+    };
+    if let Some(ring) = ring_guard.as_mut() {
+        ring.blits_recorded.iter_mut().for_each(|r| *r = false);
+    }
+}
+
 pub fn retire_all_present_semaphores(ds: &crate::state::DeviceState) {
     let Ok(mut ring_guard) = ds.capture_ring.lock() else {
         return;

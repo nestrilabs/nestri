@@ -128,14 +128,14 @@ unsafe fn try_capture(
     pi: &vk::PresentInfoKHR,
 ) -> Option<Submission> {
     let image_index = unsafe { *pi.p_image_indices } as usize;
-    let (sc_image, sc_fmt, sc_ext) = {
+    let (sc_image, sc_fmt, sc_ext, image_count) = {
         let images = ds.swapchain_images.lock().ok()?;
         let fmt = *ds.swapchain_format.lock().ok()?;
         let ext = *ds.swapchain_extent.lock().ok()?;
         if image_index >= images.len() || ext.width == 0 || ext.height == 0 {
             return None;
         }
-        (images[image_index], fmt, ext)
+        (images[image_index], fmt, ext, images.len())
     };
 
     // Gate before any GPU work is queued. A game presenting faster than the
@@ -167,7 +167,16 @@ unsafe fn try_capture(
     };
 
     let submission = unsafe {
-        capture::capture_present_frame(ds, queue, sc_image, sc_fmt, sc_ext, image_index, app_waits)
+        capture::capture_present_frame(
+            ds,
+            queue,
+            sc_image,
+            sc_fmt,
+            sc_ext,
+            image_index,
+            image_count,
+            app_waits,
+        )
     }?;
 
     Some(Submission {
