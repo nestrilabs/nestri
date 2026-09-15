@@ -72,6 +72,15 @@ pub struct PresentTiming {
     /// the game's thread, and this is the GPU, which runs alongside it. It is
     /// the share of the device the capture takes from whatever is rendering.
     pub blit: Span,
+    /// Time the game spent blocked inside `vkAcquireNextImageKHR`.
+    ///
+    /// A subdivision of `gap`, not a fourth term beside it: the acquire happens
+    /// while the game is between presents, so this is the part of its frame
+    /// time spent waiting for the compositor to hand back an image rather than
+    /// doing work of its own. Under a FIFO swapchain that wait *is* the
+    /// compositor's pacing, and it is invisible in `gap` alone — a game waiting
+    /// on a buffer and a game busy rendering produce the same number.
+    pub acquire: Span,
     /// Gaps longer than [`LONG_GAP`]. A steady handful per second is a
     /// periodic stall; zero means the frame time is merely uneven.
     long_gaps: AtomicU32,

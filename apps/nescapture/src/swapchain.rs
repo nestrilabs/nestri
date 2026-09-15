@@ -100,12 +100,26 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     ds.swapchain_colorspace
         .store(ci.image_color_space.as_raw() as u32, Ordering::Relaxed);
 
-    log::debug!(
-        "swapchain created — format={:?} colorspace={:?} extent={}x{}",
+    // `info`, not `debug`, and the present mode is why. It decides whether the
+    // compositor paces this game at all: a FIFO swapchain waits on
+    // `wl_surface.frame`, so the game's rate is the compositor's callback
+    // cadence no matter what the gate here is set to, while MAILBOX and
+    // IMMEDIATE ignore those callbacks entirely and leave the pacing to this
+    // layer. The two cases need opposite fixes and nothing else in a log
+    // distinguishes them — "the game runs at 60" reads identically either way.
+    //
+    // An application's in-game V-Sync setting is not the answer either: DXVK
+    // and VKD3D choose the Vulkan present mode themselves, and what they pick
+    // from a given setting is theirs to decide.
+    log::info!(
+        "swapchain created — format={:?} colorspace={:?} extent={}x{} present_mode={:?} \
+         min_images={}",
         ci.image_format,
         ci.image_color_space,
         ci.image_extent.width,
         ci.image_extent.height,
+        ci.present_mode,
+        ci.min_image_count,
     );
 
     vk::Result::SUCCESS
@@ -165,4 +179,79 @@ pub unsafe extern "system" fn vkGetSwapchainImagesKHR(
     }
 
     vk::Result::SUCCESS
+}
+
+/// Time the game's wait for a swapchain image.
+///
+/// Hooked for the measurement alone — the image index, the semaphore and the
+/// fence are the application's business and nothing here touches them.
+///
+/// It is the one part of a frame the present hook cannot see. `gap` runs from
+/// one present returning to the next arriving and the acquire sits inside it,
+/// so a game blocked waiting for the compositor to release a buffer and a game
+/// busy rendering are the same number. Under a FIFO swapchain that wait is the
+/// compositor's frame pacing, which is a different problem in a different
+/// process from anything this layer can fix.
+/// The device state for an acquire, with the present hook's fallback.
+///
+/// These hooks exist only to time the call, but hooking replaces the
+/// application's function pointer — so there is no passing through if the
+/// lookup misses, and returning an error would break a game for the sake of a
+/// measurement. The last resort is the same one `vkQueuePresentKHR` uses: with
+/// one device in the process, the only entry is the right one.
+fn device_for(device: vk::Device) -> Option<std::sync::Arc<crate::state::DeviceState>> {
+    let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
+    DEVICE_STATE
+        .get(&key)
+        .map(|s| s.clone())
+        .or_else(|| DEVICE_STATE.iter().next().map(|e| e.value().clone()))
+}
+
+fn record_acquire(ds: &crate::state::DeviceState, waited: std::time::Duration) {
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.timing.acquire.record(waited);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn vkAcquireNextImageKHR(
+    device: vk::Device,
+    swapchain: vk::SwapchainKHR,
+    timeout: u64,
+    semaphore: vk::Semaphore,
+    fence: vk::Fence,
+    p_image_index: *mut u32,
+) -> vk::Result {
+    let Some(ds) = device_for(device) else {
+        return vk::Result::ERROR_DEVICE_LOST;
+    };
+    let Some(acquire) = ds.fp.acquire_next_image_khr else {
+        return vk::Result::ERROR_EXTENSION_NOT_PRESENT;
+    };
+
+    let started = std::time::Instant::now();
+    let result = unsafe { acquire(device, swapchain, timeout, semaphore, fence, p_image_index) };
+    record_acquire(&ds, started.elapsed());
+    result
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn vkAcquireNextImage2KHR(
+    device: vk::Device,
+    p_acquire_info: *const vk::AcquireNextImageInfoKHR,
+    p_image_index: *mut u32,
+) -> vk::Result {
+    let Some(ds) = device_for(device) else {
+        return vk::Result::ERROR_DEVICE_LOST;
+    };
+    let Some(acquire) = ds.fp.acquire_next_image2_khr else {
+        return vk::Result::ERROR_EXTENSION_NOT_PRESENT;
+    };
+
+    let started = std::time::Instant::now();
+    let result = unsafe { acquire(device, p_acquire_info, p_image_index) };
+    record_acquire(&ds, started.elapsed());
+    result
 }

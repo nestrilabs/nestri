@@ -218,6 +218,8 @@ pub unsafe extern "system" fn vkCreateDevice(
         create_swapchain_khr: try_load!(b"vkCreateSwapchainKHR\0"),
         destroy_swapchain_khr: try_load!(b"vkDestroySwapchainKHR\0"),
         get_swapchain_images_khr: try_load!(b"vkGetSwapchainImagesKHR\0"),
+        acquire_next_image_khr: try_load!(b"vkAcquireNextImageKHR\0"),
+        acquire_next_image2_khr: try_load!(b"vkAcquireNextImage2KHR\0"),
 
         // Phase 6 — draw commands
         cmd_draw: load!(b"vkCmdDraw\0"),

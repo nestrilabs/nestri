@@ -317,6 +317,21 @@ pub type PFN_vkDestroySwapchainKHR =
 pub type PFN_vkGetSwapchainImagesKHR =
     unsafe extern "system" fn(vk::Device, vk::SwapchainKHR, *mut u32, *mut vk::Image) -> vk::Result;
 
+pub type PFN_vkAcquireNextImageKHR = unsafe extern "system" fn(
+    vk::Device,
+    vk::SwapchainKHR,
+    u64,
+    vk::Semaphore,
+    vk::Fence,
+    *mut u32,
+) -> vk::Result;
+
+pub type PFN_vkAcquireNextImage2KHR = unsafe extern "system" fn(
+    vk::Device,
+    *const vk::AcquireNextImageInfoKHR<'_>,
+    *mut u32,
+) -> vk::Result;
+
 // ── Phase 6: Draw commands ───────────────────────────────────────────────────
 
 pub type PFN_vkCmdDraw = unsafe extern "system" fn(vk::CommandBuffer, u32, u32, u32, u32);
@@ -444,6 +459,10 @@ pub struct NextDeviceFn {
     pub create_swapchain_khr: Option<PFN_vkCreateSwapchainKHR>,
     pub destroy_swapchain_khr: Option<PFN_vkDestroySwapchainKHR>,
     pub get_swapchain_images_khr: Option<PFN_vkGetSwapchainImagesKHR>,
+    /// Both acquire entry points, hooked only to time them. A game uses one or
+    /// the other and the layer must not care which.
+    pub acquire_next_image_khr: Option<PFN_vkAcquireNextImageKHR>,
+    pub acquire_next_image2_khr: Option<PFN_vkAcquireNextImage2KHR>,
 
     // Phase 6 — draw commands
     pub cmd_draw: PFN_vkCmdDraw,

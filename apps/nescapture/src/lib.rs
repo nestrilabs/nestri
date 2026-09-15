@@ -57,7 +57,10 @@ use instance::{vkCreateInstance, vkDestroyInstance};
 use pipeline::{vkCreateGraphicsPipelines, vkDestroyPipeline};
 use present::vkQueuePresentKHR;
 use shader::{vkCreateShaderModule, vkDestroyShaderModule};
-use swapchain::{vkCreateSwapchainKHR, vkDestroySwapchainKHR, vkGetSwapchainImagesKHR};
+use swapchain::{
+    vkAcquireNextImage2KHR, vkAcquireNextImageKHR, vkCreateSwapchainKHR, vkDestroySwapchainKHR,
+    vkGetSwapchainImagesKHR,
+};
 
 use dispatch::{PFN_vkGetDeviceProcAddr, PFN_vkGetInstanceProcAddr, RawFn};
 use state::{DEVICE_STATE, INSTANCE_STATE};
@@ -326,6 +329,19 @@ unsafe fn match_device_fn(name: &[u8]) -> Option<RawFn> {
                     log::debug!("gdpa: → our vkGetSwapchainImagesKHR");
                 }
                 Some(to_raw(vkGetSwapchainImagesKHR as *const () as usize))
+            }
+            // Hooked only to time the wait. See `swapchain::record_acquire`.
+            b"vkAcquireNextImageKHR" => {
+                if log_this {
+                    log::debug!("gdpa: → our vkAcquireNextImageKHR");
+                }
+                Some(to_raw(vkAcquireNextImageKHR as *const () as usize))
+            }
+            b"vkAcquireNextImage2KHR" => {
+                if log_this {
+                    log::debug!("gdpa: → our vkAcquireNextImage2KHR");
+                }
+                Some(to_raw(vkAcquireNextImage2KHR as *const () as usize))
             }
 
             _ => {
