@@ -81,6 +81,14 @@ pub struct PresentTiming {
     /// compositor's pacing, and it is invisible in `gap` alone — a game waiting
     /// on a buffer and a game busy rendering produce the same number.
     pub acquire: Span,
+    /// Time this layer deliberately held the game back, to keep it at the
+    /// target rate.
+    ///
+    /// Reported so it is never mistaken for cost. It is excluded from `layer`,
+    /// and the present-return is stamped after it, so `gap` stays the game's
+    /// own frame time — otherwise every number here would shift the moment
+    /// limiting was switched on and none of them would say why.
+    pub hold: Span,
     /// Gaps longer than [`LONG_GAP`]. A steady handful per second is a
     /// periodic stall; zero means the frame time is merely uneven.
     long_gaps: AtomicU32,

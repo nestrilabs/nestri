@@ -82,6 +82,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         return r;
     };
 
+
     // The blit consumed the application's wait semaphores, so the present waits
     // on ours instead. Presenting on the originals as well would be a second
     // wait on an already-consumed signal.
@@ -125,15 +126,37 @@ fn finish(
     entered: std::time::Instant,
     down: std::time::Duration,
 ) {
+    // Everything this hook cost, before any deliberate waiting.
+    let worked = std::time::Instant::now();
+
+    // Hold the game to the target rate. *After* the down-call, so the frame
+    // went out the moment it was ready and this only keeps the application
+    // from starting the next one — the cadence without the latency.
+    let held = match ds.frame_pacer.lock() {
+        Ok(mut pacer) => pacer.hold(worked),
+        // A poisoned pacer must not wedge the game.
+        Err(_) => std::time::Duration::ZERO,
+    };
+    if !held.is_zero() {
+        std::thread::sleep(held);
+    }
+
     let now = std::time::Instant::now();
     if let Ok(enc) = ds.encoder.lock()
         && let Some(ref h) = *enc
     {
-        h.timing
-            .layer
-            .record(now.saturating_duration_since(entered).saturating_sub(down));
+        // `layer` is this layer's cost, so the hold comes out of it: it is
+        // time spent on purpose, not overhead.
+        h.timing.layer.record(
+            worked
+                .saturating_duration_since(entered)
+                .saturating_sub(down),
+        );
         h.timing.down.record(down);
+        h.timing.hold.record(held);
     }
+    // Stamped after the hold, so the next frame's `gap` is the game's own
+    // work and not the waiting this layer asked it to do.
     if let Ok(mut last) = ds.last_present_return.lock() {
         *last = Some(now);
     }

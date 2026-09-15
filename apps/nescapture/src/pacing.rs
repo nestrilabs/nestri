@@ -2,17 +2,31 @@
 //  pacing.rs — capture frame-rate gate
 //
 //  The layer is the only place that sees every frame the game produces, so it
-//  is the only place that can decide which ones are worth capturing. Nothing
-//  here consults the compositor: no vblank, no surface, no present feedback,
-//  just the monotonic clock. nescope runs uncapped by design and must stay out
-//  of this decision.
+//  is the only place that can pace one. Nothing here consults the compositor:
+//  no vblank, no surface, no present feedback, just the monotonic clock.
 //
-//  The gate only ever *drops*. It never waits, never blocks the game's present,
-//  and never admits more frames than the game offered. A game running below the
-//  target is passed through untouched — including, and this is the whole
-//  difficulty, a game whose average is below the target but which delivers its
-//  frames in fast runs separated by stalls. That is what a CPU-starved game
-//  looks like, and it is the case the first version of this got wrong.
+//  Two jobs, deliberately apart:
+//
+//    FrameGate   — which frames are captured. Only ever *drops*: it never
+//                  waits, never blocks the game's present, and never admits
+//                  more frames than the game offered.
+//    FramePacer  — how fast the game may run. This one does block, at the end
+//                  of the present hook, which is the only thing in the process
+//                  that can hold a game whose V-Sync is off.
+//
+//  Both are needed. The pacer holds the game to the target, and the gate is the
+//  backstop for what a sleep cannot promise: `thread::sleep` lands within a
+//  fraction of a millisecond, not exactly, so frames still arrive early.
+//
+//  A game running below the target is untouched by either — including, and this
+//  is the whole difficulty, a game whose average is below the target but which
+//  delivers its frames in fast runs separated by stalls. That is what a
+//  CPU-starved game looks like, and it is the case the first gate got wrong.
+//
+//  One correction worth recording: this file used to say nescope "runs uncapped
+//  by design". It does not. Its `--fps` defaults to 60 and drives both the
+//  advertised output refresh and the `wl_surface.frame` cadence, and nothing
+//  passes a tier's rate down to it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 use std::time::{Duration, Instant};
@@ -148,6 +162,96 @@ impl FrameGate {
         } else {
             false
         }
+    }
+}
+
+/// Holds the game to the target rate, by delaying its present's *return*.
+///
+/// [`FrameGate`] decides which frames are captured and never touches the game;
+/// this decides how fast the game is allowed to run. They are separate because
+/// they answer separate questions, and because a game paced to the target still
+/// needs the gate as a backstop: `thread::sleep` lands within a fraction of a
+/// millisecond, not exactly, so a frame occasionally arrives early.
+///
+/// # Why the layer and not the compositor
+///
+/// A compositor cannot pace a game that has V-Sync off. `IMMEDIATE` and
+/// `MAILBOX` swapchains do not wait on `wl_surface.frame` — that callback is
+/// FIFO's throttle and nothing else's — so a player turning V-Sync off leaves
+/// the compositor with no lever at all. The only one it has left is withholding
+/// `wl_buffer.release` to starve the swapchain, which stalls the game inside
+/// `vkAcquireNextImageKHR` at a depth the *application* chose when it picked an
+/// image count. This process sees every present and owns a monotonic clock,
+/// which is the whole of what pacing needs.
+///
+/// # Why the hold goes after the present, not before it
+///
+/// Sleeping before calling down delays the frame reaching the screen, which is
+/// latency added to a frame that was ready. Sleeping after it means the frame
+/// went out the moment it was ready and the application is merely held back
+/// from *starting* the next one. Same cadence, no added latency — which is
+/// where every other frame limiter puts it.
+pub struct FramePacer {
+    /// Zero means no limiting — the game runs as fast as it can.
+    interval: Duration,
+    /// When the next present may return. `None` until the first one does.
+    due: Option<Instant>,
+}
+
+impl FramePacer {
+    pub fn new(target_fps: u32) -> Self {
+        Self {
+            interval: if target_fps == 0 {
+                Duration::ZERO
+            } else {
+                Duration::from_nanos(1_000_000_000 / u64::from(target_fps))
+            },
+            due: None,
+        }
+    }
+
+    /// Read the target from the environment.
+    ///
+    /// The same `NESCAPTURE_FPS` the gate reads, because a capture rate and a
+    /// game rate that disagree is a stream sending frames nobody asked for or
+    /// dropping frames somebody paid to render. `NESCAPTURE_LIMIT=0` leaves the
+    /// game alone and captures at the rate anyway, which is how the capture
+    /// path's cost is measured without the limiter hiding it.
+    pub fn from_env() -> Self {
+        let limit = std::env::var("NESCAPTURE_LIMIT")
+            .map(|v| v != "0")
+            .unwrap_or(true);
+        if !limit {
+            log::info!("game frame limiting off (NESCAPTURE_LIMIT=0)");
+            return Self::new(0);
+        }
+        let fps = std::env::var("NESCAPTURE_FPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60);
+        Self::new(fps)
+    }
+
+    /// How long to hold the application before its present may return.
+    ///
+    /// Pure, and returns the duration rather than sleeping, so the cadence can
+    /// be tested without a clock that really waits. Zero whenever the game is
+    /// already at or below the target: a slow game is never made slower.
+    pub fn hold(&mut self, now: Instant) -> Duration {
+        if self.interval.is_zero() {
+            return Duration::ZERO;
+        }
+        let slot = self.due.unwrap_or(now);
+        let wait = slot.saturating_duration_since(now);
+
+        // Advance from the slot, not from `now`, so a game presenting a hair
+        // early or late keeps an exact cadence rather than drifting. The clamp
+        // is for a real stall: a slot far enough in the past would otherwise
+        // let the game run a burst of frames back to back to "catch up", and
+        // the frames it would be catching up on were never rendered.
+        let next = slot + self.interval;
+        self.due = Some(if next <= now { now + self.interval } else { next });
+        wait
     }
 }
 
@@ -379,6 +483,95 @@ mod tests {
             after(Duration::from_secs(2)),
             after(Duration::from_secs(600)),
             "a longer stall banked a deeper burst"
+        );
+    }
+}
+
+#[cfg(test)]
+mod pacer_tests {
+    use super::*;
+
+    /// Run a game that renders each frame in `render`, for `frames` frames,
+    /// obeying whatever hold the pacer asks for. Returns the wall time taken.
+    fn run(pacer: &mut FramePacer, frames: u32, render: Duration) -> Duration {
+        let start = Instant::now();
+        let mut now = start;
+        for _ in 0..frames {
+            now += render;
+            now += pacer.hold(now);
+        }
+        now.saturating_duration_since(start)
+    }
+
+    #[test]
+    fn no_target_never_holds() {
+        let mut p = FramePacer::new(0);
+        let now = Instant::now();
+        for i in 0..100 {
+            assert_eq!(p.hold(now + Duration::from_micros(i)), Duration::ZERO);
+        }
+    }
+
+    /// A game that could render at 500 fps is held to 60: sixty frames take
+    /// about a second, not a tenth of one.
+    #[test]
+    fn a_fast_game_is_held_to_the_target() {
+        let mut p = FramePacer::new(60);
+        let took = run(&mut p, 60, Duration::from_millis(2));
+        assert!(
+            took >= Duration::from_millis(970) && took <= Duration::from_millis(1030),
+            "sixty frames at a 60 fps limit took {took:?}"
+        );
+    }
+
+    /// A game slower than the target is never delayed. Holding one would be
+    /// this layer making a struggling game slower still.
+    #[test]
+    fn a_slow_game_is_never_held() {
+        let mut p = FramePacer::new(120);
+        let mut now = Instant::now();
+        for i in 0..60 {
+            // 40 fps against a 120 fps limit.
+            now += Duration::from_millis(25);
+            assert_eq!(
+                p.hold(now),
+                Duration::ZERO,
+                "frame {i} of a 40 fps game was held against a 120 fps limit"
+            );
+        }
+    }
+
+    /// After a stall, the frames that were never rendered are not owed back.
+    /// Advancing one interval at a time would let the game run flat out until
+    /// it had "caught up" on frames that do not exist.
+    #[test]
+    fn a_stall_is_not_repaid_with_a_burst() {
+        let mut p = FramePacer::new(60);
+        let t0 = Instant::now();
+        p.hold(t0);
+
+        // Two seconds gone — a load screen.
+        let resume = t0 + Duration::from_secs(2);
+        assert_eq!(p.hold(resume), Duration::ZERO, "the first frame back waited");
+
+        // And the next frame is paced normally rather than let through free.
+        let next = resume + Duration::from_millis(2);
+        let held = p.hold(next);
+        assert!(
+            held >= Duration::from_millis(13),
+            "the frame after a stall was held only {held:?}"
+        );
+    }
+
+    /// The rate holds over a long run, which is the property that matters —
+    /// per-frame exactness is not something a sleep can promise.
+    #[test]
+    fn the_rate_holds_over_ten_seconds() {
+        let mut p = FramePacer::new(120);
+        let took = run(&mut p, 1200, Duration::from_micros(500));
+        assert!(
+            took >= Duration::from_millis(9_900) && took <= Duration::from_millis(10_100),
+            "1200 frames at a 120 fps limit took {took:?}"
         );
     }
 }

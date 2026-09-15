@@ -235,6 +235,10 @@ pub struct DeviceState {
     /// present hook, before any GPU work is queued, so a dropped frame costs
     /// nothing beyond the comparison.
     pub frame_gate: std::sync::Mutex<crate::pacing::FrameGate>,
+    /// Holds the game to the target rate. The gate decides what is captured;
+    /// this decides how fast the game is allowed to produce frames, which no
+    /// compositor can do once a player turns V-Sync off.
+    pub frame_pacer: std::sync::Mutex<crate::pacing::FramePacer>,
     /// When the previous `vkQueuePresentKHR` returned to the game.
     ///
     /// The base for the `gap` span: time from here to the next present's

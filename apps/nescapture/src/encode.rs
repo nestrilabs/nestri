@@ -1328,6 +1328,7 @@ fn stats_sender_thread(
         let (down_avg, down_max) = timing.down.take();
         let (blit_avg, blit_max) = timing.blit.take();
         let (acq_avg, acq_max) = timing.acquire.take();
+        let (hold_avg, hold_max) = timing.hold.take();
         let long_gaps = timing.take_long_gaps();
 
         log::info!(
@@ -1338,7 +1339,8 @@ fn stats_sender_thread(
         log::info!(
             "  gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
              down {down_avg:.2}/{down_max:.2}ms, acquire {acq_avg:.1}/{acq_max:.1}ms, \
-             blit-gpu {blit_avg:.3}/{blit_max:.3}ms (avg/max), hitches {long_gaps}"
+             hold {hold_avg:.2}/{hold_max:.2}ms, blit-gpu {blit_avg:.3}/{blit_max:.3}ms \
+             (avg/max), hitches {long_gaps}"
         );
 
         if let Some(ref socket) = socket {
