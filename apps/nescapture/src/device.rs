@@ -12,7 +12,6 @@ use ash::vk::{self, Handle};
 use dashmap::DashMap;
 use std::os::raw::c_void;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 const VK_LAYER_LINK_INFO: u32 = 0;
 
@@ -95,32 +94,17 @@ pub unsafe extern "system" fn vkCreateDevice(
         }
     }
 
-    // ── Bump queue count for dedicated capture queue ──────────────────
-    // Add one extra queue to the first queue family so capture
-    // submissions don't compete with game rendering.
-    let mut capture_queue_index = 0u32;
-    let queue_infos: Vec<vk::DeviceQueueCreateInfo> = if ci.queue_create_info_count > 0
-        && !ci.p_queue_create_infos.is_null()
-    {
-        let slice = unsafe {
-            std::slice::from_raw_parts(ci.p_queue_create_infos, ci.queue_create_info_count as usize)
-        };
-        let mut qis = slice.to_vec();
-        if let Some(first) = qis.first_mut() {
-            capture_queue_index = first.queue_count; // use the NEXT index
-            first.queue_count += 1;
-        }
-        qis
-    } else {
-        Vec::new()
-    };
-
     // Try with injected extensions first.
+    //
+    // The device's queue create info is passed through unchanged. An earlier
+    // version bumped the first family's queue count by one to get a dedicated
+    // capture queue, which was then never used — and could not be: the capture
+    // blit has to be submitted to the queue the game presents on, or it gains
+    // no ordering against the present. All the bump did was risk exceeding the
+    // family's available queue count on the way in.
     let mut modified_ci = *ci;
     modified_ci.enabled_extension_count = extended.len() as u32;
     modified_ci.pp_enabled_extension_names = extended.as_ptr();
-    modified_ci.queue_create_info_count = queue_infos.len() as u32;
-    modified_ci.p_queue_create_infos = queue_infos.as_ptr();
 
     let mut dmabuf_available = true;
     let result =
@@ -150,8 +134,6 @@ pub unsafe extern "system" fn vkCreateDevice(
     let device = unsafe { *p_device };
 
     // Cache physical device memory properties
-    let mut mem_props = vk::PhysicalDeviceMemoryProperties::default();
-    unsafe { (istate.get_physical_device_memory_properties)(physical_device, &mut mem_props) };
 
     macro_rules! load {
         ($name:literal) => {
@@ -206,6 +188,8 @@ pub unsafe extern "system" fn vkCreateDevice(
 
         // Phase 4 — synchronisation
         create_fence: load!(b"vkCreateFence\0"),
+        create_semaphore: try_load!(b"vkCreateSemaphore\0"),
+        destroy_semaphore: try_load!(b"vkDestroySemaphore\0"),
         destroy_fence: load!(b"vkDestroyFence\0"),
         create_command_pool: load!(b"vkCreateCommandPool\0"),
         destroy_command_pool: load!(b"vkDestroyCommandPool\0"),
@@ -230,28 +214,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         cmd_draw_indirect_count: try_load!(b"vkCmdDrawIndirectCount\0"),
         cmd_draw_indexed_indirect_count: try_load!(b"vkCmdDrawIndexedIndirectCount\0"),
     };
-
-    // ── Retrieve capture queue from the bumped slot ───────────────────
-    let mut capture_queue = vk::Queue::null();
-    if queue_infos
-        .first()
-        .map(|q| q.queue_count > 1)
-        .unwrap_or(false)
-    {
-        let qi = &queue_infos[0];
-        unsafe {
-            (fp.get_device_queue)(
-                device,
-                qi.queue_family_index,
-                capture_queue_index,
-                &mut capture_queue,
-            );
-        }
-        log::info!(
-            "capture queue: family={} index={capture_queue_index}",
-            qi.queue_family_index
-        );
-    }
 
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
 
@@ -290,23 +252,18 @@ pub unsafe extern "system" fn vkCreateDevice(
         hudless_image: std::sync::Mutex::new(None),
         hudless_memory: std::sync::Mutex::new(None),
         hudless_size: std::sync::Mutex::new((0, 0, vk::Format::UNDEFINED)),
-        final_image: std::sync::Mutex::new(None),
-        final_memory: std::sync::Mutex::new(None),
-        final_size: std::sync::Mutex::new((0, 0, vk::Format::UNDEFINED)),
-        final_stride: std::sync::atomic::AtomicU32::new(0),
+        capture_ring: std::sync::Mutex::new(None),
+        capture_slots: crate::slots::SlotPool::new(crate::state::CAPTURE_SLOTS),
         swapchain: std::sync::Mutex::new(None),
         swapchain_images: std::sync::Mutex::new(Vec::new()),
         swapchain_format: std::sync::Mutex::new(vk::Format::UNDEFINED),
+        swapchain_transfer_src: std::sync::atomic::AtomicBool::new(false),
         swapchain_extent: std::sync::Mutex::new(vk::Extent2D {
             width: 0,
             height: 0,
         }),
         swapchain_colorspace: std::sync::atomic::AtomicU32::new(0),
         frame_counter: std::sync::atomic::AtomicU64::new(0),
-        largest_extent: std::sync::Mutex::new(vk::Extent2D {
-            width: 0,
-            height: 0,
-        }),
 
         hud_detected_frame: std::sync::atomic::AtomicBool::new(false),
         pending_capture_frame: std::sync::atomic::AtomicBool::new(false),
@@ -315,24 +272,8 @@ pub unsafe extern "system" fn vkCreateDevice(
 
         encoder: std::sync::Mutex::new(None),
 
-        capture_resources: std::sync::Mutex::new(None),
-        capture_queue: std::sync::Mutex::new(capture_queue),
-        fake_images: std::sync::Mutex::new(Vec::new()),
-        fake_memories: std::sync::Mutex::new(Vec::new()),
-        fake_fds: std::sync::Mutex::new(Vec::new()),
-        fake_strides: std::sync::Mutex::new(Vec::new()),
-        fake_available: std::sync::Mutex::new(Vec::new()),
-        fake_image_count: std::sync::atomic::AtomicU32::new(0),
-        fake_swapchain: std::sync::Mutex::new(None),
-        signal_queue: std::sync::Mutex::new(vk::Queue::null()),
-        next_acquire: std::sync::atomic::AtomicU32::new(0),
-        memory_properties: std::sync::Mutex::new(mem_props),
-        acquire_dummy_pool: std::sync::Mutex::new(vk::CommandPool::null()),
-        acquire_dummy_cb: std::sync::Mutex::new(vk::CommandBuffer::null()),
-        cached_dmabuf_fd: std::sync::atomic::AtomicI32::new(-1),
 
-        target_fps: std::sync::atomic::AtomicU32::new(0),
-        last_capture_time: std::sync::Mutex::new(None),
+        frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
         capture_tx: std::sync::Mutex::new(None),
     });
 
@@ -377,42 +318,26 @@ pub unsafe extern "system" fn vkDestroyDevice(
     // Brief yield to let threads notice the disconnect.
     std::thread::sleep(std::time::Duration::from_millis(50));
 
-    // ── 2. Clean up capture resources (double-buffered cmd pool + fences) ─
+    // ── 2. Tear down the capture ring ─────────────────────────────────────
+    //
+    // Images, memory, fences, exported fds and the per-swapchain-image
+    // semaphores all belong to the ring now, so one teardown covers what used
+    // to be three separate steps.
     {
-        let mut res_guard = ds.capture_resources.lock().unwrap();
-        if let Some(res) = res_guard.take() {
-            unsafe {
-                // Wait for any in-flight capture commands to finish before
-                // destroying the fences / command pool.
-                let _ = (ds.fp.wait_for_fences)(
-                    ds.raw,
-                    res.fences.len() as u32,
-                    res.fences.as_ptr(),
-                    vk::TRUE,
-                    5_000_000_000, // 5 seconds — should be instant
+        let ring = ds.capture_ring.lock().unwrap().take();
+        if let Some(ring) = ring {
+            if !ds.capture_slots.all_free() {
+                log::warn!(
+                    "device destroyed with {} capture slot(s) still in flight",
+                    crate::state::CAPTURE_SLOTS - ds.capture_slots.available()
                 );
-                for &f in &res.fences {
-                    (ds.fp.destroy_fence)(ds.raw, f, std::ptr::null());
-                }
-                (ds.fp.destroy_command_pool)(ds.raw, res.command_pool, std::ptr::null());
             }
-            log::debug!("capture resources destroyed");
+            unsafe { crate::capture::destroy_capture_ring(&ds, ring) };
+            log::debug!("capture ring destroyed");
         }
     }
 
-    // ── 3. Free final_image / final_memory ────────────────────────────────
-    {
-        let img = ds.final_image.lock().unwrap().take();
-        let mem = ds.final_memory.lock().unwrap().take();
-        if let Some(i) = img {
-            unsafe { (ds.fp.destroy_image)(ds.raw, i, std::ptr::null()) };
-        }
-        if let Some(m) = mem {
-            unsafe { (ds.fp.free_memory)(ds.raw, m, std::ptr::null()) };
-        }
-    }
-
-    // ── 4. Free hudless_image / hudless_memory ────────────────────────────
+    // ── 3. Free hudless_image / hudless_memory ────────────────────────────
     {
         let img = ds.hudless_image.lock().unwrap().take();
         let mem = ds.hudless_memory.lock().unwrap().take();
@@ -424,19 +349,18 @@ pub unsafe extern "system" fn vkDestroyDevice(
         }
     }
 
-    // ── 5. Close cached DMA-BUF fd ────────────────────────────────────────
-    {
-        let fd = ds.cached_dmabuf_fd.load(Ordering::Relaxed);
-        if fd >= 0 {
-            unsafe { libc::close(fd) };
-            log::debug!("cached DMA-BUF fd {} closed", fd);
-        }
+    // ── 4. Clean up queue → device key mappings for this device ───────────
+    let stale: Vec<u64> = QUEUE_TO_DEVICE_KEY
+        .iter()
+        .filter(|e| *e.value() == key)
+        .map(|e| *e.key())
+        .collect();
+    for q in stale {
+        crate::state::QUEUE_TO_FAMILY.remove(&q);
     }
-
-    // ── 6. Clean up queue → device key mappings for this device ───────────
     QUEUE_TO_DEVICE_KEY.retain(|_, dk| *dk != key);
 
-    // ── 7. Call the real vkDestroyDevice ──────────────────────────────────
+    // ── 5. Call the real vkDestroyDevice ──────────────────────────────────
     unsafe { (ds.fp.destroy_device)(device, p_allocator) };
 
     log::info!("vkDestroyDevice complete");
@@ -454,11 +378,7 @@ pub unsafe extern "system" fn vkGetDeviceQueue(
         unsafe { (ds.fp.get_device_queue)(device, queue_family_index, queue_index, p_queue) };
         let queue = unsafe { *p_queue };
         QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
-        // Store first queue for acquire semaphore signaling
-        let mut sq = ds.signal_queue.lock().unwrap();
-        if *sq == vk::Queue::null() {
-            *sq = queue;
-        }
+        crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), queue_family_index);
     }
 }
 

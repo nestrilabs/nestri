@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 # Vulkan bindings
-ash = { git = "https://github.com/ash-rs/ash", rev = "55dd56906bbb5760e9e9e6c56f45be67f67e0649" }
+ash = { git = "https://github.com/ash-rs/ash", rev = "f4c2ca3e4f6b998d5254ad101a32f024d87cdec2" }
 # Shader fingerprinting
 sha2     = "0.10"
 bytemuck = "1"
@@ -20,7 +20,7 @@ bytemuck = "1"
 # Concurrent state maps
 dashmap   = "6"
 once_cell = "1"
-pollster = "0.4.0"
+pollster = "1.0"
 
 # Logging
 log        = "0.4"
@@ -32,11 +32,10 @@ toml  = "0.8"
 serde = { version = "1", features = ["derive"] }
 
 # Vulkan Video hardware encoding.
-pixelforge = { git = "https://github.com/hgaiser/pixelforge.git", rev = "2ee4d7ac6e470cc34270e48d6e9d6f3fc1d7c379", features = ["dmabuf"] }
+pixelforge = { git = "https://github.com/hgaiser/pixelforge.git", rev = "936d412e1a73917e0e108c4ab18bf5208b1681ac", features = ["dmabuf"] }
 
 # libc for DMA-BUF OS primitives
 libc = "0.2"
 
 # Shared IPC protocol
 nesprotocol = { path = "../../crates/nesprotocol" }
-

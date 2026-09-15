@@ -38,14 +38,28 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
 
     let result = unsafe { create_fn(device, &modified_ci, p_allocator, p_swapchain) };
     // If the driver rejects TRANSFER_SRC (e.g. composited window), try without.
-    let result = if result != vk::Result::SUCCESS {
-        unsafe { create_fn(device, ci, p_allocator, p_swapchain) }
-    } else {
+    let transfer_src = result == vk::Result::SUCCESS;
+    let result = if transfer_src {
         result
+    } else {
+        unsafe { create_fn(device, ci, p_allocator, p_swapchain) }
     };
     if result != vk::Result::SUCCESS {
         return result;
     }
+    if !transfer_src {
+        log::warn!(
+            "swapchain refused TRANSFER_SRC — capture disabled for this swapchain. \
+             Blitting from images the driver did not grant transfer usage is undefined."
+        );
+    }
+    ds.swapchain_transfer_src
+        .store(transfer_src, Ordering::Relaxed);
+
+    // A fresh swapchain means fresh images behind the same indices. The
+    // per-image capture semaphores may still be pending on presents from the
+    // outgoing swapchain, so they are set aside rather than reused.
+    crate::capture::retire_all_present_semaphores(&ds);
 
     *ds.swapchain.lock().unwrap() = Some(unsafe { *p_swapchain });
     *ds.swapchain_format.lock().unwrap() = ci.image_format;
