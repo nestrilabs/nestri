@@ -39,22 +39,31 @@ pub struct FrameGate {
     credit: f64,
     /// The most credit that may accumulate, in frames.
     ///
-    /// This is the whole of the stall policy. Too small and a game that stalls
-    /// briefly can never catch up, which is the bug this replaced; too large
-    /// and a game returning from a load screen replays everything it missed at
-    /// once. Bounded by the capture ring, because credit beyond the number of
-    /// slots buys frames that would be refused for want of one anyway.
+    /// This is the whole of the stall policy, and [`FrameGate::BURST_WINDOW`]
+    /// sets it: the gate enforces the target over any window longer than that
+    /// and leaves shorter ones alone.
     burst: f64,
     /// When the previous present arrived. `None` until the first.
     last: Option<Instant>,
 }
 
 impl FrameGate {
-    /// The most credit the gate will bank, in frames.
+    /// How far behind the target a game may fall and still catch up.
     ///
-    /// [`crate::state::CAPTURE_SLOTS`] — a burst larger than the ring cannot be
-    /// captured however generous the gate is.
-    const BURST_FRAMES: f64 = crate::state::CAPTURE_SLOTS as f64;
+    /// Equivalently: the gate enforces the target rate averaged over any window
+    /// longer than this and does not constrain shorter ones. It has to exceed
+    /// the longest stall the game takes mid-scene, because credit stops
+    /// accruing once the bucket is full, and every millisecond of silence after
+    /// that is a frame the game went on to present and this gate refused.
+    ///
+    /// It was `CAPTURE_SLOTS` — four frames, 67ms — on the reasoning that
+    /// banking more bought frames the ring could not hold. That reasoning was
+    /// wrong. A burst after a stall arrives serially, as fast as the game
+    /// presents it, not all at once, and the ring drains a frame every three
+    /// milliseconds; the ring was never the constraint. Measured on the target,
+    /// stalls reach 101ms, and against a 67ms bucket a game offering 59 frames
+    /// in a second had 52 of them taken.
+    const BURST_WINDOW: Duration = Duration::from_millis(250);
 
     pub fn new(target_fps: u32) -> Self {
         let interval = if target_fps == 0 {
@@ -62,12 +71,21 @@ impl FrameGate {
         } else {
             Duration::from_nanos(1_000_000_000 / u64::from(target_fps))
         };
+        let burst = if interval.is_zero() {
+            0.0
+        } else {
+            Self::BURST_WINDOW.as_secs_f64() / interval.as_secs_f64()
+        };
         Self {
             interval,
-            // Starts full: the first frames of a run must not be thinned just
-            // because the gate has no history yet.
-            credit: Self::BURST_FRAMES,
-            burst: Self::BURST_FRAMES,
+            // Nearly empty, not full. One unit admits the first frame, and the
+            // second absorbs a frame of jitter before any history exists.
+            // Starting full would hand a fast game a quarter second of free
+            // frames and make its first reported second read seventy-odd
+            // against a gate set to sixty — a burst in the one measurement
+            // this is read by.
+            credit: 2.0_f64.min(burst),
+            burst,
             last: None,
         }
     }
@@ -215,62 +233,99 @@ mod tests {
         );
     }
 
-    /// A deeper stutter than the bucket can cover is still thinned, and must
-    /// be: eight frames at 10ms is a hundred a second however short the run.
-    /// What matters is that it is thinned towards the target rather than below
-    /// it — the failure being guarded against is losing frames a slow game
-    /// needed, not admitting fewer than a fast run offers.
+    /// The stall the target actually exhibits: gaps up to 101ms, in a second
+    /// where the game still offers fewer frames than the gate allows. Every one
+    /// must survive. At the old 67ms bucket this lost seven frames in sixty —
+    /// `present 59/s, admitted 52/s` on the target.
     #[test]
-    fn a_run_faster_than_the_target_is_still_thinned() {
+    fn a_hundred_millisecond_stall_costs_no_frames() {
         let mut g = FrameGate::new(60);
         let mut at = Instant::now();
         let mut admitted = 0;
-        // Eight at 10ms then 120ms idle: 8 frames per 200ms, 40 a second.
-        for i in 0..400 {
-            at += if i % 9 == 8 {
-                Duration::from_millis(120)
+        let mut offered = 0;
+        // Ten frames at 11ms, then 100ms of silence: 10 frames per 210ms, about
+        // 48 a second, well inside a gate set to 60.
+        let mut step = |i: usize| {
+            if i % 11 == 10 {
+                Duration::from_millis(100)
             } else {
-                Duration::from_millis(10)
+                Duration::from_millis(11)
+            }
+        };
+        // The bucket starts nearly empty, so the first second of a game faster
+        // than the target loses a handful of frames while it fills. That is the
+        // deliberate trade for not bursting at startup, and it is not what this
+        // is testing — the claim is about steady state, so warm up first.
+        for i in 0..100 {
+            at += step(i);
+            g.admit(at);
+        }
+        for i in 100..400 {
+            at += step(i);
+            offered += 1;
+            if g.admit(at) {
+                admitted += 1;
+            }
+        }
+        assert_eq!(
+            admitted, offered,
+            "dropped {} frames of a stalling sub-target game",
+            offered - admitted
+        );
+    }
+
+    /// The bucket bridges a stall; it does not raise the ceiling. A game that
+    /// is genuinely faster than the target over a long run is still thinned to
+    /// it, however it distributes its frames.
+    #[test]
+    fn a_sustained_fast_game_is_still_held_to_the_target() {
+        let mut g = FrameGate::new(60);
+        let mut at = Instant::now();
+        let mut admitted = 0;
+        // 120 fps in bursts of eight with a 20ms pause: ~8 frames per 76ms,
+        // about 105 a second, sustained for ten seconds.
+        for i in 0..1000 {
+            at += if i % 9 == 8 {
+                Duration::from_millis(20)
+            } else {
+                Duration::from_millis(8)
             };
             if g.admit(at) {
                 admitted += 1;
             }
         }
-        // Offered 400 over ~8.9s at an average of 45/s. Whatever is dropped,
-        // the result must stay far above what the old gate managed and must
-        // never exceed what was offered.
-        assert!(admitted <= 400);
+        let seconds = 9.5;
+        let rate = admitted as f64 / seconds;
         assert!(
-            admitted >= 340,
-            "admitted only {admitted} of 400 from a sub-target game"
+            rate < 66.0,
+            "admitted {admitted} frames, about {rate:.0}/s, from a gate set to 60"
         );
     }
 
     #[test]
-    fn a_stall_does_not_bank_a_burst() {
+    fn a_stall_does_not_bank_an_unbounded_burst() {
         let mut g = FrameGate::new(60);
         let t0 = Instant::now();
         assert!(g.admit(t0));
 
-        // Two seconds of nothing — a load screen.
+        // Two seconds of nothing — a load screen, not a hitch.
         let resume = t0 + Duration::from_secs(2);
         assert!(g.admit(resume));
 
         // The game resuming at 300 fps must not replay the ~120 frames the gate
-        // "missed" during the stall. Across the next 100ms it may admit what 60
-        // fps allows — about six — plus at most the bucket's depth, and nothing
-        // like the thirty on offer.
+        // "missed". The bucket is a quarter second deep, so what comes through
+        // is that plus what the elapsed time earns — well short of everything
+        // on offer.
         let step = Duration::from_nanos(3_333_333);
-        let burst = (1..30).filter(|i| g.admit(resume + step * *i)).count();
+        let burst = (1..120).filter(|i| g.admit(resume + step * *i)).count();
         assert!(
-            burst <= 6 + FrameGate::BURST_FRAMES as usize,
-            "admitted {burst} frames in 100ms after a stall"
+            burst < 45,
+            "admitted {burst} frames in 400ms after a two-second stall"
         );
-        assert!(burst >= 5, "admitted only {burst} frames in 100ms");
     }
 
-    /// Credit is bounded however long the stall, so the depth of the burst
-    /// after one does not grow with it.
+    /// Credit is bounded however long the stall, so the burst after one does
+    /// not grow with it. This is what stops a load screen becoming a replay.
     #[test]
     fn a_longer_stall_does_not_bank_a_deeper_burst() {
         let after = |stall: Duration| {
@@ -279,11 +334,11 @@ mod tests {
             g.admit(t0);
             let resume = t0 + stall;
             let step = Duration::from_nanos(3_333_333);
-            (0..30).filter(|i| g.admit(resume + step * *i)).count()
+            (0..120).filter(|i| g.admit(resume + step * *i)).count()
         };
         assert_eq!(
             after(Duration::from_secs(2)),
-            after(Duration::from_secs(60)),
+            after(Duration::from_secs(600)),
             "a longer stall banked a deeper burst"
         );
     }
