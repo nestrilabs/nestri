@@ -9,7 +9,17 @@
 //  happens to be — including on the error paths that abandon a frame.
 // ─────────────────────────────────────────────────────────────────────────────
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+
+/// Presents that were admitted by the frame gate and then found no free slot.
+///
+/// Diagnostic only, and global rather than per-device because the stats thread
+/// has no route to a `DeviceState`. It answers the one question the existing
+/// counters cannot: a frame missing between `capture_attempts` and the encoder
+/// was either never captured because the encoder still held every slot, or was
+/// captured and lost further down. Those have opposite fixes.
+pub static SLOT_STARVED: AtomicU32 = AtomicU32::new(0);
 
 pub struct SlotPool {
     free: Mutex<Vec<usize>>,
@@ -30,7 +40,13 @@ impl SlotPool {
     /// thread, where waiting for the encoder to catch up would be a stutter the
     /// player can feel. A frame with no slot is simply not captured.
     pub fn try_acquire(self: &Arc<Self>) -> Option<SlotGuard> {
-        let index = self.free.lock().ok()?.pop()?;
+        let index = match self.free.lock().ok().and_then(|mut f| f.pop()) {
+            Some(i) => i,
+            None => {
+                SLOT_STARVED.fetch_add(1, Ordering::Relaxed);
+                return None;
+            }
+        };
         Some(SlotGuard {
             pool: Arc::clone(self),
             index,

@@ -1225,19 +1225,26 @@ fn stats_sender_thread(
     ipc_path: std::path::PathBuf,
     shutdown: Arc<AtomicBool>,
 ) {
+    // Optional, where it used to end the thread. The socket only exists when a
+    // hub is listening, and this thread now also writes the per-second rate line
+    // that says where frames are going — which is wanted most in exactly the
+    // bare runs that have no hub.
     let socket = match std::os::unix::net::UnixDatagram::unbound() {
-        Ok(s) => s,
+        Ok(s) if s.connect(&ipc_path).is_ok() => {
+            log::info!("stats sender → {}", ipc_path.display());
+            Some(s)
+        }
+        Ok(_) => {
+            log::warn!(
+                "stats socket connect failed; rates are logged but not sent to the hub"
+            );
+            None
+        }
         Err(e) => {
-            log::error!("stats socket create: {e}");
-            return;
+            log::error!("stats socket create: {e}; rates are logged only");
+            None
         }
     };
-    if socket.connect(&ipc_path).is_err() {
-        log::warn!("stats socket connect failed, stats unavailable");
-        return;
-    }
-
-    log::info!("stats sender → {}", ipc_path.display());
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -1255,9 +1262,27 @@ fn stats_sender_thread(
         let pa = present_attempts.swap(0, Ordering::Relaxed);
         let ca = capture_attempts.swap(0, Ordering::Relaxed);
 
-        let mut buf = Vec::with_capacity(22);
-        nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
-        let _ = socket.send(&buf);
+        let starved = crate::slots::SLOT_STARVED.swap(0, Ordering::Relaxed);
+
+        // Logged as well as sent, because the socket goes to the desktop app
+        // and the question this answers is asked from inside the container.
+        // The three rates are the whole diagnosis: `present` is what the game
+        // produced, `admitted` is what the gate let through, and `encoded` is
+        // what reached the encoder. `present` below target means the game is
+        // the bottleneck and nothing here can help it; `admitted` above
+        // `encoded` with `starved` non-zero means the encoder is not returning
+        // slots fast enough and the capture rate follows it down.
+        log::info!(
+            "present {pa}/s, admitted {ca}/s, encoded {raw_fps}/s, \
+             starved {starved}, dropped {dropped}, capture {cap_ms:.1}ms, \
+             encode {enc_ms:.1}ms"
+        );
+
+        if let Some(ref socket) = socket {
+            let mut buf = Vec::with_capacity(22);
+            nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
+            let _ = socket.send(&buf);
+        }
     }
 
     log::info!("stats sender exited");
