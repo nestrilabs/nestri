@@ -190,6 +190,10 @@ jobs:
           # the checksum of every artefact, so the agent can verify what it
           # downloaded before it swaps anything into place.
           #
+          # The order matters: units are restarted in the order they appear
+          # here, and the API's AUTH_INTERNAL_URL names the issuer, so the
+          # issuer comes back first.
+          #
           # `unit` is what gets restarted. `nestri-migrate` has none on purpose
           # — it is run, not served — and `migrate: true` is what makes the
           # deploy run it *before* the swap. That ordering is why migrations
@@ -206,14 +210,14 @@ jobs:
             "migrate": true,
             "artefacts": [
               {
-                "name": "nestri-api",
-                "unit": "nestri-api",
-                "sha256": "$(sha256sum nestri-api | cut -d' ' -f1)"
-              },
-              {
                 "name": "nestri-auth",
                 "unit": "nestri-auth",
                 "sha256": "$(sha256sum nestri-auth | cut -d' ' -f1)"
+              },
+              {
+                "name": "nestri-api",
+                "unit": "nestri-api",
+                "sha256": "$(sha256sum nestri-api | cut -d' ' -f1)"
               },
               {
                 "name": "nestri-migrate",
