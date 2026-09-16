@@ -1,0 +1,278 @@
+# What a merge to `prod` produces: the control plane, as three binaries.
+#
+# The gate is not "you may not merge" — it is **"merging does not deploy"**.
+# Every step below runs before anything is published, and a failure anywhere
+# means no release exists, so the machine has nothing new to pull and keeps
+# serving what it already has. There is no staging environment; this file is
+# the substitute, and it is only a real gate if it is willing to refuse.
+#
+# Unlike the edge, this half has tests and a database, so the gate is a real
+# test run against a real Postgres and not only a smoke test.
+#
+# These are deployed components, not released ones: they are identified by a
+# git sha and carry no version number. The release tag is `prod-<sha>` and
+# there is deliberately no semver anywhere in here.
+name: release prod
+
+on:
+  push:
+    branches: [prod]
+  # For iterating on this file without merging. Builds, tests, and publishes
+  # nothing — which is what you want while it is being written.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  # Two merges in quick succession: the newer wins, the older is cancelled.
+  # Deploying the older sha after the newer one is a silent rollback nobody
+  # asked for.
+  group: release-prod
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nestri
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to a commit rather than to `v2`. Everywhere else in this
+      # repository a moving major tag is fine; this workflow is the only thing
+      # between a merge and a process serving real users, and a tag is a
+      # mutable pointer someone else controls. There is no first-party bun
+      # action to prefer instead, so the mitigation is the pin.
+      # oven-sh/setup-bun v2.2.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.11
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # The committed migrations, applied by drizzle-kit — the same way
+      # `web.yml` does it, and the same way a developer does it locally. This
+      # is the reference against which the embedded set is checked below.
+      - name: Apply migrations
+        run: bun run db:migrate
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/nestri
+
+      - name: Test
+        run: bun test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/nestri
+
+      # Generated on every build rather than committed, so the binary's
+      # migration set cannot drift from `packages/core/migrations`.
+      - name: Embed migrations
+        run: bun run packages/core/scripts/embed-migrations.ts
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          bun build --compile --minify --target=bun-linux-x64 \
+            apps/api/app/server.ts       --outfile dist/nestri-api
+          bun build --compile --minify --target=bun-linux-x64 \
+            apps/auth/src/server.ts      --outfile dist/nestri-auth
+          bun build --compile --minify --target=bun-linux-x64 \
+            packages/core/src/migrate.ts --outfile dist/nestri-migrate
+          ls -lh dist
+
+      # The two things worth asserting about the migrator are that it agrees
+      # with drizzle-kit and that it will not run without being told where.
+      #
+      # The agreement check is the important one. `nestri-migrate` reimplements
+      # drizzle's bookkeeping — same table, same sha256, same high-water mark —
+      # because the production database was first migrated by drizzle-kit and
+      # the two have to agree about what has already run. If they ever diverge,
+      # the failure is a migration applied twice against production. Here, the
+      # database has just been migrated by drizzle-kit, so the embedded set
+      # must report nothing pending. It is the cheapest possible test for the
+      # most expensive possible bug.
+      - name: Smoke test — the migrator agrees with drizzle-kit
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/nestri
+        run: |
+          set -euo pipefail
+          out="$(./dist/nestri-migrate --check)"
+          echo "$out"
+          echo "$out" | grep -q "nothing to do" || {
+            echo "::error::the embedded migrations disagree with drizzle-kit — a migration would be applied twice"
+            exit 1
+          }
+
+          # No DATABASE_URL must be a refusal, not a default: configuration
+          # that is absent means refuse, never assume. A migrator that falls
+          # back to localhost is one that reports success having migrated
+          # nothing that matters.
+          if env -u DATABASE_URL ./dist/nestri-migrate; then
+            echo "::error::ran with no DATABASE_URL"
+            exit 1
+          fi
+
+      # Both servers are executed here, because `bun build --compile` embeds a
+      # runtime and a binary that builds can still fail the moment it runs.
+      # Neither check touches the database: `/` and the metadata document are
+      # answered without it, which is what makes this a test of the binary
+      # rather than of the runner's Postgres.
+      - name: Smoke test — both servers answer
+        run: |
+          set -euo pipefail
+
+          PORT=13999 HOST=127.0.0.1 \
+            DATABASE_URL="postgres://nobody@127.0.0.1:1/none" \
+            AUTH_ISSUER_URL=https://auth.nestri.io \
+            ADMIN_SHARED_SECRET=smoke \
+            ./dist/nestri-api & api=$!
+          # NOT `/`, which the issuer answers 404 — it has no root route. NOT
+          # `openid-configuration` either, also a 404: this is an OAuth 2.0
+          # authorization server, not an OIDC provider. A health check written
+          # from habit fails every deploy forever.
+          PORT=13998 HOST=127.0.0.1 \
+            DATABASE_URL="postgres://nobody@127.0.0.1:1/none" \
+            ./dist/nestri-auth & auth=$!
+          trap 'kill $api $auth 2>/dev/null || true' EXIT
+          sleep 3
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:13999/ || echo 000)
+          [ "$code" = "200" ] || { echo "::error::api / returned $code"; exit 1; }
+          echo "api  / -> 200"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            http://127.0.0.1:13998/.well-known/oauth-authorization-server || echo 000)
+          [ "$code" = "200" ] || { echo "::error::auth metadata returned $code"; exit 1; }
+          echo "auth /.well-known/oauth-authorization-server -> 200"
+
+          # These sit behind a tunnel and authenticate nothing at the network
+          # layer, so the bind default is a security control. Both defaulted to
+          # 0.0.0.0 until 2026-09-16, which was harmless inside a container and
+          # a public listener as a bare process.
+          # The unreachable database is named `nowhere.invalid` and not a
+          # loopback address on purpose: the assertion below greps for
+          # 127.0.0.1, and a connection string containing it would satisfy the
+          # grep from the wrong line.
+          env -u HOST PORT=13997 DATABASE_URL="postgres://nobody@nowhere.invalid:1/none" \
+            ADMIN_SHARED_SECRET=smoke ./dist/nestri-api > /tmp/bind.log 2>&1 & probe=$!
+          sleep 3
+          kill $probe 2>/dev/null || true
+          grep -q "listening on http://127.0.0.1:" /tmp/bind.log || {
+            echo "::error::the default bind is no longer loopback"
+            cat /tmp/bind.log
+            exit 1
+          }
+          echo "default bind -> loopback"
+
+      - name: Package
+        id: package
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum nestri-api nestri-auth nestri-migrate > SHA256SUMS
+          cat SHA256SUMS
+
+          # The manifest is what the machine reads: the sha it came from, and
+          # the checksum of every artefact, so the agent can verify what it
+          # downloaded before it swaps anything into place.
+          #
+          # The order matters: units are restarted in the order they appear
+          # here, and the API's AUTH_INTERNAL_URL names the issuer, so the
+          # issuer comes back first.
+          #
+          # `unit` is what gets restarted. `nestri-migrate` has none on purpose
+          # — it is run, not served — and `migrate: true` is what makes the
+          # deploy run it *before* the swap. That ordering is why migrations
+          # must be additive: a rollback moves code and never schema, so every
+          # migration has to be readable by the release it replaces.
+          cat > manifest.json <<JSON
+          {
+            "repo": "${{ github.repository }}",
+            "sha": "${{ github.sha }}",
+            "short": "$(echo '${{ github.sha }}' | cut -c1-7)",
+            "ref": "${{ github.ref_name }}",
+            "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "run": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "migrate": true,
+            "artefacts": [
+              {
+                "name": "nestri-auth",
+                "unit": "nestri-auth",
+                "sha256": "$(sha256sum nestri-auth | cut -d' ' -f1)"
+              },
+              {
+                "name": "nestri-api",
+                "unit": "nestri-api",
+                "sha256": "$(sha256sum nestri-api | cut -d' ' -f1)"
+              },
+              {
+                "name": "nestri-migrate",
+                "sha256": "$(sha256sum nestri-migrate | cut -d' ' -f1)"
+              }
+            ]
+          }
+          JSON
+          cat manifest.json
+          echo "short=$(echo '${{ github.sha }}' | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: control-plane-prod
+          path: dist/*
+          if-no-files-found: error
+
+    outputs:
+      short: ${{ steps.package.outputs.short }}
+
+  publish:
+    # Only a real merge publishes. A manual run builds, tests and stops.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/prod'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: control-plane-prod
+          path: dist
+
+      # One immutable release per sha, and the tag is the sha. Rollback is
+      # therefore "point the machine at the previous release", not "rebuild an
+      # older commit and hope it produces the same bytes".
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="prod-${{ needs.build.outputs.short }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists — replacing its assets"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* \
+              --target "${{ github.sha }}" \
+              --title "$TAG" \
+              --notes "Deployed build of the control plane from ${{ github.sha }}.
+
+          No version number: these are deployed components, identified by a git
+          sha. The machine reads \`manifest.json\` from this release,
+          verifies each artefact against its \`sha256\`, runs \`nestri-migrate\`
+          before the swap, and restarts only the units whose binary changed.
+
+          Built by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          gh release view "$TAG"
