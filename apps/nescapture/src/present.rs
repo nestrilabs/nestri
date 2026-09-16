@@ -142,6 +142,13 @@ fn finish(
     }
 
     let now = std::time::Instant::now();
+    // What the sleep actually cost, not what it asked for. `thread::sleep`
+    // guarantees a floor and nothing else: on a box whose CPUs are all busy,
+    // waking is a scheduling decision and the overshoot can be many times the
+    // request. Recording the request would hide exactly the case worth seeing,
+    // and the overshoot lands nowhere else — the present-return is stamped
+    // after it, so `gap` cannot show it either.
+    let held = now.saturating_duration_since(worked);
     if let Ok(enc) = ds.encoder.lock()
         && let Some(ref h) = *enc
     {
