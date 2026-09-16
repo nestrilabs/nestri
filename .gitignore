@@ -47,3 +47,8 @@ lunora/_generated
 # accident; never again.
 nesdoctor.json
 *.nesdoctor.json
+
+# Baked from packages/core/migrations by scripts/embed-migrations.ts on every
+# build. Committing it would let the binary's migration set drift from the
+# folder, which is the one thing embedding exists to prevent.
+packages/core/src/migrations.generated.ts
