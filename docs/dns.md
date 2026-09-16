@@ -67,15 +67,45 @@ property and none of the consequences, which is the point of having one.
 
 ## After the move off Workers
 
-Each of the four control-plane names becomes a proxied `A` record pointing at
-the host running the containers, and nothing else about them changes: same
-names, same `iss` claim. Cloudflare keeps terminating public TLS, so there is
-no certificate on our own host to renew, and the origin is not addressable
-except through the proxy.
+*Rewritten 2026-09-16. This said each name becomes **a proxied `A` record
+pointing at the host**, and described an ordering to avoid a gap while Worker
+routes were removed. Both are wrong now, and for two different reasons.*
 
-The order that matters, on the day: create the `A` records with the proxy on,
-confirm the containers answer through them, *then* remove the Worker routes.
-Doing it the other way leaves a window where the name resolves to nothing.
+**There is no `A` record, because there is no address to put in one.** The
+control plane is reached through a Cloudflare Tunnel, so each name is a
+**proxied `CNAME` to `<tunnel-uuid>.cfargotunnel.com`** — a target that resolves
+to nothing publicly and only means something inside Cloudflare. The machine's
+own address appears in no record anywhere, which is the point: an `A` record is
+a published address, and a published address is a thing that can be reached
+around the proxy and flooded off the internet.
+
+| Name | Record | Ingress rule on the machine |
+| --- | --- | --- |
+| `api.nestri.io` | `CNAME` → `<uuid>.cfargotunnel.com`, proxied | `http://127.0.0.1:3000` |
+| `auth.nestri.io` | `CNAME` → `<uuid>.cfargotunnel.com`, proxied | `http://127.0.0.1:1337` |
+| `*.nestri.link` | `CNAME` → `<uuid>.cfargotunnel.com`, proxied | `http://127.0.0.1:8443` — whatever serves box hostnames |
+
+One tunnel serves all three, including the two zones, because a tunnel belongs
+to the **account** and not to a zone. Measured 2026-09-16, both zones at once,
+from one connector.
+
+**The ordering problem does not exist, because there is nothing to cut over
+from.** Checked on 2026-09-16: `api.nestri.io` and `auth.nestri.io` have no DNS
+records and do not resolve. Only the *sandbox* pair was ever deployed, and it is
+discarded by the move. So these names are created for the first time, pointing
+at the tunnel, with no window in which anything is worse than it was.
+
+Two things that are true of a tunnel and were not true of a proxied origin:
+
+- **The record can be created before the machine exists, and it is harmless.**
+  A `CNAME` to a tunnel with no connector running answers with Cloudflare's own
+  error rather than resolving to somebody else's server — so the name is never
+  pointed anywhere it should not be, even for a minute. *Asserted, not measured:
+  the 2026-09-16 run only ever had the records and the connector up together.*
+- **The zone must stay proxied — and here the failure is worse than before.**
+  An unproxied `CNAME` to `cfargotunnel.com` resolves to nothing at all. This
+  is the same *"pausing Cloudflare is an outage, not a fallback"* the origin
+  certificate used to imply, and it survives the certificate's removal.
 
 ## `nestri.link`
 
@@ -87,6 +117,23 @@ content we do not write, and cookie scope is a property of the registrable
 domain, so a name under `nestri.io` would put that content inside the same
 cookie boundary as sign-in.
 
-`*.nestri.link` will be proxied for the same reason the control plane is: the
-public certificate stays Cloudflare's, and the only key on our own host is an
-origin certificate that is useless anywhere else.
+`*.nestri.link` is proxied for the same reason the control plane is: the public
+certificate stays Cloudflare's. ~~and the only key on our own host is an origin
+certificate that is useless anywhere else~~ — *corrected 2026-09-16:* **there is
+no key on our own host at all.** TLS terminates at Cloudflare and the tunnel
+reaches whatever serves these hostnames over loopback, so the origin certificate
+this sentence promised is not obtained, not stored, and not renewed.
+
+Measured the same day, and the negative is the useful half: a public HTTPS
+request to `m123.nestri.link` was served correctly while nothing on the machine
+listened on `443` or `8443` and both origins spoke plain HTTP on `127.0.0.1`.
+The certificate presented was `O=Google Trust Services, CN=WE1`, `SAN:
+nestri.link, *.nestri.link` — issued by Cloudflare on a zone that held zero DNS
+records, without being asked.
+
+**One level, and it fails before HTTP.** That SAN covers `nestri.link` and
+`*.nestri.link` and nothing deeper, so `deep.a.nestri.link` is refused with a
+TLS `handshake failure` and **no certificate presented**. Not a `404` — nothing
+reaches an application, so no application log will explain it. This is why
+`box_id` is a single DNS label and why a two-label scheme costs $10/mo for
+Advanced Certificate Manager rather than being free.
