@@ -74,6 +74,12 @@ services:
       # unconfigured and this unset, the issuer refuses to send rather than
       # logging codes, which is the failure a self-hoster should get.
       EMAIL_DEV_LOG: ${EMAIL_DEV_LOG:-}
+      # Every interface *inside the container*, which is what makes the
+      # loopback publication below reachable. The processes default to
+      # 127.0.0.1 because a bare process on a host has no such wrapper and a
+      # public bind there is a listener on the internet; a container's own
+      # loopback is not, and binding it would make the port unpublishable.
+      HOST: 0.0.0.0
     # Loopback. This listener speaks plain HTTP and sets no `Secure` on the
     # cookies it issues, because it expects to be behind something that
     # terminates TLS. Published on every interface it would be a way to reach
@@ -101,6 +107,12 @@ services:
       # A shared secret that turns any request carrying it into an operator.
       # Required, with no default, for that reason.
       ADMIN_SHARED_SECRET: ${ADMIN_SHARED_SECRET:?set ADMIN_SHARED_SECRET in .env to a value you generated}
+      # Every interface *inside the container*, which is what makes the
+      # loopback publication below reachable. The processes default to
+      # 127.0.0.1 because a bare process on a host has no such wrapper and a
+      # public bind there is a listener on the internet; a container's own
+      # loopback is not, and binding it would make the port unpublishable.
+      HOST: 0.0.0.0
     # Loopback, for the same reason as the issuer above.
     ports:
       - '127.0.0.1:3000:3000'
