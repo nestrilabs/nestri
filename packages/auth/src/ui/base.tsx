@@ -3,7 +3,7 @@
 import { PropsWithChildren } from 'hono/jsx';
 
 import css from './css.js';
-import { getTheme } from './theme.js';
+import type { Theme } from './theme.js';
 
 /**
  * The page every sign-in screen is drawn inside.
@@ -20,12 +20,25 @@ import { getTheme } from './theme.js';
  */
 export function Layout(
 	props: PropsWithChildren<{
+		theme?: Theme;
 		size?: 'small';
+		/**
+		 * Replaces the product tagline above the content.
+		 *
+		 * A screen that asks its own question — "Is this you?", "That code has
+		 * expired" — says it here, because the tagline is the wrong line to
+		 * read above an answer somebody has to give.
+		 */
+		headline?: unknown;
 	}>
 ) {
-	const theme = getTheme();
+	// Passed in rather than read from a module global. It was a global — with a
+	// comment conceding as much — which made every component here depend on
+	// something invisible at the call site: untestable in isolation, and shared
+	// mutable state on a runtime that keeps one module instance across requests.
+	const theme = props.theme;
 
-	function get(key: 'primary' | 'background' | 'logo', mode: 'light' | 'dark') {
+	function get(key: 'primary' | 'logo', mode: 'light' | 'dark') {
 		if (!theme) return;
 		if (!theme[key]) return;
 		if (typeof theme[key] === 'string') return theme[key];
@@ -66,18 +79,20 @@ export function Layout(
 										<div data-component="logo">
 											<LogoWord />
 										</div>
-										<h2 data-component="title">
-											One place for all the ways you play.{' '}
-											<strong>
-												Gather Around
-												<a
-													href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-													rel="noopener noreferrer"
-													target="_blank">
-													.
-												</a>
-											</strong>
-										</h2>
+										{props.headline ?? (
+											<h2 data-component="title">
+												One place for all the ways you play.{' '}
+												<strong>
+													Gather Around
+													<a
+														href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+														rel="noopener noreferrer"
+														target="_blank">
+														.
+													</a>
+												</strong>
+											</h2>
+										)}
 										<div data-component="actions">{props.children}</div>
 									</div>
 								</div>

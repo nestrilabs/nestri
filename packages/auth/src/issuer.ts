@@ -200,38 +200,39 @@ import { logger } from 'hono/logger';
 import { compactDecrypt, CompactEncrypt, jwtVerify, SignJWT } from 'jose';
 
 import {
-	MissingParameterError,
-	OauthError,
-	UnauthorizedClientError,
-	UnknownStateError
-} from './error.js';
-import { encryptionKeys, signingKeys } from './keys.js';
-import { type KeyStore, StorageKeyStore } from './key.js';
-import {
 	type AuthorizationCodeRecord,
 	type CodeStore,
 	hashAuthorizationCode,
 	StorageCodeStore
 } from './authorization-code.js';
 import {
-	hashRefreshToken,
-	type RefreshRecord,
-	type RefreshStore,
-	StorageRefreshStore
-} from './refresh.js';
-import {
 	type DeviceGrantSubject,
 	type DeviceStore,
 	hashDeviceCode,
 	MemoryDeviceStore
 } from './device.js';
+import {
+	MissingParameterError,
+	OauthError,
+	UnauthorizedClientError,
+	UnknownStateError
+} from './error.js';
+import { type KeyStore, StorageKeyStore } from './key.js';
+import { encryptionKeys, signingKeys } from './keys.js';
 import { validatePKCE } from './pkce.js';
 import { generateUnbiasedString, timingSafeCompare } from './random.js';
+import {
+	hashRefreshToken,
+	type RefreshRecord,
+	type RefreshStore,
+	StorageRefreshStore
+} from './refresh.js';
 import { DynamoStorage } from './storage/dynamo.js';
 import { MemoryStorage } from './storage/memory.js';
 import { Storage, StorageAdapter } from './storage/storage.js';
-import { Select } from './ui/select.js';
-import { setTheme, Theme } from './ui/theme.js';
+import { HtmlRenderer, type Renderer } from './ui/render.js';
+import type { ChooseOption, Screen } from './ui/screen.js';
+import type { Theme } from './ui/theme.js';
 import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
 
 /** @internal */
@@ -319,37 +320,31 @@ export interface IssuerInput<
 	 */
 	providers: Providers;
 	/**
-	 * The theme you want to use for the UI.
+	 * Per-deployment trim for the built-in screens: title, favicon, brand
+	 * colour, and any stylesheet needed to load a font.
 	 *
-	 * This includes the UI the user sees when selecting a provider. And the `PasswordUI` and
-	 * `CodeUI` that are used by the `PasswordProvider` and `CodeProvider`.
-	 *
-	 * @example
-	 * ```ts title="issuer.ts"
-	 * import { THEME_SST } from "@openauthjs/openauth/ui/theme"
-	 *
-	 * issuer({
-	 *   theme: THEME_SST
-	 *   // ...
-	 * })
-	 * ```
-	 *
-	 * Or define your own.
+	 * Ignored when {@link IssuerInput.renderer} is supplied, because a renderer
+	 * that was handed a theme would have two sources for the same values.
 	 *
 	 * ```ts title="issuer.ts"
-	 * import type { Theme } from "@openauthjs/openauth/ui/theme"
-	 *
-	 * const MY_THEME: Theme = {
-	 *   // ...
-	 * }
-	 *
 	 * issuer({
-	 *   theme: MY_THEME
+	 *   theme: { title: "Login | Example", primary: "hsl(12 84% 53%)" }
 	 *   // ...
 	 * })
 	 * ```
 	 */
 	theme?: Theme;
+	/**
+	 * Draws every screen this issuer serves.
+	 *
+	 * The whole presentation layer behind one method. Supply this to replace
+	 * the built-in pages outright — it is the only thing that has to change,
+	 * because providers describe what they need as data and never render
+	 * anything themselves.
+	 *
+	 * @default HtmlRenderer({ theme })
+	 */
+	renderer?: Renderer;
 	/**
 	 * Set the TTL, in seconds, for access and refresh tokens.
 	 *
@@ -474,26 +469,30 @@ export interface IssuerInput<
 	 */
 	allowDeviceClient?(clientID: string, req: Request): Promise<boolean>;
 	/**
-	 * Optionally, configure the UI that's displayed when the user visits the root URL of the
-	 * of the OpenAuth server.
+	 * Which providers appear on the screen offering a choice of them, and in
+	 * what order.
+	 *
+	 * What each one is *called*, and the mark beside it, comes from the
+	 * provider itself — so adding one needs nothing here. This is only for the
+	 * two decisions a deployment makes that a provider cannot: whether to offer
+	 * it at all, and what to put first.
 	 *
 	 * ```ts title="issuer.ts"
-	 * import { Select } from "@openauthjs/openauth/ui/select"
-	 *
 	 * issuer({
-	 *   select: Select({
-	 *     providers: {
-	 *       github: { hide: true },
-	 *       google: { display: "Google" }
-	 *     }
-	 *   })
+	 *   chooser: { hide: ["steam"], order: ["code", "discord"] }
 	 *   // ...
 	 * })
 	 * ```
-	 *
-	 * @default Select()
 	 */
-	select?(providers: Record<string, string>, req: Request): Promise<Response>;
+	chooser?: {
+		/** Providers to leave off the screen, by their key in `providers`. */
+		hide?: string[];
+		/**
+		 * Providers to put first, by key. Anything not named keeps its order
+		 * from `providers` and follows.
+		 */
+		order?: string[];
+	};
 	/**
 	 * @internal
 	 */
@@ -578,13 +577,17 @@ export function issuer<
 >(input: IssuerInput<Providers, Subjects, Result>) {
 	const error =
 		input.error ??
-		function (err) {
-			return new Response(err.message, {
-				status: 400,
-				headers: {
-					'Content-Type': 'text/plain'
-				}
-			});
+		function (err: UnknownStateError, req: Request) {
+			return renderer.render(
+				{
+					kind: 'message',
+					tone: 'danger',
+					heading: 'That sign-in has expired',
+					body: [err.message, 'Start again from wherever you were signing in.'],
+					status: 400
+				},
+				req
+			);
 		};
 	const ttlAccess = input.ttl?.access ?? 60 * 60 * 24 * 30;
 	const ttlRefresh = input.ttl?.refresh ?? 60 * 60 * 24 * 365;
@@ -602,11 +605,42 @@ export function issuer<
 			req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
 			req.headers.get('x-real-ip') ??
 			undefined);
-	if (input.theme) {
-		setTheme(input.theme);
-	}
+	const renderer = input.renderer ?? HtmlRenderer({ theme: input.theme });
 
-	const select = lazy(() => input.select ?? Select());
+	/**
+	 * The screen offering a choice of providers.
+	 *
+	 * Built from what each provider says about itself. Nothing here knows the
+	 * name of a single provider, which is the property worth keeping: this was
+	 * two hardcoded records in the rendering code, and a provider missing from
+	 * them appeared as its own bare identifier with no way to fix it short of
+	 * editing the library.
+	 */
+	function chooseScreen(): Screen {
+		const hidden = new Set(input.chooser?.hide ?? []);
+		const first = input.chooser?.order ?? [];
+		const options: ChooseOption[] = Object.keys(input.providers)
+			.filter((key) => !hidden.has(key))
+			// Stable, so anything `order` does not name keeps the order it was
+			// declared in rather than being shuffled by the comparator.
+			.sort((a, b) => {
+				const ai = first.indexOf(a);
+				const bi = first.indexOf(b);
+				if (ai === bi) return 0;
+				if (ai === -1) return 1;
+				if (bi === -1) return -1;
+				return ai - bi;
+			})
+			.map((key) => {
+				const provider = input.providers[key]!;
+				return {
+					href: `/${key}/authorize`,
+					label: `Continue with ${provider.display?.name ?? provider.type}`,
+					mark: provider.display?.icon
+				};
+			});
+		return { kind: 'choose', options };
+	}
 	const allow = lazy(
 		() =>
 			input.allow ??
@@ -674,10 +708,7 @@ export function issuer<
 							await auth.unset(ctx, 'authorization');
 							const grant = await deviceStore.byDeviceCode(authorization.device_code);
 							if (!grant || grant.status !== 'pending' || grant.expires <= Date.now()) {
-								return ctx.text(
-									'That sign-in request has expired. Start it again from the app.',
-									400
-								);
+								return auth.screen(ctx, expired());
 							}
 
 							// Carried in an encrypted cookie rather than written to
@@ -700,7 +731,7 @@ export function issuer<
 								}
 							};
 							await auth.set(ctx, 'device_confirm', ttlDevice, confirmation);
-							return ctx.html(deviceConfirmPage(confirmation));
+							return auth.screen(ctx, deviceConfirmScreen(confirmation));
 						}
 						if (authorization) {
 							if (authorization.response_type === 'token') {
@@ -784,6 +815,12 @@ export function issuer<
 				Object.fromEntries(response.headers.entries())
 			);
 		},
+		screen(ctx, screen) {
+			// Forwarded rather than returned directly so that cookies set
+			// earlier in the handler survive onto the response. Every page this
+			// issuer serves goes through here.
+			return auth.forward(ctx, renderer.render(screen, ctx.req.raw));
+		},
 		async set(ctx, key, maxAge, value) {
 			setCookie(ctx, key, await encrypt(value), {
 				maxAge,
@@ -858,12 +895,7 @@ export function issuer<
 			bucket && bucket.resetAt > now
 				? { count: bucket.count + 1, resetAt: bucket.resetAt }
 				: { count: 1, resetAt: now + deviceGuessWindow * 1000 };
-		await Storage.set(
-			storage!,
-			key,
-			next,
-			Math.max(1, Math.ceil((next.resetAt - now) / 1000))
-		);
+		await Storage.set(storage!, key, next, Math.max(1, Math.ceil((next.resetAt - now) / 1000)));
 		return next.count <= deviceGuessLimit;
 	}
 
@@ -888,16 +920,6 @@ export function issuer<
 		return raw.replace(/[^0-9a-zA-Z]/g, '').toUpperCase();
 	}
 
-	/** Enough escaping to put an attacker-chosen client name on a page safely. */
-	function escapeHtml(raw: string) {
-		return raw
-			.replaceAll('&', '&amp;')
-			.replaceAll('<', '&lt;')
-			.replaceAll('>', '&gt;')
-			.replaceAll('"', '&quot;')
-			.replaceAll("'", '&#39;');
-	}
-
 	/**
 	 * The page that asks the only question that authorizes anything.
 	 *
@@ -907,27 +929,43 @@ export function issuer<
 	 * link. Approving is a POST carrying a value that was put in the cookie
 	 * alongside it, so a page on another site cannot submit it on their behalf.
 	 */
-	function deviceConfirmPage(confirmation: DeviceConfirmation) {
-		const code = escapeHtml(confirmation.userCode);
-		const client = escapeHtml(confirmation.clientID);
-		return (
-			`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">` +
-			`<title>Confirm sign-in</title>` +
-			`<h1>Is this you?</h1>` +
-			`<p><strong>${client}</strong> is asking to sign in to your account.</p>` +
-			`<p>The code it is showing you should be:</p>` +
-			`<p><code style="font-size:2em;letter-spacing:.2em">${code.slice(0, 4)}-${code.slice(4)}</code></p>` +
-			`<p>If those do not match, or you did not start this on a device of your own, ` +
-			`choose Deny. Nobody can sign in as you unless you approve here.</p>` +
-			`<form method="post" action="/device/confirm">` +
-			`<input type="hidden" name="csrf" value="${escapeHtml(confirmation.csrf)}">` +
-			`<button type="submit" name="action" value="approve">Approve</button> ` +
-			`<button type="submit" name="action" value="deny">Deny</button>` +
-			`</form>`
-		);
+	/**
+	 * What a device grant says once there is nothing left to answer.
+	 *
+	 * Written once because three different dead ends reach it — a cookie that
+	 * timed out, a grant that expired, a confirmation that was already given —
+	 * and the person on the other end can do the same one thing about all
+	 * three.
+	 */
+	function expired(): Screen {
+		return {
+			kind: 'message',
+			tone: 'danger',
+			heading: 'That sign-in request has expired',
+			body: ['Start it again from the app.'],
+			status: 400
+		};
 	}
 
-		async function getAuthorization(ctx: Context) {
+	function deviceConfirmScreen(confirmation: DeviceConfirmation): Screen {
+		return {
+			kind: 'confirm',
+			heading: 'Is this you?',
+			verify: { code: confirmation.userCode, group: 4 },
+			body: [
+				`${confirmation.clientID} is asking to sign in to your account. The code above should match the one it is showing you.`,
+				'If it does not, or you did not start this on a device of your own, choose Deny. Nobody can sign in as you unless you approve here.'
+			],
+			action: '/device/confirm',
+			// The client id is escaped by the renderer like any other text. It
+			// is chosen by whoever started the grant, so it is never markup.
+			fields: [{ kind: 'hidden', name: 'csrf', value: confirmation.csrf }],
+			approve: { label: 'Approve', name: 'action', value: 'approve' },
+			deny: { label: 'Deny', name: 'action', value: 'deny' }
+		};
+	}
+
+	async function getAuthorization(ctx: Context) {
 		const match = (await auth.get(ctx, 'authorization')) || ctx.get('authorization');
 		if (!match) throw new UnknownStateError();
 		return match as AuthorizationState;
@@ -1257,10 +1295,7 @@ export function issuer<
 						400
 					);
 				if (!clientID)
-					return c.json(
-						{ error: 'invalid_request', error_description: 'Missing client_id' },
-						400
-					);
+					return c.json({ error: 'invalid_request', error_description: 'Missing client_id' }, 400);
 
 				const hash = await hashDeviceCode(deviceCode);
 				const grant = await deviceStore.byDeviceCode(hash);
@@ -1282,7 +1317,10 @@ export function issuer<
 				// carrying is whatever the last caller claimed.
 				if (grant.clientID !== clientID) {
 					return c.json(
-						{ error: 'invalid_grant', error_description: 'That device code belongs to another client' },
+						{
+							error: 'invalid_grant',
+							error_description: 'That device code belongs to another client'
+						},
 						400
 					);
 				}
@@ -1428,10 +1466,7 @@ export function issuer<
 			if (!clientID)
 				return c.json({ error: 'invalid_request', error_description: 'Missing client_id' }, 400);
 			if (input.allowDeviceClient && !(await input.allowDeviceClient(clientID, c.req.raw)))
-				return c.json(
-					{ error: 'invalid_client', error_description: 'Unknown client_id' },
-					400
-				);
+				return c.json({ error: 'invalid_client', error_description: 'Unknown client_id' }, 400);
 
 			// Not `randomUUID`: a device code is the credential the tokens are
 			// handed to, so it gets the same treatment as one — full-width
@@ -1488,19 +1523,32 @@ export function issuer<
 	app.get('/device', async (c) => {
 		const raw = c.req.query('user_code');
 		if (!raw) {
-			return c.html(
-				`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">` +
-					`<title>Sign in to a device</title>` +
-					`<form method="get" action="/device">` +
-					`<label for="user_code">Enter the code shown in the app</label>` +
-					`<input id="user_code" name="user_code" autocomplete="off" autofocus>` +
-					`<button type="submit">Continue</button>` +
-					`</form>`
-			);
+			return auth.screen(c, {
+				kind: 'form',
+				method: 'get',
+				action: '/device',
+				fields: [
+					{
+						kind: 'segments',
+						name: 'user_code',
+						label: 'Enter the code shown in the app',
+						length: USER_CODE_LENGTH,
+						autocomplete: 'off',
+						autofocus: true
+					}
+				],
+				submit: 'Continue'
+			});
 		}
 
 		if (!(await guessesLeft(c.req.raw))) {
-			return c.text('Too many codes tried. Wait a while and start again from the app.', 429);
+			return auth.screen(c, {
+				kind: 'message',
+				tone: 'danger',
+				heading: 'Too many tries',
+				body: ['Wait a while, then start again from the app.'],
+				status: 429
+			});
 		}
 
 		const found = await deviceStore.byUserCode(canonicalUserCode(raw));
@@ -1509,7 +1557,13 @@ export function issuer<
 			// nothing, so a person mistyping once and then succeeding is not
 			// walking towards a lockout.
 			await chargeGuess(c.req.raw);
-			return c.text('That code is not valid any more. Ask the app for a new one.', 400);
+			return auth.screen(c, {
+				kind: 'message',
+				tone: 'danger',
+				heading: 'That code is not valid',
+				body: ['It may have expired, or already been used. Ask the app for a new one.'],
+				status: 400
+			});
 		}
 
 		const authorization: AuthorizationState = {
@@ -1523,15 +1577,7 @@ export function issuer<
 		if (provider) return c.redirect(`/${provider}/authorize`);
 		const providers = Object.keys(input.providers);
 		if (providers.length === 1) return c.redirect(`/${providers[0]}/authorize`);
-		return auth.forward(
-			c,
-			await select()(
-				Object.fromEntries(
-					Object.entries(input.providers).map(([key, value]) => [key, value.type])
-				),
-				c.req.raw
-			)
-		);
+		return auth.screen(c, chooseScreen());
 	});
 
 	// The step that actually authorizes, and the reason there is one.
@@ -1549,31 +1595,53 @@ export function issuer<
 	app.post('/device/confirm', async (c) => {
 		const confirmation = (await auth.get(c, 'device_confirm')) as DeviceConfirmation | undefined;
 		if (!confirmation) {
-			return c.text('That sign-in request has expired. Start it again from the app.', 400);
+			return auth.screen(c, expired());
 		}
 		await auth.unset(c, 'device_confirm');
 
 		const form = await c.req.formData().catch(() => null);
 		const csrf = form?.get('csrf')?.toString() ?? '';
 		if (!timingSafeCompare(confirmation.csrf, csrf)) {
-			return c.text('That form was not the one we sent. Start again from the app.', 400);
+			return auth.screen(c, {
+				kind: 'message',
+				tone: 'danger',
+				heading: 'That form was not the one we sent',
+				body: ['Start again from the app.'],
+				status: 400
+			});
 		}
 
 		if (form?.get('action')?.toString() === 'deny') {
 			await deviceStore.deny(confirmation.deviceCode);
-			return c.text('That sign-in request was refused. You can close this page.');
+			return auth.screen(c, {
+				kind: 'message',
+				tone: 'notice',
+				heading: 'Refused',
+				body: ['That sign-in request was refused. You can close this page.']
+			});
 		}
 
 		// The store decides, not this code. If a refusal got here first the
 		// answer is already given and an approval must not overwrite it.
 		const approved = await deviceStore.approve(confirmation.deviceCode, confirmation.subject);
 		if (!approved) {
-			return c.text('That sign-in request has already been answered.', 400);
+			return auth.screen(c, {
+				kind: 'message',
+				tone: 'danger',
+				heading: 'Already answered',
+				body: ['That sign-in request has already been answered.'],
+				status: 400
+			});
 		}
-		return c.text('You are signed in. You can close this page and go back to the app.');
+		return auth.screen(c, {
+			kind: 'message',
+			tone: 'notice',
+			heading: 'You are signed in',
+			body: ['You can close this page and go back to the app.']
+		});
 	});
 
-		app.get('/authorize', async (c) => {
+	app.get('/authorize', async (c) => {
 		const provider = c.req.query('provider');
 		const response_type = c.req.query('response_type');
 		const redirect_uri = c.req.query('redirect_uri');
@@ -1629,15 +1697,7 @@ export function issuer<
 		if (provider) return c.redirect(`/${provider}/authorize`);
 		const providers = Object.keys(input.providers);
 		if (providers.length === 1) return c.redirect(`/${providers[0]}/authorize`);
-		return auth.forward(
-			c,
-			await select()(
-				Object.fromEntries(
-					Object.entries(input.providers).map(([key, value]) => [key, value.type])
-				),
-				c.req.raw
-			)
-		);
+		return auth.screen(c, chooseScreen());
 	});
 
 	app.get('/userinfo', async (c) => {

@@ -27,9 +27,16 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { OauthError } from '../error.js';
 import { generatePKCE } from '../pkce.js';
 import { getRelativeUrl } from '../util.js';
-import { Provider } from './provider.js';
+import { Provider, type ProviderDisplay } from './provider.js';
 
 export interface Oauth2Config {
+	/**
+	 * How this provider is named and marked on the chooser.
+	 *
+	 * @internal
+	 */
+	display?: ProviderDisplay;
+
 	/**
 	 * @internal
 	 */
@@ -216,6 +223,7 @@ export function Oauth2Provider(
 
 	return {
 		type: config.type || 'oauth2',
+		display: config.display,
 		init(routes, ctx) {
 			routes.get('/authorize', async (c) => {
 				const state = crypto.randomUUID();

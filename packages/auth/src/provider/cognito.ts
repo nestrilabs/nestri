@@ -65,6 +65,7 @@ export function CognitoProvider(config: CognitoConfig) {
 
 	return Oauth2Provider({
 		type: 'cognito',
+		display: { name: 'Cognito' },
 		...config,
 		endpoint: {
 			authorization: `https://${domain}/oauth2/authorize`,

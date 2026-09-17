@@ -401,6 +401,102 @@ body {
 	display: none;
 }
 
+/* The secondary action: a way in that is not the one being recommended, and
+   the only button that does not want to be the brightest thing on the page. */
+[data-component='button'][data-color='ghost'] {
+	background: var(--color-background-100);
+	border: 1px solid var(--color-gray-300);
+	color: var(--color-foreground);
+	text-decoration: none;
+	gap: 0.625rem;
+}
+
+[data-component='button'][data-color='ghost']:hover {
+	background: var(--color-gray-100);
+	border-color: var(--color-gray-400);
+}
+
+[data-component='button'] [data-slot='icon'] {
+	display: flex;
+	height: 1.25rem;
+	width: 1.25rem;
+	flex-shrink: 0;
+	align-items: center;
+	justify-content: center;
+}
+
+[data-component='button'] [data-slot='icon'] svg {
+	height: 100%;
+	width: 100%;
+}
+
+/* A code shown back to be compared against one on another screen. Tracked out
+   and monospaced because the whole job of this line is that two people looking
+   at two devices can tell whether the characters are the same. */
+[data-component='verify'] {
+	margin: 0 0 1.25rem;
+	width: 100%;
+	text-align: center;
+	font-family: var(--font-mona);
+	font-size: 2.25rem;
+	line-height: 2.5rem;
+	font-weight: 700;
+	letter-spacing: 0.15em;
+	font-variant-numeric: tabular-nums;
+	color: var(--color-foreground);
+	pointer-events: auto;
+	user-select: text;
+}
+
+[data-component='prose'] {
+	width: 100%;
+	margin-bottom: 1.5rem;
+	text-align: center;
+	text-wrap: pretty;
+	color: var(--color-muted-foreground);
+	pointer-events: auto;
+	user-select: text;
+}
+
+[data-component='prose'] p {
+	margin: 0 0 0.75rem;
+}
+
+[data-component='prose'] p:last-child {
+	margin-bottom: 0;
+}
+
+[data-component='prose'] a {
+	color: var(--color-foreground);
+	text-decoration: underline;
+	text-underline-offset: 0.125rem;
+}
+
+[data-component='prose'][data-tone='danger'] {
+	color: var(--color-muted-foreground);
+}
+
+/* The same field whether the code arrived by email or is showing on a
+   television across the room: wide, tracked out, and never autocorrected. */
+[data-component='input'][data-variant='code'] {
+	text-align: center;
+	font-family: var(--font-mona);
+	font-size: 1.5rem;
+	line-height: 2rem;
+	font-weight: 700;
+	letter-spacing: 0.35em;
+	/* Tracking adds a trailing gap after the last glyph, which pushes the run
+	   visibly off-centre; half the tracking back as padding cancels it. */
+	padding-left: calc(1.25rem + 0.35em);
+	font-variant-numeric: tabular-nums;
+}
+
+[data-component='input'][data-variant='code']::placeholder {
+	letter-spacing: normal;
+	font-size: 1rem;
+	font-weight: 400;
+}
+
 @media (min-width: 40rem) {
 	[data-component='stack'] {
 		padding: 2.5rem;

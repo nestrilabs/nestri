@@ -17,6 +17,7 @@
  * @packageDocumentation
  */
 
+import { MARK_YAHOO } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 
 export interface YahooConfig extends Oauth2WrappedConfig {}
@@ -37,6 +38,7 @@ export function YahooProvider(config: YahooConfig) {
 	return Oauth2Provider({
 		...config,
 		type: 'yahoo',
+		display: { name: 'Yahoo', icon: MARK_YAHOO },
 		endpoint: {
 			authorization: 'https://api.login.yahoo.com/oauth2/request_auth',
 			token: 'https://api.login.yahoo.com/oauth2/get_token'

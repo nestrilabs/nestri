@@ -17,6 +17,7 @@
  * @packageDocumentation
  */
 
+import { MARK_GITHUB } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 
 export interface GithubConfig extends Oauth2WrappedConfig {}
@@ -37,6 +38,7 @@ export function GithubProvider(config: GithubConfig) {
 	return Oauth2Provider({
 		...config,
 		type: 'github',
+		display: { name: 'GitHub', icon: MARK_GITHUB },
 		endpoint: {
 			authorization: 'https://github.com/login/oauth/authorize',
 			token: 'https://github.com/login/oauth/access_token'
