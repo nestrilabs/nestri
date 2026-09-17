@@ -173,33 +173,27 @@ export const allowClient = async (
 /**
  * The sign-in screen's theme.
  *
- * Restored from the pre-fork issuer config, which carried these exact values
- * before the vendored `packages/auth` replaced it and nothing set a theme at
- * all — leaving every sign-in on `THEME_OPENAUTH`, which is somebody else's
- * brand and, with the input bug this shipped beside, an unreadable one.
+ * Almost everything that used to live here is now stated in
+ * `packages/auth/src/ui/css.ts`, which states the product's design language
+ * longhand. What is left here is the handful of values the
+ * issuer itself needs — and `primary`, which is the one colour the stylesheet
+ * reads back from the theme so the brand has a single source.
  *
- * `primary` is the one value worth not changing casually: it is the brand
- * orange, and the button's own text colour is derived from its lightness
- * rather than stated, so a lighter primary silently flips that text to black.
+ * There is no `background` and no light variant on purpose: the page is dark
+ * only, and the derived-colour scheme that made two schemes possible is
+ * exactly what rendered the sign-in field's text the colour of its own
+ * background.
  */
 const THEME_NESTRI: Theme = {
-	title: 'Nestri | Auth',
-	primary: '#FF4F01',
-	// Not the URLs the old config carried: `/logo.webp` and `/seo/favicon.ico`
-	// both 404 today, and `base.tsx` falls back to OpenAuth's own mark only when
-	// `logo` is absent — a broken URL renders a broken image instead. These two
-	// are what the site actually serves.
-	logo: 'https://nestri.io/images/android-chrome-512x512.png',
+	title: 'Login | Nestri',
+	primary: 'hsl(12 84% 53%)',
 	favicon: 'https://nestri.io/images/favicon.ico',
-	background: {
-		light: '#f5f5f5',
-		dark: '#171717'
-	},
-	radius: 'lg',
-	font: {
-		family: 'Geist, sans-serif'
-	},
-	css: `@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100;200;300;400;500;600;700;800;900&display=swap');`
+	// Mona Sans for the display line and the action, Geist for everything a
+	// person reads or types. Served from the Fontsource CDN because the
+	// self-hosted font packages need a bundler and this page is a string
+	// rendered in a Worker with no build step. The family names must match the
+	// ones the stylesheet asks for.
+	css: `@import url('https://cdn.jsdelivr.net/fontsource/css/mona-sans:vf@latest/wght.css');@import url('https://cdn.jsdelivr.net/fontsource/css/geist:vf@latest/wght.css');`
 };
 
 export default {
@@ -255,7 +249,6 @@ export default {
 					// nothing — and a mistyped address that silently succeeds
 					// leaves someone waiting for mail that went nowhere.
 					...CodeUI({
-						copy: { code_info: "We'll email you a code to sign in." },
 						sendCode: async () => {}
 					}),
 					sendCode: async (claims, code) => {

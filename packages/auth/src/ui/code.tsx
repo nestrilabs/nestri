@@ -75,7 +75,20 @@ const DEFAULT_COPY = {
 	 * guesses made. Deliberately one message for both: which of the two it was
 	 * is a fact about somebody else's mailbox.
 	 */
-	rate_limited: 'Too many attempts. Wait a moment and start again.'
+	rate_limited: 'Too many attempts. Wait a moment and start again.',
+	/**
+	 * The consent line under the action, split around its two links so the
+	 * sentence stays one translatable run rather than being glued together
+	 * from fragments in the markup.
+	 */
+	terms_before:
+		'By continuing, you acknowledge that you have read and understood, and agree to Nestri\u2019s ',
+	terms_label: 'Terms & Conditions',
+	terms_url: 'https://nestri.io/terms',
+	terms_between: ' and ',
+	privacy_label: 'Privacy Policy',
+	privacy_url: 'https://nestri.io/privacy',
+	terms_after: '.'
 };
 
 export type CodeUICopy = typeof DEFAULT_COPY;
@@ -130,7 +143,7 @@ export function CodeUI(props: CodeUIOptions): CodeProviderOptions {
 					<Layout>
 						<form data-component="form" method="post">
 							{error?.type === 'invalid_claim' && <FormAlert message={copy.email_invalid} />}
-						{error?.type === 'rate_limit' && <FormAlert message={copy.rate_limited} />}
+							{error?.type === 'rate_limit' && <FormAlert message={copy.rate_limited} />}
 							<input type="hidden" name="action" value="request" />
 							<input
 								data-component="input"
@@ -143,7 +156,17 @@ export function CodeUI(props: CodeUIOptions): CodeProviderOptions {
 							/>
 							<button data-component="button">{copy.button_continue}</button>
 						</form>
-						<p data-component="form-footer">{copy.code_info}</p>
+						<p data-component="form-footer">
+							{copy.terms_before}
+							<a href={copy.terms_url} rel="noopener noreferrer" target="_blank">
+								{copy.terms_label}
+							</a>
+							{copy.terms_between}
+							<a href={copy.privacy_url} rel="noopener noreferrer" target="_blank">
+								{copy.privacy_label}
+							</a>
+							{copy.terms_after}
+						</p>
 					</Layout>
 				);
 				return new Response(jsx.toString(), {
@@ -158,7 +181,7 @@ export function CodeUI(props: CodeUIOptions): CodeProviderOptions {
 					<Layout>
 						<form data-component="form" class="form" method="post">
 							{error?.type === 'invalid_code' && <FormAlert message={copy.code_invalid} />}
-						{error?.type === 'rate_limit' && <FormAlert message={copy.rate_limited} />}
+							{error?.type === 'rate_limit' && <FormAlert message={copy.rate_limited} />}
 							{state.type === 'code' && (
 								<FormAlert
 									message={(state.resend ? copy.code_resent : copy.code_sent) + state.claims.email}

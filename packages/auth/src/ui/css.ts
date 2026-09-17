@@ -1,270 +1,433 @@
-export default `:root {
-	color-scheme: light dark;
+/**
+ * The sign-in screen's stylesheet.
+ *
+ * The design language is the product's own: a neutral grey ramp on black, one
+ * brand accent, Mona Sans for display and Geist for everything read or typed,
+ * and a page framed by dashed rules. It is expressed as utility classes
+ * wherever it is built with a CSS framework; this page is a string rendered in
+ * a Worker with no build step, so the same values are written out longhand
+ * here. They are stated as literals on purpose — a token that is computed in
+ * one place and copied in another drifts without anyone seeing it.
+ *
+ * **Dark only, deliberately.** The upstream stylesheet derived every colour
+ * from the background's lightness through `oklch(from ...)` so one theme could
+ * serve both schemes. That is what made the sign-in field black-on-black, and
+ * the product has one scheme anyway. Colours here are stated, not derived.
+ */
+export default `
+:root {
+	color-scheme: dark;
 
-	--color-background-dark: #0e0e11;
-	--color-background-light: #ffffff;
-	--color-primary-dark: #6772e5;
-	--color-primary-light: #6772e5;
+	--color-gray-100: hsl(0 0% 10%);
+	--color-gray-200: hsl(0 0% 12%);
+	--color-gray-300: hsl(0 0% 16%);
+	--color-gray-400: hsl(0 0% 18%);
+	--color-gray-500: hsl(0 0% 27%);
+	--color-gray-600: hsl(0 0% 53%);
+	--color-gray-800: hsl(0 0% 49%);
+	--color-gray-900: hsl(0 0% 63%);
+	--color-gray-1000: hsl(0 0% 93%);
 
-	--color-background-success-dark: oklch(0.3 0.04 172);
-	--color-background-success-light: oklch(from var(--color-background-success-dark) 0.83 c h);
-	--color-success-dark: oklch(from var(--color-background-success-dark) 0.92 c h);
-	--color-success-light: oklch(from var(--color-background-success-dark) 0.25 c h);
+	--color-background-100: hsl(0 0% 4%);
+	--color-background-200: hsl(0 0% 0%);
 
-	--color-background-error-dark: oklch(0.32 0.07 15);
-	--color-background-error-light: oklch(from var(--color-background-error-dark) 0.92 c h);
-	--color-error-dark: oklch(from var(--color-background-error-dark) 0.92 c h);
-	--color-error-light: oklch(from var(--color-background-error-dark) 0.25 c h);
+	/* Overridden per-request from the theme's \`primary\`, so the brand colour
+	   has one source and this is only the fallback. */
+	--color-brand: hsl(12 84% 53%);
+	--color-border: var(--color-gray-200);
+	--color-foreground: var(--color-gray-1000);
+	--color-muted-foreground: var(--color-gray-900);
+	--color-muted-foreground2: var(--color-gray-800);
 
-	--border-radius: 0;
+	--color-red-600: hsl(358 75% 59%);
+	--color-red-100: hsl(357 37% 12%);
+	--color-green-600: hsl(151 55% 42%);
+	--color-green-100: hsl(154 49% 9%);
 
-	--color-background: var(--color-background-dark);
-	--color-primary: var(--color-primary-dark);
+	--font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+	--font-mona: 'Mona Sans Variable', var(--font-sans);
 
-	--color-background-success: var(--color-background-success-dark);
-	--color-success: var(--color-success-dark);
-	--color-background-error: var(--color-background-error-dark);
-	--color-error: var(--color-error-dark);
+	--text-xxs: 11px;
+	--text-xxs--line-height: 14px;
 
-	@media (prefers-color-scheme: light) {
-		--color-background: var(--color-background-light);
-		--color-primary: var(--color-primary-light);
-
-		--color-background-success: var(--color-background-success-light);
-		--color-success: var(--color-success-light);
-		--color-background-error: var(--color-background-error-light);
-		--color-error: var(--color-error-light);
-	}
-
-	--color-high: oklch(from var(--color-background) clamp(0, calc((l - 0.714) * -1000), 1) 0 0);
-	--color-low: oklch(from var(--color-background) clamp(0, calc((l - 0.714) * 1000), 1) 0 0);
-	--lightness-high: color-mix(in oklch, var(--color-high) 0%, oklch(var(--color-high) 0 0));
-	--lightness-low: color-mix(in oklch, var(--color-low) 0%, oklch(var(--color-low) 0 0));
-	--font-family:
-		ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
-		'Noto Color Emoji';
-	--font-scale: 1;
-
-	--font-size-xs: calc(0.75rem * var(--font-scale));
-	--font-size-sm: calc(0.875rem * var(--font-scale));
-	--font-size-md: calc(1rem * var(--font-scale));
-	--font-size-lg: calc(1.125rem * var(--font-scale));
-	--font-size-xl: calc(1.25rem * var(--font-scale));
-	--font-size-2xl: calc(1.5rem * var(--font-scale));
+	/* 1440px. The band borders only close into a box once the page is at least
+	   this wide; below it the dashed rules run to the viewport edge. */
+	--width-max: 90rem;
 }
 
-[data-component='root'] {
-	font-family: var(--font-family);
-	background-color: var(--color-background);
-	padding: 1rem;
-	color: white;
-	position: absolute;
-	inset: 0;
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	min-height: 100%;
+	background: var(--color-background-200);
+	color: var(--color-foreground);
+	font-family: var(--font-sans);
+	font-size: 14px;
+	line-height: 20px;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+[data-component='page'] {
 	display: flex;
-	align-items: center;
-	justify-content: center;
+	min-height: 100vh;
+	width: 100%;
+}
+
+[data-component='frame'] {
+	display: flex;
+	min-height: 100vh;
+	flex: 1 1 0%;
 	flex-direction: column;
-	user-select: none;
-	color: var(--color-high);
+	width: 100%;
+}
+
+/* The two dashed rules across the top and bottom of the page. Their inner
+   element is what carries the vertical edges, so the dashes meet in a corner
+   rather than crossing. */
+[data-component='band'] {
+	display: flex;
+	width: 100%;
+	min-height: 5rem;
+	border-color: var(--color-border);
+	border-style: dashed;
+	border-width: 0;
+}
+
+[data-component='band'][data-edge='top'] {
+	border-bottom-width: 1px;
+}
+
+[data-component='band'][data-edge='bottom'] {
+	border-top-width: 1px;
+}
+
+[data-component='band'] > div,
+[data-component='main'] {
+	width: 100%;
+	max-width: var(--width-max);
+	margin-inline: auto;
+	flex: 1 1 0%;
+	border-color: var(--color-border);
+	border-style: dashed;
+	border-width: 0;
+}
+
+[data-component='main'] {
+	display: flex;
+	height: 100%;
+}
+
+@media (min-width: 1440px) {
+	[data-component='band'] > div,
+	[data-component='main'] {
+		border-left-width: 1px;
+		border-right-width: 1px;
+	}
+}
+
+/* The 48-column field the lockup is centred in. The two dashed verticals sit
+   on the column-5 and column-44 gridlines and the content spans 6 to -6, so
+   there is a full column of air between a rule and any text. */
+[data-component='field'] {
+	position: relative;
+	display: grid;
+	flex: 1 1 0%;
+	width: 100%;
+	align-items: center;
+	grid-template-columns: repeat(48, minmax(0, 1fr));
+	grid-template-rows: 1fr;
+}
+
+[data-component='rule'] {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 0;
+	grid-column: 5;
+	transform: translateX(-50%);
+	color: var(--color-border);
+}
+
+[data-component='rule'][data-side='end'] {
+	grid-column: -5;
 }
 
 [data-component='center'] {
-	width: 380px;
+	position: relative;
+	grid-column: 6 / -6;
+	margin: auto;
 	display: flex;
+	width: 100%;
+	max-width: 34.5rem;
 	flex-direction: column;
-	gap: 1.5rem;
-
-	&[data-size='small'] {
-		width: 300px;
-	}
+	/* The rules run edge to edge behind this column; nothing here should eat a
+	   click meant for the page. Interactive descendants opt back in. */
+	pointer-events: none;
+	user-select: none;
 }
 
-[data-component='link'] {
-	text-decoration: underline;
-	text-underline-offset: 0.125rem;
-	font-weight: 600;
-}
-
-[data-component='label'] {
+[data-component='stack'] {
 	display: flex;
-	gap: 0.75rem;
+	width: 100%;
 	flex-direction: column;
-	font-size: var(--font-size-xs);
+	align-items: center;
+	padding: 1.75rem;
 }
 
 [data-component='logo'] {
-	margin: 0 auto;
+	margin-bottom: 1.25rem;
+	display: flex;
 	height: 2.5rem;
-	width: auto;
-	display: none;
-
-	@media (prefers-color-scheme: light) {
-		&[data-mode='light'] {
-			display: block;
-		}
-	}
-
-	@media (prefers-color-scheme: dark) {
-		&[data-mode='dark'] {
-			display: block;
-		}
-	}
+	color: var(--color-brand);
 }
 
-[data-component='logo-default'] {
-	margin: 0 auto;
-	height: 2.5rem;
+[data-component='logo'] svg {
+	height: 100%;
 	width: auto;
+}
 
-	@media (prefers-color-scheme: light) {
-		color: var(--color-high);
-	}
+[data-component='title'] {
+	margin: 0;
+	text-align: center;
+	text-wrap: balance;
+	letter-spacing: -0.05em;
+	/* Balanced on narrow screens only, where an unbalanced last line leaves a
+	   single orphaned word; the wide case is reset in the media query at the
+	   foot of this file. */
+	font-family: var(--font-mona);
+	font-size: 1.875rem;
+	line-height: 2.25rem;
+	font-weight: 700;
+	color: var(--color-muted-foreground);
+	pointer-events: auto;
+}
 
-	@media (prefers-color-scheme: dark) {
-		color: var(--color-high);
-	}
+[data-component='title'] strong {
+	font-weight: inherit;
+	color: var(--color-foreground);
+}
+
+[data-component='title'] a {
+	color: inherit;
+	text-decoration: none;
+}
+
+[data-component='actions'] {
+	pointer-events: auto;
+	margin-top: 1.5rem;
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+}
+
+[data-component='form'] {
+	display: flex;
+	width: 100%;
+	flex-direction: column;
+	gap: 0.75rem;
+	margin: 0;
 }
 
 [data-component='input'] {
 	width: 100%;
-	height: 2.5rem;
-	padding: 0 1rem;
-	border: 1px solid transparent;
-	--background: oklch(
-		from var(--color-background) calc(l + (-0.06 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.03)) c
-			h
-	);
-	background: var(--background);
-	/* Form controls do not inherit \`color\`, so without this the text someone
-	   types is the UA default — black, over the near-black \`--background\`
-	   computed just above. The page looked fine and the field was unreadable. */
-	color: var(--color-high);
-	caret-color: var(--color-high);
-	border-color: oklch(
-		from var(--color-background)
-			calc(clamp(0.22, l + (-0.12 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.06), 0.88)) c h
-	);
-	border-radius: calc(var(--border-radius) * 0.25rem);
-	font-size: var(--font-size-sm);
+	appearance: none;
+	border-radius: 0.75rem;
+	border: 1px solid var(--color-gray-300);
+	background: var(--color-background-100);
+	padding: 1.125rem 1.25rem;
+	font-family: var(--font-sans);
+	font-size: 1rem;
+	line-height: 1.5rem;
+	/* Stated rather than inherited: a form control does not take its parent's
+	   colour, and leaving it to the UA put black glyphs on this field. */
+	color: var(--color-foreground);
+	caret-color: var(--color-brand);
 	outline: none;
+	transition:
+		border-color 150ms,
+		box-shadow 150ms;
+}
 
-	&::placeholder {
-		color: var(--color-high);
-		opacity: 0.5;
-	}
+[data-component='input']::placeholder {
+	color: var(--color-muted-foreground2);
+}
 
-	/* Chrome paints its own background over autofilled fields and ignores
-	   \`background\`. An inset shadow is the only thing it honours, and
-	   \`-webkit-text-fill-color\` the only thing that moves the glyphs. */
-	&:-webkit-autofill,
-	&:-webkit-autofill:hover,
-	&:-webkit-autofill:focus {
-		-webkit-text-fill-color: var(--color-high);
-		-webkit-box-shadow: 0 0 0 100px var(--background) inset;
-		caret-color: var(--color-high);
-	}
+[data-component='input']:hover {
+	border-color: var(--color-gray-400);
+}
 
-	&:focus {
-		border-color: oklch(
-			from var(--color-background)
-				calc(clamp(0.3, l + (-0.2 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.1), 0.7)) c h
-		);
-	}
+[data-component='input']:focus {
+	border-color: var(--color-brand);
+	box-shadow: 0 0 0 1px var(--color-brand);
+}
 
-	&:user-invalid:not(:focus) {
-		border-color: oklch(0.4 0.09 7.91);
-	}
+/* Chrome paints its own background over an autofilled field and ignores
+   \`background\`; an inset shadow is the only thing it honours. */
+[data-component='input']:-webkit-autofill,
+[data-component='input']:-webkit-autofill:hover,
+[data-component='input']:-webkit-autofill:focus {
+	-webkit-text-fill-color: var(--color-foreground);
+	-webkit-box-shadow: 0 0 0 100px var(--color-background-100) inset;
+	caret-color: var(--color-brand);
 }
 
 [data-component='button'] {
-	height: 2.5rem;
-	cursor: pointer;
-	border: 0;
-	font-weight: 500;
-	font-size: var(--font-size-sm);
-	border-radius: calc(var(--border-radius) * 0.25rem);
+	position: relative;
 	display: flex;
-	gap: 0.75rem;
+	width: 100%;
+	cursor: pointer;
+	appearance: none;
 	align-items: center;
 	justify-content: center;
-	background: var(--color-primary);
-	color: oklch(from var(--color-primary) clamp(0, calc((l - 0.714) * -1000), 1) 0 0);
-
-	&[data-color='ghost'] {
-		background: transparent;
-		color: var(--color-high);
-		border: 1px solid
-			oklch(
-				from var(--color-background)
-					calc(clamp(0.22, l + (-0.12 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.06), 0.88)) c h
-			);
-	}
-
-	[data-slot='icon'] {
-		width: 16px;
-		height: 16px;
-
-		svg {
-			width: 100%;
-			height: 100%;
-		}
-	}
+	border: 0;
+	border-radius: 0.75rem;
+	background: var(--color-gray-1000);
+	padding: 1.125rem 2.5rem;
+	color: var(--color-gray-100);
+	font-family: var(--font-mona);
+	font-size: 1rem;
+	line-height: 1.5rem;
+	font-weight: 700;
+	text-transform: uppercase;
+	outline: none;
+	transition: all 150ms;
 }
 
-[data-component='form'] {
-	max-width: 100%;
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-	margin: 0;
+[data-component='button']:hover {
+	background: var(--color-gray-900);
+	scale: 1.01;
 }
 
-[data-component='form-alert'] {
-	height: 2.5rem;
-	display: flex;
-	align-items: center;
-	padding: 0 1rem;
-	border-radius: calc(var(--border-radius) * 0.25rem);
-	background: var(--color-background-error);
-	color: var(--color-error);
-	text-align: left;
-	font-size: 0.75rem;
-	gap: 0.5rem;
+[data-component='button']:focus-visible {
+	box-shadow:
+		0 0 0 2px var(--color-background-200),
+		0 0 0 4px var(--color-brand);
+}
 
-	&[data-color='success'] {
-		background: var(--color-background-success);
-		color: var(--color-success);
-
-		[data-slot='icon-success'] {
-			display: block;
-		}
-		[data-slot='icon-danger'] {
-			display: none;
-		}
-	}
-
-	&:has([data-slot='message']:empty) {
-		display: none;
-	}
-
-	[data-slot='icon-success'],
-	[data-slot='icon-danger'] {
-		width: 1rem;
-		height: 1rem;
-	}
-	[data-slot='icon-success'] {
-		display: none;
-	}
+[data-component='button']:disabled {
+	cursor: not-allowed;
+	background: var(--color-background-100);
+	border: 1px solid var(--color-border);
+	color: var(--color-muted-foreground2);
+	scale: 1;
 }
 
 [data-component='form-footer'] {
-	display: flex;
-	gap: 1rem;
-	font-size: 0.75rem;
-	align-items: center;
-	justify-content: center;
+	margin-top: 0.75rem;
+	width: 100%;
+	text-align: center;
+	font-size: var(--text-xxs);
+	line-height: var(--text-xxs--line-height);
+	color: var(--color-muted-foreground2);
+	pointer-events: auto;
+}
 
-	&:has(> :nth-child(2)) {
-		justify-content: space-between;
+[data-component='form-footer'] a {
+	color: inherit;
+	text-decoration: none;
+	transition: color 150ms;
+}
+
+/* The resend control, which is a button behaving as a link and does need to
+   look like one. */
+[data-component='link'] {
+	color: inherit;
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 0.125rem;
+	transition: color 150ms;
+}
+
+[data-component='form-footer'] a:hover,
+[data-component='link']:hover {
+	color: var(--color-foreground);
+}
+
+[data-component='form-alert'] {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	border-radius: 0.75rem;
+	border: 1px solid var(--color-red-600);
+	background: var(--color-red-100);
+	padding: 0.75rem 1rem;
+	font-size: 0.8125rem;
+	line-height: 1.25rem;
+	color: var(--color-foreground);
+	text-align: left;
+}
+
+[data-component='form-alert'][data-color='success'] {
+	border-color: var(--color-green-600);
+	background: var(--color-green-100);
+}
+
+[data-component='form-alert'] svg {
+	height: 1.25rem;
+	width: 1.25rem;
+	flex-shrink: 0;
+}
+
+[data-component='form-alert'] [data-slot='icon-success'] {
+	display: none;
+	color: var(--color-green-600);
+}
+
+[data-component='form-alert'] [data-slot='icon-danger'] {
+	display: block;
+	color: var(--color-red-600);
+}
+
+[data-component='form-alert'][data-color='success'] [data-slot='icon-success'] {
+	display: block;
+}
+
+[data-component='form-alert'][data-color='success'] [data-slot='icon-danger'] {
+	display: none;
+}
+
+@media (min-width: 40rem) {
+	[data-component='stack'] {
+		padding: 2.5rem;
 	}
-}`;
+
+	[data-component='logo'] {
+		height: 3.5rem;
+	}
+
+	[data-component='title'] {
+		font-size: 40px;
+		line-height: 2.5rem;
+		text-wrap: wrap;
+	}
+
+	[data-component='form-footer'] {
+		line-height: 1.625;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	[data-component='button'],
+	[data-component='input'] {
+		transition: none;
+	}
+
+	[data-component='button']:hover {
+		scale: 1;
+	}
+}
+`;

@@ -1,15 +1,30 @@
+/** @jsxImportSource hono/jsx */
+
 import { PropsWithChildren } from 'hono/jsx';
 
+import css from './css.js';
 import { getTheme } from './theme.js';
 
-import css from './css.js';
-
+/**
+ * The page every sign-in screen is drawn inside.
+ *
+ * Two dashed bands across the top and bottom, closing into a 1440px-wide box
+ * on a wide screen; between them a 48-column field with a dashed vertical on
+ * the fifth gridline from each edge; and centred in it the lockup — wordmark,
+ * one line of copy, then whatever the provider is asking for.
+ *
+ * Dark only. There is no light variant to get wrong, which is the point:
+ * the previous version derived its colours from the background so that one
+ * theme could serve both, and that derivation is what left the input's text
+ * the same colour as the input's background.
+ */
 export function Layout(
 	props: PropsWithChildren<{
 		size?: 'small';
 	}>
 ) {
 	const theme = getTheme();
+
 	function get(key: 'primary' | 'background' | 'logo', mode: 'light' | 'dark') {
 		if (!theme) return;
 		if (!theme[key]) return;
@@ -18,69 +33,59 @@ export function Layout(
 		return theme[key][mode] as string | undefined;
 	}
 
-	const radius = (() => {
-		if (theme?.radius === 'none') return '0';
-		if (theme?.radius === 'sm') return '1';
-		if (theme?.radius === 'md') return '1.25';
-		if (theme?.radius === 'lg') return '1.5';
-		if (theme?.radius === 'full') return '1000000000001';
-		return '1';
-	})();
-
-	const hasLogo = get('logo', 'light') && get('logo', 'dark');
+	// The one value the theme still drives. Everything else is stated in the
+	// stylesheet, because a second place to set a colour is a second place for
+	// it to be wrong.
+	const brand = get('primary', 'dark') ?? get('primary', 'light');
 
 	return (
-		<html
-			style={{
-				'--color-background-light': get('background', 'light'),
-				'--color-background-dark': get('background', 'dark'),
-				'--color-primary-light': get('primary', 'light'),
-				'--color-primary-dark': get('primary', 'dark'),
-				'--font-family': theme?.font?.family,
-				'--font-scale': theme?.font?.scale,
-				'--border-radius': radius
-			}}>
+		<html lang="en">
 			<head>
-				<title>{theme?.title || 'OpenAuthJS'}</title>
+				<title>{theme?.title || 'Nestri'}</title>
 				<meta charset="utf-8" />
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
-				{theme?.favicon ? (
-					<link rel="icon" href={theme?.favicon} />
-				) : (
-					<>
-						<link rel="icon" href="https://openauth.js.org/favicon.ico" sizes="48x48" />
-						<link
-							rel="icon"
-							href="https://openauth.js.org/favicon.svg"
-							media="(prefers-color-scheme: light)"
-						/>
-						<link
-							rel="icon"
-							href="https://openauth.js.org/favicon-dark.svg"
-							media="(prefers-color-scheme: dark)"
-						/>
-						<link
-							rel="shortcut icon"
-							href="https://openauth.js.org/favicon.svg"
-							type="image/svg+xml"
-						/>
-					</>
-				)}
+				<meta name="color-scheme" content="dark" />
+				<meta name="theme-color" content="hsl(0 0% 0%)" />
+				{theme?.favicon && <link rel="icon" href={theme.favicon} />}
 				<style dangerouslySetInnerHTML={{ __html: css }} />
+				{brand && <style dangerouslySetInnerHTML={{ __html: `:root{--color-brand:${brand}}` }} />}
 				{theme?.css && <style dangerouslySetInnerHTML={{ __html: theme.css }} />}
 			</head>
 			<body>
-				<div data-component="root">
-					<div data-component="center" data-size={props.size}>
-						{hasLogo ? (
-							<>
-								<img data-component="logo" src={get('logo', 'light')} data-mode="light" />
-								<img data-component="logo" src={get('logo', 'dark')} data-mode="dark" />
-							</>
-						) : (
-							ICON_OPENAUTH
-						)}
-						{props.children}
+				<div data-component="page">
+					<div data-component="frame">
+						<div data-component="band" data-edge="top">
+							<div />
+						</div>
+						<div data-component="main">
+							<div data-component="field">
+								<Rule />
+								<Rule side="end" />
+								<div data-component="center" data-size={props.size}>
+									<div data-component="stack">
+										<div data-component="logo">
+											<LogoWord />
+										</div>
+										<h2 data-component="title">
+											One place for all the ways you play.{' '}
+											<strong>
+												Gather Around
+												<a
+													href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+													rel="noopener noreferrer"
+													target="_blank">
+													.
+												</a>
+											</strong>
+										</h2>
+										<div data-component="actions">{props.children}</div>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div data-component="band" data-edge="bottom">
+							<div />
+						</div>
 					</div>
 				</div>
 			</body>
@@ -88,17 +93,83 @@ export function Layout(
 	);
 }
 
-const ICON_OPENAUTH = (
-	<svg
-		data-component="logo-default"
-		width="51"
-		height="51"
-		viewBox="0 0 51 51"
-		fill="none"
-		xmlns="http://www.w3.org/2000/svg">
-		<path
-			d="M0 50.2303V0.12854H50.1017V50.2303H0ZM3.08002 11.8326H11.7041V3.20856H3.08002V11.8326ZM14.8526 11.8326H23.4766V3.20856H14.8526V11.8326ZM26.5566 11.8326H35.1807V3.20856H26.5566V11.8326ZM38.3292 11.8326H47.0217V3.20856H38.3292V11.8326ZM3.08002 23.6052H11.7041V14.9811H3.08002V23.6052ZM14.8526 23.6052H23.4766V14.9811H14.8526V23.6052ZM26.5566 23.6052H35.1807V14.9811H26.5566V23.6052ZM38.3292 23.6052H47.0217V14.9811H38.3292V23.6052ZM3.08002 35.3092H11.7041V26.6852H3.08002V35.3092ZM14.8526 35.3092H23.4766V26.6852H14.8526V35.3092ZM26.5566 35.3092H35.1807V26.6852H26.5566V35.3092ZM38.3292 35.3092H47.0217V26.6852H38.3292V35.3092ZM3.08002 47.1502H11.7041V38.3893H3.08002V47.1502ZM14.8526 47.1502H23.4766V38.3893H14.8526V47.1502ZM26.5566 47.1502H35.1807V38.3893H26.5566V47.1502ZM38.3292 47.1502H47.0217V38.3893H38.3292V47.1502Z"
-			fill="currentColor"
-		/>
-	</svg>
-);
+/**
+ * One of the two dashed verticals the column sits between.
+ *
+ * Drawn as an SVG line rather than a border because the dash pattern has to
+ * match the horizontal bands' `border-style: dashed`, and a border cannot be
+ * given a round cap.
+ */
+function Rule(props: { side?: 'end' }) {
+	return (
+		<svg data-component="rule" data-side={props.side} width="2" height="100%" aria-hidden="true">
+			<line
+				x1="0.5"
+				y1="0"
+				x2="0.5"
+				y2="100%"
+				stroke-width="1"
+				stroke="currentColor"
+				stroke-dasharray="4 4"
+				stroke-linecap="round"
+			/>
+		</svg>
+	);
+}
+
+/**
+ * The NESTRI wordmark.
+ *
+ * `fill="currentColor"` throughout, so the colour comes from the brand token
+ * on its container rather than being baked into the paths.
+ */
+function LogoWord() {
+	return (
+		<svg
+			viewBox="0 0 31.749999 6.3499999"
+			version="1.1"
+			xmlns="http://www.w3.org/2000/svg"
+			role="img"
+			aria-label="Nestri">
+			<g stroke="none" stroke-width="0" stroke-linejoin="round" stroke-linecap="round">
+				<g transform="matrix(1.0384818,0,0,1.0384818,-0.26119451,0.00780597)">
+					<path
+						d="m 93.240234,43.240234 v 3.34961 l -0.40039,-0.357422 c -2.096687,-1.875287 -4.792416,-2.933207 -7.59961,-2.990235 v 3.572266 c 4.331915,0.124459 7.820855,3.613398 7.945313,7.945313 h 3.574219 V 43.240234 Z"
+						fill="currentColor"
+						transform="matrix(0.44279029,0,0,0.44279029,-36.976573,-18.649472)"
+					/>
+					<path
+						d="m 85.240234,47.292969 v 3.642578 c 2.057061,0.11945 3.704769,1.767158 3.824219,3.824219 h 3.642578 C 92.583101,50.689065 89.310935,47.4169 85.240234,47.292969 Z"
+						fill="currentColor"
+						transform="matrix(0.44279029,0,0,0.44279029,-36.976573,-18.649472)"
+					/>
+					<path
+						d="m 85.240234,51.416016 v 3.34375 h 3.34375 c -0.117719,-1.795413 -1.548337,-3.226031 -3.34375,-3.34375 z"
+						fill="currentColor"
+						transform="matrix(0.44279029,0,0,0.44279029,-36.976573,-18.649472)"
+					/>
+				</g>
+				<path
+					d="m 6.3553899,0.52902957 v 0.1682512 1.53946343 h 1.6989362 0.00878 1.7077191 V 2.4050039 H 8.064776 a 1.7064502,1.7064502 0 0 0 -4.35e-4,0 1.7064502,1.7064502 0 0 0 -0.00131,0 v 0.011399 a 1.7109739,1.7109739 0 0 1 -0.0013,-0.011399 H 6.3551932 v 1.5394593 0.1684904 h 0.00261 A 1.7064502,1.7064502 0 0 0 7.3305504,5.6521827 1.7064502,1.7064502 0 0 0 8.0629013,5.818063 v 0.00263 H 9.7706262 11.478346 V 5.6521776 4.1129494 H 9.7706244 8.0629097 v -0.168495 h 1.5280697 0.1715786 0.00802 0.1682601 a 1.7109739,1.7109739 0 0 0 1.5292529,-1.539459 1.7109739,1.7109739 0 0 0 0.0079,-0.1625607 1.7109739,1.7109739 0 0 0 0,-0.00569 1.7109739,1.7109739 0 0 0 -0.976066,-1.53946152 1.7109739,1.7109739 0 0 0 -0.7292697,-0.1658802 v -0.00217 H 8.0628921 Z"
+					fill="currentColor"
+				/>
+				<path
+					d="m 13.709845,0.52614613 v 0.002175 a 1.7119553,1.7119553 0 0 0 -0.729689,0.16598235 1.7119553,1.7119553 0 0 0 -0.976632,1.54034282 1.7119553,1.7119553 0 0 0 0,0.00569 1.7119553,1.7119553 0 0 0 0.0079,0.162659 1.7119553,1.7119553 0 0 0 1.530129,1.5403426 h 0.168355 0.0081 0.171679 1.528947 v 0.168587 H 13.709919 12.001222 V 5.6520324 5.820626 h 1.708697 1.708701 v -0.00263 a 1.7074292,1.7074292 0 0 0 0.732769,-0.1659739 1.7074292,1.7074292 0 0 0 0.973313,-1.5401077 1.7074292,1.7074292 0 0 0 0,-0.00131 1.7074292,1.7074292 0 0 0 -0.0081,-0.167164 1.7074292,1.7074292 0 0 0 -1.696823,-1.5403427 1.7119553,1.7119553 0 0 1 -0.0013,0.011382 v -0.011382 a 1.7074292,1.7074292 0 0 0 -0.0013,0 h -4.35e-4 -1.707038 v -0.168328 h 1.708702 0.0088 1.69991 V 0.69442656 0.52607662 h -1.708693 z"
+					fill="currentColor"
+				/>
+				<path
+					d="M 17.649994,0.52916663 V 2.1732606 h 1.814408 0.0095 v 0.1796921 0.012166 1.6319287 0.1799455 1.6438406 h 0.784918 1.038868 V 4.1769923 a 1.8224328,1.8224328 0 0 0 0,-0.00151 1.8224328,1.8224328 0 0 0 -0.0079,-0.1687946 1.8224328,1.8224328 0 0 0 -7.34e-4,-0.00964 h 0.0085 V 2.3529527 2.1732606 h 1.821252 0.0026 V 0.52916663 h -1.044966 -0.778835 -0.791 -1.032787 z"
+					fill="currentColor"
+				/>
+				<path
+					d="M 23.644282,0.52916392 V 0.69714688 2.2341075 h 1.696176 0.0087 1.704944 v 0.1679826 h -1.551414 -0.152345 c -4.4e-4,0 -7.34e-4,0 -0.0012,0 v 0.012561 c -4.25e-4,-0.00412 -7.79e-4,-0.00837 -0.0012,-0.012561 -0.472042,6.912e-4 -0.899231,0.1934204 -1.207377,0.5041854 -0.268576,0.270858 -0.446712,0.6314329 -0.485705,1.0327745 -0.0054,0.054867 -0.008,0.1105228 -0.008,0.1667991 0,4.401e-4 -2e-6,9.809e-4 0,0.00145 h -0.0025 v 1.536728 0.1682203 h 1.704942 V 5.8095798 5.6439665 4.1697918 l 1.14579,1.1981514 0.264176,0.2760233 0.160875,0.168219 h 0.134103 1.704942 0.153767 l -0.153703,-0.1537667 -0.01446,-0.014453 -1.536723,-1.536723 -0.153767,-0.153768 -0.0055,-0.00546 c 0.0018,0 0.0037,-2.316e-4 0.0055,-2.364e-4 0.05714,-1.855e-4 0.113724,-0.00315 0.169404,-0.00873 0.807873,-0.082186 1.449216,-0.7273834 1.525589,-1.5369611 0.0051,-0.053473 0.0076,-0.1075037 0.0076,-0.1622959 0,-0.00194 7e-6,-0.00376 0,-0.0057 -0.0024,-0.6779645 -0.399622,-1.26300854 -0.973719,-1.53694086 -0.220934,-0.10543433 -0.468068,-0.1647717 -0.729009,-0.1656172 v -0.002364 h -1.704942 z"
+					fill="currentColor"
+				/>
+				<path
+					d="m 29.435832,0.5290966 v 1.4644007 0.179692 0.1796919 0.01217 1.6319272 0.1799453 1.6438394 h 0.784916 1.038868 v -1.643844 a 1.8224314,1.8224314 0 0 0 0,-0.00153 1.8224314,1.8224314 0 0 0 -0.0077,-0.1687941 1.8224314,1.8224314 0 0 0 -7.87e-4,-0.00964 h 0.0085 V 2.3528812 2.1731893 0.5290966 H 30.46863 Z"
+					fill="currentColor"
+				/>
+			</g>
+		</svg>
+	);
+}
