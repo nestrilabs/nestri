@@ -1,4 +1,6 @@
 export default `:root {
+	color-scheme: light dark;
+
 	--color-background-dark: #0e0e11;
 	--color-background-light: #ffffff;
 	--color-primary-dark: #6772e5;
@@ -133,6 +135,11 @@ export default `:root {
 			h
 	);
 	background: var(--background);
+	/* Form controls do not inherit \`color\`, so without this the text someone
+	   types is the UA default — black, over the near-black \`--background\`
+	   computed just above. The page looked fine and the field was unreadable. */
+	color: var(--color-high);
+	caret-color: var(--color-high);
 	border-color: oklch(
 		from var(--color-background)
 			calc(clamp(0.22, l + (-0.12 * clamp(0, calc((l - 0.714) * 1000), 1) + 0.06), 0.88)) c h
@@ -140,6 +147,22 @@ export default `:root {
 	border-radius: calc(var(--border-radius) * 0.25rem);
 	font-size: var(--font-size-sm);
 	outline: none;
+
+	&::placeholder {
+		color: var(--color-high);
+		opacity: 0.5;
+	}
+
+	/* Chrome paints its own background over autofilled fields and ignores
+	   \`background\`. An inset shadow is the only thing it honours, and
+	   \`-webkit-text-fill-color\` the only thing that moves the glyphs. */
+	&:-webkit-autofill,
+	&:-webkit-autofill:hover,
+	&:-webkit-autofill:focus {
+		-webkit-text-fill-color: var(--color-high);
+		-webkit-box-shadow: 0 0 0 100px var(--background) inset;
+		caret-color: var(--color-high);
+	}
 
 	&:focus {
 		border-color: oklch(

@@ -2,6 +2,7 @@ import type { Hyperdrive } from '@cloudflare/workers-types';
 import { issuer } from '@nestri/auth/index';
 import { CodeProvider } from '@nestri/auth/provider/code';
 import { CodeUI } from '@nestri/auth/ui/code';
+import type { Theme } from '@nestri/auth/ui/theme';
 import { isDomainMatch } from '@nestri/auth/util';
 import { Actor } from '@nestri/core/actor';
 import { PostgresCodeStore } from '@nestri/core/auth/authorization-code';
@@ -169,11 +170,44 @@ export const allowClient = async (
 	return isDomainMatch(redirect, host);
 };
 
+/**
+ * The sign-in screen's theme.
+ *
+ * Restored from the pre-fork issuer config, which carried these exact values
+ * before the vendored `packages/auth` replaced it and nothing set a theme at
+ * all — leaving every sign-in on `THEME_OPENAUTH`, which is somebody else's
+ * brand and, with the input bug this shipped beside, an unreadable one.
+ *
+ * `primary` is the one value worth not changing casually: it is the brand
+ * orange, and the button's own text colour is derived from its lightness
+ * rather than stated, so a lighter primary silently flips that text to black.
+ */
+const THEME_NESTRI: Theme = {
+	title: 'Nestri | Auth',
+	primary: '#FF4F01',
+	// Not the URLs the old config carried: `/logo.webp` and `/seo/favicon.ico`
+	// both 404 today, and `base.tsx` falls back to OpenAuth's own mark only when
+	// `logo` is absent — a broken URL renders a broken image instead. These two
+	// are what the site actually serves.
+	logo: 'https://nestri.io/images/android-chrome-512x512.png',
+	favicon: 'https://nestri.io/images/favicon.ico',
+	background: {
+		light: '#f5f5f5',
+		dark: '#171717'
+	},
+	radius: 'lg',
+	font: {
+		family: 'Geist, sans-serif'
+	},
+	css: `@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100;200;300;400;500;600;700;800;900&display=swap');`
+};
+
 export default {
 	async fetch(request: Request, env: Env, ctx?: ExecutionContext) {
 		Env.init(env as unknown as Record<string, unknown>);
 		const inner = issuer({
 			subjects,
+			theme: THEME_NESTRI,
 			// One database behind all of it, and nothing that only exists on
 			// one hosting provider. What is left in the generic store is the
 			// rate-limit counters — the only records here that are allowed to
