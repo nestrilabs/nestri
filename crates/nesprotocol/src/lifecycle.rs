@@ -101,6 +101,15 @@ pub struct Mount {
     pub ro: bool,
 }
 
+/// Drive/block-device to mount
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Drive {
+    pub dev: String,
+    pub at: String,
+    #[serde(default)]
+    pub opts: Vec<(String, String)>,
+}
+
 /// Names one launch, for as long as anything has something to say about it.
 ///
 /// Minted by the caller and only ever echoed by the guest. A guest that
@@ -165,6 +174,8 @@ pub struct OnExit {
 pub struct BootDescriptor {
     #[serde(default)]
     pub mounts: Vec<Mount>,
+    #[serde(default)]
+    pub drives: Vec<Drive>,
 }
 
 /// How a workload ended.
@@ -376,6 +387,7 @@ mod tests {
                 at: "/mnt/install".into(),
                 ro: true,
             }],
+            drives: Vec::new(),
         }
     }
 

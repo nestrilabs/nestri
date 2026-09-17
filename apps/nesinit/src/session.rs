@@ -266,6 +266,21 @@ where
                 }
                 booted = true;
 
+                // Additional drive mounts
+                match workload.mount_drives(&descriptor.drives) {
+                    Ok(()) => send(&mut writer, &GuestToHost::Mounted).await?,
+                    Err(failure) => {
+                        send(
+                            &mut writer,
+                            &GuestToHost::MountFailed {
+                                reason: failure.reason.clone(),
+                            },
+                        )
+                        .await?;
+                        return Ok(Outcome::Refused(failure));
+                    }
+                }
+
                 // The shares, then the services, and each reported separately.
                 // Which of the two failed decides what is worth looking at, so
                 // the two are never one message.
@@ -490,6 +505,7 @@ mod tests {
                 at: "/mnt/user".into(),
                 ro: false,
             }],
+            drives: Vec::new(),
         }
     }
 

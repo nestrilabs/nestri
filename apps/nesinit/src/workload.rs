@@ -11,7 +11,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 
-use nesprotocol::lifecycle::{Exec, Exit, Mount};
+use nesprotocol::lifecycle::{Drive, Exec, Exit, Mount};
 
 use std::os::unix::process::CommandExt;
 
@@ -40,6 +40,9 @@ pub type Exited = Pin<Box<dyn Future<Output = io::Result<Exit>> + Send>>;
 pub trait Workload {
     /// Make the shares the descriptor names, where it says to put them.
     fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure>;
+
+    /// Mount drives
+    fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure>;
 
     /// Start the command the descriptor names.
     ///
@@ -125,6 +128,13 @@ impl Workload for Process {
             // workload given some of its shares fails later, somewhere else,
             // for a reason nobody can see from here.
             mount_share(share)?;
+        }
+        Ok(())
+    }
+
+    fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure> {
+        for drive in drives {
+            mount_drive(drive)?;
         }
         Ok(())
     }
@@ -330,6 +340,36 @@ fn mount_share(share: &Mount) -> Result<(), Failure> {
 /// filesystem this mounts. A descriptor cannot name another.
 const FSTYPE: &std::ffi::CStr = c"virtiofs";
 
+/// Mounts block device instead of virtiofs share
+fn mount_drive(drive: &Drive) -> Result<(), Failure> {
+    // Checked before anything is created: a descriptor this component cannot
+    // act on should leave no directory behind to confuse whoever reads the
+    // failure.
+    let (source, target, flags, opts) = options_drive(drive)?;
+
+    // The mount point may not exist yet: a share can land anywhere the
+    // descriptor names, including a directory no image created.
+    std::fs::create_dir_all(&drive.at).map_err(|error| failed_drive(drive, error))?;
+
+    // SAFETY: mount takes two paths, a filesystem name and a flag word, all
+    // of which outlive the call, and no options string.
+    let mounted = unsafe {
+        libc::mount(
+            source.as_ptr(),
+            target.as_ptr(),
+            FSTYPE_DRIVE.as_ptr(),
+            flags,
+            opts.as_ptr() as *const libc::c_void,
+        )
+    };
+    if mounted != 0 {
+        return Err(failed_drive(drive, io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+const FSTYPE_DRIVE: &std::ffi::CStr = c"ext4";
+
 /// What the mount call is given, split out because this is the part worth
 /// asserting: mounting itself needs privileges a test does not have.
 fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> {
@@ -360,11 +400,35 @@ fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> 
     Ok((source, target, flags))
 }
 
+fn options_drive(drive: &Drive) -> Result<(CString, CString, libc::c_ulong, CString), Failure> {
+    let flags = libc::MS_NOATIME | libc::MS_NODIRATIME;
+    let data_opts = CString::new("commit=60,barrier=0")
+        .map_err(|_| Failure::new("Failed to create mount data CString".to_string()))?;
+
+    let source = CString::new(drive.dev.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the drive device contains a nul byte: {:?}",
+            drive.dev
+        ))
+    })?;
+    let target = CString::new(drive.at.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the drive mount point contains a nul byte: {:?}",
+            drive.at
+        ))
+    })?;
+    Ok((source, target, flags, data_opts))
+}
+
 /// A failure names the path, which is what makes it actionable: a permission
 /// error and the directory it happened on can be acted on, where "the share
 /// did not mount" cannot.
 fn failed(share: &Mount, error: io::Error) -> Failure {
     Failure::new(format!("{}: {error}", share.at))
+}
+
+fn failed_drive(drive: &Drive, error: io::Error) -> Failure {
+    Failure::new(format!("{}: {error}", drive.at))
 }
 
 #[cfg(test)]
@@ -540,6 +604,7 @@ pub mod double {
     /// only thing under test.
     pub struct Double {
         pub mounted: Vec<Vec<Mount>>,
+        pub drives: Vec<Vec<Drive>>,
         pub started: Vec<Exec>,
         pub stops: usize,
         pub mount_failure: Option<Failure>,
@@ -563,6 +628,7 @@ pub mod double {
         fn new(exit: Exit, holds_until_stopped: bool) -> Self {
             Self {
                 mounted: Vec::new(),
+                drives: Vec::new(),
                 started: Vec::new(),
                 stops: 0,
                 mount_failure: None,
@@ -577,6 +643,14 @@ pub mod double {
     impl Workload for Double {
         fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure> {
             self.mounted.push(mounts.to_vec());
+            match &self.mount_failure {
+                Some(failure) => Err(failure.clone()),
+                None => Ok(()),
+            }
+        }
+
+        fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure> {
+            self.drives.push(drives.to_vec());
             match &self.mount_failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(()),
