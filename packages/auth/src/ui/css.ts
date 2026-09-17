@@ -4,10 +4,11 @@
  * The design language is the product's own: a neutral grey ramp on black, one
  * brand accent, Mona Sans for display and Geist for everything read or typed,
  * and a page framed by dashed rules. It is expressed as utility classes
- * wherever it is built with a CSS framework; this page is a string rendered in
- * a Worker with no build step, so the same values are written out longhand
- * here. They are stated as literals on purpose — a token that is computed in
- * one place and copied in another drifts without anyone seeing it.
+ * wherever it is built with a CSS framework; this page is assembled as a
+ * string at request time and nothing preprocesses it, so the same values are
+ * written out longhand here. They are stated as literals on purpose — a token
+ * that is computed in one place and copied in another drifts without anyone
+ * seeing it.
  *
  * **Dark only, deliberately.** The upstream stylesheet derived every colour
  * from the background's lightness through `oklch(from ...)` so one theme could
@@ -244,7 +245,7 @@ body {
 	border-radius: 0.75rem;
 	border: 1px solid var(--color-gray-300);
 	background: var(--color-background-100);
-	padding: 1.125rem 1.25rem;
+	padding: 0.9rem 1.25rem;
 	font-family: var(--font-sans);
 	font-size: 1rem;
 	line-height: 1.5rem;

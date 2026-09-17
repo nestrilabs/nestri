@@ -190,9 +190,9 @@ const THEME_NESTRI: Theme = {
 	favicon: 'https://nestri.io/images/favicon.ico',
 	// Mona Sans for the display line and the action, Geist for everything a
 	// person reads or types. Served from the Fontsource CDN because the
-	// self-hosted font packages need a bundler and this page is a string
-	// rendered in a Worker with no build step. The family names must match the
-	// ones the stylesheet asks for.
+	// self-hosted font packages need a bundler and nothing preprocesses this
+	// page — it is assembled as a string at request time. The family names must
+	// match the ones the stylesheet asks for.
 	css: `@import url('https://cdn.jsdelivr.net/fontsource/css/mona-sans:vf@latest/wght.css');@import url('https://cdn.jsdelivr.net/fontsource/css/geist:vf@latest/wght.css');`
 };
 
