@@ -24,9 +24,16 @@ import { createLocalJWKSet, JSONWebKeySet, jwtVerify } from 'jose';
 import { WellKnown } from '../client.js';
 import { OauthError } from '../error.js';
 import { getRelativeUrl, lazy } from '../util.js';
-import { Provider } from './provider.js';
+import { Provider, type ProviderDisplay } from './provider.js';
 
 export interface OidcConfig {
+	/**
+	 * How this provider is named and marked on the chooser.
+	 *
+	 * @internal
+	 */
+	display?: ProviderDisplay;
+
 	/**
 	 * @internal
 	 */
@@ -123,6 +130,7 @@ export function OidcProvider(config: OidcConfig): Provider<{ id: JWTPayload; cli
 
 	return {
 		type: config.type || 'oidc',
+		display: config.display,
 		init(routes, ctx) {
 			routes.get('/authorize', async (c) => {
 				const provider: ProviderState = {

@@ -99,6 +99,13 @@
       "when": 1788725541386,
       "tag": "0013_machine_endpoint_id",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789680491539,
+      "tag": "0014_machine_public_label",
+      "breakpoints": true
     }
   ]
 }

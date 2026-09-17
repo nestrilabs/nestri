@@ -56,6 +56,8 @@ import { Context } from 'hono';
 
 import { generateUnbiasedDigits, generateUnbiasedString, timingSafeCompare } from '../random.js';
 import { Storage } from '../storage/storage.js';
+import { MARK_CODE } from '../ui/mark.js';
+import type { Screen } from '../ui/screen.js';
 import { Provider } from './provider.js';
 
 export interface CodeProviderConfig<
@@ -120,23 +122,18 @@ export interface CodeProviderConfig<
 	 */
 	resendInterval?: number;
 	/**
-	 * The request handler to generate the UI for the code flow.
+	 * What to ask for at each step of the flow.
 	 *
-	 * Takes the standard [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
-	 * and optionally [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData)
-	 * ojects.
-	 *
-	 * Also passes in the current `state` of the flow and any `error` that occurred.
-	 *
-	 * Expects the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) object
-	 * in return.
+	 * Returns a {@link Screen} describing the question, not a rendered page.
+	 * Which one is drawn follows from `state`, and `error` says what to say
+	 * above it.
 	 */
 	request: (
 		req: Request,
 		state: CodeProviderState,
 		form?: FormData,
 		error?: CodeProviderError
-	) => Promise<Response>;
+	) => Promise<Screen>;
 	/**
 	 * Callback to send the pin code to the user.
 	 *
@@ -242,6 +239,7 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 
 	return {
 		type: 'code',
+		display: { name: 'Email', icon: MARK_CODE },
 		init(routes, ctx) {
 			async function transition(
 				c: Context,
@@ -253,8 +251,7 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 				// Twenty-four hours, which is what this was, made a six-digit
 				// pin usable for a day.
 				await ctx.set<CodeProviderState>(c, 'provider', ttl, next);
-				const resp = ctx.forward(c, await config.request(c.req.raw, next, fd, err));
-				return resp;
+				return ctx.screen(c, await config.request(c.req.raw, next, fd, err));
 			}
 
 			routes.get('/authorize', async (c) => {
@@ -383,7 +380,7 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 				return transition(c, { type: 'start' }, fd);
 			});
 		}
-		};
+	};
 }
 
 /**

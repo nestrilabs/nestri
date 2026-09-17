@@ -129,6 +129,7 @@ export namespace Examples {
 		ownerUserId: Id('user'),
 		teamId: Id('team'),
 		label: 'living-room-box',
+		slug: 'amber-otter-4821',
 		lastSeen: '2026-07-28T12:00:00.000Z',
 		endpointId: 'a'.repeat(64)
 	};

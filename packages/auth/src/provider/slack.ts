@@ -19,6 +19,7 @@
  * @packageDocumentation
  */
 
+import { MARK_SLACK } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 
 export interface SlackConfig extends Oauth2WrappedConfig {
@@ -59,6 +60,7 @@ export function SlackProvider(config: SlackConfig) {
 	return Oauth2Provider({
 		...config,
 		type: 'slack',
+		display: { name: 'Slack', icon: MARK_SLACK },
 		endpoint: {
 			authorization: 'https://slack.com/openid/connect/authorize',
 			token: 'https://slack.com/api/openid.connect.token'

@@ -9,6 +9,7 @@ import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { Member } from '../team/member.js';
 import { MachineTable } from './machine.sql.js';
+import { Slug } from './slug.js';
 
 /**
  * Registered host identity.
@@ -54,6 +55,11 @@ export namespace Machine {
 			label: z.string().meta({
 				description: 'Human-readable name for the box',
 				example: Examples.Machine.label
+			}),
+			slug: z.string().meta({
+				description:
+					'The name this host is reached at, as the first label of its hostname. Minted here, unique across the fleet, and deliberately not the id \u2014 an id is monotonic, cannot be rotated, and would travel into every redirect URL the sign-in produces',
+				example: Examples.Machine.slug
 			}),
 			lastSeen: z.iso.datetime().optional().nullable().meta({
 				description: 'When this machine last authenticated',
@@ -111,19 +117,76 @@ export namespace Machine {
 		Info.pick({ id: true, ownerUserId: true, teamId: true, label: true }),
 		async (input) => {
 			const secret = generateSecret();
-			await Database.use(async (tx) => {
-				await tx.insert(MachineTable).values({
-					id: input.id,
-					ownerUserId: input.ownerUserId,
-					teamId: input.teamId,
-					label: input.label,
-					secretHash: await hashSecret(secret),
-					lastSeen: null
-				});
-			});
-			return { id: input.id, secret };
+			const secretHash = await hashSecret(secret);
+
+			// The name space holds tens of millions, so a collision is rare
+			// enough that retrying is cheaper than checking first -- and a
+			// check-then-insert would be wrong as well as slower, because two
+			// registrations in the same instant both read "free" and both write.
+			// The unique index is the thing that actually decides.
+			for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
+				const slug = Slug.generate();
+				try {
+					await Database.use(async (tx) => {
+						await tx.insert(MachineTable).values({
+							id: input.id,
+							ownerUserId: input.ownerUserId,
+							teamId: input.teamId,
+							label: input.label,
+							slug,
+							secretHash,
+							lastSeen: null
+						});
+					});
+					return { id: input.id, secret, slug };
+				} catch (err) {
+					if (!isUniqueViolation(err)) {
+						throw err;
+					}
+					// Only a name collision is worth another go. A duplicate id
+					// or secret means something is wrong that a new name cannot
+					// fix, and retrying would bury it.
+					if (!isSlugViolation(err)) {
+						throw err;
+					}
+				}
+			}
+
+			throw new VisibleError(
+				'internal',
+				ErrorCodes.Server.INTERNAL_ERROR,
+				'Could not mint an unused hostname for this machine'
+			);
 		}
 	);
+
+	/** How many names to try before giving up. See `register`. */
+	const SLUG_ATTEMPTS = 5;
+
+	/** Whether the constraint Postgres refused on was the hostname. */
+	function isSlugViolation(err: unknown): boolean {
+		const text = String(
+			(err as { constraint?: string })?.constraint ??
+				(err as { cause?: { constraint?: string } })?.cause?.constraint ??
+				(err as Error)?.message ??
+				''
+		);
+		return text.includes('machine_slug_unique');
+	}
+
+	/** Resolve a hostname label to the machine it names. */
+	export const fromSlug = fn(Info.shape.slug, async (slug) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select()
+				.from(MachineTable)
+				.where(and(eq(MachineTable.slug, slug), isNull(MachineTable.timeDeleted)))
+				.then((rows) => {
+					const row = rows.at(0);
+					return row ? serialize(row) : null;
+				});
+		});
+	});
 
 	/**
 	 * Resolve credentials to a machine, or `null`. Looks the row up by id and
@@ -370,6 +433,7 @@ export namespace Machine {
 			ownerUserId: input.ownerUserId,
 			teamId: input.teamId,
 			label: input.label,
+			slug: input.slug,
 			lastSeen: input.lastSeen?.toISOString() ?? null,
 			endpointId: input.endpointId
 		};

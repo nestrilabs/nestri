@@ -17,6 +17,7 @@
  * @packageDocumentation
  */
 
+import { MARK_DISCORD } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 
 export interface DiscordConfig extends Oauth2WrappedConfig {}
@@ -36,6 +37,7 @@ export interface DiscordConfig extends Oauth2WrappedConfig {}
 export function DiscordProvider(config: DiscordConfig) {
 	return Oauth2Provider({
 		type: 'discord',
+		display: { name: 'Discord', icon: MARK_DISCORD },
 		...config,
 		endpoint: {
 			authorization: 'https://discord.com/oauth2/authorize',

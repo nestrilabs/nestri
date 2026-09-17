@@ -18,6 +18,10 @@ await Bun.build({
 	outdir: 'dist/esm',
 	external: [...Object.keys(pkg.dependencies), ...Object.keys(pkg.peerDependencies)],
 	root: 'src',
-	entrypoints: ['./src/ui/base.tsx']
+	// The renderer, bundled with the layout and stylesheet it pulls in. It is
+	// the one entry point whose imports must be followed rather than left
+	// external, because a consumer replacing the pages still imports this to
+	// build on it.
+	entrypoints: ['./src/ui/render.tsx']
 });
 await $`tsc --outDir dist/types --declaration --emitDeclarationOnly --declarationMap`;
