@@ -81,7 +81,7 @@ export function Layout(
 										</div>
 										{props.headline ?? (
 											<h2 data-component="title">
-												One place for all the ways you play.{' '}
+												One place for all the ways we play.{' '}
 												<strong>
 													Gather Around
 													<a
