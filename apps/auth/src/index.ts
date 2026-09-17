@@ -2,6 +2,7 @@ import type { Hyperdrive } from '@cloudflare/workers-types';
 import { issuer } from '@nestri/auth/index';
 import { CodeProvider } from '@nestri/auth/provider/code';
 import { CodeUI } from '@nestri/auth/ui/code';
+import type { Theme } from '@nestri/auth/ui/theme';
 import { isDomainMatch } from '@nestri/auth/util';
 import { Actor } from '@nestri/core/actor';
 import { PostgresCodeStore } from '@nestri/core/auth/authorization-code';
@@ -169,11 +170,38 @@ export const allowClient = async (
 	return isDomainMatch(redirect, host);
 };
 
+/**
+ * The sign-in screen's theme.
+ *
+ * Almost everything that used to live here is now stated in
+ * `packages/auth/src/ui/css.ts`, which states the product's design language
+ * longhand. What is left here is the handful of values the
+ * issuer itself needs — and `primary`, which is the one colour the stylesheet
+ * reads back from the theme so the brand has a single source.
+ *
+ * There is no `background` and no light variant on purpose: the page is dark
+ * only, and the derived-colour scheme that made two schemes possible is
+ * exactly what rendered the sign-in field's text the colour of its own
+ * background.
+ */
+const THEME_NESTRI: Theme = {
+	title: 'Login | Nestri',
+	primary: 'hsl(12 84% 53%)',
+	favicon: 'https://nestri.io/images/favicon.ico',
+	// Mona Sans for the display line and the action, Geist for everything a
+	// person reads or types. Served from the Fontsource CDN because the
+	// self-hosted font packages need a bundler and nothing preprocesses this
+	// page — it is assembled as a string at request time. The family names must
+	// match the ones the stylesheet asks for.
+	css: `@import url('https://cdn.jsdelivr.net/fontsource/css/mona-sans:vf@latest/wght.css');@import url('https://cdn.jsdelivr.net/fontsource/css/geist:vf@latest/wght.css');`
+};
+
 export default {
 	async fetch(request: Request, env: Env, ctx?: ExecutionContext) {
 		Env.init(env as unknown as Record<string, unknown>);
 		const inner = issuer({
 			subjects,
+			theme: THEME_NESTRI,
 			// One database behind all of it, and nothing that only exists on
 			// one hosting provider. What is left in the generic store is the
 			// rate-limit counters — the only records here that are allowed to
@@ -221,7 +249,6 @@ export default {
 					// nothing — and a mistyped address that silently succeeds
 					// leaves someone waiting for mail that went nowhere.
 					...CodeUI({
-						copy: { code_info: "We'll email you a code to sign in." },
 						sendCode: async () => {}
 					}),
 					sendCode: async (claims, code) => {
