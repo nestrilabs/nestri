@@ -29,6 +29,20 @@ export const MachineTable = pgTable(
 			.notNull()
 			.references(() => TeamTable.id, { onDelete: 'restrict' }),
 		label: text('label').notNull(),
+		// The name this host is reached at: `amber-otter-4821.nestri.link`.
+		//
+		// Separate from `label`, which is what its owner calls it in a list and
+		// is theirs to duplicate or leave blank-ish. This one is a routing key,
+		// unique across the fleet, and the edge matches a Host header against
+		// it.
+		//
+		// **Not the id, on purpose.** Ids here are monotonic, so an id in a
+		// hostname discloses when a machine was registered and its order among
+		// its owner's others; the id is the primary key, so a name that has to
+		// change could only change by re-registering the machine; and the
+		// hostname is also the OAuth audience, which puts whatever is in it
+		// into redirect URLs and browser history. ref(d-0019)
+		slug: text('slug').notNull(),
 		// Where this host can actually be reached: its own endpoint id, as
 		// hex. A row can be authorised perfectly and still have nowhere to
 		// send the request without it, which is what this column fixes.
@@ -51,6 +65,11 @@ export const MachineTable = pgTable(
 	},
 	(t) => [
 		uniqueIndex('machine_secret_hash_unique').on(t.secretHash),
+		// One name, one machine. This is also the whole of "the two key spaces
+		// must not collide" while machines are the only things with names --
+		// when boxes get theirs, the two have to share one index rather than
+		// hold one each.
+		uniqueIndex('machine_slug_unique').on(t.slug),
 		uniqueIndex('machine_endpoint_id_unique').on(t.endpointId),
 		index('machine_owner_idx').on(t.ownerUserId),
 		index('machine_team_idx').on(t.teamId)

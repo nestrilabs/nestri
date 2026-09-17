@@ -37,6 +37,11 @@ export namespace MachineApi {
 								schema: Result(
 									z.object({
 										machineId: z.string().meta({ example: Examples.Machine.id }),
+										slug: z.string().meta({
+											description:
+												'The name this host is reached at. Its hostname is this label under the box zone, and the id never appears in one.',
+											example: Examples.Machine.slug
+										}),
 										secret: z.string().meta({
 											description: 'Shown once. Store it on the box; it cannot be retrieved.'
 										})
@@ -111,7 +116,13 @@ export namespace MachineApi {
 					label
 				});
 
-				return c.json({ data: { machineId: registered.id, secret: registered.secret } });
+				return c.json({
+					data: {
+						machineId: registered.id,
+						slug: registered.slug,
+						secret: registered.secret
+					}
+				});
 			}
 		)
 		.patch(
