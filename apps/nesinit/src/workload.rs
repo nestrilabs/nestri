@@ -345,7 +345,7 @@ fn mount_drive(drive: &Drive) -> Result<(), Failure> {
     // Checked before anything is created: a descriptor this component cannot
     // act on should leave no directory behind to confuse whoever reads the
     // failure.
-    let (source, target, flags, opts) = options_drive(drive)?;
+    let (source, target, flags) = options_drive(drive)?;
 
     // The mount point may not exist yet: a share can land anywhere the
     // descriptor names, including a directory no image created.
@@ -359,7 +359,7 @@ fn mount_drive(drive: &Drive) -> Result<(), Failure> {
             target.as_ptr(),
             FSTYPE_DRIVE.as_ptr(),
             flags,
-            opts.as_ptr() as *const libc::c_void,
+            std::ptr::null(),
         )
     };
     if mounted != 0 {
@@ -400,10 +400,34 @@ fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> 
     Ok((source, target, flags))
 }
 
-fn options_drive(drive: &Drive) -> Result<(CString, CString, libc::c_ulong, CString), Failure> {
-    let flags = libc::MS_NOATIME | libc::MS_NODIRATIME;
-    let data_opts = CString::new("commit=60,barrier=0")
-        .map_err(|_| Failure::new("Failed to create mount data CString".to_string()))?;
+/// What the drive mount call is given.
+///
+/// # No filesystem-specific options, and that is a decision
+///
+/// `commit=` and `barrier=` were here once and the mount failed outright:
+/// *"can't mount with commit=, fs mounted w/o journal"*, `EINVAL`, and a box
+/// that refused its own descriptor before the session started. Both options
+/// only mean anything to a journal, and a build volume is made without one --
+/// what it holds is one game, re-downloadable, mounted by a clone that is
+/// destroyed with the box. Anything added here has to be an option that is
+/// still true of a journal-less ext4.
+///
+/// `noatime` stays: a game reading its own install has no use for access
+/// times, and writing them turns every read of a clone into a write. It is not
+/// paired with `nodiratime`, which it already implies.
+///
+/// # nosuid and nodev, for the same reason every share has them
+///
+/// What this mounts is the least trusted thing in the box: files a CDN handed
+/// us, checked for the bytes the manifest named and for nothing about what
+/// those bytes are. A setuid binary or a device node inside a depot is not
+/// something a workload should be able to use, and no descriptor has a way to
+/// ask for one.
+///
+/// **Not `noexec`.** The game's own executable is on this volume and the whole
+/// point is to run it.
+fn options_drive(drive: &Drive) -> Result<(CString, CString, libc::c_ulong), Failure> {
+    let flags = libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOATIME;
 
     let source = CString::new(drive.dev.as_str()).map_err(|_| {
         Failure::new(format!(
@@ -417,7 +441,7 @@ fn options_drive(drive: &Drive) -> Result<(CString, CString, libc::c_ulong, CStr
             drive.at
         ))
     })?;
-    Ok((source, target, flags, data_opts))
+    Ok((source, target, flags))
 }
 
 /// A failure names the path, which is what makes it actionable: a permission
@@ -552,6 +576,30 @@ mod tests {
         assert_eq!(flags & libc::MS_NOSUID, libc::MS_NOSUID);
         assert_eq!(flags & libc::MS_NODEV, libc::MS_NODEV);
         assert_eq!(flags & libc::MS_RDONLY, 0);
+    }
+
+    /// The drive carries the same guard every share carries.
+    ///
+    /// It is the mount that most needs it: a share is a directory this host
+    /// prepared, and a drive is a filesystem built out of whatever a CDN sent.
+    #[test]
+    fn a_drive_is_mounted_without_devices_or_setuid_but_can_still_execute() {
+        let drive = Drive {
+            dev: "/dev/vdb".into(),
+            at: "/nestri/install".into(),
+        };
+        let (source, target, flags) = options_drive(&drive).unwrap();
+        assert_eq!(
+            source.to_str().unwrap(),
+            "/dev/vdb",
+            "the device is the source"
+        );
+        assert_eq!(target.to_str().unwrap(), "/nestri/install");
+        assert_eq!(flags & libc::MS_NOSUID, libc::MS_NOSUID);
+        assert_eq!(flags & libc::MS_NODEV, libc::MS_NODEV);
+        assert_eq!(flags & libc::MS_NOATIME, libc::MS_NOATIME);
+        // The game's executable lives here.
+        assert_eq!(flags & libc::MS_NOEXEC, 0);
     }
 
     #[test]

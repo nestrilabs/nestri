@@ -73,12 +73,23 @@ ENV ARTIFACTS=/artifacts
 FROM builder AS mesa-build
 
 ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
-ARG MESA_COMMIT=b316485dd75ca6ab6c16c113480fb94c57d86c95
+ARG MESA_COMMIT=8ace865d958b0f17254afc427db21b0ad1747b4b
 ARG JOBS=
+
+# Our patches to the amdgpu native-context path, applied on top of the pinned
+# commit. They are not cosmetic: upstream's winsys re-queries device-static
+# facts on a path that costs a synchronous round trip to the host under
+# virtio, and it was most of a frame's time. See each patch's own message.
+#
+# `git apply` and not `git am`: no committer identity is needed, and a patch
+# that no longer applies stops the build here rather than producing an image
+# that is quietly unpatched and slow.
+COPY build/patches/mesa /build/patches/mesa
 
 RUN test -n "$JOBS" || JOBS=$(nproc) && \
     git clone --depth=1 --revision="${MESA_COMMIT}" "${MESA_GIT}" /build/mesa-src && \
     cd /build/mesa-src && \
+    git apply --whitespace=nowarn /build/patches/mesa/*.patch && \
     meson setup builddir \
         -Dprefix=/usr \
         -Dbuildtype=release \

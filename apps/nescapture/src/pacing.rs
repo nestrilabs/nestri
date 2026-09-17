@@ -250,7 +250,11 @@ impl FramePacer {
         // let the game run a burst of frames back to back to "catch up", and
         // the frames it would be catching up on were never rendered.
         let next = slot + self.interval;
-        self.due = Some(if next <= now { now + self.interval } else { next });
+        self.due = Some(if next <= now {
+            now + self.interval
+        } else {
+            next
+        });
         wait
     }
 }
@@ -290,7 +294,10 @@ mod tests {
         let t0 = Instant::now();
         let step = Duration::from_nanos(3_333_333);
         let admitted = (0..3000).filter(|i| g.admit(t0 + step * *i)).count();
-        assert!((595..=610).contains(&admitted), "admitted {admitted} in 10s");
+        assert!(
+            (595..=610).contains(&admitted),
+            "admitted {admitted} in 10s"
+        );
     }
 
     #[test]
@@ -347,7 +354,8 @@ mod tests {
             }
         }
         assert_eq!(
-            admitted, 200,
+            admitted,
+            200,
             "dropped {} frames of a 50 fps game",
             200 - admitted
         );
@@ -365,7 +373,7 @@ mod tests {
         let mut offered = 0;
         // Ten frames at 11ms, then 100ms of silence: 10 frames per 210ms, about
         // 48 a second, well inside a gate set to 60.
-        let mut step = |i: usize| {
+        let step = |i: usize| {
             if i % 11 == 10 {
                 Duration::from_millis(100)
             } else {
@@ -388,7 +396,8 @@ mod tests {
             }
         }
         assert_eq!(
-            admitted, offered,
+            admitted,
+            offered,
             "dropped {} frames of a stalling sub-target game",
             offered - admitted
         );
@@ -552,7 +561,11 @@ mod pacer_tests {
 
         // Two seconds gone — a load screen.
         let resume = t0 + Duration::from_secs(2);
-        assert_eq!(p.hold(resume), Duration::ZERO, "the first frame back waited");
+        assert_eq!(
+            p.hold(resume),
+            Duration::ZERO,
+            "the first frame back waited"
+        );
 
         // And the next frame is paced normally rather than let through free.
         let next = resume + Duration::from_millis(2);

@@ -182,6 +182,11 @@ async fn reaper(waiters: Waiters) {
 
 /// A signal from outside the channel. In a guest this is the hypervisor's
 /// shutdown request.
+///
+/// **SIGTERM is the one that matters here, not SIGINT.** A box has no terminal
+/// and nothing sends it Ctrl-C; what arrives is the hypervisor's ACPI power
+/// button, and a `ctrl_c()` that only watches SIGINT ignores it -- so the guest
+/// never shuts down cleanly and the box is killed on a timeout instead.
 async fn asked_to_stop() -> std::io::Result<()> {
     let mut term = signal(SignalKind::terminate())?;
     let mut int = signal(SignalKind::interrupt())?;
