@@ -36,6 +36,7 @@ export interface JumpCloudConfig extends Oauth2WrappedConfig {}
 export function JumpCloudProvider(config: JumpCloudConfig) {
 	return Oauth2Provider({
 		type: 'jumpcloud',
+		display: { name: 'JumpCloud' },
 		...config,
 		endpoint: {
 			authorization: 'https://oauth.id.jumpcloud.com/oauth2/auth',

@@ -1,3 +1,4 @@
+import { MARK_STEAM } from '../ui/mark.js';
 import { getRelativeUrl } from '../util.js';
 import { Provider } from './provider.js';
 
@@ -6,6 +7,7 @@ const STEAM_OPENID_URL = 'https://steamcommunity.com/openid/login';
 export function SteamProvider(): Provider<{ steamid: string }> {
 	return {
 		type: 'steam',
+		display: { name: 'Steam', icon: MARK_STEAM },
 		init(routes, ctx) {
 			routes.get('/authorize', async (c) => {
 				const returnUrl = getRelativeUrl(c, './callback');

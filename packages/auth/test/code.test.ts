@@ -15,17 +15,22 @@ const auth = issuer({
 	storage: MemoryStorage(),
 	subjects,
 	allow: async () => true,
+	// Screens back as JSON instead of HTML, which is the whole of what it takes
+	// to replace the presentation layer — and is why these tests can assert on
+	// what the flow decided rather than on the markup it happened to produce.
+	renderer: { render: (screen) => Response.json(screen) },
 	providers: {
 		code: CodeProvider({
 			maxAttempts: 3,
 			maxSends: 2,
 			sendWindow: 3600,
 			resendInterval: 0,
-			request: async (_req, _state, _form, error) =>
-				new Response(JSON.stringify({ error: error?.type ?? null }), {
-					status: 200,
-					headers: { 'content-type': 'application/json' }
-				}),
+			request: async (_req, _state, _form, error) => ({
+				kind: 'message',
+				tone: 'danger',
+				heading: error?.type ?? 'none',
+				body: []
+			}),
 			sendCode: async (claims, code) => {
 				if (!claims.email?.includes('@')) {
 					return { type: 'invalid_claim', key: 'email', value: claims.email ?? '' };
@@ -92,7 +97,8 @@ async function ask(email: string) {
 
 /** What the stub UI reported, so a test can name the error rather than a status. */
 async function errorOf(response: Response) {
-	return ((await response.clone().json()) as { error: string | null }).error;
+	const screen = (await response.clone().json()) as { heading: string };
+	return screen.heading === 'none' ? null : screen.heading;
 }
 
 beforeEach(() => {

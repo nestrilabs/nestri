@@ -33,6 +33,7 @@
  * @packageDocumentation
  */
 
+import { MARK_FACEBOOK } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 import { OidcProvider, OidcWrappedConfig } from './oidc.js';
 
@@ -55,6 +56,7 @@ export function FacebookProvider(config: FacebookConfig) {
 	return Oauth2Provider({
 		...config,
 		type: 'facebook',
+		display: { name: 'Facebook', icon: MARK_FACEBOOK },
 		endpoint: {
 			authorization: 'https://www.facebook.com/v12.0/dialog/oauth',
 			token: 'https://graph.facebook.com/v12.0/oauth/access_token'
@@ -79,6 +81,7 @@ export function FacebookOidcProvider(config: FacebookOidcConfig) {
 	return OidcProvider({
 		...config,
 		type: 'facebook',
+		display: { name: 'Facebook', icon: MARK_FACEBOOK },
 		issuer: 'https://graph.facebook.com'
 	});
 }

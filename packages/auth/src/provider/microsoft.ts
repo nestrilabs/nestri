@@ -34,6 +34,7 @@
  * @packageDocumentation
  */
 
+import { MARK_MICROSOFT } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 import { OidcProvider, OidcWrappedConfig } from './oidc.js';
 
@@ -71,6 +72,7 @@ export function MicrosoftProvider(config: MicrosoftConfig) {
 	return Oauth2Provider({
 		...config,
 		type: 'microsoft',
+		display: { name: 'Microsoft', icon: MARK_MICROSOFT },
 		endpoint: {
 			authorization: `https://login.microsoftonline.com/${config?.tenant}/oauth2/v2.0/authorize`,
 			token: `https://login.microsoftonline.com/${config?.tenant}/oauth2/v2.0/token`
@@ -95,6 +97,7 @@ export function MicrosoftOidcProvider(config: MicrosoftOidcConfig) {
 	return OidcProvider({
 		...config,
 		type: 'microsoft',
+		display: { name: 'Microsoft', icon: MARK_MICROSOFT },
 		issuer: 'https://graph.microsoft.com/oidc/userinfo'
 	});
 }

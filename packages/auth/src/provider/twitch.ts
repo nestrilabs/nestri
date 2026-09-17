@@ -17,6 +17,7 @@
  * @packageDocumentation
  */
 
+import { MARK_TWITCH } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 
 export interface TwitchConfig extends Oauth2WrappedConfig {}
@@ -36,6 +37,7 @@ export interface TwitchConfig extends Oauth2WrappedConfig {}
 export function TwitchProvider(config: TwitchConfig) {
 	return Oauth2Provider({
 		type: 'twitch',
+		display: { name: 'Twitch', icon: MARK_TWITCH },
 		...config,
 		endpoint: {
 			authorization: 'https://id.twitch.tv/oauth2/authorize',

@@ -5,8 +5,8 @@ import { v1 } from '@standard-schema/spec';
  * paired with the `PasswordUI`.
  *
  * ```ts
- * import { PasswordUI } from "@openauthjs/openauth/ui/password"
- * import { PasswordProvider } from "@openauthjs/openauth/provider/password"
+ * import { PasswordUI } from "@nestri/auth/ui/password"
+ * import { PasswordProvider } from "@nestri/auth/provider/password"
  *
  * export default issuer({
  *   providers: {
@@ -23,25 +23,26 @@ import { v1 } from '@standard-schema/spec';
  * })
  * ```
  *
- * Behind the scenes, the `PasswordProvider` expects callbacks that implements request handlers
- * that generate the UI for the following.
+ * Behind the scenes, the `PasswordProvider` asks its config what to put on
+ * each screen. Each callback returns a `Screen` — a description of what is
+ * being asked for — and the issuer's renderer decides how it is drawn.
  *
  * ```ts
  * PasswordProvider({
  *   // ...
- *   login: (req, form, error) => Promise<Response>
- *   register: (req, state, form, error) => Promise<Response>
- *   change: (req, state, form, error) => Promise<Response>
+ *   login: (req, form, error) => Promise<Screen>
+ *   register: (req, state, form, error) => Promise<Screen>
+ *   change: (req, state, form, error) => Promise<Screen>
  * })
  * ```
- *
- * This allows you to create your own UI for each of these screens.
  *
  * @packageDocumentation
  */
 import { UnknownStateError } from '../error.js';
 import { generateUnbiasedDigits, timingSafeCompare } from '../random.js';
 import { Storage } from '../storage/storage.js';
+import { MARK_PASSWORD } from '../ui/mark.js';
+import type { Screen } from '../ui/screen.js';
 import { Provider } from './provider.js';
 
 /**
@@ -64,52 +65,37 @@ export interface PasswordConfig {
 	/**
 	 * The request handler to generate the UI for the login screen.
 	 *
-	 * Takes the standard [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
-	 * and optionally [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData)
-	 * ojects.
-	 *
 	 * In case of an error, this is called again with the `error`.
 	 *
-	 * Expects the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) object
-	 * in return.
+	 * Returns a `Screen` describing what to ask for, not a rendered page.
 	 */
-	login: (req: Request, form?: FormData, error?: PasswordLoginError) => Promise<Response>;
+	login: (req: Request, form?: FormData, error?: PasswordLoginError) => Promise<Screen>;
 	/**
 	 * The request handler to generate the UI for the register screen.
 	 *
-	 * Takes the standard [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
-	 * and optionally [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData)
-	 * ojects.
-	 *
 	 * Also passes in the current `state` of the flow and any `error` that occurred.
 	 *
-	 * Expects the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) object
-	 * in return.
+	 * Returns a `Screen` describing what to ask for, not a rendered page.
 	 */
 	register: (
 		req: Request,
 		state: PasswordRegisterState,
 		form?: FormData,
 		error?: PasswordRegisterError
-	) => Promise<Response>;
+	) => Promise<Screen>;
 	/**
 	 * The request handler to generate the UI for the change password screen.
 	 *
-	 * Takes the standard [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request)
-	 * and optionally [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData)
-	 * ojects.
-	 *
 	 * Also passes in the current `state` of the flow and any `error` that occurred.
 	 *
-	 * Expects the [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) object
-	 * in return.
+	 * Returns a `Screen` describing what to ask for, not a rendered page.
 	 */
 	change: (
 		req: Request,
 		state: PasswordChangeState,
 		form?: FormData,
 		error?: PasswordChangeError
-	) => Promise<Response>;
+	) => Promise<Screen>;
 	/**
 	 * Callback to send the confirmation pin code to the user.
 	 *
@@ -268,13 +254,14 @@ export function PasswordProvider(config: PasswordConfig): Provider<{ email: stri
 	}
 	return {
 		type: 'password',
+		display: { name: 'Password', icon: MARK_PASSWORD },
 		init(routes, ctx) {
-			routes.get('/authorize', async (c) => ctx.forward(c, await config.login(c.req.raw)));
+			routes.get('/authorize', async (c) => ctx.screen(c, await config.login(c.req.raw)));
 
 			routes.post('/authorize', async (c) => {
 				const fd = await c.req.formData();
 				async function error(err: PasswordLoginError) {
-					return ctx.forward(c, await config.login(c.req.raw, fd, err));
+					return ctx.screen(c, await config.login(c.req.raw, fd, err));
 				}
 				const email = fd.get('email')?.toString()?.toLowerCase();
 				if (!email) return error({ type: 'invalid_email' });
@@ -300,7 +287,7 @@ export function PasswordProvider(config: PasswordConfig): Provider<{ email: stri
 					type: 'start'
 				};
 				await ctx.set(c, 'provider', 60 * 60 * 24, state);
-				return ctx.forward(c, await config.register(c.req.raw, state));
+				return ctx.screen(c, await config.register(c.req.raw, state));
 			});
 
 			routes.post('/register', async (c) => {
@@ -311,7 +298,7 @@ export function PasswordProvider(config: PasswordConfig): Provider<{ email: stri
 
 				async function transition(next: PasswordRegisterState, err?: PasswordRegisterError) {
 					await ctx.set<PasswordRegisterState>(c, 'provider', 60 * 60 * 24, next);
-					return ctx.forward(c, await config.register(c.req.raw, next, fd, err));
+					return ctx.screen(c, await config.register(c.req.raw, next, fd, err));
 				}
 
 				if (action === 'register' && provider.type === 'start') {
@@ -386,7 +373,7 @@ export function PasswordProvider(config: PasswordConfig): Provider<{ email: stri
 					redirect
 				};
 				await ctx.set(c, 'provider', 60 * 60 * 24, state);
-				return ctx.forward(c, await config.change(c.req.raw, state));
+				return ctx.screen(c, await config.change(c.req.raw, state));
 			});
 
 			routes.post('/change', async (c) => {
@@ -397,7 +384,7 @@ export function PasswordProvider(config: PasswordConfig): Provider<{ email: stri
 
 				async function transition(next: PasswordChangeState, err?: PasswordChangeError) {
 					await ctx.set<PasswordChangeState>(c, 'provider', 60 * 60 * 24, next);
-					return ctx.forward(c, await config.change(c.req.raw, next, fd, err));
+					return ctx.screen(c, await config.change(c.req.raw, next, fd, err));
 				}
 
 				if (action === 'code') {

@@ -33,6 +33,7 @@
  * @packageDocumentation
  */
 
+import { MARK_GOOGLE } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 import { OidcProvider, OidcWrappedConfig } from './oidc.js';
 
@@ -55,6 +56,7 @@ export function GoogleProvider(config: GoogleConfig) {
 	return Oauth2Provider({
 		...config,
 		type: 'google',
+		display: { name: 'Google', icon: MARK_GOOGLE },
 		endpoint: {
 			authorization: 'https://accounts.google.com/o/oauth2/v2/auth',
 			token: 'https://oauth2.googleapis.com/token',
@@ -80,6 +82,7 @@ export function GoogleOidcProvider(config: GoogleOidcConfig) {
 	return OidcProvider({
 		...config,
 		type: 'google',
+		display: { name: 'Google', icon: MARK_GOOGLE },
 		issuer: 'https://accounts.google.com'
 	});
 }

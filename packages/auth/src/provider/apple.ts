@@ -51,6 +51,7 @@
  * @packageDocumentation
  */
 
+import { MARK_APPLE } from '../ui/mark.js';
 import { Oauth2Provider, Oauth2WrappedConfig } from './oauth2.js';
 import { OidcProvider, OidcWrappedConfig } from './oidc.js';
 
@@ -96,6 +97,7 @@ export function AppleProvider(config: AppleConfig) {
 	return Oauth2Provider({
 		...restConfig,
 		type: 'apple' as const,
+		display: { name: 'Apple', icon: MARK_APPLE },
 		endpoint: {
 			authorization: 'https://appleid.apple.com/auth/authorize',
 			token: 'https://appleid.apple.com/auth/token',
@@ -122,6 +124,7 @@ export function AppleOidcProvider(config: AppleOidcConfig) {
 	return OidcProvider({
 		...config,
 		type: 'apple' as const,
+		display: { name: 'Apple', icon: MARK_APPLE },
 		issuer: 'https://appleid.apple.com'
 	});
 }
