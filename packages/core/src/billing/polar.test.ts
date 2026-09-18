@@ -137,3 +137,53 @@ describe('Webhooks', () => {
 		expect(() => Polar.receive({ body: '{}', headers: {} })).toThrow(/not configured/);
 	});
 });
+
+describe('Both signing schemes', () => {
+	// A `whsec_` secret is Standard Webhooks, where the secret is a base64 key.
+	// The SDK helper only implements the older scheme and base64-encodes
+	// whatever it is handed, so a Standard Webhooks secret verified through it
+	// fails every time, for a reason no error message mentions. These assert the
+	// prefix is what picks, so rotating a secret cannot put the two out of step.
+	test('a Standard Webhooks secret is verified, and a real signature passes', async () => {
+		const { Webhook } = await import('standardwebhooks');
+		const key = Buffer.from('a'.repeat(32)).toString('base64');
+		const secret = `whsec_${key}`;
+		configure({ POLAR_WEBHOOK_SECRET: secret });
+
+		const body = JSON.stringify({
+			type: 'subscription.active',
+			data: { customer: { externalId: 'tem_x' }, productId: PAID }
+		});
+		const id = 'msg_1';
+		const timestamp = new Date();
+		const signature = new Webhook(secret).sign(id, timestamp, body);
+
+		const delivery = Polar.receive({
+			body,
+			headers: {
+				'webhook-id': id,
+				'webhook-timestamp': Math.floor(timestamp.getTime() / 1000).toString(),
+				'webhook-signature': signature
+			}
+		});
+
+		expect(delivery.type).toBe('subscription.active');
+		expect(delivery.teamId).toBe('tem_x');
+		expect(delivery.standing).toEqual({ plan: 'paid', status: 'active' });
+	});
+
+	test('a tampered body under a valid-looking signature is refused', () => {
+		const secret = `whsec_${Buffer.from('a'.repeat(32)).toString('base64')}`;
+		configure({ POLAR_WEBHOOK_SECRET: secret });
+		expect(() =>
+			Polar.receive({
+				body: '{"type":"subscription.revoked"}',
+				headers: {
+					'webhook-id': 'msg_1',
+					'webhook-timestamp': '1',
+					'webhook-signature': 'v1,AAAA'
+				}
+			})
+		).toThrow(/Signature/);
+	});
+});
