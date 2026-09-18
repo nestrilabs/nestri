@@ -15,7 +15,6 @@ import { GameApi } from './routes/game.js';
 import { IndexApi } from './routes/index.js';
 import { LibraryApi } from './routes/library.js';
 import { MachineApi } from './routes/machine.js';
-import { PairingCodeApi } from './routes/pairing-code.js';
 import { SessionApi } from './routes/session.js';
 import { SteamApi } from './routes/steam.js';
 import { UserApi } from './routes/user.js';
@@ -43,7 +42,6 @@ const routes = app
 	.route('/steam', SteamApi.route)
 	.route('/library', LibraryApi.route)
 	.route('/games', GameApi.route)
-	.route('/pairing-code', PairingCodeApi.route)
 	.route('/machine', MachineApi.route)
 	.route('/machine', SessionApi.machineRoute)
 	.route('/machine', EnrolmentApi.route)
@@ -125,7 +123,6 @@ export type ApiEnv = {
 	AUTH_INTERNAL_URL?: string;
 	HYPERDRIVE?: Hyperdrive;
 	DATABASE_URL?: string;
-	ADMIN_SHARED_SECRET?: string;
 };
 
 export default {

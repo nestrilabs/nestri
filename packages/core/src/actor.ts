@@ -33,11 +33,6 @@ const System = z.object({
 	})
 });
 
-const Admin = z.object({
-	type: z.literal('admin'),
-	properties: z.object({})
-});
-
 /**
  * A registered nessh host, authenticated by its own credentials.
  *
@@ -58,7 +53,7 @@ const Machine = z.object({
 	})
 });
 
-const ActorInfo = z.discriminatedUnion('type', [Public, User, Member, System, Admin, Machine]);
+const ActorInfo = z.discriminatedUnion('type', [Public, User, Member, System, Machine]);
 type ActorInfo = z.infer<typeof ActorInfo>;
 
 const _context = Context.create<ActorInfo>();

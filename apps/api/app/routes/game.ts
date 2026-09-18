@@ -10,7 +10,7 @@ import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { z } from 'zod';
 
-import { ErrorResponses, adminOnly, machineOrAdmin, notPublic, Result, validator } from '../utils';
+import { enrolledUser, ErrorResponses, machineOnly, notPublic, Result, validator } from '../utils';
 
 const SyncGameSchema = z.object({
 	steamAppId: z.number().int(),
@@ -150,12 +150,12 @@ export namespace GameApi {
 		.post(
 			'/sync',
 			notPublic,
-			adminOnly,
+			machineOnly,
 			describeRoute({
 				tags: ['Games'],
 				summary: 'Batch sync games, library entries, and depots',
 				description:
-					'Bulk upsert games, library entries, and depot info from Steam sync. Admin only.',
+					'Bulk upsert games, library entries and depot info from a Steam sync. Entries land in the caller\u2019s own library; there is no field for naming another user.',
 				responses: {
 					200: {
 						content: {
@@ -180,13 +180,17 @@ export namespace GameApi {
 			validator(
 				'json',
 				z.object({
-					userId: z.string(),
+					userId: z.string().meta({
+						description: 'Which of the host\u2019s enrolled users this sync is for',
+						example: Examples.User.id
+					}),
 					games: z.array(SyncGameSchema).default([]),
 					library: z.array(SyncLibrarySchema).default([])
 				})
 			),
 			async (c) => {
-				const { userId, games, library } = c.req.valid('json');
+				const { games, library } = c.req.valid('json');
+				const userId = await enrolledUser(c.req.valid('json').userId);
 
 				const existingGames = await Game.listByAppIDs(games.map((g) => g.steamAppId));
 				const existingByAppId = new Map(existingGames.map((g) => [g.steamAppId, g]));
@@ -347,7 +351,7 @@ export namespace GameApi {
 				tags: ['Games'],
 				summary: 'Get download states for a game',
 				description:
-					'Returns the per-host download states for a game. Optionally filter by hostId. Protected read route for initial/fallback data; SSH-connected clients use the live SSH snapshot.',
+					'Returns the per-host download states for a game, optionally filtered to one host. This is the recorded state, written by hosts as they report progress; a client holding a live connection to a host has a fresher answer from the host itself.',
 				responses: {
 					200: {
 						content: {
@@ -409,12 +413,12 @@ export namespace GameApi {
 		.post(
 			'/download-state',
 			notPublic,
-			machineOrAdmin,
+			machineOnly,
 			describeRoute({
 				tags: ['Games'],
 				summary: 'Report a download state change',
 				description:
-					'Update the shared per-host download state for a game. Called by nessh on terminal events (start/verifying/complete/fail). A registered host reports as itself and cannot name another; admin must supply the hostId explicitly.',
+					'Update the shared per-host download state for a game, on terminal events (start/verifying/complete/fail). A host reports as itself \u2014 which host it is comes from its own credentials, and there is no field that could name another.',
 				responses: {
 					200: {
 						content: {
@@ -437,63 +441,42 @@ export namespace GameApi {
 			}),
 			validator(
 				'json',
-				z.object({
-					hostId: z.string().optional().meta({
-						description:
-							'The nessh host reporting the download. Required for admin callers; ignored for machines, which report as themselves.',
-						example: Examples.GameDownload.hostId
-					}),
-					steamAppId: z.number().int().meta({
-						description: 'Steam application ID',
-						example: Examples.Game.steamAppId
-					}),
-					status: z.enum(GameDownload.Status).meta({
-						description: 'New download status',
-						example: Examples.GameDownload.status
-					}),
-					progressBytes: z.number().int().optional().meta({
-						description: 'Bytes downloaded so far',
-						example: Examples.GameDownload.progressBytes
-					}),
-					totalBytes: z.number().int().optional().meta({
-						description: 'Total bytes to download',
-						example: Examples.GameDownload.totalBytes
-					}),
-					errorMessage: z.string().nullable().optional().meta({
-						description: 'Error message if status is failed',
-						example: null
+				z
+					.object({
+						steamAppId: z.number().int().meta({
+							description: 'Steam application ID',
+							example: Examples.Game.steamAppId
+						}),
+						status: z.enum(GameDownload.Status).meta({
+							description: 'New download status',
+							example: Examples.GameDownload.status
+						}),
+						progressBytes: z.number().int().optional().meta({
+							description: 'Bytes downloaded so far',
+							example: Examples.GameDownload.progressBytes
+						}),
+						totalBytes: z.number().int().optional().meta({
+							description: 'Total bytes to download',
+							example: Examples.GameDownload.totalBytes
+						}),
+						errorMessage: z.string().nullable().optional().meta({
+							description: 'Error message if status is failed',
+							example: null
+						})
 					})
-				})
+					// A body naming a host is refused rather than ignored. It used
+					// to carry one, so a caller that still sends it is saying
+					// something this route no longer honours, and accepting it
+					// quietly would look like it had been.
+					.strict()
 			),
 			async (c) => {
-				const { hostId, steamAppId, status, progressBytes, totalBytes, errorMessage } =
-					c.req.valid('json');
+				const { steamAppId, status, progressBytes, totalBytes, errorMessage } = c.req.valid('json');
 
-				// A machine reports as itself. Taking the id from the body would
-				// mean any holder of a shared secret could write download state
-				// under any box's id, which is the whole reason boxes register.
-				const actor = Actor.use();
-				let reportingHostId: string;
-				if (actor.type === 'machine') {
-					if (hostId && hostId !== actor.properties.machineID) {
-						throw new VisibleError(
-							'forbidden',
-							ErrorCodes.Permission.FORBIDDEN,
-							'A machine may only report its own download state'
-						);
-					}
-					reportingHostId = actor.properties.machineID;
-				} else {
-					if (!hostId) {
-						throw new VisibleError(
-							'validation',
-							ErrorCodes.Validation.MISSING_REQUIRED_FIELD,
-							'hostId is required when reporting on behalf of a host',
-							'hostId'
-						);
-					}
-					reportingHostId = hostId;
-				}
+				// A host reports as itself, and `machineOnly` is what makes that
+				// the only possibility: with the id read from its credentials
+				// there is no body field to disagree with them.
+				const reportingHostId = Actor.machineID;
 
 				const game = await Game.fromSteamAppID(steamAppId);
 				if (!game) {
@@ -516,103 +499,6 @@ export namespace GameApi {
 				return c.json({
 					data: { downloadId: row.id, download: GameDownload.serialize(row) }
 				});
-			}
-		)
-		.post(
-			'/',
-			notPublic,
-			adminOnly,
-			describeRoute({
-				tags: ['Games'],
-				summary: 'Create or update a game',
-				description: 'Upsert a game by Steam app ID. Admin only.',
-				responses: {
-					201: {
-						content: {
-							'application/json': {
-								schema: Result(
-									Game.Info.meta({
-										description: 'The created or updated game',
-										example: Examples.Game
-									})
-								)
-							}
-						},
-						description: 'Game created or updated'
-					},
-					400: ErrorResponses[400],
-					401: ErrorResponses[401],
-					403: ErrorResponses[403]
-				}
-			}),
-			validator(
-				'json',
-				z.object({
-					steamAppId: z.number().int().meta({
-						description: 'Steam application ID',
-						example: Examples.Game.steamAppId
-					}),
-					name: z.string().meta({
-						description: 'Game title',
-						example: Examples.Game.name
-					}),
-					slug: z.string().optional().meta({
-						description: 'URL-friendly slug',
-						example: Examples.Game.slug
-					}),
-					type: z.string().nullable().optional().meta({
-						description: 'Content type',
-						example: Examples.Game.type
-					}),
-					clientIcon: z.string().nullable().optional().meta({
-						description: 'Steam client icon hash (256×256 square)',
-						example: Examples.Game.clientIcon
-					}),
-					icon: z.string().nullable().optional().meta({
-						description: 'Steam icon hash (32×32)',
-						example: Examples.Game.icon
-					}),
-					shortDescription: z.string().nullable().optional().meta({
-						description: 'Short description',
-						example: Examples.Game.shortDescription
-					}),
-					description: z.string().nullable().optional().meta({
-						description: 'Full description',
-						example: Examples.Game.description
-					}),
-					developers: z.array(z.string()).nullable().optional().meta({
-						description: 'Game developers',
-						example: Examples.Game.developers
-					}),
-					publishers: z.array(z.string()).nullable().optional().meta({
-						description: 'Game publishers',
-						example: Examples.Game.publishers
-					}),
-					genres: z.array(z.string()).nullable().optional().meta({
-						description: 'Game genres',
-						example: Examples.Game.genres
-					}),
-					oslist: z.array(z.string()).nullable().optional().meta({
-						description: 'Supported OS list',
-						example: Examples.Game.oslist
-					}),
-					releaseDate: z.string().nullable().optional().meta({
-						description: 'Release date ISO string',
-						example: Examples.Game.releaseDate
-					})
-				})
-			),
-			async (c) => {
-				const body = c.req.valid('json');
-				const id = Identifier.ascending('game');
-				const slug =
-					body.slug ??
-					body.name
-						.toLowerCase()
-						.replace(/[^a-z0-9]+/g, '-')
-						.replace(/^-|-$/g, '');
-				const game = await Game.upsert({ ...body, id, slug });
-				return c.json({ data: game[0] }, 201);
 			}
 		);
 }

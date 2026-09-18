@@ -27,10 +27,6 @@ export namespace Env {
 		 */
 		AUTH_INTERNAL_URL: z.string().optional(),
 
-		SSH_AUTH_KEY: z.string().optional(),
-
-		ADMIN_SHARED_SECRET: z.string().optional(),
-
 		DATABASE_URL: z.string().optional()
 	});
 

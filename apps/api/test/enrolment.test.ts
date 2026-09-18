@@ -1,17 +1,36 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 
+import { AccessToken } from '@nestri/core/access-token/index';
 import { Fixtures } from '@nestri/core/db/fixtures';
 import { testDb } from '@nestri/core/db/test';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
 
 import { app } from '../app/index';
-import { TEST_ADMIN_SECRET } from './setup';
 import './setup';
 
 const sql = testDb();
 
 const createdUserIds: string[] = [];
+
+/**
+ * A signed-in person, as a personal access token.
+ *
+ * The tests below use it to prove `machineOnly` refuses a human: it needs a
+ * caller who is authenticated and is not a host, and a user session is the
+ * only kind there is.
+ */
+async function signedInHeaders(label: string): Promise<Record<string, string>> {
+	const owner = await Fixtures.owner(label);
+	createdUserIds.push(owner.userId);
+	const pat = await AccessToken.create({
+		id: Identifier.ascending('accessToken'),
+		ownerUserId: owner.userId,
+		teamId: null,
+		name: label
+	});
+	return { authorization: `Bearer ${pat.token}` };
+}
 
 /** A Steam ID is 17 digits; these are distinct and obviously not real. */
 function steamId(n: number) {
@@ -185,7 +204,10 @@ describe('POST /machine/enrolment', () => {
 	test('machine credentials are required', async () => {
 		const res = await app.request('/machine/enrolment', {
 			method: 'POST',
-			headers: { 'x-nestri-admin-token': TEST_ADMIN_SECRET, 'content-type': 'application/json' },
+			headers: {
+				...(await signedInHeaders('enrol-nomachine')),
+				'content-type': 'application/json'
+			},
 			body: JSON.stringify({ userId: Identifier.ascending('user'), steamId: steamId(7) })
 		});
 		expect(res.status).toBe(403);
@@ -240,7 +262,10 @@ describe('POST /machine/enrolment/stale', () => {
 	test('machine credentials are required', async () => {
 		const res = await app.request('/machine/enrolment/stale', {
 			method: 'POST',
-			headers: { 'x-nestri-admin-token': TEST_ADMIN_SECRET, 'content-type': 'application/json' },
+			headers: {
+				...(await signedInHeaders('stale-nomachine')),
+				'content-type': 'application/json'
+			},
 			body: JSON.stringify({ userId: Identifier.ascending('user') })
 		});
 		expect(res.status).toBe(403);
@@ -272,7 +297,7 @@ describe('GET /machine/enrolment', () => {
 
 	test('machine credentials are required', async () => {
 		const res = await app.request('/machine/enrolment', {
-			headers: { 'x-nestri-admin-token': TEST_ADMIN_SECRET }
+			headers: await signedInHeaders('list-nomachine')
 		});
 		expect(res.status).toBe(403);
 	});

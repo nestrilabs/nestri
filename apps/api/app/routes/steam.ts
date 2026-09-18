@@ -79,7 +79,7 @@ export namespace SteamApi {
 			describeRoute({
 				tags: ['Steam'],
 				summary: 'Link a Steam account',
-				description: 'Link a Steam account to a user (admin) or yourself (user)',
+				description: 'Link a Steam account to the calling user.',
 				responses: {
 					200: {
 						content: {
@@ -113,13 +113,6 @@ export namespace SteamApi {
 						description: 'Steam ID to link',
 						example: '76561197960287930'
 					}),
-					userId: z
-						.string()
-						.optional()
-						.meta({
-							description: 'User ID to link to (admin only; omitted when linking your own account)',
-							example: Examples.Id('user')
-						}),
 					profile: z
 						.record(z.string(), z.unknown())
 						.optional()
@@ -131,20 +124,14 @@ export namespace SteamApi {
 			),
 			async (c) => {
 				const body = c.req.valid('json');
-				const actor = Actor.use();
 
-				if (body.userId && actor.type !== 'admin') {
-					throw new VisibleError(
-						'forbidden',
-						ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
-						'Only admin can link a Steam account for another user'
-					);
-				}
-
+				// Linking is always for the caller. It once accepted a `userId`,
+				// which meant one credential could attach a Steam account to any
+				// user \u2014 and a linked account is how a library is reached.
 				const linkedAccountID = await Steam.link({
 					steamId: body.steamId,
 					profile: body.profile,
-					userId: body.userId
+					userId: Actor.userID
 				});
 				return c.json({
 					data: { linkedAccountId: linkedAccountID, steamId: body.steamId }

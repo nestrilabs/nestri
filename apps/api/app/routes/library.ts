@@ -8,7 +8,7 @@ import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { z } from 'zod';
 
-import { ErrorResponses, adminOnly, notPublic, Result, validator } from '../utils';
+import { enrolledUser, ErrorResponses, machineOnly, notPublic, Result, validator } from '../utils';
 
 export namespace LibraryApi {
 	export const route = new Hono()
@@ -56,12 +56,12 @@ export namespace LibraryApi {
 		)
 		.post(
 			'/sync',
-			adminOnly,
+			machineOnly,
 			describeRoute({
 				tags: ['Library'],
 				summary: "Sync a user's Steam library",
 				description:
-					'Batch upsert games and library entries for a user from Steam owned games data. Admin only.',
+					'Batch upsert games and library entries from Steam owned games data. The library synced is the caller\u2019s own; there is no field for naming another user.',
 				responses: {
 					200: {
 						content: {
@@ -86,7 +86,7 @@ export namespace LibraryApi {
 				'json',
 				z.object({
 					userId: z.string().meta({
-						description: 'The user to sync library for',
+						description: 'Which of the host\u2019s enrolled users this library belongs to',
 						example: Examples.User.id
 					}),
 					games: z
@@ -121,7 +121,8 @@ export namespace LibraryApi {
 				})
 			),
 			async (c) => {
-				const { userId, games } = c.req.valid('json');
+				const { games } = c.req.valid('json');
+				const userId = await enrolledUser(c.req.valid('json').userId);
 
 				const existingGames = await Game.listByAppIDs(games.map((g) => g.steamAppId));
 				const existingByAppId = new Map(existingGames.map((g) => [g.steamAppId, g]));
