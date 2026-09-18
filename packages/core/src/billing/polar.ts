@@ -87,30 +87,79 @@ export namespace Polar {
 	 * fixes it. That is also why it is safe to call on a team that already has
 	 * one.
 	 */
-	export const ensureFree = fn(z.object({ teamId: z.string() }), async (input) => {
-		const { freeProductId } = settings();
-		if (!freeProductId) {
-			return { created: false, reason: 'no free product configured' as const };
-		}
-
-		try {
-			const existing = await client().customers.getStateExternal({
-				externalId: input.teamId
-			});
-			if (existing.activeSubscriptions.length > 0) {
-				return { created: false, reason: 'already subscribed' as const };
+	export const ensureFree = fn(
+		z.object({ teamId: z.string(), email: z.email().optional() }),
+		async (input) => {
+			const { freeProductId } = settings();
+			if (!freeProductId) {
+				return { created: false, reason: 'no free product configured' as const };
 			}
-		} catch {
-			// No such customer yet, which is the ordinary case the first time.
-			// Creating the subscription below makes one.
-		}
 
-		await client().subscriptions.create({
-			productId: freeProductId,
-			externalCustomerId: input.teamId
-		});
-		return { created: true, reason: 'created' as const };
-	});
+			// Already ours, and already subscribed to something.
+			try {
+				const state = await client().customers.getStateExternal({
+					externalId: input.teamId
+				});
+				if (state.activeSubscriptions.length > 0) {
+					return { created: false, reason: 'already subscribed' as const };
+				}
+				await client().subscriptions.create({
+					productId: freeProductId,
+					externalCustomerId: input.teamId
+				});
+				return { created: true, reason: 'subscribed an existing customer' as const };
+			} catch {
+				// No customer carries this team id yet, which is the ordinary
+				// case the first time. Fall through and find or make one.
+			}
+
+			// A customer may already exist under this address without being
+			// linked to anything of ours — made by hand, or left behind by a
+			// checkout taken before the team existed. Their addresses are unique,
+			// so creating a second one is refused rather than allowed, and the
+			// only way forward is to adopt the one that is there.
+			let customerId: string | null = null;
+			if (input.email) {
+				const found = await client().customers.list({ email: input.email, limit: 2 });
+				const existing = found.result.items.at(0);
+				if (existing) {
+					// **Never take one that belongs to another team.** Moving an
+					// external id would move where a subscription is billed, and
+					// the team losing it would go quiet rather than error.
+					if (existing.externalId && existing.externalId !== input.teamId) {
+						return { created: false, reason: 'address belongs to another team' as const };
+					}
+					if (!existing.externalId) {
+						await client().customers.update({
+							id: existing.id,
+							customerUpdate: { externalId: input.teamId }
+						});
+					}
+					customerId = existing.id;
+				}
+			}
+
+			if (!customerId) {
+				if (!input.email) {
+					// Without an address there is nothing to look up and nothing
+					// to create with, and guessing one would make a customer
+					// nobody can be reached at.
+					return { created: false, reason: 'no email to create a customer with' as const };
+				}
+				const made = await client().customers.create({
+					email: input.email,
+					externalId: input.teamId
+				});
+				customerId = made.id;
+			}
+
+			await client().subscriptions.create({
+				productId: freeProductId,
+				externalCustomerId: input.teamId
+			});
+			return { created: true, reason: 'created' as const };
+		}
+	);
 
 	/**
 	 * A checkout for a team, as the customer they already are.
@@ -292,18 +341,27 @@ export namespace Polar {
 				throw error;
 			}
 
+			// Both spellings, for both paths. The SDK's parser renames fields to
+			// camelCase on the way through; verifying the signature ourselves
+			// hands back exactly what was sent, which is snake_case. Reading only
+			// one spelling makes every delivery arrive intact, verify correctly,
+			// and then quietly apply to nobody.
 			const data = event.data ?? {};
-			const customer = data.customer as { externalId?: string | null } | undefined;
+			const customer = data.customer as
+				| { externalId?: string | null; external_id?: string | null }
+				| undefined;
 			// `externalId` is the team id we put on the customer. A delivery
 			// without one is about a customer created some other way — by hand in
 			// their dashboard, most likely — and there is nothing here it can
 			// change.
-			const teamId = customer?.externalId ?? null;
+			const teamId = customer?.externalId ?? customer?.external_id ?? null;
 
-			// Both spellings, because which one a payload carries depends on
-			// whether the product was expanded into it.
 			const product = data.product as { id?: string } | undefined;
-			const productId = (data.productId as string | undefined) ?? product?.id ?? null;
+			const productId =
+				(data.productId as string | undefined) ??
+				(data.product_id as string | undefined) ??
+				product?.id ??
+				null;
 
 			return { type: event.type, teamId, standing: standingFor(event.type, productId) };
 		}

@@ -7,6 +7,7 @@ import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
+import { User } from '../user/index.js';
 import { TeamMemberTable } from './member.sql.js';
 import { TeamTable } from './team.sql.js';
 
@@ -91,7 +92,12 @@ export namespace Team {
 		// idempotent.
 		Database.effect(async () => {
 			try {
-				await Polar.ensureFree({ teamId: input.id });
+				// The owner's address, so a customer can be found or made. A team
+				// created by somebody with no verified address gets no customer
+				// yet, which is a state `ensureFree` reports rather than guesses
+				// its way out of.
+				const owner = await User.fromID(ownerId);
+				await Polar.ensureFree({ teamId: input.id, email: owner?.email ?? undefined });
 			} catch (error) {
 				// eslint-disable-next-line no-console
 				console.error('could not register team with the payment provider:', error);

@@ -172,6 +172,36 @@ describe('Both signing schemes', () => {
 		expect(delivery.standing).toEqual({ plan: 'paid', status: 'active' });
 	});
 
+	test('a raw snake_case payload is read, not just the SDK\u2019s camelCase', async () => {
+		// Verifying the signature ourselves hands back exactly what was sent,
+		// which is snake_case; the SDK's parser renames fields on the way
+		// through. Reading one spelling made every delivery verify correctly and
+		// then apply to nobody, which looks identical to working.
+		const { Webhook } = await import('standardwebhooks');
+		const secret = `whsec_${Buffer.from('b'.repeat(32)).toString('base64')}`;
+		configure({ POLAR_WEBHOOK_SECRET: secret });
+
+		const body = JSON.stringify({
+			type: 'subscription.revoked',
+			data: { customer: { external_id: 'tem_snake' }, product_id: PAID }
+		});
+		const id = 'msg_snake';
+		const timestamp = new Date();
+		const signature = new Webhook(secret).sign(id, timestamp, body);
+
+		const delivery = Polar.receive({
+			body,
+			headers: {
+				'webhook-id': id,
+				'webhook-timestamp': Math.floor(timestamp.getTime() / 1000).toString(),
+				'webhook-signature': signature
+			}
+		});
+
+		expect(delivery.teamId).toBe('tem_snake');
+		expect(delivery.standing).toEqual({ plan: 'free', status: 'revoked' });
+	});
+
 	test('a tampered body under a valid-looking signature is refused', () => {
 		const secret = `whsec_${Buffer.from('a'.repeat(32)).toString('base64')}`;
 		configure({ POLAR_WEBHOOK_SECRET: secret });
