@@ -21,6 +21,8 @@ export namespace Identifier {
 		gameDepot: 'gdp',
 		gameDownload: 'gdl',
 		waitlistEntry: 'wle',
+		burnCounter: 'bct',
+		burnSegment: 'bsg',
 		deviceGrant: 'dvg',
 		authKv: 'akv',
 		authKey: 'aky',

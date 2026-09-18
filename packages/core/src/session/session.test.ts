@@ -47,7 +47,14 @@ async function scene(label: string, steamAppId: number) {
 afterAll(async () => {
 	if (createdUserIds.length > 0) {
 		// session cascades from box; box has to precede the machine, which
-		// cascades from the user.
+		// cascades from the user. `burn_segment` holds a session with
+		// `restrict` — deleting a run must not erase what it cost — so what the
+		// runs cost goes before the runs do.
+		await sql`delete from "burn_segment" where session_id in (
+			select s.id from "session" s
+			join "box" b on b.id = s.box_id
+			where b.user_id in ${sql(createdUserIds)}
+		)`;
 		await sql`delete from "box" where user_id in ${sql(createdUserIds)}`;
 		await sql`delete from "user" where id in ${sql(createdUserIds)}`;
 		createdUserIds.length = 0;

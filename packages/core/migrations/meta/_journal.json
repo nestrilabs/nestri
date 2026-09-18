@@ -113,6 +113,13 @@
 			"when": 1789762221718,
 			"tag": "0015_organisation_owns_fleet_hardware",
 			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1789765075037,
+			"tag": "0016_burn_counters_and_rate_segments",
+			"breakpoints": true
 		}
 	]
 }
