@@ -1186,16 +1186,46 @@ fn ipc_send_thread(
         let mut last_warn = Instant::now();
         let mut error_count: u64 = 0;
 
+        // Where this loop's time goes, per second.
+        //
+        // `encode` in the rate line is the encoder's own GPU time for whichever
+        // frame happened to be last, which is not the same thing as how long a
+        // frame took to get out of here. This loop is serial — wait for the
+        // encoder, build the IPC frame, write the socket — so a spike in any of
+        // the three delays every frame behind it. A client measured video
+        // datagrams stopping for 43 ms at a time while the present path stayed
+        // under 30 ms and audio was untouched, which puts the missing 13 ms
+        // somewhere in here, and averages cannot show which part.
+        let mut last_out = Instant::now();
+        let mut worst_out_gap = std::time::Duration::ZERO;
+        let mut worst_queued = std::time::Duration::ZERO;
+        let mut worst_awaited = std::time::Duration::ZERO;
+        let mut worst_send = std::time::Duration::ZERO;
+        let mut worst_key_wait = std::time::Duration::ZERO;
+        let mut keyframes: u32 = 0;
+        let mut last_pace = Instant::now();
+
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break 'outer;
             }
-            let (result, present_time) =
-                match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                    Ok(p) => (pollster::block_on(p.future), p.present_time),
-                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break 'outer,
-                };
+            // Timed apart, because they are different faults with different
+            // fixes and one number cannot tell them apart. `queued` is this
+            // loop waiting for the capture side to submit anything at all;
+            // `awaited` is the encoder finishing work already submitted. A
+            // single timer around both reported 40 ms and named neither.
+            let recv_start = Instant::now();
+            let pending = match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(p) => p,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break 'outer,
+            };
+            let queued = recv_start.elapsed();
+            let present_time = pending.present_time;
+            let encode_start = Instant::now();
+            let result = pollster::block_on(pending.future);
+            let awaited = encode_start.elapsed();
+            let waited = queued + awaited;
             let pkt = match result {
                 Ok(p) => p,
                 Err(e) => {
@@ -1235,6 +1265,14 @@ fn ipc_send_thread(
                 &pkt.data,
             );
 
+            if pkt.is_key_frame {
+                keyframes += 1;
+                worst_key_wait = worst_key_wait.max(waited);
+            }
+            worst_queued = worst_queued.max(queued);
+            worst_awaited = worst_awaited.max(awaited);
+
+            let send_start = Instant::now();
             if let Err(e) = socket.send(&ipc_frame) {
                 error_count += 1;
                 if last_warn.elapsed() > std::time::Duration::from_secs(5) {
@@ -1250,6 +1288,32 @@ fn ipc_send_thread(
                 break;
             }
 
+            worst_send = worst_send.max(send_start.elapsed());
+            let out = Instant::now();
+            worst_out_gap = worst_out_gap.max(out.duration_since(last_out));
+            last_out = out;
+
+            if last_pace.elapsed() >= std::time::Duration::from_secs(1) {
+                last_pace = Instant::now();
+                log::info!(
+                    "  ipc: worst gap between frames out {:.1}ms = worst wait for a \
+                     submission {:.1}ms + worst wait for the encoder {:.1}ms, worst \
+                     socket send {:.1}ms, {keyframes} keyframe(s) (worst wait on one \
+                     {:.1}ms)",
+                    worst_out_gap.as_secs_f64() * 1000.0,
+                    worst_queued.as_secs_f64() * 1000.0,
+                    worst_awaited.as_secs_f64() * 1000.0,
+                    worst_send.as_secs_f64() * 1000.0,
+                    worst_key_wait.as_secs_f64() * 1000.0,
+                );
+                worst_out_gap = std::time::Duration::ZERO;
+                worst_queued = std::time::Duration::ZERO;
+                worst_awaited = std::time::Duration::ZERO;
+                worst_send = std::time::Duration::ZERO;
+                worst_key_wait = std::time::Duration::ZERO;
+                keyframes = 0;
+            }
+
             frame_count += 1;
             if frame_count % 300 == 0 {
                 log::trace!("IPC sent {frame_count} frames");
@@ -1258,6 +1322,34 @@ fn ipc_send_thread(
     }
 
     log::info!("IPC thread exited ({frame_count} frames)");
+}
+
+/// Microseconds this box spent stalled on one resource, cumulative since boot.
+///
+/// `/proc/pressure/<kind>` reports two totals: `some` is time at least one task
+/// was blocked on the resource, `full` is time *every* runnable task was. For a
+/// stall a player sees, `some` is the one that matters -- the render thread is
+/// one task, and it being blocked is enough.
+///
+/// Returns `None` when the kernel was built without `CONFIG_PSI` or it is off,
+/// which is a thing to say once rather than to retry every second.
+fn pressure_total_us(kind: &str) -> Option<(u64, u64)> {
+    let text = std::fs::read_to_string(format!("/proc/pressure/{kind}")).ok()?;
+    let mut some = None;
+    let mut full = None;
+    for line in text.lines() {
+        let total = line
+            .split_whitespace()
+            .find_map(|f| f.strip_prefix("total="))
+            .and_then(|v| v.parse::<u64>().ok());
+        if line.starts_with("some") {
+            some = total;
+        } else if line.starts_with("full") {
+            full = total;
+        }
+    }
+    // `cpu` has no `full` line on most kernels, so its absence is not a failure.
+    Some((some?, full.unwrap_or(0)))
 }
 
 fn stats_sender_thread(
@@ -1291,6 +1383,18 @@ fn stats_sender_thread(
             None
         }
     };
+
+    // What the box itself was stalled on, second by second.
+    //
+    // Every stage of the pipeline has now been measured and is clean; what is
+    // left is the game's own frame time, which spikes to 29 ms about once a
+    // second in one title and never in another on the identical path. That is
+    // no longer a question about this code, and guessing at it from outside is
+    // how a week goes. The kernel already knows: PSI attributes a stall to cpu,
+    // io or memory, and the answer decides whether to look at the host's
+    // scheduling, the guest's storage, or its memory sizing.
+    let mut prev_pressure: Option<[(u64, u64); 3]> = None;
+    let mut pressure_said_missing = false;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -1342,6 +1446,49 @@ fn stats_sender_thread(
              hold {hold_avg:.2}/{hold_max:.2}ms, blit-gpu {blit_avg:.3}/{blit_max:.3}ms \
              (avg/max), hitches {long_gaps}"
         );
+
+        match ["cpu", "io", "memory"]
+            .iter()
+            .map(|k| pressure_total_us(k))
+            .collect::<Option<Vec<_>>>()
+            .and_then(|v| <[(u64, u64); 3]>::try_from(v.as_slice()).ok())
+        {
+            Some(now) => {
+                if let Some(before) = prev_pressure {
+                    // Printed as milliseconds stalled in the second just ended,
+                    // which is the same unit as everything else on these lines
+                    // and directly comparable with `gap`.
+                    let ms = |i: usize, full: bool| {
+                        let (s_now, f_now) = now[i];
+                        let (s_before, f_before) = before[i];
+                        let (a, b) = if full {
+                            (f_now, f_before)
+                        } else {
+                            (s_now, s_before)
+                        };
+                        a.saturating_sub(b) as f64 / 1000.0
+                    };
+                    log::info!(
+                        "  pressure: cpu {:.1}ms, io {:.1}/{:.1}ms, memory {:.1}/{:.1}ms \
+                         (some/full, stalled in the last second)",
+                        ms(0, false),
+                        ms(1, false),
+                        ms(1, true),
+                        ms(2, false),
+                        ms(2, true),
+                    );
+                }
+                prev_pressure = Some(now);
+            }
+            None if !pressure_said_missing => {
+                log::info!(
+                    "  pressure: /proc/pressure is unreadable, so this guest cannot say \
+                     whether a stall was cpu, io or memory (CONFIG_PSI off, or psi=0)"
+                );
+                pressure_said_missing = true;
+            }
+            None => {}
+        }
 
         if let Some(ref socket) = socket {
             let mut buf = Vec::with_capacity(22);

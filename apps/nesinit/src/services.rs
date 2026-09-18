@@ -379,6 +379,17 @@ impl Stack {
         command.args(args);
         command.env_clear();
         command.envs(WRITABLE.iter().copied());
+        // Forwarded, not cleared away with everything else: a service's log
+        // level is otherwise unreachable. `env_clear` drops `RUST_LOG`, every
+        // service resolves its filter with `EnvFilter::try_from_default_env`,
+        // and that call has no variable to read — so each one falls back to
+        // `info` whatever an operator sets, wherever they set it. There was no
+        // way to raise a level inside the box at all, and the only ways around
+        // it were to log at a level the line does not deserve or to rebuild the
+        // image for each change.
+        if let Ok(filter) = std::env::var("RUST_LOG") {
+            command.env("RUST_LOG", filter);
+        }
         // The service's own entry last, so a service that states one of these
         // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
