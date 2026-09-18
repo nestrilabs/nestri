@@ -54,6 +54,15 @@ if (!accessToken) {
 
 const polar = new Polar({ accessToken, server });
 
+/**
+ * An organization token already names its organization.
+ *
+ * Sending `organizationId` alongside one is refused outright rather than
+ * ignored, so which kind of token this is has to be known before the call. A
+ * personal token can see several organizations and must say which.
+ */
+const scopedToOrganization = accessToken.startsWith('polar_oat_');
+
 const organizations = await polar.organizations.listOrganizations({ limit: 2 });
 const organization = organizations.result.items.at(0);
 if (!organization) {
@@ -89,7 +98,7 @@ if (!apply) {
 }
 
 const created = await polar.products.create({
-	organizationId: organization.id,
+	...(scopedToOrganization ? {} : { organizationId: organization.id }),
 	name: PRODUCT.name,
 	description: PRODUCT.description,
 	recurringInterval: PRODUCT.recurringInterval,
