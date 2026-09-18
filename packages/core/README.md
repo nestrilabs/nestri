@@ -5,16 +5,16 @@ serialization lives here. The API and auth workers are thin pass-through transla
 
 ## What it contains
 
-| Area | Files | Purpose |
-| ---- | ----- | ------- |
-| **db** | `db/index.ts`, `db/types.ts`, `db/test.ts` | Drizzle + Postgres (`Database.use/transaction`), ULID column helpers |
-| **users** | `user/*` | Users, linked accounts, fingerprints, library |
-| **teams** | `team/*` | Teams + membership with roles (`team_member`) |
-| **games** | `game/*` | Game catalog, depot content, per-host downloads |
-| **steam** | `steam/index.ts` | Steam API integration & SSH identity resolution |
-| **auth** | `auth/subjects.ts` | JWT subjects shared with the auth worker |
-| **infra** | `env.ts`, `context.ts`, `actor.ts`, `fn.ts`, `id.ts`, `error.ts`, `examples.ts` | Environment, Actor model, zod-typed `fn()` wrappers, IDs, error types, examples |
-| **migrations** | `migrations/` | Drizzle-kit SQL migrations for Postgres schema |
+| Area           | Files                                                                           | Purpose                                                                         |
+| -------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| **db**         | `db/index.ts`, `db/types.ts`, `db/test.ts`                                      | Drizzle + Postgres (`Database.use/transaction`), ULID column helpers            |
+| **users**      | `user/*`                                                                        | Users, linked accounts, fingerprints, library                                   |
+| **teams**      | `team/*`                                                                        | Teams + membership with roles (`team_member`)                                   |
+| **games**      | `game/*`                                                                        | Game catalog, depot content, per-host downloads                                 |
+| **steam**      | `steam/index.ts`                                                                | Steam API integration & SSH identity resolution                                 |
+| **auth**       | `auth/subjects.ts`                                                              | JWT subjects shared with the auth worker                                        |
+| **infra**      | `env.ts`, `context.ts`, `actor.ts`, `fn.ts`, `id.ts`, `error.ts`, `examples.ts` | Environment, Actor model, zod-typed `fn()` wrappers, IDs, error types, examples |
+| **migrations** | `migrations/`                                                                   | Drizzle-kit SQL migrations for Postgres schema                                  |
 
 ## Conventions
 

@@ -4,8 +4,8 @@ import { Actor } from '../actor.js';
 import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
 import { Identifier } from '../id.js';
-import { Member } from './member.js';
 import { Team } from './index.js';
+import { Member } from './member.js';
 
 const sql = testDb();
 
@@ -44,7 +44,10 @@ describe('Team.ensurePersonal', () => {
 		// the user is created — that is what backfills accounts made before the
 		// call existed. A second call must not mint a second team.
 		const again = await Actor.with(
-			{ type: 'user', properties: { userID: owner.userId, linkedAccountID: owner.linkedAccountId } },
+			{
+				type: 'user',
+				properties: { userID: owner.userId, linkedAccountID: owner.linkedAccountId }
+			},
 			() => Team.ensurePersonal({ displayName: 'team-idempotent' })
 		);
 

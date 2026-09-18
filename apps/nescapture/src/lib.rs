@@ -31,12 +31,15 @@ mod dmabuf_import;
 mod encode;
 mod framebuffer;
 mod instance;
+mod memory;
+mod modifiers;
 mod pacing;
 mod pipeline;
 mod present;
 mod shader;
 mod slots;
 mod state;
+mod timing;
 mod swapchain;
 
 use commands::{
@@ -54,7 +57,10 @@ use instance::{vkCreateInstance, vkDestroyInstance};
 use pipeline::{vkCreateGraphicsPipelines, vkDestroyPipeline};
 use present::vkQueuePresentKHR;
 use shader::{vkCreateShaderModule, vkDestroyShaderModule};
-use swapchain::{vkCreateSwapchainKHR, vkDestroySwapchainKHR, vkGetSwapchainImagesKHR};
+use swapchain::{
+    vkAcquireNextImage2KHR, vkAcquireNextImageKHR, vkCreateSwapchainKHR, vkDestroySwapchainKHR,
+    vkGetSwapchainImagesKHR,
+};
 
 use dispatch::{PFN_vkGetDeviceProcAddr, PFN_vkGetInstanceProcAddr, RawFn};
 use state::{DEVICE_STATE, INSTANCE_STATE};
@@ -151,6 +157,17 @@ pub(crate) unsafe fn try_load_device_fn<T>(
     name: &[u8],
 ) -> Option<T> {
     let raw = unsafe { get(device, name.as_ptr() as *const c_char) }?;
+    Some(unsafe { std::mem::transmute_copy(&raw) })
+}
+
+/// Like [`load_instance_fn`], but `None` rather than a panic when the entry
+/// point is absent. For instance functions the layer can do without.
+pub(crate) unsafe fn try_load_instance_fn<T>(
+    get: PFN_vkGetInstanceProcAddr,
+    instance: vk::Instance,
+    name: &[u8],
+) -> Option<T> {
+    let raw = unsafe { get(instance, name.as_ptr() as *const c_char) }?;
     Some(unsafe { std::mem::transmute_copy(&raw) })
 }
 
@@ -312,6 +329,19 @@ unsafe fn match_device_fn(name: &[u8]) -> Option<RawFn> {
                     log::debug!("gdpa: → our vkGetSwapchainImagesKHR");
                 }
                 Some(to_raw(vkGetSwapchainImagesKHR as *const () as usize))
+            }
+            // Hooked only to time the wait. See `swapchain::record_acquire`.
+            b"vkAcquireNextImageKHR" => {
+                if log_this {
+                    log::debug!("gdpa: → our vkAcquireNextImageKHR");
+                }
+                Some(to_raw(vkAcquireNextImageKHR as *const () as usize))
+            }
+            b"vkAcquireNextImage2KHR" => {
+                if log_this {
+                    log::debug!("gdpa: → our vkAcquireNextImage2KHR");
+                }
+                Some(to_raw(vkAcquireNextImage2KHR as *const () as usize))
             }
 
             _ => {

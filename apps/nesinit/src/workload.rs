@@ -11,7 +11,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 
-use nesprotocol::lifecycle::{Exec, Exit, Mount};
+use nesprotocol::lifecycle::{Drive, Exec, Exit, Mount};
 
 use std::os::unix::process::CommandExt;
 
@@ -40,6 +40,9 @@ pub type Exited = Pin<Box<dyn Future<Output = io::Result<Exit>> + Send>>;
 pub trait Workload {
     /// Make the shares the descriptor names, where it says to put them.
     fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure>;
+
+    /// Mount drives
+    fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure>;
 
     /// Start the command the descriptor names.
     ///
@@ -125,6 +128,13 @@ impl Workload for Process {
             // workload given some of its shares fails later, somewhere else,
             // for a reason nobody can see from here.
             mount_share(share)?;
+        }
+        Ok(())
+    }
+
+    fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure> {
+        for drive in drives {
+            mount_drive(drive)?;
         }
         Ok(())
     }
@@ -330,6 +340,36 @@ fn mount_share(share: &Mount) -> Result<(), Failure> {
 /// filesystem this mounts. A descriptor cannot name another.
 const FSTYPE: &std::ffi::CStr = c"virtiofs";
 
+/// Mounts block device instead of virtiofs share
+fn mount_drive(drive: &Drive) -> Result<(), Failure> {
+    // Checked before anything is created: a descriptor this component cannot
+    // act on should leave no directory behind to confuse whoever reads the
+    // failure.
+    let (source, target, flags) = options_drive(drive)?;
+
+    // The mount point may not exist yet: a share can land anywhere the
+    // descriptor names, including a directory no image created.
+    std::fs::create_dir_all(&drive.at).map_err(|error| failed_drive(drive, error))?;
+
+    // SAFETY: mount takes two paths, a filesystem name and a flag word, all
+    // of which outlive the call, and no options string.
+    let mounted = unsafe {
+        libc::mount(
+            source.as_ptr(),
+            target.as_ptr(),
+            FSTYPE_DRIVE.as_ptr(),
+            flags,
+            std::ptr::null(),
+        )
+    };
+    if mounted != 0 {
+        return Err(failed_drive(drive, io::Error::last_os_error()));
+    }
+    Ok(())
+}
+
+const FSTYPE_DRIVE: &std::ffi::CStr = c"ext4";
+
 /// What the mount call is given, split out because this is the part worth
 /// asserting: mounting itself needs privileges a test does not have.
 fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> {
@@ -360,11 +400,59 @@ fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> 
     Ok((source, target, flags))
 }
 
+/// What the drive mount call is given.
+///
+/// # No filesystem-specific options, and that is a decision
+///
+/// `commit=` and `barrier=` were here once and the mount failed outright:
+/// *"can't mount with commit=, fs mounted w/o journal"*, `EINVAL`, and a box
+/// that refused its own descriptor before the session started. Both options
+/// only mean anything to a journal, and a build volume is made without one --
+/// what it holds is one game, re-downloadable, mounted by a clone that is
+/// destroyed with the box. Anything added here has to be an option that is
+/// still true of a journal-less ext4.
+///
+/// `noatime` stays: a game reading its own install has no use for access
+/// times, and writing them turns every read of a clone into a write. It is not
+/// paired with `nodiratime`, which it already implies.
+///
+/// # nosuid and nodev, for the same reason every share has them
+///
+/// What this mounts is the least trusted thing in the box: files a CDN handed
+/// us, checked for the bytes the manifest named and for nothing about what
+/// those bytes are. A setuid binary or a device node inside a depot is not
+/// something a workload should be able to use, and no descriptor has a way to
+/// ask for one.
+///
+/// **Not `noexec`.** The game's own executable is on this volume and the whole
+/// point is to run it.
+fn options_drive(drive: &Drive) -> Result<(CString, CString, libc::c_ulong), Failure> {
+    let flags = libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOATIME;
+
+    let source = CString::new(drive.dev.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the drive device contains a nul byte: {:?}",
+            drive.dev
+        ))
+    })?;
+    let target = CString::new(drive.at.as_str()).map_err(|_| {
+        Failure::new(format!(
+            "the drive mount point contains a nul byte: {:?}",
+            drive.at
+        ))
+    })?;
+    Ok((source, target, flags))
+}
+
 /// A failure names the path, which is what makes it actionable: a permission
 /// error and the directory it happened on can be acted on, where "the share
 /// did not mount" cannot.
 fn failed(share: &Mount, error: io::Error) -> Failure {
     Failure::new(format!("{}: {error}", share.at))
+}
+
+fn failed_drive(drive: &Drive, error: io::Error) -> Failure {
+    Failure::new(format!("{}: {error}", drive.at))
 }
 
 #[cfg(test)]
@@ -490,6 +578,30 @@ mod tests {
         assert_eq!(flags & libc::MS_RDONLY, 0);
     }
 
+    /// The drive carries the same guard every share carries.
+    ///
+    /// It is the mount that most needs it: a share is a directory this host
+    /// prepared, and a drive is a filesystem built out of whatever a CDN sent.
+    #[test]
+    fn a_drive_is_mounted_without_devices_or_setuid_but_can_still_execute() {
+        let drive = Drive {
+            dev: "/dev/vdb".into(),
+            at: "/nestri/install".into(),
+        };
+        let (source, target, flags) = options_drive(&drive).unwrap();
+        assert_eq!(
+            source.to_str().unwrap(),
+            "/dev/vdb",
+            "the device is the source"
+        );
+        assert_eq!(target.to_str().unwrap(), "/nestri/install");
+        assert_eq!(flags & libc::MS_NOSUID, libc::MS_NOSUID);
+        assert_eq!(flags & libc::MS_NODEV, libc::MS_NODEV);
+        assert_eq!(flags & libc::MS_NOATIME, libc::MS_NOATIME);
+        // The game's executable lives here.
+        assert_eq!(flags & libc::MS_NOEXEC, 0);
+    }
+
     #[test]
     fn a_read_only_share_is_mounted_read_only() {
         let (_, _, flags) = options(&share(true)).unwrap();
@@ -540,6 +652,7 @@ pub mod double {
     /// only thing under test.
     pub struct Double {
         pub mounted: Vec<Vec<Mount>>,
+        pub drives: Vec<Vec<Drive>>,
         pub started: Vec<Exec>,
         pub stops: usize,
         pub mount_failure: Option<Failure>,
@@ -563,6 +676,7 @@ pub mod double {
         fn new(exit: Exit, holds_until_stopped: bool) -> Self {
             Self {
                 mounted: Vec::new(),
+                drives: Vec::new(),
                 started: Vec::new(),
                 stops: 0,
                 mount_failure: None,
@@ -577,6 +691,14 @@ pub mod double {
     impl Workload for Double {
         fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure> {
             self.mounted.push(mounts.to_vec());
+            match &self.mount_failure {
+                Some(failure) => Err(failure.clone()),
+                None => Ok(()),
+            }
+        }
+
+        fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure> {
+            self.drives.push(drives.to_vec());
             match &self.mount_failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(()),

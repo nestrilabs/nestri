@@ -1,0 +1,80 @@
+From ef1f613123fadfd8ef778f77090ba696cb18797e Mon Sep 17 00:00:00 2001
+From: DatCaptainHorse <DatCaptainHorse@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 19:33:08 +0300
+Subject: [PATCH] radv/amdgpu: query all three heaps with one
+ AMDGPU_INFO_MEMORY
+
+radv_amdgpu_winsys_query_heap_info() wants the usage of VRAM, visible VRAM
+and GTT. It called ac_drm_query_heap_info() three times to get them, which
+is six ioctls: each of those calls also re-queries the device's static
+VRAM_GTT sizes, and then only .heap_usage is used out of the result.
+
+AMDGPU_INFO_MEMORY returns all three heaps together, each with its usage,
+which is exactly what this function assembles. One query replaces six.
+
+Six ioctls instead of one is invisible on a local device and is not
+invisible over virtio, where each is a synchronous round trip to the host.
+Measured on an amdgpu native context with one game running, this function
+alone accounted for 94% of all guest-to-host traffic -- around 300 round
+trips per frame, against 20 for the actual command submissions -- and with
+it most of the frame time.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ .../vulkan/winsys/amdgpu/radv_amdgpu_winsys.c | 36 +++++++++++--------
+ 1 file changed, 21 insertions(+), 15 deletions(-)
+
+diff --git a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c
+index 6aaf8a475c3..a7587f86d85 100644
+--- a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c
++++ b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_winsys.c
+@@ -378,7 +378,7 @@ fail:
+ int
+ radv_amdgpu_winsys_query_heap_info(ac_drm_device *dev, struct radeon_winsys_heap_info *heap_info)
+ {
+-   struct amdgpu_heap_info heap_vram = {0}, heap_vram_vis = {0}, heap_gtt = {0};
++   struct drm_amdgpu_memory_info mem_info = {0};
+    struct radv_amdgpu_alloc_tracker *alloc_tracker;
+    int r;
+ 
+@@ -393,20 +393,26 @@ radv_amdgpu_winsys_query_heap_info(ac_drm_device *dev, struct radeon_winsys_heap
+    heap_info->allocated_vram_vis = alloc_tracker->allocated_vram_vis;
+    heap_info->allocated_gtt = alloc_tracker->allocated_gtt;
+ 
+-   /* VRAM usage. */
+-   r = ac_drm_query_heap_info(dev, AMDGPU_GEM_DOMAIN_VRAM, 0, &heap_vram);
+-   if (!r)
+-      heap_info->vram_usage = heap_vram.heap_usage;
+-
+-   /* VRAM visible usage. */
+-   r = ac_drm_query_heap_info(dev, AMDGPU_GEM_DOMAIN_VRAM, AMDGPU_GEM_CREATE_CPU_ACCESS_REQUIRED, &heap_vram_vis);
+-   if (!r)
+-      heap_info->vram_vis_usage = heap_vram_vis.heap_usage;
+-
+-   /* GTT usage. */
+-   r = ac_drm_query_heap_info(dev, AMDGPU_GEM_DOMAIN_GTT, 0, &heap_gtt);
+-   if (!r)
+-      heap_info->gtt_usage = heap_gtt.heap_usage;
++   /* One query for all three heaps.
++    *
++    * AMDGPU_INFO_MEMORY returns vram, cpu_accessible_vram and gtt together,
++    * each with its usage -- which is the whole of what this function wants.
++    * Three ac_drm_query_heap_info() calls did the same work in six ioctls,
++    * because each of them also re-queried the device's static VRAM_GTT sizes
++    * and then used only .heap_usage out of the result.
++    *
++    * Six ioctls instead of one is invisible on a local device and is not
++    * invisible over virtio, where each is a synchronous round trip to the
++    * host. Measured on an amdgpu native context with one game running, this
++    * function alone accounted for 94% of all guest-to-host traffic and most of
++    * the frame time.
++    */
++   r = ac_drm_query_info(dev, AMDGPU_INFO_MEMORY, sizeof(mem_info), &mem_info);
++   if (!r) {
++      heap_info->vram_usage = mem_info.vram.heap_usage;
++      heap_info->vram_vis_usage = mem_info.cpu_accessible_vram.heap_usage;
++      heap_info->gtt_usage = mem_info.gtt.heap_usage;
++   }
+ 
+    radv_amdgpu_alloc_tracker_release(alloc_tracker);
+ 

@@ -2,8 +2,8 @@ import { Actor } from '@nestri/core/actor';
 import { Env } from '@nestri/core/env';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
-import { User } from '@nestri/core/user/index';
 import { Fingerprint } from '@nestri/core/user/fingerprint';
+import { User } from '@nestri/core/user/index';
 import { VERIFICATION_TTL_MINUTES, Verification } from '@nestri/core/user/verification';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -159,9 +159,7 @@ export namespace UserApi {
 					200: {
 						content: {
 							'application/json': {
-								schema: Result(
-									z.object({ verified: z.boolean() })
-								)
+								schema: Result(z.object({ verified: z.boolean() }))
 							}
 						},
 						description: 'Email verified'

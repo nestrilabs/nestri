@@ -109,6 +109,11 @@ impl CompositorHandler for NescopeState {
             .cloned()
         {
             window.on_commit();
+            // A game frame, which is what the stats claim to report. Counted
+            // here rather than on the frame-callback tick: that tick fires
+            // whether anything was drawn or not, so counting it reported the
+            // compositor's own cadence back as the game's rate.
+            self.game_frame_count += 1;
         }
     }
 

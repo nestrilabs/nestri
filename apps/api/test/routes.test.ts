@@ -1,11 +1,58 @@
 import { describe, expect, test } from 'bun:test';
 
+import { AccessToken } from '@nestri/core/access-token/index';
+import { Fixtures } from '@nestri/core/db/fixtures';
+import { Identifier } from '@nestri/core/id';
+import { Machine } from '@nestri/core/machine/index';
+
 import { app } from '../app/index';
-import { TEST_ADMIN_SECRET } from './setup';
 import './setup';
 
-function adminHeaders(): Record<string, string> {
-	return { 'x-nestri-admin-token': TEST_ADMIN_SECRET };
+/**
+ * A signed-in person and a registered host.
+ *
+ * Between them they are every credential the API accepts, so the validation
+ * tests below have to pick one. There is no longer a credential that stands
+ * for "some authenticated caller" in general — reaching a handler means being
+ * a specific someone, which is the property these fixtures preserve.
+ *
+ * Built once, lazily, because the settings they need are installed by a
+ * `beforeEach` that has not run when a `beforeAll` would.
+ */
+let built: Promise<{ user: Record<string, string>; host: Record<string, string> }> | undefined;
+
+function credentials() {
+	built ??= (async () => {
+		const owner = await Fixtures.owner('routes');
+		const pat = await AccessToken.create({
+			id: Identifier.ascending('accessToken'),
+			ownerUserId: owner.userId,
+			teamId: null,
+			name: 'routes'
+		});
+		const registered = await Machine.register({
+			id: Identifier.ascending('machine'),
+			ownerUserId: owner.userId,
+			teamId: owner.teamId,
+			label: 'routes'
+		});
+		return {
+			user: { authorization: `Bearer ${pat.token}` },
+			host: {
+				'x-nestri-machine-id': registered.id,
+				'x-nestri-machine-secret': registered.secret
+			}
+		};
+	})();
+	return built;
+}
+
+async function userHeaders(): Promise<Record<string, string>> {
+	return (await credentials()).user;
+}
+
+async function hostHeaders(): Promise<Record<string, string>> {
+	return (await credentials()).host;
 }
 
 describe('Index', () => {
@@ -32,22 +79,6 @@ describe('Auth middleware', () => {
 		expect(res.status).toBe(200);
 	});
 
-	test('admin token gains access to protected routes', async () => {
-		const res = await app.request('/waitlist', {
-			headers: adminHeaders()
-		});
-		expect(res.status).toBe(200);
-	});
-
-	test('wrong admin token is treated as public → 401', async () => {
-		const res = await app.request('/library', {
-			headers: { 'x-nestri-admin-token': 'wrong-secret' }
-		});
-		expect(res.status).toBe(401);
-		const body = (await res.json()) as any;
-		expect(body.type).toBe('authentication');
-	});
-
 	test('a bearer token that cannot be verified is unauthenticated, not a server error', async () => {
 		// A token nobody can verify makes the *caller* unauthenticated; it does
 		// not make the request a server fault. `verify` reports a malformed or
@@ -61,13 +92,12 @@ describe('Auth middleware', () => {
 		expect(body.type).toBe('authentication');
 	});
 
-	test('missing authorization on admin-only route returns 401', async () => {
+	test('missing authorization on a protected route returns 401', async () => {
 		const res = await app.request('/games/sync', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
 			body: JSON.stringify({})
 		});
-		// notPublic runs before adminOnly → 401
 		expect(res.status).toBe(401);
 		const body = (await res.json()) as any;
 		expect(body.code).toBe('unauthorized');
@@ -79,7 +109,7 @@ describe('Validation', () => {
 		const res = await app.request('/games/sync', {
 			method: 'POST',
 			headers: {
-				...adminHeaders(),
+				...(await hostHeaders()),
 				'content-type': 'application/json'
 			},
 			body: '{not-json'
@@ -93,7 +123,7 @@ describe('Validation', () => {
 		const res = await app.request('/games/download-state', {
 			method: 'POST',
 			headers: {
-				...adminHeaders(),
+				...(await hostHeaders()),
 				'content-type': 'application/json'
 			},
 			body: JSON.stringify({ status: 'downloading' })
@@ -107,11 +137,10 @@ describe('Validation', () => {
 		const res = await app.request('/games/download-state', {
 			method: 'POST',
 			headers: {
-				...adminHeaders(),
+				...(await hostHeaders()),
 				'content-type': 'application/json'
 			},
 			body: JSON.stringify({
-				hostId: 'hst_test',
 				steamAppId: 440,
 				status: 'bogus_status'
 			})
@@ -123,7 +152,7 @@ describe('Validation', () => {
 
 	test('non-existent game returns 404', async () => {
 		const res = await app.request('/games/gam_nonexistent', {
-			headers: adminHeaders()
+			headers: await userHeaders()
 		});
 		expect(res.status).toBe(404);
 		const body = (await res.json()) as any;
@@ -133,7 +162,7 @@ describe('Validation', () => {
 	test('missing content-type header returns 400', async () => {
 		const res = await app.request('/games/sync', {
 			method: 'POST',
-			headers: adminHeaders(),
+			headers: await hostHeaders(),
 			body: JSON.stringify({})
 		});
 		expect(res.status).toBe(400);
@@ -143,7 +172,7 @@ describe('Validation', () => {
 describe('Error response shape', () => {
 	test('404 on unknown game has standard error shape', async () => {
 		const res = await app.request('/games/gam_nonexistent', {
-			headers: adminHeaders()
+			headers: await userHeaders()
 		});
 		expect(res.status).toBe(404);
 		const body = (await res.json()) as any;
@@ -154,7 +183,7 @@ describe('Error response shape', () => {
 
 	test('429 error responses have standard shape', async () => {
 		const res = await app.request('/games/gam_nonexistent', {
-			headers: adminHeaders()
+			headers: await userHeaders()
 		});
 		expect(res.status).toBe(404);
 		const body = (await res.json()) as any;
@@ -189,7 +218,6 @@ describe('OpenAPI doc', () => {
 		expect(paths).toContain('/user');
 		expect(paths).toContain('/user/email');
 		expect(paths).toContain('/user/devices');
-		expect(paths).toContain('/pairing-code');
 		expect(paths).toContain('/waitlist');
 	});
 
@@ -223,18 +251,31 @@ describe('CORS', () => {
 });
 
 describe('Download state route', () => {
-	test('POST /games/download-state requires hostId and steamAppId', async () => {
+	test('POST /games/download-state requires steamAppId', async () => {
 		const res = await app.request('/games/download-state', {
 			method: 'POST',
 			headers: {
-				...adminHeaders(),
+				...(await hostHeaders()),
 				'content-type': 'application/json'
 			},
 			body: JSON.stringify({
-				hostId: 'hst_test',
 				status: 'downloading'
 				// missing steamAppId
 			})
+		});
+		expect(res.status).toBe(400);
+	});
+
+	test('a host cannot name the host it is reporting for', async () => {
+		// Which host this is comes from the credentials. The body once carried
+		// it, so a caller could write download state under any box's id.
+		const res = await app.request('/games/download-state', {
+			method: 'POST',
+			headers: {
+				...(await hostHeaders()),
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({ hostId: 'mch_someoneelse', steamAppId: 440, status: 'ready' })
 		});
 		expect(res.status).toBe(400);
 	});
@@ -246,11 +287,10 @@ describe('Download state route', () => {
 			const res = await app.request('/games/download-state', {
 				method: 'POST',
 				headers: {
-					...adminHeaders(),
+					...(await hostHeaders()),
 					'content-type': 'application/json'
 				},
 				body: JSON.stringify({
-					hostId: 'hst_test',
 					steamAppId: 440,
 					status
 				})
@@ -264,26 +304,11 @@ describe('Download state route', () => {
 		const res = await app.request('/games/download-state', {
 			method: 'POST',
 			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ hostId: 'mch_test', steamAppId: 440, status: 'ready' })
-		});
-		// The route group's `notPublic` runs first, so this is 401 rather than
-		// the 403 `machineOrAdmin` would give an authenticated non-host.
-		expect(res.status).toBe(401);
-	});
-
-	test('an admin caller must say which host it is reporting for', async () => {
-		// hostId is optional in the schema now because a machine supplies it
-		// from its own identity. Admin has no identity to take it from, so
-		// leaving it out has to fail rather than write under an empty host.
-		const res = await app.request('/games/download-state', {
-			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
 			body: JSON.stringify({ steamAppId: 440, status: 'ready' })
 		});
-		expect(res.status).toBe(400);
-		const body = (await res.json()) as any;
-		expect(body.code).toBe('missing_required_field');
-		expect(body.param).toBe('hostId');
+		// The route group's `notPublic` runs first, so this is 401 rather than
+		// the 403 `machineOnly` would give an authenticated non-host.
+		expect(res.status).toBe(401);
 	});
 });
 
@@ -297,24 +322,10 @@ describe('Access tokens', () => {
 		expect(res.status).toBe(401);
 	});
 
-	test('the admin token cannot mint a token for anyone', async () => {
-		// This is the boundary that makes admin safe to hand out for tooling:
-		// it reads and writes API data but cannot *become* a user. Minting a
-		// PAT on someone's behalf would erase exactly that.
-		const res = await app.request('/access-token', {
-			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
-			body: JSON.stringify({ name: 'living-room-box' })
-		});
-		expect(res.status).toBe(403);
-		const body = (await res.json()) as any;
-		expect(body.message).toContain('user session');
-	});
-
 	test('a token needs a name', async () => {
 		const res = await app.request('/access-token', {
 			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ name: '' })
 		});
 		expect(res.status).toBe(400);
@@ -323,7 +334,7 @@ describe('Access tokens', () => {
 	test('expiry is capped at a year', async () => {
 		const res = await app.request('/access-token', {
 			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ name: 'box', expiresInDays: 4000 })
 		});
 		expect(res.status).toBe(400);
@@ -337,12 +348,10 @@ describe('Access tokens', () => {
 		// omitting the field means "take the default", which is not the same.
 		const res = await app.request('/access-token', {
 			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ name: 'box', teamId: null })
 		});
-		// Admin is refused at the handler, but only after validation — so a
-		// 403 here proves null passed the schema rather than being rejected.
-		expect(res.status).toBe(403);
+		expect(res.status).toBe(200);
 	});
 
 	test('revoking someone else’s token requires authentication', async () => {
@@ -372,17 +381,17 @@ describe('Box access', () => {
 		expect(res.status).toBe(401);
 	});
 
-	test('the admin token cannot rescope a machine', async () => {
-		// Rescoping is an owner action and the query is scoped to a user id;
-		// admin has none, so it must be refused rather than 500 later.
+	test('rescoping onto a team you do not belong to is refused', async () => {
+		// Naming a team is how hardware would otherwise be parked in somebody
+		// else's, so membership is checked rather than taken from the body.
 		const res = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ teamId: 'tem_whatever' })
 		});
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as any;
-		expect(body.message).toContain('user session');
+		expect(body.message).toContain('not a member');
 	});
 
 	test('teamId is required on the body, and null is no longer a value', async () => {
@@ -392,32 +401,31 @@ describe('Box access', () => {
 		// error rather than a meaning.
 		const missing = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({})
 		});
 		expect(missing.status).toBe(400);
 
 		const explicitNull = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ teamId: null })
 		});
 		expect(explicitNull.status).toBe(400);
 
 		const named = await app.request('/machine/mch_whatever', {
 			method: 'PATCH',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ teamId: 'tem_whatever' })
 		});
-		// Past validation, refused at the handler for being admin.
-		expect(named.status).toBe(403);
+		expect([403, 404]).toContain(named.status);
 	});
 
 	test('entitlement requires machine credentials, not a user session', async () => {
 		// The machine is taken from its credentials, never the query, so a box
 		// cannot ask about another box.
 		const res = await app.request('/machine/entitlement?userId=usr_x', {
-			headers: adminHeaders()
+			headers: await userHeaders()
 		});
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as any;
@@ -441,24 +449,10 @@ describe('Machine registration', () => {
 		expect(res.status).toBe(401);
 	});
 
-	test('the admin token cannot register a machine', async () => {
-		// Registering is an act of ownership and the resulting row references a
-		// user. Admin is authenticated but owns nothing, so it must be refused
-		// here rather than fail later on a null owner.
-		const res = await app.request('/machine/register', {
-			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
-			body: JSON.stringify({ label: 'living-room-box' })
-		});
-		expect(res.status).toBe(403);
-		const body = (await res.json()) as any;
-		expect(body.message).toContain('user session');
-	});
-
 	test('registering a machine requires a label', async () => {
 		const res = await app.request('/machine/register', {
 			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ label: '' })
 		});
 		expect(res.status).toBe(400);
@@ -467,7 +461,7 @@ describe('Machine registration', () => {
 	});
 
 	test('describing yourself requires machine credentials', async () => {
-		const res = await app.request('/machine/me', { headers: adminHeaders() });
+		const res = await app.request('/machine/me', { headers: await userHeaders() });
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as any;
 		expect(body.message).toContain('Machine credentials');
@@ -484,7 +478,7 @@ describe('Steam routes', () => {
 		const res = await app.request('/steam/link', {
 			method: 'POST',
 			headers: {
-				...adminHeaders(),
+				...(await userHeaders()),
 				'content-type': 'application/json'
 			},
 			body: JSON.stringify({})
@@ -507,67 +501,6 @@ describe('Library routes', () => {
 	});
 });
 
-describe('Pairing code routes', () => {
-	test('POST /pairing-code requires auth', async () => {
-		// Generating a code says "this key is also me", so it can only be done
-		// from a session that already is that user.
-		const res = await app.request('/pairing-code', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({})
-		});
-		expect(res.status).toBe(401);
-	});
-
-	test('POST /pairing-code/claim rejects an unauthenticated caller', async () => {
-		// Claiming is done for a device with no identity yet, so it carries the
-		// admin token rather than a user session. Without it, no.
-		const res = await app.request('/pairing-code/claim', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({ code: 'NESSH-7F2Q', fingerprint: 'aa:bb' })
-		});
-		expect([401, 403]).toContain(res.status);
-	});
-
-	test('POST /pairing-code/claim requires both a code and a fingerprint', async () => {
-		for (const body of [{}, { code: 'NESSH-7F2Q' }, { fingerprint: 'aa:bb' }]) {
-			// eslint-disable-next-line
-			const res = await app.request('/pairing-code/claim', {
-				method: 'POST',
-				headers: { ...adminHeaders(), 'content-type': 'application/json' },
-				body: JSON.stringify(body)
-			});
-			expect(res.status).toBe(400);
-		}
-	});
-
-	test('POST /pairing-code/claim rejects an empty code', async () => {
-		// An empty string must not be treated as "any code".
-		const res = await app.request('/pairing-code/claim', {
-			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
-			body: JSON.stringify({ code: '', fingerprint: 'aa:bb' })
-		});
-		expect(res.status).toBe(400);
-	});
-
-	test('POST /pairing-code caps how long a code stays valid', async () => {
-		// Short-lived by design; a long-lived code is a shared password.
-		const res = await app.request('/pairing-code', {
-			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
-			body: JSON.stringify({ ttlMinutes: 60 * 24 })
-		});
-		expect(res.status).toBe(400);
-	});
-
-	test('GET /pairing-code requires auth', async () => {
-		const res = await app.request('/pairing-code');
-		expect(res.status).toBe(401);
-	});
-});
-
 describe('Email routes', () => {
 	test('POST /user/email requires auth', async () => {
 		const res = await app.request('/user/email', {
@@ -581,7 +514,7 @@ describe('Email routes', () => {
 	test('POST /user/email rejects a malformed address', async () => {
 		const res = await app.request('/user/email', {
 			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ email: 'not-an-email' })
 		});
 		expect(res.status).toBe(400);
@@ -606,7 +539,7 @@ describe('Email routes', () => {
 	test('POST /user/email/verify requires a 6-digit code', async () => {
 		const res = await app.request('/user/email/verify', {
 			method: 'POST',
-			headers: { ...adminHeaders(), 'content-type': 'application/json' },
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
 			body: JSON.stringify({ code: '12' })
 		});
 		expect(res.status).toBe(400);
@@ -661,10 +594,5 @@ describe('Waitlist routes', () => {
 			body: JSON.stringify({ email: 'nope' })
 		});
 		expect(res.status).toBe(400);
-	});
-
-	test('GET /waitlist is admin-only', async () => {
-		const res = await app.request('/waitlist');
-		expect(res.status).toBe(403);
 	});
 });

@@ -112,6 +112,13 @@ async function requestSession(s: Awaited<ReturnType<typeof scene>>) {
 
 afterAll(async () => {
 	if (createdUserIds.length > 0) {
+		// `burn_segment` holds a session with `restrict` — deleting a run must
+		// not erase what it cost — so the record goes before the runs do.
+		await sql`delete from "burn_segment" where session_id in (
+			select s.id from "session" s
+			join "box" b on b.id = s.box_id
+			where b.user_id in ${sql(createdUserIds)}
+		)`;
 		await sql`delete from "box" where user_id in ${sql(createdUserIds)}`;
 		await sql`delete from "user" where id in ${sql(createdUserIds)}`;
 		createdUserIds.length = 0;
@@ -131,7 +138,20 @@ describe('POST /session', () => {
 		// The field names are the contract. A rename on either side produces a
 		// host that starts, reads nothing, and reports success — so the shape
 		// is asserted whole rather than field by field.
-		expect(Object.keys(body)).toEqual(['data']);
+		// `billing` rides alongside `data` on purpose: every surface that can
+		// start a run has to show what it costs and what remains, and a second
+		// call for that is a call nobody makes.
+		expect(Object.keys(body)).toEqual(['data', 'billing']);
+		expect(body.billing.exhausted).toBe(false);
+		expect(body.billing.windows.map((w: { window: string }) => w.window)).toEqual([
+			'fiveHour',
+			'sevenDay',
+			'thirtyDay'
+		]);
+		// Nothing is live yet, so nothing is being spent — and one more run
+		// would cost exactly one unit per second.
+		expect(body.billing.rateMilli).toBe(0);
+		expect(body.billing.rateMilliIfOneMore).toBe(1000);
 		expect(body.data).toEqual({
 			id: body.data.id,
 			boxId: s.box.id,

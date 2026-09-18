@@ -1,0 +1,93 @@
+From 5f615ac88a6f2b962a3e0d68c995f1ab3ec12d20 Mon Sep 17 00:00:00 2001
+From: DatCaptainHorse <DatCaptainHorse@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 19:33:08 +0300
+Subject: [PATCH] ac/linux_drm: cache the device's static VRAM/GTT sizes
+
+AMDGPU_INFO_VRAM_GTT returns total VRAM, CPU-visible VRAM and GTT size.
+All three are fixed properties of the device and cannot change while it is
+open, but ac_drm_query_heap_info() asked for them on every call.
+
+That is free on a local ioctl. It is not free on an amdgpu native context,
+where every query is a synchronous round trip to the host: measured with one
+game running under virtio, this single query was 47% of all guest-to-host
+traffic, asked roughly 15,000 times a second for an answer that never
+changed.
+
+Fetch it once during ac_drm_device_initialize(), before the device is
+visible to any other thread, so reading it needs no lock. A failure there is
+not fatal -- vram_gtt_valid stays false and the old per-call path is used.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/amd/common/ac_linux_drm.c | 40 +++++++++++++++++++++++++++++------
+ 1 file changed, 34 insertions(+), 6 deletions(-)
+
+diff --git a/src/amd/common/ac_linux_drm.c b/src/amd/common/ac_linux_drm.c
+index 21fb2c9e4e3..63b27058ec1 100644
+--- a/src/amd/common/ac_linux_drm.c
++++ b/src/amd/common/ac_linux_drm.c
+@@ -28,6 +28,23 @@ struct ac_drm_device {
+    struct util_sync_provider *p;
+    int fd;
+    bool is_virtio;
++
++   /* AMDGPU_INFO_VRAM_GTT, fetched once.
++    *
++    * The three sizes it returns -- total VRAM, CPU-visible VRAM, GTT -- are
++    * fixed properties of the device and cannot change while it is open, but
++    * ac_drm_query_heap_info() re-queried them on every call. That is free on a
++    * local ioctl and is not free over virtio, where every query is a
++    * synchronous round trip to the host: measured on an amdgpu native context,
++    * this single query was 47% of all guest-to-host traffic, asked ~15,000
++    * times a second for an answer that never changed.
++    *
++    * Filled during initialize(), before the device is visible to any other
++    * thread, so reading it needs no lock. If the query fails there,
++    * vram_gtt_valid stays false and the old per-call path is used.
++    */
++   struct drm_amdgpu_info_vram_gtt vram_gtt;
++   bool vram_gtt_valid;
+ };
+ 
+ int ac_drm_device_initialize(int fd, bool is_virtio,
+@@ -64,10 +81,17 @@ int ac_drm_device_initialize(int fd, bool is_virtio,
+       }
+    }
+ 
+-   if (r == 0)
++   if (r == 0) {
+       (*dev)->is_virtio = is_virtio;
+-   else
++      /* Device-static, so it is asked once here rather than on every heap
++       * query. A failure is not fatal: the caller falls back to querying it.
++       */
++      (*dev)->vram_gtt_valid =
++         ac_drm_query_info(*dev, AMDGPU_INFO_VRAM_GTT, sizeof((*dev)->vram_gtt),
++                           &(*dev)->vram_gtt) == 0;
++   } else {
+       free(*dev);
++   }
+ 
+    return r;
+ }
+@@ -757,12 +781,16 @@ int ac_drm_query_gpu_info(ac_drm_device *dev, struct amdgpu_gpu_info *info)
+ int ac_drm_query_heap_info(ac_drm_device *dev, uint32_t heap, uint32_t flags,
+                            struct amdgpu_heap_info *info)
+ {
+-   struct drm_amdgpu_info_vram_gtt vram_gtt_info = {};
++   struct drm_amdgpu_info_vram_gtt vram_gtt_info;
+    int r;
+ 
+-   r = ac_drm_query_info(dev, AMDGPU_INFO_VRAM_GTT, sizeof(vram_gtt_info), &vram_gtt_info);
+-   if (r)
+-      return r;
++   if (dev->vram_gtt_valid) {
++      vram_gtt_info = dev->vram_gtt;
++   } else {
++      r = ac_drm_query_info(dev, AMDGPU_INFO_VRAM_GTT, sizeof(vram_gtt_info), &vram_gtt_info);
++      if (r)
++         return r;
++   }
+ 
+    /* Get heap information */
+    switch (heap) {

@@ -149,6 +149,37 @@ export namespace Enrolment {
 	});
 
 	/**
+	 * The enrolment a host holds for one user, or null.
+	 *
+	 * This is the question "may this host speak about this user's Steam
+	 * library?", and it is answered from the record of sign-ins rather than
+	 * from team membership: holding a refresh token for somebody is what makes
+	 * a host able to enumerate their games in the first place. One host carries
+	 * several people's sign-ins, so the pair is the unit and neither half of it
+	 * is enough on its own.
+	 */
+	export const findByMachineAndUser = fn(
+		Info.pick({ machineId: true, userId: true }),
+		async (input) => {
+			return Database.use(async (tx) => {
+				return tx
+					.select()
+					.from(SteamEnrolmentTable)
+					.where(
+						and(
+							eq(SteamEnrolmentTable.machineId, input.machineId),
+							eq(SteamEnrolmentTable.userId, input.userId)
+						)
+					)
+					.then((rows) => {
+						const row = rows.at(0);
+						return row ? serialize(row) : null;
+					});
+			});
+		}
+	);
+
+	/**
 	 * Every enrolment the control plane believes this host has.
 	 *
 	 * A host that lost its disk asks this to find out what it is expected to

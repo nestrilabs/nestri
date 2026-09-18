@@ -172,7 +172,12 @@ pub fn output_format(pixel_fmt: PixelFormat, bit_depth: EncodeBitDepth) -> Outpu
 // ── Captured frame (sent from present.rs to encoder thread) ──────────────────
 
 pub struct CapturedFrame {
-    pub source: FrameSource,
+    /// Which device this frame's slot belongs to.
+    ///
+    /// The encoder thread needs it to reach the fence and the exported fd: it
+    /// now does the waiting that a separate capture thread used to do, and that
+    /// work is per-device.
+    pub ds_key: usize,
     pub width: u32,
     pub height: u32,
     pub vk_format: u32,
@@ -355,6 +360,8 @@ pub struct PipelineHandle {
     pub dropped_frames: Arc<AtomicU32>,
     pub present_attempts: Arc<AtomicU32>,
     pub capture_attempts: Arc<AtomicU32>,
+    /// Where each present's time went, split three ways. Diagnostic.
+    pub timing: Arc<crate::timing::PresentTiming>,
 }
 
 impl PipelineHandle {
@@ -362,7 +369,10 @@ impl PipelineHandle {
         let (codec, ctx) = resolve_codec(config.codec_request.as_deref())
             .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
 
-        let (frame_tx, frame_rx) = mpsc::sync_channel::<CapturedFrame>(2);
+        // One deep. The frame in it is now an unwaited blit rather than an
+        // exported buffer, and the ring's four slots are already the
+        // backpressure — a second layer of queue only adds latency.
+        let (frame_tx, frame_rx) = mpsc::sync_channel::<CapturedFrame>(1);
         let (encoded_tx, encoded_rx) = mpsc::sync_channel::<EncodedFrame>(2);
         let (reconfig_tx, reconfig_rx) = mpsc::channel::<EncodeSettingsChange>();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -373,6 +383,7 @@ impl PipelineHandle {
         let dropped_frames = Arc::new(AtomicU32::new(0));
         let present_attempts = Arc::new(AtomicU32::new(0));
         let capture_attempts = Arc::new(AtomicU32::new(0));
+        let timing = Arc::new(crate::timing::PresentTiming::default());
         let current_codec = Arc::new(AtomicU8::new(codec.to_protocol_codec()));
         let needs_reconfig_flag = Arc::new(AtomicBool::new(false));
 
@@ -395,6 +406,7 @@ impl PipelineHandle {
             current_codec: current_codec.clone(),
             wanted_depth_override: None,
             needs_reconfig_flag: needs_reconfig_flag.clone(),
+            capture_ms: capture_ms.clone(),
         };
         thread::Builder::new()
             .name("nescapture-encoder".into())
@@ -426,6 +438,7 @@ impl PipelineHandle {
         let stats_shutdown = shutdown.clone();
         let pa = present_attempts.clone();
         let ca = capture_attempts.clone();
+        let stats_timing = timing.clone();
         thread::Builder::new()
             .name("nescapture-stats".into())
             .spawn(move || {
@@ -436,6 +449,7 @@ impl PipelineHandle {
                     stats_drop,
                     pa,
                     ca,
+                    stats_timing,
                     stats_ipc,
                     stats_shutdown,
                 )
@@ -543,16 +557,26 @@ impl PipelineHandle {
             dropped_frames,
             present_attempts,
             capture_attempts,
+            timing,
         })
     }
 
     pub fn push_frame(&self, frame: CapturedFrame) -> bool {
-        self.capture_fps.fetch_add(1, Ordering::Relaxed);
-        let ok = self.frame_tx.try_send(frame).is_ok();
-        if !ok {
-            self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+        // Counted on success only. It used to be incremented before the send,
+        // so a frame the channel refused was reported both as captured and as
+        // dropped, and the capture rate read as the rate the ring offered
+        // rather than the rate the encoder accepted — which is the number
+        // anyone reading it wants.
+        match self.frame_tx.try_send(frame) {
+            Ok(()) => {
+                self.capture_fps.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Err(_) => {
+                self.dropped_frames.fetch_add(1, Ordering::Relaxed);
+                false
+            }
         }
-        ok
     }
 
     pub fn shutdown(&self) {
@@ -589,6 +613,9 @@ struct EncoderConfig {
     current_codec: Arc<AtomicU8>,
     wanted_depth_override: Option<EncodeBitDepth>,
     needs_reconfig_flag: Arc<AtomicBool>,
+    /// Present-to-encoder latency in milliseconds, as `f32` bits. Written here
+    /// now that this thread is the one doing the waiting.
+    capture_ms: Arc<AtomicU32>,
 }
 
 struct EncodedPacket {
@@ -676,11 +703,29 @@ fn encoder_thread(
             cfg.idr_requested.store(true, Ordering::Relaxed);
         }
 
-        let mut raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        let raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(frame) => frame,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+
+        // Wait for the blit and export the buffer. This used to be a thread of
+        // its own between the present hook and here; it is cheaper on this one,
+        // because the blit it waits for was submitted a frame earlier and has
+        // already completed, and every frame saves a channel and a wakeup.
+        let Some(ds) = crate::state::DEVICE_STATE.get(&raw.ds_key).map(|s| s.clone()) else {
+            log::error!("encoder: device state gone");
+            break;
+        };
+        let Some(mut source) = crate::present::resolve_source(&ds, &raw) else {
+            continue;
+        };
+
+        // Measured from the game's present, not from the top of this iteration:
+        // the wait above is part of what capture costs.
+        let capture_elapsed = raw.present_time.elapsed().as_secs_f32() * 1000.0;
+        cfg.capture_ms
+            .store(capture_elapsed.to_bits(), Ordering::Relaxed);
 
         let Some(input_fmt) = vk_format_to_input_format(raw.vk_format) else {
             // Drop the frame rather than encode it wrongly. Logged once per
@@ -756,7 +801,7 @@ fn encoder_thread(
         // first, for every frame after it.
         let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
 
-        let result = match &mut raw.source {
+        let result = match &mut source {
             FrameSource::DmaBuf {
                 fd,
                 stride,
@@ -791,7 +836,7 @@ fn encoder_thread(
             FrameSource::Pixels(pixels) => cpu_encode_frame(
                 &ctx,
                 &mut state.encoder,
-                pixels,
+                pixels.as_slice(),
                 raw.width,
                 raw.height,
                 raw.vk_format,
@@ -1141,16 +1186,46 @@ fn ipc_send_thread(
         let mut last_warn = Instant::now();
         let mut error_count: u64 = 0;
 
+        // Where this loop's time goes, per second.
+        //
+        // `encode` in the rate line is the encoder's own GPU time for whichever
+        // frame happened to be last, which is not the same thing as how long a
+        // frame took to get out of here. This loop is serial — wait for the
+        // encoder, build the IPC frame, write the socket — so a spike in any of
+        // the three delays every frame behind it. A client measured video
+        // datagrams stopping for 43 ms at a time while the present path stayed
+        // under 30 ms and audio was untouched, which puts the missing 13 ms
+        // somewhere in here, and averages cannot show which part.
+        let mut last_out = Instant::now();
+        let mut worst_out_gap = std::time::Duration::ZERO;
+        let mut worst_queued = std::time::Duration::ZERO;
+        let mut worst_awaited = std::time::Duration::ZERO;
+        let mut worst_send = std::time::Duration::ZERO;
+        let mut worst_key_wait = std::time::Duration::ZERO;
+        let mut keyframes: u32 = 0;
+        let mut last_pace = Instant::now();
+
         loop {
             if shutdown.load(Ordering::Relaxed) {
                 break 'outer;
             }
-            let (result, present_time) =
-                match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-                    Ok(p) => (pollster::block_on(p.future), p.present_time),
-                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break 'outer,
-                };
+            // Timed apart, because they are different faults with different
+            // fixes and one number cannot tell them apart. `queued` is this
+            // loop waiting for the capture side to submit anything at all;
+            // `awaited` is the encoder finishing work already submitted. A
+            // single timer around both reported 40 ms and named neither.
+            let recv_start = Instant::now();
+            let pending = match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                Ok(p) => p,
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => break 'outer,
+            };
+            let queued = recv_start.elapsed();
+            let present_time = pending.present_time;
+            let encode_start = Instant::now();
+            let result = pollster::block_on(pending.future);
+            let awaited = encode_start.elapsed();
+            let waited = queued + awaited;
             let pkt = match result {
                 Ok(p) => p,
                 Err(e) => {
@@ -1190,6 +1265,14 @@ fn ipc_send_thread(
                 &pkt.data,
             );
 
+            if pkt.is_key_frame {
+                keyframes += 1;
+                worst_key_wait = worst_key_wait.max(waited);
+            }
+            worst_queued = worst_queued.max(queued);
+            worst_awaited = worst_awaited.max(awaited);
+
+            let send_start = Instant::now();
             if let Err(e) = socket.send(&ipc_frame) {
                 error_count += 1;
                 if last_warn.elapsed() > std::time::Duration::from_secs(5) {
@@ -1205,6 +1288,32 @@ fn ipc_send_thread(
                 break;
             }
 
+            worst_send = worst_send.max(send_start.elapsed());
+            let out = Instant::now();
+            worst_out_gap = worst_out_gap.max(out.duration_since(last_out));
+            last_out = out;
+
+            if last_pace.elapsed() >= std::time::Duration::from_secs(1) {
+                last_pace = Instant::now();
+                log::info!(
+                    "  ipc: worst gap between frames out {:.1}ms = worst wait for a \
+                     submission {:.1}ms + worst wait for the encoder {:.1}ms, worst \
+                     socket send {:.1}ms, {keyframes} keyframe(s) (worst wait on one \
+                     {:.1}ms)",
+                    worst_out_gap.as_secs_f64() * 1000.0,
+                    worst_queued.as_secs_f64() * 1000.0,
+                    worst_awaited.as_secs_f64() * 1000.0,
+                    worst_send.as_secs_f64() * 1000.0,
+                    worst_key_wait.as_secs_f64() * 1000.0,
+                );
+                worst_out_gap = std::time::Duration::ZERO;
+                worst_queued = std::time::Duration::ZERO;
+                worst_awaited = std::time::Duration::ZERO;
+                worst_send = std::time::Duration::ZERO;
+                worst_key_wait = std::time::Duration::ZERO;
+                keyframes = 0;
+            }
+
             frame_count += 1;
             if frame_count % 300 == 0 {
                 log::trace!("IPC sent {frame_count} frames");
@@ -1215,6 +1324,34 @@ fn ipc_send_thread(
     log::info!("IPC thread exited ({frame_count} frames)");
 }
 
+/// Microseconds this box spent stalled on one resource, cumulative since boot.
+///
+/// `/proc/pressure/<kind>` reports two totals: `some` is time at least one task
+/// was blocked on the resource, `full` is time *every* runnable task was. For a
+/// stall a player sees, `some` is the one that matters -- the render thread is
+/// one task, and it being blocked is enough.
+///
+/// Returns `None` when the kernel was built without `CONFIG_PSI` or it is off,
+/// which is a thing to say once rather than to retry every second.
+fn pressure_total_us(kind: &str) -> Option<(u64, u64)> {
+    let text = std::fs::read_to_string(format!("/proc/pressure/{kind}")).ok()?;
+    let mut some = None;
+    let mut full = None;
+    for line in text.lines() {
+        let total = line
+            .split_whitespace()
+            .find_map(|f| f.strip_prefix("total="))
+            .and_then(|v| v.parse::<u64>().ok());
+        if line.starts_with("some") {
+            some = total;
+        } else if line.starts_with("full") {
+            full = total;
+        }
+    }
+    // `cpu` has no `full` line on most kernels, so its absence is not a failure.
+    Some((some?, full.unwrap_or(0)))
+}
+
 fn stats_sender_thread(
     capture_fps: Arc<AtomicU32>,
     encode_avg_ms: Arc<AtomicU32>,
@@ -1222,22 +1359,42 @@ fn stats_sender_thread(
     dropped_frames: Arc<AtomicU32>,
     present_attempts: Arc<AtomicU32>,
     capture_attempts: Arc<AtomicU32>,
+    timing: Arc<crate::timing::PresentTiming>,
     ipc_path: std::path::PathBuf,
     shutdown: Arc<AtomicBool>,
 ) {
+    // Optional, where it used to end the thread. The socket only exists when a
+    // hub is listening, and this thread now also writes the per-second rate line
+    // that says where frames are going — which is wanted most in exactly the
+    // bare runs that have no hub.
     let socket = match std::os::unix::net::UnixDatagram::unbound() {
-        Ok(s) => s,
+        Ok(s) if s.connect(&ipc_path).is_ok() => {
+            log::info!("stats sender → {}", ipc_path.display());
+            Some(s)
+        }
+        Ok(_) => {
+            log::warn!(
+                "stats socket connect failed; rates are logged but not sent to the hub"
+            );
+            None
+        }
         Err(e) => {
-            log::error!("stats socket create: {e}");
-            return;
+            log::error!("stats socket create: {e}; rates are logged only");
+            None
         }
     };
-    if socket.connect(&ipc_path).is_err() {
-        log::warn!("stats socket connect failed, stats unavailable");
-        return;
-    }
 
-    log::info!("stats sender → {}", ipc_path.display());
+    // What the box itself was stalled on, second by second.
+    //
+    // Every stage of the pipeline has now been measured and is clean; what is
+    // left is the game's own frame time, which spikes to 29 ms about once a
+    // second in one title and never in another on the identical path. That is
+    // no longer a question about this code, and guessing at it from outside is
+    // how a week goes. The kernel already knows: PSI attributes a stall to cpu,
+    // io or memory, and the answer decides whether to look at the host's
+    // scheduling, the guest's storage, or its memory sizing.
+    let mut prev_pressure: Option<[(u64, u64); 3]> = None;
+    let mut pressure_said_missing = false;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -1255,9 +1412,89 @@ fn stats_sender_thread(
         let pa = present_attempts.swap(0, Ordering::Relaxed);
         let ca = capture_attempts.swap(0, Ordering::Relaxed);
 
-        let mut buf = Vec::with_capacity(22);
-        nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
-        let _ = socket.send(&buf);
+        let starved = crate::slots::SLOT_STARVED.swap(0, Ordering::Relaxed);
+
+        // Logged as well as sent, because the socket goes to the desktop app
+        // and the question this answers is asked from inside the container.
+        // The three rates are the whole diagnosis: `present` is what the game
+        // produced, `admitted` is what the gate let through, and `encoded` is
+        // what reached the encoder. `present` below target means the game is
+        // the bottleneck and nothing here can help it; `admitted` above
+        // `encoded` with `starved` non-zero means the encoder is not returning
+        // slots fast enough and the capture rate follows it down.
+        // Where the present path's time went, for the second just ended. A
+        // hitch lands in exactly one of these three and that names its owner:
+        // `gap` is the game's own frame time with this layer excluded, `layer`
+        // is this layer's code on both sides of the down-call, `down` is the
+        // driver, WSI and compositor.
+        let (gap_avg, gap_max) = timing.gap.take();
+        let (layer_avg, layer_max) = timing.layer.take();
+        let (down_avg, down_max) = timing.down.take();
+        let (blit_avg, blit_max) = timing.blit.take();
+        let (acq_avg, acq_max) = timing.acquire.take();
+        let (hold_avg, hold_max) = timing.hold.take();
+        let long_gaps = timing.take_long_gaps();
+
+        log::info!(
+            "present {pa}/s, admitted {ca}/s, encoded {raw_fps}/s, \
+             starved {starved}, dropped {dropped}, capture {cap_ms:.1}ms, \
+             encode {enc_ms:.1}ms"
+        );
+        log::info!(
+            "  gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
+             down {down_avg:.2}/{down_max:.2}ms, acquire {acq_avg:.1}/{acq_max:.1}ms, \
+             hold {hold_avg:.2}/{hold_max:.2}ms, blit-gpu {blit_avg:.3}/{blit_max:.3}ms \
+             (avg/max), hitches {long_gaps}"
+        );
+
+        match ["cpu", "io", "memory"]
+            .iter()
+            .map(|k| pressure_total_us(k))
+            .collect::<Option<Vec<_>>>()
+            .and_then(|v| <[(u64, u64); 3]>::try_from(v.as_slice()).ok())
+        {
+            Some(now) => {
+                if let Some(before) = prev_pressure {
+                    // Printed as milliseconds stalled in the second just ended,
+                    // which is the same unit as everything else on these lines
+                    // and directly comparable with `gap`.
+                    let ms = |i: usize, full: bool| {
+                        let (s_now, f_now) = now[i];
+                        let (s_before, f_before) = before[i];
+                        let (a, b) = if full {
+                            (f_now, f_before)
+                        } else {
+                            (s_now, s_before)
+                        };
+                        a.saturating_sub(b) as f64 / 1000.0
+                    };
+                    log::info!(
+                        "  pressure: cpu {:.1}ms, io {:.1}/{:.1}ms, memory {:.1}/{:.1}ms \
+                         (some/full, stalled in the last second)",
+                        ms(0, false),
+                        ms(1, false),
+                        ms(1, true),
+                        ms(2, false),
+                        ms(2, true),
+                    );
+                }
+                prev_pressure = Some(now);
+            }
+            None if !pressure_said_missing => {
+                log::info!(
+                    "  pressure: /proc/pressure is unreadable, so this guest cannot say \
+                     whether a stall was cpu, io or memory (CONFIG_PSI off, or psi=0)"
+                );
+                pressure_said_missing = true;
+            }
+            None => {}
+        }
+
+        if let Some(ref socket) = socket {
+            let mut buf = Vec::with_capacity(22);
+            nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
+            let _ = socket.send(&buf);
+        }
     }
 
     log::info!("stats sender exited");

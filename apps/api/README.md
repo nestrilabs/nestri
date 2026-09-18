@@ -11,17 +11,17 @@ and returns `{ data: ... }`. All business logic lives in the core package.
 
 Routes:
 
-| Prefix            | Purpose                                                       |
-| ----------------- | ------------------------------------------------------------- |
-| `/`               | Health check                                                  |
-| `/user`           | Current user profile, fingerprints, linked accounts           |
-| `/steam`          | Link / sync / unlink a Steam account                          |
-| `/library`        | Owned games with playtime                                     |
-| `/games`          | Game catalog                                                 |
-| `/pairing-code`   | Device pairing codes                                          |
-| `/machine`        | Host machines                                                 |
-| `/access-token`   | Short-lived access tokens                                     |
-| `/doc`            | Generated OpenAPI spec                                        |
+| Prefix          | Purpose                                             |
+| --------------- | --------------------------------------------------- |
+| `/`             | Health check                                        |
+| `/user`         | Current user profile, fingerprints, linked accounts |
+| `/steam`        | Link / sync / unlink a Steam account                |
+| `/library`      | Owned games with playtime                           |
+| `/games`        | Game catalog                                        |
+| `/pairing-code` | Device pairing codes                                |
+| `/machine`      | Host machines                                       |
+| `/access-token` | Short-lived access tokens                           |
+| `/doc`          | Generated OpenAPI spec                              |
 
 ## Structure
 
@@ -29,7 +29,7 @@ Routes:
 app/
   index.ts           # The handler: middleware, routes, error handler, /doc
   server.ts          # The same handler behind a listening socket
-  middleware/auth.ts # Bearer JWT + admin shared-secret auth → Actor
+  middleware/auth.ts # Bearer JWT, access token or host credentials → Actor
   routes/*.ts        # Thin route namespaces (UserApi, SteamApi, ...)
   utils/             # ErrorResponses, Result(), validator wrapping
 wrangler.jsonc       # Worker configuration, one environment per stage
@@ -39,12 +39,11 @@ test/                # Route tests
 
 ## Key details
 
-- Auth: `Authorization: Bearer <JWT>` verified against `@nestri/auth`; or the `x-nestri-admin-token` header
-  carrying `ADMIN_SHARED_SECRET`, which bypasses JWT verification entirely and is required — it has no
-  default anywhere. It is what authenticates the callers that have no user identity to present:
-  `POST /pairing-code/claim` (a device being paired has no identity yet, which is the whole point),
-  `POST /games`, `POST /games/sync`, `POST /library/sync`, `GET /waitlist`, `POST /steam/link` on behalf
-  of another user, and `POST /games/download-state` when an operator is repairing state a box reported.
+- Auth: `Authorization: Bearer …`, carrying either a session token verified against `@nestri/auth`
+  or a personal access token resolved from the database; or a registered host's own
+  `x-nestri-machine-id` and `x-nestri-machine-secret`. There is no shared secret and no credential
+  that stands for more than one caller, so every route resolves to a specific user or a specific
+  host — which is what lets a route say "the caller's own library" and mean it.
 - Errors: centralized `VisibleError` → typed JSON responses.
 - Settings arrive as bindings or as environment variables, and two of them have one spelling of
   each: Postgres is `HYPERDRIVE` or `DATABASE_URL`, and the route to the issuer is an `AUTH`

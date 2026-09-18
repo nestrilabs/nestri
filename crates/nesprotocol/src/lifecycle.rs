@@ -101,6 +101,18 @@ pub struct Mount {
     pub ro: bool,
 }
 
+/// A block device the guest mounts, rather than a share it is handed.
+///
+/// There are no mount options on this and that is deliberate: what the guest
+/// mounts a build volume with is a property of how the volume was built --
+/// journal-less ext4, `nosuid`, `nodev` -- and not something a descriptor is in
+/// a position to know. A field for options was here and was never read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Drive {
+    pub dev: String,
+    pub at: String,
+}
+
 /// Names one launch, for as long as anything has something to say about it.
 ///
 /// Minted by the caller and only ever echoed by the guest. A guest that
@@ -165,6 +177,8 @@ pub struct OnExit {
 pub struct BootDescriptor {
     #[serde(default)]
     pub mounts: Vec<Mount>,
+    #[serde(default)]
+    pub drives: Vec<Drive>,
 }
 
 /// How a workload ended.
@@ -376,6 +390,7 @@ mod tests {
                 at: "/mnt/install".into(),
                 ro: true,
             }],
+            drives: Vec::new(),
         }
     }
 

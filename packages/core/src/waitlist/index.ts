@@ -40,7 +40,9 @@ export namespace Waitlist {
 			return tx
 				.select()
 				.from(WaitlistEntryTable)
-				.where(and(eq(WaitlistEntryTable.email, input.email), isNull(WaitlistEntryTable.timeDeleted)))
+				.where(
+					and(eq(WaitlistEntryTable.email, input.email), isNull(WaitlistEntryTable.timeDeleted))
+				)
 				.then((rows) => rows.at(0) ?? null);
 		});
 		if (existing) {

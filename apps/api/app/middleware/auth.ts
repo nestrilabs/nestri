@@ -85,11 +85,6 @@ function getClient(env: Record<string, unknown>) {
 }
 
 export const auth: MiddlewareHandler = async (c, next) => {
-	const adminToken = c.req.header('x-nestri-admin-token');
-	if (adminToken && adminToken === Env.get().ADMIN_SHARED_SECRET) {
-		return Actor.with({ type: 'admin', properties: {} }, next);
-	}
-
 	// A registered nessh host proves it is itself, rather than asserting an id
 	// nobody checks. Wrong credentials fall through to public rather than
 	// erroring, so probing tells an attacker nothing about which ids exist.
@@ -105,7 +100,8 @@ export const auth: MiddlewareHandler = async (c, next) => {
 					properties: {
 						machineID: machine.id,
 						ownerUserID: machine.ownerUserId,
-						teamID: machine.teamId
+						teamID: machine.teamId,
+						organisationID: machine.organisationId
 					}
 				},
 				next
@@ -259,37 +255,6 @@ export const machineOnly: MiddlewareHandler = async (_, next) => {
 			'forbidden',
 			ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
 			'Machine credentials required'
-		);
-	}
-	return next();
-};
-
-/**
- * A box reporting about itself, or an operator reaching in.
- *
- * The two are not equivalent and routes behind this must not treat them so: a
- * machine may only speak for itself, while admin still has to say which host
- * it means. Keeping admin is what lets an operator repair state by hand.
- */
-export const machineOrAdmin: MiddlewareHandler = async (_, next) => {
-	const actor = Actor.use();
-	if (actor.type !== 'machine' && actor.type !== 'admin') {
-		throw new VisibleError(
-			'forbidden',
-			ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
-			'Machine or admin credentials required'
-		);
-	}
-	return next();
-};
-
-export const adminOnly: MiddlewareHandler = async (_, next) => {
-	const actor = Actor.use();
-	if (actor.type !== 'admin') {
-		throw new VisibleError(
-			'forbidden',
-			ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
-			'Admin access required'
 		);
 	}
 	return next();

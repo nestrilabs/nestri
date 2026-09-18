@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 
+import { AccessToken } from '@nestri/core/access-token/index';
 import { Fixtures } from '@nestri/core/db/fixtures';
 import { testDb } from '@nestri/core/db/test';
 import { Identifier } from '@nestri/core/id';
@@ -11,6 +12,25 @@ import './setup';
 const sql = testDb();
 
 const createdUserIds: string[] = [];
+
+/**
+ * A signed-in person, as a personal access token.
+ *
+ * The tests below use it to prove `machineOnly` refuses a human: it needs a
+ * caller who is authenticated and is not a host, and a user session is the
+ * only kind there is.
+ */
+async function signedInHeaders(label: string): Promise<Record<string, string>> {
+	const owner = await Fixtures.owner(label);
+	createdUserIds.push(owner.userId);
+	const pat = await AccessToken.create({
+		id: Identifier.ascending('accessToken'),
+		ownerUserId: owner.userId,
+		teamId: null,
+		name: label
+	});
+	return { authorization: `Bearer ${pat.token}` };
+}
 
 /**
  * A registered host, with the secret kept — which registration returns exactly
@@ -188,7 +208,7 @@ describe('POST /machine/heartbeat', () => {
 		// driven by whoever owns it.
 		const res = await app.request('/machine/heartbeat', {
 			method: 'POST',
-			headers: { 'x-nestri-admin-token': 'test-admin-secret-42' }
+			headers: await signedInHeaders('beat-nomachine')
 		});
 		expect(res.status).toBe(403);
 	});

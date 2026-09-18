@@ -1,0 +1,140 @@
+From 4dcb0baf29136c90776133afb714bac3c4cb7686 Mon Sep 17 00:00:00 2001
+From: DatCaptainHorse <DatCaptainHorse@users.noreply.github.com>
+Date: Thu, 17 Sep 2026 21:50:25 +0300
+Subject: [PATCH] radv/amdgpu: cache AMDGPU_INFO_MEMORY briefly on the virtio
+ path
+
+Heap usage is asked for far more often than it changes. Measured on an
+amdgpu native context with one game running, RADV asked for it ~47 times
+per 8.8 ms frame -- the same answer, 47 times, each one a synchronous round
+trip to the host rather than an ioctl.
+
+Serve a recent answer instead, for one millisecond. That is inside the
+contract of what the value is for: heap usage feeds VK_EXT_memory_budget
+and the winsys's own eviction decisions, and the spec calls those estimates
+that may be out of date. It is also short enough that an application
+allocating hard still sees its own pressure within a frame at any plausible
+frame rate.
+
+Only on the virtio path, where a query costs a round trip; a local ioctl is
+cheap enough that caching it would be complexity for nothing. Only this
+query, and only at its natural size: every other AMDGPU_INFO_* either
+carries a caller-supplied selector in the union, so one cached answer would
+be the wrong answer to the next question, or is asked once at startup.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ src/amd/common/virtio/amdgpu_virtio.c         | 53 +++++++++++++++++++
+ src/amd/common/virtio/amdgpu_virtio_device.c  |  1 +
+ src/amd/common/virtio/amdgpu_virtio_private.h |  6 +++
+ 3 files changed, 60 insertions(+)
+
+diff --git a/src/amd/common/virtio/amdgpu_virtio.c b/src/amd/common/virtio/amdgpu_virtio.c
+index 00494d6a750..dd38ef141f5 100644
+--- a/src/amd/common/virtio/amdgpu_virtio.c
++++ b/src/amd/common/virtio/amdgpu_virtio.c
+@@ -19,8 +19,25 @@
+ #include "drm-uapi/amdgpu_drm.h"
+ 
+ #include "util/log.h"
++#include "util/os_time.h"
+ #include "util/u_math.h"
+ 
++/* How long a cached AMDGPU_INFO_MEMORY answer is reused, in nanoseconds.
++ *
++ * Bounded by what the value is for. Heap usage feeds VK_EXT_memory_budget and
++ * the winsys's own eviction decisions, and the spec calls those values
++ * estimates that may be out of date -- so a millisecond of staleness is inside
++ * the contract, while a round trip per ask is not free here the way it is on a
++ * local ioctl.
++ *
++ * A millisecond rather than a frame: it is short enough that an application
++ * allocating hard still sees its own pressure within a frame at any plausible
++ * rate, and long enough to collapse the repeats. Measured on an amdgpu native
++ * context with one game running, RADV asked for this ~47 times per 8.8 ms
++ * frame -- the same answer, 47 synchronous round trips.
++ */
++#define AMDVGPU_MEMORY_INFO_TTL_NS (1000 * 1000)
++
+ int
+ amdvgpu_query_info(amdvgpu_device_handle dev, struct drm_amdgpu_info *info)
+ {
+@@ -32,6 +49,30 @@ amdvgpu_query_info(amdvgpu_device_handle dev, struct drm_amdgpu_info *info)
+    struct amdgpu_ccmd_query_info_rsp *rsp;
+    assert(0 == (offsetof(struct amdgpu_ccmd_query_info_rsp, payload) % 8));
+ 
++   /* AMDGPU_INFO_MEMORY is asked far more often than it changes, and over
++    * virtio every ask is a synchronous round trip to the host rather than an
++    * ioctl. Serve a recent answer instead.
++    *
++    * Only this query, and only at its natural size: every other query either
++    * has a caller-supplied selector in the union -- so one cached answer would
++    * be the wrong answer to the next question -- or is asked once at startup
++    * and costs nothing.
++    */
++   bool cacheable = info->query == AMDGPU_INFO_MEMORY &&
++                    info->return_size == sizeof(struct drm_amdgpu_memory_info);
++   if (cacheable) {
++      int64_t now = os_time_get_nano();
++      simple_mtx_lock(&dev->memory_info_mutex);
++      if (dev->memory_info_stamp &&
++          now - dev->memory_info_stamp < AMDVGPU_MEMORY_INFO_TTL_NS) {
++         memcpy((void *)(uintptr_t)info->return_pointer, &dev->memory_info,
++                sizeof(dev->memory_info));
++         simple_mtx_unlock(&dev->memory_info_mutex);
++         return 0;
++      }
++      simple_mtx_unlock(&dev->memory_info_mutex);
++   }
++
+    req->hdr = AMDGPU_CCMD(QUERY_INFO, req_len);
+    memcpy(&req->info, info, sizeof(struct drm_amdgpu_info));
+ 
+@@ -43,6 +84,18 @@ amdvgpu_query_info(amdvgpu_device_handle dev, struct drm_amdgpu_info *info)
+ 
+    memcpy((void*)(uintptr_t)info->return_pointer, rsp->payload, info->return_size);
+ 
++   if (cacheable) {
++      simple_mtx_lock(&dev->memory_info_mutex);
++      memcpy(&dev->memory_info, rsp->payload, sizeof(dev->memory_info));
++      /* Stamped after the answer is in hand, so the window covers the time the
++       * value is actually served rather than the round trip that fetched it.
++       * A zero stamp means "never fetched", so a clock that returns zero here
++       * costs a re-fetch rather than pinning a stale answer forever.
++       */
++      dev->memory_info_stamp = os_time_get_nano();
++      simple_mtx_unlock(&dev->memory_info_mutex);
++   }
++
+    return 0;
+ }
+ 
+diff --git a/src/amd/common/virtio/amdgpu_virtio_device.c b/src/amd/common/virtio/amdgpu_virtio_device.c
+index eecfd6aa11a..7e58913d520 100644
+--- a/src/amd/common/virtio/amdgpu_virtio_device.c
++++ b/src/amd/common/virtio/amdgpu_virtio_device.c
+@@ -136,6 +136,7 @@ int amdvgpu_device_initialize(int fd, uint32_t *drm_major, uint32_t *drm_minor,
+    dev->vdev = vdev;
+ 
+    simple_mtx_init(&dev->handle_to_vbo_mutex, mtx_plain);
++   simple_mtx_init(&dev->memory_info_mutex, mtx_plain);
+    simple_mtx_init(&dev->contexts_mutex, mtx_plain);
+ 
+    dev->handle_to_vbo = _mesa_hash_table_u64_create(NULL);
+diff --git a/src/amd/common/virtio/amdgpu_virtio_private.h b/src/amd/common/virtio/amdgpu_virtio_private.h
+index 743f8f74b5c..fb877dc8d28 100644
+--- a/src/amd/common/virtio/amdgpu_virtio_private.h
++++ b/src/amd/common/virtio/amdgpu_virtio_private.h
+@@ -60,6 +60,12 @@ struct amdvgpu_device {
+ 
+    struct drm_amdgpu_info_device dev_info;
+ 
++   /* AMDGPU_INFO_MEMORY, cached for a short while. See amdvgpu_query_info(). */
++   simple_mtx_t memory_info_mutex;
++   struct drm_amdgpu_memory_info memory_info;
++   /* os_time_get_nano() when memory_info was fetched; 0 means never. */
++   int64_t memory_info_stamp;
++
+    /* Blob id are per drm_file identifiers of host blobs.
+     * Use a monotically increased integer to assign the blob id.
+     */

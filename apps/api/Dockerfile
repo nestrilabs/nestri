@@ -50,7 +50,6 @@ COPY packages/auth packages/auth
 #   DATABASE_URL          postgres://…               required
 #   AUTH_ISSUER_URL       the issuer's public URL    required
 #   STEAM_API_KEY         for linking an account
-#   ADMIN_SHARED_SECRET   operator access
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000

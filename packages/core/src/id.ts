@@ -6,6 +6,7 @@ export namespace Identifier {
 	export const prefixes = {
 		user: 'usr',
 		linkedAccount: 'lac',
+		organisation: 'org',
 		team: 'tem',
 		teamMember: 'mem',
 		verification: 'ver',
@@ -20,6 +21,8 @@ export namespace Identifier {
 		gameDepot: 'gdp',
 		gameDownload: 'gdl',
 		waitlistEntry: 'wle',
+		burnCounter: 'bct',
+		burnSegment: 'bsg',
 		deviceGrant: 'dvg',
 		authKv: 'akv',
 		authKey: 'aky',
