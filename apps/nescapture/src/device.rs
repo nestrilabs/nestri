@@ -75,11 +75,16 @@ pub unsafe extern "system" fn vkCreateDevice(
     const EXT_EXTERNAL_MEMORY: &[u8] = b"VK_KHR_external_memory\0";
     const EXT_EXTERNAL_MEMORY_FD: &[u8] = b"VK_KHR_external_memory_fd\0";
     const EXT_EXTERNAL_MEMORY_DMABUF: &[u8] = b"VK_EXT_external_memory_dma_buf\0";
+    // Lets the capture ring be allocated tiled. The importer has always created
+    // its side with DRM_FORMAT_MODIFIER_EXT tiling; without this the producer
+    // can only offer it a linear buffer.
+    const EXT_IMAGE_DRM_FORMAT_MODIFIER: &[u8] = b"VK_EXT_image_drm_format_modifier\0";
 
     let needed: &[&[u8]] = &[
         EXT_EXTERNAL_MEMORY,
         EXT_EXTERNAL_MEMORY_FD,
         EXT_EXTERNAL_MEMORY_DMABUF,
+        EXT_IMAGE_DRM_FORMAT_MODIFIER,
     ];
 
     // Build extended list: original + any of ours not already present.
@@ -185,6 +190,14 @@ pub unsafe extern "system" fn vkCreateDevice(
         cmd_copy_image: load!(b"vkCmdCopyImage\0"),
         get_image_subresource_layout: load!(b"vkGetImageSubresourceLayout\0"),
         get_memory_fd_khr: try_load!(b"vkGetMemoryFdKHR\0"),
+        get_image_drm_format_modifier_properties_ext: try_load!(
+            b"vkGetImageDrmFormatModifierPropertiesEXT\0"
+        ),
+        create_query_pool: try_load!(b"vkCreateQueryPool\0"),
+        destroy_query_pool: try_load!(b"vkDestroyQueryPool\0"),
+        cmd_reset_query_pool: try_load!(b"vkCmdResetQueryPool\0"),
+        cmd_write_timestamp: try_load!(b"vkCmdWriteTimestamp\0"),
+        get_query_pool_results: try_load!(b"vkGetQueryPoolResults\0"),
 
         // Phase 4 — synchronisation
         create_fence: load!(b"vkCreateFence\0"),
@@ -205,6 +218,8 @@ pub unsafe extern "system" fn vkCreateDevice(
         create_swapchain_khr: try_load!(b"vkCreateSwapchainKHR\0"),
         destroy_swapchain_khr: try_load!(b"vkDestroySwapchainKHR\0"),
         get_swapchain_images_khr: try_load!(b"vkGetSwapchainImagesKHR\0"),
+        acquire_next_image_khr: try_load!(b"vkAcquireNextImageKHR\0"),
+        acquire_next_image2_khr: try_load!(b"vkAcquireNextImage2KHR\0"),
 
         // Phase 6 — draw commands
         cmd_draw: load!(b"vkCmdDraw\0"),
@@ -274,7 +289,9 @@ pub unsafe extern "system" fn vkCreateDevice(
 
 
         frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
-        capture_tx: std::sync::Mutex::new(None),
+        frame_pacer: std::sync::Mutex::new(crate::pacing::FramePacer::from_env()),
+        last_present_return: std::sync::Mutex::new(None),
+        encoder_starting: std::sync::atomic::AtomicBool::new(false),
     });
 
     DEVICE_STATE.insert(key, dev_state);

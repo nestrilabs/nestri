@@ -144,7 +144,7 @@ const EARLY: &[Early] = &[
         fstype: "tmpfs",
         flags: NOSUID_NODEV,
         data: "mode=755,size=4m",
-        cost: "no share can be mounted, because its target cannot be created                on a read-only root",
+        cost: "no share can be mounted, because its target cannot be created on a read-only root",
     },
     // The relay's own directory, and it is deliberately **not** in the tree the
     // session's shares live in.

@@ -190,6 +190,62 @@ pub type PFN_vkGetImageSubresourceLayout = unsafe extern "system" fn(
     *mut vk::SubresourceLayout,
 );
 
+// DRM format modifiers. Both optional: without them the capture ring stays
+// linear, which is what it was before it could be anything else.
+pub type PFN_vkGetPhysicalDeviceFormatProperties2 = unsafe extern "system" fn(
+    vk::PhysicalDevice,
+    vk::Format,
+    *mut vk::FormatProperties2<'_>,
+);
+
+pub type PFN_vkGetImageDrmFormatModifierPropertiesEXT = unsafe extern "system" fn(
+    vk::Device,
+    vk::Image,
+    *mut vk::ImageDrmFormatModifierPropertiesEXT<'_>,
+) -> vk::Result;
+
+// Timestamp queries around the capture blit. All optional: without them the
+// blit's GPU cost is simply not reported.
+pub type PFN_vkGetPhysicalDeviceProperties =
+    unsafe extern "system" fn(vk::PhysicalDevice, *mut vk::PhysicalDeviceProperties);
+
+pub type PFN_vkGetPhysicalDeviceQueueFamilyProperties =
+    unsafe extern "system" fn(vk::PhysicalDevice, *mut u32, *mut vk::QueueFamilyProperties);
+
+pub type PFN_vkCreateQueryPool = unsafe extern "system" fn(
+    vk::Device,
+    *const vk::QueryPoolCreateInfo<'_>,
+    *const vk::AllocationCallbacks,
+    *mut vk::QueryPool,
+) -> vk::Result;
+
+pub type PFN_vkDestroyQueryPool = unsafe extern "system" fn(
+    vk::Device,
+    vk::QueryPool,
+    *const vk::AllocationCallbacks,
+);
+
+pub type PFN_vkCmdResetQueryPool =
+    unsafe extern "system" fn(vk::CommandBuffer, vk::QueryPool, u32, u32);
+
+pub type PFN_vkCmdWriteTimestamp = unsafe extern "system" fn(
+    vk::CommandBuffer,
+    vk::PipelineStageFlags,
+    vk::QueryPool,
+    u32,
+);
+
+pub type PFN_vkGetQueryPoolResults = unsafe extern "system" fn(
+    vk::Device,
+    vk::QueryPool,
+    u32,
+    u32,
+    usize,
+    *mut std::ffi::c_void,
+    vk::DeviceSize,
+    vk::QueryResultFlags,
+) -> vk::Result;
+
 // DMA-BUF fd export (used to share final_image with pixelforge zero-copy)
 pub type PFN_vkGetMemoryFdKHR = unsafe extern "system" fn(
     vk::Device,
@@ -261,6 +317,21 @@ pub type PFN_vkDestroySwapchainKHR =
 pub type PFN_vkGetSwapchainImagesKHR =
     unsafe extern "system" fn(vk::Device, vk::SwapchainKHR, *mut u32, *mut vk::Image) -> vk::Result;
 
+pub type PFN_vkAcquireNextImageKHR = unsafe extern "system" fn(
+    vk::Device,
+    vk::SwapchainKHR,
+    u64,
+    vk::Semaphore,
+    vk::Fence,
+    *mut u32,
+) -> vk::Result;
+
+pub type PFN_vkAcquireNextImage2KHR = unsafe extern "system" fn(
+    vk::Device,
+    *const vk::AcquireNextImageInfoKHR<'_>,
+    *mut u32,
+) -> vk::Result;
+
 // ── Phase 6: Draw commands ───────────────────────────────────────────────────
 
 pub type PFN_vkCmdDraw = unsafe extern "system" fn(vk::CommandBuffer, u32, u32, u32, u32);
@@ -298,6 +369,16 @@ pub struct NextInstanceFn {
     pub get_instance_proc_addr: PFN_vkGetInstanceProcAddr,
     pub destroy_instance: PFN_vkDestroyInstance,
     pub get_physical_device_memory_properties: PFN_vkGetPhysicalDeviceMemoryProperties,
+    /// `None` on an instance below Vulkan 1.1 without
+    /// `VK_KHR_get_physical_device_properties2`. Without it the modifier list
+    /// cannot be queried and the capture ring stays linear.
+    pub get_physical_device_format_properties2: Option<PFN_vkGetPhysicalDeviceFormatProperties2>,
+    /// Needed for `timestampPeriod`, which turns device ticks into nanoseconds.
+    pub get_physical_device_properties: Option<PFN_vkGetPhysicalDeviceProperties>,
+    /// Needed for a queue family's `timestampValidBits`. A family reporting
+    /// zero makes `vkCmdWriteTimestamp` illegal on it, so it has to be asked.
+    pub get_physical_device_queue_family_properties:
+        Option<PFN_vkGetPhysicalDeviceQueueFamilyProperties>,
     pub create_device: PFN_vkCreateDevice,
 }
 
@@ -343,6 +424,20 @@ pub struct NextDeviceFn {
     /// `None` when `VK_KHR_external_memory_fd` is unavailable.
     /// Required for DMA-BUF export to pixelforge's VkDevice.
     pub get_memory_fd_khr: Option<PFN_vkGetMemoryFdKHR>,
+    /// `None` when `VK_EXT_image_drm_format_modifier` was not enabled. The
+    /// driver picks the modifier from the list it is offered, so this is how
+    /// the layer learns which one it actually got — and the importer needs the
+    /// exact value, not the list.
+    pub get_image_drm_format_modifier_properties_ext:
+        Option<PFN_vkGetImageDrmFormatModifierPropertiesEXT>,
+
+    // Phase 4 — blit timing. All-or-nothing: the ring only times the blit when
+    // every one of these loaded and the presenting queue family can timestamp.
+    pub create_query_pool: Option<PFN_vkCreateQueryPool>,
+    pub destroy_query_pool: Option<PFN_vkDestroyQueryPool>,
+    pub cmd_reset_query_pool: Option<PFN_vkCmdResetQueryPool>,
+    pub cmd_write_timestamp: Option<PFN_vkCmdWriteTimestamp>,
+    pub get_query_pool_results: Option<PFN_vkGetQueryPoolResults>,
 
     // Phase 4 — synchronisation
     pub create_fence: PFN_vkCreateFence,
@@ -364,6 +459,10 @@ pub struct NextDeviceFn {
     pub create_swapchain_khr: Option<PFN_vkCreateSwapchainKHR>,
     pub destroy_swapchain_khr: Option<PFN_vkDestroySwapchainKHR>,
     pub get_swapchain_images_khr: Option<PFN_vkGetSwapchainImagesKHR>,
+    /// Both acquire entry points, hooked only to time them. A game uses one or
+    /// the other and the layer must not care which.
+    pub acquire_next_image_khr: Option<PFN_vkAcquireNextImageKHR>,
+    pub acquire_next_image2_khr: Option<PFN_vkAcquireNextImage2KHR>,
 
     // Phase 6 — draw commands
     pub cmd_draw: PFN_vkCmdDraw,

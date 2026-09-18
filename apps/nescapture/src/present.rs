@@ -5,22 +5,6 @@ use crate::state::{DEVICE_STATE, QUEUE_TO_DEVICE_KEY};
 use ash::vk::{self, Handle};
 use std::os::raw::c_void;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc;
-
-/// A frame already blitted into a ring slot, waiting to be handed to the
-/// encoder. The GPU work is submitted before this is queued, so the worker's
-/// only job is to wait for it and export the buffer.
-pub struct CaptureJob {
-    pub ds_key: usize,
-    /// Holds the ring slot until the encoder is finished with it.
-    pub slot: SlotGuard,
-    pub width: u32,
-    pub height: u32,
-    pub sc_fmt: vk::Format,
-    /// When the game handed this frame to `vkQueuePresentKHR`. The only honest
-    /// capture time — everything downstream is queued behind something.
-    pub present_time: std::time::Instant,
-}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn vkQueuePresentKHR(
@@ -44,15 +28,25 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         None => return vk::Result::ERROR_DEVICE_LOST,
     };
 
+    // Entry. `gap` is measured from where the previous present *returned*, so
+    // it is the game's own frame time with this layer's cost excluded — the
+    // three spans then partition the wall clock between presents exactly.
+    let entered = std::time::Instant::now();
+
     ds.frame_counter.fetch_add(1, Ordering::Relaxed);
     ds.hud_detected_frame.store(false, Ordering::Relaxed);
     ds.pending_capture_frame.store(false, Ordering::Relaxed);
     ds.capture_injected_frame.store(false, Ordering::Relaxed);
     ds.skipped_draws_frame.store(0, Ordering::Relaxed);
 
-    if let Ok(enc) = ds.encoder.lock() {
-        if let Some(ref h) = *enc {
-            h.present_attempts.fetch_add(1, Ordering::Relaxed);
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.present_attempts.fetch_add(1, Ordering::Relaxed);
+        if let Ok(prev) = ds.last_present_return.lock()
+            && let Some(prev) = *prev
+        {
+            h.timing.record_gap(entered.saturating_duration_since(prev));
         }
     }
 
@@ -71,14 +65,23 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         None
     };
 
+    let down_us = std::cell::Cell::new(std::time::Duration::ZERO);
     let call_down = |info: *const vk::PresentInfoKHR| match ds.fp.queue_present_khr {
-        Some(f) => unsafe { f(queue, info) },
+        Some(f) => {
+            let t = std::time::Instant::now();
+            let r = unsafe { f(queue, info) };
+            down_us.set(t.elapsed());
+            r
+        }
         None => vk::Result::ERROR_EXTENSION_NOT_PRESENT,
     };
 
     let Some(submission) = submission else {
-        return call_down(p_present_info);
+        let r = call_down(p_present_info);
+        finish(&ds, entered, down_us.get());
+        return r;
     };
+
 
     // The blit consumed the application's wait semaphores, so the present waits
     // on ours instead. Presenting on the originals as well would be a second
@@ -109,7 +112,61 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         capture::retire_present_semaphore(&ds, image_index);
     }
 
+    finish(&ds, entered, down_us.get());
     result
+}
+
+/// Close out a present: record what this layer cost and stamp the return.
+///
+/// `layer` is everything in this hook that is not the down-call, both sides of
+/// it added together, so `gap + layer + down` accounts for the wall clock
+/// between one present and the next with nothing unattributed.
+fn finish(
+    ds: &crate::state::DeviceState,
+    entered: std::time::Instant,
+    down: std::time::Duration,
+) {
+    // Everything this hook cost, before any deliberate waiting.
+    let worked = std::time::Instant::now();
+
+    // Hold the game to the target rate. *After* the down-call, so the frame
+    // went out the moment it was ready and this only keeps the application
+    // from starting the next one — the cadence without the latency.
+    let held = match ds.frame_pacer.lock() {
+        Ok(mut pacer) => pacer.hold(worked),
+        // A poisoned pacer must not wedge the game.
+        Err(_) => std::time::Duration::ZERO,
+    };
+    if !held.is_zero() {
+        std::thread::sleep(held);
+    }
+
+    let now = std::time::Instant::now();
+    // What the sleep actually cost, not what it asked for. `thread::sleep`
+    // guarantees a floor and nothing else: on a box whose CPUs are all busy,
+    // waking is a scheduling decision and the overshoot can be many times the
+    // request. Recording the request would hide exactly the case worth seeing,
+    // and the overshoot lands nowhere else — the present-return is stamped
+    // after it, so `gap` cannot show it either.
+    let held = now.saturating_duration_since(worked);
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        // `layer` is this layer's cost, so the hold comes out of it: it is
+        // time spent on purpose, not overhead.
+        h.timing.layer.record(
+            worked
+                .saturating_duration_since(entered)
+                .saturating_sub(down),
+        );
+        h.timing.down.record(down);
+        h.timing.hold.record(held);
+    }
+    // Stamped after the hold, so the next frame's `gap` is the game's own
+    // work and not the waiting this layer asked it to do.
+    if let Ok(mut last) = ds.last_present_return.lock() {
+        *last = Some(now);
+    }
 }
 
 /// Everything the present hook needs to carry from the blit to the worker.
@@ -128,14 +185,14 @@ unsafe fn try_capture(
     pi: &vk::PresentInfoKHR,
 ) -> Option<Submission> {
     let image_index = unsafe { *pi.p_image_indices } as usize;
-    let (sc_image, sc_fmt, sc_ext) = {
+    let (sc_image, sc_fmt, sc_ext, image_count) = {
         let images = ds.swapchain_images.lock().ok()?;
         let fmt = *ds.swapchain_format.lock().ok()?;
         let ext = *ds.swapchain_extent.lock().ok()?;
         if image_index >= images.len() || ext.width == 0 || ext.height == 0 {
             return None;
         }
-        (images[image_index], fmt, ext)
+        (images[image_index], fmt, ext, images.len())
     };
 
     // Gate before any GPU work is queued. A game presenting faster than the
@@ -148,6 +205,13 @@ unsafe fn try_capture(
         Err(_) => true,
     };
     if !admitted {
+        return None;
+    }
+
+    // Before the blit, not after it. A frame captured with nowhere to send it
+    // costs a slot, a copy and an export for nothing.
+    let ds_key = unsafe { crate::dispatch_key(ds.raw.as_raw() as *const c_void) };
+    if !encoder_ready(ds, ds_key, sc_ext.width, sc_ext.height) {
         return None;
     }
 
@@ -167,7 +231,16 @@ unsafe fn try_capture(
     };
 
     let submission = unsafe {
-        capture::capture_present_frame(ds, queue, sc_image, sc_fmt, sc_ext, image_index, app_waits)
+        capture::capture_present_frame(
+            ds,
+            queue,
+            sc_image,
+            sc_fmt,
+            sc_ext,
+            image_index,
+            image_count,
+            app_waits,
+        )
     }?;
 
     Some(Submission {
@@ -183,122 +256,121 @@ unsafe fn try_capture(
 fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
     let ds_key = unsafe { crate::dispatch_key(ds.raw.as_raw() as *const c_void) };
 
-    {
-        let mut ctx = match ds.capture_tx.lock() {
-            Ok(c) => c,
-            Err(_) => return,
-        };
-        if ctx.is_none() {
-            let (tx, rx) = mpsc::channel();
-            start_capture_worker(ds_key, rx);
-            *ctx = Some(tx);
-        }
-        if let Some(tx) = ctx.as_ref() {
-            // Unbounded, but bounded in practice: the ring hands out a fixed
-            // number of slots and a job holds one for its whole life, so the
-            // queue can never exceed the slot count.
-            let _ = tx.send(CaptureJob {
-                ds_key,
-                slot: submission.slot,
-                width: submission.width,
-                height: submission.height,
-                sc_fmt: submission.sc_fmt,
-                present_time: submission.present_time,
-            });
-        }
-    }
+    let Ok(enc) = ds.encoder.lock() else {
+        return;
+    };
+    let Some(handle) = enc.as_ref() else {
+        return;
+    };
+    // `push_frame` is a `try_send`, so this never blocks the game's thread. A
+    // refused frame is dropped and its slot goes back when the `CapturedFrame`
+    // does, which is the backpressure the ring was always providing.
+    handle.push_frame(CapturedFrame {
+        ds_key,
+        width: submission.width,
+        height: submission.height,
+        vk_format: submission.sc_fmt.as_raw() as u32,
+        vk_colorspace: ds.swapchain_colorspace.load(Ordering::Relaxed),
+        present_time: submission.present_time,
+        slot: Some(submission.slot),
+    });
 }
 
-pub fn start_capture_worker(ds_key: usize, capture_rx: mpsc::Receiver<CaptureJob>) {
+/// Make sure the encode pipeline exists, without building it here.
+///
+/// Returns false until it is ready, and the frame is simply not captured. The
+/// build opens a pixelforge `VideoContext` and starts four threads; doing that
+/// on the game's present thread would be a visible hitch on the first frame,
+/// and doing it after a blit would waste one. It runs once, on a thread of its
+/// own, and frames presented in the meantime are skipped before any GPU work is
+/// queued for them.
+fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, height: u32) -> bool {
+    if let Ok(enc) = ds.encoder.lock() {
+        if enc.is_some() {
+            return true;
+        }
+    }
+    if ds.encoder_starting.swap(true, Ordering::SeqCst) {
+        return false;
+    }
     std::thread::Builder::new()
-        .name("nescapture-capture".into())
+        .name("nescapture-encoder-init".into())
         .spawn(move || {
-            while let Ok(job) = capture_rx.recv() {
-                let ds = match DEVICE_STATE.get(&job.ds_key) {
-                    Some(s) => s.clone(),
-                    None => {
-                        log::error!("capture worker: device state gone");
-                        break;
-                    }
-                };
-
-                // Copy the slot's handles out and release the ring lock before
-                // waiting: the present hook needs that lock every frame and
-                // must not queue behind a GPU wait.
-                let Some((fence, dmabuf_fd, stride, image, memory)) = ({
-                    let ring = ds.capture_ring.lock().unwrap();
-                    ring.as_ref()
-                        .and_then(|r| r.slots.get(job.slot.index()))
-                        .map(|s| (s.fence, s.dmabuf_fd, s.stride, s.image, s.memory))
-                }) else {
-                    continue;
-                };
-
-                // The encoder reads this buffer from pixelforge's own VkDevice,
-                // which shares no timeline with ours, so the handover has to be
-                // on the CPU. Waiting here rather than in the present hook is
-                // the whole point of the worker thread.
-                let waited = unsafe {
-                    (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000)
-                };
-                if waited != vk::Result::SUCCESS {
-                    log::warn!("capture blit did not complete — frame dropped");
-                    continue;
-                }
-
-                let source = if dmabuf_fd >= 0 {
-                    let duped = unsafe { libc::dup(dmabuf_fd) };
-                    if duped < 0 {
-                        log::warn!("dup of capture DMA-BUF failed — frame dropped");
-                        continue;
-                    }
-                    FrameSource::DmaBuf {
-                        fd: duped,
-                        stride,
-                        modifier: 0,
-                    }
-                } else {
-                    match unsafe {
-                        capture::read_frame_pixels(&ds, image, memory, job.width, job.height)
-                    } {
-                        Some(p) if !p.is_empty() => FrameSource::Pixels(p),
-                        _ => continue,
-                    }
-                };
-
-                // Lazy-init encoder
-                {
-                    let mut enc = ds.encoder.lock().unwrap();
-                    if enc.is_none() {
-                        if let Some(cfg) = PipelineConfig::from_env(job.width, job.height) {
-                            match PipelineHandle::new(cfg) {
-                                Ok(h) => *enc = Some(h),
-                                Err(e) => panic!("{e}"),
-                            }
-                        }
+            let Some(ds) = DEVICE_STATE.get(&ds_key).map(|s| s.clone()) else {
+                return;
+            };
+            let Some(cfg) = PipelineConfig::from_env(width, height) else {
+                log::error!("no encode pipeline configuration; capture disabled");
+                return;
+            };
+            match PipelineHandle::new(cfg) {
+                Ok(h) => {
+                    if let Ok(mut enc) = ds.encoder.lock() {
+                        *enc = Some(h);
                     }
                 }
-                let enc_guard = ds.encoder.lock().unwrap();
-                if let Some(ref encoder) = *enc_guard {
-                    // Measured from the game's present, not from the start of
-                    // this iteration: the wait above is part of what capture
-                    // costs, and timing only the parts after it hid that.
-                    let capture_elapsed = job.present_time.elapsed().as_secs_f32() * 1000.0;
-                    encoder
-                        .capture_ms
-                        .store(capture_elapsed.to_bits(), Ordering::Relaxed);
-                    encoder.push_frame(CapturedFrame {
-                        source,
-                        width: job.width,
-                        height: job.height,
-                        vk_format: job.sc_fmt.as_raw() as u32,
-                        vk_colorspace: ds.swapchain_colorspace.load(Ordering::Relaxed),
-                        present_time: job.present_time,
-                        slot: Some(job.slot),
-                    });
-                }
+                Err(e) => log::error!("encode pipeline: {e}"),
             }
-            log::info!("capture worker exiting");
         })
         .ok();
+    false
+}
+
+/// Wait for a frame's blit and turn its slot into something the encoder reads.
+///
+/// This is the CPU handover the two devices need: pixelforge's `VkDevice`
+/// shares no timeline with the game's, so no semaphore can bridge them and
+/// somebody has to block. It used to be a thread of its own between the present
+/// hook and the encoder; it is now the first thing the encoder thread does with
+/// a frame, which costs that thread nothing — the blit it waits for was
+/// submitted a whole frame earlier and has long since completed — and takes a
+/// channel and a wakeup out of every frame's path.
+pub fn resolve_source(
+    ds: &crate::state::DeviceState,
+    frame: &CapturedFrame,
+) -> Option<FrameSource> {
+    let slot_index = frame.slot.as_ref()?.index();
+
+    // Copy the handles out and drop the ring lock before waiting: the present
+    // hook needs that lock every frame and must not queue behind a GPU wait.
+    let (fence, dmabuf_fd, stride, modifier, image, memory) = {
+        let ring = ds.capture_ring.lock().ok()?;
+        ring.as_ref()
+            .and_then(|r| r.slots.get(slot_index))
+            .map(|s| (s.fence, s.dmabuf_fd, s.stride, s.modifier, s.image, s.memory))?
+    };
+
+    let waited = unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000) };
+    if waited != vk::Result::SUCCESS {
+        log::warn!("capture blit did not complete — frame dropped");
+        return None;
+    }
+
+    // After the fence, so the queries have landed and `WAIT` returns at once.
+    if let Some(ns) = unsafe { capture::blit_gpu_time_ns(ds, slot_index) }
+        && let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.timing.blit.record(std::time::Duration::from_nanos(ns));
+    }
+
+    if dmabuf_fd >= 0 {
+        let duped = unsafe { libc::dup(dmabuf_fd) };
+        if duped < 0 {
+            log::warn!("dup of capture DMA-BUF failed — frame dropped");
+            return None;
+        }
+        return Some(FrameSource::DmaBuf {
+            fd: duped,
+            stride,
+            // The slot's own modifier. This was hard-coded to zero, which was
+            // true only because the producer could not ask for anything else.
+            modifier,
+        });
+    }
+
+    match unsafe { capture::read_frame_pixels(ds, image, memory, frame.width, frame.height) } {
+        Some(p) if !p.is_empty() => Some(FrameSource::Pixels(p)),
+        _ => None,
+    }
 }

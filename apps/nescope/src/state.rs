@@ -178,7 +178,7 @@ pub struct NescopeState {
     /// Whether the cursor has been explicitly positioned at least once.
     pub cursor_initialized: bool,
     /// Game FPS tracking: frame count since last stats send.
-    game_frame_count: u64,
+    pub game_frame_count: u64,
     /// Last time stats were sent.
     last_stats_time: std::time::Instant,
     /// Last cursor position sent over IPC (for change detection).
@@ -753,13 +753,16 @@ impl NescopeState {
     }
 
     // -----------------------------------------------------------------------
-    // Frame callbacks — driven by the fps timer in main.rs
+    // Frame callbacks — driven by the frame-callback timer in main.rs
     // -----------------------------------------------------------------------
 
-    /// Called from the calloop timer at target fps.
+    /// Called from the calloop timer at `--frame-callback-hz`.
+    ///
+    /// Note what this does *not* count: the game's frames. This runs whether or
+    /// not anything was drawn, so counting ticks here reported the timer's own
+    /// rate as the game's — true only while the two were the same number, which
+    /// they no longer are. `game_frame_count` is incremented on commit.
     pub fn on_frame_tick(&mut self) {
-        self.game_frame_count += 1;
-
         let output = self.output.clone();
         let now = self.clock.now();
 
