@@ -36,6 +36,19 @@ export namespace Env {
 		 */
 		BURN_LIMITS: z.string().optional(),
 
+		/**
+		 * The payment provider.
+		 *
+		 * `POLAR_SERVER` picks the instance and the two are entirely separate
+		 * servers with separate data, so a token from one is refused by the
+		 * other and a product id from one means nothing to it. Getting this
+		 * wrong fails loudly rather than quietly charging somebody.
+		 */
+		POLAR_ACCESS_TOKEN: z.string().optional(),
+		POLAR_WEBHOOK_SECRET: z.string().optional(),
+		POLAR_PRODUCT_ID: z.string().optional(),
+		POLAR_SERVER: z.enum(['sandbox', 'production']).optional(),
+
 		DATABASE_URL: z.string().optional()
 	});
 

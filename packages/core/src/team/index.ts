@@ -170,6 +170,37 @@ export namespace Team {
 		return create({ id, name: `${input.displayName}'s Team`, slug });
 	});
 
+	/**
+	 * Record what the payment provider says a team is on.
+	 *
+	 * The only writer is the webhook, and it writes both fields together: a plan
+	 * without the status it came from cannot say whether "paid" means paying,
+	 * cancelled-but-paid-up, or behind on a card, and every one of those wants a
+	 * different sentence in front of a person.
+	 *
+	 * Deliberately not reached from anywhere a user can call. A plan that could
+	 * be set by a request is a plan somebody can set on themselves.
+	 */
+	export const setPlan = fn(
+		Info.pick({ id: true }).extend({
+			plan: z.string(),
+			subscriptionStatus: z.string()
+		}),
+		async (input) => {
+			return Database.use(async (tx) => {
+				return tx
+					.update(TeamTable)
+					.set({ plan: input.plan, subscriptionStatus: input.subscriptionStatus })
+					.where(and(eq(TeamTable.id, input.id), isNull(TeamTable.timeDeleted)))
+					.returning()
+					.then((rows) => {
+						const row = rows.at(0);
+						return row ? serialize(row) : null;
+					});
+			});
+		}
+	);
+
 	export function serialize(input: typeof TeamTable.$inferSelect): z.infer<typeof Info> {
 		return {
 			id: input.id,

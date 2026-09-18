@@ -10,6 +10,7 @@ import { type ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { auth } from './middleware/auth.js';
 import { AccessTokenApi } from './routes/access-token.js';
+import { BillingApi } from './routes/billing.js';
 import { EnrolmentApi } from './routes/enrolment.js';
 import { GameApi } from './routes/game.js';
 import { IndexApi } from './routes/index.js';
@@ -43,6 +44,7 @@ const routes = app
 	.route('/steam', SteamApi.route)
 	.route('/library', LibraryApi.route)
 	.route('/games', GameApi.route)
+	.route('/billing', BillingApi.route)
 	.route('/organisation', OrganisationApi.route)
 	.route('/machine', MachineApi.route)
 	.route('/machine', SessionApi.machineRoute)
