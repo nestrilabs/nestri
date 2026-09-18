@@ -125,6 +125,7 @@ impl PathView {
 
 /// Why the target is what it is, for the overlay and the log.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum Reason {
     /// Loss was high; backed off to under what was actually getting through.
     Congested,
@@ -243,7 +244,7 @@ impl Controller {
         let next = match report.as_ref().and_then(|r| r.loss().map(|l| (r, l))) {
             Some((report, loss)) => {
                 self.silent_ticks = 0;
-                self.from_report(report, loss)
+                self.decide_from_report(report, loss)
             }
             None => {
                 self.silent_ticks = self.silent_ticks.saturating_add(1);
@@ -251,7 +252,7 @@ impl Controller {
                     self.reason = Reason::Holding;
                     return None;
                 }
-                self.from_path(path)
+                self.decide_from_path(path)
             }
         };
 
@@ -268,12 +269,7 @@ impl Controller {
         }
     }
 
-    /// What the encoder was last told, if anything.
-    pub fn sent_kbps(&self) -> Option<u32> {
-        self.sent_kbps
-    }
-
-    fn from_report(&mut self, report: &ReceiverReport, loss: f32) -> u32 {
+    fn decide_from_report(&mut self, report: &ReceiverReport, loss: f32) -> u32 {
         if loss > LOSS_DECREASE {
             self.reason = Reason::Congested;
             // Anchored on what actually arrived, not on what we were asking for.
@@ -299,7 +295,7 @@ impl Controller {
         self.target_kbps
     }
 
-    fn from_path(&mut self, path: PathView) -> u32 {
+    fn decide_from_path(&mut self, path: PathView) -> u32 {
         match path.estimate_kbps() {
             Some(estimate) => {
                 self.reason = Reason::Fallback;
@@ -424,9 +420,13 @@ mod tests {
         // tells the encoder anything, and the encoder keeps whatever its
         // environment gave it -- which is the failure this replaces.
         let mut c = controller();
-        assert_eq!(c.sent_kbps(), None);
-        assert!(c.tick(Some(healthy()), PathView::default()).is_some());
-        assert_eq!(c.sent_kbps(), Some(CEILING));
+        assert_eq!(
+            c.tick(Some(healthy()), PathView::default()),
+            Some(CEILING),
+            "the opening target was never stated",
+        );
+        // And not repeated, now that the encoder has been told.
+        assert_eq!(c.tick(Some(healthy()), PathView::default()), None);
     }
 
     #[test]

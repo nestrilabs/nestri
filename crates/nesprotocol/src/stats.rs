@@ -60,6 +60,49 @@ pub fn encode_hub_stats(
     buf.push(audio_channels);
 }
 
+/// What the video bitrate is made of, and who chose it.
+///
+/// Appended to a hub stats packet rather than replacing anything, so an older
+/// reader keeps working on the part it understands -- `decode_stats` already
+/// guards each field on the length it needs.
+///
+/// **The split is the point.** One combined byte counter cannot distinguish an
+/// encoder ignoring its bitrate target from a stream that is mostly keyframes,
+/// and those have opposite fixes. A session overshooting its target by ten times
+/// looked identical either way, which is why the cause stayed ambiguous for
+/// weeks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VideoBreakdown {
+    /// Keyframe bits per second, measured over the last second.
+    pub key_bps: u32,
+    /// Everything else, measured the same way.
+    pub delta_bps: u32,
+    /// Keyframes in the last second.
+    pub keyframes: u8,
+    /// What the controller is asking the encoder for.
+    pub target_kbps: u32,
+    /// The ceiling it is choosing within.
+    pub ceiling_kbps: u32,
+    /// Why the target is what it is; see the hub's control module.
+    pub reason: u8,
+    /// 0 when the controller is deciding, 1 when a person set it by hand.
+    pub manual: u8,
+}
+
+/// `[4B key_bps][4B delta_bps][1B keyframes][4B target][4B ceiling][1B reason][1B manual]`
+pub const VIDEO_BREAKDOWN_LEN: usize = 19;
+
+pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
+    buf.reserve(VIDEO_BREAKDOWN_LEN);
+    buf.extend_from_slice(&b.key_bps.to_le_bytes());
+    buf.extend_from_slice(&b.delta_bps.to_le_bytes());
+    buf.push(b.keyframes);
+    buf.extend_from_slice(&b.target_kbps.to_le_bytes());
+    buf.extend_from_slice(&b.ceiling_kbps.to_le_bytes());
+    buf.push(b.reason);
+    buf.push(b.manual);
+}
+
 /// Decoded stats from any source.
 #[derive(Debug, Clone, Default)]
 pub struct PipelineStats {
@@ -76,6 +119,8 @@ pub struct PipelineStats {
     pub capture_attempts: u32,
     pub audio_bitrate_kbps: u32,
     pub audio_channels: u8,
+    /// `None` from a hub that predates the breakdown.
+    pub video: Option<VideoBreakdown>,
 }
 
 /// Try to decode a single stats packet. The `msg_type` is the frame-level
@@ -110,7 +155,106 @@ pub fn decode_stats(msg_type: u8, data: &[u8], stats: &mut PipelineStats) {
             if data.len() >= 14 {
                 stats.audio_channels = data[13];
             }
+            if data.len() >= 14 + VIDEO_BREAKDOWN_LEN {
+                let d = &data[14..];
+                let u32_at = |o: usize| u32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+                stats.video = Some(VideoBreakdown {
+                    key_bps: u32_at(0),
+                    delta_bps: u32_at(4),
+                    keyframes: d[8],
+                    target_kbps: u32_at(9),
+                    ceiling_kbps: u32_at(13),
+                    reason: d[17],
+                    manual: d[18],
+                });
+            }
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod breakdown_tests {
+    use super::*;
+
+    fn breakdown() -> VideoBreakdown {
+        VideoBreakdown {
+            key_bps: 3_200_000,
+            delta_bps: 6_800_000,
+            keyframes: 2,
+            target_kbps: 6_000,
+            ceiling_kbps: 8_000,
+            reason: 1,
+            manual: 0,
+        }
+    }
+
+    fn hub_packet(with_breakdown: bool) -> Vec<u8> {
+        let mut buf = Vec::new();
+        encode_hub_stats(&mut buf, 1, 10_000_000, 0.0, 128, 2);
+        if with_breakdown {
+            encode_video_breakdown(&mut buf, &breakdown());
+        }
+        buf
+    }
+
+    #[test]
+    fn a_breakdown_survives_the_wire() {
+        let packet = hub_packet(true);
+        let mut stats = PipelineStats::default();
+        decode_stats(STATS_HUB, &packet[1..], &mut stats);
+        assert_eq!(stats.video, Some(breakdown()));
+        // The fields that were always there still read correctly beside it.
+        assert_eq!(stats.hub_clients, 1);
+        assert_eq!(stats.audio_bitrate_kbps, 128);
+        assert_eq!(stats.audio_channels, 2);
+    }
+
+    #[test]
+    fn a_hub_without_the_breakdown_still_reads() {
+        // The reason this is appended rather than folded into the layout: a hub
+        // that predates it keeps working, and says so by omission rather than by
+        // reporting zeroes that look like a stream carrying nothing.
+        let packet = hub_packet(false);
+        let mut stats = PipelineStats::default();
+        decode_stats(STATS_HUB, &packet[1..], &mut stats);
+        assert_eq!(stats.video, None);
+        assert_eq!(stats.hub_clients, 1);
+        assert_eq!(stats.audio_channels, 2);
+    }
+
+    #[test]
+    fn a_truncated_breakdown_is_left_out_rather_than_half_read() {
+        let full = hub_packet(true);
+        for n in 15..full.len() - 1 {
+            let mut stats = PipelineStats::default();
+            decode_stats(STATS_HUB, &full[1..n], &mut stats);
+            assert_eq!(stats.video, None, "{n} bytes produced a partial breakdown");
+        }
+    }
+
+    #[test]
+    fn the_split_distinguishes_the_two_ways_a_stream_overshoots() {
+        // The whole reason for the split. Same total, opposite causes: an
+        // encoder ignoring its target, and a stream that is nearly all
+        // keyframes. One counter cannot tell them apart.
+        let ignoring_target = VideoBreakdown {
+            key_bps: 200_000,
+            delta_bps: 9_800_000,
+            keyframes: 1,
+            ..breakdown()
+        };
+        let keyframe_storm = VideoBreakdown {
+            key_bps: 9_000_000,
+            delta_bps: 1_000_000,
+            keyframes: 30,
+            ..breakdown()
+        };
+        assert_eq!(
+            ignoring_target.key_bps + ignoring_target.delta_bps,
+            keyframe_storm.key_bps + keyframe_storm.delta_bps,
+        );
+        assert!(ignoring_target.delta_bps > ignoring_target.key_bps);
+        assert!(keyframe_storm.key_bps > keyframe_storm.delta_bps);
     }
 }

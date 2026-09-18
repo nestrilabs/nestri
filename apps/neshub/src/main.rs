@@ -162,6 +162,14 @@ async fn main() -> Result<()> {
 
     let session_manager = Arc::new(SessionManager::new());
 
+    // One controller for the box, not one per client: there is one encoder, so
+    // there is one bitrate, and the client having the worst time is the one it
+    // has to answer.
+    let box_ceiling_kbps = args.max_bitrate_kbps.unwrap_or(DEFAULT_MAX_BITRATE_KBPS);
+    let controller = Arc::new(tokio::sync::Mutex::new(control::Controller::new(
+        control::Limits::new(box_ceiling_kbps),
+    )));
+
     // IDR / encode settings command channel: input reader → nescapture
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
     {
@@ -209,23 +217,63 @@ async fn main() -> Result<()> {
             args.audio_channels,
             args.audio_bitrate_per_channel
         );
+        let controller = controller.clone();
+        let cmd_tx = cmd_tx.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             loop {
                 interval.tick().await;
+
+                // One decision a second, on the same tick as the stats, because
+                // a report describes the second that just passed and there is
+                // nothing to gain from deciding more often than they arrive.
+                {
+                    let (report, path) = mgr.worst_report().await;
+                    let mut controller = controller.lock().await;
+                    if let Some(kbps) = controller.tick(report, path) {
+                        let mut cmd = vec![nesprotocol::MSG_ENCODE_SETTINGS];
+                        nesprotocol::encode_bitrate_only(&mut cmd, kbps);
+                        if cmd_tx.send(cmd).is_err() {
+                            tracing::warn!("encoder command channel closed");
+                        } else {
+                            tracing::info!(
+                                "video ceiling {}/{} kbps: {:?}",
+                                kbps,
+                                controller.limits().ceiling_kbps,
+                                controller.reason(),
+                            );
+                        }
+                    }
+                }
+
                 let clients = mgr.client_count().await as u8;
-                let bitrate = mgr.video_bitrate_bps();
+                let (key_bps, delta_bps, keyframes) = mgr.video_breakdown();
                 let audio_kbps = mgr.audio_bitrate_kbps();
                 let relay_ms = mgr.relay_ms();
-                let mut buf = Vec::with_capacity(15);
+                let mut buf = Vec::with_capacity(34);
                 nesprotocol::stats::encode_hub_stats(
                     &mut buf,
                     clients,
-                    bitrate,
+                    key_bps.saturating_add(delta_bps),
                     relay_ms,
                     audio_kbps,
                     audio_channels,
                 );
+                {
+                    let controller = controller.lock().await;
+                    nesprotocol::stats::encode_video_breakdown(
+                        &mut buf,
+                        &nesprotocol::stats::VideoBreakdown {
+                            key_bps,
+                            delta_bps,
+                            keyframes,
+                            target_kbps: controller.target_kbps(),
+                            ceiling_kbps: controller.limits().ceiling_kbps,
+                            reason: controller.reason() as u8,
+                            manual: u8::from(controller.mode() == nesprotocol::ControlMode::Manual),
+                        },
+                    );
+                }
                 mgr.broadcast_stats(buf).await;
             }
         });
@@ -296,6 +344,8 @@ async fn main() -> Result<()> {
                         input_broadcast_tx.clone(),
                         session_manager.relay_ms_atomic(),
                         cmd_tx.clone(),
+                        controller.clone(),
+                        box_ceiling_kbps,
                     );
                     mgr.add_session(remote_id, session).await;
                     let mgr_clone = mgr.clone();

@@ -219,6 +219,21 @@ pub fn encode_encode_settings(
     buf.push(bit_depth);
 }
 
+/// A settings payload that changes the bitrate and nothing else.
+///
+/// Six bytes rather than seven: the bit-depth byte is *omitted*, which
+/// [`decode_encode_settings`] reports as `None`. That matters at the far end,
+/// where a change carrying a depth has to be treated as a possible depth change
+/// and rebuild the video session -- and a rebuild costs a keyframe. A controller
+/// adjusting the bitrate every second must not do that, so it says nothing it
+/// does not mean: keep the codec, keep the depth, this bitrate.
+pub fn encode_bitrate_only(buf: &mut Vec<u8>, kbps: u32) {
+    buf.reserve(6);
+    buf.push(CODEC_KEEP);
+    buf.push(RC_CBR);
+    buf.extend_from_slice(&kbps.to_le_bytes());
+}
+
 /// Decode an encode-settings payload. Returns `(codec_id, rate_control_mode, value, bit_depth)`.
 /// bit_depth is None for 6-byte (old client) payloads, Some(n) for 7+ byte payloads.
 pub fn decode_encode_settings(payload: &[u8]) -> Option<(u8, u8, u32, Option<u8>)> {
@@ -455,6 +470,20 @@ mod media_control_tests {
         let mut buf = vec![0x7F];
         buf.extend_from_slice(&8_000u32.to_le_bytes());
         assert_eq!(decode_control_mode(&buf), None);
+    }
+
+    #[test]
+    fn a_bitrate_only_change_carries_no_depth_and_no_codec() {
+        // The far end rebuilds its video session -- and spends a keyframe -- for
+        // anything that might be a codec or depth change. A controller nudging
+        // the bitrate every second must say neither.
+        let mut buf = Vec::new();
+        encode_bitrate_only(&mut buf, 2_500);
+        let (codec, rc, value, depth) = decode_encode_settings(&buf).expect("readable");
+        assert_eq!(codec, CODEC_KEEP);
+        assert_eq!(rc, RC_CBR);
+        assert_eq!(value, 2_500);
+        assert_eq!(depth, None, "a depth byte would force a rebuild");
     }
 
     #[test]

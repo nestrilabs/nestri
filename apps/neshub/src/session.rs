@@ -9,13 +9,29 @@ use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
 use nesprotocol::{BIDI_INPUT, STREAM_CURSOR, STREAM_STATS};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
-use nesprotocol::{MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH};
+use nesprotocol::{
+    MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT,
+};
+use nesprotocol::{ReceiverReport, decode_control_mode, decode_receiver_report};
+
+use crate::control::{Controller, PathView};
 
 use crate::dgram::run_datagram_writer;
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 pub struct ClientSession {
+    /// The connection, kept so the path underneath it can be read.
+    ///
+    /// Only for the fallback estimate when the client has gone quiet -- see
+    /// `control`, and note that this view was measured being wrong exactly when
+    /// it mattered.
+    conn: Connection,
+    /// The most recent report from this client, if it has sent one.
+    ///
+    /// Overwritten rather than queued. A report describes the second that just
+    /// passed, and an older one is not evidence about now.
+    latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
     send_video: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     send_audio: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     send_cursor: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
@@ -33,7 +49,10 @@ impl ClientSession {
         input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
         relay_ms: Arc<AtomicU32>,
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        controller: Arc<Mutex<Controller>>,
+        box_ceiling_kbps: u32,
     ) -> Self {
+        let latest_report = Arc::new(std::sync::Mutex::new(None));
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -64,12 +83,22 @@ impl ClientSession {
         let _stats_task = tokio::spawn(async move { run_stats_sender(conn_s, stats_rx).await });
 
         let conn_i = conn.clone();
-        let _input_task =
-            tokio::spawn(
-                async move { run_input_reader(conn_i, input_broadcast, idr_cmd_tx).await },
-            );
+        let reports = latest_report.clone();
+        let _input_task = tokio::spawn(async move {
+            run_input_reader(
+                conn_i,
+                input_broadcast,
+                idr_cmd_tx,
+                reports,
+                controller,
+                box_ceiling_kbps,
+            )
+            .await
+        });
 
         Self {
+            conn,
+            latest_report,
             send_video: video_tx,
             send_audio: audio_tx,
             send_cursor: cursor_tx,
@@ -79,6 +108,32 @@ impl ClientSession {
             _cursor_task,
             _stats_task,
             _input_task,
+        }
+    }
+
+    /// The latest report, cleared as it is taken.
+    ///
+    /// Taken rather than read so a client that stops reporting stops looking
+    /// healthy: a report left in place would be read again every second and the
+    /// controller would keep acting on a second that is long gone.
+    pub fn take_report(&self) -> Option<ReceiverReport> {
+        self.latest_report.lock().ok()?.take()
+    }
+
+    /// What this end can see of the path, from the route actually in use.
+    ///
+    /// A connection can hold several paths at once -- typically one through a
+    /// relay and one direct -- and only the selected one describes where the
+    /// media is going.
+    pub fn path_view(&self) -> PathView {
+        let paths = self.conn.paths();
+        let Some(path) = paths.iter().find(|p| p.is_selected()) else {
+            return PathView::default();
+        };
+        let stats = path.stats();
+        PathView {
+            cwnd_bytes: Some(stats.cwnd),
+            rtt_ms: Some(path.rtt().as_millis().min(u128::from(u32::MAX)) as u32),
         }
     }
 
@@ -107,10 +162,14 @@ impl ClientSession {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_input_reader(
     conn: Connection,
     input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
     idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
+    controller: Arc<Mutex<Controller>>,
+    box_ceiling_kbps: u32,
 ) {
     debug!("input reader started");
     loop {
@@ -212,11 +271,45 @@ async fn run_input_reader(
                                 "received encode settings from client ({} bytes)",
                                 payload.len()
                             );
+                            // A person set this by hand, so the controller stops
+                            // deciding until it is told otherwise. Overriding a
+                            // person's setting a second later would take away the
+                            // only tool that finds this class of bug.
+                            if let Some((_, rc, value, _)) =
+                                nesprotocol::decode_encode_settings(payload)
+                            {
+                                let mut controller = controller.lock().await;
+                                if rc == nesprotocol::RC_CBR {
+                                    controller.note_manual_target(value);
+                                } else {
+                                    controller.set_constant_quality(true);
+                                }
+                            }
                             let mut cmd = Vec::with_capacity(1 + payload.len());
                             cmd.push(MSG_ENCODE_SETTINGS);
                             cmd.extend_from_slice(payload);
                             let _ = idr_cmd_tx.send(cmd);
                         }
+                        MSG_RECEIVER_REPORT => match decode_receiver_report(payload) {
+                            Some(report) => {
+                                if let Ok(mut slot) = latest_report.lock() {
+                                    *slot = Some(report);
+                                }
+                            }
+                            None => debug!("unreadable receiver report ({} bytes)", payload.len()),
+                        },
+                        MSG_CONTROL_MODE => match decode_control_mode(payload) {
+                            Some((mode, ceiling)) => {
+                                let mut controller = controller.lock().await;
+                                controller.set_mode(mode);
+                                controller.set_constant_quality(false);
+                                if let Some(kbps) = ceiling {
+                                    controller.set_ceiling(kbps, box_ceiling_kbps);
+                                }
+                                info!("control mode {mode:?}, ceiling {ceiling:?}");
+                            }
+                            None => debug!("unreadable control mode ({} bytes)", payload.len()),
+                        },
                         _ => {
                             debug!("unknown bidi msg type: {}", msg_type);
                         }
@@ -361,11 +454,33 @@ async fn run_stats_sender(conn: Connection, mut rx: tokio::sync::mpsc::Unbounded
     debug!("stats sender exiting");
 }
 
+/// Whether a broadcast video payload is a keyframe.
+///
+/// The payload is `[1B codec][1B flags][4B ts][2B w][2B h][data]`, the same
+/// layout `encode_ipc_frame` writes. Deliberately narrower than
+/// `video_wants_reliable`, which also answers true for the reconfiguration
+/// frame that follows a codec change: that one belongs on a reliable stream for
+/// the same reason a keyframe does, but counting it as a keyframe would put a
+/// once-per-session frame into a per-second rate.
+fn is_keyframe(payload: &[u8]) -> bool {
+    payload
+        .get(nesprotocol::reliable::VIDEO_PAYLOAD_FLAGS_OFFSET)
+        .is_some_and(|flags| flags & nesprotocol::FLAG_KEYFRAME != 0)
+}
+
 pub struct SessionManager {
     sessions: Arc<Mutex<HashMap<iroh::EndpointId, ClientSession>>>,
-    video_bytes: AtomicU64,
-    last_video_bytes: AtomicU64,
-    video_bitrate: AtomicU64, // bytes/sec
+    /// Video bytes, split by what they were.
+    ///
+    /// One counter could not tell an encoder ignoring its bitrate target from a
+    /// stream that is mostly keyframes, and those have opposite fixes. A session
+    /// overshooting its target by ten times looked the same either way.
+    video_key_bytes: AtomicU64,
+    video_delta_bytes: AtomicU64,
+    keyframes: AtomicU64,
+    last_video_key_bytes: AtomicU64,
+    last_video_delta_bytes: AtomicU64,
+    last_keyframes: AtomicU64,
     audio_bytes: AtomicU64,
     last_audio_bytes: AtomicU64,
     relay_ms: Arc<AtomicU32>, // latest relay latency (f32 bits)
@@ -375,9 +490,12 @@ impl SessionManager {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
-            video_bytes: AtomicU64::new(0),
-            last_video_bytes: AtomicU64::new(0),
-            video_bitrate: AtomicU64::new(0),
+            video_key_bytes: AtomicU64::new(0),
+            video_delta_bytes: AtomicU64::new(0),
+            keyframes: AtomicU64::new(0),
+            last_video_key_bytes: AtomicU64::new(0),
+            last_video_delta_bytes: AtomicU64::new(0),
+            last_keyframes: AtomicU64::new(0),
             audio_bytes: AtomicU64::new(0),
             last_audio_bytes: AtomicU64::new(0),
             relay_ms: Arc::new(AtomicU32::new(0)),
@@ -397,8 +515,17 @@ impl SessionManager {
     }
 
     pub async fn broadcast_video(&self, data: Vec<u8>) {
-        self.video_bytes
-            .fetch_add(data.len() as u64, Ordering::Relaxed);
+        // Counted before the early return, like audio, so the figure measures
+        // what the encoder produced rather than what a client happened to be
+        // around for.
+        if is_keyframe(&data) {
+            self.video_key_bytes
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
+            self.keyframes.fetch_add(1, Ordering::Relaxed);
+        } else {
+            self.video_delta_bytes
+                .fetch_add(data.len() as u64, Ordering::Relaxed);
+        }
         let sessions = self.sessions.lock().await;
         if sessions.is_empty() {
             return;
@@ -443,6 +570,41 @@ impl SessionManager {
         }
     }
 
+    /// The report from whichever client is having the worst time, and the path
+    /// view belonging to that same client.
+    ///
+    /// **The worst, not the average.** One encoder serves every client, so it
+    /// can only answer one question, and the client that cannot decode is the
+    /// one that matters -- averaging its trouble away leaves it never
+    /// recovering while the numbers look acceptable.
+    pub async fn worst_report(&self) -> (Option<ReceiverReport>, PathView) {
+        let sessions = self.sessions.lock().await;
+        let mut worst: Option<(f32, ReceiverReport, PathView)> = None;
+        let mut any_path = PathView::default();
+        for session in sessions.values() {
+            let path = session.path_view();
+            if path != PathView::default() {
+                any_path = path;
+            }
+            // Taken every tick whether or not it is used, so a report never
+            // outlives the second it describes.
+            let Some(report) = session.take_report() else {
+                continue;
+            };
+            // A report accounting for no frames says nothing about loss, so it
+            // cannot be ranked -- but it is still the freshest thing this client
+            // has said, and losing it would look like silence.
+            let loss = report.loss().unwrap_or(0.0);
+            if worst.as_ref().is_none_or(|(w, _, _)| loss > *w) {
+                worst = Some((loss, report, path));
+            }
+        }
+        match worst {
+            Some((_, report, path)) => (Some(report), path),
+            None => (None, any_path),
+        }
+    }
+
     pub fn relay_ms(&self) -> f32 {
         f32::from_bits(self.relay_ms.swap(0, Ordering::Relaxed))
     }
@@ -474,11 +636,22 @@ impl SessionManager {
         (diff * 8 / 1000) as u32
     }
 
-    pub fn video_bitrate_bps(&self) -> u32 {
-        let current = self.video_bytes.load(Ordering::Relaxed);
-        let last = self.last_video_bytes.swap(current, Ordering::Relaxed);
-        let diff = current.saturating_sub(last);
-        self.video_bitrate.store(diff, Ordering::Relaxed);
-        (diff * 8) as u32 // bits per second
+    /// Keyframe bits, delta bits and keyframe count for the last second.
+    ///
+    /// Like the audio figure, this assumes the caller ticks once a second: the
+    /// difference since the previous call *is* the per-second number.
+    pub fn video_breakdown(&self) -> (u32, u32, u8) {
+        let per_second = |current: &AtomicU64, last: &AtomicU64| -> u64 {
+            let now = current.load(Ordering::Relaxed);
+            now.saturating_sub(last.swap(now, Ordering::Relaxed))
+        };
+        let key = per_second(&self.video_key_bytes, &self.last_video_key_bytes);
+        let delta = per_second(&self.video_delta_bytes, &self.last_video_delta_bytes);
+        let keyframes = per_second(&self.keyframes, &self.last_keyframes);
+        (
+            (key * 8) as u32,
+            (delta * 8) as u32,
+            keyframes.min(u64::from(u8::MAX)) as u8,
+        )
     }
 }
