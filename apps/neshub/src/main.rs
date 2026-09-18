@@ -1,3 +1,4 @@
+mod control;
 mod dgram;
 mod ipc_listener;
 mod keyframe;
