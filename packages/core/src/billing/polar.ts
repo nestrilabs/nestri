@@ -1,5 +1,6 @@
 import { Polar as PolarSdk } from '@polar-sh/sdk';
 import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks';
+import { Webhook as StandardWebhook } from 'standardwebhooks';
 import z from 'zod';
 
 import { Env } from '../env.js';
@@ -257,11 +258,31 @@ export namespace Polar {
 				);
 			}
 
-			let event;
+			// Two signing schemes, told apart by the secret itself.
+			//
+			// A `whsec_` prefix means Standard Webhooks, where the secret is a
+			// base64 key the library decodes. Anything else is the older scheme,
+			// where the secret is used as its own raw bytes. The SDK's helper
+			// only implements the older one — it base64-encodes whatever it is
+			// handed, which turns a Standard Webhooks secret into the literal
+			// bytes of the string including the prefix, and then every signature
+			// fails to match for a reason no error message mentions.
+			//
+			// Reading the prefix rather than configuring which scheme is in use
+			// means rotating a secret cannot put the two out of step.
+			let event: { type: string; data?: Record<string, unknown> };
 			try {
-				event = validateEvent(input.body, input.headers, webhookSecret);
+				if (webhookSecret.startsWith('whsec_')) {
+					const verified = new StandardWebhook(webhookSecret).verify(input.body, input.headers);
+					event = verified as { type: string; data?: Record<string, unknown> };
+				} else {
+					event = validateEvent(input.body, input.headers, webhookSecret) as {
+						type: string;
+						data?: Record<string, unknown>;
+					};
+				}
 			} catch (error) {
-				if (error instanceof WebhookVerificationError) {
+				if (error instanceof WebhookVerificationError || error instanceof Error) {
 					throw new VisibleError(
 						'authentication',
 						ErrorCodes.Authentication.INVALID_TOKEN,
@@ -271,7 +292,7 @@ export namespace Polar {
 				throw error;
 			}
 
-			const data = (event as { data?: Record<string, unknown> }).data ?? {};
+			const data = event.data ?? {};
 			const customer = data.customer as { externalId?: string | null } | undefined;
 			// `externalId` is the team id we put on the customer. A delivery
 			// without one is about a customer created some other way — by hand in

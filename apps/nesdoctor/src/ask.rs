@@ -28,11 +28,12 @@ pub struct Answers {
     /// currently reach are already doing for themselves. That is the
     /// uncomfortable possibility, which is the reason to ask rather than not.
     pub want: Option<String>,
-    /// USERS.md 7, roughly: is this machine a host, a client, or both?
+    /// Roughly: is this machine a host, a client, or both?
     pub role: Option<String>,
-    /// USERS.md 6: cash or credit. Only asked of a machine that could host.
+    /// Cash or credit. Only asked of a machine that could host.
     pub share_for: Option<String>,
-    /// USERS.md 5, in its factual form: current spend, not willingness to pay.
+    /// The factual form of what they pay now: current spend, not willingness
+    /// to pay.
     pub pays_today: Option<String>,
     /// Asked only of a non-Linux machine: is there a Linux box behind it?
     pub other_linux: Option<String>,

@@ -22,6 +22,8 @@
 import { Polar } from '@polar-sh/sdk';
 import type { PresentmentCurrency } from '@polar-sh/sdk/models/components/presentmentcurrency.js';
 
+type Price = { currency: PresentmentCurrency; amount: number };
+
 /**
  * The paid rung of the self-serve ladder.
  *
@@ -32,16 +34,29 @@ import type { PresentmentCurrency } from '@polar-sh/sdk/models/components/presen
  *
  * Amounts are in minor units: 2000 is 20.00.
  */
-const PRODUCT = {
-	name: 'Nestri Pro',
-	description: 'Cloud sessions on Nestri hardware, and a larger burn allowance.',
-	recurringInterval: 'month' as const,
-	prices: [
-		{ currency: 'usd', amount: 2000 },
-		{ currency: 'eur', amount: 2000 },
-		{ currency: 'gbp', amount: 2000 }
-	] satisfies { currency: PresentmentCurrency; amount: number }[]
-};
+const PRODUCTS = [
+	{
+		env: 'POLAR_FREE_PRODUCT_ID',
+		name: 'Nestri Free',
+		description: 'Sessions on hardware you own, and a monthly burn allowance.',
+		// Recurring, and priced at nothing. It has to be a *subscription* rather
+		// than a one-time purchase, because a team is put on it outright at
+		// signup and a one-time product has no subscription to create.
+		recurringInterval: 'month' as const,
+		prices: [{ currency: 'usd', amount: 0 }] satisfies Price[]
+	},
+	{
+		env: 'POLAR_PRODUCT_ID',
+		name: 'Nestri Pro',
+		description: 'Cloud sessions on Nestri hardware, and a larger burn allowance.',
+		recurringInterval: 'month' as const,
+		prices: [
+			{ currency: 'usd', amount: 2000 },
+			{ currency: 'eur', amount: 2000 },
+			{ currency: 'gbp', amount: 2000 }
+		] satisfies Price[]
+	}
+];
 
 const apply = process.argv.includes('--apply');
 const accessToken = process.env.POLAR_ACCESS_TOKEN;
@@ -80,34 +95,49 @@ console.log(`server:       ${server}`);
 console.log(`organization: ${organization.name} (${organization.id})`);
 
 const existing = await polar.products.list({ organizationId: organization.id, limit: 100 });
-const clash = existing.result.items.find((p) => p.name === PRODUCT.name && !p.isArchived);
-if (clash) {
-	console.log(`\nalready there: ${PRODUCT.name} (${clash.id})`);
-	console.log('nothing to do. Archive it first if you meant to replace it.');
-	process.exit(0);
-}
 
-console.log(`\nwould create: ${PRODUCT.name}, every ${PRODUCT.recurringInterval}`);
-for (const price of PRODUCT.prices) {
-	console.log(`  ${price.currency.toUpperCase()} ${(price.amount / 100).toFixed(2)}`);
+for (const product of PRODUCTS) {
+	const clash = existing.result.items.find((p) => p.name === product.name && !p.isArchived);
+	if (clash) {
+		// Same name is not the same product. A one-time product where a
+		// subscription is wanted cannot be subscribed to at all, and reporting
+		// it as already-there would hand back an id that fails at the first use.
+		if (clash.recurringInterval !== product.recurringInterval) {
+			console.log(`\nwrong shape: ${product.name} (${clash.id})`);
+			console.log(
+				`  wanted every ${product.recurringInterval}, found ${clash.recurringInterval ?? 'one-time'}`
+			);
+			console.log('  archive it first, then run this again.');
+			continue;
+		}
+		console.log(`\nalready there: ${product.name}`);
+		console.log(`  ${product.env}=${clash.id}`);
+		continue;
+	}
+
+	console.log(`\nwould create: ${product.name}, every ${product.recurringInterval}`);
+	for (const price of product.prices) {
+		console.log(`  ${price.currency.toUpperCase()} ${(price.amount / 100).toFixed(2)}`);
+	}
+
+	if (!apply) {
+		continue;
+	}
+
+	const created = await polar.products.create({
+		...(scopedToOrganization ? {} : { organizationId: organization.id }),
+		name: product.name,
+		description: product.description,
+		recurringInterval: product.recurringInterval,
+		prices: product.prices.map((price) => ({
+			amountType: 'fixed' as const,
+			priceCurrency: price.currency,
+			priceAmount: price.amount
+		}))
+	});
+	console.log(`  created: ${product.env}=${created.id}`);
 }
 
 if (!apply) {
-	console.log('\nnothing written. Re-run with --apply to create it.');
-	process.exit(0);
+	console.log('\nnothing written. Re-run with --apply to create them.');
 }
-
-const created = await polar.products.create({
-	...(scopedToOrganization ? {} : { organizationId: organization.id }),
-	name: PRODUCT.name,
-	description: PRODUCT.description,
-	recurringInterval: PRODUCT.recurringInterval,
-	prices: PRODUCT.prices.map((price) => ({
-		amountType: 'fixed' as const,
-		priceCurrency: price.currency,
-		priceAmount: price.amount
-	}))
-});
-
-console.log(`\ncreated: ${created.id}`);
-console.log(`set POLAR_PRODUCT_ID=${created.id} for the ${server} deployment.`);

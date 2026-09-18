@@ -15,7 +15,8 @@
 			"hono": "^4.12.31",
 			"typescript": "^7.0.1-rc",
 			"zod": "^4.4.3",
-			"@polar-sh/sdk": "^0.49.0"
+			"@polar-sh/sdk": "^0.49.0",
+			"standardwebhooks": "^1.1.1"
 		}
 	},
 	"type": "module",
