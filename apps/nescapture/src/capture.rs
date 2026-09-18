@@ -467,6 +467,34 @@ pub unsafe fn ensure_hudless_image(ds: &crate::state::DeviceState, w: u32, h: u3
 /// A rebuild destroys images the encoder may still be reading, so it only
 /// happens when every slot has come back. Resolution changes are rare and one
 /// dropped frame at a resize is not worth a use-after-free.
+/// Whether an existing ring can serve a request, or has to be rebuilt.
+///
+/// **The extent must match exactly.** This used to accept any ring at least as
+/// large as the request, which sounds like a saving and is a corruption: the
+/// blit follows the new, smaller extent while the slot image stays the old
+/// size, so everything outside the copied region keeps whatever the previous
+/// resolution left there. The encoder then sends the whole image, stale margins
+/// and all -- a band of the old picture down the right edge and along the
+/// bottom. A resolution change is rare enough that rebuilding is the cheaper
+/// mistake.
+///
+/// `image_count` is part of the identity because the blit buffers are allocated
+/// one per (image, slot) pair. A swapchain that gained an image needs more of
+/// them, and a ring that kept the old count would silently stop capturing
+/// whenever that image came round.
+fn ring_still_serves(
+    existing: (u32, u32, vk::Format),
+    existing_family: u32,
+    existing_image_count: usize,
+    wanted: (u32, u32, vk::Format),
+    wanted_family: u32,
+    wanted_image_count: usize,
+) -> bool {
+    existing == wanted
+        && existing_family == wanted_family
+        && existing_image_count == wanted_image_count
+}
+
 unsafe fn ensure_capture_ring(
     ds: &crate::state::DeviceState,
     ring: &mut Option<CaptureRing>,
@@ -482,12 +510,15 @@ unsafe fn ensure_capture_ring(
         // allocated one per (image, slot) pair. A swapchain that gained an
         // image needs more of them, and a ring that kept the old count would
         // silently stop capturing whenever that image came round.
-        if ew >= w
-            && eh >= h
-            && ef == f
-            && existing.queue_family == queue_family
-            && existing.image_count == image_count
-        {
+        //
+        if ring_still_serves(
+            (ew, eh, ef),
+            existing.queue_family,
+            existing.image_count,
+            (w, h, f),
+            queue_family,
+            image_count,
+        ) {
             return true;
         }
         if !ds.capture_slots.all_free() {
@@ -497,7 +528,11 @@ unsafe fn ensure_capture_ring(
             unsafe { destroy_capture_ring(ds, old) };
         }
     }
-    match unsafe { create_capture_ring(ds, w, h, f, queue_family, image_count) } {
+    let generation = ds
+        .ring_generation
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
+    match unsafe { create_capture_ring(ds, w, h, f, queue_family, image_count, generation) } {
         Some(fresh) => {
             *ring = Some(fresh);
             true
@@ -513,6 +548,7 @@ unsafe fn create_capture_ring(
     f: vk::Format,
     queue_family: u32,
     image_count: usize,
+    generation: u64,
 ) -> Option<CaptureRing> {
     let pci = vk::CommandPoolCreateInfo {
         s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
@@ -596,7 +632,7 @@ unsafe fn create_capture_ring(
     }
 
     log::info!(
-        "capture ring: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}",
+        "capture ring {generation}: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}",
         f.as_raw()
     );
     Some(CaptureRing {
@@ -608,6 +644,7 @@ unsafe fn create_capture_ring(
         timestamp_pool,
         timestamp_period,
         size: (w, h, f),
+        generation,
         queue_family,
         // Zero so the first frame always records: no real extent equals it, so
         // the invalidation check in `capture_present_frame` fires once and then
@@ -810,6 +847,10 @@ pub unsafe fn inject_hudless_copy(cb: vk::CommandBuffer, dk: usize) {
 pub struct CaptureSubmission {
     /// Keeps the ring slot reserved until the encoder is finished with it.
     pub slot: crate::slots::SlotGuard,
+    /// Which ring the slot belongs to. See [`CaptureRing::generation`].
+    ///
+    /// [`CaptureRing::generation`]: crate::state::CaptureRing::generation
+    pub generation: u64,
     /// The semaphore the present must now wait on. The application's own wait
     /// semaphores were consumed by the blit submission, so presenting on them
     /// again would be a double wait.
@@ -1133,6 +1174,7 @@ pub unsafe fn capture_present_frame(
         return None;
     }
     let ring = ring_guard.as_mut()?;
+    let ring_generation = ring.generation;
 
     let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
 
@@ -1156,9 +1198,9 @@ pub unsafe fn capture_present_frame(
     }
 
     // The recording depends on the source image, the destination image and the
-    // extent. A ring survives the swapchain shrinking, so the extent can move
-    // under recordings whose images are still valid — invalidate on it here
-    // rather than trusting every caller to have noticed.
+    // extent. A swapchain recreated at the same extent keeps the ring but
+    // replaces the source images, so invalidate here rather than trusting every
+    // caller to have noticed.
     if ring.blit_extent != ext {
         ring.blits_recorded.iter_mut().for_each(|r| *r = false);
         ring.blit_extent = ext;
@@ -1172,7 +1214,6 @@ pub unsafe fn capture_present_frame(
         }
         ring.blits_recorded[blit] = true;
     }
-
 
     let wait_stages = vec![vk::PipelineStageFlags::TRANSFER; app_waits.len()];
     let subi = vk::SubmitInfo {
@@ -1210,6 +1251,7 @@ pub unsafe fn capture_present_frame(
 
     Some(CaptureSubmission {
         slot: guard,
+        generation: ring_generation,
         present_wait,
     })
 }
@@ -1343,4 +1385,49 @@ pub unsafe fn read_frame_pixels(
     }
     unsafe { (ds.fp.unmap_memory)(ds.raw, mem) };
     Some(pixels)
+}
+
+#[cfg(test)]
+mod ring_identity_tests {
+    use super::ring_still_serves;
+    use ash::vk;
+
+    const FMT: vk::Format = vk::Format::B8G8R8A8_UNORM;
+    const OTHER: vk::Format = vk::Format::R8G8B8A8_UNORM;
+
+    fn serves(existing: (u32, u32, vk::Format), wanted: (u32, u32, vk::Format)) -> bool {
+        ring_still_serves(existing, 0, 3, wanted, 0, 3)
+    }
+
+    #[test]
+    fn an_identical_request_reuses_the_ring() {
+        assert!(serves((1920, 1080, FMT), (1920, 1080, FMT)));
+    }
+
+    #[test]
+    fn a_smaller_request_rebuilds() {
+        // The regression this guards. A ring that is merely large enough leaves
+        // the area outside the new extent holding the old resolution's picture,
+        // and the encoder sends it.
+        assert!(!serves((1920, 1080, FMT), (1280, 720, FMT)));
+        assert!(!serves((1920, 1080, FMT), (1920, 720, FMT)));
+        assert!(!serves((1920, 1080, FMT), (1280, 1080, FMT)));
+    }
+
+    #[test]
+    fn a_larger_request_rebuilds() {
+        assert!(!serves((1280, 720, FMT), (1920, 1080, FMT)));
+    }
+
+    #[test]
+    fn a_different_format_rebuilds() {
+        assert!(!serves((1920, 1080, FMT), (1920, 1080, OTHER)));
+    }
+
+    #[test]
+    fn a_different_queue_family_or_image_count_rebuilds() {
+        let g = (1920, 1080, FMT);
+        assert!(!ring_still_serves(g, 0, 3, g, 1, 3));
+        assert!(!ring_still_serves(g, 0, 3, g, 0, 4));
+    }
 }

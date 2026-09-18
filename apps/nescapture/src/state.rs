@@ -75,12 +75,20 @@ pub struct CaptureRing {
     pub timestamp_period: f32,
     /// The extent `blits` were recorded for.
     ///
-    /// The ring is kept when the swapchain shrinks — `ensure_capture_ring`
-    /// accepts a ring at least as large as the request — so the extent can
-    /// change under a ring that is not rebuilt, and the recordings have to
-    /// follow it even though the images do not.
+    /// Kept separate from `size` because a swapchain can be recreated at the
+    /// same extent — on a format or present-mode change — which invalidates the
+    /// recordings without invalidating the images.
     pub blit_extent: vk::Extent2D,
     pub size: (u32, u32, vk::Format),
+    /// Which ring this is, counting from the device's first.
+    ///
+    /// A ring's slot images are destroyed when it is replaced, but the encoder
+    /// side caches imports of their DMA-BUFs by *slot index*, and slot indices
+    /// are the same small numbers in every ring. Without something to tell one
+    /// ring's slot 0 from the next one's, that cache hands back a `VkImage`
+    /// backed by memory that has already been freed. This is that something:
+    /// the frame carries it to the encoder, and a change invalidates the cache.
+    pub generation: u64,
     /// Queue family the command pool was created for. Command buffers may only
     /// be submitted to a queue of the family their pool belongs to, so a
     /// present arriving on a different family rebuilds the ring rather than
@@ -219,6 +227,9 @@ pub struct DeviceState {
     pub swapchain_transfer_src: std::sync::atomic::AtomicBool,
 
     pub frame_counter: std::sync::atomic::AtomicU64,
+    /// Rings built for this device so far. Names the current one; see
+    /// [`CaptureRing::generation`].
+    pub ring_generation: std::sync::atomic::AtomicU64,
 
     // Phase 3/4: per-frame HUD detection flags
     pub hud_detected_frame: std::sync::atomic::AtomicBool,
@@ -228,7 +239,6 @@ pub struct DeviceState {
 
     // Phase 7: encode + IPC pipeline (lazy-init on first frame)
     pub encoder: std::sync::Mutex<Option<PipelineHandle>>,
-
 
     // ── Frame-rate throttle ───────────────────────────────────────────
     /// Decides which presented frames are worth capturing. Consulted in the

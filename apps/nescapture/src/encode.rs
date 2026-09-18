@@ -178,6 +178,11 @@ pub struct CapturedFrame {
     /// now does the waiting that a separate capture thread used to do, and that
     /// work is per-device.
     pub ds_key: usize,
+    /// Which capture ring the slot belongs to.
+    ///
+    /// Carried so the encoder's DMA-BUF import cache can tell one ring's slot
+    /// from the next one's. Both are slot 0; only one of them still exists.
+    pub ring_generation: u64,
     pub width: u32,
     pub height: u32,
     pub vk_format: u32,
@@ -753,15 +758,38 @@ fn encoder_thread(
         let color_space = vk_colorspace_to_color_space(raw.vk_colorspace);
         let out_fmt = output_format(cfg.pixel_format, bit_depth);
 
+        // The geometry joins the guard. It used to be absent, and `cfg.width` /
+        // `cfg.height` were whatever the *first* frame happened to be, so a game
+        // that changed resolution kept being encoded at the old one: shrinking
+        // left a band of the previous picture down the right edge and along the
+        // bottom, and growing had no surface large enough to hold the frame.
         let state = match encoder_state.as_mut() {
-            Some(s) if s.bit_depth == bit_depth && s.pixel_format == cfg.pixel_format => s,
+            Some(s)
+                if encoder_still_serves(
+                    (s.width, s.height, s.bit_depth, s.pixel_format),
+                    (raw.width, raw.height, bit_depth, cfg.pixel_format),
+                ) =>
+            {
+                s
+            }
             _ => {
+                if let Some(old) = encoder_state.as_ref()
+                    && (old.width != raw.width || old.height != raw.height)
+                {
+                    log::info!(
+                        "resolution changed {}x{} -> {}x{}, rebuilding the encoder",
+                        old.width,
+                        old.height,
+                        raw.width,
+                        raw.height,
+                    );
+                }
                 let color_desc = vk_colorspace_to_color_description(raw.vk_colorspace);
                 match PerFrameEncoder::new(
                     &ctx,
                     cfg.codec.to_pixelforge(),
-                    cfg.width,
-                    cfg.height,
+                    raw.width,
+                    raw.height,
                     cfg.fps,
                     cfg.bitrate_kbps,
                     cfg.qp,
@@ -822,6 +850,7 @@ fn encoder_thread(
                         raw.vk_format,
                         frame_number,
                         buffer_index,
+                        raw.ring_generation,
                     ),
                     None => {
                         unsafe { libc::close(owned_fd) };
@@ -880,6 +909,13 @@ struct PerFrameEncoder {
     converter: ColorConverter,
     bit_depth: EncodeBitDepth,
     pixel_format: PixelFormat,
+    /// The geometry this encoder and its converter were built for.
+    ///
+    /// A Vulkan video session pins its coded extent at creation and the
+    /// converter is sized to match, so a frame of a different size cannot be
+    /// encoded by either -- it has to be rebuilt.
+    width: u32,
+    height: u32,
 }
 
 impl PerFrameEncoder {
@@ -970,8 +1006,25 @@ impl PerFrameEncoder {
             converter,
             bit_depth,
             pixel_format,
+            width,
+            height,
         })
     }
+}
+
+/// Whether an existing encoder can take this frame, or has to be rebuilt.
+///
+/// **The geometry is part of the answer**, and it used to be missing. A Vulkan
+/// video session pins its coded extent when it is created and the colour
+/// converter is sized to match, so neither can take a frame of another size --
+/// but the guard only compared bit depth and pixel format, and the dimensions
+/// it built with came from whatever the *first* frame happened to be. A game
+/// that changed resolution went on being encoded at the old one.
+fn encoder_still_serves(
+    existing: (u32, u32, EncodeBitDepth, PixelFormat),
+    wanted: (u32, u32, EncodeBitDepth, PixelFormat),
+) -> bool {
+    existing == wanted
 }
 
 fn gpu_encode_frame(
@@ -986,6 +1039,7 @@ fn gpu_encode_frame(
     vk_format: u32,
     frame_number: u32,
     buffer_index: usize,
+    ring_generation: u64,
 ) -> Result<EncodeFuture> {
     use ash::vk;
 
@@ -999,7 +1053,14 @@ fn gpu_encode_frame(
     };
 
     let (imported_image, needs_layout_transition) = importer
-        .import_or_reuse(buffer_index, width, height, bgra_vk_fmt, &[plane])
+        .import_or_reuse(
+            ring_generation,
+            buffer_index,
+            width,
+            height,
+            bgra_vk_fmt,
+            &[plane],
+        )
         .map_err(|e| anyhow::anyhow!("DmaBufImporter: {e}"))?;
 
     unsafe { libc::close(fd) };
@@ -1707,5 +1768,52 @@ mod tests {
                 "{cs:?} produced a limited-range description"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod encoder_identity_tests {
+    use super::encoder_still_serves;
+    use pixelforge::{EncodeBitDepth, PixelFormat};
+
+    const HD: (u32, u32, EncodeBitDepth, PixelFormat) =
+        (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420);
+
+    #[test]
+    fn an_unchanged_frame_reuses_the_encoder() {
+        assert!(encoder_still_serves(HD, HD));
+    }
+
+    #[test]
+    fn a_resolution_change_rebuilds_in_either_direction() {
+        // The regression. Shrinking left the encoder sending the old geometry
+        // with stale margins; growing had no surface big enough for the frame.
+        let smaller = (1280, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420);
+        assert!(!encoder_still_serves(HD, smaller));
+        assert!(!encoder_still_serves(smaller, HD));
+    }
+
+    #[test]
+    fn one_axis_moving_is_still_a_change() {
+        assert!(!encoder_still_serves(
+            HD,
+            (1920, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420)
+        ));
+        assert!(!encoder_still_serves(
+            HD,
+            (1280, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420)
+        ));
+    }
+
+    #[test]
+    fn depth_and_pixel_format_still_rebuild() {
+        assert!(!encoder_still_serves(
+            HD,
+            (1920, 1080, EncodeBitDepth::Ten, PixelFormat::Yuv420)
+        ));
+        assert!(!encoder_still_serves(
+            HD,
+            (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv444)
+        ));
     }
 }

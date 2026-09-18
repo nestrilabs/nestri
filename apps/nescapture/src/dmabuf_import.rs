@@ -44,6 +44,16 @@ pub struct DmaBufImporter {
     external_memory_fd: ash::khr::external_memory_fd::Device,
     /// Per-buffer-index cache. Index corresponds to `ExportedFrame::buffer_index`.
     cached_imports: Vec<Option<CachedImport>>,
+    /// Which producer generation `cached_imports` describes.
+    ///
+    /// A buffer index alone does not identify a buffer: the producer numbers
+    /// its slots from zero and renumbers from zero again every time it rebuilds
+    /// them, which it does whenever the resolution changes. The cache used to
+    /// key on the index alone, so after a rebuild every lookup hit and returned
+    /// a `VkImage` imported from a DMA-BUF whose memory had just been freed.
+    /// Pairing the index with a generation is what makes the key identify a
+    /// buffer rather than a position.
+    generation: u64,
 }
 
 impl DmaBufImporter {
@@ -56,6 +66,7 @@ impl DmaBufImporter {
             context,
             external_memory_fd,
             cached_imports: Vec::new(),
+            generation: 0,
         })
     }
 
@@ -72,12 +83,27 @@ impl DmaBufImporter {
     /// the appropriate `src_layout` to `ColorConverter::convert`).
     pub fn import_or_reuse(
         &mut self,
+        generation: u64,
         buffer_index: usize,
         width: u32,
         height: u32,
         format: vk::Format,
         planes: &[DmaBufPlane],
     ) -> Result<(vk::Image, bool)> {
+        // A new generation means the buffers these describe are gone. Drop them
+        // before anything can look one up: every entry is now a handle onto
+        // freed memory, and the cost of being wrong here is not a stale picture
+        // but a use-after-free.
+        if generation != self.generation {
+            debug!(
+                "producer generation {} -> {generation}: dropping {} cached import(s)",
+                self.generation,
+                self.cached_imports.iter().flatten().count(),
+            );
+            self.clear();
+            self.generation = generation;
+        }
+
         // Grow the cache vector if needed.
         if self.cached_imports.len() <= buffer_index {
             self.cached_imports.resize_with(buffer_index + 1, || None);
@@ -228,15 +254,26 @@ impl DmaBufImporter {
     }
 }
 
-impl Drop for DmaBufImporter {
-    fn drop(&mut self) {
+impl DmaBufImporter {
+    /// Destroy every cached import.
+    ///
+    /// The caller must be sure nothing is still reading them. Both callers are:
+    /// the encoder thread imports and encodes on the same thread, so a frame
+    /// that reached here has been submitted, and teardown happens after the
+    /// device is idle.
+    fn clear(&mut self) {
         let device = self.context.device();
         unsafe {
-            // Clean up cached imports.
             for cached in self.cached_imports.drain(..).flatten() {
                 device.destroy_image(cached.image, None);
                 device.free_memory(cached.memory, None);
             }
         }
+    }
+}
+
+impl Drop for DmaBufImporter {
+    fn drop(&mut self) {
+        self.clear();
     }
 }

@@ -173,6 +173,7 @@ fn finish(
 struct Submission {
     slot: SlotGuard,
     present_wait: vk::Semaphore,
+    generation: u64,
     width: u32,
     height: u32,
     sc_fmt: vk::Format,
@@ -246,6 +247,7 @@ unsafe fn try_capture(
     Some(Submission {
         slot: submission.slot,
         present_wait: submission.present_wait,
+        generation: submission.generation,
         width: sc_ext.width,
         height: sc_ext.height,
         sc_fmt,
@@ -267,6 +269,7 @@ fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
     // does, which is the backpressure the ring was always providing.
     handle.push_frame(CapturedFrame {
         ds_key,
+        ring_generation: submission.generation,
         width: submission.width,
         height: submission.height,
         vk_format: submission.sc_fmt.as_raw() as u32,

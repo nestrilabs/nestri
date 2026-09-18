@@ -279,6 +279,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         }),
         swapchain_colorspace: std::sync::atomic::AtomicU32::new(0),
         frame_counter: std::sync::atomic::AtomicU64::new(0),
+        ring_generation: std::sync::atomic::AtomicU64::new(0),
 
         hud_detected_frame: std::sync::atomic::AtomicBool::new(false),
         pending_capture_frame: std::sync::atomic::AtomicBool::new(false),
@@ -286,7 +287,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         skipped_draws_frame: std::sync::atomic::AtomicU32::new(0),
 
         encoder: std::sync::Mutex::new(None),
-
 
         frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
         frame_pacer: std::sync::Mutex::new(crate::pacing::FramePacer::from_env()),
