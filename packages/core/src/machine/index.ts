@@ -43,14 +43,20 @@ export namespace Machine {
 				description: 'Unique identifier for the machine',
 				example: Examples.Machine.id
 			}),
-			ownerUserId: z.string().meta({
-				description: 'The user who registered this machine',
+			ownerUserId: z.string().nullable().meta({
+				description:
+					'The user who registered this machine, or null for hardware an organisation owns outright — a company card is nobody\u2019s personal property',
 				example: Examples.Machine.ownerUserId
 			}),
-			teamId: z.string().meta({
+			teamId: z.string().nullable().meta({
 				description:
-					'The team that owns this hardware. Always set — every user has a personal team',
+					'The team that owns this hardware, for a host somebody brought. Null exactly when organisationId is set',
 				example: Examples.Machine.teamId
+			}),
+			organisationId: z.string().nullable().meta({
+				description:
+					'The organisation that owns this hardware outright, for a host serving workloads rather than its owner\u2019s. Null exactly when teamId is set',
+				example: null
 			}),
 			label: z.string().meta({
 				description: 'Human-readable name for the box',
@@ -114,7 +120,11 @@ export namespace Machine {
 	 * than looking it up.
 	 */
 	export const register = fn(
-		Info.pick({ id: true, ownerUserId: true, teamId: true, label: true }),
+		Info.pick({ id: true, ownerUserId: true, teamId: true, label: true })
+			.extend({ organisationId: Info.shape.organisationId.optional() })
+			.refine((v) => (v.teamId === null) !== ((v.organisationId ?? null) === null), {
+				message: 'A machine belongs to a team or to an organisation, and not to both'
+			}),
 		async (input) => {
 			const secret = generateSecret();
 			const secretHash = await hashSecret(secret);
@@ -132,6 +142,7 @@ export namespace Machine {
 							id: input.id,
 							ownerUserId: input.ownerUserId,
 							teamId: input.teamId,
+							organisationId: input.organisationId ?? null,
 							label: input.label,
 							slug,
 							secretHash,
@@ -236,7 +247,7 @@ export namespace Machine {
 	 * is left to re-registration until renting makes it worth building.
 	 */
 	export const setTeam = fn(
-		Info.pick({ id: true, ownerUserId: true, teamId: true }),
+		Info.pick({ id: true }).extend({ ownerUserId: z.string(), teamId: z.string() }),
 		async (input) => {
 			return Database.use(async (tx) => {
 				return tx
@@ -367,8 +378,11 @@ export namespace Machine {
 	/** Why a user may — or may not — use a box. */
 	export const Entitlement = z.object({
 		entitled: z.boolean(),
-		/** `owner`, `team`, or `none`. Present so a refusal can explain itself. */
-		reason: z.enum(['owner', 'team', 'none'])
+		/**
+		 * `owner`, `team`, `fleet`, or `none`. Present so a refusal can explain
+		 * itself rather than being an unexplained no.
+		 */
+		reason: z.enum(['owner', 'team', 'fleet', 'none'])
 	});
 
 	export type Entitlement = z.infer<typeof Entitlement>;
@@ -376,14 +390,20 @@ export namespace Machine {
 	/**
 	 * Whether a user may use a box.
 	 *
-	 * The whole access model in one function: a solo box (`teamId` null) is the
-	 * owner's alone, and a team-scoped box is open to that team. Multi-user
-	 * access is the paid tier, so this is the line the paywall sits on — worth
-	 * having exactly one implementation of.
+	 * The whole access model in one function: a box someone brought is open to
+	 * its owner and to the team it was registered under, and hardware an
+	 * organisation owns outright is open to whoever has paid for a run on it.
 	 *
 	 * Membership is read live rather than cached in the machine row, so
 	 * removing someone from a team takes their box access with it and nobody
 	 * has to remember to revoke anything.
+	 *
+	 * **Fleet hardware refuses everyone for now, and that is deliberate.** What
+	 * grants it is a plan, and nothing here can yet ask whether a user has one
+	 * — so the honest answer is no rather than a yes that would hand out metered
+	 * hardware for free. Failing closed on the expensive case is the cheap
+	 * mistake to make; the branch is written out so there is one obvious place
+	 * for the plan check to land. todo(d-0051)
 	 */
 	export const entitlement = fn(
 		z.object({ machineId: z.string(), userId: z.string() }),
@@ -392,7 +412,12 @@ export namespace Machine {
 			if (!machine) {
 				return { entitled: false, reason: 'none' };
 			}
-			if (machine.ownerUserId === input.userId) {
+			if (machine.organisationId) {
+				// Fleet hardware. Not the owner's and not a team's, so neither
+				// test below means anything here.
+				return { entitled: false, reason: 'fleet' };
+			}
+			if (machine.ownerUserId && machine.ownerUserId === input.userId) {
 				return { entitled: true, reason: 'owner' };
 			}
 			if (!machine.teamId) {
@@ -407,7 +432,21 @@ export namespace Machine {
 		}
 	);
 
-	export const listByOwner = fn(Info.shape.ownerUserId, async (ownerUserId) => {
+	/** Every host an organisation owns outright — its fleet. */
+	export const listByOrganisation = fn(z.string(), async (organisationId) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select()
+				.from(MachineTable)
+				.where(
+					and(eq(MachineTable.organisationId, organisationId), isNull(MachineTable.timeDeleted))
+				)
+				.orderBy(MachineTable.timeCreated)
+				.then((rows) => rows.map(serialize));
+		});
+	});
+
+	export const listByOwner = fn(z.string(), async (ownerUserId) => {
 		return Database.use(async (tx) => {
 			return tx
 				.select()
@@ -432,6 +471,7 @@ export namespace Machine {
 			id: input.id,
 			ownerUserId: input.ownerUserId,
 			teamId: input.teamId,
+			organisationId: input.organisationId,
 			label: input.label,
 			slug: input.slug,
 			lastSeen: input.lastSeen?.toISOString() ?? null,

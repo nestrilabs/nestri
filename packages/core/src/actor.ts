@@ -45,11 +45,16 @@ const Machine = z.object({
 	type: z.literal('machine'),
 	properties: z.object({
 		machineID: z.string(),
-		ownerUserID: z.string(),
-		// Not optional: `machine.teamId` is notNull, so a host that authenticated
-		// always has a team, and the branch that used to handle its absence was
-		// handling a state that can no longer exist.
-		teamID: z.string()
+		// All three of these describe *who owns the hardware*, and a host is
+		// owned one of two ways. A box somebody brought carries an owner and a
+		// team; hardware an organisation owns outright carries neither and
+		// carries an organisation instead. Exactly one of `teamID` and
+		// `organisationID` is ever set, which the database enforces rather than
+		// this schema — so read the one you mean and do not infer it from the
+		// other being absent.
+		ownerUserID: z.string().nullable(),
+		teamID: z.string().nullable(),
+		organisationID: z.string().nullable()
 	})
 });
 

@@ -112,6 +112,45 @@ binding names a script that has to exist. The custom domains in the config are
 what create the DNS records — there is no separate step, and no separate tool
 holding the other half of that fact.
 
+## Organisations, and why none are created for you
+
+An organisation owns hardware outright — a host that serves other people's
+workloads rather than its registrant's — and gathers the teams whose members
+sign in with its email domain. Membership is derived from that domain, so the
+`domain_verified` flag is the whole of the access decision: an address on a
+verified domain *is* membership, and nothing grants anything on an unverified
+one.
+
+**Nothing seeds one, deliberately, and it must stay that way.** A migration
+that inserted a row here would insert it into every deployment, including
+somebody else's — handing every account on that domain membership of a
+deployment its owners have nothing to do with. Seeding business data is what
+makes a schema migration a back door.
+
+So it is an operator action, run once against the database, by whoever is
+allowed to decide that a domain is really theirs:
+
+```sql
+INSERT INTO organisation (id, name, slug, domain, domain_verified)
+VALUES (
+  'org_' || substr(replace(gen_random_uuid()::text, '-', ''), 1, 26),
+  'Example',
+  'example',
+  'example.com',
+  true
+);
+```
+
+Two things to get right, because nothing checks them for you. The domain is
+lower-cased and has no `@` — it is compared literally against the domain half
+of an address. And `domain_verified` should be `true` only for a domain you
+control: everyone who can receive mail at it becomes a member the next time
+they sign in, with no further step.
+
+Hardware is then registered to it by a member, with `organisationId` instead of
+a team on `POST /machine/register`. Such a host has no owner and no team, which
+is the point — it outlives the account of whoever ran the command.
+
 ## Containers
 
 ```sh

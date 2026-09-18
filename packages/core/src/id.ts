@@ -6,6 +6,7 @@ export namespace Identifier {
 	export const prefixes = {
 		user: 'usr',
 		linkedAccount: 'lac',
+		organisation: 'org',
 		team: 'tem',
 		teamMember: 'mem',
 		verification: 'ver',

@@ -24,11 +24,20 @@ export namespace Examples {
 		profile: { personaname: 'John Doe', avatarfull: 'https://avatars.steamstatic.com/xxxx.jpg' }
 	};
 
+	export const Organisation = {
+		id: Id('organisation'),
+		name: 'Initech',
+		slug: 'initech',
+		domain: 'initech.example',
+		domainVerified: true
+	};
+
 	export const Team = {
 		id: Id('team'),
 		name: 'The A Team',
 		slug: 'the-a-team',
 		ownerId: Id('user'),
+		organisationId: null,
 		billingEmail: 'billing@example.com',
 		plan: 'free',
 		subscriptionStatus: 'active',

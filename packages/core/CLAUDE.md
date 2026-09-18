@@ -446,7 +446,9 @@ Game ───1:N─── Download        ← per-host game depot downloads
 
 - **User**: Person record. Email is nullable (gaming accounts don't provide one).
 - **LinkedAccount**: A gaming/OAuth identity. `(provider, providerAccountId)` is unique.
-- **Team**: Organization for billing/collaboration. First team is auto-created as "personal" team.
+- **Team**: The billing subject, and how people collaborate. The first one is auto-created as a "personal" team.
+- **Organisation**: A company. Owns hardware outright — a host serving other people's workloads, belonging to no team and no person — and gathers teams under a verified email domain. Membership is derived from that domain rather than stored. **Not a billing subject**: a team pays for what it uses whether it sits under an organisation or not.
+- **Machine**: A registered host. Owned by a team (a host somebody brought) or by an organisation (fleet hardware), never both and never neither — a check constraint, not a convention.
 - **TeamMember**: Joins User → Team with a role. `(teamId, userId)` is unique.
 
 ---
@@ -500,7 +502,15 @@ type ActorInfo =
 			properties: { userID: string; teamID: string; role: 'owner' | 'admin' | 'member' };
 	  }
 	| { type: 'system'; properties: { teamID: string } }
-	| { type: 'admin'; properties: {} };
+	| {
+			type: 'machine';
+			properties: {
+				machineID: string;
+				ownerUserID: string | null;
+				teamID: string | null;
+				organisationID: string | null;
+			};
+	  };
 ```
 
 ### API
@@ -509,8 +519,8 @@ type ActorInfo =
 Actor.use(); // → ActorInfo (throws if no context set)
 Actor.with(value, fn); // Run fn in the given actor context
 Actor.assert(type); // Assert current actor type, returns narrowed type
-Actor.type; // → 'public' | 'user' | 'member' | 'system' | 'admin'
-Actor.userID; // → string (user/member only)
+Actor.type; // → 'public' | 'user' | 'member' | 'system' | 'machine'
+Actor.userID; // → string (user/member only; refuses a machine outright)
 Actor.linkedAccountID; // → string (user only)
 Actor.useTeam; // → string (member/system only — the teamID)
 Actor.role; // → 'owner' | 'admin' | 'member' (member only)

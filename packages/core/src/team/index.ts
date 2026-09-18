@@ -28,6 +28,11 @@ export namespace Team {
 				description: 'The user who owns/created this team',
 				example: Examples.Team.ownerId
 			}),
+			organisationId: z.string().nullable().optional().meta({
+				description:
+					'The organisation this team belongs to, or null for a personal team. It groups teams under a company; it does not move billing, which stays on the team',
+				example: Examples.Team.organisationId
+			}),
 			billingEmail: z.email().nullable().optional().meta({
 				description: 'Email address used for billing and invoices',
 				example: Examples.Team.billingEmail
@@ -171,6 +176,7 @@ export namespace Team {
 			name: input.name,
 			slug: input.slug,
 			ownerId: input.ownerId,
+			organisationId: input.organisationId,
 			billingEmail: input.billingEmail,
 			plan: input.plan,
 			subscriptionStatus: input.subscriptionStatus,

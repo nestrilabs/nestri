@@ -72,7 +72,8 @@ describe('Machine registration', () => {
 			Machine.register({
 				id: Identifier.ascending('machine'),
 				ownerUserId: owner.userId,
-				// @ts-expect-error — the point of the test is that this is refused
+				// Null is a real value now — it is how fleet hardware says it has
+				// no team — so this is refused for naming neither owner.
 				teamId: null,
 				label: 'teamless'
 			})
