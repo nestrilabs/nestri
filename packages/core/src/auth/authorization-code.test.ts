@@ -86,7 +86,8 @@ describe('PostgresCodeStore', () => {
 
 		await store.create(hash(), record(), 60);
 
-		const [row] = await sql`select count(*)::int as n from authorization_code where code_hash = ${stale}`;
+		const [row] =
+			await sql`select count(*)::int as n from authorization_code where code_hash = ${stale}`;
 		expect(row!.n).toBe(0);
 	});
 });

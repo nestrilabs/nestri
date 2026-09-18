@@ -127,10 +127,7 @@ export namespace Database {
 				// callback ran on — harmless by luck, since neither was a real
 				// transaction, and twice the pools either way.
 				const db = client();
-				const result = await TransactionContext.provide(
-					{ effects, tx: db },
-					() => callback(db)
-				);
+				const result = await TransactionContext.provide({ effects, tx: db }, () => callback(db));
 				await Promise.all(effects.map((x) => x()));
 				return result;
 			}

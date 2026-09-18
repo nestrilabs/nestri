@@ -344,7 +344,13 @@ describe('Session claim', () => {
 	test('re-reporting the state you already reported changes nothing', async () => {
 		const { machineId, session } = await requested('ses-repeat', 5424);
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
 		const again = await Session.transition({
 			claimToken: HOLDER,
 			id: session.id,
@@ -373,8 +379,20 @@ describe('Session claim', () => {
 		expect(skipped.outcome).toBe('illegal');
 		expect((await Session.fromID(session.id))?.state).toBe('requested');
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'failed', errorMessage: 'no' });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'failed',
+			errorMessage: 'no'
+		});
 
 		// Terminal is terminal: a dead session cannot be resurrected.
 		const raised = await Session.transition({
@@ -390,7 +408,13 @@ describe('Session claim', () => {
 
 	test('the timestamps survive a duplicate report, which is what billing rests on', async () => {
 		const { machineId, session } = await requested('ses-idempotent', 5426);
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
 		const live = await Session.transition({
 			claimToken: HOLDER,
 			id: session.id,
@@ -414,7 +438,13 @@ describe('Session claim', () => {
 		const { machineId, session } = await requested('ses-ticket-scope', 5427);
 		const other = await scene('ses-ticket-other', 5428);
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
 
 		const refused = await Session.publishTicket({
 			claimToken: HOLDER,
@@ -426,12 +456,22 @@ describe('Session claim', () => {
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 
 		// A ticket may appear while the state is still `starting`.
-		const first = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'one' });
+		const first = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'one'
+		});
 		expect(first.outcome).toBe('published');
 		expect(first.session?.ticket).toBe('one');
 		expect(first.session?.state).toBe('starting');
 
-		const second = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'two' });
+		const second = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'two'
+		});
 		expect(second.session?.ticket).toBe('two');
 	});
 
@@ -691,11 +731,34 @@ describe('Session claim', () => {
 
 	test('a stopped session has no address to publish', async () => {
 		const { machineId, session } = await requested('ses-ticket-dead', 5429);
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'ended', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
 
-		const result = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'late' });
+		const result = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'late'
+		});
 		expect(result.outcome).toBe('closed');
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 	});
@@ -739,9 +802,27 @@ describe('Session one active run per box', () => {
 			});
 
 		const first = await mk();
-		await Session.transition({ claimToken: HOLDER, id: first.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: first.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: first.id, machineId, state: 'ended', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: first.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: first.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: first.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
 
 		// The index is partial for exactly this reason: a box is a durable
 		// thing and playing twice is the ordinary case, so a stopped run must
@@ -755,11 +836,29 @@ describe('Session one active run per box', () => {
 describe('Session tickets and the end of a run', () => {
 	test('stopping a run takes its address away', async () => {
 		const { machineId, session } = await requestedRun('ses-ticket-cleared', 5452);
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
 		expect(
-			(await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'live-address' })).session
-				?.ticket
+			(
+				await Session.publishTicket({
+					claimToken: HOLDER,
+					id: session.id,
+					machineId,
+					ticket: 'live-address'
+				})
+			).session?.ticket
 		).toBe('live-address');
 
 		const ended = await Session.transition({
@@ -779,8 +878,19 @@ describe('Session tickets and the end of a run', () => {
 
 	test('a run that failed does not keep an address either', async () => {
 		const { machineId, session } = await requestedRun('ses-ticket-cleared-fail', 5453);
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'starting-address' });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'starting-address'
+		});
 
 		const failed = await Session.transition({
 			claimToken: HOLDER,
@@ -814,12 +924,24 @@ describe('Session and the box underneath it', () => {
 		// `created` while a run on it was `live`.
 		expect((await Box.fromID(box.id))?.state).toBe('created');
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
 		// `starting` is deliberately not a box state: that transition is
 		// synchronous from the agent's side, so nothing would ever write it.
 		expect((await Box.fromID(box.id))?.state).toBe('created');
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
 		const running = await Box.fromID(box.id);
 		expect(running?.state).toBe('running');
 		expect(running?.stopReason).toBeNull();
@@ -828,9 +950,27 @@ describe('Session and the box underneath it', () => {
 
 	test('a run that ends stops its box, cleanly', async () => {
 		const { machineId, box, session } = await requestedRun('ses-box-ended', 5461);
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'ended', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
 
 		const stopped = await Box.fromID(box.id);
 		expect(stopped?.state).toBe('stopped');
@@ -840,7 +980,13 @@ describe('Session and the box underneath it', () => {
 
 	test('a run that fails stops its box in the words the agent used', async () => {
 		const { machineId, box, session } = await requestedRun('ses-box-failed', 5462);
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
 		await Session.transition({
 			claimToken: HOLDER,
 			id: session.id,
@@ -891,24 +1037,68 @@ describe('Session tickets need a claim first', () => {
 		// A ticket is the address of something being brought up, so publishing
 		// one for a `requested` run means the agent skipped the claim — the
 		// step that is the only mutual exclusion in the design.
-		const early = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'too-soon' });
+		const early = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'too-soon'
+		});
 		expect(early.outcome).toBe('unclaimed');
 		expect((await Session.fromID(session.id))?.ticket).toBeNull();
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		const now = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'in-time' });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		const now = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'in-time'
+		});
 		expect(now.outcome).toBe('published');
 		expect(now.session?.ticket).toBe('in-time');
 	});
 
 	test('the two refusals are different answers, because they are different mistakes', async () => {
 		const { machineId, session } = await requestedRun('ses-ticket-refusals', 5466);
-		const unclaimed = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'a' });
+		const unclaimed = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'a'
+		});
 
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'starting', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'live', errorMessage: null });
-		await Session.transition({ claimToken: HOLDER, id: session.id, machineId, state: 'ended', errorMessage: null });
-		const closed = await Session.publishTicket({ claimToken: HOLDER, id: session.id, machineId, ticket: 'b' });
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'starting',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'live',
+			errorMessage: null
+		});
+		await Session.transition({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			state: 'ended',
+			errorMessage: null
+		});
+		const closed = await Session.publishTicket({
+			claimToken: HOLDER,
+			id: session.id,
+			machineId,
+			ticket: 'b'
+		});
 
 		// One is an agent that has not claimed the work; the other is a run
 		// with nothing left to reach. Collapsing them would tell an agent
