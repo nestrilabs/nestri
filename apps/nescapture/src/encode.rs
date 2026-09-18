@@ -42,7 +42,7 @@ use nesprotocol::{
     MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO, decode_encode_settings, encode_ipc_frame,
 };
 use pixelforge::{
-    Codec, ColorConverter, ColorConverterConfig, ColorDescription, ColorSpace, EncodeBitDepth,
+    Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
     EncodeConfig, EncodeContentHint, EncodeFuture, EncodeUsageHint, Encoder, EncoderTuningMode,
     InputFormat, OutputFormat, PixelFormat, RateControlMode, VideoContextBuilder,
 };
@@ -91,35 +91,64 @@ pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
     }
 }
 
-pub fn vk_colorspace_to_color_space(vk_colorspace: u32) -> ColorSpace {
+/// What a swapchain's pixels already are, from its `VkColorSpaceKHR`.
+///
+/// Only the source. What the stream should be is a separate decision --
+/// [`stream_spec`] -- and keeping them apart is what fixed `BT2020_LINEAR_EXT`:
+/// with one fused source-to-target enum there was no arm for linear light on
+/// BT.2020 primaries, so it borrowed scRGB's and took a gamut error to avoid a
+/// gamma one. Now it says what it is.
+pub fn vk_colorspace_to_source_spec(vk_colorspace: u32) -> ColorSpec {
     match vk_colorspace {
-        VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpace::Bt2020,
-
-        // Both are linear, so the inverse sRGB EOTF that `SrgbToBt2020Pq` applies
-        // would decode data that was never encoded. `Bt709LinearToBt2020Pq` is
-        // documented for `EXTENDED_SRGB_LINEAR_EXT` exactly. `BT2020_LINEAR_EXT`
-        // is linear on BT.2020 primaries and there is no arm for that yet, so it
-        // borrows this one and takes a gamut error rather than a gamma one.
-        VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT | VK_COLOR_SPACE_BT2020_LINEAR_EXT => {
-            ColorSpace::Bt709LinearToBt2020Pq
-        }
-
-        _ => ColorSpace::Bt709,
+        VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpec::Bt2020Pq,
+        // Linear, so no inverse sRGB EOTF on the way out -- applying one would
+        // decode data that was never encoded.
+        VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT => ColorSpec::Bt709Linear,
+        VK_COLOR_SPACE_BT2020_LINEAR_EXT => ColorSpec::Bt2020Linear,
+        _ => ColorSpec::Srgb,
     }
 }
 
-/// SDR reference white for the PQ conversions, in nits.
+/// What to encode a given source as.
 ///
-/// Only the two arms that write PQ consume this. They disagree on what 1.0 means:
-/// sRGB content is gamma-encoded and its white sits at the BT.2408 reference of
-/// 203 nits, while scRGB is linear and IEC 61966-2-2 puts 1.0 at 80 nits.
-/// pixelforge defaults to 203 for both, which maps scRGB white about 2.5x too
-/// bright.
-pub fn sdr_reference_white_nits(color_space: ColorSpace) -> f32 {
-    match color_space {
-        ColorSpace::Bt709LinearToBt2020Pq => 80.0,
-        _ => 203.0,
+/// Video has no way to record that it holds linear light, so neither linear
+/// space can be a target -- [`ColorSpec::is_encodable`] says as much. Anything
+/// wide or linear goes out as HDR10; everything else stays SDR.
+pub fn stream_spec(source: ColorSpec) -> ColorSpec {
+    match source {
+        ColorSpec::Srgb => ColorSpec::Srgb,
+        ColorSpec::Bt709Linear | ColorSpec::Bt2020Linear | ColorSpec::Bt2020Pq => {
+            ColorSpec::Bt2020Pq
+        }
     }
+}
+
+/// The converter configuration for one capture.
+///
+/// One place decides source, target and range, and the colour description the
+/// encoder declares is then derived from this same value rather than matched
+/// separately -- so the matrix the shader applies and the one the VUI announces
+/// cannot disagree.
+pub fn converter_config(
+    width: u32,
+    height: u32,
+    input_fmt: InputFormat,
+    out_fmt: OutputFormat,
+    vk_colorspace: u32,
+) -> ColorConverterConfig {
+    let source = vk_colorspace_to_source_spec(vk_colorspace);
+    ColorConverterConfig::new(
+        width,
+        height,
+        input_fmt,
+        out_fmt,
+        source,
+        stream_spec(source),
+        // Capture is always full-range, and the description derived from this
+        // config says so. A limited-range tag over full-range samples is
+        // expanded again by the decoder.
+        ColorRange::Full,
+    )
 }
 
 /// Bit depth implied by a converter input format.
@@ -135,28 +164,6 @@ pub fn input_format_bit_depth(input_fmt: InputFormat) -> EncodeBitDepth {
         InputFormat::ABGR2101010 | InputFormat::RGBA16F => EncodeBitDepth::Ten,
         _ => EncodeBitDepth::Eight,
     }
-}
-
-pub fn vk_colorspace_to_color_description(vk_colorspace: u32) -> Option<ColorDescription> {
-    // Derived from the conversion rather than matched separately: the VUI has to
-    // describe what the shader actually wrote, and two independent matches on the
-    // same input drift the moment one gains an arm the other doesn't.
-    //
-    // Full range on every arm, because the converter is configured full-range
-    // unconditionally. pixelforge's constructors are limited-range per
-    // ITU-R BT.709-6, so leaving the flag off tags full-range luma as limited and
-    // every compliant decoder expands it again — darkening midtones and clipping
-    // both ends.
-    let desc = match vk_colorspace_to_color_space(vk_colorspace) {
-        ColorSpace::Bt709 => ColorDescription::bt709(),
-        // BT.2020 passthrough carries PQ-encoded input; the other two write PQ.
-        // HLG swapchains are tagged PQ here because pixelforge has no HLG transfer
-        // constant — a pre-existing approximation, not a consequence of this.
-        ColorSpace::Bt2020 | ColorSpace::SrgbToBt2020Pq | ColorSpace::Bt709LinearToBt2020Pq => {
-            ColorDescription::bt2020_pq()
-        }
-    };
-    Some(desc.with_full_range(true))
 }
 
 pub fn output_format(pixel_fmt: PixelFormat, bit_depth: EncodeBitDepth) -> OutputFormat {
@@ -669,6 +676,32 @@ fn encoder_thread(
 
         // Check for dynamic encode settings changes
         if let Ok(change) = cfg.reconfig_rx.try_recv() {
+            // A bitrate is the one setting that can move without rebuilding
+            // anything, and it is the one that moves most often -- a congestion
+            // controller adjusts it continuously, and every rebuild costs an IDR.
+            // An IDR is the largest frame there is, so paying one per adjustment
+            // would spend the most on the path least able to afford it, at the
+            // exact moment it is struggling. Everything else here -- a codec, a
+            // bit depth, a rate-control *mode* -- changes the video session
+            // itself and cannot avoid the rebuild.
+            if let Some(kbps) = bitrate_only_change(
+                &change,
+                cfg.bitrate_kbps,
+                cfg.codec,
+                cfg.wanted_depth_override,
+            ) && let Some(state) = encoder_state.as_mut()
+            {
+                match state.encoder.set_target_bitrate(kbps * 1_000) {
+                    Ok(()) => {
+                        cfg.bitrate_kbps = Some(kbps);
+                        log::info!("bitrate → {kbps} kbps (no rebuild, no IDR)");
+                        continue;
+                    }
+                    // Refused means this encode has no bitrate to retarget, so
+                    // fall through and rebuild it as one that does.
+                    Err(e) => log::info!("live retune refused ({e}), rebuilding"),
+                }
+            }
             log::info!(
                 "reconfig: codec={:?}, rc={:?}, value={}",
                 change.codec,
@@ -755,7 +788,6 @@ fn encoder_thread(
                 _ => input_format_bit_depth(input_fmt),
             }
         };
-        let color_space = vk_colorspace_to_color_space(raw.vk_colorspace);
         let out_fmt = output_format(cfg.pixel_format, bit_depth);
 
         // The geometry joins the guard. It used to be absent, and `cfg.width` /
@@ -784,7 +816,6 @@ fn encoder_thread(
                         raw.height,
                     );
                 }
-                let color_desc = vk_colorspace_to_color_description(raw.vk_colorspace);
                 match PerFrameEncoder::new(
                     &ctx,
                     cfg.codec.to_pixelforge(),
@@ -797,10 +828,9 @@ fn encoder_thread(
                     cfg.encoder_tuning_mode,
                     cfg.pixel_format,
                     bit_depth,
-                    color_desc,
                     input_fmt,
                     out_fmt,
-                    color_space,
+                    raw.vk_colorspace,
                 ) {
                     Ok(s) => {
                         encoder_state = Some(s);
@@ -932,18 +962,15 @@ impl PerFrameEncoder {
         encoder_tuning_mode: EncoderTuningMode,
         pixel_format: PixelFormat,
         bit_depth: EncodeBitDepth,
-        color_desc: Option<ColorDescription>,
         input_fmt: InputFormat,
         out_fmt: OutputFormat,
-        color_space: ColorSpace,
+        vk_colorspace: u32,
     ) -> Result<Self, String> {
+        let source = vk_colorspace_to_source_spec(vk_colorspace);
         log::info!(
-            "(re)init encoder: {:?} {:?} {:?} {:?} → {:?}",
-            codec,
-            pixel_format,
-            bit_depth,
-            color_space,
-            out_fmt
+            "(re)init encoder: {codec:?} {width}x{height} {pixel_format:?} {bit_depth:?} \
+             {source:?} → {:?} {out_fmt:?}",
+            stream_spec(source),
         );
 
         let mut enc_cfg = match codec {
@@ -960,14 +987,15 @@ impl PerFrameEncoder {
             .with_encode_usage_hint(EncodeUsageHint::Streaming)
             .with_encode_content_hint(EncodeContentHint::Rendered)
             .with_encoder_tuning_mode(encoder_tuning_mode);
-        if let Some(desc) = color_desc {
-            enc_cfg = enc_cfg.with_color_description(desc);
-        } else {
-            // GPU framebuffer captures are always full-range — use BT.709 full-range
-            // so the decoder doesn't apply limited‑range expansion.
-            enc_cfg =
-                enc_cfg.with_color_description(ColorDescription::bt709().with_full_range(true));
-        }
+        // Derived from the conversion rather than matched separately: the VUI
+        // has to describe what the shader actually wrote, and two independent
+        // matches on the same input drift the moment one gains an arm the other
+        // does not. `color_description` answers from the same source, target and
+        // range the converter is about to be built with.
+        let conv_cfg = converter_config(width, height, input_fmt, out_fmt, vk_colorspace);
+        enc_cfg = enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
+            format!("colour space {vk_colorspace} has no encodable stream description")
+        })?);
         enc_cfg = if let Some(q) = qp {
             enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
@@ -987,17 +1015,6 @@ impl PerFrameEncoder {
         let encoder =
             Encoder::new(ctx.clone(), enc_cfg).map_err(|e| format!("Encoder::new: {e}"))?;
 
-        let mut conv_cfg = ColorConverterConfig::new(width, height, input_fmt, out_fmt);
-        // The matrix the shader applies has to be the one the VUI declares. The
-        // colour space was previously computed, logged and then dropped on the
-        // floor, so BT.2020 captures were converted with the BT.709 matrix and
-        // the scRGB→PQ arm never ran at all.
-        conv_cfg.color_space = color_space;
-        conv_cfg.sdr_reference_white_nits = sdr_reference_white_nits(color_space);
-        // Capture is always full-range; `vk_colorspace_to_color_description` tags
-        // the stream to match.
-        conv_cfg.full_range = true;
-
         let converter = ColorConverter::new(ctx.clone(), conv_cfg)
             .map_err(|e| format!("ColorConverter::new: {e}"))?;
 
@@ -1010,6 +1027,35 @@ impl PerFrameEncoder {
             height,
         })
     }
+}
+
+/// The new target in kbps when a settings change is nothing but a bitrate.
+///
+/// `None` when anything else moved, in which case the session has to be rebuilt.
+/// The comparisons against the running configuration matter: the debug overlay
+/// sends every field on every apply, so a change that only moved the slider
+/// still arrives carrying a codec and a bit depth. Treating those as changes
+/// would rebuild the encoder -- and emit an IDR -- every time somebody nudged
+/// the bitrate.
+fn bitrate_only_change(
+    change: &EncodeSettingsChange,
+    current_bitrate_kbps: Option<u32>,
+    current_codec: HwCodec,
+    current_depth_override: Option<EncodeBitDepth>,
+) -> Option<u32> {
+    if change.rate_control_mode != RateControlMode::Cbr {
+        return None;
+    }
+    // Already under a bitrate. Coming *from* constant QP is a mode change, and
+    // the session was built for the other one.
+    current_bitrate_kbps?;
+    if change.codec.is_some_and(|c| c != current_codec) {
+        return None;
+    }
+    if change.bit_depth.is_some_and(|d| Some(d) != current_depth_override) {
+        return None;
+    }
+    Some(change.value)
 }
 
 /// Whether an existing encoder can take this frame, or has to be rebuilt.
@@ -1565,6 +1611,7 @@ fn stats_sender_thread(
 mod tests {
     use super::*;
     use ash::vk::ColorSpaceKHR as Cs;
+    use pixelforge::ColorDescription;
 
     /// The colour space values were once written out by hand and two were wrong,
     /// which routed every HDR swapchain into the SDR arm silently. Deriving them
@@ -1631,18 +1678,31 @@ mod tests {
         );
     }
 
+    /// A description for one colour space, through the same path the encoder
+    /// uses. The geometry and formats are irrelevant to the answer.
+    fn description(vk_colorspace: u32) -> ColorDescription {
+        converter_config(
+            1920,
+            1080,
+            InputFormat::BGRA,
+            OutputFormat::NV12,
+            vk_colorspace,
+        )
+        .color_description()
+        .expect("every source we accept has an encodable stream")
+    }
+
     #[test]
-    fn hdr_colour_spaces_select_the_hdr_arm() {
+    fn hdr_colour_spaces_are_already_pq() {
         for cs in [Cs::HDR10_ST2084_EXT, Cs::HDR10_HLG_EXT] {
             let raw = cs.as_raw() as u32;
             assert_eq!(
-                vk_colorspace_to_color_space(raw),
-                ColorSpace::Bt2020,
-                "{cs:?} must convert as BT.2020, not BT.709"
+                vk_colorspace_to_source_spec(raw),
+                ColorSpec::Bt2020Pq,
+                "{cs:?} must convert as BT.2020 PQ, not BT.709"
             );
-            let desc = vk_colorspace_to_color_description(raw).expect("a description");
             assert_eq!(
-                desc,
+                description(raw),
                 ColorDescription::bt2020_pq().with_full_range(true),
                 "{cs:?}"
             );
@@ -1650,35 +1710,61 @@ mod tests {
     }
 
     /// Linear swapchains must not be run through an inverse sRGB EOTF on the way
-    /// to PQ; `Bt709LinearToBt2020Pq` is the arm that skips it.
+    /// to PQ, and they are not the same linear space as each other.
     #[test]
-    fn scrgb_and_bt2020_linear_select_the_pq_conversion() {
+    fn the_two_linear_spaces_are_told_apart() {
+        // They used to share an arm: there was no source for linear light on
+        // BT.2020 primaries, so BT2020_LINEAR borrowed scRGB's and took a gamut
+        // error to avoid a gamma one. Splitting source from target gives it one.
+        assert_eq!(
+            vk_colorspace_to_source_spec(Cs::EXTENDED_SRGB_LINEAR_EXT.as_raw() as u32),
+            ColorSpec::Bt709Linear,
+        );
+        assert_eq!(
+            vk_colorspace_to_source_spec(Cs::BT2020_LINEAR_EXT.as_raw() as u32),
+            ColorSpec::Bt2020Linear,
+        );
+        // Both still leave as HDR10: video cannot carry linear light.
         for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
+            let raw = cs.as_raw() as u32;
             assert_eq!(
-                vk_colorspace_to_color_space(cs.as_raw() as u32),
-                ColorSpace::Bt709LinearToBt2020Pq,
+                stream_spec(vk_colorspace_to_source_spec(raw)),
+                ColorSpec::Bt2020Pq,
+                "{cs:?}"
+            );
+            assert!(
+                stream_spec(vk_colorspace_to_source_spec(raw)).is_encodable(),
                 "{cs:?}"
             );
         }
     }
 
-    /// scRGB is linear with 1.0 at 80 nits; everything else that reaches PQ is
-    /// gamma-encoded sRGB with white at the BT.2408 reference of 203.
+    /// scRGB is linear with 1.0 at 80 nits; gamma-encoded sRGB puts white at the
+    /// BT.2408 reference of 203.
     #[test]
     fn scrgb_white_is_not_the_srgb_reference() {
+        assert_eq!(ColorSpec::Bt709Linear.reference_white_nits(), Some(80.0));
+        assert_eq!(ColorSpec::Srgb.reference_white_nits(), Some(203.0));
         assert_eq!(
-            sdr_reference_white_nits(ColorSpace::Bt709LinearToBt2020Pq),
-            80.0
+            vk_colorspace_to_source_spec(Cs::EXTENDED_SRGB_LINEAR_EXT.as_raw() as u32)
+                .reference_white_nits(),
+            Some(80.0),
         );
-        assert_eq!(sdr_reference_white_nits(ColorSpace::SrgbToBt2020Pq), 203.0);
-        for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
-            let nits = sdr_reference_white_nits(vk_colorspace_to_color_space(cs.as_raw() as u32));
-            assert_eq!(nits, 80.0, "{cs:?}");
-        }
+        // BT.2020 linear now answers 203 rather than scRGB's 80, because it is
+        // no longer pretending to be scRGB. That is a deliberate change of
+        // behaviour: 80 was a side effect of the borrowed arm, not a decision
+        // about this space.
+        assert_eq!(
+            vk_colorspace_to_source_spec(Cs::BT2020_LINEAR_EXT.as_raw() as u32)
+                .reference_white_nits(),
+            Some(203.0),
+        );
+        // PQ already carries absolute brightness, so there is nothing to map.
+        assert_eq!(ColorSpec::Bt2020Pq.reference_white_nits(), None);
     }
 
     /// The matrix and transfer the shader applies and the ones the VUI declares
-    /// come from the same match, so they cannot disagree.
+    /// come from one config, so they cannot disagree.
     #[test]
     fn conversion_and_declaration_agree() {
         for cs in [
@@ -1690,8 +1776,8 @@ mod tests {
             Cs::BT2020_LINEAR_EXT,
         ] {
             let raw = cs.as_raw() as u32;
-            let desc = vk_colorspace_to_color_description(raw).expect("a description");
-            let writes_bt2020 = vk_colorspace_to_color_space(raw) != ColorSpace::Bt709;
+            let desc = description(raw);
+            let writes_bt2020 = stream_spec(vk_colorspace_to_source_spec(raw)) != ColorSpec::Srgb;
             assert_eq!(desc.is_hdr(), writes_bt2020, "{cs:?}");
             assert_eq!(
                 desc,
@@ -1708,11 +1794,9 @@ mod tests {
     #[test]
     fn sdr_colour_spaces_stay_on_bt709() {
         for cs in [Cs::SRGB_NONLINEAR, Cs::PASS_THROUGH_EXT] {
-            assert_eq!(
-                vk_colorspace_to_color_space(cs.as_raw() as u32),
-                ColorSpace::Bt709,
-                "{cs:?}"
-            );
+            let raw = cs.as_raw() as u32;
+            assert_eq!(vk_colorspace_to_source_spec(raw), ColorSpec::Srgb, "{cs:?}");
+            assert_eq!(stream_spec(ColorSpec::Srgb), ColorSpec::Srgb);
         }
     }
 
@@ -1761,10 +1845,8 @@ mod tests {
             Cs::EXTENDED_SRGB_LINEAR_EXT,
             Cs::PASS_THROUGH_EXT,
         ] {
-            let desc =
-                vk_colorspace_to_color_description(cs.as_raw() as u32).expect("a description");
             assert!(
-                desc.full_range,
+                description(cs.as_raw() as u32).full_range,
                 "{cs:?} produced a limited-range description"
             );
         }
@@ -1815,5 +1897,110 @@ mod encoder_identity_tests {
             HD,
             (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv444)
         ));
+    }
+}
+
+#[cfg(test)]
+mod bitrate_only_tests {
+    use super::{HwCodec, bitrate_only_change};
+    use crate::encode::EncodeSettingsChange;
+    use pixelforge::{EncodeBitDepth, RateControlMode};
+
+    fn change(
+        mode: RateControlMode,
+        value: u32,
+        codec: Option<HwCodec>,
+        bit_depth: Option<EncodeBitDepth>,
+    ) -> EncodeSettingsChange {
+        EncodeSettingsChange {
+            codec,
+            rate_control_mode: mode,
+            value,
+            bit_depth,
+        }
+    }
+
+    /// The running encode for these: CBR at 8 Mbps, H.264, no depth override.
+    fn running(c: &EncodeSettingsChange) -> Option<u32> {
+        bitrate_only_change(c, Some(8_000), HwCodec::H264, None)
+    }
+
+    #[test]
+    fn a_bare_bitrate_change_is_taken() {
+        let c = change(RateControlMode::Cbr, 2_000, None, None);
+        assert_eq!(running(&c), Some(2_000));
+    }
+
+    #[test]
+    fn restating_the_current_codec_and_depth_is_not_a_change() {
+        // The debug overlay sends every field on every apply, so a change that
+        // only moved the slider still arrives carrying a codec. Treating that as
+        // a codec change would rebuild the encoder, and an IDR with it, every
+        // time somebody nudged the bitrate.
+        let c = change(RateControlMode::Cbr, 2_000, Some(HwCodec::H264), None);
+        assert_eq!(running(&c), Some(2_000));
+
+        // Same, with the depth restated as what is already in force.
+        let c = change(
+            RateControlMode::Cbr,
+            2_000,
+            Some(HwCodec::H264),
+            Some(EncodeBitDepth::Eight),
+        );
+        assert_eq!(
+            bitrate_only_change(&c, Some(8_000), HwCodec::H264, Some(EncodeBitDepth::Eight)),
+            Some(2_000),
+        );
+    }
+
+    #[test]
+    fn a_stated_depth_against_no_override_rebuilds() {
+        // Deliberately conservative. With no override in force the running depth
+        // came from the input format or the environment, and this cannot tell
+        // whether the stated value matches it -- so it rebuilds rather than
+        // assume. The cost is one rebuild on the first manual apply; the cost of
+        // assuming wrongly is a stream whose depth silently disagrees with the
+        // encoder's.
+        let c = change(
+            RateControlMode::Cbr,
+            2_000,
+            None,
+            Some(EncodeBitDepth::Eight),
+        );
+        assert_eq!(bitrate_only_change(&c, Some(8_000), HwCodec::H264, None), None);
+    }
+
+    #[test]
+    fn a_different_codec_rebuilds() {
+        // A codec is the video session's profile; there is no retuning it.
+        for codec in [HwCodec::H265, HwCodec::AV1] {
+            let c = change(RateControlMode::Cbr, 2_000, Some(codec), None);
+            assert_eq!(running(&c), None, "{codec:?}");
+        }
+    }
+
+    #[test]
+    fn a_different_bit_depth_rebuilds() {
+        let c = change(
+            RateControlMode::Cbr,
+            2_000,
+            None,
+            Some(EncodeBitDepth::Ten),
+        );
+        assert_eq!(running(&c), None);
+    }
+
+    #[test]
+    fn switching_to_constant_qp_rebuilds() {
+        let c = change(RateControlMode::Cqp, 28, None, None);
+        assert_eq!(running(&c), None);
+    }
+
+    #[test]
+    fn coming_back_from_constant_qp_rebuilds() {
+        // The session was built without a bitrate, so there is nothing to
+        // retarget -- it has to become an encode that has one.
+        let c = change(RateControlMode::Cbr, 2_000, None, None);
+        assert_eq!(bitrate_only_change(&c, None, HwCodec::H264, None), None);
     }
 }

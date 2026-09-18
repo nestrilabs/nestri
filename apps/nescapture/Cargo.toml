@@ -32,7 +32,7 @@ toml  = "0.8"
 serde = { version = "1", features = ["derive"] }
 
 # Vulkan Video hardware encoding.
-pixelforge = { git = "https://github.com/DatCaptainHorse/pixelforge.git", rev = "681fa4dd8bce5dabf008d00983e991b0eb8b3696", features = ["dmabuf"] }
+pixelforge = { git = "https://github.com/DatCaptainHorse/pixelforge.git", rev = "f45cc95bb5f076287613a2e0269b1fb334697a78", features = ["dmabuf"] }
 
 # libc for DMA-BUF OS primitives
 libc = "0.2"
