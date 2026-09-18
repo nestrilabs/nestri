@@ -179,6 +179,39 @@ pub struct BootDescriptor {
     pub mounts: Vec<Mount>,
     #[serde(default)]
     pub drives: Vec<Drive>,
+    /// What the box may spend on video.
+    ///
+    /// Here rather than on a launch because its consumer is `neshub`, which is
+    /// a service and comes up with the box. Geometry went the other way for the
+    /// same reason: its consumer is the compositor, which is started per launch.
+    /// A number travels to where the thing that reads it is started.
+    #[serde(default)]
+    pub video: VideoLimits,
+}
+
+/// Ceilings on what a box's video may cost.
+///
+/// A struct rather than a bare number so the next video-shaped limit joins it
+/// instead of arriving loose alongside it.
+///
+/// Note what `deny_unknown_fields` on [`BootDescriptor`] means for this: a host
+/// that sends `video` to a guest too old to know the field is *refused*, not
+/// quietly accepted. That is the intended direction of failure -- the
+/// alternative is a box that comes up, streams, and ignores the ceiling it was
+/// given, which is exactly the shape of failure this stack produces too easily.
+/// The guest image is rebuilt before a host starts sending it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VideoLimits {
+    /// Ceiling on the video bitrate, in kbps.
+    ///
+    /// `None` means nobody said, which is not the same as zero and is not the
+    /// same as unlimited. A reader that was told nothing should say so and pick
+    /// a conservative default of its own; a reader that treats "unsaid" as
+    /// "unlimited" reproduces the bug this exists to fix, where every session
+    /// offered 10 Mbps because nothing had ever set a number.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub bitrate_kbps: Option<u32>,
 }
 
 /// How a workload ended.
@@ -391,6 +424,7 @@ mod tests {
                 ro: true,
             }],
             drives: Vec::new(),
+            video: VideoLimits::default(),
         }
     }
 
@@ -631,5 +665,66 @@ mod tests {
         assert!(exec.env.is_empty());
         assert_eq!(exec.cwd, None);
         assert!(!on_exit.terminal);
+    }
+}
+
+#[cfg(test)]
+mod video_limits_tests {
+    use super::*;
+
+    #[test]
+    fn a_descriptor_without_video_still_reads() {
+        // An older host says nothing about video. That has to keep working, and
+        // it has to be distinguishable from a host that said "no limit".
+        let d: BootDescriptor = serde_json::from_str(r#"{"mounts":[],"drives":[]}"#).unwrap();
+        assert_eq!(d.video.bitrate_kbps, None);
+    }
+
+    #[test]
+    fn an_unsaid_ceiling_is_not_serialised() {
+        // So a host that has nothing to say produces the same bytes it always
+        // did, and an older guest keeps accepting it.
+        let d = BootDescriptor {
+            mounts: Vec::new(),
+            drives: Vec::new(),
+            video: VideoLimits::default(),
+        };
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("bitrate"), "{json}");
+    }
+
+    #[test]
+    fn a_ceiling_survives_the_round_trip() {
+        let d = BootDescriptor {
+            mounts: Vec::new(),
+            drives: Vec::new(),
+            video: VideoLimits {
+                bitrate_kbps: Some(8_000),
+            },
+        };
+        let back: BootDescriptor =
+            serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
+        assert_eq!(back, d);
+    }
+
+    #[test]
+    fn zero_is_not_the_same_as_unsaid() {
+        // A reader that conflates them cannot tell "the host wants no video" from
+        // "the host never mentioned it", and the second must not be read as a
+        // licence to send whatever it likes.
+        let said: BootDescriptor = serde_json::from_str(r#"{"video":{"bitrate_kbps":0}}"#).unwrap();
+        let unsaid: BootDescriptor = serde_json::from_str("{}").unwrap();
+        assert_eq!(said.video.bitrate_kbps, Some(0));
+        assert_eq!(unsaid.video.bitrate_kbps, None);
+    }
+
+    #[test]
+    fn an_unknown_video_field_is_refused() {
+        // Same reasoning as the descriptor's own `deny_unknown_fields`: a limit
+        // this build does not understand is one it would otherwise ignore while
+        // reporting success.
+        let r: Result<BootDescriptor, _> =
+            serde_json::from_str(r#"{"video":{"bitrate_kbps":8000,"fps_cap":30}}"#);
+        assert!(r.is_err(), "an unknown video limit must not be ignored");
     }
 }

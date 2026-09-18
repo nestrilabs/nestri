@@ -73,6 +73,16 @@ struct Args {
     #[arg(long, env = "NESTRI_AUDIO_BITRATE", default_value_t = 64)]
     audio_bitrate_per_channel: u32,
 
+    /// Ceiling on the video bitrate, in kbps.
+    ///
+    /// Set by `nesinit` from the boot descriptor's video limits, which come
+    /// from the tier the box was sized for. Absent means nobody said -- which is
+    /// not a licence to send whatever the encoder defaults to, since that is
+    /// precisely how every session came to offer 10 Mbps regardless of what the
+    /// path could carry. Unset is reported, and a conservative ceiling is used.
+    #[arg(long, env = "NESTRI_MAX_BITRATE")]
+    max_bitrate_kbps: Option<u32>,
+
     /// Socket nescope sends screenshots on. neshub listens; nescope dials out.
     #[arg(
         long,
@@ -81,6 +91,14 @@ struct Args {
     )]
     screenshot_ipc: PathBuf,
 }
+
+/// What to assume when nobody said.
+///
+/// Deliberately modest. A ceiling that was never set should not behave like an
+/// unlimited one: the whole failure this exists to fix was a session offering
+/// 10 Mbps into a path carrying under three, because no number had ever been
+/// chosen and the encoder's own default stood in for one.
+const DEFAULT_MAX_BITRATE_KBPS: u32 = 4_000;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -115,6 +133,15 @@ async fn main() -> Result<()> {
             builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(relay_map));
             tracing::info!("using custom relay: {url}");
         }
+    }
+
+    match args.max_bitrate_kbps {
+        Some(kbps) => tracing::info!("video ceiling: {kbps} kbps, from the boot descriptor"),
+        None => tracing::warn!(
+            "no video ceiling on the boot descriptor; using {DEFAULT_MAX_BITRATE_KBPS} kbps. \
+             A box sized by a tier is told its ceiling -- if this is one, the descriptor did \
+             not carry it."
+        ),
     }
 
     let endpoint = builder.bind().await?;

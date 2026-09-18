@@ -40,6 +40,17 @@ pub const FRAME_HDR_LEN: usize = 7;
 pub const MSG_DATA: u8 = 0; // generic data frame (video / audio)
 pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub → hudless)
 pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → hudless)
+/// What the receiver actually got, once a second (desktop → hub).
+///
+/// The hub cannot see this. Its own view of the path -- RTT, congestion window,
+/// whether a datagram send returned an error -- was measured saying the path was
+/// healthy while the client was receiving almost nothing, and one reason is
+/// structural: `send_datagram` evicts the oldest queued datagrams and returns
+/// `Ok`, so the send side has no backpressure signal at all. Only the far end
+/// knows what arrived.
+pub const MSG_RECEIVER_REPORT: u8 = 0x13;
+/// Who decides the bitrate, and the ceiling to decide within (desktop → hub).
+pub const MSG_CONTROL_MODE: u8 = 0x14;
 pub const MSG_INPUT_BATCH: u8 = 0xFE; // batched input events (desktop → hub)
 
 /// Build a frame body: `[u8 type] [u16 LE seq] [payload]`.
@@ -223,4 +234,243 @@ pub fn decode_encode_settings(payload: &[u8]) -> Option<(u8, u8, u32, Option<u8>
         None
     };
     Some((codec_id, rc, value, depth))
+}
+
+// ── Receiver report ─────────────────────────────────────────────
+
+/// What one second looked like from the receiving end.
+///
+/// Counts are per-second deltas, not totals: a controller wants to know what is
+/// happening now, and a total makes every reading depend on how long the session
+/// has been running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReceiverReport {
+    /// Video bits per second actually reassembled and released to the decoder.
+    ///
+    /// Not what was sent, and not what arrived -- what *completed*. A frame
+    /// missing one fragment contributes nothing here, which is right: it
+    /// contributed nothing to the picture either. When the sender is saturating
+    /// the path this is the measured capacity of it.
+    pub goodput_bps: u64,
+    /// Frames released to the decoder.
+    pub released: u32,
+    /// Frames that started arriving and never completed.
+    pub incomplete: u32,
+    /// Frames no fragment of which ever arrived.
+    pub never_arrived: u32,
+    /// The receiver's own round-trip estimate, in milliseconds.
+    pub rtt_ms: u32,
+}
+
+impl ReceiverReport {
+    /// The fraction of frames that did not make it, in `0.0..=1.0`.
+    ///
+    /// `None` when no frames were accounted for at all, which is not the same
+    /// as no loss -- a second in which nothing was sent and a second in which
+    /// nothing arrived look identical here, and only the caller knows which it
+    /// is expecting.
+    pub fn loss(&self) -> Option<f32> {
+        let total = self.released + self.incomplete + self.never_arrived;
+        if total == 0 {
+            return None;
+        }
+        Some((self.incomplete + self.never_arrived) as f32 / total as f32)
+    }
+}
+
+/// `[8B goodput_bps][4B released][4B incomplete][4B never_arrived][4B rtt_ms]`,
+/// all little-endian.
+pub const RECEIVER_REPORT_LEN: usize = 24;
+
+pub fn encode_receiver_report(buf: &mut Vec<u8>, report: &ReceiverReport) {
+    buf.reserve(RECEIVER_REPORT_LEN);
+    buf.extend_from_slice(&report.goodput_bps.to_le_bytes());
+    buf.extend_from_slice(&report.released.to_le_bytes());
+    buf.extend_from_slice(&report.incomplete.to_le_bytes());
+    buf.extend_from_slice(&report.never_arrived.to_le_bytes());
+    buf.extend_from_slice(&report.rtt_ms.to_le_bytes());
+}
+
+/// Decode a receiver report. `None` when the payload is short.
+///
+/// A payload *longer* than expected is accepted and its tail ignored, so a newer
+/// client that appends a field still reports usefully to an older hub.
+pub fn decode_receiver_report(payload: &[u8]) -> Option<ReceiverReport> {
+    if payload.len() < RECEIVER_REPORT_LEN {
+        return None;
+    }
+    let u32_at = |o: usize| u32::from_le_bytes(payload[o..o + 4].try_into().unwrap());
+    Some(ReceiverReport {
+        goodput_bps: u64::from_le_bytes(payload[0..8].try_into().unwrap()),
+        released: u32_at(8),
+        incomplete: u32_at(12),
+        never_arrived: u32_at(16),
+        rtt_ms: u32_at(20),
+    })
+}
+
+// ── Control mode ────────────────────────────────────────────────
+
+/// Who is choosing the bitrate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ControlMode {
+    /// The hub's controller decides, within the ceiling.
+    #[default]
+    Auto,
+    /// A person decided, and the controller stands down until told otherwise.
+    ///
+    /// Kept because it is how this class of bug gets diagnosed at all: the
+    /// original "the bitrate is already lowered" report was wrong, and the only
+    /// way anyone established that was by setting one by hand and watching the
+    /// picture come back.
+    Manual,
+}
+
+pub const CONTROL_MODE_AUTO: u8 = 0;
+pub const CONTROL_MODE_MANUAL: u8 = 1;
+
+/// `[1B mode][4B ceiling_kbps LE]`. A ceiling of 0 means "no opinion, keep
+/// whatever the hub was given".
+pub const CONTROL_MODE_LEN: usize = 5;
+
+pub fn encode_control_mode(buf: &mut Vec<u8>, mode: ControlMode, ceiling_kbps: u32) {
+    buf.reserve(CONTROL_MODE_LEN);
+    buf.push(match mode {
+        ControlMode::Auto => CONTROL_MODE_AUTO,
+        ControlMode::Manual => CONTROL_MODE_MANUAL,
+    });
+    buf.extend_from_slice(&ceiling_kbps.to_le_bytes());
+}
+
+/// Returns `(mode, ceiling_kbps)`; the ceiling is `None` when it was left at 0.
+pub fn decode_control_mode(payload: &[u8]) -> Option<(ControlMode, Option<u32>)> {
+    if payload.len() < CONTROL_MODE_LEN {
+        return None;
+    }
+    let mode = match payload[0] {
+        CONTROL_MODE_AUTO => ControlMode::Auto,
+        CONTROL_MODE_MANUAL => ControlMode::Manual,
+        // An unknown mode is not a reason to stop controlling the bitrate, and
+        // guessing "manual" would silently disable the controller.
+        _ => return None,
+    };
+    let ceiling = u32::from_le_bytes(payload[1..5].try_into().unwrap());
+    Some((mode, (ceiling != 0).then_some(ceiling)))
+}
+
+#[cfg(test)]
+mod media_control_tests {
+    use super::*;
+
+    fn report() -> ReceiverReport {
+        ReceiverReport {
+            goodput_bps: 2_850_000,
+            released: 47,
+            incomplete: 12,
+            never_arrived: 1,
+            rtt_ms: 182,
+        }
+    }
+
+    #[test]
+    fn a_report_survives_the_wire() {
+        let mut buf = Vec::new();
+        encode_receiver_report(&mut buf, &report());
+        assert_eq!(buf.len(), RECEIVER_REPORT_LEN);
+        assert_eq!(decode_receiver_report(&buf), Some(report()));
+    }
+
+    #[test]
+    fn a_short_report_is_refused_rather_than_guessed() {
+        let mut buf = Vec::new();
+        encode_receiver_report(&mut buf, &report());
+        for n in 0..RECEIVER_REPORT_LEN {
+            assert_eq!(decode_receiver_report(&buf[..n]), None, "{n} bytes");
+        }
+    }
+
+    #[test]
+    fn a_longer_report_is_read_and_its_tail_ignored() {
+        // So a newer client that appends a field still reports usefully to a
+        // hub that predates it.
+        let mut buf = Vec::new();
+        encode_receiver_report(&mut buf, &report());
+        buf.extend_from_slice(&[0xAA; 8]);
+        assert_eq!(decode_receiver_report(&buf), Some(report()));
+    }
+
+    #[test]
+    fn loss_counts_every_frame_that_did_not_arrive_whole() {
+        // An incomplete frame is a lost frame. It cost bandwidth and produced no
+        // picture, which is worse than never having been sent.
+        let r = ReceiverReport {
+            released: 90,
+            incomplete: 8,
+            never_arrived: 2,
+            ..Default::default()
+        };
+        assert_eq!(r.loss(), Some(0.1));
+    }
+
+    #[test]
+    fn a_silent_second_has_no_loss_figure() {
+        // Nothing sent and nothing arrived look identical from here. Reporting
+        // 0% would tell a controller the path is healthy; reporting 100% would
+        // tell it to collapse the bitrate. Neither is known, so neither is said.
+        assert_eq!(ReceiverReport::default().loss(), None);
+    }
+
+    #[test]
+    fn total_loss_is_reported_as_total() {
+        let r = ReceiverReport {
+            released: 0,
+            incomplete: 46,
+            never_arrived: 14,
+            ..Default::default()
+        };
+        assert_eq!(r.loss(), Some(1.0));
+    }
+
+    #[test]
+    fn a_control_mode_survives_the_wire() {
+        for (mode, ceiling) in [
+            (ControlMode::Auto, 8_000u32),
+            (ControlMode::Manual, 1_000),
+            (ControlMode::Auto, 0),
+        ] {
+            let mut buf = Vec::new();
+            encode_control_mode(&mut buf, mode, ceiling);
+            assert_eq!(buf.len(), CONTROL_MODE_LEN);
+            assert_eq!(
+                decode_control_mode(&buf),
+                Some((mode, (ceiling != 0).then_some(ceiling))),
+            );
+        }
+    }
+
+    #[test]
+    fn an_unknown_mode_is_refused_rather_than_defaulted() {
+        // Defaulting to manual would silently switch the controller off, which
+        // is the failure this whole change exists to remove.
+        let mut buf = vec![0x7F];
+        buf.extend_from_slice(&8_000u32.to_le_bytes());
+        assert_eq!(decode_control_mode(&buf), None);
+    }
+
+    #[test]
+    fn the_new_message_types_do_not_collide() {
+        let all = [
+            MSG_DATA,
+            MSG_IDR_REQUEST,
+            MSG_ENCODE_SETTINGS,
+            MSG_RECEIVER_REPORT,
+            MSG_CONTROL_MODE,
+            MSG_INPUT_BATCH,
+        ];
+        for (i, a) in all.iter().enumerate() {
+            for b in &all[i + 1..] {
+                assert_ne!(a, b, "two message types share a value");
+            }
+        }
+    }
 }

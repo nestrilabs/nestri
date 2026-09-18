@@ -41,6 +41,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::reap::{Waiters, Watched};
 use crate::workload::Failure;
+use nesprotocol::lifecycle::VideoLimits;
 
 /// A service that died, and how.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +61,13 @@ pub trait Services {
     /// Called once, after the shares are mounted and before anything may be
     /// launched. An empty stack is legitimate: a box with no services still
     /// boots, and a caller can still launch something that needs none.
-    fn bring_up(&mut self) -> Result<Vec<String>, Failure>;
+    ///
+    /// `video` comes from the descriptor and reaches the services that read it.
+    /// It has to arrive here rather than later because a service configured
+    /// after it is already running has a window in which it is not configured,
+    /// and for a bitrate ceiling that window is a session streaming at whatever
+    /// default it started with.
+    fn bring_up(&mut self, video: VideoLimits) -> Result<Vec<String>, Failure>;
 
     /// Deaths, as they happen.
     ///
@@ -308,6 +315,13 @@ pub struct Stack {
     running: Vec<(&'static str, Watched)>,
     deaths: Receiver<Died>,
     reported: Sender<Died>,
+    /// What the host said this box may spend on video, from the descriptor.
+    ///
+    /// Held here because `spawn` is where it reaches a service, and `spawn`
+    /// takes a `&'static Service` whose `env` is a fixed table -- a value that
+    /// arrives at runtime has no route through it otherwise. The same problem
+    /// `RUST_LOG` has, solved the same way.
+    video: VideoLimits,
 }
 
 impl Stack {
@@ -328,6 +342,7 @@ impl Stack {
             running: Vec::new(),
             deaths,
             reported,
+            video: VideoLimits::default(),
         }
     }
 
@@ -390,6 +405,15 @@ impl Stack {
         if let Ok(filter) = std::env::var("RUST_LOG") {
             command.env("RUST_LOG", filter);
         }
+        // The descriptor's video limits, for the services that read them. Same
+        // shape of problem as `RUST_LOG` above -- `env_clear` drops everything
+        // and the service table is a fixed list of literals, so a value that
+        // only exists at runtime has no other route in. `neshub` reads this
+        // through the clap `env =` attribute it already uses for every other
+        // setting.
+        if let Some(kbps) = self.video.bitrate_kbps {
+            command.env("NESTRI_MAX_BITRATE", kbps.to_string());
+        }
         // The service's own entry last, so a service that states one of these
         // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
@@ -451,7 +475,8 @@ impl Stack {
 }
 
 impl Services for Stack {
-    fn bring_up(&mut self) -> Result<Vec<String>, Failure> {
+    fn bring_up(&mut self, video: VideoLimits) -> Result<Vec<String>, Failure> {
+        self.video = video;
         let mut up = Vec::new();
         // Lifted out so the loop does not hold a borrow of `self` across the
         // start it is asking for.
@@ -604,6 +629,9 @@ pub mod double {
     /// only thing under test.
     pub struct Double {
         pub brought_up: usize,
+        /// What the last `bring_up` was told, so a test can assert the limits
+        /// reached the stack rather than assuming they did.
+        pub video: VideoLimits,
         pub failure: Option<Failure>,
         pub names: Vec<String>,
         deaths: Receiver<Died>,
@@ -625,6 +653,7 @@ pub mod double {
                 names: vec!["dbus-system".into(), "neshub".into()],
                 deaths,
                 report,
+                video: VideoLimits::default(),
             }
         }
 
@@ -637,8 +666,9 @@ pub mod double {
     }
 
     impl Services for Double {
-        fn bring_up(&mut self) -> Result<Vec<String>, Failure> {
+        fn bring_up(&mut self, video: VideoLimits) -> Result<Vec<String>, Failure> {
             self.brought_up += 1;
+            self.video = video;
             match &self.failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(self.names.clone()),

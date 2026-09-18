@@ -311,7 +311,7 @@ where
                 // A box whose own services will not come up cannot be launched
                 // into, so this is refused rather than reported and carried on
                 // from — unlike a launch, which is the caller's to correct.
-                match services.bring_up() {
+                match services.bring_up(descriptor.video) {
                     Ok(up) => {
                         tracing::info!(services = up.len(), "the box is ready to be launched into");
                         send(&mut writer, &GuestToHost::Initialized { services: up }).await?
@@ -517,6 +517,7 @@ mod tests {
                 ro: false,
             }],
             drives: Vec::new(),
+            video: Default::default(),
         }
     }
 
@@ -713,6 +714,53 @@ mod tests {
             workload.started.is_empty(),
             "the descriptor started something, which is a launch's job"
         );
+    }
+
+    #[tokio::test]
+    async fn the_descriptors_video_limits_reach_the_services() {
+        // The ceiling is useless if it stops at the descriptor. `neshub` is the
+        // only thing that can enforce it and it is a service, so the number has
+        // to survive the whole way from the boot document to the spawn.
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        let mut given = descriptor();
+        given.video.bitrate_kbps = Some(8_000);
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (_, _, services) = session.await.unwrap();
+        assert_eq!(services.video.bitrate_kbps, Some(8_000));
+    }
+
+    #[tokio::test]
+    async fn a_box_told_nothing_about_video_says_so_rather_than_inventing_a_limit() {
+        // "Unsaid" must not arrive as a number. A stack that cannot tell the two
+        // apart cannot log that it was never told, and a ceiling nobody set is
+        // exactly how every session came to offer 10 Mbps.
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (_, _, services) = session.await.unwrap();
+        assert_eq!(services.video.bitrate_kbps, None);
     }
 
     #[tokio::test]
