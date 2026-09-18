@@ -2,6 +2,7 @@ import { eq, and, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Actor } from '../actor.js';
+import { Polar } from '../billing/polar.js';
 import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
@@ -75,6 +76,28 @@ export namespace Team {
 				role: 'owner'
 			});
 		});
+
+		// Register the team with the payment provider, *after* the rows are
+		// committed and without being able to affect them.
+		//
+		// Every team exists on their side, free ones included, so that an
+		// upgrade changes a subscription rather than inventing a customer and
+		// there is one question to ask about anybody rather than two.
+		//
+		// **Signing up is not allowed to depend on a third party.** So this
+		// cannot run inside the transaction, cannot fail the call, and does not
+		// retry: a team that misses it is free, which is what it would have been
+		// anyway, and the next call puts it right because the operation is
+		// idempotent.
+		Database.effect(async () => {
+			try {
+				await Polar.ensureFree({ teamId: input.id });
+			} catch (error) {
+				// eslint-disable-next-line no-console
+				console.error('could not register team with the payment provider:', error);
+			}
+		});
+
 		return input.id;
 	});
 

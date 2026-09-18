@@ -47,6 +47,8 @@ export namespace Env {
 		POLAR_ACCESS_TOKEN: z.string().optional(),
 		POLAR_WEBHOOK_SECRET: z.string().optional(),
 		POLAR_PRODUCT_ID: z.string().optional(),
+		/** The product a team is put on at signup, priced at nothing. */
+		POLAR_FREE_PRODUCT_ID: z.string().optional(),
 		POLAR_SERVER: z.enum(['sandbox', 'production']).optional(),
 
 		DATABASE_URL: z.string().optional()

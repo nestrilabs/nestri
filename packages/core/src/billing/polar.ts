@@ -45,6 +45,7 @@ export namespace Polar {
 			accessToken: env.POLAR_ACCESS_TOKEN,
 			server: Server.parse(env.POLAR_SERVER ?? 'sandbox'),
 			productId: env.POLAR_PRODUCT_ID,
+			freeProductId: env.POLAR_FREE_PRODUCT_ID,
 			webhookSecret: env.POLAR_WEBHOOK_SECRET
 		};
 	}
@@ -64,6 +65,51 @@ export namespace Polar {
 	export function reset(): void {
 		client.reset();
 	}
+
+	/**
+	 * Put a team on the free plan with the provider, without a checkout.
+	 *
+	 * A subscription at nothing a month needs no payment, so it is created
+	 * outright rather than by sending somebody to pay zero — a checkout for a
+	 * free account is a step that exists only to be got through.
+	 *
+	 * The point of doing it at all is that every team then exists on their side,
+	 * with our team id as its external id. Free accounts show up in the same
+	 * places paid ones do, an upgrade changes a subscription rather than
+	 * inventing a customer, and there is one question to ask about anybody
+	 * rather than two.
+	 *
+	 * **Idempotent, and quiet when it fails.** It runs after a team is created
+	 * and must never be able to undo that: signing up is not allowed to depend
+	 * on a third party being reachable, so a failure here leaves a team that is
+	 * free anyway — which is exactly what it would have been — and the next call
+	 * fixes it. That is also why it is safe to call on a team that already has
+	 * one.
+	 */
+	export const ensureFree = fn(z.object({ teamId: z.string() }), async (input) => {
+		const { freeProductId } = settings();
+		if (!freeProductId) {
+			return { created: false, reason: 'no free product configured' as const };
+		}
+
+		try {
+			const existing = await client().customers.getStateExternal({
+				externalId: input.teamId
+			});
+			if (existing.activeSubscriptions.length > 0) {
+				return { created: false, reason: 'already subscribed' as const };
+			}
+		} catch {
+			// No such customer yet, which is the ordinary case the first time.
+			// Creating the subscription below makes one.
+		}
+
+		await client().subscriptions.create({
+			productId: freeProductId,
+			externalCustomerId: input.teamId
+		});
+		return { created: true, reason: 'created' as const };
+	});
 
 	/**
 	 * A checkout for a team, as the customer they already are.
@@ -142,18 +188,38 @@ export namespace Polar {
 	 * changed somebody's plan would be a default that eventually cancels an
 	 * account nobody cancelled.
 	 */
-	export function standingFor(eventType: string): Standing | null {
+	export function standingFor(eventType: string, productId: string | null): Standing | null {
+		// Which plan a subscription *is* comes from the product, never from the
+		// event. Free is a real subscription here, so it announces itself with
+		// the same `subscription.created` a paid one does — reading the type
+		// alone would put every new signup on the paid allowance.
+		const { productId: paidProduct, freeProductId } = settings();
+		const plan: Standing['plan'] | null =
+			productId && productId === paidProduct
+				? 'paid'
+				: productId && productId === freeProductId
+					? 'free'
+					: null;
+
+		// A product we do not recognise is left alone rather than guessed at.
+		// Somebody selling something else through the same account should not be
+		// able to change what a team may run by doing so.
+		if (!plan) {
+			return null;
+		}
+
 		switch (eventType) {
 			case 'subscription.created':
 			case 'subscription.active':
 			case 'subscription.updated':
 			case 'subscription.uncanceled':
-				return { plan: 'paid', status: 'active' };
+				return { plan, status: 'active' };
 			case 'subscription.canceled':
-				return { plan: 'paid', status: 'canceled' };
+				return { plan, status: 'canceled' };
 			case 'subscription.past_due':
-				return { plan: 'paid', status: 'past_due' };
+				return { plan, status: 'past_due' };
 			case 'subscription.revoked':
+				// Whatever it was, it is over. Free is where everybody lands.
 				return { plan: 'free', status: 'revoked' };
 			default:
 				return null;
@@ -207,12 +273,18 @@ export namespace Polar {
 
 			const data = (event as { data?: Record<string, unknown> }).data ?? {};
 			const customer = data.customer as { externalId?: string | null } | undefined;
-			// `externalId` is the team id we sent at checkout. A delivery without
-			// one is about a customer created some other way — by hand in their
-			// dashboard, most likely — and there is nothing here it can change.
+			// `externalId` is the team id we put on the customer. A delivery
+			// without one is about a customer created some other way — by hand in
+			// their dashboard, most likely — and there is nothing here it can
+			// change.
 			const teamId = customer?.externalId ?? null;
 
-			return { type: event.type, teamId, standing: standingFor(event.type) };
+			// Both spellings, because which one a payload carries depends on
+			// whether the product was expanded into it.
+			const product = data.product as { id?: string } | undefined;
+			const productId = (data.productId as string | undefined) ?? product?.id ?? null;
+
+			return { type: event.type, teamId, standing: standingFor(event.type, productId) };
 		}
 	);
 }
