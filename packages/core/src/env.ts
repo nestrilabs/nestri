@@ -27,6 +27,15 @@ export namespace Env {
 		 */
 		AUTH_INTERNAL_URL: z.string().optional(),
 
+		/**
+		 * Burn allowances per plan, as JSON. Unset takes the placeholder set.
+		 *
+		 * Configuration rather than constants because these are retuned against
+		 * real burn far more often than the code that reads them changes, and a
+		 * rate that needs a deploy is a rate that stays wrong until the next one.
+		 */
+		BURN_LIMITS: z.string().optional(),
+
 		DATABASE_URL: z.string().optional()
 	});
 
