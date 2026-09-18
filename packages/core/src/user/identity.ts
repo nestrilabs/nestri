@@ -6,9 +6,9 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
 import { User } from './index.js';
-import { UserTable } from './user.sql.js';
 import { LinkedAccount } from './linked-account.js';
 import { LinkedAccountTable } from './linked-account.sql.js';
+import { UserTable } from './user.sql.js';
 
 const STEAM_ID_RE = /^\d{17}$/;
 

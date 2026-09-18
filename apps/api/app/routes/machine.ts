@@ -4,6 +4,7 @@ import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
+import { Organisation } from '@nestri/core/organisation/index';
 import { Team } from '@nestri/core/team/index';
 import { Member } from '@nestri/core/team/member';
 import { Hono } from 'hono';
@@ -27,9 +28,9 @@ export namespace MachineApi {
 			notPublic,
 			describeRoute({
 				tags: ['Machine'],
-				summary: 'Register a nessh host',
+				summary: 'Register a host',
 				description:
-					'Exchange the calling user session for a machine id and secret. The secret is returned once and never again — it is stored only as a digest.',
+					'Exchange the calling user session for a machine id and secret. The secret is returned once and never again — it is stored only as a digest. Hardware belongs either to a team, which is the default and covers a host somebody brings, or to an organisation the caller belongs to, which is how hardware bought to serve other people is registered so that it is nobody\u2019s personal property.',
 				responses: {
 					200: {
 						content: {
@@ -64,15 +65,28 @@ export namespace MachineApi {
 					}),
 					teamId: z.string().optional().meta({
 						description:
-							'Team to own this hardware. Defaults to the caller’s personal team, which always exists'
+							'Team to own this hardware. Defaults to the caller\u2019s personal team, which always exists. Mutually exclusive with organisationId'
+					}),
+					organisationId: z.string().optional().meta({
+						description:
+							'Organisation to own this hardware outright, for a host that serves other people rather than its registrant. The caller must belong to it, and no team is recorded'
 					})
 				})
 			),
 			async (c) => {
-				const { label, teamId } = c.req.valid('json');
+				const { label, teamId, organisationId } = c.req.valid('json');
 
-				// `notPublic` also admits admin, which has no user to own the box.
-				// Registering is an act of ownership, so it needs a real one.
+				if (teamId && organisationId) {
+					throw new VisibleError(
+						'validation',
+						ErrorCodes.Validation.INVALID_PARAMETER,
+						'Hardware belongs to a team or to an organisation, not to both',
+						'organisationId'
+					);
+				}
+
+				// `notPublic` also admits a machine, which has no user to own a
+				// box. Registering is an act of ownership, so it needs a real one.
 				const actor = Actor.use();
 				if (actor.type !== 'user' && actor.type !== 'member') {
 					throw new VisibleError(
@@ -82,11 +96,39 @@ export namespace MachineApi {
 					);
 				}
 
-				// A team has to be resolved rather than defaulted to null, because
-				// `machine.teamId` is notNull. The order is: what the caller asked
-				// for, then the team they are acting inside, then their personal
-				// team — which `ensurePersonal` makes if this is an older user who
-				// has none. ref(d-0048)
+				// Naming an organisation registers fleet hardware: owned outright,
+				// with no team and no person behind it, so that it survives the
+				// account of whoever happened to run the command.
+				if (organisationId) {
+					if (!(await Organisation.isMember(Actor.userID, organisationId))) {
+						// Membership is the verified address, so this refuses the
+						// same way for an organisation that does not exist and one
+						// the caller simply is not in — there is nothing to learn
+						// from the difference.
+						throw new VisibleError(
+							'forbidden',
+							ErrorCodes.Permission.FORBIDDEN,
+							'You do not belong to that organisation'
+						);
+					}
+
+					const fleet = await Machine.register({
+						id: Identifier.ascending('machine'),
+						ownerUserId: null,
+						teamId: null,
+						organisationId,
+						label
+					});
+					return c.json({
+						data: { machineId: fleet.id, slug: fleet.slug, secret: fleet.secret }
+					});
+				}
+
+				// Otherwise a team has to be resolved rather than left null, since
+				// hardware with neither owner is hardware nothing can bill. The
+				// order is: what the caller asked for, then the team they are
+				// acting inside, then their personal team — which `ensurePersonal`
+				// makes if this is an older user who has none. ref(d-0048)
 				const owningTeam =
 					teamId ??
 					(actor.type === 'member'

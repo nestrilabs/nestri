@@ -2,6 +2,7 @@ import { eq, and, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Actor } from '../actor.js';
+import { Polar } from '../billing/polar.js';
 import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
@@ -27,6 +28,11 @@ export namespace Team {
 			ownerId: z.string().meta({
 				description: 'The user who owns/created this team',
 				example: Examples.Team.ownerId
+			}),
+			organisationId: z.string().nullable().optional().meta({
+				description:
+					'The organisation this team belongs to, or null for a personal team. It groups teams under a company; it does not move billing, which stays on the team',
+				example: Examples.Team.organisationId
 			}),
 			billingEmail: z.email().nullable().optional().meta({
 				description: 'Email address used for billing and invoices',
@@ -70,6 +76,28 @@ export namespace Team {
 				role: 'owner'
 			});
 		});
+
+		// Register the team with the payment provider, *after* the rows are
+		// committed and without being able to affect them.
+		//
+		// Every team exists on their side, free ones included, so that an
+		// upgrade changes a subscription rather than inventing a customer and
+		// there is one question to ask about anybody rather than two.
+		//
+		// **Signing up is not allowed to depend on a third party.** So this
+		// cannot run inside the transaction, cannot fail the call, and does not
+		// retry: a team that misses it is free, which is what it would have been
+		// anyway, and the next call puts it right because the operation is
+		// idempotent.
+		Database.effect(async () => {
+			try {
+				await Polar.ensureFree({ teamId: input.id });
+			} catch (error) {
+				// eslint-disable-next-line no-console
+				console.error('could not register team with the payment provider:', error);
+			}
+		});
+
 		return input.id;
 	});
 
@@ -165,12 +193,44 @@ export namespace Team {
 		return create({ id, name: `${input.displayName}'s Team`, slug });
 	});
 
+	/**
+	 * Record what the payment provider says a team is on.
+	 *
+	 * The only writer is the webhook, and it writes both fields together: a plan
+	 * without the status it came from cannot say whether "paid" means paying,
+	 * cancelled-but-paid-up, or behind on a card, and every one of those wants a
+	 * different sentence in front of a person.
+	 *
+	 * Deliberately not reached from anywhere a user can call. A plan that could
+	 * be set by a request is a plan somebody can set on themselves.
+	 */
+	export const setPlan = fn(
+		Info.pick({ id: true }).extend({
+			plan: z.string(),
+			subscriptionStatus: z.string()
+		}),
+		async (input) => {
+			return Database.use(async (tx) => {
+				return tx
+					.update(TeamTable)
+					.set({ plan: input.plan, subscriptionStatus: input.subscriptionStatus })
+					.where(and(eq(TeamTable.id, input.id), isNull(TeamTable.timeDeleted)))
+					.returning()
+					.then((rows) => {
+						const row = rows.at(0);
+						return row ? serialize(row) : null;
+					});
+			});
+		}
+	);
+
 	export function serialize(input: typeof TeamTable.$inferSelect): z.infer<typeof Info> {
 		return {
 			id: input.id,
 			name: input.name,
 			slug: input.slug,
 			ownerId: input.ownerId,
+			organisationId: input.organisationId,
 			billingEmail: input.billingEmail,
 			plan: input.plan,
 			subscriptionStatus: input.subscriptionStatus,

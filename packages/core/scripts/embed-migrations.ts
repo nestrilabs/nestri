@@ -24,9 +24,9 @@ const out = path.join(here, '..', 'src', 'migrations.generated.ts');
 
 type JournalEntry = { idx: number; when: number; tag: string; breakpoints: boolean };
 
-const journal = JSON.parse(
-	fs.readFileSync(path.join(folder, 'meta', '_journal.json'), 'utf8')
-) as { entries: JournalEntry[] };
+const journal = JSON.parse(fs.readFileSync(path.join(folder, 'meta', '_journal.json'), 'utf8')) as {
+	entries: JournalEntry[];
+};
 
 // Deliberately identical to drizzle-orm's own `readMigrationFiles`: the same
 // `--> statement-breakpoint` split, the same sha256 over the whole file, the

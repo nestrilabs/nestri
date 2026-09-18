@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
+import { Burn } from '../billing/burn.js';
 import { BoxTable, BoxTier } from '../box/box.sql.js';
 import { Box } from '../box/index.js';
 import { Database } from '../db/index.js';
@@ -8,6 +9,7 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
+import { Machine } from '../machine/index.js';
 import { SessionState, SessionTable } from './session.sql.js';
 
 /**
@@ -650,6 +652,37 @@ export namespace Session {
 					await Box.setState({ id: moved.boxId, ...box });
 				}
 
+				// Burn follows the run's state, in the same transaction that
+				// moved it. A session that went live without its meter starting
+				// is free hardware; one that ended without its meter stopping
+				// bills forever. Both are silent, so neither may be a second
+				// write that might not happen.
+				//
+				// `live` is where it starts rather than `starting`, because what
+				// is billed is an envelope actually held — a box that never
+				// finished coming up held nothing.
+				const machine = await Machine.fromID(input.machineId);
+				if (machine?.teamId) {
+					if (current.state !== 'live' && moved.state === 'live') {
+						// The rate is fixed here, from what this run actually is:
+						// the size it holds, and whose card it holds it on. Both
+						// are settled before the run starts, which is what lets a
+						// person be told the cost before committing to it.
+						const box = await Box.fromID(moved.boxId);
+						await Burn.start({
+							teamId: machine.teamId,
+							sessionId: moved.id,
+							tier: (box?.tier ?? 'sm') as Burn.Tier,
+							hostClass: machine.organisationId ? 'fleet' : 'byo'
+						});
+					} else if (
+						ACCRUING.includes(current.state as (typeof ACCRUING)[number]) &&
+						!ACCRUING.includes(moved.state as (typeof ACCRUING)[number])
+					) {
+						await Burn.stop({ teamId: machine.teamId, sessionId: moved.id });
+					}
+				}
+
 				return { outcome: 'moved', session: moved };
 			});
 		}
@@ -670,6 +703,16 @@ export namespace Session {
 	 * not there has no address at all.
 	 */
 	const ADDRESSABLE = ['starting', 'live'] as const;
+
+	/**
+	 * The states in which a run is spending.
+	 *
+	 * Only `live`. A run that is being brought up holds nothing yet, and the
+	 * terminal states hold nothing any more — so this is a list of one, written
+	 * as a list because the question it answers is "is this run costing
+	 * anything?" and that will not always have one answer.
+	 */
+	const ACCRUING = ['live'] as const;
 
 	/**
 	 * Publish a ticket for a run, on behalf of the host it is placed on.

@@ -14,14 +14,14 @@ src/<parent>/
 
 ### Sub-modules nested under parents
 
-| File                    | Namespace       | Why                                   |
-| ----------------------- | --------------- | ------------------------------------- |
-| `user/linked-account.*` | `LinkedAccount` | A user's OAuth/gaming identities      |
-| `user/fingerprint.*`    | `Fingerprint`   | SSH key fingerprints                  |
-| `game/download.*`      | `GameDownload`  | Per-host game depot downloads         |
-| `user/library.*`        | `Library`       | User's owned games with playtime      |
-| `team/member.*`         | `Member`        | Team membership with role             |
-| `game/depot.*`          | `Depot`         | Platform-specific game content depots |
+| File                    | Namespace       | Why                                     |
+| ----------------------- | --------------- | --------------------------------------- |
+| `user/linked-account.*` | `LinkedAccount` | A user's OAuth/gaming identities        |
+| `user/fingerprint.*`    | `Fingerprint`   | SSH key fingerprints                    |
+| `game/download.*`       | `GameDownload`  | Per-host game depot downloads           |
+| `user/library.*`        | `Library`       | User's owned games with playtime        |
+| `team/member.*`         | `Member`        | Team membership with role               |
+| `game/depot.*`          | `Depot`         | Platform-specific game content depots   |
 | `steam/enrolment.*`     | `Enrolment`     | Which host holds a Steam token for whom |
 
 Existing top-level modules: `user/`, `team/`, `game/`, `pairing-code/`, `steam/`, `auth/`, `db/`.
@@ -446,7 +446,9 @@ Game ───1:N─── Download        ← per-host game depot downloads
 
 - **User**: Person record. Email is nullable (gaming accounts don't provide one).
 - **LinkedAccount**: A gaming/OAuth identity. `(provider, providerAccountId)` is unique.
-- **Team**: Organization for billing/collaboration. First team is auto-created as "personal" team.
+- **Team**: The billing subject, and how people collaborate. The first one is auto-created as a "personal" team.
+- **Organisation**: A company. Owns hardware outright — a host serving other people's workloads, belonging to no team and no person — and gathers teams under a verified email domain. Membership is derived from that domain rather than stored. **Not a billing subject**: a team pays for what it uses whether it sits under an organisation or not.
+- **Machine**: A registered host. Owned by a team (a host somebody brought) or by an organisation (fleet hardware), never both and never neither — a check constraint, not a convention.
 - **TeamMember**: Joins User → Team with a role. `(teamId, userId)` is unique.
 
 ---
@@ -500,7 +502,15 @@ type ActorInfo =
 			properties: { userID: string; teamID: string; role: 'owner' | 'admin' | 'member' };
 	  }
 	| { type: 'system'; properties: { teamID: string } }
-	| { type: 'admin'; properties: {} };
+	| {
+			type: 'machine';
+			properties: {
+				machineID: string;
+				ownerUserID: string | null;
+				teamID: string | null;
+				organisationID: string | null;
+			};
+	  };
 ```
 
 ### API
@@ -509,8 +519,8 @@ type ActorInfo =
 Actor.use(); // → ActorInfo (throws if no context set)
 Actor.with(value, fn); // Run fn in the given actor context
 Actor.assert(type); // Assert current actor type, returns narrowed type
-Actor.type; // → 'public' | 'user' | 'member' | 'system' | 'admin'
-Actor.userID; // → string (user/member only)
+Actor.type; // → 'public' | 'user' | 'member' | 'system' | 'machine'
+Actor.userID; // → string (user/member only; refuses a machine outright)
 Actor.linkedAccountID; // → string (user only)
 Actor.useTeam; // → string (member/system only — the teamID)
 Actor.role; // → 'owner' | 'admin' | 'member' (member only)
@@ -573,25 +583,19 @@ A Cloudflare Worker using `@nestri/auth` (OpenAuth). Entry point is the `success
 4. If no memberships, calls `Team.createPersonal({ displayName })`
 5. Issues JWT via `context.subject('user', { userID, linkedAccountID })`
 
-### Admin Auth via Shared Secret
-
-Server-to-server calls can authenticate as an `admin` actor by setting the `x-nestri-admin-token` header to the value of `ADMIN_SHARED_SECRET`. This bypasses JWT auth entirely and grants a system-level actor with no user scope — useful for operations like adding games to the DB, syncing data, or other admin tasks.
-
-Configure `ADMIN_SHARED_SECRET` in `.env`. It has no default anywhere — a known value here is an authentication bypass, so nothing falls back to one.
-
 ### Auth Middleware (`apps/api/app/middleware/auth.ts`)
 
 Hono middleware that runs on every API request:
 
-1. Checks `x-nestri-admin-token` header — if it matches `Env.get().ADMIN_SHARED_SECRET`, sets actor to `admin` and proceeds immediately
-2. Otherwise, reads `Authorization: Bearer <token>` header
+1. Checks `x-nestri-machine-id` / `x-nestri-machine-secret` — a registered host authenticates as itself, and bad credentials fall through to `public` rather than erroring
+2. Otherwise, reads `Authorization: Bearer <token>` header — a personal access token is resolved from the database, anything else is verified as a JWT
 3. Verifies via `client.verify(subjects, token)` from `@nestri/auth/client`
 4. If valid `user` subject:
    - Checks `x-nestri-team` header for team-scoped access
    - If team header present, verifies membership via `Member.findByTeamAndUser`
    - Sets actor to `member` (with role) or `user` type
 5. If no token/invalid: sets actor to `public` type
-6. Exports `notPublic` guard middleware — throws `VisibleError('authentication', UNAUTHORIZED, …)` if actor is `public`. Caught by `onError` → 401 JSON response. The `admin` actor passes this guard (it's not `public`), so admin routes can use `.use(notPublic)` like any other protected route.
+6. Exports `notPublic` guard middleware — throws `VisibleError('authentication', UNAUTHORIZED, …)` if actor is `public`. Caught by `onError` → 401 JSON response. It admits machines too; what stops a host acting as its owner is `Actor.userID`, which refuses a `machine` outright.
 
 ### OpenAuth Subjects (`src/auth/subjects.ts`)
 

@@ -27,9 +27,29 @@ export namespace Env {
 		 */
 		AUTH_INTERNAL_URL: z.string().optional(),
 
-		SSH_AUTH_KEY: z.string().optional(),
+		/**
+		 * Burn allowances per plan, as JSON. Unset takes the placeholder set.
+		 *
+		 * Configuration rather than constants because these are retuned against
+		 * real burn far more often than the code that reads them changes, and a
+		 * rate that needs a deploy is a rate that stays wrong until the next one.
+		 */
+		BURN_LIMITS: z.string().optional(),
 
-		ADMIN_SHARED_SECRET: z.string().optional(),
+		/**
+		 * The payment provider.
+		 *
+		 * `POLAR_SERVER` picks the instance and the two are entirely separate
+		 * servers with separate data, so a token from one is refused by the
+		 * other and a product id from one means nothing to it. Getting this
+		 * wrong fails loudly rather than quietly charging somebody.
+		 */
+		POLAR_ACCESS_TOKEN: z.string().optional(),
+		POLAR_WEBHOOK_SECRET: z.string().optional(),
+		POLAR_PRODUCT_ID: z.string().optional(),
+		/** The product a team is put on at signup, priced at nothing. */
+		POLAR_FREE_PRODUCT_ID: z.string().optional(),
+		POLAR_SERVER: z.enum(['sandbox', 'production']).optional(),
 
 		DATABASE_URL: z.string().optional()
 	});

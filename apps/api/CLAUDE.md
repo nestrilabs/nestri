@@ -281,4 +281,3 @@ Route handler
   │
   └─ returns normally ─────► c.json({ data: … })
 ```
-

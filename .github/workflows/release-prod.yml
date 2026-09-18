@@ -138,7 +138,6 @@ jobs:
           PORT=13999 HOST=127.0.0.1 \
             DATABASE_URL="postgres://nobody@127.0.0.1:1/none" \
             AUTH_ISSUER_URL=https://auth.nestri.io \
-            ADMIN_SHARED_SECRET=smoke \
             ./dist/nestri-api & api=$!
           # NOT `/`, which the issuer answers 404 — it has no root route. NOT
           # `openid-configuration` either, also a 404: this is an OAuth 2.0
@@ -168,7 +167,7 @@ jobs:
           # 127.0.0.1, and a connection string containing it would satisfy the
           # grep from the wrong line.
           env -u HOST PORT=13997 DATABASE_URL="postgres://nobody@nowhere.invalid:1/none" \
-            ADMIN_SHARED_SECRET=smoke ./dist/nestri-api > /tmp/bind.log 2>&1 & probe=$!
+            ./dist/nestri-api > /tmp/bind.log 2>&1 & probe=$!
           sleep 3
           kill $probe 2>/dev/null || true
           grep -q "listening on http://127.0.0.1:" /tmp/bind.log || {

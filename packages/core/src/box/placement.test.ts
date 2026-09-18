@@ -3,8 +3,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
 import { Identifier } from '../id.js';
-import { Placement } from './placement.js';
 import { Box } from './index.js';
+import { Placement } from './placement.js';
 
 const sql = testDb();
 
@@ -46,9 +46,7 @@ describe('Placement', () => {
 
 		// `box.machineId` is notNull, so a placer with no candidate must refuse
 		// rather than hand back something the insert would reject.
-		await expect(
-			Placement.choose({ userId: owner.userId, tier: 'sm' })
-		).rejects.toThrow();
+		await expect(Placement.choose({ userId: owner.userId, tier: 'sm' })).rejects.toThrow();
 	});
 
 	test('more than one candidate is refused rather than picked silently', async () => {
@@ -59,9 +57,7 @@ describe('Placement', () => {
 		// There is no policy for choosing between hosts yet. Inventing one here
 		// is how a placement decision ends up buried in the caller: the refusal
 		// is what keeps the choice in one replaceable place.
-		await expect(
-			Placement.choose({ userId: owner.userId, tier: 'sm' })
-		).rejects.toThrow();
+		await expect(Placement.choose({ userId: owner.userId, tier: 'sm' })).rejects.toThrow();
 	});
 
 	test('the placer is swappable without touching box creation', async () => {

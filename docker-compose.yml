@@ -20,8 +20,7 @@
 # Every one is read from `.env`, and compose refuses to start naming the
 # variable it wanted rather than falling back to something. A default is worth
 # less than it looks: the deployment that never set the variable is exactly the
-# one where the default is a publicly known value, and `ADMIN_SHARED_SECRET`
-# below bypasses authentication entirely.
+# one where the default is a publicly known value.
 #
 # Migrations are not run for you — `bun run db:migrate` against DATABASE_URL,
 # because a container that migrates on boot races with the second copy of
@@ -104,9 +103,6 @@ services:
       # here. `AUTH_INTERNAL_URL` is how this container actually gets there.
       AUTH_ISSUER_URL: ${AUTH_ISSUER_URL:?set AUTH_ISSUER_URL in .env}
       AUTH_INTERNAL_URL: http://auth:1337
-      # A shared secret that turns any request carrying it into an operator.
-      # Required, with no default, for that reason.
-      ADMIN_SHARED_SECRET: ${ADMIN_SHARED_SECRET:?set ADMIN_SHARED_SECRET in .env to a value you generated}
       # Every interface *inside the container*, which is what makes the
       # loopback publication below reachable. The processes default to
       # 127.0.0.1 because a bare process on a host has no such wrapper and a

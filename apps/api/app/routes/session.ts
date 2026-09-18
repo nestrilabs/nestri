@@ -1,4 +1,5 @@
 import { Actor } from '@nestri/core/actor';
+import { Billing } from '@nestri/core/billing/index';
 import { Box } from '@nestri/core/box/index';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
@@ -11,7 +12,14 @@ import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { z } from 'zod';
 
-import { ErrorResponses, machineOnly, notPublic, Result, validator } from '../utils';
+import {
+	ErrorResponses,
+	machineOnly,
+	notPublic,
+	Result,
+	ResultWithBilling,
+	validator
+} from '../utils';
 
 /**
  * Requesting a run, and carrying one out.
@@ -89,17 +97,22 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'Ask for a run of a box',
 				description:
-					'Creates the run in state `requested`, which is the work order the box’s host picks up. This makes no decision about where the run happens: a box already names the hardware it is placed on, so the run inherits it. Poll the run to watch it start, and re-read its ticket rather than keeping the first one.',
+					'Creates the run in state `requested`, which is the work order the box’s host picks up. This makes no decision about where the run happens: a box already names the hardware it is placed on, so the run inherits it. Poll the run to watch it start, and re-read its ticket rather than keeping the first one. The response carries where the account’s allowance stands and what it is now spending per second, including what one more run would cost — a spent allowance refuses this call with a 429 and never interrupts a run already going.',
 				responses: {
 					201: {
-						content: { 'application/json': { schema: Result(Session.Info) } },
+						content: {
+							'application/json': {
+								schema: ResultWithBilling(Session.Info, Billing.State.nullable())
+							}
+						},
 						description: 'The run has been requested'
 					},
 					400: ErrorResponses[400],
 					401: ErrorResponses[401],
 					403: ErrorResponses[403],
 					404: ErrorResponses[404],
-					409: ErrorResponses[409]
+					409: ErrorResponses[409],
+					429: ErrorResponses[429]
 				}
 			}),
 			validator(
@@ -217,13 +230,28 @@ export namespace SessionApi {
 					conflict(Session.BOX_BUSY);
 				}
 
+				// The allowance is checked here and nowhere later. A limit refuses
+				// the next run; it never stops one already going, so this is the
+				// only moment it may speak. The answer comes back rather than
+				// being discarded, because the caller has to be told what it will
+				// cost and what remains — and asking a second time would let the
+				// number shown and the number billed disagree.
+				const payer = await Billing.teamForBox(box.id);
+				const billing = payer
+					? await Billing.assertMayStart({
+							teamId: payer.teamId,
+							nextTier: payer.tier,
+							nextHostClass: payer.hostClass
+						})
+					: null;
+
 				const session = await Session.request({
 					id: Identifier.ascending('session'),
 					boxId: box.id,
 					gameId: game.id,
 					linkedAccountId
 				});
-				return c.json({ data: session }, 201);
+				return c.json({ data: session, billing }, 201);
 			}
 		)
 		.get(
