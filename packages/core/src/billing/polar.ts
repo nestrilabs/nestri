@@ -341,18 +341,27 @@ export namespace Polar {
 				throw error;
 			}
 
+			// Both spellings, for both paths. The SDK's parser renames fields to
+			// camelCase on the way through; verifying the signature ourselves
+			// hands back exactly what was sent, which is snake_case. Reading only
+			// one spelling makes every delivery arrive intact, verify correctly,
+			// and then quietly apply to nobody.
 			const data = event.data ?? {};
-			const customer = data.customer as { externalId?: string | null } | undefined;
+			const customer = data.customer as
+				| { externalId?: string | null; external_id?: string | null }
+				| undefined;
 			// `externalId` is the team id we put on the customer. A delivery
 			// without one is about a customer created some other way — by hand in
 			// their dashboard, most likely — and there is nothing here it can
 			// change.
-			const teamId = customer?.externalId ?? null;
+			const teamId = customer?.externalId ?? customer?.external_id ?? null;
 
-			// Both spellings, because which one a payload carries depends on
-			// whether the product was expanded into it.
 			const product = data.product as { id?: string } | undefined;
-			const productId = (data.productId as string | undefined) ?? product?.id ?? null;
+			const productId =
+				(data.productId as string | undefined) ??
+				(data.product_id as string | undefined) ??
+				product?.id ??
+				null;
 
 			return { type: event.type, teamId, standing: standingFor(event.type, productId) };
 		}
