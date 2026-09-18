@@ -48,8 +48,8 @@ pub struct Gpu {
     pub name: String,
     pub vendor: Option<String>,
     /// The DRM render node, where one exists. Linux only, and a hard
-    /// requirement in `contracts/host-requirements.md`: a card without one
-    /// cannot host, however good it is.
+    /// requirement: a card without one cannot host, however good it is.
+    /// ref(d-0002)
     pub render_node: Option<String>,
 }
 
