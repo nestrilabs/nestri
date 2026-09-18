@@ -57,43 +57,70 @@ export namespace Billing {
 			return null;
 		}
 		const machine = await Machine.fromID(box.machineId);
-		return machine?.teamId ?? null;
+		if (!machine?.teamId) {
+			return null;
+		}
+		return {
+			teamId: machine.teamId,
+			tier: box.tier as Burn.Tier,
+			// Whose hardware decides the cost basis, and the machine is the only
+			// thing that knows. A host an organisation owns is ours to pay for;
+			// anything else is the caller's own card.
+			hostClass: (machine.organisationId ? 'fleet' : 'byo') as Burn.HostClass
+		};
 	});
 
 	/** Where a team stands, in every window, with the rates to show beside it. */
-	export const state = fn(z.string(), async (teamId): Promise<State> => {
-		const team = await Team.fromID(teamId);
-		const plan = team?.plan ?? 'free';
-		const allowances = Limits.forPlan(plan);
-		const counters = await Burn.counters(teamId);
-		const open = await Burn.openSegments(teamId);
+	export const state = fn(
+		z.object({
+			teamId: z.string(),
+			/** The run being considered, so "one more" can be costed honestly. */
+			nextTier: Burn.Tier.optional(),
+			nextHostClass: Burn.HostClass.optional()
+		}),
+		async (input): Promise<State> => {
+			const teamId = input.teamId;
+			const team = await Team.fromID(teamId);
+			const plan = team?.plan ?? 'free';
+			const allowances = Limits.forPlan(plan);
+			const counters = await Burn.counters(teamId);
+			const open = await Burn.openSegments(teamId);
 
-		const windows = Window.ALL.map((window) => {
-			const usage = counters ? Number(counters[`${window.key}Usage`] ?? 0) : 0;
-			const at = counters ? (counters[`${window.key}At`] ?? null) : null;
+			const windows = Window.ALL.map((window) => {
+				const usage = counters ? Number(counters[`${window.key}Usage`] ?? 0) : 0;
+				const at = counters ? (counters[`${window.key}At`] ?? null) : null;
+				return {
+					window: window.key,
+					label: window.label,
+					...Window.analyze({
+						allowance: allowances[window.key],
+						windowSeconds: window.seconds,
+						usage,
+						timeUpdated: at
+					})
+				};
+			});
+
+			// The account's total is the sum of what each run costs, not a count
+			// times one rate: an `xl` run and an `xs` one alongside it are not
+			// two of anything. Concurrency shows up here, as there being more to
+			// add, rather than as a multiplier on any of them.
+			const rateMilli = open.reduce((total, segment) => total + segment.rateMilli, 0);
+			const next = Burn.baseRateMilli({
+				tier: input.nextTier ?? 'sm',
+				hostClass: input.nextHostClass ?? 'byo'
+			});
+
 			return {
-				window: window.key,
-				label: window.label,
-				...Window.analyze({
-					allowance: allowances[window.key],
-					windowSeconds: window.seconds,
-					usage,
-					timeUpdated: at
-				})
+				teamId,
+				plan,
+				exhausted: windows.some((w) => w.exhausted),
+				rateMilli,
+				rateMilliIfOneMore: rateMilli + next,
+				windows
 			};
-		});
-
-		return {
-			teamId,
-			plan,
-			exhausted: windows.some((w) => w.exhausted),
-			// The account's total, which is what moves when a run starts — not
-			// any one session's own rate, which does not change.
-			rateMilli: open.length * Burn.rateMilliFor(open.length),
-			rateMilliIfOneMore: (open.length + 1) * Burn.rateMilliFor(open.length + 1),
-			windows
-		};
-	});
+		}
+	);
 
 	/**
 	 * Refuse a new run when any window is spent.
@@ -107,17 +134,24 @@ export namespace Billing {
 	 * which is the honest status — this is a rate limit the customer experiences
 	 * as a budget, and it will succeed later without anything changing.
 	 */
-	export const assertMayStart = fn(z.string(), async (teamId) => {
-		const current = await state(teamId);
-		const spent = current.windows.find((w) => w.exhausted);
-		if (!spent) {
-			return current;
+	export const assertMayStart = fn(
+		z.object({
+			teamId: z.string(),
+			nextTier: Burn.Tier.optional(),
+			nextHostClass: Burn.HostClass.optional()
+		}),
+		async (input) => {
+			const current = await state(input);
+			const spent = current.windows.find((w) => w.exhausted);
+			if (!spent) {
+				return current;
+			}
+			const minutes = Math.ceil(spent.resetInSec / 60);
+			throw new VisibleError(
+				'rate_limit',
+				ErrorCodes.RateLimit.QUOTA_EXCEEDED,
+				`Your ${spent.label} allowance is spent. It clears in about ${minutes} minute${minutes === 1 ? '' : 's'}. Runs already going are not affected.`
+			);
 		}
-		const minutes = Math.ceil(spent.resetInSec / 60);
-		throw new VisibleError(
-			'rate_limit',
-			ErrorCodes.RateLimit.QUOTA_EXCEEDED,
-			`Your ${spent.label} allowance is spent. It clears in about ${minutes} minute${minutes === 1 ? '' : 's'}. Runs already going are not affected.`
-		);
-	});
+	);
 }

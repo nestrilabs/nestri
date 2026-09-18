@@ -67,6 +67,16 @@ describe('The nesting rule: every window has to bind', () => {
 		expect(() => Limits.check(hours(10, 335, 1000), 'free')).not.toThrow();
 	});
 
+	test('the reference tier has to cost exactly one unit a second', () => {
+		// The unit *is* a second of a reference session, so moving `sm` off 1
+		// would silently redefine every allowance — the same stored number
+		// would be a different number of hours.
+		expect(() =>
+			Limits.checkFactors({ size: { xs: 500, sm: 900, md: 2200, lg: 5000, xl: 12000 } })
+		).toThrow(/reference tier/);
+		expect(() => Limits.checkFactors(Limits.PLACEHOLDER.factors)).not.toThrow();
+	});
+
 	test('the placeholder set satisfies both rules', () => {
 		// It is not a pricing decision, but it has to be a coherent one, or
 		// nothing downstream can be tested against it.
@@ -83,7 +93,11 @@ describe('Configuration', () => {
 
 	test('the environment overrides it, and is validated on the way in', () => {
 		Env.init({
-			BURN_LIMITS: JSON.stringify({ free: hours(12, 350, 1200), paid: hours(40, 1200, 4000) })
+			BURN_LIMITS: JSON.stringify({
+				free: hours(12, 350, 1200),
+				paid: hours(40, 1200, 4000),
+				factors: Limits.PLACEHOLDER.factors
+			})
 		});
 		Limits.reset();
 		expect(Limits.get().free.fiveHour).toBe(12 * HOUR);
@@ -94,7 +108,11 @@ describe('Configuration', () => {
 		// closest to the burn data, and a set that quietly stops binding is not
 		// visible from the numbers.
 		Env.init({
-			BURN_LIMITS: JSON.stringify({ free: hours(10, 400, 1000), paid: hours(30, 900, 3000) })
+			BURN_LIMITS: JSON.stringify({
+				free: hours(10, 400, 1000),
+				paid: hours(30, 900, 3000),
+				factors: Limits.PLACEHOLDER.factors
+			})
 		});
 		Limits.reset();
 		expect(() => Limits.get()).toThrow(/never be reached/);

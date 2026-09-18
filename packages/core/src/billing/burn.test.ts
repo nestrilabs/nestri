@@ -76,7 +76,7 @@ describe('Segments', () => {
 		const run = await s.newRun();
 		const t0 = new Date();
 
-		await Burn.start({ teamId: s.teamId, sessionId: run.id, at: t0 });
+		await Burn.start({ teamId: s.teamId, sessionId: run.id, tier: 'sm', hostClass: 'byo', at: t0 });
 		const banked = await Burn.stop({
 			teamId: s.teamId,
 			sessionId: run.id,
@@ -98,8 +98,20 @@ describe('Segments', () => {
 		const second = await s.newRun();
 		const t0 = new Date();
 
-		await Burn.start({ teamId: s.teamId, sessionId: first.id, at: t0 });
-		await Burn.start({ teamId: s.teamId, sessionId: second.id, at: t0 });
+		await Burn.start({
+			teamId: s.teamId,
+			sessionId: first.id,
+			tier: 'sm',
+			hostClass: 'byo',
+			at: t0
+		});
+		await Burn.start({
+			teamId: s.teamId,
+			sessionId: second.id,
+			tier: 'sm',
+			hostClass: 'byo',
+			at: t0
+		});
 		await Burn.stop({ teamId: s.teamId, sessionId: first.id, at: at(MINUTE, t0) });
 		await Burn.stop({ teamId: s.teamId, sessionId: second.id, at: at(MINUTE, t0) });
 
@@ -116,9 +128,21 @@ describe('Segments', () => {
 		const brief = await s.newRun();
 		const t0 = new Date();
 
-		await Burn.start({ teamId: s.teamId, sessionId: long.id, at: t0 });
+		await Burn.start({
+			teamId: s.teamId,
+			sessionId: long.id,
+			tier: 'sm',
+			hostClass: 'byo',
+			at: t0
+		});
 		// One minute alone.
-		await Burn.start({ teamId: s.teamId, sessionId: brief.id, at: at(MINUTE, t0) });
+		await Burn.start({
+			teamId: s.teamId,
+			sessionId: brief.id,
+			tier: 'sm',
+			hostClass: 'byo',
+			at: at(MINUTE, t0)
+		});
 		// One minute together, which costs two.
 		await Burn.stop({ teamId: s.teamId, sessionId: brief.id, at: at(2 * MINUTE, t0) });
 		// One minute alone again.
@@ -134,7 +158,7 @@ describe('Segments', () => {
 		const run = await s.newRun();
 		const t0 = new Date();
 
-		await Burn.start({ teamId: s.teamId, sessionId: run.id, at: t0 });
+		await Burn.start({ teamId: s.teamId, sessionId: run.id, tier: 'sm', hostClass: 'byo', at: t0 });
 		await Burn.stop({ teamId: s.teamId, sessionId: run.id, at: at(MINUTE, t0) });
 		const second = await Burn.stop({
 			teamId: s.teamId,
@@ -153,7 +177,7 @@ describe('Segments', () => {
 		const run = await s.newRun();
 		const t0 = new Date();
 
-		await Burn.start({ teamId: s.teamId, sessionId: run.id, at: t0 });
+		await Burn.start({ teamId: s.teamId, sessionId: run.id, tier: 'sm', hostClass: 'byo', at: t0 });
 		await Burn.resegment({ teamId: s.teamId, at: at(5 * MINUTE, t0) });
 
 		expect(Number((await Burn.counters(s.teamId))?.fiveHourUsage)).toBe(5 * MINUTE);
@@ -207,16 +231,31 @@ describe('The counters', () => {
 });
 
 describe('Rates', () => {
-	test('a run costs the same whoever is running it', () => {
-		// The plan buys an allowance, never a discount on the meter. If the
-		// rate moved with the tier, an upgrade would change what past runs cost
-		// and the bars would stop being comparable.
-		expect(Burn.rateMilliFor(1)).toBe(Burn.SCALE);
-		expect(Burn.rateMilliFor(4)).toBe(Burn.SCALE);
+	test('on our hardware a bigger tier costs more, superlinearly', () => {
+		const rate = (tier: Burn.Tier) => Burn.baseRateMilli({ tier, hostClass: 'fleet' });
+		expect(rate('sm')).toBe(Burn.SCALE);
+		expect(rate('xl')).toBeGreaterThan(rate('lg'));
+		// A tier buys a share of a card, and the ladder has to pinch harder
+		// than the share grows or running a small title at the top of it is
+		// cheaper than it costs us.
+		expect(rate('xl') / rate('sm')).toBeGreaterThan(4);
 	});
 
-	test('nothing running costs nothing', () => {
-		expect(Burn.rateMilliFor(0)).toBe(0);
+	test('on the caller\u2019s own hardware the tier changes nothing', () => {
+		// There is no share of a card of ours being spent, so charging more for
+		// a bigger one would be a tax on hardware they bought.
+		for (const tier of ['xs', 'sm', 'md', 'lg', 'xl'] as const) {
+			expect(Burn.baseRateMilli({ tier, hostClass: 'byo' })).toBe(Burn.SCALE);
+		}
+	});
+
+	test('a run costs the same whatever plan is paying for it', () => {
+		// The plan buys an allowance, never a discount on the meter. If the
+		// rate moved with the tier somebody is on, an upgrade would change what
+		// past runs cost and the bars would stop being comparable.
+		expect(Burn.baseRateMilli({ tier: 'md', hostClass: 'fleet' })).toBe(
+			Burn.baseRateMilli({ tier: 'md', hostClass: 'fleet' })
+		);
 	});
 
 	test('burn is whole seconds, never a fraction of one', () => {

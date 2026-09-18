@@ -33,9 +33,49 @@ export namespace Limits {
 
 	export type Allowances = z.infer<typeof Allowances>;
 
+	/**
+	 * What a size tier costs per second, times a thousand, on our own hardware.
+	 *
+	 * A tier buys a share of a card, so a bigger one spends more of something
+	 * we paid for. These must be **superlinear in that share**: a small title
+	 * asked to run at the top of the ladder has to cost what a whole card
+	 * costs, or the ladder is gamed and the density that makes any of this
+	 * priceable is theoretical.
+	 *
+	 * They do not apply on a caller's own hardware. See {@link Factors}.
+	 */
+	const SizeFactors = z.object({
+		xs: z.number().int().positive(),
+		sm: z.number().int().positive(),
+		md: z.number().int().positive(),
+		lg: z.number().int().positive(),
+		xl: z.number().int().positive()
+	});
+
+	/**
+	 * How much a running session costs per second, before concurrency.
+	 *
+	 * **Only on hardware we own.** The size factor prices a share of a card we
+	 * bought; on somebody else's card there is no such share being spent, so a
+	 * session there costs one unit a second whatever tier it asked for. Charging
+	 * more for taking more of their own GPU would be a tax on hardware they paid
+	 * for, which is the complaint this whole model is shaped to avoid.
+	 *
+	 * There is no hardware factor here yet, and its absence is deliberate rather
+	 * than an oversight: nothing records which card a host has, so a table keyed
+	 * on a model would be keyed on nothing. A faster card should cost more, and
+	 * that starts with a column, not a number.
+	 */
+	export const Factors = z.object({
+		size: SizeFactors
+	});
+
+	export type Factors = z.infer<typeof Factors>;
+
 	export const Config = z.object({
 		free: Allowances,
-		paid: Allowances
+		paid: Allowances,
+		factors: Factors
 	});
 
 	export type Config = z.infer<typeof Config>;
@@ -59,6 +99,13 @@ export namespace Limits {
 			fiveHour: 30 * 60 * 60,
 			sevenDay: 900 * 60 * 60,
 			thirtyDay: 3000 * 60 * 60
+		},
+		// Superlinear, and no more principled than that. `sm` is the reference
+		// and is 1 by definition; the rest roughly double per step so the shape
+		// is visible in tests. Real values come from what a card-hour costs us
+		// divided by the share a tier holds.
+		factors: {
+			size: { xs: 500, sm: 1000, md: 2200, lg: 5000, xl: 12000 }
 		}
 	};
 
@@ -108,10 +155,28 @@ export namespace Limits {
 		}
 	}
 
+	/**
+	 * The reference tier costs exactly one unit a second, by definition.
+	 *
+	 * The unit *is* a second of a reference session, so a size factor that made
+	 * `sm` anything other than 1 would silently redefine what every allowance
+	 * means — the same stored number would be a different number of hours.
+	 */
+	export function checkFactors(factors: Factors): void {
+		if (factors.size.sm !== 1000) {
+			throw new VisibleError(
+				'internal',
+				ErrorCodes.Server.INTERNAL_ERROR,
+				`the reference tier must cost exactly one unit a second (1000), not ${factors.size.sm} \u2014 it is what every allowance is denominated in`
+			);
+		}
+	}
+
 	export function validate(config: unknown): Config {
 		const parsed = Config.parse(config);
 		check(parsed.free, 'free');
 		check(parsed.paid, 'paid');
+		checkFactors(parsed.factors);
 		return parsed;
 	}
 

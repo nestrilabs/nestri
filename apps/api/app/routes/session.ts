@@ -236,8 +236,14 @@ export namespace SessionApi {
 				// being discarded, because the caller has to be told what it will
 				// cost and what remains — and asking a second time would let the
 				// number shown and the number billed disagree.
-				const team = await Billing.teamForBox(box.id);
-				const billing = team ? await Billing.assertMayStart(team) : null;
+				const payer = await Billing.teamForBox(box.id);
+				const billing = payer
+					? await Billing.assertMayStart({
+							teamId: payer.teamId,
+							nextTier: payer.tier,
+							nextHostClass: payer.hostClass
+						})
+					: null;
 
 				const session = await Session.request({
 					id: Identifier.ascending('session'),

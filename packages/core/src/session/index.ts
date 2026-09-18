@@ -664,7 +664,17 @@ export namespace Session {
 				const machine = await Machine.fromID(input.machineId);
 				if (machine?.teamId) {
 					if (current.state !== 'live' && moved.state === 'live') {
-						await Burn.start({ teamId: machine.teamId, sessionId: moved.id });
+						// The rate is fixed here, from what this run actually is:
+						// the size it holds, and whose card it holds it on. Both
+						// are settled before the run starts, which is what lets a
+						// person be told the cost before committing to it.
+						const box = await Box.fromID(moved.boxId);
+						await Burn.start({
+							teamId: machine.teamId,
+							sessionId: moved.id,
+							tier: (box?.tier ?? 'sm') as Burn.Tier,
+							hostClass: machine.organisationId ? 'fleet' : 'byo'
+						});
 					} else if (
 						ACCRUING.includes(current.state as (typeof ACCRUING)[number]) &&
 						!ACCRUING.includes(moved.state as (typeof ACCRUING)[number])

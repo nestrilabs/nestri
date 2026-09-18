@@ -6,6 +6,7 @@ import { Database } from '../db/index.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
 import { BurnCounterTable, BurnSegmentTable } from './burn.sql.js';
+import { Limits } from './limits.js';
 import { Window } from './window.js';
 
 /**
@@ -27,30 +28,39 @@ export namespace Burn {
 	/** Rates are scaled by this so fractional factors stay integers. */
 	export const SCALE = 1000;
 
+	/** Whose hardware a run is on, which is what decides the cost basis. */
+	export const HostClass = z.enum(['byo', 'fleet']);
+	export type HostClass = z.infer<typeof HostClass>;
+
+	export const Tier = z.enum(['xs', 'sm', 'md', 'lg', 'xl']);
+	export type Tier = z.infer<typeof Tier>;
+
 	/**
-	 * What one running session costs per second, given how many are running.
+	 * What one run costs per second, before anything else is running.
 	 *
-	 * On hardware the caller owns this is the whole calculation: the factors
-	 * that price a share of a card price *our* cost basis, and on somebody
-	 * else's card there is no card of ours being spent, so they are 1 and burn
-	 * is duration times how much is running at once.
+	 * **On our own hardware the tier decides it**, because a tier buys a share
+	 * of a card we paid for and a bigger share is more of something real being
+	 * spent. On the caller's own hardware it does not: there is no share of a
+	 * card of ours in play, so a run costs one unit a second whatever size it
+	 * asked for. Charging somebody more for taking more of their own GPU is a
+	 * tax on hardware they bought, and avoiding that is most of the point.
 	 *
-	 * The factor is on the **total**, not on each session — N concurrent runs
-	 * cost N between them, and a run's own rate does not change because a
-	 * sibling started. Two deadline guarantees cost twice one, not four times.
-	 * Anything steeper would be a commercial decision to price concentration
-	 * above cost, and has not been made.
+	 * Note what is *not* here: the number of other runs. Concurrency is on the
+	 * account's total, not on any one run — two deadline guarantees cost twice
+	 * one, so two runs cost the sum of their two rates and neither of them gets
+	 * more expensive because the other started. That is why this rate is fixed
+	 * for a run's whole life, and why a sibling starting does not have to
+	 * rewrite anything.
 	 */
-	export function rateMilliFor(concurrency: number): number {
-		if (concurrency <= 0) {
-			return 0;
+	export const baseRateMilli = fn(
+		z.object({ tier: Tier, hostClass: HostClass }),
+		(input): number => {
+			if (input.hostClass === 'byo') {
+				return SCALE;
+			}
+			return Limits.get().factors.size[input.tier];
 		}
-		// Total rate is `concurrency`, shared equally, so each open segment
-		// carries 1x. Spelled out rather than written as the constant it
-		// currently equals, because this is the line that changes if the factor
-		// ever moves off cost.
-		return SCALE;
-	}
+	);
 
 	/** Burn from one closed stretch, in whole reference-seconds. */
 	export function amountFor(seconds: number, rateMilli: number): number {
@@ -197,18 +207,20 @@ export namespace Burn {
 					.set({ endedAt: now })
 					.where(and(eq(BurnSegmentTable.teamId, input.teamId), isNull(BurnSegmentTable.endedAt)));
 
-				const rateMilli = rateMilliFor(open.length);
-				if (open.length > 0) {
-					await tx.insert(BurnSegmentTable).values(
-						open.map((segment) => ({
-							id: Identifier.ascending('burnSegment'),
-							teamId: segment.teamId,
-							sessionId: segment.sessionId,
-							rateMilli,
-							startedAt: now
-						}))
-					);
-				}
+				// Each run keeps its own rate. It is a property of what that run
+				// is — its tier, and whose hardware it sits on — and none of that
+				// changed because the clock ticked or a sibling appeared.
+				// Recomputing a single shared rate here would quietly reprice an
+				// `xl` run as whatever the last one to start was.
+				await tx.insert(BurnSegmentTable).values(
+					open.map((segment) => ({
+						id: Identifier.ascending('burnSegment'),
+						teamId: segment.teamId,
+						sessionId: segment.sessionId,
+						rateMilli: segment.rateMilli,
+						startedAt: now
+					}))
+				);
 
 				await record({ teamId: input.teamId, amount: total });
 				return total;
@@ -224,22 +236,26 @@ export namespace Burn {
 	 * backdated over time that was spent under the old one.
 	 */
 	export const start = fn(
-		z.object({ teamId: z.string(), sessionId: z.string(), at: z.date().optional() }),
+		z.object({
+			teamId: z.string(),
+			sessionId: z.string(),
+			tier: Tier,
+			hostClass: HostClass,
+			at: z.date().optional()
+		}),
 		async (input) => {
 			return Database.transaction(async (tx) => {
 				const now = input.at ?? new Date();
+				// Bank what the runs already going have spent, so the moment this
+				// one appears is a clean boundary in the record rather than a
+				// point inside somebody else's open stretch.
 				await resegment({ teamId: input.teamId, at: now });
-
-				const open = await tx
-					.select()
-					.from(BurnSegmentTable)
-					.where(and(eq(BurnSegmentTable.teamId, input.teamId), isNull(BurnSegmentTable.endedAt)));
 
 				await tx.insert(BurnSegmentTable).values({
 					id: Identifier.ascending('burnSegment'),
 					teamId: input.teamId,
 					sessionId: input.sessionId,
-					rateMilli: rateMilliFor(open.length + 1),
+					rateMilli: baseRateMilli({ tier: input.tier, hostClass: input.hostClass }),
 					startedAt: now
 				});
 			});
