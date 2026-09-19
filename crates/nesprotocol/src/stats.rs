@@ -112,11 +112,20 @@ pub struct VideoBreakdown {
     pub reason: u8,
     /// 0 when the controller is deciding, 1 when a person set it by hand.
     pub manual: u8,
+    /// How far behind the send queue is, in milliseconds of video.
+    ///
+    /// Bytes handed to the transport and not yet gone, over the rate they are
+    /// leaving at. This is the number that was invisible during the session
+    /// where every frame arrived, nothing was lost, and the picture was still
+    /// eight seconds old: loss cannot show a queue, only its overflow. Anything
+    /// but near-zero here means latency is being spent on backlog.
+    pub backlog_ms: u16,
 }
 
 /// `[4B key_bps][4B delta_bps][1B keyframes][4B target][4B ceiling][1B reason]
-/// [1B manual][4B box_ceiling][2B pipeline_p50][2B pipeline_p95][2B pipeline_max]`
-pub const VIDEO_BREAKDOWN_LEN: usize = 29;
+/// [1B manual][4B box_ceiling][2B pipeline_p50][2B pipeline_p95][2B pipeline_max]
+/// [2B backlog_ms]`
+pub const VIDEO_BREAKDOWN_LEN: usize = 31;
 
 pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.reserve(VIDEO_BREAKDOWN_LEN);
@@ -131,6 +140,7 @@ pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.extend_from_slice(&b.pipeline_p50_ms.to_le_bytes());
     buf.extend_from_slice(&b.pipeline_p95_ms.to_le_bytes());
     buf.extend_from_slice(&b.pipeline_max_ms.to_le_bytes());
+    buf.extend_from_slice(&b.backlog_ms.to_le_bytes());
 }
 
 /// Decoded stats from any source.
@@ -200,6 +210,7 @@ pub fn decode_stats(msg_type: u8, data: &[u8], stats: &mut PipelineStats) {
                     pipeline_p50_ms: u16::from_le_bytes([d[23], d[24]]),
                     pipeline_p95_ms: u16::from_le_bytes([d[25], d[26]]),
                     pipeline_max_ms: u16::from_le_bytes([d[27], d[28]]),
+                    backlog_ms: u16::from_le_bytes([d[29], d[30]]),
                 });
             }
         }
@@ -224,6 +235,7 @@ mod breakdown_tests {
             pipeline_p50_ms: 9,
             pipeline_p95_ms: 24,
             pipeline_max_ms: 61,
+            backlog_ms: 40,
         }
     }
 

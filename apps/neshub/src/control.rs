@@ -212,6 +212,8 @@ pub struct Controller {
     constant_quality: bool,
     silent_ticks: u32,
     reason: Reason,
+    /// Last measured send-queue depth, kept for reporting rather than control.
+    backlog_ms: u32,
 }
 
 impl Controller {
@@ -231,6 +233,7 @@ impl Controller {
             constant_quality: false,
             silent_ticks: 0,
             reason: Reason::Holding,
+            backlog_ms: 0,
         }
     }
 
@@ -245,6 +248,11 @@ impl Controller {
     }
     pub fn reason(&self) -> Reason {
         self.reason
+    }
+
+    /// How far behind the send queue was at the last decision, in milliseconds.
+    pub fn backlog_ms(&self) -> u32 {
+        self.backlog_ms
     }
 
     /// The ceiling the box was given, whatever a client has since asked for.
@@ -334,6 +342,16 @@ impl Controller {
             return None;
         }
 
+        // What the queue drains at is what is getting through. With no report
+        // to say, the target is the best guess available -- and a target that
+        // is too high only makes the backlog look shorter than it is, so this
+        // errs towards patience rather than towards cutting the rate.
+        let drain_kbps = match report.as_ref().map(|r| (r.goodput_bps / 1000) as u32) {
+            Some(measured) if measured > 0 => measured,
+            _ => self.target_kbps,
+        };
+        self.backlog_ms = path.backlog_ms(drain_kbps).unwrap_or(0);
+
         let next = match report.as_ref().and_then(|r| r.loss().map(|l| (r, l))) {
             Some((report, loss)) => {
                 self.silent_ticks = 0;
@@ -363,18 +381,12 @@ impl Controller {
     }
 
     fn decide_from_report(&mut self, report: &ReceiverReport, loss: f32, path: PathView) -> u32 {
-        // What the queue drains at is what is getting through. Falling back to
-        // the target when nothing completed keeps this defined, and a target
-        // that is too high only makes the backlog look shorter than it is --
-        // so this errs towards patience rather than towards cutting the rate.
         let measured = (report.goodput_bps / 1000) as u32;
-        let drain_kbps = if measured == 0 {
-            self.target_kbps
-        } else {
-            measured
-        };
-        let backlog_ms = path.backlog_ms(drain_kbps);
-        let queued = backlog_ms.is_some_and(|ms| ms > QUEUE_DECREASE_MS);
+        // `backlog_ms` is zero both when the queue is empty and when the
+        // transport cannot say, which are the same thing for this purpose: a
+        // queue nobody can see is not evidence of one.
+        let known = path.backlog_bytes.is_some();
+        let queued = known && self.backlog_ms > QUEUE_DECREASE_MS;
 
         if loss > LOSS_DECREASE || queued {
             self.reason = if queued {
@@ -400,7 +412,7 @@ impl Controller {
         // because a path that queues instead of dropping reports no loss at all
         // until the buffer finally overflows -- and by then the picture is
         // seconds behind.
-        if loss < LOSS_INCREASE && backlog_ms.is_none_or(|ms| ms < QUEUE_CLIMB_MS) {
+        if loss < LOSS_INCREASE && (!known || self.backlog_ms < QUEUE_CLIMB_MS) {
             self.reason = Reason::Climbing;
             return self
                 .target_kbps
@@ -548,6 +560,20 @@ mod tests {
             hi <= 2_400,
             "settled at {hi} kbps against a path carrying 2000"
         );
+    }
+
+    /// The reported depth is what the next session will be judged on, so it
+    /// has to be right: bytes over the rate they leave at, in milliseconds.
+    #[test]
+    fn the_queue_depth_is_reported_as_measured() {
+        let mut c = controller();
+        // 250 kB queued behind a 2 Mbps drain is exactly one second.
+        c.tick(1, Some(report(60, 0, 2_000)), backlogged(250_000), false);
+        assert_eq!(c.backlog_ms(), 1_000);
+
+        // A transport that cannot say must report no queue, not a wrong one.
+        c.tick(1, Some(report(60, 0, 2_000)), PathView::default(), false);
+        assert_eq!(c.backlog_ms(), 0);
     }
 
     /// The backlog must not become a reason never to climb again.

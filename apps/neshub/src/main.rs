@@ -280,6 +280,7 @@ async fn main() -> Result<()> {
                             pipeline_p50_ms,
                             pipeline_p95_ms,
                             pipeline_max_ms,
+                            backlog_ms: controller.backlog_ms().min(u32::from(u16::MAX)) as u16,
                         },
                     );
                 }
