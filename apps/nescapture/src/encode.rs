@@ -751,7 +751,10 @@ fn encoder_thread(
         // its own between the present hook and here; it is cheaper on this one,
         // because the blit it waits for was submitted a frame earlier and has
         // already completed, and every frame saves a channel and a wakeup.
-        let Some(ds) = crate::state::DEVICE_STATE.get(&raw.ds_key).map(|s| s.clone()) else {
+        let Some(ds) = crate::state::DEVICE_STATE
+            .get(&raw.ds_key)
+            .map(|s| s.clone())
+        else {
             log::error!("encoder: device state gone");
             break;
         };
@@ -993,9 +996,10 @@ impl PerFrameEncoder {
         // does not. `color_description` answers from the same source, target and
         // range the converter is about to be built with.
         let conv_cfg = converter_config(width, height, input_fmt, out_fmt, vk_colorspace);
-        enc_cfg = enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
-            format!("colour space {vk_colorspace} has no encodable stream description")
-        })?);
+        enc_cfg =
+            enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
+                format!("colour space {vk_colorspace} has no encodable stream description")
+            })?);
         enc_cfg = if let Some(q) = qp {
             enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
@@ -1052,7 +1056,10 @@ fn bitrate_only_change(
     if change.codec.is_some_and(|c| c != current_codec) {
         return None;
     }
-    if change.bit_depth.is_some_and(|d| Some(d) != current_depth_override) {
+    if change
+        .bit_depth
+        .is_some_and(|d| Some(d) != current_depth_override)
+    {
         return None;
     }
     Some(change.value)
@@ -1402,8 +1409,8 @@ fn ipc_send_thread(
 
             if last_pace.elapsed() >= std::time::Duration::from_secs(1) {
                 last_pace = Instant::now();
-                log::info!(
-                    "  ipc: worst gap between frames out {:.1}ms = worst wait for a \
+                log::trace!(
+                    "ipc: worst gap between frames out {:.1}ms = worst wait for a \
                      submission {:.1}ms + worst wait for the encoder {:.1}ms, worst \
                      socket send {:.1}ms, {keyframes} keyframe(s) (worst wait on one \
                      {:.1}ms)",
@@ -1480,9 +1487,7 @@ fn stats_sender_thread(
             Some(s)
         }
         Ok(_) => {
-            log::warn!(
-                "stats socket connect failed; rates are logged but not sent to the hub"
-            );
+            log::warn!("stats socket connect failed; rates are logged but not sent to the hub");
             None
         }
         Err(e) => {
@@ -1542,13 +1547,13 @@ fn stats_sender_thread(
         let (hold_avg, hold_max) = timing.hold.take();
         let long_gaps = timing.take_long_gaps();
 
-        log::info!(
+        log::trace!(
             "present {pa}/s, admitted {ca}/s, encoded {raw_fps}/s, \
              starved {starved}, dropped {dropped}, capture {cap_ms:.1}ms, \
              encode {enc_ms:.1}ms"
         );
-        log::info!(
-            "  gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
+        log::trace!(
+            "gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
              down {down_avg:.2}/{down_max:.2}ms, acquire {acq_avg:.1}/{acq_max:.1}ms, \
              hold {hold_avg:.2}/{hold_max:.2}ms, blit-gpu {blit_avg:.3}/{blit_max:.3}ms \
              (avg/max), hitches {long_gaps}"
@@ -1575,8 +1580,8 @@ fn stats_sender_thread(
                         };
                         a.saturating_sub(b) as f64 / 1000.0
                     };
-                    log::info!(
-                        "  pressure: cpu {:.1}ms, io {:.1}/{:.1}ms, memory {:.1}/{:.1}ms \
+                    log::trace!(
+                        "pressure: cpu {:.1}ms, io {:.1}/{:.1}ms, memory {:.1}/{:.1}ms \
                          (some/full, stalled in the last second)",
                         ms(0, false),
                         ms(1, false),
@@ -1588,8 +1593,8 @@ fn stats_sender_thread(
                 prev_pressure = Some(now);
             }
             None if !pressure_said_missing => {
-                log::info!(
-                    "  pressure: /proc/pressure is unreadable, so this guest cannot say \
+                log::trace!(
+                    "pressure: /proc/pressure is unreadable, so this guest cannot say \
                      whether a stall was cpu, io or memory (CONFIG_PSI off, or psi=0)"
                 );
                 pressure_said_missing = true;
@@ -1599,7 +1604,9 @@ fn stats_sender_thread(
 
         if let Some(ref socket) = socket {
             let mut buf = Vec::with_capacity(22);
-            nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
+            nesprotocol::stats::encode_hudless_stats(
+                &mut buf, fps, enc_ms, dropped, pa, ca, cap_ms,
+            );
             let _ = socket.send(&buf);
         }
     }
@@ -1967,7 +1974,10 @@ mod bitrate_only_tests {
             None,
             Some(EncodeBitDepth::Eight),
         );
-        assert_eq!(bitrate_only_change(&c, Some(8_000), HwCodec::H264, None), None);
+        assert_eq!(
+            bitrate_only_change(&c, Some(8_000), HwCodec::H264, None),
+            None
+        );
     }
 
     #[test]
@@ -1981,12 +1991,7 @@ mod bitrate_only_tests {
 
     #[test]
     fn a_different_bit_depth_rebuilds() {
-        let c = change(
-            RateControlMode::Cbr,
-            2_000,
-            None,
-            Some(EncodeBitDepth::Ten),
-        );
+        let c = change(RateControlMode::Cbr, 2_000, None, Some(EncodeBitDepth::Ten));
         assert_eq!(running(&c), None);
     }
 
