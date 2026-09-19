@@ -7,7 +7,7 @@ use tracing::{debug, info};
 
 use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_BUFFER_BYTES, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
-use nesprotocol::{BIDI_INPUT, STREAM_CURSOR, STREAM_STATS};
+use nesprotocol::{BIDI_CONTROL, BIDI_INPUT, Carrier, STREAM_CURSOR, STREAM_STATS};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{
     MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT,
@@ -20,13 +20,29 @@ use crate::dgram::run_datagram_writer;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
+/// One client, across the several connections it opens.
+///
+/// A connection is the unit congestion control, pacing and the datagram send
+/// buffer all work on, so a client that put everything on one connection had
+/// one queue for everything -- and video is the only flow big enough to build
+/// a queue, so video delayed audio and input with it. Each kind of traffic
+/// therefore gets its own connection, and this is what reassembles them into
+/// one client. They are correlated by endpoint id, which is the same for every
+/// connection a client opens.
+///
+/// Connections arrive in whatever order they are dialled, so every one is
+/// optional until it turns up. Frames handed to a carrier that has not
+/// connected yet are dropped, which is right: there is nothing to send them on.
 pub struct ClientSession {
-    /// The connection, kept so the path underneath it can be read.
+    /// The connection carrying the picture.
     ///
-    /// Only for the fallback estimate when the client has gone quiet -- see
-    /// `control`, and note that this view was measured being wrong exactly when
-    /// it mattered.
-    conn: Connection,
+    /// The only one whose path is worth reading for control: it carries
+    /// essentially all the bytes, so it is the only one that can build a
+    /// backlog, and its congestion window is the one that describes where the
+    /// video is going.
+    video_conn: Option<Connection>,
+    /// Kept only so it can be closed with the rest of the session.
+    other_conns: Vec<Connection>,
     /// Set while this client has asked for a keyframe and not yet been sent
     /// one, so the writer knows its deltas are undecodable.
     awaiting_keyframe: Arc<AtomicBool>,
@@ -41,108 +57,144 @@ pub struct ClientSession {
     /// Overwritten rather than queued. A report describes the second that just
     /// passed, and an older one is not evidence about now.
     latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
+    relay_ms: Arc<AtomicU32>,
+    input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
+    idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    controller: Arc<Mutex<Controller>>,
     send_video: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     send_audio: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     send_cursor: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     send_stats: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
-    _video_task: tokio::task::JoinHandle<()>,
-    _audio_task: tokio::task::JoinHandle<()>,
-    _cursor_task: tokio::task::JoinHandle<()>,
-    _stats_task: tokio::task::JoinHandle<()>,
-    _input_task: tokio::task::JoinHandle<()>,
+    /// Receiving ends, held until the carrier that drains them connects.
+    pending_video: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
+    pending_audio: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
+    pending_cursor: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
+    pending_stats: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl ClientSession {
+    /// A client with no connections yet. They attach as they are accepted.
     pub fn new(
-        conn: Connection,
         input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
         relay_ms: Arc<AtomicU32>,
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         controller: Arc<Mutex<Controller>>,
     ) -> Self {
-        let latest_report = Arc::new(std::sync::Mutex::new(None));
-        let awaiting_keyframe = Arc::new(AtomicBool::new(false));
-        let withheld = Arc::new(AtomicU64::new(0));
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (stats_tx, stats_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-
-        // Delta frames and audio go out as datagrams; cursor, stats and input
-        // stay on reliable streams. See `nestri_protocol::datagram` for why.
-        //
-        // Video keyframes are the exception: each goes on a reliable stream of
-        // its own, because a lost keyframe freezes the picture until the next
-        // one instead of costing a single frame. See
-        // `nestri_protocol::reliable`. Audio is not offered the same path — it
-        // has no keyframes to promote.
-        let conn_v = conn.clone();
-        let awaiting_video = awaiting_keyframe.clone();
-        let withheld_video = withheld.clone();
-        let _video_task = tokio::spawn(async move {
-            run_datagram_writer(
-                conn_v,
-                DGRAM_VIDEO,
-                "video",
-                video_rx,
-                Some(relay_ms),
-                true,
-                Some(awaiting_video),
-                Some(withheld_video),
-            )
-            .await
-        });
-
-        let conn_a = conn.clone();
-        let _audio_task = tokio::spawn(async move {
-            run_datagram_writer(
-                conn_a,
-                DGRAM_AUDIO,
-                "audio",
-                audio_rx,
-                None,
-                false,
-                None,
-                None,
-            )
-            .await
-        });
-
-        let conn_c = conn.clone();
-        let _cursor_task = tokio::spawn(async move { run_cursor_sender(conn_c, cursor_rx).await });
-
-        let conn_s = conn.clone();
-        let _stats_task = tokio::spawn(async move { run_stats_sender(conn_s, stats_rx).await });
-
-        let conn_i = conn.clone();
-        let reports = latest_report.clone();
-        let awaiting_input = awaiting_keyframe.clone();
-        let _input_task = tokio::spawn(async move {
-            run_input_reader(
-                conn_i,
-                input_broadcast,
-                idr_cmd_tx,
-                reports,
-                controller,
-                awaiting_input,
-            )
-            .await
-        });
-
         Self {
-            conn,
-            awaiting_keyframe,
-            withheld,
-            latest_report,
+            video_conn: None,
+            other_conns: Vec::new(),
+            awaiting_keyframe: Arc::new(AtomicBool::new(false)),
+            withheld: Arc::new(AtomicU64::new(0)),
+            latest_report: Arc::new(std::sync::Mutex::new(None)),
+            relay_ms,
+            input_broadcast,
+            idr_cmd_tx,
+            controller,
             send_video: video_tx,
             send_audio: audio_tx,
             send_cursor: cursor_tx,
             send_stats: stats_tx,
-            _video_task,
-            _audio_task,
-            _cursor_task,
-            _stats_task,
-            _input_task,
+            pending_video: Some(video_rx),
+            pending_audio: Some(audio_rx),
+            pending_cursor: Some(cursor_rx),
+            pending_stats: Some(stats_rx),
+            tasks: Vec::new(),
+        }
+    }
+
+    /// Whether the picture has somewhere to go.
+    ///
+    /// A client with every connection but this one is connected and not yet
+    /// streaming, which for the controller is the same as not being there.
+    pub fn is_streaming(&self) -> bool {
+        self.video_conn.is_some()
+    }
+
+    /// Take on one of this client's connections.
+    ///
+    /// A carrier arriving twice is the second one being dropped: the first is
+    /// already draining the channel, and two writers on one channel would split
+    /// the stream between them.
+    pub fn attach(&mut self, carrier: Carrier, conn: Connection) {
+        match carrier {
+            Carrier::Video => {
+                let Some(rx) = self.pending_video.take() else {
+                    debug!("video carrier attached twice; ignoring the second");
+                    return;
+                };
+                self.video_conn = Some(conn.clone());
+                let relay_ms = self.relay_ms.clone();
+                let awaiting = self.awaiting_keyframe.clone();
+                let withheld = self.withheld.clone();
+                // Keyframes go on reliable streams of their own, because a lost
+                // keyframe freezes the picture until the next one instead of
+                // costing a single frame. See `nesprotocol::reliable`.
+                self.tasks.push(tokio::spawn(async move {
+                    run_datagram_writer(
+                        conn,
+                        DGRAM_VIDEO,
+                        "video",
+                        rx,
+                        Some(relay_ms),
+                        true,
+                        Some(awaiting),
+                        Some(withheld),
+                    )
+                    .await
+                }));
+            }
+            Carrier::Audio => {
+                let Some(rx) = self.pending_audio.take() else {
+                    debug!("audio carrier attached twice; ignoring the second");
+                    return;
+                };
+                self.other_conns.push(conn.clone());
+                // No reliable path offered: audio has no keyframes to promote,
+                // and on its own connection it is no longer queued behind any.
+                self.tasks.push(tokio::spawn(async move {
+                    run_datagram_writer(conn, DGRAM_AUDIO, "audio", rx, None, false, None, None)
+                        .await
+                }));
+            }
+            Carrier::Input => {
+                self.other_conns.push(conn.clone());
+                let broadcast = self.input_broadcast.clone();
+                self.tasks
+                    .push(tokio::spawn(
+                        async move { run_input_reader(conn, broadcast).await },
+                    ));
+            }
+            Carrier::Control => {
+                let (Some(cursor_rx), Some(stats_rx)) =
+                    (self.pending_cursor.take(), self.pending_stats.take())
+                else {
+                    debug!("control carrier attached twice; ignoring the second");
+                    return;
+                };
+                self.other_conns.push(conn.clone());
+                let conn_c = conn.clone();
+                self.tasks
+                    .push(tokio::spawn(
+                        async move { run_cursor_sender(conn_c, cursor_rx).await },
+                    ));
+                let conn_s = conn.clone();
+                self.tasks
+                    .push(tokio::spawn(
+                        async move { run_stats_sender(conn_s, stats_rx).await },
+                    ));
+                let reports = self.latest_report.clone();
+                let awaiting = self.awaiting_keyframe.clone();
+                let idr = self.idr_cmd_tx.clone();
+                let controller = self.controller.clone();
+                self.tasks.push(tokio::spawn(async move {
+                    run_control_reader(conn, idr, reports, controller, awaiting).await
+                }));
+            }
         }
     }
 
@@ -166,7 +218,14 @@ impl ClientSession {
     /// relay and one direct -- and only the selected one describes where the
     /// media is going.
     pub fn path_view(&self) -> PathView {
-        let paths = self.conn.paths();
+        // The video connection or nothing. Every connection now has its own
+        // congestion window, and the one describing where the picture goes is
+        // the only one worth controlling against -- audio's window says
+        // nothing about whether the video is keeping up.
+        let Some(conn) = self.video_conn.as_ref() else {
+            return PathView::default();
+        };
+        let paths = conn.paths();
         let Some(path) = paths.iter().find(|p| p.is_selected()) else {
             return PathView::default();
         };
@@ -179,7 +238,7 @@ impl ClientSession {
             // becomes loss, and it costs nothing to read.
             backlog_bytes: Some(
                 (DGRAM_BUFFER_BYTES as u64)
-                    .saturating_sub(self.conn.datagram_send_buffer_space() as u64),
+                    .saturating_sub(conn.datagram_send_buffer_space() as u64),
             ),
         }
     }
@@ -216,29 +275,33 @@ impl ClientSession {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn run_input_reader(
+/// Open the client's bidi stream, announce what it is, and read framed
+/// messages off it until it ends.
+///
+/// Shared because input and control differ only in which messages they expect:
+/// the framing, the announcement and the reconnect behaviour are the same, and
+/// two copies of that would drift.
+async fn run_framed_reader<F, Fut>(
     conn: Connection,
-    input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
-    idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
-    latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
-    controller: Arc<Mutex<Controller>>,
-    awaiting_keyframe: Arc<AtomicBool>,
-) {
-    debug!("input reader started");
+    stream_type: u8,
+    label: &'static str,
+    mut handle: F,
+) where
+    F: FnMut(u8, Vec<u8>) -> Fut,
+    Fut: std::future::Future<Output = ()>,
+{
+    debug!("{label} reader started");
     loop {
-        debug!("input reader opening bidi stream");
         match conn.open_bi().await {
             Ok((mut send, mut recv)) => {
-                debug!("input bidi stream opened, writing type+version byte");
-                if send.write_all(&[BIDI_INPUT, STREAM_VERSION]).await.is_err() {
-                    debug!("input type byte write failed");
+                if send.write_all(&[stream_type, STREAM_VERSION]).await.is_err() {
+                    debug!("{label} type byte write failed");
                     break;
                 }
                 let _ = send.finish();
-                debug!("input bidi stream ready, reading framed events");
-
+                debug!("{label} bidi stream ready, reading framed messages");
                 loop {
-                    // Read uniform frame: [4B len][1B type][2B seq][payload]
+                    // [4B len][1B type][2B seq][payload]
                     let mut len_buf = [0u8; 4];
                     if recv.read_exact(&mut len_buf).await.is_err() {
                         break;
@@ -251,138 +314,156 @@ async fn run_input_reader(
                     if recv.read_exact(&mut frame).await.is_err() {
                         break;
                     }
-                    let msg_type = frame[0];
-                    let _seq = u16::from_le_bytes([frame[1], frame[2]]);
-                    let payload = &frame[3..];
-
-                    match msg_type {
-                        MSG_INPUT_BATCH => {
-                            let mut offset = 0;
-                            while offset < payload.len() {
-                                if offset + 1 > payload.len() {
-                                    break;
-                                }
-                                match payload[offset] {
-                                    INPUT_KEY => {
-                                        if offset + 4 > payload.len() {
-                                            break;
-                                        }
-                                        let raw = vec![
-                                            INPUT_KEY,
-                                            payload[offset + 1],
-                                            payload[offset + 2],
-                                            payload[offset + 3],
-                                        ];
-                                        let _ = input_broadcast.send(raw);
-                                        offset += 4;
-                                    }
-                                    INPUT_MOUSE_MOVE => {
-                                        if offset + 5 > payload.len() {
-                                            break;
-                                        }
-                                        let mut raw = Vec::with_capacity(5);
-                                        raw.push(INPUT_MOUSE_MOVE);
-                                        raw.extend_from_slice(&payload[offset + 1..offset + 5]);
-                                        let _ = input_broadcast.send(raw);
-                                        offset += 5;
-                                    }
-                                    INPUT_MOUSE_BUTTON => {
-                                        if offset + 3 > payload.len() {
-                                            break;
-                                        }
-                                        let raw = vec![
-                                            INPUT_MOUSE_BUTTON,
-                                            payload[offset + 1],
-                                            payload[offset + 2],
-                                        ];
-                                        let _ = input_broadcast.send(raw);
-                                        offset += 3;
-                                    }
-                                    INPUT_MOUSE_WHEEL => {
-                                        if offset + 5 > payload.len() {
-                                            break;
-                                        }
-                                        let mut raw = Vec::with_capacity(5);
-                                        raw.push(INPUT_MOUSE_WHEEL);
-                                        raw.extend_from_slice(&payload[offset + 1..offset + 5]);
-                                        let _ = input_broadcast.send(raw);
-                                        offset += 5;
-                                    }
-                                    _ => {
-                                        debug!("unknown input event type: {}", payload[offset]);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        MSG_IDR_REQUEST => {
-                            // Client-side rate limited to one every two
-                            // seconds, which is still far too often for info
-                            // when a struggling receiver asks continuously.
-                            debug!("received IDR request from client");
-                            // Until one arrives, everything else sent to this
-                            // client is undecodable and starves the keyframe
-                            // that would fix it. See `dgram::ResyncGate`.
-                            awaiting_keyframe.store(true, Ordering::Relaxed);
-                            let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
-                        }
-                        MSG_ENCODE_SETTINGS => {
-                            info!(
-                                "received encode settings from client ({} bytes)",
-                                payload.len()
-                            );
-                            // A person set this by hand, so the controller stops
-                            // deciding until it is told otherwise. Overriding a
-                            // person's setting a second later would take away the
-                            // only tool that finds this class of bug.
-                            if let Some((_, rc, value, _)) =
-                                nesprotocol::decode_encode_settings(payload)
-                            {
-                                let mut controller = controller.lock().await;
-                                if rc == nesprotocol::RC_CBR {
-                                    controller.note_manual_target(value);
-                                } else {
-                                    controller.set_constant_quality(true);
-                                }
-                            }
-                            let mut cmd = Vec::with_capacity(1 + payload.len());
-                            cmd.push(MSG_ENCODE_SETTINGS);
-                            cmd.extend_from_slice(payload);
-                            let _ = idr_cmd_tx.send(cmd);
-                        }
-                        MSG_RECEIVER_REPORT => match decode_receiver_report(payload) {
-                            Some(report) => {
-                                if let Ok(mut slot) = latest_report.lock() {
-                                    *slot = Some(report);
-                                }
-                            }
-                            None => debug!("unreadable receiver report ({} bytes)", payload.len()),
-                        },
-                        MSG_CONTROL_MODE => match decode_control_mode(payload) {
-                            Some((mode, ceiling)) => {
-                                let mut controller = controller.lock().await;
-                                controller.set_mode(mode);
-                                controller.set_constant_quality(false);
-                                if let Some(kbps) = ceiling {
-                                    controller.set_ceiling(kbps);
-                                }
-                                info!("control mode {mode:?}, ceiling {ceiling:?}");
-                            }
-                            None => debug!("unreadable control mode ({} bytes)", payload.len()),
-                        },
-                        _ => {
-                            debug!("unknown bidi msg type: {}", msg_type);
-                        }
-                    }
+                    handle(frame[0], frame[3..].to_vec()).await;
                 }
             }
             Err(e) => {
-                debug!("input open_bi failed: {e}");
+                debug!("{label} open_bi failed: {e}");
                 break;
             }
         }
     }
-    debug!("input reader exiting");
+    debug!("{label} reader exiting");
+}
+
+/// Input events, and nothing else.
+///
+/// On its own connection so a keypress never waits behind a video keyframe.
+async fn run_input_reader(
+    conn: Connection,
+    input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
+) {
+    run_framed_reader(conn, BIDI_INPUT, "input", |msg_type, payload| {
+        let input_broadcast = input_broadcast.clone();
+        async move {
+            if msg_type != MSG_INPUT_BATCH {
+                debug!("unknown input msg type: {msg_type}");
+                return;
+            }
+            let mut offset = 0usize;
+            while offset < payload.len() {
+                match payload[offset] {
+                    INPUT_KEY => {
+                        if offset + 3 > payload.len() {
+                            break;
+                        }
+                        let raw = vec![INPUT_KEY, payload[offset + 1], payload[offset + 2]];
+                        let _ = input_broadcast.send(raw);
+                        offset += 3;
+                    }
+                    INPUT_MOUSE_MOVE => {
+                        if offset + 5 > payload.len() {
+                            break;
+                        }
+                        let mut raw = Vec::with_capacity(5);
+                        raw.push(INPUT_MOUSE_MOVE);
+                        raw.extend_from_slice(&payload[offset + 1..offset + 5]);
+                        let _ = input_broadcast.send(raw);
+                        offset += 5;
+                    }
+                    INPUT_MOUSE_BUTTON => {
+                        if offset + 3 > payload.len() {
+                            break;
+                        }
+                        let raw =
+                            vec![INPUT_MOUSE_BUTTON, payload[offset + 1], payload[offset + 2]];
+                        let _ = input_broadcast.send(raw);
+                        offset += 3;
+                    }
+                    INPUT_MOUSE_WHEEL => {
+                        if offset + 5 > payload.len() {
+                            break;
+                        }
+                        let mut raw = Vec::with_capacity(5);
+                        raw.push(INPUT_MOUSE_WHEEL);
+                        raw.extend_from_slice(&payload[offset + 1..offset + 5]);
+                        let _ = input_broadcast.send(raw);
+                        offset += 5;
+                    }
+                    other => {
+                        debug!("unknown input event type: {other}");
+                        break;
+                    }
+                }
+            }
+        }
+    })
+    .await;
+}
+
+/// Everything the client says that is not an input event.
+async fn run_control_reader(
+    conn: Connection,
+    idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
+    controller: Arc<Mutex<Controller>>,
+    awaiting_keyframe: Arc<AtomicBool>,
+) {
+    run_framed_reader(conn, BIDI_CONTROL, "control", |msg_type, payload| {
+        let idr_cmd_tx = idr_cmd_tx.clone();
+        let latest_report = latest_report.clone();
+        let controller = controller.clone();
+        let awaiting_keyframe = awaiting_keyframe.clone();
+        async move {
+            match msg_type {
+                MSG_IDR_REQUEST => {
+                    // Client-side rate limited to one every two seconds, which
+                    // is still far too often for info when a struggling
+                    // receiver asks continuously.
+                    debug!("received IDR request from client");
+                    // Until one arrives, everything else sent to this client is
+                    // undecodable and starves the keyframe that would fix it.
+                    // See `dgram::ResyncGate`.
+                    awaiting_keyframe.store(true, Ordering::Relaxed);
+                    let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
+                }
+                MSG_ENCODE_SETTINGS => {
+                    info!(
+                        "received encode settings from client ({} bytes)",
+                        payload.len()
+                    );
+                    // A person set this by hand, so the controller stops
+                    // deciding until it is told otherwise. Overriding a
+                    // person's setting a second later would take away the only
+                    // tool that finds this class of bug.
+                    if let Some((_, rc, value, _)) = nesprotocol::decode_encode_settings(&payload) {
+                        let mut controller = controller.lock().await;
+                        if rc == nesprotocol::RC_CBR {
+                            controller.note_manual_target(value);
+                        } else {
+                            controller.set_constant_quality(true);
+                        }
+                    }
+                    let mut cmd = Vec::with_capacity(1 + payload.len());
+                    cmd.push(MSG_ENCODE_SETTINGS);
+                    cmd.extend_from_slice(&payload);
+                    let _ = idr_cmd_tx.send(cmd);
+                }
+                MSG_RECEIVER_REPORT => match decode_receiver_report(&payload) {
+                    Some(report) => {
+                        if let Ok(mut slot) = latest_report.lock() {
+                            *slot = Some(report);
+                        }
+                    }
+                    None => debug!("unreadable receiver report ({} bytes)", payload.len()),
+                },
+                MSG_CONTROL_MODE => match decode_control_mode(&payload) {
+                    Some((mode, ceiling)) => {
+                        let mut controller = controller.lock().await;
+                        controller.set_mode(mode);
+                        controller.set_constant_quality(false);
+                        if let Some(kbps) = ceiling {
+                            controller.set_ceiling(kbps);
+                        }
+                        info!("control mode {mode:?}, ceiling {ceiling:?}");
+                    }
+                    None => debug!("unreadable control mode ({} bytes)", payload.len()),
+                },
+                other => debug!("unknown control msg type: {other}"),
+            }
+        }
+    })
+    .await;
 }
 
 async fn run_cursor_sender(
@@ -572,10 +653,32 @@ impl SessionManager {
         }
     }
 
-    pub async fn add_session(&self, id: iroh::EndpointId, session: ClientSession) {
+    /// Take on one of a client's connections, creating the session if this is
+    /// the first to arrive.
+    ///
+    /// A client dials several connections and they are accepted in whatever
+    /// order they complete, so no one of them can be "the" arrival. They are
+    /// matched by endpoint id, which every connection from one client shares.
+    pub async fn attach(
+        &self,
+        id: iroh::EndpointId,
+        carrier: Carrier,
+        conn: Connection,
+        input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
+        idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        controller: Arc<Mutex<Controller>>,
+    ) {
         let mut sessions = self.sessions.lock().await;
-        sessions.insert(id, session);
-        info!(remote = %id.fmt_short(), "client session added ({} total)", sessions.len());
+        let fresh = !sessions.contains_key(&id);
+        let session = sessions.entry(id).or_insert_with(|| {
+            ClientSession::new(input_broadcast, self.relay_ms.clone(), idr_cmd_tx, controller)
+        });
+        session.attach(carrier, conn);
+        if fresh {
+            info!(remote = %id.fmt_short(), "client session added ({} total)", sessions.len());
+        } else {
+            debug!(remote = %id.fmt_short(), "{} carrier attached", carrier.label());
+        }
     }
 
     pub async fn remove_session(&self, id: &iroh::EndpointId) {
@@ -721,12 +824,19 @@ impl SessionManager {
         f32::from_bits(self.relay_ms.swap(0, Ordering::Relaxed))
     }
 
-    pub fn relay_ms_atomic(&self) -> Arc<AtomicU32> {
-        self.relay_ms.clone()
-    }
-
+    /// Clients with somewhere to send a picture.
+    ///
+    /// Not simply the number of sessions: a client whose other connections
+    /// have completed but whose video connection has not is connected and not
+    /// yet streaming, and counting it would have the controller deciding a
+    /// bitrate for a carrier that cannot yet take one.
     pub async fn client_count(&self) -> usize {
-        self.sessions.lock().await.len()
+        self.sessions
+            .lock()
+            .await
+            .values()
+            .filter(|s| s.is_streaming())
+            .count()
     }
 
     /// Opus actually received from neswire since the last call, in kbps.

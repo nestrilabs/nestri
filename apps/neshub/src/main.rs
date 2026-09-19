@@ -15,7 +15,7 @@ use iroh::endpoint::presets;
 
 use crate::session::SessionManager;
 use crate::ticket::NestriTicket;
-use nesprotocol::ALPN;
+use nesprotocol::{ALPNS, Carrier};
 
 #[derive(Parser, Debug)]
 #[command(name = "neshub")]
@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut builder = iroh::Endpoint::builder(presets::N0)
-        .alpns(vec![ALPN.to_vec()])
+        .alpns(ALPNS.iter().map(|a| a.to_vec()).collect::<Vec<_>>())
         .transport_config(crate::dgram::media_transport_config());
 
     match args.relay.as_str() {
@@ -348,19 +348,43 @@ async fn main() -> Result<()> {
             match incoming.await {
                 Ok(conn) => {
                     let remote_id = conn.remote_id();
-                    tracing::info!(remote = %remote_id.fmt_short(), "client connected");
-                    let session = session::ClientSession::new(
+                    // A client opens one connection per kind of traffic, so the
+                    // ALPN says which this is and the endpoint id says whose.
+                    let Some(carrier) = Carrier::from_alpn(conn.alpn()) else {
+                        tracing::warn!(
+                            remote = %remote_id.fmt_short(),
+                            "connection with an unknown ALPN; closing"
+                        );
+                        conn.close(0u32.into(), b"unknown alpn");
+                        continue;
+                    };
+                    tracing::info!(
+                        remote = %remote_id.fmt_short(),
+                        carrier = carrier.label(),
+                        "client connected"
+                    );
+                    mgr.attach(
+                        remote_id,
+                        carrier,
                         conn.clone(),
                         input_broadcast_tx.clone(),
-                        session_manager.relay_ms_atomic(),
                         cmd_tx.clone(),
                         controller.clone(),
-                    );
-                    mgr.add_session(remote_id, session).await;
+                    )
+                    .await;
                     let mgr_clone = mgr.clone();
-                    let conn_clone = conn.clone();
                     tokio::spawn(async move {
-                        conn_clone.closed().await;
+                        conn.closed().await;
+                        // Any one of them going means the session goes. A client
+                        // left holding audio and input but no video is not a
+                        // degraded session, it is a stuck one, and a clean
+                        // reconnect is both simpler to reason about and quicker
+                        // than whatever partial recovery would be built here.
+                        tracing::debug!(
+                            remote = %remote_id.fmt_short(),
+                            carrier = carrier.label(),
+                            "carrier closed, ending session"
+                        );
                         mgr_clone.remove_session(&remote_id).await;
                     });
                 }

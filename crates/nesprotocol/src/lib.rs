@@ -10,7 +10,57 @@ pub mod lifecycle;
 pub mod reliable;
 pub mod stats;
 
-pub const ALPN: &[u8] = b"/nestri/stream/1";
+/// One connection per kind of traffic, not one connection for everything.
+///
+/// A QUIC connection is the unit that congestion control, pacing and the
+/// datagram send buffer all operate on, so everything sharing one shares a
+/// queue. Measured over a 1000-mile link: a video backlog delayed audio and
+/// input with it, because a backlog is a property of the connection and video
+/// is the only flow large enough to build one. Audio behind a deep video queue
+/// was twenty-five times worse for timing than audio behind a shallow one --
+/// the same audio, on the same path, ruined by what it was queued behind.
+///
+/// Splitting them gives each its own congestion controller and its own send
+/// buffer, so video can only ever delay video. They compete at a shared
+/// bottleneck rather than cooperating, which is the point: audio and input are
+/// small and need a share, not a place in line behind a keyframe.
+pub const ALPN_VIDEO: &[u8] = b"/nestri/video/1";
+pub const ALPN_AUDIO: &[u8] = b"/nestri/audio/1";
+pub const ALPN_INPUT: &[u8] = b"/nestri/input/1";
+pub const ALPN_CONTROL: &[u8] = b"/nestri/control/1";
+
+/// Every ALPN a hub accepts, for the endpoint builder.
+pub const ALPNS: [&[u8]; 4] = [ALPN_VIDEO, ALPN_AUDIO, ALPN_INPUT, ALPN_CONTROL];
+
+/// Which connection an accepted one is, by its ALPN.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Carrier {
+    Video,
+    Audio,
+    Input,
+    Control,
+}
+
+impl Carrier {
+    pub fn from_alpn(alpn: &[u8]) -> Option<Self> {
+        match alpn {
+            a if a == ALPN_VIDEO => Some(Self::Video),
+            a if a == ALPN_AUDIO => Some(Self::Audio),
+            a if a == ALPN_INPUT => Some(Self::Input),
+            a if a == ALPN_CONTROL => Some(Self::Control),
+            _ => None,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::Audio => "audio",
+            Self::Input => "input",
+            Self::Control => "control",
+        }
+    }
+}
 
 pub const IPC_MAGIC: [u8; 4] = [b'N', b'S', b'T', b'R'];
 
@@ -102,6 +152,13 @@ pub const STREAM_KEYFRAME: u8 = 5;
 // ── Bidi stream types (desktop ↔ hub over QUIC bidi) ───────────
 
 pub const BIDI_INPUT: u8 = 2; // desktop → hub → nescope (input events)
+/// Everything the client says that is not an input event: keyframe requests,
+/// receiver reports, encode settings, control mode.
+///
+/// Its own stream on its own connection. Input is small and latency-critical
+/// and must not wait behind a receiver report, and neither must wait behind
+/// video, which is why these live apart from the media connections entirely.
+pub const BIDI_CONTROL: u8 = 6;
 
 // Codec IDs
 pub const CODEC_H264: u8 = 0;
