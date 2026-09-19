@@ -237,7 +237,10 @@ async fn main() -> Result<()> {
                         if cmd_tx.send(cmd).is_err() {
                             tracing::warn!("encoder command channel closed");
                         } else {
-                            tracing::info!(
+                            // Trace, not info: under a path that keeps moving
+                            // this fires every second, and a per-second line at
+                            // info buries everything worth reading.
+                            tracing::trace!(
                                 "video ceiling {}/{} kbps: {:?}",
                                 kbps,
                                 controller.limits().ceiling_kbps,

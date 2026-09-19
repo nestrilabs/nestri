@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use iroh::endpoint::Connection;
 use tokio::sync::Mutex;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
@@ -128,27 +128,33 @@ impl ClientSession {
         }
     }
 
+    /// Hand one frame to this client's writer.
+    ///
+    /// A failure here is debug rather than warn because it is per frame: the
+    /// only way it fails is a closed channel, which means the writer is already
+    /// gone, and sixty warnings a second on the way down bury whatever actually
+    /// ended the session.
     pub fn send_video_frame(&self, data: Vec<u8>) {
         if let Err(e) = self.send_video.send(data) {
-            warn!("failed to send video data: {e}");
+            debug!("failed to send video data: {e}");
         }
     }
 
     pub fn send_audio_packet(&self, data: Vec<u8>) {
         if let Err(e) = self.send_audio.send(data) {
-            warn!("failed to send audio data: {e}");
+            debug!("failed to send audio data: {e}");
         }
     }
 
     pub fn send_cursor_data(&self, data: Vec<u8>) {
         if let Err(e) = self.send_cursor.send(data) {
-            warn!("failed to send cursor data: {e}");
+            debug!("failed to send cursor data: {e}");
         }
     }
 
     pub fn send_stats_data(&self, data: Vec<u8>) {
         if let Err(e) = self.send_stats.send(data) {
-            warn!("failed to send stats data: {e}");
+            debug!("failed to send stats data: {e}");
         }
     }
 }
@@ -253,7 +259,10 @@ async fn run_input_reader(
                             }
                         }
                         MSG_IDR_REQUEST => {
-                            info!("received IDR request from client");
+                            // Client-side rate limited to one every two
+                            // seconds, which is still far too often for info
+                            // when a struggling receiver asks continuously.
+                            debug!("received IDR request from client");
                             let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
                         }
                         MSG_ENCODE_SETTINGS => {

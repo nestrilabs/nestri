@@ -694,7 +694,9 @@ fn encoder_thread(
                 match state.encoder.set_target_bitrate(kbps * 1_000) {
                     Ok(()) => {
                         cfg.bitrate_kbps = Some(kbps);
-                        log::info!("bitrate → {kbps} kbps (no rebuild, no IDR)");
+                        // Same reasoning as the hub's own line: a controller
+                        // tracking a moving path retunes every second.
+                        log::trace!("bitrate → {kbps} kbps (no rebuild, no IDR)");
                         continue;
                     }
                     // Refused means this encode has no bitrate to retarget, so
