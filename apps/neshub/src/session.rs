@@ -18,7 +18,7 @@ use crate::control::{Controller, PathView};
 
 use crate::dgram::run_datagram_writer;
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 pub struct ClientSession {
     /// The connection, kept so the path underneath it can be read.
@@ -27,6 +27,9 @@ pub struct ClientSession {
     /// `control`, and note that this view was measured being wrong exactly when
     /// it mattered.
     conn: Connection,
+    /// Set while this client has asked for a keyframe and not yet been sent
+    /// one, so the writer knows its deltas are undecodable.
+    awaiting_keyframe: Arc<AtomicBool>,
     /// The most recent report from this client, if it has sent one.
     ///
     /// Overwritten rather than queued. A report describes the second that just
@@ -52,6 +55,7 @@ impl ClientSession {
         controller: Arc<Mutex<Controller>>,
     ) -> Self {
         let latest_report = Arc::new(std::sync::Mutex::new(None));
+        let awaiting_keyframe = Arc::new(AtomicBool::new(false));
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -66,13 +70,23 @@ impl ClientSession {
         // `nestri_protocol::reliable`. Audio is not offered the same path — it
         // has no keyframes to promote.
         let conn_v = conn.clone();
+        let awaiting_video = awaiting_keyframe.clone();
         let _video_task = tokio::spawn(async move {
-            run_datagram_writer(conn_v, DGRAM_VIDEO, "video", video_rx, Some(relay_ms), true).await
+            run_datagram_writer(
+                conn_v,
+                DGRAM_VIDEO,
+                "video",
+                video_rx,
+                Some(relay_ms),
+                true,
+                Some(awaiting_video),
+            )
+            .await
         });
 
         let conn_a = conn.clone();
         let _audio_task = tokio::spawn(async move {
-            run_datagram_writer(conn_a, DGRAM_AUDIO, "audio", audio_rx, None, false).await
+            run_datagram_writer(conn_a, DGRAM_AUDIO, "audio", audio_rx, None, false, None).await
         });
 
         let conn_c = conn.clone();
@@ -83,12 +97,22 @@ impl ClientSession {
 
         let conn_i = conn.clone();
         let reports = latest_report.clone();
+        let awaiting_input = awaiting_keyframe.clone();
         let _input_task = tokio::spawn(async move {
-            run_input_reader(conn_i, input_broadcast, idr_cmd_tx, reports, controller).await
+            run_input_reader(
+                conn_i,
+                input_broadcast,
+                idr_cmd_tx,
+                reports,
+                controller,
+                awaiting_input,
+            )
+            .await
         });
 
         Self {
             conn,
+            awaiting_keyframe,
             latest_report,
             send_video: video_tx,
             send_audio: audio_tx,
@@ -166,6 +190,7 @@ async fn run_input_reader(
     idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
     controller: Arc<Mutex<Controller>>,
+    awaiting_keyframe: Arc<AtomicBool>,
 ) {
     debug!("input reader started");
     loop {
@@ -263,6 +288,10 @@ async fn run_input_reader(
                             // seconds, which is still far too often for info
                             // when a struggling receiver asks continuously.
                             debug!("received IDR request from client");
+                            // Until one arrives, everything else sent to this
+                            // client is undecodable and starves the keyframe
+                            // that would fix it. See `dgram::ResyncGate`.
+                            awaiting_keyframe.store(true, Ordering::Relaxed);
                             let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
                         }
                         MSG_ENCODE_SETTINGS => {
