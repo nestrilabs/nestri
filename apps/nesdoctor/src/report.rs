@@ -710,12 +710,19 @@ pub fn open_in_browser(url: &str) -> bool {
     // and treats `&` as a command separator; Rust's `Command` quotes arguments
     // for the MSVC C runtime convention, which `cmd` does not honour. So a URL
     // is cut at its first `&` -- which in ours falls immediately after `v=` --
-    // and the browser opened `https://doctor.nestri.io/?v=0.2.0` carrying
-    // nothing else at all.
+    // and the browser opened the submit URL bearing a version and nothing
+    // else at all.
     //
     // Silently, too: the worker saw a version, accepted it, and thanked the
     // person for a submission that contained one field. Two arrived like that
     // before anyone noticed.
+    //
+    // That cut URL is deliberately not written out here. This repository is
+    // public and gets pull-mirrored onto forges that crawlers index far more
+    // eagerly than GitHub does, so a working link in a comment is a link
+    // something will eventually follow: two such visits reached the worker,
+    // were correctly classed as truncated submissions, and raised an alert
+    // apiece for a bug that had been fixed for weeks.
     //
     // `rundll32 url.dll,FileProtocolHandler` hands the URL to the shell's
     // protocol handler without any command interpreter in the path, so nothing
