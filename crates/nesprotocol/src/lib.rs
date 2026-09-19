@@ -3,6 +3,7 @@
 // can drift from each other silently.
 
 pub mod datagram;
+pub mod delay;
 pub mod input;
 #[cfg(feature = "lifecycle")]
 pub mod lifecycle;

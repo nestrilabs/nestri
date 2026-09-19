@@ -534,13 +534,15 @@ pub struct SessionManager {
     last_video_key_bytes: AtomicU64,
     last_video_delta_bytes: AtomicU64,
     last_keyframes: AtomicU64,
-    /// Capture-to-broadcast delay of each frame this second, in milliseconds.
+    /// How much this box's own pipeline delay varied, frame to frame.
     ///
-    /// The box's own contribution to how late a frame is. Kept per frame rather
-    /// than averaged because the question it answers is about the tail: a mean
-    /// hides the one frame in sixty that took 80 ms, and that frame is the one
-    /// a client would otherwise buffer against for the whole session.
-    pipeline_ms: std::sync::Mutex<Vec<u16>>,
+    /// **Variation, not absolute delay**, and it cannot be otherwise: the
+    /// encoder's `timestamp_ms` counts from its own start rather than from any
+    /// epoch, so the difference to wall clock holds an unknown constant even
+    /// though both run on this machine. Variation is also the comparable
+    /// quantity -- the client measures the same thing about the total, using the
+    /// same code, so the difference between the two is what the network added.
+    pipeline: std::sync::Mutex<nesprotocol::delay::DelayTracker>,
     audio_bytes: AtomicU64,
     last_audio_bytes: AtomicU64,
     relay_ms: Arc<AtomicU32>, // latest relay latency (f32 bits)
@@ -556,7 +558,7 @@ impl SessionManager {
             last_video_key_bytes: AtomicU64::new(0),
             last_video_delta_bytes: AtomicU64::new(0),
             last_keyframes: AtomicU64::new(0),
-            pipeline_ms: std::sync::Mutex::new(Vec::new()),
+            pipeline: std::sync::Mutex::new(nesprotocol::delay::DelayTracker::new()),
             audio_bytes: AtomicU64::new(0),
             last_audio_bytes: AtomicU64::new(0),
             relay_ms: Arc::new(AtomicU32::new(0)),
@@ -575,12 +577,13 @@ impl SessionManager {
         info!(remote = %id.fmt_short(), "client session removed ({} remaining)", sessions.len());
     }
 
-    /// What the box spent on this frame before the network saw it.
+    /// Note how long this box took over a frame, relative to its own best.
     ///
-    /// `ts_ms` is the capture timestamp the encoder stamped, and the encoder
-    /// runs on this same machine, so the two clocks are the same one and the
-    /// difference is real rather than an offset. It wraps every 49 days, which
-    /// a subtraction in `u32` handles on its own.
+    /// `ts_ms` is stamped at capture by an encoder on this same machine, so the
+    /// clock is shared even though its origin is arbitrary -- which is exactly
+    /// what [`DelayTracker`] is built for.
+    ///
+    /// [`DelayTracker`]: nesprotocol::delay::DelayTracker
     fn note_pipeline_delay(&self, payload: &[u8]) {
         let Some(ts_bytes) = payload.get(2..6) else {
             return;
@@ -588,33 +591,27 @@ impl SessionManager {
         let ts_ms = u32::from_le_bytes(ts_bytes.try_into().unwrap());
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u32)
-            .unwrap_or(ts_ms);
-        let delay = now_ms.wrapping_sub(ts_ms).min(u32::from(u16::MAX)) as u16;
-        if let Ok(mut samples) = self.pipeline_ms.lock() {
-            // Bounded: a second of frames is tens of entries, and a stats
-            // consumer that stopped draining must not grow this without end.
-            if samples.len() < 1024 {
-                samples.push(delay);
-            }
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or_default();
+        if let Ok(mut pipeline) = self.pipeline.lock() {
+            pipeline.observe(ts_ms, now_ms, std::time::Instant::now());
         }
     }
 
-    /// The median, 95th percentile and worst pipeline delay since the last call.
+    /// The median, 95th percentile and worst pipeline variation since the last
+    /// call, in milliseconds.
     ///
-    /// Drains, like the byte counters, so each answer describes one second.
+    /// Zeroes for a second in which no frame was broadcast. That is not the
+    /// same as a second with no variation, but the wire has no room to say so
+    /// and the client can tell from the frame counters beside it.
     pub fn pipeline_delays(&self) -> (u16, u16, u16) {
-        let Ok(mut samples) = self.pipeline_ms.lock() else {
+        let Ok(mut pipeline) = self.pipeline.lock() else {
             return (0, 0, 0);
         };
-        if samples.is_empty() {
-            return (0, 0, 0);
-        }
-        samples.sort_unstable();
-        let at = |q: f64| samples[((samples.len() - 1) as f64 * q) as usize];
-        let out = (at(0.5), at(0.95), samples[samples.len() - 1]);
-        samples.clear();
-        out
+        pipeline
+            .take()
+            .map(|s| (s.p50_ms, s.p95_ms, s.max_ms))
+            .unwrap_or((0, 0, 0))
     }
 
     pub async fn broadcast_video(&self, data: Vec<u8>) {
@@ -779,47 +776,35 @@ mod pipeline_delay_tests {
     }
 
     #[test]
-    fn a_second_with_no_frames_reports_nothing_rather_than_zero_delay() {
-        // Zero would read as a perfectly fast pipeline, which is the opposite
-        // of "no evidence" and would make a stalled encoder look healthy.
+    fn a_second_with_no_frames_reports_nothing() {
         let mgr = SessionManager::new();
         assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
     }
 
     #[test]
-    fn the_tail_is_reported_and_not_averaged_away() {
-        // The whole reason for keeping every frame: one frame in sixty taking
-        // far longer than the rest is exactly the frame a client would buffer
-        // against for the entire session, and a mean hides it.
+    fn a_steady_pipeline_reports_no_variation() {
+        // The encoder's timestamp counts from its own start, so the difference
+        // to wall clock holds a large unknown constant. A pipeline taking the
+        // same time on every frame must read as zero, not as that constant --
+        // which is what a plain subtraction would have reported, pinned at the
+        // maximum the wire can carry.
         let mgr = SessionManager::new();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u32;
-        // Fifty-nine prompt frames and one that took far longer.
-        for _ in 0..59 {
-            mgr.note_pipeline_delay(&payload(now));
+        for i in 0..60u32 {
+            mgr.note_pipeline_delay(&payload(i * 16));
         }
-        mgr.note_pipeline_delay(&payload(now.wrapping_sub(400)));
-
-        let (p50, p95, max) = mgr.pipeline_delays();
-        assert!(p50 < 50, "the median was dragged up by one frame: {p50}");
-        assert!(max >= 400, "the worst frame vanished: {max}");
-        assert!(p95 <= max);
+        let (p50, _, max) = mgr.pipeline_delays();
+        assert_eq!(p50, 0);
+        assert!(
+            max < 100,
+            "a steady pipeline reported {max} ms of variation"
+        );
     }
 
     #[test]
     fn draining_means_each_answer_describes_one_second() {
         let mgr = SessionManager::new();
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u32;
-        mgr.note_pipeline_delay(&payload(now.wrapping_sub(100)));
-        assert!(mgr.pipeline_delays().2 >= 100);
-        // The second second saw nothing, and must say so rather than repeat the
-        // first -- a stale reading is how a fault that has already stopped goes
-        // on being reported.
+        mgr.note_pipeline_delay(&payload(0));
+        assert!(mgr.pipeline_delays().0 == 0);
         assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
     }
 

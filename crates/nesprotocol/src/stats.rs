@@ -83,14 +83,20 @@ pub struct VideoBreakdown {
     pub target_kbps: u32,
     /// The ceiling it is choosing within, after any client lowered it.
     pub ceiling_kbps: u32,
-    /// What the box's own pipeline cost this frame, in milliseconds, at the
-    /// median and the 95th percentile of the last second.
+    /// How much the box's own pipeline delay *varied* over the last second, in
+    /// milliseconds, at the median and the 95th percentile.
     ///
-    /// Capture to the moment the hub handed the frame to the transport, so it
-    /// covers encoding and the IPC hop and nothing beyond this machine. The
-    /// point is attribution: a client measuring late frames cannot otherwise
+    /// Variation rather than absolute cost, and necessarily so: the encoder
+    /// stamps a frame with milliseconds since its own start, not since any
+    /// epoch, so the difference to wall clock holds an unknown constant even
+    /// though both run on the same machine. It is also the comparable
+    /// quantity -- the client measures the same thing about the total arrival
+    /// delay, with the same code, so the gap between the two is what the
+    /// network added.
+    ///
+    /// The point is attribution: a client seeing late frames cannot otherwise
     /// tell a stalled encoder from a jittery path, and buffering against the
-    /// first is latency spent hiding a fault that should be fixed.
+    /// first is latency spent hiding a fault that should be fixed instead.
     pub pipeline_p50_ms: u16,
     pub pipeline_p95_ms: u16,
     /// The worst single frame in that second.
