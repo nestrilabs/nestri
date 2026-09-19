@@ -30,6 +30,12 @@ pub struct ClientSession {
     /// Set while this client has asked for a keyframe and not yet been sent
     /// one, so the writer knows its deltas are undecodable.
     awaiting_keyframe: Arc<AtomicBool>,
+    /// Frames this client was not sent because it could not have decoded them.
+    ///
+    /// Read and cleared by the controller's tick: a second containing these is
+    /// a second the hub starved on purpose, and reading it as path evidence
+    /// would cut the bitrate in response to the hub's own decision.
+    withheld: Arc<AtomicU64>,
     /// The most recent report from this client, if it has sent one.
     ///
     /// Overwritten rather than queued. A report describes the second that just
@@ -56,6 +62,7 @@ impl ClientSession {
     ) -> Self {
         let latest_report = Arc::new(std::sync::Mutex::new(None));
         let awaiting_keyframe = Arc::new(AtomicBool::new(false));
+        let withheld = Arc::new(AtomicU64::new(0));
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -71,6 +78,7 @@ impl ClientSession {
         // has no keyframes to promote.
         let conn_v = conn.clone();
         let awaiting_video = awaiting_keyframe.clone();
+        let withheld_video = withheld.clone();
         let _video_task = tokio::spawn(async move {
             run_datagram_writer(
                 conn_v,
@@ -80,13 +88,24 @@ impl ClientSession {
                 Some(relay_ms),
                 true,
                 Some(awaiting_video),
+                Some(withheld_video),
             )
             .await
         });
 
         let conn_a = conn.clone();
         let _audio_task = tokio::spawn(async move {
-            run_datagram_writer(conn_a, DGRAM_AUDIO, "audio", audio_rx, None, false, None).await
+            run_datagram_writer(
+                conn_a,
+                DGRAM_AUDIO,
+                "audio",
+                audio_rx,
+                None,
+                false,
+                None,
+                None,
+            )
+            .await
         });
 
         let conn_c = conn.clone();
@@ -113,6 +132,7 @@ impl ClientSession {
         Self {
             conn,
             awaiting_keyframe,
+            withheld,
             latest_report,
             send_video: video_tx,
             send_audio: audio_tx,
@@ -131,6 +151,11 @@ impl ClientSession {
     /// Taken rather than read so a client that stops reporting stops looking
     /// healthy: a report left in place would be read again every second and the
     /// controller would keep acting on a second that is long gone.
+    /// Frames withheld since the last call, cleared as it is read.
+    pub fn take_withheld(&self) -> u64 {
+        self.withheld.swap(0, Ordering::Relaxed)
+    }
+
     pub fn take_report(&self) -> Option<ReceiverReport> {
         self.latest_report.lock().ok()?.take()
     }
@@ -656,11 +681,15 @@ impl SessionManager {
     /// can only answer one question, and the client that cannot decode is the
     /// one that matters -- averaging its trouble away leaves it never
     /// recovering while the numbers look acceptable.
-    pub async fn worst_report(&self) -> (Option<ReceiverReport>, PathView) {
+    pub async fn worst_report(&self) -> (Option<ReceiverReport>, PathView, bool) {
         let sessions = self.sessions.lock().await;
         let mut worst: Option<(f32, ReceiverReport, PathView)> = None;
         let mut any_path = PathView::default();
+        let mut self_inflicted = false;
         for session in sessions.values() {
+            // Read for every client, not only the worst, and always cleared --
+            // a count left behind would contaminate a later second too.
+            self_inflicted |= session.take_withheld() > 0;
             let path = session.path_view();
             if path != PathView::default() {
                 any_path = path;
@@ -679,8 +708,8 @@ impl SessionManager {
             }
         }
         match worst {
-            Some((_, report, path)) => (Some(report), path),
-            None => (None, any_path),
+            Some((_, report, path)) => (Some(report), path, self_inflicted),
+            None => (None, any_path, self_inflicted),
         }
     }
 

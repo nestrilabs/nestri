@@ -231,6 +231,9 @@ pub async fn run_datagram_writer(
     // Set while this client has asked for a keyframe and not yet been sent
     // one. Video only; audio has no such notion.
     awaiting_keyframe: Option<Arc<std::sync::atomic::AtomicBool>>,
+    // Counts frames withheld during a resynchronisation, so the bitrate
+    // controller can tell a second it starved from a second the path did.
+    withheld: Option<Arc<std::sync::atomic::AtomicU64>>,
 ) {
     let sender = DatagramSender::new(conn.clone(), kind);
     let keyframes = keyframes_reliable.then(|| KeyframeSender::new(conn, sender.clone()));

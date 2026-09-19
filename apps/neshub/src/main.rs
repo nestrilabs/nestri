@@ -229,9 +229,9 @@ async fn main() -> Result<()> {
                 // nothing to gain from deciding more often than they arrive.
                 {
                     let clients = mgr.client_count().await;
-                    let (report, path) = mgr.worst_report().await;
+                    let (report, path, self_inflicted) = mgr.worst_report().await;
                     let mut controller = controller.lock().await;
-                    if let Some(kbps) = controller.tick(clients, report, path) {
+                    if let Some(kbps) = controller.tick(clients, report, path, self_inflicted) {
                         let mut cmd = vec![nesprotocol::MSG_ENCODE_SETTINGS];
                         nesprotocol::encode_bitrate_only(&mut cmd, kbps);
                         if cmd_tx.send(cmd).is_err() {

@@ -143,6 +143,9 @@ pub enum Reason {
     ConstantQuality,
     /// Nobody is connected, so there is no path to have an opinion about.
     NoClients,
+    /// This second's numbers describe frames the hub chose not to send, so they
+    /// say nothing about the path.
+    SelfInflicted,
 }
 
 /// The controller's whole state.
@@ -249,11 +252,22 @@ impl Controller {
     /// `report` is the worst report across the clients attached, or `None` when
     /// none of them said anything. Returns the new target when it is worth
     /// sending, and `None` when nothing should be sent -- which is most seconds.
+    /// One second's decision.
+    ///
+    /// `self_inflicted` says this second contained frames the hub deliberately
+    /// withheld -- a client resynchronising, whose deltas were undecodable and
+    /// were dropped rather than sent. Those seconds cannot be read as evidence
+    /// about the path: fewer frames were sent, so fewer arrived, so the measured
+    /// goodput is low and the loss is high, and a controller anchoring a backoff
+    /// on that would cut the bitrate in response to its own decision. Every
+    /// stutter would then also cost bandwidth, which is the opposite of what a
+    /// resynchronisation needs.
     pub fn tick(
         &mut self,
         clients: usize,
         report: Option<ReceiverReport>,
         path: PathView,
+        self_inflicted: bool,
     ) -> Option<u32> {
         if clients == 0 {
             // Nothing is connected, so nothing is being carried and there is no
@@ -272,6 +286,13 @@ impl Controller {
         }
         if self.mode == ControlMode::Manual {
             self.reason = Reason::Manual;
+            return None;
+        }
+        if self_inflicted {
+            // Held, not decayed. The path may be fine; this second simply
+            // cannot say, and silence about the path is not evidence against it.
+            self.reason = Reason::SelfInflicted;
+            self.silent_ticks = 0;
             return None;
         }
 
@@ -401,7 +422,7 @@ mod tests {
         let mut ticks = 0;
         while c.target_kbps() > 2_800 && ticks < 10 {
             // 46 frames a second starting to arrive, none of them completing.
-            c.tick(1, Some(report(0, 46, 0)), PathView::default());
+            c.tick(1, Some(report(0, 46, 0)), PathView::default(), false);
             ticks += 1;
         }
         assert!(
@@ -421,7 +442,7 @@ mod tests {
     #[test]
     fn a_measured_goodput_is_corrected_in_one_step() {
         let mut c = controller();
-        let sent = c.tick(1, Some(report(12, 48, 2_850)), PathView::default());
+        let sent = c.tick(1, Some(report(12, 48, 2_850)), PathView::default(), false);
         assert_eq!(sent, Some(c.target_kbps()));
         assert!(
             c.target_kbps() < 2_850,
@@ -438,12 +459,12 @@ mod tests {
         // its environment gave it and this end cannot know that matches, so the
         // target is asserted once rather than assumed.
         assert_eq!(
-            c.tick(1, Some(healthy()), PathView::default()),
+            c.tick(1, Some(healthy()), PathView::default(), false),
             Some(CEILING)
         );
         for _ in 0..60 {
             assert_eq!(
-                c.tick(1, Some(healthy()), PathView::default()),
+                c.tick(1, Some(healthy()), PathView::default(), false),
                 None,
                 "a healthy path produced a bitrate change",
             );
@@ -458,12 +479,12 @@ mod tests {
         // environment gave it -- which is the failure this replaces.
         let mut c = controller();
         assert_eq!(
-            c.tick(1, Some(healthy()), PathView::default()),
+            c.tick(1, Some(healthy()), PathView::default(), false),
             Some(CEILING),
             "the opening target was never stated",
         );
         // And not repeated, now that the encoder has been told.
-        assert_eq!(c.tick(1, Some(healthy()), PathView::default()), None);
+        assert_eq!(c.tick(1, Some(healthy()), PathView::default(), false), None);
     }
 
     #[test]
@@ -486,7 +507,7 @@ mod tests {
     fn the_ceiling_is_never_exceeded() {
         let mut c = controller();
         for _ in 0..200 {
-            c.tick(1, Some(healthy()), PathView::default());
+            c.tick(1, Some(healthy()), PathView::default(), false);
             assert!(c.target_kbps() <= CEILING, "{} kbps", c.target_kbps());
         }
     }
@@ -495,7 +516,7 @@ mod tests {
     fn the_floor_is_never_gone_below() {
         let mut c = controller();
         for _ in 0..200 {
-            c.tick(1, Some(report(0, 60, 0)), PathView::default());
+            c.tick(1, Some(report(0, 60, 0)), PathView::default(), false);
             assert!(
                 c.target_kbps() >= c.limits().floor_kbps(),
                 "{} kbps is below the floor",
@@ -508,11 +529,11 @@ mod tests {
     fn it_climbs_back_after_a_bad_patch() {
         let mut c = controller();
         for _ in 0..5 {
-            c.tick(1, Some(report(0, 46, 0)), PathView::default());
+            c.tick(1, Some(report(0, 46, 0)), PathView::default(), false);
         }
         let bottom = c.target_kbps();
         for _ in 0..40 {
-            c.tick(1, Some(healthy()), PathView::default());
+            c.tick(1, Some(healthy()), PathView::default(), false);
         }
         assert!(
             c.target_kbps() > bottom,
@@ -522,13 +543,63 @@ mod tests {
     }
 
     #[test]
+    fn a_second_the_hub_starved_is_not_read_as_a_bad_path() {
+        // While a client resynchronises its deltas are withheld, so fewer frames
+        // are sent, fewer arrive, goodput reads low and loss reads high. Backing
+        // off on that would cut the bitrate in response to the hub's own
+        // decision -- and make every stutter cost bandwidth as well.
+        let mut c = controller();
+        assert_eq!(
+            c.tick(1, Some(healthy()), PathView::default(), false),
+            Some(CEILING)
+        );
+
+        let starved = report(0, 46, 0);
+        for _ in 0..10 {
+            assert_eq!(c.tick(1, Some(starved), PathView::default(), true), None);
+        }
+        assert_eq!(c.target_kbps(), CEILING, "the hub cut its own bitrate");
+        assert_eq!(c.reason(), Reason::SelfInflicted);
+    }
+
+    #[test]
+    fn a_genuinely_bad_second_still_acts_once_the_hub_stops_starving_it() {
+        // The flag holds, it does not blind. The moment a second is the path's
+        // own, the same evidence is acted on.
+        let mut c = controller();
+        c.tick(1, Some(healthy()), PathView::default(), false);
+        c.tick(1, Some(report(0, 46, 0)), PathView::default(), true);
+        assert_eq!(c.target_kbps(), CEILING);
+
+        c.tick(1, Some(report(12, 48, 2_850)), PathView::default(), false);
+        assert!(c.target_kbps() < 2_850, "a real bad second was ignored too");
+    }
+
+    #[test]
+    fn a_starved_second_does_not_count_towards_silence() {
+        // It is not a missing report -- one arrived, it just cannot be read.
+        // Counting it as silence would slide towards the path-based fallback and
+        // then to decaying blind, which is a different wrong answer.
+        let mut c = controller();
+        c.tick(1, Some(healthy()), PathView::default(), false);
+        for _ in 0..10 {
+            c.tick(1, Some(report(0, 60, 0)), PathView::default(), true);
+        }
+        assert_eq!(c.reason(), Reason::SelfInflicted);
+        assert_eq!(c.target_kbps(), CEILING);
+    }
+
+    #[test]
     fn a_hand_set_bitrate_stands_the_controller_down() {
         // How this class of bug gets diagnosed. A controller that overrode a
         // person's setting a second later would take the tool away.
         let mut c = controller();
         c.note_manual_target(1_000);
         for _ in 0..30 {
-            assert_eq!(c.tick(1, Some(report(0, 60, 0)), PathView::default()), None);
+            assert_eq!(
+                c.tick(1, Some(report(0, 60, 0)), PathView::default(), false),
+                None
+            );
         }
         assert_eq!(c.target_kbps(), 1_000);
         assert_eq!(c.reason(), Reason::Manual);
@@ -538,7 +609,10 @@ mod tests {
     fn constant_quality_has_no_bitrate_to_decide() {
         let mut c = controller();
         c.set_constant_quality(true);
-        assert_eq!(c.tick(1, Some(report(0, 60, 0)), PathView::default()), None);
+        assert_eq!(
+            c.tick(1, Some(report(0, 60, 0)), PathView::default(), false),
+            None
+        );
         assert_eq!(c.reason(), Reason::ConstantQuality);
     }
 
@@ -547,13 +621,13 @@ mod tests {
         let mut c = controller();
         // A missed report or two says nothing; the path was fine a second ago.
         for _ in 0..(SILENT_TICKS_BEFORE_FALLBACK - 1) {
-            assert_eq!(c.tick(1, None, PathView::default()), None);
+            assert_eq!(c.tick(1, None, PathView::default(), false), None);
             assert_eq!(c.target_kbps(), CEILING);
         }
         // Past that, with nothing visible from this end either, it decays rather
         // than holding a high target on no evidence at all -- holding is how the
         // original failure sustained itself.
-        c.tick(1, None, PathView::default());
+        c.tick(1, None, PathView::default(), false);
         assert_eq!(c.reason(), Reason::Blind);
         assert!(c.target_kbps() < CEILING);
     }
@@ -566,11 +640,11 @@ mod tests {
             rtt_ms: Some(200),
         };
         // A report present means the path view is ignored, however tempting.
-        c.tick(1, Some(healthy()), path);
+        c.tick(1, Some(healthy()), path, false);
         assert_eq!(c.reason(), Reason::Climbing);
 
         for _ in 0..SILENT_TICKS_BEFORE_FALLBACK {
-            c.tick(1, None, path);
+            c.tick(1, None, path, false);
         }
         assert_eq!(c.reason(), Reason::Fallback);
         // 120 KB in flight per 200 ms is 4.8 Mbps.
@@ -584,7 +658,7 @@ mod tests {
         // somebody arrived. There is no path to have an opinion about yet.
         let mut c = controller();
         for _ in 0..30 {
-            assert_eq!(c.tick(0, None, PathView::default()), None);
+            assert_eq!(c.tick(0, None, PathView::default(), false), None);
         }
         assert_eq!(c.target_kbps(), CEILING);
         assert_eq!(c.reason(), Reason::NoClients);
@@ -609,9 +683,15 @@ mod tests {
         // happens to land on the same number is still a different instruction
         // when the band around it moved.
         let mut c = controller();
-        assert!(c.tick(1, Some(healthy()), PathView::default()).is_some());
+        assert!(
+            c.tick(1, Some(healthy()), PathView::default(), false)
+                .is_some()
+        );
         c.set_ceiling(3_000);
-        assert_eq!(c.tick(1, Some(healthy()), PathView::default()), Some(3_000));
+        assert_eq!(
+            c.tick(1, Some(healthy()), PathView::default(), false),
+            Some(3_000)
+        );
     }
 
     #[test]
@@ -646,7 +726,7 @@ mod tests {
         let mut c = controller();
         let empty = ReceiverReport::default();
         assert_eq!(empty.loss(), None);
-        c.tick(1, Some(empty), PathView::default());
+        c.tick(1, Some(empty), PathView::default(), false);
         assert_eq!(c.target_kbps(), CEILING, "climbed on an empty report");
     }
 }
