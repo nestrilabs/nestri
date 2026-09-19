@@ -116,6 +116,44 @@ rate, while the pacer underneath is using the measured window and RTT. If the
 application is producing faster than the pacer drains, the answer is to produce
 less — which is the bitrate controller's job — not to add a second pacer.
 
+## Loss is a lagging indicator; the queue is the leading one
+
+A path that is overrun does not necessarily drop anything. It can simply be
+slower than the offer, in which case the pacer above meters packets out at the
+rate it measures and the difference accumulates in the datagram send buffer.
+Nothing is lost. Everything is late.
+
+This was measured over a 1000-mile link: every frame arrived, every frame
+completed, zero QUIC loss, zero congestion events, and a **flat** 180 ms round
+trip for an entire session — while the picture ran up to eight seconds behind.
+A flat RTT is the tell that the queue is *ours* and not the network's; a
+standing queue in the path would have shown up as rising round-trip time.
+
+The trap is that every health signal reads clean. Loss only appears once the
+buffer finally overflows, long after the session became unplayable, and by then
+the queue is deep enough that the only way out is the floor. A controller
+driven by loss alone therefore climbs to its ceiling against a path it is
+already overrunning, collapses when the buffer spills, drains, and climbs
+again — a sawtooth with a period of tens of seconds, in which the stream is
+never once at a rate the path can carry.
+
+`DGRAM_BUFFER_BYTES` is 4 MiB. That was chosen as headroom for a keyframe
+burst, which is a real requirement and still correct. But a buffer sized in
+bytes is a queue whose *duration* depends on the drain rate: at a couple of
+megabits, 4 MiB is several seconds of video. Sizing for one dimension silently
+set a bound in the other.
+
+The signal that does work was available the whole time and simply never read:
+
+```
+backlog_bytes = DGRAM_BUFFER_BYTES - conn.datagram_send_buffer_space()
+backlog_ms    = backlog_bytes * 8 / drain_kbps
+```
+
+Divide by the rate the queue actually drains at — what is getting through — and
+not by what is being asked for, because the latter is the number that is too
+high whenever this matters.
+
 ## What follows
 
 These are the design rules we arrived at, and the reasoning is above rather
@@ -135,6 +173,13 @@ the number is safe precisely because nothing went out under it.
 behind it holds. If the keyframe never comes, withholding forever converts a
 recoverable freeze into a permanent black screen, so the suppression expires
 and says that it did.
+
+**Measure the queue, not just the casualties.** Loss says a path was overrun
+some time ago. A standing send queue says it is being overrun right now, while
+the frames are still only late. On a transport that drops the oldest datagram
+rather than refusing the newest, the queue is the only signal that arrives in
+time to act on — and climbing is what digs it, so climbing needs the queue to
+be empty and not merely the loss to be low.
 
 **Trust the receiver over the sender.** The sender's view of this path was
 measured reporting 182 ms RTT with zero packet loss while the client received
