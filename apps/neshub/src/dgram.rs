@@ -171,26 +171,8 @@ pub async fn run_datagram_writer(
     // but only the first time, since it will then be true for every frame.
     let mut warned_unsupported = false;
 
-    // Where this writer's second went.
-    //
-    // The pair that matters is the first two: if frames arrive here already
-    // 43 ms apart then the hole was made upstream, in the encoder or on the IPC
-    // hop, and nothing in this file can be the cause. If they arrive evenly and
-    // leave unevenly, it is made here. A client measured exactly that hole in
-    // video datagram arrivals while audio — same connection, same congestion
-    // window, its own writer — stayed at 8 ms.
-    let mut last_in = std::time::Instant::now();
-    let mut worst_in_gap = std::time::Duration::ZERO;
-    let mut worst_send = std::time::Duration::ZERO;
-    let mut frames: u32 = 0;
-    let mut last_pace = std::time::Instant::now();
-
     while let Some(payload) = rx.recv().await {
         let t0 = std::time::Instant::now();
-        worst_in_gap = worst_in_gap.max(t0.duration_since(last_in));
-        last_in = t0;
-        frames += 1;
-
         body.clear();
         nesprotocol::encode_frame_body(&mut body, MSG_DATA, seq, &payload);
 
@@ -228,19 +210,6 @@ pub async fn run_datagram_writer(
                 }
             }
             Err(e) => debug!("{label}: dropping frame {seq}: {e}"),
-        }
-        worst_send = worst_send.max(t0.elapsed());
-
-        if last_pace.elapsed() >= std::time::Duration::from_secs(1) {
-            last_pace = std::time::Instant::now();
-            debug!(
-                "{label}: {frames} frames, worst gap between frames in {:.1}ms,                  worst send {:.1}ms",
-                worst_in_gap.as_secs_f64() * 1000.0,
-                worst_send.as_secs_f64() * 1000.0,
-            );
-            worst_in_gap = std::time::Duration::ZERO;
-            worst_send = std::time::Duration::ZERO;
-            frames = 0;
         }
 
         seq = seq.wrapping_add(1);
