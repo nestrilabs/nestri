@@ -20,7 +20,7 @@
 //  ──────────────────────
 //  NESCAPTURE_CODEC         "h264" | "h265" | "av1"          (default: best available)
 //  NESCAPTURE_FORMAT        "yuv420" | "yuv444"              (default: yuv420)
-//  NESCAPTURE_DEPTH         "8" | "10"                       (default: auto from VkFormat)
+//  NESCAPTURE_DEPTH         "8" | "10"                       (default: 8)
 //  NESCAPTURE_BITRATE       CBR target kbps                  (default: 10000)
 //  NESCAPTURE_QP            Constant QP (overrides BITRATE)  (default: unset)
 //  NESCAPTURE_FPS           Frame rate                       (default: 60)
@@ -149,21 +149,6 @@ pub fn converter_config(
         // expanded again by the decoder.
         ColorRange::Full,
     )
-}
-
-/// Bit depth implied by a converter input format.
-///
-/// Taken from the input format rather than matched against the `VkFormat` a
-/// second time. The two matches had drifted: `A2R10G10B10` counted as ten-bit
-/// here while the input-format mapping above had no entry for it and fell back
-/// to eight-bit BGRA, so the encoder was configured for ten-bit while the
-/// converter read the buffer as eight. Deriving one from the other makes that
-/// particular disagreement unrepresentable.
-pub fn input_format_bit_depth(input_fmt: InputFormat) -> EncodeBitDepth {
-    match input_fmt {
-        InputFormat::ABGR2101010 | InputFormat::RGBA16F => EncodeBitDepth::Ten,
-        _ => EncodeBitDepth::Eight,
-    }
 }
 
 pub fn output_format(pixel_fmt: PixelFormat, bit_depth: EncodeBitDepth) -> OutputFormat {
@@ -668,6 +653,12 @@ fn encoder_thread(
     let mut frame_number = 0u32;
 
     let wanted_depth = std::env::var("NESCAPTURE_DEPTH");
+    // So the ten-bit refusal is said once per codec rather than per frame.
+    let mut warned_depth = false;
+    // When the last encoder build failed, and what it said, so a configuration
+    // the device refuses is not rebuilt on every frame.
+    let mut init_failed_at: Option<std::time::Instant> = None;
+    let mut last_init_error: Option<String> = None;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -784,15 +775,22 @@ fn encoder_thread(
             continue;
         };
 
-        let bit_depth = if let Some(ov) = cfg.wanted_depth_override {
+        let requested_depth = if let Some(ov) = cfg.wanted_depth_override {
             ov
         } else {
             match wanted_depth.as_deref() {
                 Ok("10") => EncodeBitDepth::Ten,
-                Ok("8") => EncodeBitDepth::Eight,
-                _ => input_format_bit_depth(input_fmt),
+                // Eight rather than the source's own depth. What the game chose
+                // to render into says what *it* wanted, not what this stream
+                // should carry or what the encoder can produce -- and deriving
+                // one from the other means a game opening a 10-bit swapchain
+                // silently selects an encode profile the hardware may not have.
+                // Control does exactly that, and picked a profile that does not
+                // exist.
+                _ => EncodeBitDepth::Eight,
             }
         };
+        let bit_depth = depth_for_codec(cfg.codec, requested_depth, &mut warned_depth);
         let out_fmt = output_format(cfg.pixel_format, bit_depth);
 
         // The geometry joins the guard. It used to be absent, and `cfg.width` /
@@ -810,6 +808,18 @@ fn encoder_thread(
                 s
             }
             _ => {
+                // Building an encoder is expensive and a configuration the
+                // device cannot do will not start working on the next frame.
+                // Without this, a refused profile is retried sixty times a
+                // second forever -- which is how an unsupported ten-bit H.264
+                // request turned into a log with nothing else in it and a
+                // session that never recovered.
+                if let Some(failed_at) = init_failed_at
+                    && failed_at.elapsed() < INIT_RETRY_INTERVAL
+                {
+                    frame_number += 1;
+                    continue;
+                }
                 if let Some(old) = encoder_state.as_ref()
                     && (old.width != raw.width || old.height != raw.height)
                 {
@@ -838,11 +848,20 @@ fn encoder_thread(
                     raw.vk_colorspace,
                 ) {
                     Ok(s) => {
+                        init_failed_at = None;
+                        last_init_error = None;
                         encoder_state = Some(s);
                         encoder_state.as_mut().unwrap()
                     }
                     Err(e) => {
-                        log::error!("encoder (re)init: {e}");
+                        // Said once per distinct failure. The same refusal every
+                        // second says nothing the first one did not, and buries
+                        // the one that is different.
+                        if last_init_error.as_deref() != Some(e.as_str()) {
+                            log::error!("encoder (re)init: {e}");
+                            last_init_error = Some(e);
+                        }
+                        init_failed_at = Some(std::time::Instant::now());
                         frame_number += 1;
                         continue;
                     }
@@ -1080,6 +1099,32 @@ fn encoder_still_serves(
     wanted: (u32, u32, EncodeBitDepth, PixelFormat),
 ) -> bool {
     existing == wanted
+}
+
+/// The bit depth a codec can actually encode, given what was asked for.
+///
+/// **H.264 has no ten-bit encode.** Main 10 exists on paper for H.264 only as a
+/// vendor extension that no Vulkan Video implementation here offers, so asking
+/// for it does not produce a worse stream, it produces
+/// `ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR` and no stream at all. H.265 and
+/// AV1 have it properly.
+///
+/// Clamped here rather than refused, because the caller asking is often not a
+/// person: a client may send a depth alongside a codec change, and a session
+/// that stops encoding is worse than one that encodes eight-bit.
+/// How long to wait before rebuilding an encoder whose last build failed.
+const INIT_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+fn depth_for_codec(codec: HwCodec, requested: EncodeBitDepth, warned: &mut bool) -> EncodeBitDepth {
+    if codec == HwCodec::H264 && requested == EncodeBitDepth::Ten {
+        if !*warned {
+            *warned = true;
+            log::warn!("H.264 has no ten-bit encode; using eight-bit");
+        }
+        return EncodeBitDepth::Eight;
+    }
+    *warned = false;
+    requested
 }
 
 fn gpu_encode_frame(
@@ -1648,31 +1693,6 @@ mod tests {
     }
 
     #[test]
-    fn bit_depth_agrees_with_the_input_format() {
-        // The two used to be separate matches on VkFormat and had drifted.
-        // Ten-bit in means ten-bit out, eight means eight, for every format
-        // the converter accepts.
-        let ten = [64u32, 97];
-        let eight = [37u32, 43, 44, 50];
-        for f in ten {
-            let fmt = vk_format_to_input_format(f).expect("mapped");
-            assert_eq!(
-                input_format_bit_depth(fmt),
-                EncodeBitDepth::Ten,
-                "VkFormat {f} is a ten-bit format"
-            );
-        }
-        for f in eight {
-            let fmt = vk_format_to_input_format(f).expect("mapped");
-            assert_eq!(
-                input_format_bit_depth(fmt),
-                EncodeBitDepth::Eight,
-                "VkFormat {f} is an eight-bit format"
-            );
-        }
-    }
-
-    #[test]
     fn hdr_formats_map_to_their_converter_inputs() {
         // The two pairs a WSI layer injects that we can actually consume.
         assert_eq!(
@@ -1906,6 +1926,73 @@ mod encoder_identity_tests {
             HD,
             (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv444)
         ));
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::{HwCodec, depth_for_codec};
+    use pixelforge::EncodeBitDepth;
+
+    #[test]
+    fn h264_is_never_asked_for_ten_bit() {
+        // There is no H.264 ten-bit encode to ask for. Asking does not produce a
+        // worse stream, it produces ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR
+        // and no stream at all -- which is what the game Control caused by
+        // opening a ten-bit swapchain.
+        let mut warned = false;
+        assert_eq!(
+            depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned),
+            EncodeBitDepth::Eight,
+        );
+        assert!(warned, "it was clamped silently");
+    }
+
+    #[test]
+    fn the_refusal_is_said_once_and_not_per_frame() {
+        let mut warned = false;
+        for _ in 0..600 {
+            depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned);
+        }
+        assert!(warned);
+    }
+
+    #[test]
+    fn the_codecs_that_have_ten_bit_keep_it() {
+        let mut warned = false;
+        for codec in [HwCodec::H265, HwCodec::AV1] {
+            assert_eq!(
+                depth_for_codec(codec, EncodeBitDepth::Ten, &mut warned),
+                EncodeBitDepth::Ten,
+                "{codec:?} lost its ten-bit",
+            );
+            assert!(!warned);
+        }
+    }
+
+    #[test]
+    fn eight_bit_passes_through_every_codec() {
+        let mut warned = false;
+        for codec in [HwCodec::H264, HwCodec::H265, HwCodec::AV1] {
+            assert_eq!(
+                depth_for_codec(codec, EncodeBitDepth::Eight, &mut warned),
+                EncodeBitDepth::Eight,
+            );
+            assert!(!warned, "{codec:?} warned about a depth it supports");
+        }
+    }
+
+    #[test]
+    fn moving_off_h264_lets_the_warning_be_said_again() {
+        // The flag is about not repeating one refusal, not about never
+        // mentioning it twice in a session: a codec switch is a new situation.
+        let mut warned = false;
+        depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned);
+        assert!(warned);
+        depth_for_codec(HwCodec::AV1, EncodeBitDepth::Ten, &mut warned);
+        assert!(!warned);
+        depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned);
+        assert!(warned);
     }
 }
 
