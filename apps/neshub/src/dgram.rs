@@ -280,6 +280,13 @@ pub async fn run_datagram_writer(
                 // controller reacting to its own decision rather than to the
                 // path. Reusing the number is safe precisely because nothing
                 // went out under it.
+                //
+                // Saying so is the other half: the receiver still reports fewer
+                // frames this second, and without this count the controller has
+                // no way to tell that second from one the path ruined.
+                if let Some(ref withheld) = withheld {
+                    withheld.fetch_add(1, Ordering::Relaxed);
+                }
                 continue;
             }
         }
