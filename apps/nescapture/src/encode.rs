@@ -420,6 +420,7 @@ impl PipelineHandle {
             encode_ms: encode_avg_ms.clone(),
             idr_requested: idr_requested.clone(),
             epoch: Instant::now(),
+            reconfig_tx: reconfig_tx.clone(),
         };
         thread::Builder::new()
             .name("nescapture-ipc".into())
@@ -1286,6 +1287,15 @@ struct IpcConfig {
     idr_requested: Arc<AtomicBool>,
     /// Zero point for wire timestamps.
     epoch: Instant,
+    /// For the rate probe to command its own steps.
+    ///
+    /// The probe has to live where the encoded sizes are, which is here, and
+    /// has to drive the bitrate, which happens in the encoder thread -- so it
+    /// sends down the same channel every other bitrate change uses. Measuring
+    /// through the real path rather than beside it is the point: a probe that
+    /// called the encoder directly would not measure the path the controller
+    /// will actually use.
+    reconfig_tx: mpsc::Sender<EncodeSettingsChange>,
 }
 
 fn ipc_send_thread(
@@ -1365,6 +1375,17 @@ fn ipc_send_thread(
         let mut worst_key_wait = std::time::Duration::ZERO;
         let mut keyframes: u32 = 0;
         let mut last_pace = Instant::now();
+        // Off unless asked for. A sweep takes the bitrate away from whatever
+        // else is steering it, so it must never start by accident.
+        let mut rate_probe = match std::env::var("NESCAPTURE_RATE_PROBE") {
+            Ok(v) if v != "0" && !v.is_empty() => {
+                log::info!(
+                    "rate probe armed: the encoder's bitrate is under this sweep, not the hub's control"
+                );
+                Some(crate::rate_probe::RateProbe::new(Instant::now(), 0))
+            }
+            _ => None,
+        };
 
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -1425,6 +1446,46 @@ fn ipc_send_thread(
                 cfg.height,
                 &pkt.data,
             );
+
+            if let Some(probe) = rate_probe.as_mut() {
+                let now = Instant::now();
+                probe.observe(now, pkt.data.len() as u32, pkt.is_key_frame);
+                if let Some(kbps) = probe.due_step(now) {
+                    log::info!("rate probe: stepping to {kbps} kbps");
+                    let change = EncodeSettingsChange {
+                        codec: None,
+                        rate_control_mode: RateControlMode::Cbr,
+                        value: kbps,
+                        bit_depth: None,
+                    };
+                    let _ = cfg.reconfig_tx.send(change);
+                }
+                if probe.finished() {
+                    // One line per rung, said once, at the end. This is the
+                    // whole point of the run, not per-tick reporting.
+                    log::info!("rate probe: finished");
+                    for r in probe.reports() {
+                        match r.settle_ms {
+                            Some(ms) => log::info!(
+                                "rate probe: {} -> {} kbps settled in {} ms ({} frames), steady {:.2}x target, {} keyframe(s)",
+                                r.from_kbps, r.to_kbps, ms,
+                                r.settle_frames.unwrap_or(0), r.steady_ratio, r.keyframes
+                            ),
+                            None => log::warn!(
+                                "rate probe: {} -> {} kbps NEVER settled, steady {:.2}x target, {} keyframe(s)",
+                                r.from_kbps, r.to_kbps, r.steady_ratio, r.keyframes
+                            ),
+                        }
+                    }
+                    match probe.worst_settle_ms() {
+                        Some(ms) => log::info!(
+                            "rate probe: worst settle {ms} ms -- a control loop cannot usefully run faster than this"
+                        ),
+                        None => log::warn!("rate probe: nothing settled; the encoder does not follow its target"),
+                    }
+                    rate_probe = None;
+                }
+            }
 
             if pkt.is_key_frame {
                 keyframes += 1;

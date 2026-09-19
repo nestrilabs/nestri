@@ -220,6 +220,39 @@ async fn main() -> Result<()> {
         let controller = controller.clone();
         let cmd_tx = cmd_tx.clone();
         tokio::spawn(async move {
+            // Ten times a second, and only when asked for. Pairs with
+            // nescapture's rate probe: that measures how fast the encoder
+            // follows a new bitrate, this shows how fast the queue downstream
+            // of it responds, and the slower of the two is the fastest a
+            // control loop can usefully run. At one sample a second neither is
+            // visible -- a queue that fills and drains inside a second looks
+            // like a queue that was never there.
+            if std::env::var("NESHUB_BACKLOG_TRACE").is_ok_and(|v| v != "0" && !v.is_empty()) {
+                let mgr = mgr.clone();
+                let controller = controller.clone();
+                tokio::spawn(async move {
+                    let mut fast =
+                        tokio::time::interval(std::time::Duration::from_millis(100));
+                    tracing::info!("backlog trace on, 10 Hz");
+                    loop {
+                        fast.tick().await;
+                        let backlogs = mgr.backlog_bytes().await;
+                        if backlogs.is_empty() {
+                            continue;
+                        }
+                        let target = controller.lock().await.target_kbps();
+                        for bytes in backlogs {
+                            // Against the target rather than a measured drain:
+                            // this is a trace to read afterwards, and a number
+                            // divided by a second measurement is two things
+                            // moving at once.
+                            let ms = bytes.saturating_mul(8) / u64::from(target.max(1));
+                            tracing::info!("backlog {ms} ms ({bytes} bytes) at {target} kbps");
+                        }
+                    }
+                });
+            }
+
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             loop {
                 interval.tick().await;

@@ -36,6 +36,7 @@ mod modifiers;
 mod pacing;
 mod pipeline;
 mod present;
+mod rate_probe;
 mod shader;
 mod slots;
 mod state;

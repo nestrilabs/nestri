@@ -788,6 +788,23 @@ impl SessionManager {
     /// can only answer one question, and the client that cannot decode is the
     /// one that matters -- averaging its trouble away leaves it never
     /// recovering while the numbers look acceptable.
+    /// The send-queue depth of every streaming client, in bytes.
+    ///
+    /// Separate from `worst_report` because it needs nothing from the far end
+    /// and so is not tied to the once-a-second cadence a receiver report
+    /// imposes. That independence is the whole question the rate probe exists
+    /// to settle: a control loop can only usefully run as fast as the thing it
+    /// steers responds, but it is not otherwise limited by how often the client
+    /// talks.
+    pub async fn backlog_bytes(&self) -> Vec<u64> {
+        self.sessions
+            .lock()
+            .await
+            .values()
+            .filter_map(|s| s.path_view().backlog_bytes)
+            .collect()
+    }
+
     pub async fn worst_report(&self) -> (Option<ReceiverReport>, PathView, bool) {
         let sessions = self.sessions.lock().await;
         let mut worst: Option<(f32, ReceiverReport, PathView)> = None;
