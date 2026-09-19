@@ -11,7 +11,7 @@ name = "neshub"
 path = "src/main.rs"
 
 [dependencies]
-iroh = "1.1.0"
+iroh = "1.2"
 
 anyhow.workspace = true
 clap.workspace = true
