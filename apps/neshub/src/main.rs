@@ -252,6 +252,7 @@ async fn main() -> Result<()> {
 
                 let clients = mgr.client_count().await as u8;
                 let (key_bps, delta_bps, keyframes) = mgr.video_breakdown();
+                let (pipeline_p50_ms, pipeline_p95_ms, pipeline_max_ms) = mgr.pipeline_delays();
                 let audio_kbps = mgr.audio_bitrate_kbps();
                 let relay_ms = mgr.relay_ms();
                 let mut buf = Vec::with_capacity(34);
@@ -276,6 +277,9 @@ async fn main() -> Result<()> {
                             reason: controller.reason() as u8,
                             manual: u8::from(controller.mode() == nesprotocol::ControlMode::Manual),
                             box_ceiling_kbps: controller.box_ceiling_kbps(),
+                            pipeline_p50_ms,
+                            pipeline_p95_ms,
+                            pipeline_max_ms,
                         },
                     );
                 }

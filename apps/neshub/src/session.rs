@@ -509,6 +509,13 @@ pub struct SessionManager {
     last_video_key_bytes: AtomicU64,
     last_video_delta_bytes: AtomicU64,
     last_keyframes: AtomicU64,
+    /// Capture-to-broadcast delay of each frame this second, in milliseconds.
+    ///
+    /// The box's own contribution to how late a frame is. Kept per frame rather
+    /// than averaged because the question it answers is about the tail: a mean
+    /// hides the one frame in sixty that took 80 ms, and that frame is the one
+    /// a client would otherwise buffer against for the whole session.
+    pipeline_ms: std::sync::Mutex<Vec<u16>>,
     audio_bytes: AtomicU64,
     last_audio_bytes: AtomicU64,
     relay_ms: Arc<AtomicU32>, // latest relay latency (f32 bits)
@@ -524,6 +531,7 @@ impl SessionManager {
             last_video_key_bytes: AtomicU64::new(0),
             last_video_delta_bytes: AtomicU64::new(0),
             last_keyframes: AtomicU64::new(0),
+            pipeline_ms: std::sync::Mutex::new(Vec::new()),
             audio_bytes: AtomicU64::new(0),
             last_audio_bytes: AtomicU64::new(0),
             relay_ms: Arc::new(AtomicU32::new(0)),
@@ -542,7 +550,50 @@ impl SessionManager {
         info!(remote = %id.fmt_short(), "client session removed ({} remaining)", sessions.len());
     }
 
+    /// What the box spent on this frame before the network saw it.
+    ///
+    /// `ts_ms` is the capture timestamp the encoder stamped, and the encoder
+    /// runs on this same machine, so the two clocks are the same one and the
+    /// difference is real rather than an offset. It wraps every 49 days, which
+    /// a subtraction in `u32` handles on its own.
+    fn note_pipeline_delay(&self, payload: &[u8]) {
+        let Some(ts_bytes) = payload.get(2..6) else {
+            return;
+        };
+        let ts_ms = u32::from_le_bytes(ts_bytes.try_into().unwrap());
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u32)
+            .unwrap_or(ts_ms);
+        let delay = now_ms.wrapping_sub(ts_ms).min(u32::from(u16::MAX)) as u16;
+        if let Ok(mut samples) = self.pipeline_ms.lock() {
+            // Bounded: a second of frames is tens of entries, and a stats
+            // consumer that stopped draining must not grow this without end.
+            if samples.len() < 1024 {
+                samples.push(delay);
+            }
+        }
+    }
+
+    /// The median, 95th percentile and worst pipeline delay since the last call.
+    ///
+    /// Drains, like the byte counters, so each answer describes one second.
+    pub fn pipeline_delays(&self) -> (u16, u16, u16) {
+        let Ok(mut samples) = self.pipeline_ms.lock() else {
+            return (0, 0, 0);
+        };
+        if samples.is_empty() {
+            return (0, 0, 0);
+        }
+        samples.sort_unstable();
+        let at = |q: f64| samples[((samples.len() - 1) as f64 * q) as usize];
+        let out = (at(0.5), at(0.95), samples[samples.len() - 1]);
+        samples.clear();
+        out
+    }
+
     pub async fn broadcast_video(&self, data: Vec<u8>) {
+        self.note_pipeline_delay(&data);
         // Counted before the early return, like audio, so the figure measures
         // what the encoder produced rather than what a client happened to be
         // around for.
@@ -681,5 +732,72 @@ impl SessionManager {
             (delta * 8) as u32,
             keyframes.min(u64::from(u8::MAX)) as u8,
         )
+    }
+}
+
+#[cfg(test)]
+mod pipeline_delay_tests {
+    use super::SessionManager;
+
+    /// A video payload with `ts_ms` where the wire format puts it.
+    fn payload(ts_ms: u32) -> Vec<u8> {
+        let mut p = vec![0u8, 0u8];
+        p.extend_from_slice(&ts_ms.to_le_bytes());
+        p.extend_from_slice(&1920u16.to_le_bytes());
+        p.extend_from_slice(&1080u16.to_le_bytes());
+        p.extend_from_slice(&[0u8; 32]);
+        p
+    }
+
+    #[test]
+    fn a_second_with_no_frames_reports_nothing_rather_than_zero_delay() {
+        // Zero would read as a perfectly fast pipeline, which is the opposite
+        // of "no evidence" and would make a stalled encoder look healthy.
+        let mgr = SessionManager::new();
+        assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
+    }
+
+    #[test]
+    fn the_tail_is_reported_and_not_averaged_away() {
+        // The whole reason for keeping every frame: one frame in sixty taking
+        // far longer than the rest is exactly the frame a client would buffer
+        // against for the entire session, and a mean hides it.
+        let mgr = SessionManager::new();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u32;
+        // Fifty-nine prompt frames and one that took far longer.
+        for _ in 0..59 {
+            mgr.note_pipeline_delay(&payload(now));
+        }
+        mgr.note_pipeline_delay(&payload(now.wrapping_sub(400)));
+
+        let (p50, p95, max) = mgr.pipeline_delays();
+        assert!(p50 < 50, "the median was dragged up by one frame: {p50}");
+        assert!(max >= 400, "the worst frame vanished: {max}");
+        assert!(p95 <= max);
+    }
+
+    #[test]
+    fn draining_means_each_answer_describes_one_second() {
+        let mgr = SessionManager::new();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u32;
+        mgr.note_pipeline_delay(&payload(now.wrapping_sub(100)));
+        assert!(mgr.pipeline_delays().2 >= 100);
+        // The second second saw nothing, and must say so rather than repeat the
+        // first -- a stale reading is how a fault that has already stopped goes
+        // on being reported.
+        assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
+    }
+
+    #[test]
+    fn a_truncated_payload_is_ignored_rather_than_misread() {
+        let mgr = SessionManager::new();
+        mgr.note_pipeline_delay(&[0u8, 0u8, 1u8]);
+        assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
     }
 }

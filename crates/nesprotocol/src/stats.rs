@@ -83,6 +83,18 @@ pub struct VideoBreakdown {
     pub target_kbps: u32,
     /// The ceiling it is choosing within, after any client lowered it.
     pub ceiling_kbps: u32,
+    /// What the box's own pipeline cost this frame, in milliseconds, at the
+    /// median and the 95th percentile of the last second.
+    ///
+    /// Capture to the moment the hub handed the frame to the transport, so it
+    /// covers encoding and the IPC hop and nothing beyond this machine. The
+    /// point is attribution: a client measuring late frames cannot otherwise
+    /// tell a stalled encoder from a jittery path, and buffering against the
+    /// first is latency spent hiding a fault that should be fixed.
+    pub pipeline_p50_ms: u16,
+    pub pipeline_p95_ms: u16,
+    /// The worst single frame in that second.
+    pub pipeline_max_ms: u16,
     /// The ceiling the box itself was given, which no client may exceed.
     ///
     /// Separate from `ceiling_kbps` because a client that lowers the ceiling
@@ -97,8 +109,8 @@ pub struct VideoBreakdown {
 }
 
 /// `[4B key_bps][4B delta_bps][1B keyframes][4B target][4B ceiling][1B reason]
-/// [1B manual][4B box_ceiling]`
-pub const VIDEO_BREAKDOWN_LEN: usize = 23;
+/// [1B manual][4B box_ceiling][2B pipeline_p50][2B pipeline_p95][2B pipeline_max]`
+pub const VIDEO_BREAKDOWN_LEN: usize = 29;
 
 pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.reserve(VIDEO_BREAKDOWN_LEN);
@@ -110,6 +122,9 @@ pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.push(b.reason);
     buf.push(b.manual);
     buf.extend_from_slice(&b.box_ceiling_kbps.to_le_bytes());
+    buf.extend_from_slice(&b.pipeline_p50_ms.to_le_bytes());
+    buf.extend_from_slice(&b.pipeline_p95_ms.to_le_bytes());
+    buf.extend_from_slice(&b.pipeline_max_ms.to_le_bytes());
 }
 
 /// Decoded stats from any source.
@@ -176,6 +191,9 @@ pub fn decode_stats(msg_type: u8, data: &[u8], stats: &mut PipelineStats) {
                     reason: d[17],
                     manual: d[18],
                     box_ceiling_kbps: u32_at(19),
+                    pipeline_p50_ms: u16::from_le_bytes([d[23], d[24]]),
+                    pipeline_p95_ms: u16::from_le_bytes([d[25], d[26]]),
+                    pipeline_max_ms: u16::from_le_bytes([d[27], d[28]]),
                 });
             }
         }
@@ -197,6 +215,9 @@ mod breakdown_tests {
             reason: 1,
             manual: 0,
             box_ceiling_kbps: 8_000,
+            pipeline_p50_ms: 9,
+            pipeline_p95_ms: 24,
+            pipeline_max_ms: 61,
         }
     }
 
