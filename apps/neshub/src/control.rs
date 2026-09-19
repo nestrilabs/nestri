@@ -70,6 +70,22 @@ const ABSOLUTE_FLOOR_KBPS: u32 = 800;
 /// Seconds without a receiver report before this end's own view is used instead.
 const SILENT_TICKS_BEFORE_FALLBACK: u32 = 3;
 
+/// Backlog, in milliseconds of video, that means the path is being overrun.
+///
+/// Not a tuned number: it is a latency budget. At sixty frames a second a frame
+/// is under 17 ms, so a quarter second of backlog is fifteen frames already
+/// handed over and not yet gone -- a player is looking at a picture from before
+/// their last four keypresses. There is no bitrate worth that, so past this the
+/// target comes down whatever the loss says.
+const QUEUE_DECREASE_MS: u32 = 250;
+
+/// Backlog, in milliseconds, under which the path is considered clear.
+///
+/// Climbing needs a stronger warrant than holding does, because climbing is
+/// what digs the queue. Five frames or so of backlog is the most that can be
+/// outstanding and still be called live.
+const QUEUE_CLIMB_MS: u32 = 80;
+
 /// The band a target must stay inside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
@@ -107,9 +123,28 @@ pub struct PathView {
     pub cwnd_bytes: Option<u64>,
     /// Round-trip time in milliseconds.
     pub rtt_ms: Option<u32>,
+    /// Datagram bytes handed to the transport that have not yet left.
+    ///
+    /// The backlog is the one thing this end can see that says the path is
+    /// being overrun *while it is still only late*. Loss says so too, but only
+    /// afterwards, and on a path that queues rather than drops, "afterwards"
+    /// can be several seconds.
+    pub backlog_bytes: Option<u64>,
 }
 
 impl PathView {
+    /// How long the backlog takes to drain at `drain_kbps`, in milliseconds.
+    ///
+    /// Bits divided by kilobits-per-second is milliseconds. The rate to divide
+    /// by is the one the queue actually drains at -- what is getting through --
+    /// and not what we are asking for, which is the number that is too high
+    /// whenever this matters.
+    pub fn backlog_ms(&self, drain_kbps: u32) -> Option<u32> {
+        let backlog = self.backlog_bytes?;
+        let drain = u64::from(drain_kbps.max(1));
+        Some((backlog.saturating_mul(8) / drain).min(u64::from(u32::MAX)) as u32)
+    }
+
     /// Delivery rate the window and round trip imply, in kbps.
     ///
     /// A window is a quantity of bytes in flight for one round trip, so the two
@@ -146,6 +181,9 @@ pub enum Reason {
     /// This second's numbers describe frames the hub chose not to send, so they
     /// say nothing about the path.
     SelfInflicted,
+    /// Nothing was lost, but the send queue is standing deep enough that the
+    /// picture is arriving late. Backed off on the queue rather than on loss.
+    Backlogged,
 }
 
 /// The controller's whole state.
@@ -299,7 +337,7 @@ impl Controller {
         let next = match report.as_ref().and_then(|r| r.loss().map(|l| (r, l))) {
             Some((report, loss)) => {
                 self.silent_ticks = 0;
-                self.decide_from_report(report, loss)
+                self.decide_from_report(report, loss, path)
             }
             None => {
                 self.silent_ticks = self.silent_ticks.saturating_add(1);
@@ -324,15 +362,31 @@ impl Controller {
         }
     }
 
-    fn decide_from_report(&mut self, report: &ReceiverReport, loss: f32) -> u32 {
-        if loss > LOSS_DECREASE {
-            self.reason = Reason::Congested;
+    fn decide_from_report(&mut self, report: &ReceiverReport, loss: f32, path: PathView) -> u32 {
+        // What the queue drains at is what is getting through. Falling back to
+        // the target when nothing completed keeps this defined, and a target
+        // that is too high only makes the backlog look shorter than it is --
+        // so this errs towards patience rather than towards cutting the rate.
+        let measured = (report.goodput_bps / 1000) as u32;
+        let drain_kbps = if measured == 0 {
+            self.target_kbps
+        } else {
+            measured
+        };
+        let backlog_ms = path.backlog_ms(drain_kbps);
+        let queued = backlog_ms.is_some_and(|ms| ms > QUEUE_DECREASE_MS);
+
+        if loss > LOSS_DECREASE || queued {
+            self.reason = if queued {
+                Reason::Backlogged
+            } else {
+                Reason::Congested
+            };
             // Anchored on what actually arrived, not on what we were asking for.
             // `goodput` of zero means nothing completed at all, in which case
             // there is no measurement to anchor to and the target is simply
             // halved -- the alternative, backing off to zero, would take the
             // stream below the floor on a single bad second.
-            let measured = (report.goodput_bps / 1000) as u32;
             let anchor = if measured == 0 {
                 self.target_kbps / 2
             } else {
@@ -340,7 +394,13 @@ impl Controller {
             };
             return (anchor as f32 * BACKOFF) as u32;
         }
-        if loss < LOSS_INCREASE {
+        // Climbing is what digs the queue, so it needs the queue to be empty as
+        // well as the loss to be low. Without this the controller climbs all
+        // the way to the ceiling against a path it is already overrunning,
+        // because a path that queues instead of dropping reports no loss at all
+        // until the buffer finally overflows -- and by then the picture is
+        // seconds behind.
+        if loss < LOSS_INCREASE && backlog_ms.is_none_or(|ms| ms < QUEUE_CLIMB_MS) {
             self.reason = Reason::Climbing;
             return self
                 .target_kbps
@@ -410,6 +470,96 @@ mod tests {
 
     fn healthy() -> ReceiverReport {
         report(60, 0, 9_800)
+    }
+
+    /// A path with `backlog` bytes handed over and not yet gone.
+    fn backlogged(backlog: u64) -> PathView {
+        PathView {
+            cwnd_bytes: Some(13_000),
+            rtt_ms: Some(180),
+            backlog_bytes: Some(backlog),
+        }
+    }
+
+    /// The second reported failure, as measured over a 1000-mile link.
+    ///
+    /// Every frame arrived and every frame completed -- zero loss, zero QUIC
+    /// congestion events, a flat 180 ms round trip for the whole session -- and
+    /// the picture was still several seconds behind, because the offer was
+    /// several times what the path carried and the difference was sitting in
+    /// the hub's own send buffer. A controller reading loss alone sees a
+    /// perfect path here and climbs to the ceiling against it.
+    #[test]
+    fn a_path_that_queues_instead_of_dropping_must_not_read_as_healthy() {
+        let mut c = controller();
+        // Two megabits get through; a megabyte is already queued behind them.
+        let arriving = report(60, 0, 2_000);
+        let path = backlogged(1024 * 1024);
+
+        for _ in 0..30 {
+            c.tick(1, Some(arriving), path, false);
+        }
+
+        assert_ne!(
+            c.reason(),
+            Reason::Climbing,
+            "climbing against a path with four seconds of backlog"
+        );
+        assert!(
+            c.target_kbps() < 2_000,
+            "target {} kbps is at or above what is getting through, so the \
+             queue can only grow",
+            c.target_kbps()
+        );
+    }
+
+    /// The sawtooth: floor, climb to ceiling, collapse, repeat every 20 s.
+    ///
+    /// Loss alone cannot break this cycle, because on a queueing path loss only
+    /// appears once the buffer finally overflows -- long after the latency has
+    /// made the session unplayable, and by then the queue is deep enough that
+    /// backing off to the floor is the only way out.
+    #[test]
+    fn the_target_settles_instead_of_sawtoothing() {
+        let mut c = controller();
+        // A steady 2 Mbps path. The backlog is what the last second of
+        // over-sending left behind, drained at what actually gets through.
+        let mut backlog: i64 = 0;
+        let mut seen = Vec::new();
+
+        for _ in 0..60 {
+            let target = c.target_kbps();
+            // Whatever was asked for above 2 Mbps piles up; the rest drains.
+            backlog = (backlog + (i64::from(target) - 2_000) * 1000 / 8).clamp(0, 4 * 1024 * 1024);
+            c.tick(1, Some(report(60, 0, 2_000)), backlogged(backlog as u64), false);
+            seen.push(c.target_kbps());
+        }
+
+        let settled = &seen[30..];
+        let (lo, hi) = (
+            *settled.iter().min().unwrap(),
+            *settled.iter().max().unwrap(),
+        );
+        assert!(
+            hi - lo <= 1_000,
+            "target still swinging between {lo} and {hi} kbps after 30 seconds"
+        );
+        assert!(
+            hi <= 2_400,
+            "settled at {hi} kbps against a path carrying 2000"
+        );
+    }
+
+    /// The backlog must not become a reason never to climb again.
+    #[test]
+    fn a_clear_queue_still_climbs() {
+        let mut c = controller();
+        c.set_ceiling(4_000);
+        let clear = backlogged(0);
+        for _ in 0..5 {
+            c.tick(1, Some(report(60, 0, 3_900)), clear, false);
+        }
+        assert_eq!(c.reason(), Reason::Climbing);
     }
 
     /// The reported failure, as measured: a 10 Mbps offer into a path carrying
@@ -638,6 +788,7 @@ mod tests {
         let path = PathView {
             cwnd_bytes: Some(120_000),
             rtt_ms: Some(200),
+            backlog_bytes: None,
         };
         // A report present means the path view is ignored, however tempting.
         c.tick(1, Some(healthy()), path, false);

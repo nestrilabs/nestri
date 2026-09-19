@@ -5,7 +5,7 @@ use iroh::endpoint::Connection;
 use tokio::sync::Mutex;
 use tracing::{debug, info};
 
-use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_VIDEO};
+use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_BUFFER_BYTES, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
 use nesprotocol::{BIDI_INPUT, STREAM_CURSOR, STREAM_STATS};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
@@ -174,6 +174,13 @@ impl ClientSession {
         PathView {
             cwnd_bytes: Some(stats.cwnd),
             rtt_ms: Some(path.rtt().as_millis().min(u128::from(u32::MAX)) as u32),
+            // What is left of the buffer says what is still in it. This is the
+            // only signal either end has that reports an overrun *before* it
+            // becomes loss, and it costs nothing to read.
+            backlog_bytes: Some(
+                (DGRAM_BUFFER_BYTES as u64)
+                    .saturating_sub(self.conn.datagram_send_buffer_space() as u64),
+            ),
         }
     }
 
