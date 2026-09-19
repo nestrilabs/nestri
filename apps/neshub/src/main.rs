@@ -228,9 +228,10 @@ async fn main() -> Result<()> {
                 // a report describes the second that just passed and there is
                 // nothing to gain from deciding more often than they arrive.
                 {
+                    let clients = mgr.client_count().await;
                     let (report, path) = mgr.worst_report().await;
                     let mut controller = controller.lock().await;
-                    if let Some(kbps) = controller.tick(report, path) {
+                    if let Some(kbps) = controller.tick(clients, report, path) {
                         let mut cmd = vec![nesprotocol::MSG_ENCODE_SETTINGS];
                         nesprotocol::encode_bitrate_only(&mut cmd, kbps);
                         if cmd_tx.send(cmd).is_err() {
@@ -271,6 +272,7 @@ async fn main() -> Result<()> {
                             ceiling_kbps: controller.limits().ceiling_kbps,
                             reason: controller.reason() as u8,
                             manual: u8::from(controller.mode() == nesprotocol::ControlMode::Manual),
+                            box_ceiling_kbps: controller.box_ceiling_kbps(),
                         },
                     );
                 }
@@ -345,7 +347,6 @@ async fn main() -> Result<()> {
                         session_manager.relay_ms_atomic(),
                         cmd_tx.clone(),
                         controller.clone(),
-                        box_ceiling_kbps,
                     );
                     mgr.add_session(remote_id, session).await;
                     let mgr_clone = mgr.clone();

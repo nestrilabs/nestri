@@ -141,11 +141,20 @@ pub enum Reason {
     Manual,
     /// The encoder is not under a bitrate at all, so there is nothing to decide.
     ConstantQuality,
+    /// Nobody is connected, so there is no path to have an opinion about.
+    NoClients,
 }
 
 /// The controller's whole state.
 #[derive(Debug, Clone, Copy)]
 pub struct Controller {
+    /// The ceiling the box was given, which a client may lower but never raise.
+    ///
+    /// Kept apart from `limits`, which holds whatever is in force *now*. Folding
+    /// the two together means a client that lowers the ceiling can never raise
+    /// it again, because the only number left to compare against is the one it
+    /// just lowered.
+    box_ceiling_kbps: u32,
     /// What the controller currently believes the bitrate should be.
     ///
     /// Kept apart from `sent_kbps` deliberately. Folding the two together looks
@@ -173,6 +182,7 @@ impl Controller {
     /// undoes it in one step.
     pub fn new(limits: Limits) -> Self {
         Self {
+            box_ceiling_kbps: limits.ceiling_kbps,
             target_kbps: limits.ceiling_kbps,
             sent_kbps: None,
             limits,
@@ -196,14 +206,22 @@ impl Controller {
         self.reason
     }
 
+    /// The ceiling the box was given, whatever a client has since asked for.
+    pub fn box_ceiling_kbps(&self) -> u32 {
+        self.box_ceiling_kbps
+    }
+
     /// Adopt a ceiling a client asked for, never above the one the box was given.
     ///
     /// A client may lower its own ceiling -- to test a path, or because it knows
     /// something about its link that this end does not -- but it may not raise
     /// the one the tier bought.
-    pub fn set_ceiling(&mut self, ceiling_kbps: u32, box_ceiling_kbps: u32) {
-        self.limits = Limits::new(ceiling_kbps.min(box_ceiling_kbps).max(1));
+    pub fn set_ceiling(&mut self, ceiling_kbps: u32) {
+        self.limits = Limits::new(ceiling_kbps.min(self.box_ceiling_kbps).max(1));
         self.target_kbps = self.limits.clamp(self.target_kbps);
+        // A ceiling that moved is worth restating even when the target did not,
+        // because the encoder is the thing that has to hear about it.
+        self.sent_kbps = None;
     }
 
     pub fn set_mode(&mut self, mode: ControlMode) {
@@ -231,7 +249,23 @@ impl Controller {
     /// `report` is the worst report across the clients attached, or `None` when
     /// none of them said anything. Returns the new target when it is worth
     /// sending, and `None` when nothing should be sent -- which is most seconds.
-    pub fn tick(&mut self, report: Option<ReceiverReport>, path: PathView) -> Option<u32> {
+    pub fn tick(
+        &mut self,
+        clients: usize,
+        report: Option<ReceiverReport>,
+        path: PathView,
+    ) -> Option<u32> {
+        if clients == 0 {
+            // Nothing is connected, so nothing is being carried and there is no
+            // path to form an opinion about. Deciding here means deciding on the
+            // absence of evidence: the controller used to read it as silence and
+            // decay to the floor, so a box waiting for its first client spent
+            // that time winding itself down and then jumped back up the moment
+            // somebody arrived.
+            self.reason = Reason::NoClients;
+            self.silent_ticks = 0;
+            return None;
+        }
         if self.constant_quality {
             self.reason = Reason::ConstantQuality;
             return None;
@@ -367,7 +401,7 @@ mod tests {
         let mut ticks = 0;
         while c.target_kbps() > 2_800 && ticks < 10 {
             // 46 frames a second starting to arrive, none of them completing.
-            c.tick(Some(report(0, 46, 0)), PathView::default());
+            c.tick(1, Some(report(0, 46, 0)), PathView::default());
             ticks += 1;
         }
         assert!(
@@ -387,7 +421,7 @@ mod tests {
     #[test]
     fn a_measured_goodput_is_corrected_in_one_step() {
         let mut c = controller();
-        let sent = c.tick(Some(report(12, 48, 2_850)), PathView::default());
+        let sent = c.tick(1, Some(report(12, 48, 2_850)), PathView::default());
         assert_eq!(sent, Some(c.target_kbps()));
         assert!(
             c.target_kbps() < 2_850,
@@ -403,10 +437,13 @@ mod tests {
         // The first decision is always stated. The encoder started at whatever
         // its environment gave it and this end cannot know that matches, so the
         // target is asserted once rather than assumed.
-        assert_eq!(c.tick(Some(healthy()), PathView::default()), Some(CEILING));
+        assert_eq!(
+            c.tick(1, Some(healthy()), PathView::default()),
+            Some(CEILING)
+        );
         for _ in 0..60 {
             assert_eq!(
-                c.tick(Some(healthy()), PathView::default()),
+                c.tick(1, Some(healthy()), PathView::default()),
                 None,
                 "a healthy path produced a bitrate change",
             );
@@ -421,12 +458,12 @@ mod tests {
         // environment gave it -- which is the failure this replaces.
         let mut c = controller();
         assert_eq!(
-            c.tick(Some(healthy()), PathView::default()),
+            c.tick(1, Some(healthy()), PathView::default()),
             Some(CEILING),
             "the opening target was never stated",
         );
         // And not repeated, now that the encoder has been told.
-        assert_eq!(c.tick(Some(healthy()), PathView::default()), None);
+        assert_eq!(c.tick(1, Some(healthy()), PathView::default()), None);
     }
 
     #[test]
@@ -449,7 +486,7 @@ mod tests {
     fn the_ceiling_is_never_exceeded() {
         let mut c = controller();
         for _ in 0..200 {
-            c.tick(Some(healthy()), PathView::default());
+            c.tick(1, Some(healthy()), PathView::default());
             assert!(c.target_kbps() <= CEILING, "{} kbps", c.target_kbps());
         }
     }
@@ -458,7 +495,7 @@ mod tests {
     fn the_floor_is_never_gone_below() {
         let mut c = controller();
         for _ in 0..200 {
-            c.tick(Some(report(0, 60, 0)), PathView::default());
+            c.tick(1, Some(report(0, 60, 0)), PathView::default());
             assert!(
                 c.target_kbps() >= c.limits().floor_kbps(),
                 "{} kbps is below the floor",
@@ -471,11 +508,11 @@ mod tests {
     fn it_climbs_back_after_a_bad_patch() {
         let mut c = controller();
         for _ in 0..5 {
-            c.tick(Some(report(0, 46, 0)), PathView::default());
+            c.tick(1, Some(report(0, 46, 0)), PathView::default());
         }
         let bottom = c.target_kbps();
         for _ in 0..40 {
-            c.tick(Some(healthy()), PathView::default());
+            c.tick(1, Some(healthy()), PathView::default());
         }
         assert!(
             c.target_kbps() > bottom,
@@ -491,7 +528,7 @@ mod tests {
         let mut c = controller();
         c.note_manual_target(1_000);
         for _ in 0..30 {
-            assert_eq!(c.tick(Some(report(0, 60, 0)), PathView::default()), None);
+            assert_eq!(c.tick(1, Some(report(0, 60, 0)), PathView::default()), None);
         }
         assert_eq!(c.target_kbps(), 1_000);
         assert_eq!(c.reason(), Reason::Manual);
@@ -501,7 +538,7 @@ mod tests {
     fn constant_quality_has_no_bitrate_to_decide() {
         let mut c = controller();
         c.set_constant_quality(true);
-        assert_eq!(c.tick(Some(report(0, 60, 0)), PathView::default()), None);
+        assert_eq!(c.tick(1, Some(report(0, 60, 0)), PathView::default()), None);
         assert_eq!(c.reason(), Reason::ConstantQuality);
     }
 
@@ -510,13 +547,13 @@ mod tests {
         let mut c = controller();
         // A missed report or two says nothing; the path was fine a second ago.
         for _ in 0..(SILENT_TICKS_BEFORE_FALLBACK - 1) {
-            assert_eq!(c.tick(None, PathView::default()), None);
+            assert_eq!(c.tick(1, None, PathView::default()), None);
             assert_eq!(c.target_kbps(), CEILING);
         }
         // Past that, with nothing visible from this end either, it decays rather
         // than holding a high target on no evidence at all -- holding is how the
         // original failure sustained itself.
-        c.tick(None, PathView::default());
+        c.tick(1, None, PathView::default());
         assert_eq!(c.reason(), Reason::Blind);
         assert!(c.target_kbps() < CEILING);
     }
@@ -529,11 +566,11 @@ mod tests {
             rtt_ms: Some(200),
         };
         // A report present means the path view is ignored, however tempting.
-        c.tick(Some(healthy()), path);
+        c.tick(1, Some(healthy()), path);
         assert_eq!(c.reason(), Reason::Climbing);
 
         for _ in 0..SILENT_TICKS_BEFORE_FALLBACK {
-            c.tick(None, path);
+            c.tick(1, None, path);
         }
         assert_eq!(c.reason(), Reason::Fallback);
         // 120 KB in flight per 200 ms is 4.8 Mbps.
@@ -541,13 +578,50 @@ mod tests {
     }
 
     #[test]
+    fn nothing_is_decided_while_nobody_is_connected() {
+        // A box waiting for its first client used to read the silence as a dead
+        // path and wind itself down to the floor, then jump back up the moment
+        // somebody arrived. There is no path to have an opinion about yet.
+        let mut c = controller();
+        for _ in 0..30 {
+            assert_eq!(c.tick(0, None, PathView::default()), None);
+        }
+        assert_eq!(c.target_kbps(), CEILING);
+        assert_eq!(c.reason(), Reason::NoClients);
+    }
+
+    #[test]
+    fn a_lowered_ceiling_can_be_raised_again() {
+        // The trap in folding the box's ceiling together with the one in force:
+        // after lowering, the only number left to compare against is the lowered
+        // one, so the client can never get back up.
+        let mut c = controller();
+        c.set_ceiling(2_000);
+        assert_eq!(c.limits().ceiling_kbps, 2_000);
+        c.set_ceiling(5_000);
+        assert_eq!(c.limits().ceiling_kbps, 5_000);
+        assert_eq!(c.box_ceiling_kbps(), CEILING);
+    }
+
+    #[test]
+    fn a_ceiling_change_is_restated_to_the_encoder() {
+        // The encoder is the thing that has to act on it, and a target that
+        // happens to land on the same number is still a different instruction
+        // when the band around it moved.
+        let mut c = controller();
+        assert!(c.tick(1, Some(healthy()), PathView::default()).is_some());
+        c.set_ceiling(3_000);
+        assert_eq!(c.tick(1, Some(healthy()), PathView::default()), Some(3_000));
+    }
+
+    #[test]
     fn a_client_may_lower_its_ceiling_but_not_raise_it() {
         let mut c = controller();
-        c.set_ceiling(4_000, CEILING);
+        c.set_ceiling(4_000);
         assert_eq!(c.limits().ceiling_kbps, 4_000);
         assert!(c.target_kbps() <= 4_000, "the target outlived its ceiling");
 
-        c.set_ceiling(50_000, CEILING);
+        c.set_ceiling(50_000);
         assert_eq!(
             c.limits().ceiling_kbps,
             CEILING,
@@ -572,7 +646,7 @@ mod tests {
         let mut c = controller();
         let empty = ReceiverReport::default();
         assert_eq!(empty.loss(), None);
-        c.tick(Some(empty), PathView::default());
+        c.tick(1, Some(empty), PathView::default());
         assert_eq!(c.target_kbps(), CEILING, "climbed on an empty report");
     }
 }

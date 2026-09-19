@@ -50,7 +50,6 @@ impl ClientSession {
         relay_ms: Arc<AtomicU32>,
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         controller: Arc<Mutex<Controller>>,
-        box_ceiling_kbps: u32,
     ) -> Self {
         let latest_report = Arc::new(std::sync::Mutex::new(None));
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -85,15 +84,7 @@ impl ClientSession {
         let conn_i = conn.clone();
         let reports = latest_report.clone();
         let _input_task = tokio::spawn(async move {
-            run_input_reader(
-                conn_i,
-                input_broadcast,
-                idr_cmd_tx,
-                reports,
-                controller,
-                box_ceiling_kbps,
-            )
-            .await
+            run_input_reader(conn_i, input_broadcast, idr_cmd_tx, reports, controller).await
         });
 
         Self {
@@ -169,7 +160,6 @@ async fn run_input_reader(
     idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
     controller: Arc<Mutex<Controller>>,
-    box_ceiling_kbps: u32,
 ) {
     debug!("input reader started");
     loop {
@@ -304,7 +294,7 @@ async fn run_input_reader(
                                 controller.set_mode(mode);
                                 controller.set_constant_quality(false);
                                 if let Some(kbps) = ceiling {
-                                    controller.set_ceiling(kbps, box_ceiling_kbps);
+                                    controller.set_ceiling(kbps);
                                 }
                                 info!("control mode {mode:?}, ceiling {ceiling:?}");
                             }

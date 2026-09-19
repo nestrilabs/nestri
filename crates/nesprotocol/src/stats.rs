@@ -81,16 +81,24 @@ pub struct VideoBreakdown {
     pub keyframes: u8,
     /// What the controller is asking the encoder for.
     pub target_kbps: u32,
-    /// The ceiling it is choosing within.
+    /// The ceiling it is choosing within, after any client lowered it.
     pub ceiling_kbps: u32,
+    /// The ceiling the box itself was given, which no client may exceed.
+    ///
+    /// Separate from `ceiling_kbps` because a client that lowers the ceiling
+    /// would otherwise have nothing left to raise it against: the only number
+    /// it can see is the one it just lowered. A control that can be turned down
+    /// and not back up is worse than no control.
+    pub box_ceiling_kbps: u32,
     /// Why the target is what it is; see the hub's control module.
     pub reason: u8,
     /// 0 when the controller is deciding, 1 when a person set it by hand.
     pub manual: u8,
 }
 
-/// `[4B key_bps][4B delta_bps][1B keyframes][4B target][4B ceiling][1B reason][1B manual]`
-pub const VIDEO_BREAKDOWN_LEN: usize = 19;
+/// `[4B key_bps][4B delta_bps][1B keyframes][4B target][4B ceiling][1B reason]
+/// [1B manual][4B box_ceiling]`
+pub const VIDEO_BREAKDOWN_LEN: usize = 23;
 
 pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.reserve(VIDEO_BREAKDOWN_LEN);
@@ -101,6 +109,7 @@ pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.extend_from_slice(&b.ceiling_kbps.to_le_bytes());
     buf.push(b.reason);
     buf.push(b.manual);
+    buf.extend_from_slice(&b.box_ceiling_kbps.to_le_bytes());
 }
 
 /// Decoded stats from any source.
@@ -166,6 +175,7 @@ pub fn decode_stats(msg_type: u8, data: &[u8], stats: &mut PipelineStats) {
                     ceiling_kbps: u32_at(13),
                     reason: d[17],
                     manual: d[18],
+                    box_ceiling_kbps: u32_at(19),
                 });
             }
         }
@@ -186,6 +196,7 @@ mod breakdown_tests {
             ceiling_kbps: 8_000,
             reason: 1,
             manual: 0,
+            box_ceiling_kbps: 8_000,
         }
     }
 
