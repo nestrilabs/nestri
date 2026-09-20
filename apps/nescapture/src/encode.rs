@@ -35,7 +35,7 @@
 use anyhow::Result;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::os::unix::net::UnixDatagram;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Instant;
@@ -192,6 +192,91 @@ pub struct CapturedFrame {
 }
 
 /// An encode in flight, with the time of the present it came from.
+/// Where each media thread last got to, and when.
+///
+/// A freeze with nothing in the log is the worst shape a fault can take: the
+/// capture layer stops, the session stays up, and no counter moves. Both media
+/// threads are serial and both have a step that can wait indefinitely -- the
+/// encoder thread blocks handing a frame to a full channel, and the IPC thread
+/// blocks awaiting an encode. Neither can report being stuck, because being
+/// stuck is precisely not reaching the next line.
+///
+/// So each says where it is and when it got there, and something else does the
+/// noticing.
+#[derive(Default)]
+struct Progress {
+    /// Milliseconds since the process epoch at the last step.
+    at_ms: AtomicU64,
+    /// Which step, as an index into `STEPS`.
+    step: AtomicU32,
+}
+
+/// The steps a media thread can be waiting in, named for the log.
+const STEPS: [&str; 6] = [
+    "starting",
+    "waiting for a captured frame",
+    "encoding",
+    "handing the encoded frame on",
+    "awaiting the encoder",
+    "writing to the socket",
+];
+
+impl Progress {
+    fn note(&self, epoch: Instant, step: u32) {
+        self.at_ms
+            .store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+        self.step.store(step, Ordering::Relaxed);
+    }
+
+    /// How long this thread has been where it is, and what it is doing.
+    fn stalled_for(&self, epoch: Instant) -> (u64, &'static str) {
+        let at = self.at_ms.load(Ordering::Relaxed);
+        let now = epoch.elapsed().as_millis() as u64;
+        let step = self.step.load(Ordering::Relaxed) as usize;
+        (
+            now.saturating_sub(at),
+            STEPS.get(step).copied().unwrap_or("unknown"),
+        )
+    }
+}
+
+/// Say where the media threads are if either stops moving.
+///
+/// Warn rather than error: a stall is not necessarily fatal and may clear.
+/// Once per thread per stall, not once a second, because a frozen pipeline
+/// would otherwise fill the log with the same line and bury whatever else is
+/// still being said.
+fn spawn_stall_watchdog(
+    epoch: Instant,
+    encoder: Arc<Progress>,
+    ipc: Arc<Progress>,
+    shutdown: Arc<AtomicBool>,
+) {
+    const STALL_MS: u64 = 2_000;
+    let _ = thread::Builder::new()
+        .name("nescapture-watchdog".into())
+        .spawn(move || {
+            let mut said = [false; 2];
+            while !shutdown.load(Ordering::Relaxed) {
+                thread::sleep(std::time::Duration::from_millis(500));
+                for (i, (name, p)) in [("encoder", &encoder), ("ipc", &ipc)].iter().enumerate() {
+                    let (stalled, step) = p.stalled_for(epoch);
+                    if stalled >= STALL_MS {
+                        if !said[i] {
+                            log::warn!(
+                                "{name} thread has not moved for {stalled} ms, {step}"
+                            );
+                            said[i] = true;
+                        }
+                    } else if said[i] {
+                        log::warn!("{name} thread moving again after a stall");
+                        said[i] = false;
+                    }
+                }
+            }
+        });
+}
+
 struct EncodedFrame {
     future: EncodeFuture,
     present_time: Instant,
@@ -376,6 +461,15 @@ impl PipelineHandle {
         let (encoded_tx, encoded_rx) = mpsc::sync_channel::<EncodedFrame>(2);
         let (reconfig_tx, reconfig_rx) = mpsc::channel::<EncodeSettingsChange>();
         let shutdown = Arc::new(AtomicBool::new(false));
+        let progress_epoch = Instant::now();
+        let encoder_progress = Arc::new(Progress::default());
+        let ipc_progress = Arc::new(Progress::default());
+        spawn_stall_watchdog(
+            progress_epoch,
+            encoder_progress.clone(),
+            ipc_progress.clone(),
+            shutdown.clone(),
+        );
         let idr_requested = Arc::new(AtomicBool::new(false));
         let capture_fps = Arc::new(AtomicU32::new(0));
         let encode_avg_ms = Arc::new(AtomicU32::new(0));
@@ -408,9 +502,20 @@ impl PipelineHandle {
             needs_reconfig_flag: needs_reconfig_flag.clone(),
             capture_ms: capture_ms.clone(),
         };
+        let enc_progress = encoder_progress.clone();
+        let progress_base = progress_epoch;
         thread::Builder::new()
             .name("nescapture-encoder".into())
-            .spawn(move || encoder_thread(enc_cfg, frame_rx, encoded_tx, enc_shutdown))
+            .spawn(move || {
+                encoder_thread(
+                    enc_cfg,
+                    frame_rx,
+                    encoded_tx,
+                    enc_shutdown,
+                    progress_base,
+                    enc_progress,
+                )
+            })
             .map_err(|e| format!("spawn encoder: {e}"))?;
 
         let ipc_path = config.ipc_path.clone();
@@ -425,9 +530,12 @@ impl PipelineHandle {
             epoch: Instant::now(),
             reconfig_tx: reconfig_tx.clone(),
         };
+        let ipc_prog = ipc_progress.clone();
         thread::Builder::new()
             .name("nescapture-ipc".into())
-            .spawn(move || ipc_send_thread(ipc_cfg, encoded_rx, ipc_shutdown))
+            .spawn(move || {
+                ipc_send_thread(ipc_cfg, encoded_rx, ipc_shutdown, progress_base, ipc_prog)
+            })
             .map_err(|e| format!("spawn ipc: {e}"))?;
 
         // Spawn periodic stats sender
@@ -638,6 +746,8 @@ fn encoder_thread(
     frame_rx: mpsc::Receiver<CapturedFrame>,
     encoded_tx: mpsc::SyncSender<EncodedFrame>,
     shutdown: Arc<AtomicBool>,
+    epoch: Instant,
+    progress: Arc<Progress>,
 ) {
     let ctx = cfg.ctx;
 
@@ -738,6 +848,7 @@ fn encoder_thread(
             cfg.idr_requested.store(true, Ordering::Relaxed);
         }
 
+        progress.note(epoch, 1);
         let raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(frame) => frame,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -888,6 +999,7 @@ fn encoder_thread(
         // first, for every frame after it.
         let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
 
+        progress.note(epoch, 2);
         let result = match &mut source {
             FrameSource::DmaBuf {
                 fd,
@@ -946,6 +1058,9 @@ fn encoder_thread(
                     future,
                     present_time: raw.present_time,
                 };
+                // The blocking send. If the thread draining this stops, every
+                // frame after the second one waits here forever.
+                progress.note(epoch, 3);
                 if encoded_tx.send(pending).is_err() {
                     break;
                 }
@@ -1410,6 +1525,8 @@ fn ipc_send_thread(
     cfg: IpcConfig,
     encoded_rx: mpsc::Receiver<EncodedFrame>,
     shutdown: Arc<AtomicBool>,
+    epoch: Instant,
+    progress: Arc<Progress>,
 ) {
     let socket = match UnixDatagram::unbound() {
         Ok(s) => {
@@ -1513,6 +1630,11 @@ fn ipc_send_thread(
             let queued = recv_start.elapsed();
             let present_time = pending.present_time;
             let encode_start = Instant::now();
+            // The other indefinite wait. An encode that never completes stops
+            // this thread, which fills the channel, which stops the encoder
+            // thread -- a whole pipeline stalled behind one frame, with
+            // nothing said anywhere.
+            progress.note(epoch, 4);
             let result = pollster::block_on(pending.future);
             let awaited = encode_start.elapsed();
             let waited = queued + awaited;
@@ -1605,6 +1727,7 @@ fn ipc_send_thread(
             worst_awaited = worst_awaited.max(awaited);
 
             let send_start = Instant::now();
+            progress.note(epoch, 5);
             if let Err(e) = socket.send(&ipc_frame) {
                 error_count += 1;
                 if last_warn.elapsed() > std::time::Duration::from_secs(5) {
