@@ -1467,13 +1467,15 @@ fn ipc_send_thread(
                     for r in probe.reports() {
                         match r.settle_ms {
                             Some(ms) => log::info!(
-                                "rate probe: {} -> {} kbps settled in {} ms ({} frames), steady {:.2}x target, {} keyframe(s)",
+                                "rate probe: {} -> {} kbps settled in {} ms ({} frames), steady {:.2}x target, {} keyframe(s) worst {} bytes = {} ms of link",
                                 r.from_kbps, r.to_kbps, ms,
-                                r.settle_frames.unwrap_or(0), r.steady_ratio, r.keyframes
+                                r.settle_frames.unwrap_or(0), r.steady_ratio,
+                                r.keyframes, r.keyframe_bytes, r.keyframe_ms
                             ),
                             None => log::warn!(
-                                "rate probe: {} -> {} kbps NEVER settled, steady {:.2}x target, {} keyframe(s)",
-                                r.from_kbps, r.to_kbps, r.steady_ratio, r.keyframes
+                                "rate probe: {} -> {} kbps NEVER settled, steady {:.2}x target, {} keyframe(s) worst {} bytes = {} ms of link",
+                                r.from_kbps, r.to_kbps, r.steady_ratio,
+                                r.keyframes, r.keyframe_bytes, r.keyframe_ms
                             ),
                         }
                     }

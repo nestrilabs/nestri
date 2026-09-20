@@ -69,10 +69,23 @@ pub struct StepReport {
     /// target. This is the overshoot the controller has to divide out: a
     /// hardware encoder asked for 1000 does not produce 1000.
     pub steady_ratio: f32,
-    /// Keyframes during settling. A keyframe is the largest frame there is, so
-    /// one landing inside the window inflates the measured rate and can make
-    /// settling look slower than it is.
+    /// Keyframes during the rung.
     pub keyframes: u32,
+    /// The largest keyframe seen, in bytes.
+    ///
+    /// Reported rather than folded in, because it is a different quantity with
+    /// a different consumer. Settling is about the rate control finding its
+    /// operating point; a keyframe is a single burst handed to the transport
+    /// whole. The controller needs both and must not confuse them: measured at
+    /// 4 s GOP, a run where keyframes were counted in the rate said settling
+    /// took 2266 ms where the same encoder with no keyframes said 450 ms, and
+    /// in one case the number went *down* when keyframes were added. That is
+    /// not an encoder being erratic, it is a window catching an IDR.
+    pub keyframe_bytes: u32,
+    /// How long that keyframe alone occupies the link at this rung's target,
+    /// in milliseconds. This is the burst a queue has to absorb, and the
+    /// reason a queue setpoint cannot simply be set below it.
+    pub keyframe_ms: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,8 +102,14 @@ pub struct RateProbe {
     /// When the current rung was commanded.
     began: Instant,
     current_kbps: u32,
-    /// `(when, bytes)` inside the measurement window.
+    /// `(when, bytes)` inside the measurement window, delta frames only.
+    ///
+    /// Keyframes are deliberately absent. One IDR is worth many delta frames,
+    /// so a half-second window containing one reports a rate several times the
+    /// truth, leaves the tolerance band, and restarts the settle clock -- which
+    /// measures the GOP rather than the encoder.
     samples: Vec<(Instant, u32)>,
+    keyframe_bytes: u32,
     /// Frames since the current rung was commanded.
     frames: u32,
     keyframes: u32,
@@ -111,6 +130,7 @@ impl RateProbe {
             began: now,
             current_kbps: starting_kbps,
             samples: Vec::new(),
+            keyframe_bytes: 0,
             frames: 0,
             keyframes: 0,
             inside_since: None,
@@ -131,9 +151,15 @@ impl RateProbe {
 
     /// One encoded frame.
     pub fn observe(&mut self, now: Instant, bytes: u32, keyframe: bool) {
-        self.samples.push((now, bytes));
+        if keyframe {
+            self.keyframe_bytes = self.keyframe_bytes.max(bytes);
+        } else {
+            self.samples.push((now, bytes));
+        }
         self.samples
             .retain(|(t, _)| now.duration_since(*t) <= WINDOW);
+        // The steady-state ratio *does* include keyframes: it answers what the
+        // link actually carries for a given target, which is the whole output.
         self.steady.push((now, bytes));
         self.steady
             .retain(|(t, _)| now.duration_since(*t) <= Duration::from_secs(1));
@@ -195,6 +221,7 @@ impl RateProbe {
         self.began = now;
         self.frames = 0;
         self.keyframes = 0;
+        self.keyframe_bytes = 0;
         self.inside_since = None;
         self.settled = None;
         let from = self.current_kbps;
@@ -223,6 +250,9 @@ impl RateProbe {
             settle_frames: self.settled.map(|(_, f)| f),
             steady_ratio: (steady_kbps / f64::from(self.current_kbps.max(1))) as f32,
             keyframes: self.keyframes,
+            keyframe_bytes: self.keyframe_bytes,
+            keyframe_ms: (u64::from(self.keyframe_bytes) * 8
+                / u64::from(self.current_kbps.max(1))) as u32,
         });
     }
 
@@ -319,6 +349,43 @@ mod tests {
             (step.steady_ratio - 1.25).abs() < 0.1,
             "steady ratio {} should be about 1.25",
             step.steady_ratio
+        );
+    }
+
+    /// The confound that made a 4 s GOP look like a three-times slower
+    /// encoder, including making one rung appear *faster* when keyframes were
+    /// added -- which no encoder does, and which gave the measurement away.
+    #[test]
+    fn a_keyframe_landing_mid_window_does_not_delay_the_reported_settle() {
+        let t0 = Instant::now();
+        let mut p = RateProbe::new(t0, 6_000);
+        let mut now = feed(&mut p, t0, 5.1, 6_000);
+        p.due_step(now);
+        now = feed(&mut p, now, 5.1, 6_000);
+        assert_eq!(p.due_step(now), Some(1_500));
+
+        // Settles immediately, but an IDR worth a second of bitrate lands in
+        // the middle of the window that is meant to prove it.
+        let bytes = (1_500u64 * 1000 / 8 / 60) as u32;
+        let base = now;
+        for i in 1..=320u32 {
+            now = base + Duration::from_secs_f64(f64::from(i) / 60.0);
+            let key = i == 40;
+            p.observe(now, if key { 1_500 * 1000 / 8 } else { bytes }, key);
+        }
+        p.due_step(now);
+        let step = p.reports().iter().find(|r| r.to_kbps == 1_500).unwrap();
+        assert!(
+            step.settle_ms.is_some_and(|ms| ms < 1_000),
+            "an encoder that settled at once reported {:?} because of one keyframe",
+            step.settle_ms
+        );
+        // And the burst is still reported, because the queue has to absorb it.
+        assert_eq!(step.keyframes, 1);
+        assert!(
+            step.keyframe_ms >= 900,
+            "a keyframe worth a second of bitrate reported {} ms",
+            step.keyframe_ms
         );
     }
 
