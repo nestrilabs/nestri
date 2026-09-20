@@ -275,9 +275,7 @@ fn spawn_stall_watchdog(
                     let (stalled, step) = p.stalled_for(epoch);
                     if stalled >= STALL_MS {
                         if !said[i] {
-                            log::warn!(
-                                "{name} thread has not moved for {stalled} ms, {step}"
-                            );
+                            log::warn!("{name} thread has not moved for {stalled} ms, {step}");
                             said[i] = true;
                         }
                     } else if said[i] {
@@ -1176,7 +1174,9 @@ impl PerFrameEncoder {
             );
         }
         let shape = intra_refresh_shape();
-        if refresh_cycle.is_some() && let Some(shape) = shape {
+        if refresh_cycle.is_some()
+            && let Some(shape) = shape
+        {
             log::info!("intra refresh shape: {shape:?}");
         }
         enc_cfg = enc_cfg
@@ -1260,7 +1260,8 @@ impl PerFrameEncoder {
 fn intra_refresh_shape() -> Option<IntraRefreshShape> {
     let v = std::env::var("NESCAPTURE_INTRA_REFRESH_SHAPE").ok()?;
     match v.trim().to_ascii_lowercase().as_str() {
-        "auto" | "blocks" | "" => None,
+        "auto" | "" => None,
+        "blocks" => Some(IntraRefreshShape::Blocks),
         "rows" | "row" => Some(IntraRefreshShape::Rows),
         "columns" | "column" | "cols" => Some(IntraRefreshShape::Columns),
         "partitions" | "partition" => Some(IntraRefreshShape::Partitions),
@@ -1648,7 +1649,9 @@ fn ipc_send_thread(
             // picture recovers continuously rather than waiting for a key
             // frame.
             if let Err(e) = s.set_write_timeout(Some(IPC_WRITE_TIMEOUT)) {
-                log::warn!("IPC socket write timeout could not be set ({e}); a stalled consumer will block capture");
+                log::warn!(
+                    "IPC socket write timeout could not be set ({e}); a stalled consumer will block capture"
+                );
             }
             s
         }
@@ -1818,14 +1821,23 @@ fn ipc_send_thread(
                         match r.settle_ms {
                             Some(ms) => log::info!(
                                 "rate probe: {} -> {} kbps settled in {} ms ({} frames), steady {:.2}x target, {} keyframe(s) worst {} bytes = {} ms of link",
-                                r.from_kbps, r.to_kbps, ms,
-                                r.settle_frames.unwrap_or(0), r.steady_ratio,
-                                r.keyframes, r.keyframe_bytes, r.keyframe_ms
+                                r.from_kbps,
+                                r.to_kbps,
+                                ms,
+                                r.settle_frames.unwrap_or(0),
+                                r.steady_ratio,
+                                r.keyframes,
+                                r.keyframe_bytes,
+                                r.keyframe_ms
                             ),
                             None => log::warn!(
                                 "rate probe: {} -> {} kbps NEVER settled, steady {:.2}x target, {} keyframe(s) worst {} bytes = {} ms of link",
-                                r.from_kbps, r.to_kbps, r.steady_ratio,
-                                r.keyframes, r.keyframe_bytes, r.keyframe_ms
+                                r.from_kbps,
+                                r.to_kbps,
+                                r.steady_ratio,
+                                r.keyframes,
+                                r.keyframe_bytes,
+                                r.keyframe_ms
                             ),
                         }
                     }
@@ -1833,7 +1845,9 @@ fn ipc_send_thread(
                         Some(ms) => log::info!(
                             "rate probe: worst settle {ms} ms -- a control loop cannot usefully run faster than this"
                         ),
-                        None => log::warn!("rate probe: nothing settled; the encoder does not follow its target"),
+                        None => log::warn!(
+                            "rate probe: nothing settled; the encoder does not follow its target"
+                        ),
                     }
                     rate_probe = None;
                 }
@@ -1856,9 +1870,7 @@ fn ipc_send_thread(
                     || e.kind() == std::io::ErrorKind::TimedOut
                 {
                     if !blocked_consumer {
-                        log::warn!(
-                            "IPC consumer is not reading; dropping frames until it does"
-                        );
+                        log::warn!("IPC consumer is not reading; dropping frames until it does");
                         blocked_consumer = true;
                     }
                     frame_count += 1;
@@ -2480,8 +2492,6 @@ mod bitrate_only_tests {
         assert_eq!(cycle_for(0.001, 60), Some(2));
     }
 
-
-
     /// The point of deriving it: the same slack on every tier.
     #[test]
     fn the_buffer_is_the_same_number_of_frames_at_every_frame_rate() {
@@ -2502,7 +2512,10 @@ mod bitrate_only_tests {
     #[test]
     fn the_buffer_is_never_zero_however_fast_the_stream() {
         assert!(vbv_ms_for(1000, 1) >= 1);
-        assert!(vbv_ms_for(0, 4) >= 1, "a frame rate of zero must not divide by it");
+        assert!(
+            vbv_ms_for(0, 4) >= 1,
+            "a frame rate of zero must not divide by it"
+        );
     }
     use crate::encode::EncodeSettingsChange;
     use pixelforge::{EncodeBitDepth, RateControlMode};
