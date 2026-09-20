@@ -25,6 +25,8 @@
 //  NESCAPTURE_QP            Constant QP (overrides BITRATE)  (default: unset)
 //  NESCAPTURE_FPS           Frame rate                       (default: 60)
 //  NESCAPTURE_IDR_INTERVAL  Force IDR every N seconds        (default: 4)
+//  NESCAPTURE_INTRA_REFRESH_SHAPE
+//                           auto | rows | columns | partitions (default: auto)
 //  NESCAPTURE_INTRA_REFRESH Refresh cycle in seconds, fractional, replacing
 //                           periodic key frames entirely. 0.5 measured clean
 //                           at 1080p60; longer shows a seam  (default: off)
@@ -48,7 +50,8 @@ use nesprotocol::{
 use pixelforge::{
     Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
     EncodeConfig, EncodeContentHint, EncodeFuture, EncodeUsageHint, Encoder, EncoderTuningMode,
-    InputFormat, OutputFormat, PixelFormat, RateControlMode, VideoContextBuilder,
+    InputFormat, IntraRefreshShape, OutputFormat, PixelFormat, RateControlMode,
+    VideoContextBuilder,
 };
 
 use crate::dmabuf_import::{DmaBufImporter, DmaBufPlane};
@@ -1172,7 +1175,13 @@ impl PerFrameEncoder {
                 cycle as f32 / fps.max(1) as f32
             );
         }
-        enc_cfg = enc_cfg.with_intra_refresh(refresh_cycle);
+        let shape = intra_refresh_shape();
+        if refresh_cycle.is_some() && let Some(shape) = shape {
+            log::info!("intra refresh shape: {shape:?}");
+        }
+        enc_cfg = enc_cfg
+            .with_intra_refresh(refresh_cycle)
+            .with_intra_refresh_mode(shape);
 
         let vbv_ms = vbv_ms_for(fps, vbv_frames());
         log::info!(
@@ -1240,6 +1249,28 @@ impl PerFrameEncoder {
 /// Measured on RADV, H.264 1080p: the largest picture went from twice the
 /// median to 1.2 times it, and the only one above the median was the opening
 /// IDR. AV1 is not yet worth turning this on for; see the pixelforge test.
+/// Which shape the refresh regions take, from the environment.
+///
+/// `auto` (the default) lets the driver divide the picture and choose the
+/// direction of the sweep, which is what the spec recommends when there is no
+/// preference. `rows` sweeps a horizontal band down the picture and `columns`
+/// a vertical band across it -- which of those looks better depends on how the
+/// content moves, so it is a question for whoever is watching rather than one
+/// answerable here. An unknown value is refused rather than guessed at.
+fn intra_refresh_shape() -> Option<IntraRefreshShape> {
+    let v = std::env::var("NESCAPTURE_INTRA_REFRESH_SHAPE").ok()?;
+    match v.trim().to_ascii_lowercase().as_str() {
+        "auto" | "blocks" | "" => None,
+        "rows" | "row" => Some(IntraRefreshShape::Rows),
+        "columns" | "column" | "cols" => Some(IntraRefreshShape::Columns),
+        "partitions" | "partition" => Some(IntraRefreshShape::Partitions),
+        other => {
+            log::warn!("unknown intra refresh shape {other:?}; letting the driver choose");
+            None
+        }
+    }
+}
+
 fn intra_refresh_cycle(fps: u32) -> Option<u32> {
     let secs = std::env::var("NESCAPTURE_INTRA_REFRESH")
         .ok()
