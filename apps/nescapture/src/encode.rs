@@ -1022,6 +1022,23 @@ impl PerFrameEncoder {
             enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
                 format!("colour space {vk_colorspace} has no encodable stream description")
             })?);
+        // How long the rate control averages over, and so how long it takes to
+        // reach a bitrate it has been given. Measured on this encoder: a step
+        // down to 1000 kbps took 2383 ms to settle, reproducibly, against a
+        // default of 1000 ms -- and 2.4 seconds of plant lag makes every
+        // congestion controller equivalent, because none of them can steer
+        // something that answers that slowly. Shorter should track faster and
+        // fluctuate more; this exists so the trade can be measured rather than
+        // argued about.
+        if let Ok(ms) = std::env::var("NESCAPTURE_VBV_MS")
+            && let Ok(ms) = ms.parse::<u32>()
+            && ms > 0
+        {
+            log::info!("rate control buffer: {ms} ms (default 1000)");
+            enc_cfg = enc_cfg
+                .with_virtual_buffer_size_ms(ms)
+                .with_initial_virtual_buffer_size_ms(ms);
+        }
         enc_cfg = if let Some(q) = qp {
             enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
