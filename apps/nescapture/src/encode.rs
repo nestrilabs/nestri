@@ -213,13 +213,15 @@ struct Progress {
 }
 
 /// The steps a media thread can be waiting in, named for the log.
-const STEPS: [&str; 6] = [
+const STEPS: [&str; 8] = [
     "starting",
     "waiting for a captured frame",
     "encoding",
     "handing the encoded frame on",
     "awaiting the encoder",
     "writing to the socket",
+    "waiting for an encoded frame",
+    "offering a captured frame",
 ];
 
 impl Progress {
@@ -249,6 +251,7 @@ impl Progress {
 /// still being said.
 fn spawn_stall_watchdog(
     epoch: Instant,
+    capture: Arc<Progress>,
     encoder: Arc<Progress>,
     ipc: Arc<Progress>,
     shutdown: Arc<AtomicBool>,
@@ -257,10 +260,15 @@ fn spawn_stall_watchdog(
     let _ = thread::Builder::new()
         .name("nescapture-watchdog".into())
         .spawn(move || {
-            let mut said = [false; 2];
+            let mut said = [false; 3];
             while !shutdown.load(Ordering::Relaxed) {
                 thread::sleep(std::time::Duration::from_millis(500));
-                for (i, (name, p)) in [("encoder", &encoder), ("ipc", &ipc)].iter().enumerate() {
+                // Capture first, because it is upstream of the other two and
+                // its stopping makes both of them look idle rather than stuck.
+                for (i, (name, p)) in [("capture", &capture), ("encoder", &encoder), ("ipc", &ipc)]
+                    .iter()
+                    .enumerate()
+                {
                     let (stalled, step) = p.stalled_for(epoch);
                     if stalled >= STALL_MS {
                         if !said[i] {
@@ -437,6 +445,8 @@ fn env_u64(key: &str, default: u64) -> u64 {
 
 pub struct PipelineHandle {
     frame_tx: mpsc::SyncSender<CapturedFrame>,
+    capture_progress: Arc<Progress>,
+    progress_epoch: Instant,
     idr_requested: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     pub codec: HwCodec,
@@ -465,8 +475,10 @@ impl PipelineHandle {
         let progress_epoch = Instant::now();
         let encoder_progress = Arc::new(Progress::default());
         let ipc_progress = Arc::new(Progress::default());
+        let capture_progress = Arc::new(Progress::default());
         spawn_stall_watchdog(
             progress_epoch,
+            capture_progress.clone(),
             encoder_progress.clone(),
             ipc_progress.clone(),
             shutdown.clone(),
@@ -658,6 +670,8 @@ impl PipelineHandle {
         );
         Ok(Self {
             frame_tx,
+            capture_progress: capture_progress.clone(),
+            progress_epoch,
             idr_requested,
             shutdown,
             codec,
@@ -677,6 +691,13 @@ impl PipelineHandle {
         // dropped, and the capture rate read as the rate the ring offered
         // rather than the rate the encoder accepted — which is the number
         // anyone reading it wants.
+        // The game's own thread, reached from the present hook. It is the
+        // start of the chain and the only part nothing else can speak for: if
+        // the game stops presenting, or the layer stops capturing what it
+        // presents, every thread downstream sits idle waiting and none of them
+        // is stuck. An idle thread looks healthy, which is how a stopped
+        // capture reads as a working encoder.
+        self.capture_progress.note(self.progress_epoch, 7);
         match self.frame_tx.try_send(frame) {
             Ok(()) => {
                 self.capture_fps.fetch_add(1, Ordering::Relaxed);
@@ -1682,6 +1703,13 @@ fn ipc_send_thread(
             // loop waiting for the capture side to submit anything at all;
             // `awaited` is the encoder finishing work already submitted. A
             // single timer around both reported 40 ms and named neither.
+            // Noted every time round, including the timeout path below.
+            // Without this the last step recorded was the socket write, so a
+            // thread sitting idle here -- because whatever feeds it stopped --
+            // reported itself as stuck writing to the socket. A watchdog that
+            // names the wrong thread is worse than none: it sends the next
+            // hour after the wrong bug.
+            progress.note(epoch, 6);
             let recv_start = Instant::now();
             let pending = match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(p) => p,
