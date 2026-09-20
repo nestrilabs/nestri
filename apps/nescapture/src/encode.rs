@@ -1339,6 +1339,14 @@ fn encoder_still_serves(
 /// How long to wait before rebuilding an encoder whose last build failed.
 const INIT_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// How long a write to the IPC socket may wait before the frame is dropped.
+///
+/// Long enough to ride out a consumer that is briefly busy -- rebuilding a
+/// decoder after a resolution change, say -- and short enough that it cannot
+/// stop capture. There is no value here worth freezing the pipeline for: a
+/// frame nobody could take in a quarter of a second is one nobody wanted.
+const IPC_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
+
 fn depth_for_codec(codec: HwCodec, requested: EncodeBitDepth, warned: &mut bool) -> EncodeBitDepth {
     if codec == HwCodec::H264 && requested == EncodeBitDepth::Ten {
         if !*warned {
@@ -1540,6 +1548,22 @@ fn ipc_send_thread(
                     std::mem::size_of::<libc::c_int>() as libc::socklen_t,
                 );
             }
+            // A datagram socket whose peer has stopped reading blocks the
+            // sender once its buffer fills, and blocks it forever. This thread
+            // is serial and the channel feeding it is two deep, so that stops
+            // the encoder thread as well -- the whole capture layer frozen
+            // behind one write, which is what a game changing resolution was
+            // doing: the consumer pauses to rebuild its decoder, the buffer
+            // fills, and nothing here ever returns.
+            //
+            // Waiting a bounded time and giving up is the right answer for
+            // live media anyway. A frame nobody could take for a quarter of a
+            // second is a frame not worth having, and intra refresh means the
+            // picture recovers continuously rather than waiting for a key
+            // frame.
+            if let Err(e) = s.set_write_timeout(Some(IPC_WRITE_TIMEOUT)) {
+                log::warn!("IPC socket write timeout could not be set ({e}); a stalled consumer will block capture");
+            }
             s
         }
         Err(e) => {
@@ -1581,6 +1605,9 @@ fn ipc_send_thread(
         // Send loop
         let mut last_warn = Instant::now();
         let mut error_count: u64 = 0;
+        // Set while the consumer is refusing frames, so the recovery is said
+        // once as well rather than being left to be inferred from silence.
+        let mut blocked_consumer = false;
 
         // Where this loop's time goes, per second.
         //
@@ -1729,6 +1756,21 @@ fn ipc_send_thread(
             let send_start = Instant::now();
             progress.note(epoch, 5);
             if let Err(e) = socket.send(&ipc_frame) {
+                // Said on the edges only. A stalled consumer fails every frame,
+                // and sixty identical lines a second bury whatever else is
+                // being said about why it stalled.
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut
+                {
+                    if !blocked_consumer {
+                        log::warn!(
+                            "IPC consumer is not reading; dropping frames until it does"
+                        );
+                        blocked_consumer = true;
+                    }
+                    frame_count += 1;
+                    continue;
+                }
                 error_count += 1;
                 if last_warn.elapsed() > std::time::Duration::from_secs(5) {
                     log::warn!("IPC send failed ({} frames dropped): {e}", error_count);
@@ -1741,6 +1783,11 @@ fn ipc_send_thread(
                 cfg.idr_requested.store(true, Ordering::Relaxed);
                 log::warn!("IPC disconnected, reconnecting...");
                 break;
+            }
+
+            if blocked_consumer {
+                log::warn!("IPC consumer is reading again");
+                blocked_consumer = false;
             }
 
             worst_send = worst_send.max(send_start.elapsed());
