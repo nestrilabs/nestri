@@ -73,6 +73,20 @@ pub struct ClientSession {
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
+impl Drop for ClientSession {
+    fn drop(&mut self) {
+        // Dropping a `JoinHandle` detaches its task rather than stopping it,
+        // so without this a removed session's readers and writers keep running
+        // until their connections time out on their own -- seconds later, and
+        // visible in the log as a session that had already gone still
+        // reporting. They have nothing left to serve; the session holding
+        // their channels is what is being dropped.
+        for task in &self.tasks {
+            task.abort();
+        }
+    }
+}
+
 impl ClientSession {
     /// A client with no connections yet. They attach as they are accepted.
     pub fn new(
@@ -326,6 +340,47 @@ async fn run_framed_reader<F, Fut>(
     debug!("{label} reader exiting");
 }
 
+/// Split a batch of input events into the individual events to broadcast.
+///
+/// Its own function because it is the only part of the input path with
+/// arithmetic in it, and arithmetic is the part that can be wrong while
+/// everything still runs. A key event is four bytes and was read as three:
+/// the keycode lost its high byte, the offset finished one short, and every
+/// later event in the batch was read starting one byte inside the one before
+/// it. Nothing failed -- events were forwarded, the stream stayed up, and the
+/// only sign was a keycode appearing in the log as an event type.
+///
+/// Stops at the first malformed event rather than trying to resynchronise. A
+/// batch is built by one sender in one write; if it does not parse, the
+/// disagreement is about the format and skipping ahead would only invent
+/// events nobody sent.
+fn split_input_events(payload: &[u8]) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut offset = 0usize;
+    while offset < payload.len() {
+        // Type, then the event's own fields. The widths are the protocol's,
+        // not this function's: see `nesprotocol::input`.
+        let len = match payload[offset] {
+            // [type][up/down][keycode u16 LE]
+            INPUT_KEY => 4,
+            // [type][dx i16 LE][dy i16 LE]
+            INPUT_MOUSE_MOVE | INPUT_MOUSE_WHEEL => 5,
+            // [type][button][up/down]
+            INPUT_MOUSE_BUTTON => 3,
+            other => {
+                debug!("unknown input event type: {other}");
+                break;
+            }
+        };
+        if offset + len > payload.len() {
+            break;
+        }
+        out.push(payload[offset..offset + len].to_vec());
+        offset += len;
+    }
+    out
+}
+
 /// Input events, and nothing else.
 ///
 /// On its own connection so a keypress never waits behind a video keyframe.
@@ -340,51 +395,8 @@ async fn run_input_reader(
                 debug!("unknown input msg type: {msg_type}");
                 return;
             }
-            let mut offset = 0usize;
-            while offset < payload.len() {
-                match payload[offset] {
-                    INPUT_KEY => {
-                        if offset + 3 > payload.len() {
-                            break;
-                        }
-                        let raw = vec![INPUT_KEY, payload[offset + 1], payload[offset + 2]];
-                        let _ = input_broadcast.send(raw);
-                        offset += 3;
-                    }
-                    INPUT_MOUSE_MOVE => {
-                        if offset + 5 > payload.len() {
-                            break;
-                        }
-                        let mut raw = Vec::with_capacity(5);
-                        raw.push(INPUT_MOUSE_MOVE);
-                        raw.extend_from_slice(&payload[offset + 1..offset + 5]);
-                        let _ = input_broadcast.send(raw);
-                        offset += 5;
-                    }
-                    INPUT_MOUSE_BUTTON => {
-                        if offset + 3 > payload.len() {
-                            break;
-                        }
-                        let raw =
-                            vec![INPUT_MOUSE_BUTTON, payload[offset + 1], payload[offset + 2]];
-                        let _ = input_broadcast.send(raw);
-                        offset += 3;
-                    }
-                    INPUT_MOUSE_WHEEL => {
-                        if offset + 5 > payload.len() {
-                            break;
-                        }
-                        let mut raw = Vec::with_capacity(5);
-                        raw.push(INPUT_MOUSE_WHEEL);
-                        raw.extend_from_slice(&payload[offset + 1..offset + 5]);
-                        let _ = input_broadcast.send(raw);
-                        offset += 5;
-                    }
-                    other => {
-                        debug!("unknown input event type: {other}");
-                        break;
-                    }
-                }
+            for event in split_input_events(&payload) {
+                let _ = input_broadcast.send(event);
             }
         }
     })
@@ -683,8 +695,14 @@ impl SessionManager {
 
     pub async fn remove_session(&self, id: &iroh::EndpointId) {
         let mut sessions = self.sessions.lock().await;
-        sessions.remove(id);
-        info!(remote = %id.fmt_short(), "client session removed ({} remaining)", sessions.len());
+        // Said only when something was actually removed. Every carrier of a
+        // client reports its own close, so a client leaving announced its
+        // session as removed four times over -- three of them describing a
+        // session that had already gone, which reads like four clients
+        // leaving.
+        if sessions.remove(id).is_some() {
+            info!(remote = %id.fmt_short(), "client session removed ({} remaining)", sessions.len());
+        }
     }
 
     /// Note how long this box took over a frame, relative to its own best.
@@ -947,5 +965,82 @@ mod pipeline_delay_tests {
         let mgr = SessionManager::new();
         mgr.note_pipeline_delay(&[0u8, 0u8, 1u8]);
         assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod input_batch_tests {
+    use super::split_input_events;
+    use nesprotocol::input::{
+        encode_key_event, encode_mouse_button, encode_mouse_move, encode_mouse_wheel,
+    };
+
+    /// The bug this exists for: a four-byte key event read as three bytes
+    /// forwards a truncated keycode and leaves the offset one short, so the
+    /// next event is read from inside this one. Built with the encoder rather
+    /// than by hand, so the widths cannot drift apart again.
+    #[test]
+    fn a_key_event_survives_the_round_trip_whole() {
+        let mut batch = Vec::new();
+        // A keycode above 255, so a lost high byte cannot go unnoticed.
+        encode_key_event(&mut batch, true, 0x1234);
+        let events = split_input_events(&batch);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0], batch, "the event was not forwarded intact");
+    }
+
+    /// The consequence of getting a width wrong, and the symptom that was
+    /// actually seen: a keycode read as though it were an event type.
+    #[test]
+    fn every_event_in_a_batch_is_recovered() {
+        let mut batch = Vec::new();
+        let mut expected = Vec::new();
+        for (down, code) in [(true, 29u16), (true, 42), (true, 32), (false, 32)] {
+            let mut one = Vec::new();
+            encode_key_event(&mut one, down, code);
+            batch.extend_from_slice(&one);
+            expected.push(one);
+        }
+        assert_eq!(
+            split_input_events(&batch),
+            expected,
+            "a batch of key events did not come back as the events that went in"
+        );
+    }
+
+    #[test]
+    fn mixed_events_keep_their_boundaries() {
+        let mut batch = Vec::new();
+        let mut expected = Vec::new();
+        let mut add = |f: &dyn Fn(&mut Vec<u8>), batch: &mut Vec<u8>| {
+            let mut one = Vec::new();
+            f(&mut one);
+            batch.extend_from_slice(&one);
+            expected.push(one);
+        };
+        add(&|b| encode_key_event(b, true, 0x0102), &mut batch);
+        add(&|b| encode_mouse_move(b, -300, 42), &mut batch);
+        add(&|b| encode_mouse_button(b, 1, true), &mut batch);
+        add(&|b| encode_mouse_wheel(b, 0, -120), &mut batch);
+        add(&|b| encode_key_event(b, false, 0x0102), &mut batch);
+        assert_eq!(split_input_events(&batch), expected);
+    }
+
+    /// A truncated batch must stop, not read past the end or invent an event.
+    #[test]
+    fn a_cut_off_event_is_dropped_rather_than_guessed_at() {
+        let mut batch = Vec::new();
+        encode_key_event(&mut batch, true, 0x1234);
+        let whole = batch.clone();
+        encode_key_event(&mut batch, true, 0x5678);
+        batch.pop();
+        let events = split_input_events(&batch);
+        assert_eq!(events, vec![whole], "the half event was not discarded");
+    }
+
+    #[test]
+    fn an_unknown_event_type_stops_the_batch_rather_than_the_process() {
+        let events = split_input_events(&[0xAA, 0xBB, 0xCC]);
+        assert!(events.is_empty());
     }
 }
