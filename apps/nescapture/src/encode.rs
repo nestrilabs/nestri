@@ -873,11 +873,12 @@ fn encoder_thread(
             }
         };
 
-        let mut force_idr = cfg.idr_requested.swap(false, Ordering::Relaxed);
-        if cfg.idr_interval > 0 {
-            force_idr = force_idr || frame_number % cfg.idr_interval == 0;
-        }
-        if force_idr {
+        // Only when something asked. Periodic key frames are the encoder's own
+        // schedule, set by `with_gop_size` -- counting frames here as well
+        // meant two mechanisms driving one thing, and the encoder's schedule
+        // being the one that could be turned off. Turning it off changed
+        // nothing, because this kept asking every four seconds regardless.
+        if cfg.idr_requested.swap(false, Ordering::Relaxed) {
             state.encoder.request_idr();
         }
 
