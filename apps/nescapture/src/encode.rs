@@ -21,8 +21,10 @@
 //  NESCAPTURE_CODEC         "h264" | "h265" | "av1"          (default: best available)
 //  NESCAPTURE_FORMAT        "yuv420" | "yuv444"              (default: yuv420)
 //  NESCAPTURE_DEPTH         "8" | "10"                       (default: 8)
-//  NESCAPTURE_BITRATE       CBR target kbps                  (default: 10000)
-//  NESCAPTURE_QP            Constant QP (overrides BITRATE)  (default: unset)
+//  NESCAPTURE_RC            "cqp" | "cbr" | "vbr"            (default: inferred)
+//  NESCAPTURE_BITRATE       Target kbps, under cbr and vbr   (default: 10000)
+//  NESCAPTURE_BITRATE_MAX   Ceiling kbps, vbr only           (default: 1.5x target)
+//  NESCAPTURE_QP            Constant QP, under cqp           (default: unset)
 //  NESCAPTURE_FPS           Frame rate                       (default: 60)
 //  NESCAPTURE_IDR_INTERVAL  Force IDR every N seconds        (default: 4)
 //  NESCAPTURE_INTRA_REFRESH_SHAPE
@@ -377,14 +379,176 @@ fn resolve_codec(requested: Option<&str>) -> Option<(HwCodec, pixelforge::VideoC
     }
 }
 
+// ── Rate control ──────────────────────────────────────────────────────────────
+
+/// The bitrate used when nothing asks for one.
+const DEFAULT_BITRATE_KBPS: u32 = 10_000;
+
+/// How the encoder decides what a frame may spend.
+///
+/// One value rather than the pair of `Option`s this used to be. The pair could
+/// say "both" and "neither", and an encoder can be built for neither of those;
+/// the mode was carried by which of the two happened to be set, which left
+/// nowhere to put a second number when a mode needed one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateControl {
+    /// Constant quality. Frame size follows the content, unbounded.
+    Cqp { qp: u32 },
+    /// Constant bitrate: every frame is pushed toward the same size.
+    Cbr { kbps: u32 },
+    /// Variable bitrate: `target_kbps` on average, with frames that need it
+    /// allowed up to `max_kbps`.
+    Vbr { target_kbps: u32, max_kbps: u32 },
+}
+
+impl RateControl {
+    /// The target in kbps, or `None` under constant QP, which has no bitrate.
+    fn target_kbps(self) -> Option<u32> {
+        match self {
+            Self::Cqp { .. } => None,
+            Self::Cbr { kbps } => Some(kbps),
+            Self::Vbr { target_kbps, .. } => Some(target_kbps),
+        }
+    }
+
+    /// The same mode, aimed at `kbps`.
+    ///
+    /// VBR keeps its ceiling. The ceiling describes what the path can carry,
+    /// which is not a function of what the encode is currently aiming at --
+    /// scaling it with the target would shrink the headroom at exactly the
+    /// moment the target dropped because frames were being lost.
+    ///
+    /// Constant QP becomes constant bitrate, because there is no target inside
+    /// it to move: a caller asking for one is asking for a mode that has one.
+    fn retargeted(self, kbps: u32) -> Self {
+        match self {
+            Self::Cqp { .. } | Self::Cbr { .. } => Self::Cbr { kbps },
+            Self::Vbr { max_kbps, .. } => Self::Vbr {
+                target_kbps: kbps,
+                max_kbps,
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for RateControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cqp { qp } => write!(f, "QP {qp}"),
+            Self::Cbr { kbps } => write!(f, "CBR {kbps} kbps"),
+            Self::Vbr {
+                target_kbps,
+                max_kbps,
+            } => write!(f, "VBR {target_kbps} kbps, up to {max_kbps}"),
+        }
+    }
+}
+
+/// Bits per second from kilobits, saturating. The encoder's unit is bits; the
+/// environment's is kilobits, because that is the unit a bitrate is quoted in.
+fn bps(kbps: u32) -> u32 {
+    kbps.saturating_mul(1_000)
+}
+
+/// The ceiling a VBR encode gets when it is not given one: half again the
+/// target. Enough headroom that a scene change is coded rather than smeared,
+/// and still a bound the path can be planned around -- which is the whole
+/// reason to name a ceiling instead of leaving the encode unbounded.
+fn default_ceiling_kbps(target_kbps: u32) -> u32 {
+    // Divided before multiplied so a target near the top of the range
+    // saturates instead of wrapping. A wrapped ceiling is a *small* one, and a
+    // small ceiling silently throttles the encode -- the one failure here that
+    // would not look like a failure.
+    (target_kbps / 2).saturating_mul(3).max(target_kbps)
+}
+
+/// Resolve the rate control from what the environment said.
+///
+/// Pure, and takes the parsed values rather than reading them, so the decision
+/// can be tested without a process-wide environment.
+///
+/// `rc` is authoritative when it names a mode this understands. When it does
+/// not -- unset, or a word this does not know -- the mode is inferred the way
+/// it was before the variable existed: a QP means constant QP, anything else
+/// means a bitrate. That fallback is what keeps every configuration written
+/// before this working unchanged.
+fn resolve_rate_control(
+    rc: Option<&str>,
+    qp: Option<u32>,
+    bitrate_kbps: Option<u32>,
+    max_kbps: Option<u32>,
+) -> RateControl {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Mode {
+        Cqp,
+        Cbr,
+        Vbr,
+    }
+
+    let named = match rc.map(str::trim) {
+        None => None,
+        Some(s) if s.eq_ignore_ascii_case("cqp") => Some(Mode::Cqp),
+        Some(s) if s.eq_ignore_ascii_case("cbr") => Some(Mode::Cbr),
+        Some(s) if s.eq_ignore_ascii_case("vbr") => Some(Mode::Vbr),
+        Some(other) => {
+            log::warn!(
+                "NESCAPTURE_RC={other:?} is not a rate control mode \
+                 (cqp, cbr or vbr) — choosing one from the other settings"
+            );
+            None
+        }
+    };
+
+    let mode = named.unwrap_or(if qp.is_some() { Mode::Cqp } else { Mode::Cbr });
+
+    if mode != Mode::Vbr && max_kbps.is_some() {
+        log::warn!("NESCAPTURE_BITRATE_MAX is a VBR ceiling and this encode is not VBR — ignored");
+    }
+
+    let target = bitrate_kbps.unwrap_or(DEFAULT_BITRATE_KBPS);
+
+    match mode {
+        Mode::Cqp => match qp {
+            Some(qp) => RateControl::Cqp { qp },
+            // Inventing a QP would encode at a quality nobody chose, and
+            // constant quality is the one mode where that number *is* the
+            // setting. Say what happened and encode at a bitrate instead.
+            None => {
+                log::warn!(
+                    "NESCAPTURE_RC=cqp needs a NESCAPTURE_QP to hold constant — \
+                     encoding at {target} kbps instead"
+                );
+                RateControl::Cbr { kbps: target }
+            }
+        },
+        Mode::Cbr => RateControl::Cbr { kbps: target },
+        Mode::Vbr => {
+            let max = match max_kbps {
+                Some(m) if m < target => {
+                    log::warn!(
+                        "NESCAPTURE_BITRATE_MAX={m} is below the {target} kbps target, \
+                         which is not a ceiling — raising it to the target"
+                    );
+                    target
+                }
+                Some(m) => m,
+                None => default_ceiling_kbps(target),
+            };
+            RateControl::Vbr {
+                target_kbps: target,
+                max_kbps: max,
+            }
+        }
+    }
+}
+
 // ── Pipeline config ───────────────────────────────────────────────────────────
 
 pub struct PipelineConfig {
     pub width: u32,
     pub height: u32,
     pub fps: u32,
-    pub bitrate_kbps: Option<u32>,
-    pub qp: Option<u32>,
+    pub rate_control: RateControl,
     pub idr_interval: u32,
     pub encoder_tuning_mode: EncoderTuningMode,
     pub pixel_format: PixelFormat,
@@ -403,11 +567,6 @@ impl PipelineConfig {
             .unwrap_or_else(|_| "/tmp/nestri-video.sock".to_string())
             .into();
 
-        let mut bitrate: Option<u32> = None;
-        if std::env::var("NESCAPTURE_QP").is_err() {
-            bitrate = Some(env_u64("NESCAPTURE_BITRATE", 10_000) as u32);
-        }
-
         let encoder_tuning_mode = match std::env::var("NESCAPTURE_TUNE").as_deref() {
             Ok("highquality") => EncoderTuningMode::HighQuality,
             Ok("lowlatency") => EncoderTuningMode::LowLatency,
@@ -420,10 +579,12 @@ impl PipelineConfig {
             width,
             height,
             fps: env_u64("NESCAPTURE_FPS", 60) as u32,
-            bitrate_kbps: bitrate,
-            qp: std::env::var("NESCAPTURE_QP")
-                .ok()
-                .and_then(|s| s.parse().ok()),
+            rate_control: resolve_rate_control(
+                std::env::var("NESCAPTURE_RC").ok().as_deref(),
+                env_opt_u32("NESCAPTURE_QP"),
+                env_opt_u32("NESCAPTURE_BITRATE"),
+                env_opt_u32("NESCAPTURE_BITRATE_MAX"),
+            ),
             idr_interval: (env_u64("NESCAPTURE_FPS", 60) * env_u64("NESCAPTURE_IDR_INTERVAL", 4))
                 as u32,
             encoder_tuning_mode,
@@ -440,6 +601,19 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(default)
+}
+
+/// A setting that has no default, so that "unset" and "set to something
+/// unreadable" can be told apart from a value.
+fn env_opt_u32(key: &str) -> Option<u32> {
+    let raw = std::env::var(key).ok()?;
+    match raw.trim().parse() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log::warn!("{key}={raw:?} is not a number — ignored");
+            None
+        }
+    }
 }
 
 // ── Pipeline handle ───────────────────────────────────────────────────────────
@@ -502,8 +676,7 @@ impl PipelineHandle {
             width: config.width,
             height: config.height,
             fps: config.fps,
-            bitrate_kbps: config.bitrate_kbps,
-            qp: config.qp,
+            rate_control: config.rate_control,
             idr_interval: config.idr_interval,
             encoder_tuning_mode: config.encoder_tuning_mode,
             pixel_format: config.pixel_format,
@@ -655,18 +828,12 @@ impl PipelineHandle {
             .map_err(|e| format!("spawn idr: {e}"))?;
 
         log::info!(
-            "pipeline ready — {:?} {}x{} @ {}FPS {} -> {}",
+            "pipeline ready — {:?} {}x{} @ {}FPS, {} -> {}",
             codec,
             config.width,
             config.height,
             config.fps,
-            (if config.bitrate_kbps.is_some() {
-                std::format!("- CBR: {}kbps", config.bitrate_kbps.unwrap())
-            } else if config.qp.is_some() {
-                std::format!("- QP: {}", config.qp.unwrap())
-            } else {
-                "".to_string()
-            }),
+            config.rate_control,
             ipc_path.display(),
         );
         Ok(Self {
@@ -733,8 +900,7 @@ struct EncoderConfig {
     width: u32,
     height: u32,
     fps: u32,
-    bitrate_kbps: Option<u32>,
-    qp: Option<u32>,
+    rate_control: RateControl,
     idr_interval: u32,
     encoder_tuning_mode: EncoderTuningMode,
     pixel_format: PixelFormat,
@@ -814,14 +980,14 @@ fn encoder_thread(
             // itself and cannot avoid the rebuild.
             if let Some(kbps) = bitrate_only_change(
                 &change,
-                cfg.bitrate_kbps,
+                cfg.rate_control,
                 cfg.codec,
                 cfg.wanted_depth_override,
             ) && let Some(state) = encoder_state.as_mut()
             {
-                match state.encoder.set_target_bitrate(kbps * 1_000) {
+                match state.encoder.set_target_bitrate(bps(kbps)) {
                     Ok(()) => {
-                        cfg.bitrate_kbps = Some(kbps);
+                        cfg.rate_control = cfg.rate_control.retargeted(kbps);
                         // Same reasoning as the hub's own line: a controller
                         // tracking a moving path retunes every second.
                         log::trace!("bitrate → {kbps} kbps (no rebuild, no IDR)");
@@ -839,13 +1005,17 @@ fn encoder_thread(
                 change.value,
             );
             match change.rate_control_mode {
+                // `retargeted` rather than an outright CBR, so a VBR encode
+                // keeps its ceiling across a rebuild it is having for some
+                // other reason -- a codec change, say. The settings message has
+                // no way to name VBR, so every bitrate arrives labelled CBR;
+                // reading that label as a mode would mean a ceiling asked for
+                // at launch survived only until the first codec switch.
                 RateControlMode::Cbr => {
-                    cfg.bitrate_kbps = Some(change.value);
-                    cfg.qp = None;
+                    cfg.rate_control = cfg.rate_control.retargeted(change.value);
                 }
                 RateControlMode::Cqp => {
-                    cfg.bitrate_kbps = None;
-                    cfg.qp = Some(change.value);
+                    cfg.rate_control = RateControl::Cqp { qp: change.value };
                 }
                 _ => {
                     log::warn!(
@@ -975,8 +1145,7 @@ fn encoder_thread(
                     raw.width,
                     raw.height,
                     cfg.fps,
-                    cfg.bitrate_kbps,
-                    cfg.qp,
+                    cfg.rate_control,
                     cfg.idr_interval,
                     cfg.encoder_tuning_mode,
                     cfg.pixel_format,
@@ -1123,8 +1292,7 @@ impl PerFrameEncoder {
         width: u32,
         height: u32,
         fps: u32,
-        bitrate_kbps: Option<u32>,
-        qp: Option<u32>,
+        rate_control: RateControl,
         idr_interval: u32,
         encoder_tuning_mode: EncoderTuningMode,
         pixel_format: PixelFormat,
@@ -1136,7 +1304,7 @@ impl PerFrameEncoder {
         let source = vk_colorspace_to_source_spec(vk_colorspace);
         log::info!(
             "(re)init encoder: {codec:?} {width}x{height} {pixel_format:?} {bit_depth:?} \
-             {source:?} → {:?} {out_fmt:?}",
+             {rate_control} {source:?} → {:?} {out_fmt:?}",
             stream_spec(source),
         );
 
@@ -1191,20 +1359,20 @@ impl PerFrameEncoder {
         enc_cfg = enc_cfg
             .with_virtual_buffer_size_ms(vbv_ms)
             .with_initial_virtual_buffer_size_ms(vbv_ms);
-        enc_cfg = if let Some(q) = qp {
-            enc_cfg
+        enc_cfg = match rate_control {
+            RateControl::Cqp { qp } => enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
-                .with_quality_level(q)
-        } else {
-            if let Some(bitrate) = bitrate_kbps {
-                enc_cfg
-                    .with_rate_control(RateControlMode::Cbr)
-                    .with_target_bitrate(bitrate * 1_000)
-            } else {
-                enc_cfg
-                    .with_rate_control(RateControlMode::Cbr)
-                    .with_target_bitrate(1000 * 1_000)
-            }
+                .with_quality_level(qp),
+            RateControl::Cbr { kbps } => enc_cfg
+                .with_rate_control(RateControlMode::Cbr)
+                .with_target_bitrate(bps(kbps)),
+            RateControl::Vbr {
+                target_kbps,
+                max_kbps,
+            } => enc_cfg
+                .with_rate_control(RateControlMode::Vbr)
+                .with_target_bitrate(bps(target_kbps))
+                .with_max_bitrate(bps(max_kbps)),
         };
 
         let encoder =
@@ -1375,7 +1543,7 @@ fn vbv_ms_for(fps: u32, frames: u32) -> u32 {
 
 fn bitrate_only_change(
     change: &EncodeSettingsChange,
-    current_bitrate_kbps: Option<u32>,
+    current: RateControl,
     current_codec: HwCodec,
     current_depth_override: Option<EncodeBitDepth>,
 ) -> Option<u32> {
@@ -1384,7 +1552,14 @@ fn bitrate_only_change(
     }
     // Already under a bitrate. Coming *from* constant QP is a mode change, and
     // the session was built for the other one.
-    current_bitrate_kbps?;
+    //
+    // A VBR encode qualifies, and that is the point. The settings message can
+    // only say CBR or constant QP, so every bitrate a controller sends arrives
+    // labelled CBR -- and reading the label rather than the number would tear
+    // down a VBR session and rebuild it as CBR on the first adjustment, so a
+    // ceiling asked for at launch would last exactly until the path moved.
+    // What the message carries is a target; the mode is what was asked for.
+    current.target_kbps()?;
     if change.codec.is_some_and(|c| c != current_codec) {
         return None;
     }
@@ -2444,7 +2619,9 @@ mod depth_tests {
 
 #[cfg(test)]
 mod bitrate_only_tests {
-    use super::{DEFAULT_VBV_FRAMES, HwCodec, bitrate_only_change, cycle_for, vbv_ms_for};
+    use super::{
+        DEFAULT_VBV_FRAMES, HwCodec, RateControl, bitrate_only_change, cycle_for, vbv_ms_for,
+    };
 
     /// Half a second is the value that measured clean at 1080p60, and it
     /// cannot be said in whole seconds -- which is the reason this takes a
@@ -2536,8 +2713,14 @@ mod bitrate_only_tests {
 
     /// The running encode for these: CBR at 8 Mbps, H.264, no depth override.
     fn running(c: &EncodeSettingsChange) -> Option<u32> {
-        bitrate_only_change(c, Some(8_000), HwCodec::H264, None)
+        bitrate_only_change(c, CBR_8M, HwCodec::H264, None)
     }
+
+    const CBR_8M: RateControl = RateControl::Cbr { kbps: 8_000 };
+    const VBR_8M: RateControl = RateControl::Vbr {
+        target_kbps: 8_000,
+        max_kbps: 12_000,
+    };
 
     #[test]
     fn a_bare_bitrate_change_is_taken() {
@@ -2562,7 +2745,7 @@ mod bitrate_only_tests {
             Some(EncodeBitDepth::Eight),
         );
         assert_eq!(
-            bitrate_only_change(&c, Some(8_000), HwCodec::H264, Some(EncodeBitDepth::Eight)),
+            bitrate_only_change(&c, CBR_8M, HwCodec::H264, Some(EncodeBitDepth::Eight)),
             Some(2_000),
         );
     }
@@ -2581,10 +2764,7 @@ mod bitrate_only_tests {
             None,
             Some(EncodeBitDepth::Eight),
         );
-        assert_eq!(
-            bitrate_only_change(&c, Some(8_000), HwCodec::H264, None),
-            None
-        );
+        assert_eq!(bitrate_only_change(&c, CBR_8M, HwCodec::H264, None), None);
     }
 
     #[test]
@@ -2613,6 +2793,228 @@ mod bitrate_only_tests {
         // The session was built without a bitrate, so there is nothing to
         // retarget -- it has to become an encode that has one.
         let c = change(RateControlMode::Cbr, 2_000, None, None);
-        assert_eq!(bitrate_only_change(&c, None, HwCodec::H264, None), None);
+        assert_eq!(
+            bitrate_only_change(&c, RateControl::Cqp { qp: 26 }, HwCodec::H264, None),
+            None,
+        );
+    }
+
+    /// The one that makes launch-time VBR survive a session. A controller has
+    /// no way to say VBR, so its bitrates arrive labelled CBR; taken as a mode
+    /// this would rebuild the encode as CBR and drop the ceiling on the first
+    /// adjustment.
+    #[test]
+    fn a_bitrate_under_vbr_is_a_retune_not_a_mode_change() {
+        let c = change(RateControlMode::Cbr, 2_000, None, None);
+        assert_eq!(
+            bitrate_only_change(&c, VBR_8M, HwCodec::H264, None),
+            Some(2_000),
+        );
+    }
+
+    /// Everything else that rebuilds still rebuilds under VBR -- the reprieve
+    /// is for the rate control label alone, not for a codec or a depth.
+    #[test]
+    fn a_vbr_encode_rebuilds_for_the_same_reasons_any_other_does() {
+        let c = change(RateControlMode::Cbr, 2_000, Some(HwCodec::AV1), None);
+        assert_eq!(bitrate_only_change(&c, VBR_8M, HwCodec::H264, None), None);
+
+        let c = change(RateControlMode::Cqp, 28, None, None);
+        assert_eq!(bitrate_only_change(&c, VBR_8M, HwCodec::H264, None), None);
+    }
+}
+
+#[cfg(test)]
+mod rate_control_tests {
+    use super::{DEFAULT_BITRATE_KBPS, RateControl, resolve_rate_control};
+
+    /// Nothing in the environment: the historical behaviour, which is a
+    /// bitrate at the default.
+    #[test]
+    fn an_empty_environment_is_the_default_bitrate() {
+        assert_eq!(
+            resolve_rate_control(None, None, None, None),
+            RateControl::Cbr {
+                kbps: DEFAULT_BITRATE_KBPS
+            },
+        );
+    }
+
+    /// The inference this replaced, preserved exactly: a QP and no mode is
+    /// constant QP. Anyone who set only `NESCAPTURE_QP` before this existed
+    /// gets what they got before.
+    #[test]
+    fn a_bare_qp_still_means_constant_qp() {
+        assert_eq!(
+            resolve_rate_control(None, Some(26), None, None),
+            RateControl::Cqp { qp: 26 },
+        );
+    }
+
+    /// And the mode wins over the inference, in the direction that makes the
+    /// QP the ignored one -- otherwise asking for a bitrate while a stale QP
+    /// sits in the environment would silently not give you one.
+    #[test]
+    fn an_explicit_bitrate_mode_outranks_a_qp_in_the_environment() {
+        assert_eq!(
+            resolve_rate_control(Some("cbr"), Some(26), Some(8_000), None),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+    }
+
+    #[test]
+    fn a_mode_is_read_without_regard_to_case_or_surrounding_space() {
+        assert_eq!(
+            resolve_rate_control(Some("  VbR "), None, Some(8_000), Some(12_000)),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    #[test]
+    fn vbr_takes_both_numbers() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, Some(8_000), Some(12_000)),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    /// A ceiling is optional, and the one it gets is headroom over the target
+    /// rather than the target itself -- a VBR encode whose ceiling is its
+    /// target is a CBR encode with extra steps.
+    #[test]
+    fn vbr_without_a_ceiling_gets_headroom_over_the_target() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, Some(8_000), None),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    /// A ceiling under the target is not a ceiling. Raised to the target
+    /// rather than refused: the target is the number the operator was more
+    /// specific about, and an encode that runs is worth more than one that
+    /// does not.
+    #[test]
+    fn a_ceiling_below_the_target_is_raised_to_it() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, Some(8_000), Some(3_000)),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 8_000,
+            },
+        );
+    }
+
+    /// Constant QP asked for without a QP has no quality to hold constant.
+    /// Falling back to a bitrate says so; inventing a QP would encode at a
+    /// quality nobody chose.
+    #[test]
+    fn constant_qp_without_a_qp_falls_back_to_a_bitrate() {
+        assert_eq!(
+            resolve_rate_control(Some("cqp"), None, Some(8_000), None),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+    }
+
+    #[test]
+    fn an_unreadable_mode_falls_back_to_the_inference() {
+        assert_eq!(
+            resolve_rate_control(Some("adaptive"), Some(26), None, None),
+            RateControl::Cqp { qp: 26 },
+        );
+        assert_eq!(
+            resolve_rate_control(Some(""), None, Some(8_000), None),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+    }
+
+    /// A ceiling has nowhere to go under a mode with no ceiling. It is
+    /// dropped, not quietly turned into VBR -- the mode is the operator's to
+    /// pick, and one var implying another is how a config becomes unreadable.
+    #[test]
+    fn a_ceiling_outside_vbr_changes_nothing() {
+        assert_eq!(
+            resolve_rate_control(Some("cbr"), None, Some(8_000), Some(12_000)),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+        assert_eq!(
+            resolve_rate_control(None, Some(26), None, Some(12_000)),
+            RateControl::Cqp { qp: 26 },
+        );
+    }
+
+    /// The ceiling scales off whatever target is in force, including the
+    /// default one.
+    #[test]
+    fn vbr_with_nothing_at_all_still_has_a_target_and_a_ceiling() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, None, None),
+            RateControl::Vbr {
+                target_kbps: DEFAULT_BITRATE_KBPS,
+                max_kbps: DEFAULT_BITRATE_KBPS / 2 * 3,
+            },
+        );
+    }
+
+    /// A target large enough to overflow the headroom arithmetic is nonsense,
+    /// but nonsense that wraps is worse than nonsense that saturates: a
+    /// wrapped ceiling is a *small* one, which silently throttles the encode.
+    #[test]
+    fn an_absurd_target_saturates_rather_than_wraps() {
+        let RateControl::Vbr { max_kbps, .. } =
+            resolve_rate_control(Some("vbr"), None, Some(u32::MAX), None)
+        else {
+            panic!("asked for vbr, got something else");
+        };
+        assert!(max_kbps >= u32::MAX / 2);
+    }
+
+    /// Retargeting is what a congestion controller does, and it must not
+    /// disturb the ceiling: the ceiling describes the path, not the target.
+    #[test]
+    fn retargeting_vbr_keeps_the_ceiling() {
+        let rc = RateControl::Vbr {
+            target_kbps: 8_000,
+            max_kbps: 12_000,
+        };
+        assert_eq!(
+            rc.retargeted(2_000),
+            RateControl::Vbr {
+                target_kbps: 2_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    /// There is no target inside constant QP to move, so a caller asking for
+    /// one is asking for the mode that has one.
+    #[test]
+    fn retargeting_constant_qp_gives_a_bitrate() {
+        assert_eq!(
+            RateControl::Cqp { qp: 26 }.retargeted(2_000),
+            RateControl::Cbr { kbps: 2_000 },
+        );
+    }
+
+    #[test]
+    fn only_a_bitrate_mode_reports_a_target() {
+        assert_eq!(RateControl::Cbr { kbps: 8_000 }.target_kbps(), Some(8_000));
+        assert_eq!(
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            }
+            .target_kbps(),
+            Some(8_000),
+        );
+        assert_eq!(RateControl::Cqp { qp: 26 }.target_kbps(), None);
     }
 }

@@ -93,8 +93,10 @@ implicit layer is loaded into *every* Vulkan process on the system.
 | `NESCAPTURE_CODEC` | best available | `h264`, `h265` or `av1`; probes if unset |
 | `NESCAPTURE_FORMAT` | `yuv420` | `yuv420` or `yuv444` |
 | `NESCAPTURE_DEPTH` | auto | `8` or `10`; inferred from the swapchain `VkFormat` if unset |
-| `NESCAPTURE_BITRATE` | `10000` | CBR target in kbps. Ignored when `NESCAPTURE_QP` is set |
-| `NESCAPTURE_QP` | _(unset)_ | Constant QP instead of CBR |
+| `NESCAPTURE_RC` | _(inferred)_ | `cqp`, `cbr` or `vbr`. Unset infers `cqp` when `NESCAPTURE_QP` is set, `cbr` otherwise |
+| `NESCAPTURE_BITRATE` | `10000` | Target bitrate in kbps, under `cbr` and `vbr` |
+| `NESCAPTURE_BITRATE_MAX` | 1.5x the target | VBR ceiling in kbps. Ignored outside `vbr` |
+| `NESCAPTURE_QP` | _(unset)_ | Constant QP, under `cqp` |
 | `NESCAPTURE_FPS` | `60` | Target frame rate |
 | `NESCAPTURE_IDR_INTERVAL` | `4` | Force an IDR every N **seconds** |
 | `NESCAPTURE_TUNE` | _(unset)_ | `highquality`, `lowlatency`, `ultralowlatency`, `lossless` |
@@ -106,6 +108,21 @@ implicit layer is loaded into *every* Vulkan process on the system.
 Everything else is decided at runtime: the client asks `neshub` for a codec or
 bitrate change and it arrives on the command socket, so the encoder is
 reconfigured without a restart.
+
+### Rate control
+
+`cbr` holds every frame to the same size, which is what a link with a fixed
+budget wants. `vbr` holds the same *average* while letting a frame that needs
+it spend up to the ceiling — a scene change is coded rather than smeared, at
+the cost of a burst the path has to absorb. `cqp` holds quality constant and
+lets the bitrate go wherever the content takes it, which is a recording
+setting rather than a streaming one.
+
+The command socket carries a target bitrate but has no way to name a mode
+beyond CBR and constant QP. A target arriving while the encode is `vbr` is
+therefore applied as a target, leaving the mode and the ceiling alone — so the
+ceiling asked for at launch survives a session, and a congestion controller
+adjusts underneath it. Retargeting costs no rebuild and no key frame.
 
 ---
 
