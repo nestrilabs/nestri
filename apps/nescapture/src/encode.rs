@@ -1022,23 +1022,14 @@ impl PerFrameEncoder {
             enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
                 format!("colour space {vk_colorspace} has no encodable stream description")
             })?);
-        // How long the rate control averages over, and so how long it takes to
-        // reach a bitrate it has been given. Measured on this encoder: a step
-        // down to 1000 kbps took 2383 ms to settle, reproducibly, against a
-        // default of 1000 ms -- and 2.4 seconds of plant lag makes every
-        // congestion controller equivalent, because none of them can steer
-        // something that answers that slowly. Shorter should track faster and
-        // fluctuate more; this exists so the trade can be measured rather than
-        // argued about.
-        if let Ok(ms) = std::env::var("NESCAPTURE_VBV_MS")
-            && let Ok(ms) = ms.parse::<u32>()
-            && ms > 0
-        {
-            log::info!("rate control buffer: {ms} ms (default 1000)");
-            enc_cfg = enc_cfg
-                .with_virtual_buffer_size_ms(ms)
-                .with_initial_virtual_buffer_size_ms(ms);
-        }
+        let vbv_ms = vbv_ms_for(fps, vbv_frames());
+        log::info!(
+            "rate control buffer: {vbv_ms} ms ({} frames at {fps} fps)",
+            vbv_frames()
+        );
+        enc_cfg = enc_cfg
+            .with_virtual_buffer_size_ms(vbv_ms)
+            .with_initial_virtual_buffer_size_ms(vbv_ms);
         enc_cfg = if let Some(q) = qp {
             enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
@@ -1080,6 +1071,60 @@ impl PerFrameEncoder {
 /// still arrives carrying a codec and a bit depth. Treating those as changes
 /// would rebuild the encoder -- and emit an IDR -- every time somebody nudged
 /// the bitrate.
+/// Frames of bitrate one frame may borrow from its neighbours.
+///
+/// The rate-control buffer is what makes an encoder slow to obey a new
+/// bitrate: it is the window the rate is averaged over, so a wide one lets the
+/// encoder stay wrong for a long time while still being right on average.
+/// Measured on this encoder at 1080p60, stepping down to 1000 kbps:
+///
+/// ```text
+/// buffer   frames    worst settle   keyframe
+/// 1000 ms      60         2383 ms   48k-141k
+///  250 ms      15         2116 ms   48k-141k
+///  100 ms       6         1082 ms   20k-107k
+///   50 ms       3          533 ms    2k- 55k
+/// ```
+///
+/// Four is a compromise between two things this cannot both have. Narrower
+/// tracks a new bitrate faster, which is the whole problem a congestion
+/// controller is trying to solve. Wider lets a keyframe be several times a
+/// delta frame, which is what a keyframe *is* -- at three frames one IDR came
+/// out at 2114 bytes, which cannot look right at 1080p, and every frame in the
+/// group predicts from it.
+///
+/// One frame would mean no borrowing at all, so a keyframe would have to fit a
+/// delta frame's budget. That is the configuration low-latency encoders pair
+/// with intra refresh, which has no keyframes to starve -- which is the
+/// argument for doing that work, rather than a reason to set this to one now.
+const DEFAULT_VBV_FRAMES: u32 = 4;
+
+fn vbv_frames() -> u32 {
+    std::env::var("NESCAPTURE_VBV_FRAMES")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|f| *f > 0)
+        .unwrap_or(DEFAULT_VBV_FRAMES)
+}
+
+/// The buffer in milliseconds, which is what Vulkan wants, from the frames
+/// that are what actually matter.
+///
+/// Expressed in time, the same number means different things on different
+/// tiers: at 50 ms a 60 fps stream may borrow three frames and a 120 fps
+/// stream six. The tiers here run at both, so a fixed millisecond value hands
+/// the faster ones twice the slack for no reason anybody chose.
+///
+/// Bitrate needs no such treatment -- the buffer is a duration, so its size in
+/// bytes already scales with the rate.
+fn vbv_ms_for(fps: u32, frames: u32) -> u32 {
+    // Rounded up, not down: a frame's worth of slack that does not quite cover
+    // a frame is the one case this must not produce, and truncation gives
+    // exactly that at frame rates milliseconds do not divide evenly -- 4
+    // frames at 30 fps is 133.3 ms, and 133 is three frames and change.
+    frames.saturating_mul(1000).div_ceil(fps.max(1)).max(1)
+}
+
 fn bitrate_only_change(
     change: &EncodeSettingsChange,
     current_bitrate_kbps: Option<u32>,
@@ -2078,7 +2123,30 @@ mod depth_tests {
 
 #[cfg(test)]
 mod bitrate_only_tests {
-    use super::{HwCodec, bitrate_only_change};
+    use super::{DEFAULT_VBV_FRAMES, HwCodec, bitrate_only_change, vbv_ms_for};
+
+    /// The point of deriving it: the same slack on every tier.
+    #[test]
+    fn the_buffer_is_the_same_number_of_frames_at_every_frame_rate() {
+        // The ladder runs at 60 and 120. Expressed in milliseconds these would
+        // differ by a factor of two, handing the faster tiers twice the
+        // borrowing allowance for no reason anybody chose.
+        for fps in [30, 60, 120] {
+            let ms = vbv_ms_for(fps, DEFAULT_VBV_FRAMES);
+            let frames = ms * fps / 1000;
+            assert_eq!(
+                frames, DEFAULT_VBV_FRAMES,
+                "{fps} fps got {frames} frames of slack, not {DEFAULT_VBV_FRAMES}"
+            );
+        }
+    }
+
+    /// A buffer of zero would mean an encoder that may never spend a bit.
+    #[test]
+    fn the_buffer_is_never_zero_however_fast_the_stream() {
+        assert!(vbv_ms_for(1000, 1) >= 1);
+        assert!(vbv_ms_for(0, 4) >= 1, "a frame rate of zero must not divide by it");
+    }
     use crate::encode::EncodeSettingsChange;
     use pixelforge::{EncodeBitDepth, RateControlMode};
 
