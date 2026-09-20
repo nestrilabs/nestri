@@ -25,8 +25,9 @@
 //  NESCAPTURE_QP            Constant QP (overrides BITRATE)  (default: unset)
 //  NESCAPTURE_FPS           Frame rate                       (default: 60)
 //  NESCAPTURE_IDR_INTERVAL  Force IDR every N seconds        (default: 4)
-//  NESCAPTURE_INTRA_REFRESH Refresh cycle in seconds, replacing periodic key
-//                           frames entirely                   (default: off)
+//  NESCAPTURE_INTRA_REFRESH Refresh cycle in seconds, fractional, replacing
+//                           periodic key frames entirely. 0.5 measured clean
+//                           at 1080p60; longer shows a seam  (default: off)
 //  NESCAPTURE_VBV_FRAMES    Frames of rate-control buffer     (default: 4)
 //  NESCAPTURE_TUNE          "highquality" | "lowlatency" | "ultralowlatency" | "lossless" (default: unset)
 //  NESCAPTURE_IPC_PATH      Unix socket path for hub IPC     (default: /tmp/nestri-video.sock)
@@ -1143,27 +1144,12 @@ impl PerFrameEncoder {
             })?);
         let refresh_cycle = intra_refresh_cycle(fps);
         if let Some(cycle) = refresh_cycle {
-            // Both numbers, because the one asked for is the one a reader will
-            // be looking for and its absence would read as the setting being
-            // ignored.
-            let asked = std::env::var("NESCAPTURE_INTRA_REFRESH")
-                .ok()
-                .and_then(|v| v.parse::<u32>().ok())
-                .unwrap_or(0)
-                .saturating_mul(fps.max(1));
-            if asked > cycle {
-                log::info!(
-                    "intra refresh: {cycle} pictures per cycle ({:.1}s), not the {asked} asked \
-                     for -- a longer cycle leaves prediction restricted long enough to show as \
-                     a seam",
-                    cycle as f32 / fps.max(1) as f32
-                );
-            } else {
-                log::info!(
-                    "intra refresh: {cycle} pictures per cycle ({:.1}s), replacing periodic key frames",
-                    cycle as f32 / fps.max(1) as f32
-                );
-            }
+            // Both units, because one of them is what was asked for and the
+            // other is what decides whether a seam shows.
+            log::info!(
+                "intra refresh: {cycle} pictures per cycle ({:.2}s), replacing periodic key frames",
+                cycle as f32 / fps.max(1) as f32
+            );
         }
         enc_cfg = enc_cfg.with_intra_refresh(refresh_cycle);
 
@@ -1236,41 +1222,48 @@ impl PerFrameEncoder {
 fn intra_refresh_cycle(fps: u32) -> Option<u32> {
     let secs = std::env::var("NESCAPTURE_INTRA_REFRESH")
         .ok()
-        .and_then(|v| v.parse::<u32>().ok())?;
+        .and_then(|v| v.trim().parse::<f32>().ok())?;
     cycle_for(secs, fps)
 }
-
-/// Longest refresh cycle worth using, in pictures.
-///
-/// While a cycle is running, a picture's already-refreshed regions may only
-/// predict from the part of the reference that has been refreshed so far --
-/// which grows by one region per picture. A long cycle therefore keeps
-/// prediction restricted for a long time, and the boundary between the
-/// restricted part and the rest shows as a horizontal seam that crawls down
-/// the screen.
-///
-/// Measured at 1080p, 1 Mbps, 60 fps, against the same clip encoded without
-/// refresh: a 240-picture cycle (four seconds, which is what inheriting the
-/// IDR interval gave) has obvious seams; 60 still has one; 30 is
-/// indistinguishable from no refresh at all. Empirical, and from one driver --
-/// but the direction is structural, and the cost of a short cycle is only
-/// that more of each picture is intra-coded.
-///
-/// A shorter cycle is also a *faster* recovery for a client joining the
-/// stream, so this bound gives up nothing but bitrate.
-const MAX_REFRESH_CYCLE_PICTURES: u32 = 30;
 
 /// The cycle in pictures, kept apart from reading the environment so it can be
 /// tested without one. Two tests setting the same process-wide variable are
 /// one parallel run away from being flaky.
-fn cycle_for(secs: u32, fps: u32) -> Option<u32> {
-    if secs == 0 {
+///
+/// # What a good value is
+///
+/// While a cycle runs, a picture's already-refreshed regions may only predict
+/// from the part of the reference refreshed so far, and that part grows by one
+/// region per picture. A long cycle therefore keeps prediction restricted for
+/// a long time, and the boundary between the restricted part and the rest
+/// shows as a horizontal seam crawling down the screen over the length of the
+/// cycle.
+///
+/// Measured at 1080p, 1 Mbps, 60 fps, against the same clip and frame encoded
+/// without refresh:
+///
+/// ```text
+/// 240 pictures (4 s)    obvious seams
+///  60 pictures (1 s)    one seam, lower third
+///  30 pictures (0.5 s)  indistinguishable from no refresh
+/// ```
+///
+/// So half a second is the longest that looked right here, which is why this
+/// takes a fractional number of seconds: whole seconds cannot express it. Not
+/// clamped, because the numbers above are from one driver at one resolution
+/// and bitrate, and a bound that cannot be exceeded is a bound that cannot be
+/// re-measured.
+///
+/// A shorter cycle also means *faster* recovery for a client joining the
+/// stream; the only thing it costs is that more of each picture is intra.
+fn cycle_for(secs: f32, fps: u32) -> Option<u32> {
+    if !secs.is_finite() || secs <= 0.0 {
         return None;
     }
-    Some(
-        secs.saturating_mul(fps.max(1))
-            .clamp(2, MAX_REFRESH_CYCLE_PICTURES),
-    )
+    let pictures = (secs * fps.max(1) as f32).round();
+    // Two is the shortest cycle that is a cycle: one would refresh the whole
+    // picture in a single go, which is a key frame with extra steps.
+    Some((pictures as u32).max(2))
 }
 
 /// Frames of bitrate one frame may borrow from its neighbours.
@@ -2382,39 +2375,53 @@ mod depth_tests {
 mod bitrate_only_tests {
     use super::{DEFAULT_VBV_FRAMES, HwCodec, bitrate_only_change, cycle_for, vbv_ms_for};
 
-    /// The cap, and the reason for it: a cycle long enough to keep prediction
-    /// restricted shows as a seam crawling down the picture. Measured at
-    /// 1080p60, four seconds is obvious and half a second is invisible.
+    /// Half a second is the value that measured clean at 1080p60, and it
+    /// cannot be said in whole seconds -- which is the reason this takes a
+    /// fraction at all.
     #[test]
-    fn a_refresh_cycle_is_never_long_enough_to_show_as_a_seam() {
+    fn a_fraction_of_a_second_is_expressible() {
+        assert_eq!(cycle_for(0.5, 60), Some(30));
+        assert_eq!(cycle_for(0.25, 120), Some(30));
+        assert_eq!(cycle_for(0.5, 30), Some(15));
+    }
+
+    /// A recovery interval in seconds is the same interval at any frame rate.
+    #[test]
+    fn a_cycle_is_the_same_length_of_time_at_every_frame_rate() {
         for fps in [30, 60, 120] {
-            let cycle = cycle_for(4, fps).expect("four seconds");
+            let cycle = cycle_for(0.5, fps).expect("half a second");
+            let secs = cycle as f32 / fps as f32;
             assert!(
-                cycle <= super::MAX_REFRESH_CYCLE_PICTURES,
-                "{fps} fps gave a {cycle}-picture cycle"
+                (secs - 0.5).abs() < 0.02,
+                "{fps} fps gave {cycle} pictures, which is {secs}s"
             );
         }
     }
 
-    /// Asking for less than the cap still gets what was asked for -- the cap
-    /// is a bound, not a setting.
+    /// Long cycles look wrong, but they are still measurable -- a bound that
+    /// cannot be exceeded is a bound that cannot be re-measured.
     #[test]
-    fn a_short_request_is_honoured_as_asked() {
-        assert_eq!(cycle_for(1, 20), Some(20));
+    fn a_long_cycle_is_allowed_even_though_it_looks_bad() {
+        assert_eq!(cycle_for(4.0, 60), Some(240));
     }
 
-    /// Off unless asked for: this changes the shape of every stream.
+    /// Nonsense must read as off rather than as some cycle.
     #[test]
-    fn a_cycle_of_zero_seconds_is_off_rather_than_a_cycle_of_nothing() {
-        assert_eq!(cycle_for(0, 60), None);
+    fn a_meaningless_interval_is_off() {
+        assert_eq!(cycle_for(0.0, 60), None);
+        assert_eq!(cycle_for(-1.0, 60), None);
+        assert_eq!(cycle_for(f32::NAN, 60), None);
+        assert_eq!(cycle_for(f32::INFINITY, 60), None);
     }
 
-    /// A cycle of one picture would refresh everything in one go, which is a
-    /// key frame with extra steps.
+    /// One picture would refresh everything at once, which is a key frame with
+    /// extra steps -- and is what a very small fraction rounds to.
     #[test]
-    fn a_cycle_is_never_shorter_than_two_pictures() {
-        assert!(cycle_for(1, 1).is_some_and(|c| c >= 2));
+    fn a_cycle_is_never_shorter_than_two_pictures_however_small_the_fraction() {
+        assert_eq!(cycle_for(0.001, 60), Some(2));
     }
+
+
 
     /// The point of deriving it: the same slack on every tier.
     #[test]
