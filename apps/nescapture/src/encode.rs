@@ -32,6 +32,9 @@
 //  NESCAPTURE_INTRA_REFRESH Replace periodic key frames with an intra refresh
 //                           cycle. The cycle length follows from the codec,
 //                           the picture and the device                (default: off)
+//  NESCAPTURE_INTRA_REFRESH_QP_DELTA
+//                           QP shift inside the refresh band, negative to
+//                           spend bits on it                          (default: -4)
 //  NESCAPTURE_TUNE          "highquality" | "lowlatency" | "ultralowlatency" | "lossless" (default: unset)
 //  NESCAPTURE_IPC_PATH      Unix socket path for hub IPC     (default: /tmp/nestri-video.sock)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1356,7 +1359,8 @@ impl PerFrameEncoder {
         }
         enc_cfg = enc_cfg
             .with_intra_refresh(refresh)
-            .with_intra_refresh_mode(shape);
+            .with_intra_refresh_mode(shape)
+            .with_intra_refresh_qp_delta(intra_refresh_qp_delta());
 
         // The rate-control buffer is left unset: the encoder derives it from
         // the streaming usage hint above and the frame rate, which is the same
@@ -1419,6 +1423,29 @@ impl PerFrameEncoder {
 /// Measured on RADV, H.264 1080p: the largest picture went from twice the
 /// median to 1.2 times it, and the only one above the median was the opening
 /// IDR. AV1 is not yet worth turning this on for; see the pixelforge test.
+/// How much to shift QP inside the refresh band, or `None` for the encoder's
+/// own default.
+///
+/// The band is freshly intra-coded every cycle and carries none of the
+/// refinement its neighbours have built up, so it reads as a strip of lower
+/// quality sweeping across the picture. A negative delta spends bits back into
+/// it, out of the rest of the frame — which is a perceptual trade with no
+/// closed form, so the number worth using is whichever looks best on the
+/// content being streamed.
+///
+/// Ignored where the device cannot express it; the encoder says so and carries
+/// on without one.
+fn intra_refresh_qp_delta() -> Option<i32> {
+    let raw = std::env::var("NESCAPTURE_INTRA_REFRESH_QP_DELTA").ok()?;
+    match raw.trim().parse() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log::warn!("NESCAPTURE_INTRA_REFRESH_QP_DELTA={raw:?} is not a number — ignored");
+            None
+        }
+    }
+}
+
 /// Which shape the refresh regions take, from the environment.
 ///
 /// `auto` (the default) lets the driver divide the picture and choose the

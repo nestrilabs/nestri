@@ -100,6 +100,7 @@ implicit layer is loaded into *every* Vulkan process on the system.
 | `NESCAPTURE_FPS` | `60` | Target frame rate |
 | `NESCAPTURE_IDR_INTERVAL` | `4` | Force an IDR every N **seconds** |
 | `NESCAPTURE_INTRA_REFRESH` | _(off)_ | Set to `1` to replace periodic key frames with an intra refresh cycle |
+| `NESCAPTURE_INTRA_REFRESH_QP_DELTA` | `-4` | QP shift inside the refresh band; negative spends bits on it |
 | `NESCAPTURE_INTRA_REFRESH_SHAPE` | auto | `rows`, `columns` or `partitions`; the driver chooses if unset |
 | `NESCAPTURE_TUNE` | _(unset)_ | `highquality`, `lowlatency`, `ultralowlatency`, `lossless` |
 | `NESCAPTURE_CONFIG` | _(unset)_ | Path to the per-app shader-hash TOML |
@@ -130,6 +131,16 @@ The refresh here spreads cost only; it does not make the cycle a recovery
 point. Doing that would restrict prediction on every picture — expensive, and
 what turns the refreshed band into a visible discontinuity — to buy a
 guarantee this stream gets more cheaply from the client asking for an IDR.
+
+The band is coded intra every cycle, so it carries none of the refinement its
+neighbours have accumulated and reads as a strip of lower quality sweeping
+across the picture. `NESCAPTURE_INTRA_REFRESH_QP_DELTA` spends bits back into
+it, out of the rest of the frame. Measured at 1080p with ColorVideoVDP, `-4`
+recovers a fifth of what intra refresh costs and the encoded size does not
+grow — but the best value depends on the content, and too large a shift
+starves the rest of the frame faster than too small a one helps. Devices that
+cannot express a negative delta, or whose refresh regions follow the slice
+layout rather than a block sweep, decline it and say so.
 
 `NESCAPTURE_INTRA_REFRESH_SHAPE` stays configurable because the device cannot
 answer it: whether a horizontal or vertical sweep looks better depends on how
