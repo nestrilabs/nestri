@@ -29,10 +29,9 @@
 //  NESCAPTURE_IDR_INTERVAL  Force IDR every N seconds        (default: 4)
 //  NESCAPTURE_INTRA_REFRESH_SHAPE
 //                           auto | rows | columns | partitions (default: auto)
-//  NESCAPTURE_INTRA_REFRESH Refresh cycle in seconds, fractional, replacing
-//                           periodic key frames entirely. 0.5 measured clean
-//                           at 1080p60; longer shows a seam  (default: off)
-//  NESCAPTURE_VBV_FRAMES    Frames of rate-control buffer     (default: 4)
+//  NESCAPTURE_INTRA_REFRESH Replace periodic key frames with an intra refresh
+//                           cycle. The cycle length follows from the codec,
+//                           the picture and the device                (default: off)
 //  NESCAPTURE_TUNE          "highquality" | "lowlatency" | "ultralowlatency" | "lossless" (default: unset)
 //  NESCAPTURE_IPC_PATH      Unix socket path for hub IPC     (default: /tmp/nestri-video.sock)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,7 +51,7 @@ use nesprotocol::{
 use pixelforge::{
     Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
     EncodeConfig, EncodeContentHint, EncodeFuture, EncodeUsageHint, Encoder, EncoderTuningMode,
-    InputFormat, IntraRefreshShape, OutputFormat, PixelFormat, RateControlMode,
+    InputFormat, IntraRefresh, IntraRefreshShape, OutputFormat, PixelFormat, RateControlMode,
     VideoContextBuilder,
 };
 
@@ -1332,33 +1331,36 @@ impl PerFrameEncoder {
             enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
                 format!("colour space {vk_colorspace} has no encodable stream description")
             })?);
-        let refresh_cycle = intra_refresh_cycle(fps);
-        if let Some(cycle) = refresh_cycle {
-            // Both units, because one of them is what was asked for and the
-            // other is what decides whether a seam shows.
+        // `Smooth` rather than `Recovering`, because this stream already has a
+        // way to recover: the client asks for an IDR on the command socket
+        // when it needs one. `Recovering` would restrict prediction on every
+        // picture forever to buy a guarantee that is wanted seconds at a time,
+        // and the restriction is expensive -- it is what turns the refreshed
+        // band into a visible quality discontinuity.
+        //
+        // The cycle length is not set here on purpose. It follows the key
+        // frame interval, bounded by the device and by how many refresh
+        // regions the picture has, and that last bound is not visible from
+        // this side: at 1080p an H.265 picture has 17 CTB rows, so a cycle
+        // named in seconds was routinely asking for regions that do not exist.
+        let refresh = intra_refresh_enabled().then_some(IntraRefresh::Smooth);
+        let shape = intra_refresh_shape();
+        if refresh.is_some() {
             log::info!(
-                "intra refresh: {cycle} pictures per cycle ({:.2}s), replacing periodic key frames",
-                cycle as f32 / fps.max(1) as f32
+                "intra refresh on, replacing periodic key frames{}",
+                match shape {
+                    Some(shape) => std::format!(" — shape {shape:?}"),
+                    None => String::new(),
+                }
             );
         }
-        let shape = intra_refresh_shape();
-        if refresh_cycle.is_some()
-            && let Some(shape) = shape
-        {
-            log::info!("intra refresh shape: {shape:?}");
-        }
         enc_cfg = enc_cfg
-            .with_intra_refresh(refresh_cycle)
+            .with_intra_refresh(refresh)
             .with_intra_refresh_mode(shape);
 
-        let vbv_ms = vbv_ms_for(fps, vbv_frames());
-        log::info!(
-            "rate control buffer: {vbv_ms} ms ({} frames at {fps} fps)",
-            vbv_frames()
-        );
-        enc_cfg = enc_cfg
-            .with_virtual_buffer_size_ms(vbv_ms)
-            .with_initial_virtual_buffer_size_ms(vbv_ms);
+        // The rate-control buffer is left unset: the encoder derives it from
+        // the streaming usage hint above and the frame rate, which is the same
+        // answer this used to compute and one fewer place to disagree.
         enc_cfg = match rate_control {
             RateControl::Cqp { qp } => enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
@@ -1440,105 +1442,23 @@ fn intra_refresh_shape() -> Option<IntraRefreshShape> {
     }
 }
 
-fn intra_refresh_cycle(fps: u32) -> Option<u32> {
-    let secs = std::env::var("NESCAPTURE_INTRA_REFRESH")
-        .ok()
-        .and_then(|v| v.trim().parse::<f32>().ok())?;
-    cycle_for(secs, fps)
-}
-
-/// The cycle in pictures, kept apart from reading the environment so it can be
-/// tested without one. Two tests setting the same process-wide variable are
-/// one parallel run away from being flaky.
+/// Whether to replace periodic key frames with an intra refresh cycle.
 ///
-/// # What a good value is
-///
-/// While a cycle runs, a picture's already-refreshed regions may only predict
-/// from the part of the reference refreshed so far, and that part grows by one
-/// region per picture. A long cycle therefore keeps prediction restricted for
-/// a long time, and the boundary between the restricted part and the rest
-/// shows as a horizontal seam crawling down the screen over the length of the
-/// cycle.
-///
-/// Measured at 1080p, 1 Mbps, 60 fps, against the same clip and frame encoded
-/// without refresh:
-///
-/// ```text
-/// 240 pictures (4 s)    obvious seams
-///  60 pictures (1 s)    one seam, lower third
-///  30 pictures (0.5 s)  indistinguishable from no refresh
-/// ```
-///
-/// So half a second is the longest that looked right here, which is why this
-/// takes a fractional number of seconds: whole seconds cannot express it. Not
-/// clamped, because the numbers above are from one driver at one resolution
-/// and bitrate, and a bound that cannot be exceeded is a bound that cannot be
-/// re-measured.
-///
-/// A shorter cycle also means *faster* recovery for a client joining the
-/// stream; the only thing it costs is that more of each picture is intra.
-fn cycle_for(secs: f32, fps: u32) -> Option<u32> {
-    if !secs.is_finite() || secs <= 0.0 {
-        return None;
+/// A plain switch. It used to name a cycle length in seconds, which turned out
+/// to be a number this side cannot get right: the cycle is bounded by how many
+/// refresh regions the picture has, and that depends on the codec's block size
+/// and the device's capabilities. At 1080p an H.265 picture has 17 CTB rows
+/// against H.264's 68 macroblock rows, so the same duration was valid for one
+/// codec and impossible for the other. The encoder knows both and derives it.
+fn intra_refresh_enabled() -> bool {
+    match std::env::var("NESCAPTURE_INTRA_REFRESH").as_deref() {
+        Ok("1" | "true" | "yes" | "on") => true,
+        Ok("0" | "false" | "no" | "off") | Err(_) => false,
+        Ok(other) => {
+            log::warn!("NESCAPTURE_INTRA_REFRESH={other:?} is not a yes or a no — off");
+            false
+        }
     }
-    let pictures = (secs * fps.max(1) as f32).round();
-    // Two is the shortest cycle that is a cycle: one would refresh the whole
-    // picture in a single go, which is a key frame with extra steps.
-    Some((pictures as u32).max(2))
-}
-
-/// Frames of bitrate one frame may borrow from its neighbours.
-///
-/// The rate-control buffer is what makes an encoder slow to obey a new
-/// bitrate: it is the window the rate is averaged over, so a wide one lets the
-/// encoder stay wrong for a long time while still being right on average.
-/// Measured on this encoder at 1080p60, stepping down to 1000 kbps:
-///
-/// ```text
-/// buffer   frames    worst settle   keyframe
-/// 1000 ms      60         2383 ms   48k-141k
-///  250 ms      15         2116 ms   48k-141k
-///  100 ms       6         1082 ms   20k-107k
-///   50 ms       3          533 ms    2k- 55k
-/// ```
-///
-/// Four is a compromise between two things this cannot both have. Narrower
-/// tracks a new bitrate faster, which is the whole problem a congestion
-/// controller is trying to solve. Wider lets a keyframe be several times a
-/// delta frame, which is what a keyframe *is* -- at three frames one IDR came
-/// out at 2114 bytes, which cannot look right at 1080p, and every frame in the
-/// group predicts from it.
-///
-/// One frame would mean no borrowing at all, so a keyframe would have to fit a
-/// delta frame's budget. That is the configuration low-latency encoders pair
-/// with intra refresh, which has no keyframes to starve -- which is the
-/// argument for doing that work, rather than a reason to set this to one now.
-const DEFAULT_VBV_FRAMES: u32 = 4;
-
-fn vbv_frames() -> u32 {
-    std::env::var("NESCAPTURE_VBV_FRAMES")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .filter(|f| *f > 0)
-        .unwrap_or(DEFAULT_VBV_FRAMES)
-}
-
-/// The buffer in milliseconds, which is what Vulkan wants, from the frames
-/// that are what actually matter.
-///
-/// Expressed in time, the same number means different things on different
-/// tiers: at 50 ms a 60 fps stream may borrow three frames and a 120 fps
-/// stream six. The tiers here run at both, so a fixed millisecond value hands
-/// the faster ones twice the slack for no reason anybody chose.
-///
-/// Bitrate needs no such treatment -- the buffer is a duration, so its size in
-/// bytes already scales with the rate.
-fn vbv_ms_for(fps: u32, frames: u32) -> u32 {
-    // Rounded up, not down: a frame's worth of slack that does not quite cover
-    // a frame is the one case this must not produce, and truncation gives
-    // exactly that at frame rates milliseconds do not divide evenly -- 4
-    // frames at 30 fps is 133.3 ms, and 133 is three frames and change.
-    frames.saturating_mul(1000).div_ceil(fps.max(1)).max(1)
 }
 
 fn bitrate_only_change(
@@ -2619,81 +2539,8 @@ mod depth_tests {
 
 #[cfg(test)]
 mod bitrate_only_tests {
-    use super::{
-        DEFAULT_VBV_FRAMES, HwCodec, RateControl, bitrate_only_change, cycle_for, vbv_ms_for,
-    };
+    use super::{HwCodec, RateControl, bitrate_only_change};
 
-    /// Half a second is the value that measured clean at 1080p60, and it
-    /// cannot be said in whole seconds -- which is the reason this takes a
-    /// fraction at all.
-    #[test]
-    fn a_fraction_of_a_second_is_expressible() {
-        assert_eq!(cycle_for(0.5, 60), Some(30));
-        assert_eq!(cycle_for(0.25, 120), Some(30));
-        assert_eq!(cycle_for(0.5, 30), Some(15));
-    }
-
-    /// A recovery interval in seconds is the same interval at any frame rate.
-    #[test]
-    fn a_cycle_is_the_same_length_of_time_at_every_frame_rate() {
-        for fps in [30, 60, 120] {
-            let cycle = cycle_for(0.5, fps).expect("half a second");
-            let secs = cycle as f32 / fps as f32;
-            assert!(
-                (secs - 0.5).abs() < 0.02,
-                "{fps} fps gave {cycle} pictures, which is {secs}s"
-            );
-        }
-    }
-
-    /// Long cycles look wrong, but they are still measurable -- a bound that
-    /// cannot be exceeded is a bound that cannot be re-measured.
-    #[test]
-    fn a_long_cycle_is_allowed_even_though_it_looks_bad() {
-        assert_eq!(cycle_for(4.0, 60), Some(240));
-    }
-
-    /// Nonsense must read as off rather than as some cycle.
-    #[test]
-    fn a_meaningless_interval_is_off() {
-        assert_eq!(cycle_for(0.0, 60), None);
-        assert_eq!(cycle_for(-1.0, 60), None);
-        assert_eq!(cycle_for(f32::NAN, 60), None);
-        assert_eq!(cycle_for(f32::INFINITY, 60), None);
-    }
-
-    /// One picture would refresh everything at once, which is a key frame with
-    /// extra steps -- and is what a very small fraction rounds to.
-    #[test]
-    fn a_cycle_is_never_shorter_than_two_pictures_however_small_the_fraction() {
-        assert_eq!(cycle_for(0.001, 60), Some(2));
-    }
-
-    /// The point of deriving it: the same slack on every tier.
-    #[test]
-    fn the_buffer_is_the_same_number_of_frames_at_every_frame_rate() {
-        // The ladder runs at 60 and 120. Expressed in milliseconds these would
-        // differ by a factor of two, handing the faster tiers twice the
-        // borrowing allowance for no reason anybody chose.
-        for fps in [30, 60, 120] {
-            let ms = vbv_ms_for(fps, DEFAULT_VBV_FRAMES);
-            let frames = ms * fps / 1000;
-            assert_eq!(
-                frames, DEFAULT_VBV_FRAMES,
-                "{fps} fps got {frames} frames of slack, not {DEFAULT_VBV_FRAMES}"
-            );
-        }
-    }
-
-    /// A buffer of zero would mean an encoder that may never spend a bit.
-    #[test]
-    fn the_buffer_is_never_zero_however_fast_the_stream() {
-        assert!(vbv_ms_for(1000, 1) >= 1);
-        assert!(
-            vbv_ms_for(0, 4) >= 1,
-            "a frame rate of zero must not divide by it"
-        );
-    }
     use crate::encode::EncodeSettingsChange;
     use pixelforge::{EncodeBitDepth, RateControlMode};
 

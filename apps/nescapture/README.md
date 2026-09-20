@@ -99,6 +99,8 @@ implicit layer is loaded into *every* Vulkan process on the system.
 | `NESCAPTURE_QP` | _(unset)_ | Constant QP, under `cqp` |
 | `NESCAPTURE_FPS` | `60` | Target frame rate |
 | `NESCAPTURE_IDR_INTERVAL` | `4` | Force an IDR every N **seconds** |
+| `NESCAPTURE_INTRA_REFRESH` | _(off)_ | Set to `1` to replace periodic key frames with an intra refresh cycle |
+| `NESCAPTURE_INTRA_REFRESH_SHAPE` | auto | `rows`, `columns` or `partitions`; the driver chooses if unset |
 | `NESCAPTURE_TUNE` | _(unset)_ | `highquality`, `lowlatency`, `ultralowlatency`, `lossless` |
 | `NESCAPTURE_CONFIG` | _(unset)_ | Path to the per-app shader-hash TOML |
 | `NESCAPTURE_GAME_NAME` | exe basename | Override app identification for that config |
@@ -108,6 +110,32 @@ implicit layer is loaded into *every* Vulkan process on the system.
 Everything else is decided at runtime: the client asks `neshub` for a codec or
 bitrate change and it arrives on the command socket, so the encoder is
 reconfigured without a restart.
+
+### Intra refresh
+
+Instead of a key frame every few seconds, each picture codes one slice of the
+image as intra, so after a full cycle every part has been refreshed. The same
+cost, paid evenly, with no picture much larger than any other — which is what
+a link with a latency budget wants, since a key frame is the largest frame
+there is.
+
+**The cycle length is not configurable, deliberately.** It is bounded by how
+many refresh regions the picture actually has, and that depends on the codec's
+block size: at 1080p an H.265 picture is 17 CTB rows tall where an H.264 one is
+68 macroblock rows, so the same duration is comfortable for one codec and
+impossible for the other. The encoder knows the codec, the resolution and what
+the device allows, and derives it from the key frame interval it replaces.
+
+The refresh here spreads cost only; it does not make the cycle a recovery
+point. Doing that would restrict prediction on every picture — expensive, and
+what turns the refreshed band into a visible discontinuity — to buy a
+guarantee this stream gets more cheaply from the client asking for an IDR.
+
+`NESCAPTURE_INTRA_REFRESH_SHAPE` stays configurable because the device cannot
+answer it: whether a horizontal or vertical sweep looks better depends on how
+the content moves. It also changes how many regions there are — a 1080p
+picture in 64×64 blocks is 17 rows but 30 columns, so `columns` allows a
+longer cycle and thus less intra per picture.
 
 ### Rate control
 
