@@ -56,7 +56,6 @@ use pixelforge::{
     VideoContextBuilder,
 };
 
-
 // ── VkColorSpaceKHR constants ────────────────────────────────────────────────
 //
 // Taken from `ash` rather than written out. They were transcribed by hand once
@@ -662,8 +661,9 @@ impl PipelineHandle {
         shared: Option<pixelforge::VideoContext>,
     ) -> Result<Self, String> {
         let (codec, ctx) = match shared {
-            Some(ctx) => resolve_codec_on(&ctx, config.codec_request.as_deref())
-                .map(|codec| (codec, ctx)),
+            Some(ctx) => {
+                resolve_codec_on(&ctx, config.codec_request.as_deref()).map(|codec| (codec, ctx))
+            }
             None => resolve_codec(config.codec_request.as_deref()),
         }
         .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
@@ -1431,22 +1431,10 @@ impl PerFrameEncoder {
                 .with_max_bitrate(bps(max_kbps)),
         };
 
-        // Where the conversion is only the YUV matrix, the encoder can take
-        // the RGB frame and apply it itself, and the converter's dispatch and
-        // copy go out of the frame. Only for frames read in place: the CPU
-        // readback path uploads YUV. A driver can still refuse the format for
-        // this codec and profile, which is only known by trying, so a refusal
-        // falls back to the converter.
-        //
-        // Limited range there, where everything else here is full: the one
-        // driver offering this writes limited range whatever it is asked, so
-        // the stream is labelled to match what it carries.
-        let mut hardware = conv_cfg.clone();
-        hardware.range = ColorRange::Limited;
         if in_place
             && std::env::var("NESCAPTURE_RGB_ENCODE").as_deref() != Ok("0")
-            && let Some(rgb) = hardware.rgb_encode_input(ctx)
-            && let Some(description) = hardware.color_description()
+            && let Some(rgb) = conv_cfg.rgb_encode_input(ctx)
+            && let Some(description) = conv_cfg.color_description()
         {
             let rgb_cfg = enc_cfg
                 .clone()
@@ -1724,7 +1712,12 @@ fn shared_encode_frame(
     let converted =
         match converter.convert_async(image, ash::vk::ImageLayout::GENERAL, target, &[blit]) {
             Ok(p) => p,
-            Err(e) => return (Err(anyhow::anyhow!("ColorConverter::convert_async: {e}")), None),
+            Err(e) => {
+                return (
+                    Err(anyhow::anyhow!("ColorConverter::convert_async: {e}")),
+                    None,
+                );
+            }
         };
     let result = encoder
         .encode_after(target, &[converted])
