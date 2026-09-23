@@ -24,15 +24,12 @@ Game process
 │  vkCmdBindPipeline          → detect HUD     │
 │  vkQueuePresentKHR          → capture+encode │
 └──────────────────────────────────────────────┘
-    │  GPU blit, same device
+    │  GPU blit on the game's queue, signals a timeline semaphore
     ▼
-final_image  (DMA-BUF exportable)
-    │  get_dmabuf_fd(final_memory)
+ring slot  (an image on the game's own device)
+    │  read in place, once the blit's point is reached
     ▼
-DmaBufImporter  (pixelforge VkDevice)
-    │  import_or_reuse() → vk::Image
-    ▼
-ColorConverter  (GPU compute shader)
+ColorConverter  (GPU compute shader, the encoder's own queue)
     │  BGRA/RGB10/FP16 → NV12/P010/YUV444
     ▼
 Encoder  (Vulkan Video: H.264 / H.265 / AV1)
@@ -41,8 +38,24 @@ Encoder  (Vulkan Video: H.264 / H.265 / AV1)
 Unix datagram → neshub → the client
 ```
 
-CPU fallback exists only for driver configurations without DMA-BUF external
-memory export.
+The encoder runs on the game's own `VkDevice`. The layer creates that device
+with what the encoder needs: the extensions and feature bits it asks for, and
+queues of its own wherever a queue family has one to spare, since a `VkQueue`
+may not be submitted to from two threads at once. Where no family has room,
+the game's queue is created internally synchronized and shared. Every step of
+a frame is ordered on the GPU; nothing waits on the CPU.
+
+Where the conversion is only the YUV matrix and the device has
+`VK_VALVE_video_encode_rgb_conversion`, the encoder takes the RGB frame and
+converts it itself, and the converter is not built. That path runs at limited
+range, since the one driver offering it writes limited range whatever it is
+asked; everything else is full range.
+
+When the game's device cannot host the encoder -- an instance the loader
+cannot raise to Vulkan 1.1, no queue the encoder could safely use, a driver
+refusing the additions, or `NESCAPTURE_SHARED_DEVICE=0` -- the encoder gets a
+device of its own, and each frame is read back on the CPU and uploaded there.
+That works everywhere and costs a copy each way.
 
 ---
 
@@ -103,6 +116,8 @@ implicit layer is loaded into *every* Vulkan process on the system.
 | `NESCAPTURE_INTRA_REFRESH_QP_DELTA` | `-4` | QP shift inside the refresh band; negative spends bits on it |
 | `NESCAPTURE_INTRA_REFRESH_SHAPE` | auto | `rows`, `columns` or `partitions`; the driver chooses if unset |
 | `NESCAPTURE_TUNE` | _(unset)_ | `highquality`, `lowlatency`, `ultralowlatency`, `lossless` |
+| `NESCAPTURE_SHARED_DEVICE` | _(on)_ | Set to `0` to leave the game's device as the game asked for it, and encode on a device of the encoder's own with CPU readback |
+| `NESCAPTURE_RGB_ENCODE` | _(on)_ | Set to `0` to always convert with the shader, even where the encoder could convert RGB itself |
 | `NESCAPTURE_CONFIG` | _(unset)_ | Path to the per-app shader-hash TOML |
 | `NESCAPTURE_GAME_NAME` | exe basename | Override app identification for that config |
 | `NESCAPTURE_DISCOVER` | _(unset)_ | Set to `1` to log every draw, for finding HUD shaders |
@@ -201,10 +216,10 @@ src/
 ├── framebuffer.rs   image view and framebuffer tracking
 ├── commands.rs      vkCmdBind*, vkCmdDraw*, vkCmdBeginRenderPass
 ├── swapchain.rs     vkCreateSwapchainKHR, image enumeration
-├── capture.rs       GPU blit to the capture image, DMA-BUF export
+├── capture.rs       GPU blit into the capture ring, CPU readback fallback
 ├── present.rs       vkQueuePresentKHR, encode dispatch
 ├── encode.rs        pixelforge pipeline, codec probing, IPC send
-├── dmabuf_import.rs cross-device zero-copy import
+├── shared.rs        creating the game's device for the encoder to share
 ├── config.rs        per-app TOML shader-hash config
 └── discovery.rs     draw-call logging for shader discovery
 ```
