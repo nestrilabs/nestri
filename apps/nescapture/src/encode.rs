@@ -348,12 +348,14 @@ fn probe_any() -> Option<(HwCodec, pixelforge::VideoContext)> {
 }
 
 fn probe_specific(codec: HwCodec) -> Option<(HwCodec, pixelforge::VideoContext)> {
-    let ctx = VideoContextBuilder::new()
-        .app_name("nescapture")
-        .enable_validation(false)
-        .require_encode(codec.to_pixelforge())
-        .build()
-        .ok()?;
+    let ctx = crate::shared::creating_own_device(|| {
+        VideoContextBuilder::new()
+            .app_name("nescapture")
+            .enable_validation(false)
+            .require_encode(codec.to_pixelforge())
+            .build()
+    })
+    .ok()?;
     if ctx.supports_encode(codec.to_pixelforge()) {
         log::info!("hardware {:?} encode available", codec);
         Some((codec, ctx))

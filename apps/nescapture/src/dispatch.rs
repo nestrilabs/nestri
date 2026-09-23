@@ -38,6 +38,8 @@ pub type PFN_vkDestroyDevice =
     unsafe extern "system" fn(vk::Device, *const vk::AllocationCallbacks);
 
 pub type PFN_vkGetDeviceQueue = unsafe extern "system" fn(vk::Device, u32, u32, *mut vk::Queue);
+pub type PFN_vkGetDeviceQueue2 =
+    unsafe extern "system" fn(vk::Device, *const vk::DeviceQueueInfo2, *mut vk::Queue);
 
 pub type PFN_vkQueuePresentKHR =
     unsafe extern "system" fn(vk::Queue, *const vk::PresentInfoKHR) -> vk::Result;
@@ -366,6 +368,11 @@ pub type PFN_vkResetCommandBuffer =
 // ── Dispatch table structs ────────────────────────────────────────────────────
 
 pub struct NextInstanceFn {
+    /// The instance itself, for building the encoder's view of it.
+    pub instance: vk::Instance,
+    /// The Vulkan version the application asked for, which bounds what core
+    /// functionality exists on its devices.
+    pub api_version: u32,
     pub get_instance_proc_addr: PFN_vkGetInstanceProcAddr,
     pub destroy_instance: PFN_vkDestroyInstance,
     pub get_physical_device_memory_properties: PFN_vkGetPhysicalDeviceMemoryProperties,
@@ -388,6 +395,9 @@ pub struct NextDeviceFn {
     pub get_device_proc_addr: PFN_vkGetDeviceProcAddr,
     pub destroy_device: PFN_vkDestroyDevice,
     pub get_device_queue: PFN_vkGetDeviceQueue,
+    /// Core in 1.1. Needed to fetch queues created with flags, which is how a
+    /// queue shared with the encoder is created.
+    pub get_device_queue2: Option<PFN_vkGetDeviceQueue2>,
     pub queue_present_khr: Option<PFN_vkQueuePresentKHR>,
 
     // Phase 1

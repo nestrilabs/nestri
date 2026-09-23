@@ -111,9 +111,33 @@ pub unsafe extern "system" fn vkCreateDevice(
     modified_ci.enabled_extension_count = extended.len() as u32;
     modified_ci.pp_enabled_extension_names = extended.as_ptr();
 
+    // Where it can, the encoder runs on this very device, so the device is
+    // first created with what that needs. Anything refused falls back to the
+    // device as it would otherwise have been.
+    let mut shared = None;
+    if let Some(prepared) =
+        unsafe { crate::shared::prepare(&istate, physical_device, &modified_ci, &extended) }
+    {
+        let shared_ci = prepared.create_info(&modified_ci);
+        let result =
+            unsafe { (istate.create_device)(physical_device, &shared_ci, p_allocator, p_device) };
+        let (additions, entry, instance) = unsafe { prepared.finish() };
+        if result == vk::Result::SUCCESS {
+            shared = Some((additions, entry, instance));
+        } else {
+            log::warn!(
+                "vkCreateDevice with the encoder's additions failed ({result:?}), \
+                 retrying without them"
+            );
+        }
+    }
+
     let mut dmabuf_available = true;
-    let result =
-        unsafe { (istate.create_device)(physical_device, &modified_ci, p_allocator, p_device) };
+    let result = if shared.is_some() {
+        vk::Result::SUCCESS
+    } else {
+        unsafe { (istate.create_device)(physical_device, &modified_ci, p_allocator, p_device) }
+    };
 
     let result = if result != vk::Result::SUCCESS {
         // Driver rejected our extensions — retry with original create info.
@@ -156,6 +180,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         get_device_proc_addr: next_gdpa,
         destroy_device: load!(b"vkDestroyDevice\0"),
         get_device_queue: load!(b"vkGetDeviceQueue\0"),
+        get_device_queue2: try_load!(b"vkGetDeviceQueue2\0"),
         queue_present_khr: try_load!(b"vkQueuePresentKHR\0"),
 
         // Phase 1
@@ -232,6 +257,17 @@ pub unsafe extern "system" fn vkCreateDevice(
 
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
 
+    let shared = shared.map(|(additions, entry, instance)| unsafe {
+        crate::shared::SharedDevice::adopt(
+            additions,
+            entry,
+            instance,
+            physical_device,
+            device,
+            next_gdpa,
+        )
+    });
+
     // Phase 3: load shader hash config
     let shader_hashes = config::resolve_config_path()
         .as_ref()
@@ -252,6 +288,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         raw: device,
         physical_device,
         fp,
+        shared,
 
         shader_registry: DashMap::new(),
         pipeline_registry: DashMap::new(),
@@ -392,11 +429,62 @@ pub unsafe extern "system" fn vkGetDeviceQueue(
 ) {
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
     if let Some(ds) = DEVICE_STATE.get(&key) {
-        unsafe { (ds.fp.get_device_queue)(device, queue_family_index, queue_index, p_queue) };
+        // A queue created internally synchronized, so the encoder can share
+        // it, is invisible to vkGetDeviceQueue: only vkGetDeviceQueue2 with the
+        // matching flags returns it. The game asked for a plain queue and gets
+        // this one.
+        match (
+            shares_family(&ds, queue_family_index),
+            ds.fp.get_device_queue2,
+        ) {
+            (true, Some(get2)) => {
+                let info = vk::DeviceQueueInfo2::default()
+                    .flags(vk::DeviceQueueCreateFlags::INTERNALLY_SYNCHRONIZED_KHR)
+                    .queue_family_index(queue_family_index)
+                    .queue_index(queue_index);
+                unsafe { get2(device, &info, p_queue) };
+            }
+            _ => unsafe {
+                (ds.fp.get_device_queue)(device, queue_family_index, queue_index, p_queue)
+            },
+        }
         let queue = unsafe { *p_queue };
         QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
         crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), queue_family_index);
     }
+}
+
+/// Whether the game's queues in `family` were created internally synchronized
+/// for the encoder to share.
+fn shares_family(ds: &DeviceState, family: u32) -> bool {
+    ds.shared
+        .as_ref()
+        .is_some_and(|s| s.queues.internally_synchronized.contains(&family))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn vkGetDeviceQueue2(
+    device: vk::Device,
+    p_queue_info: *const vk::DeviceQueueInfo2,
+    p_queue: *mut vk::Queue,
+) {
+    let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
+    let Some(ds) = DEVICE_STATE.get(&key) else {
+        return;
+    };
+    let Some(get2) = ds.fp.get_device_queue2 else {
+        return;
+    };
+    // The flags have to match the ones the queue was created with, and for a
+    // shared family the layer added one the game does not know about.
+    let mut info = unsafe { *p_queue_info };
+    if shares_family(&ds, info.queue_family_index) {
+        info.flags |= vk::DeviceQueueCreateFlags::INTERNALLY_SYNCHRONIZED_KHR;
+    }
+    unsafe { get2(device, &info, p_queue) };
+    let queue = unsafe { *p_queue };
+    QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
+    crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), info.queue_family_index);
 }
 
 /// Enumerate device extensions supported by the physical device.

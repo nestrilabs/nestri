@@ -185,6 +185,10 @@ pub struct DeviceState {
     pub raw: vk::Device,
     pub physical_device: vk::PhysicalDevice,
     pub fp: NextDeviceFn,
+    /// The encoder's view of this device, when it runs on it. `None` when the
+    /// device could not be created with what the encoder needs, in which case
+    /// the encoder uses a device of its own.
+    pub shared: Option<crate::shared::SharedDevice>,
 
     // Phase 1: shader / pipeline
     pub shader_registry: DashMap<u64, u64>,

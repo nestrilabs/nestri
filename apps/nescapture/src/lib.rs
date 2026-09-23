@@ -38,6 +38,7 @@ mod pipeline;
 mod present;
 mod rate_probe;
 mod shader;
+mod shared;
 mod slots;
 mod state;
 mod timing;
@@ -49,7 +50,7 @@ use commands::{
     vkCmdDrawIndirect, vkCmdDrawIndirectCount, vkCmdDrawIndirectCountKHR, vkCmdEndRenderPass,
     vkCmdEndRenderingKHR,
 };
-use device::{vkCreateDevice, vkDestroyDevice, vkGetDeviceQueue};
+use device::{vkCreateDevice, vkDestroyDevice, vkGetDeviceQueue, vkGetDeviceQueue2};
 use framebuffer::{
     vkAllocateCommandBuffers, vkCreateFramebuffer, vkCreateImageView, vkDestroyFramebuffer,
     vkDestroyImageView, vkFreeCommandBuffers,
@@ -272,6 +273,7 @@ unsafe fn match_device_fn(name: &[u8]) -> Option<RawFn> {
             b"vkCreateDevice" => Some(to_raw(vkCreateDevice as *const () as usize)),
             b"vkDestroyDevice" => Some(to_raw(vkDestroyDevice as *const () as usize)),
             b"vkGetDeviceQueue" => Some(to_raw(vkGetDeviceQueue as *const () as usize)),
+            b"vkGetDeviceQueue2" => Some(to_raw(vkGetDeviceQueue2 as *const () as usize)),
             b"vkQueuePresentKHR" => Some(to_raw(vkQueuePresentKHR as *const () as usize)),
 
             b"vkCreateShaderModule" => Some(to_raw(vkCreateShaderModule as *const () as usize)),
