@@ -33,7 +33,6 @@
 # the actual mistake. See the Proton stage below for what this is.
 ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-ge:11-7
 
-
 # ───────────────────────────────────────────────────────────
 #  initial / builder
 #
@@ -73,17 +72,13 @@ ENV ARTIFACTS=/artifacts
 FROM builder AS mesa-build
 
 ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
-ARG MESA_COMMIT=8ace865d958b0f17254afc427db21b0ad1747b4b
+ARG MESA_COMMIT=6ac7466d40be92bfec4fe3dfe21376a6af45a8e0
 ARG JOBS=
 
 # Our patches to the amdgpu native-context path, applied on top of the pinned
 # commit. They are not cosmetic: upstream's winsys re-queries device-static
 # facts on a path that costs a synchronous round trip to the host under
 # virtio, and it was most of a frame's time. See each patch's own message.
-#
-# `git apply` and not `git am`: no committer identity is needed, and a patch
-# that no longer applies stops the build here rather than producing an image
-# that is quietly unpatched and slow.
 COPY build/patches/mesa /build/patches/mesa
 
 RUN test -n "$JOBS" || JOBS=$(nproc) && \
@@ -504,9 +499,8 @@ RUN failed=0; \
              /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
-             /usr/share/steam/compatibilitytools.d/proton-ge/files/bin/* \
-             /usr/share/steam/compatibilitytools.d/proton-ge/files/lib*/wine/*-unix/ntdll.so \
-             /usr/share/steam/compatibilitytools.d/proton-ge/files/lib*/wine/*-unix/winepulse.so; do \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
+             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/ntdll.so; do \
         [ -e "$f" ] || continue; \
         libs="$(LD_LIBRARY_PATH="${f%/*}" ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
         [ -n "$libs" ] || continue; \
@@ -525,7 +519,7 @@ RUN failed=0; \
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
                     /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 \
-                    /usr/share/steam/compatibilitytools.d/proton-ge/proton; do \
+                    /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
 
@@ -540,7 +534,7 @@ RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/n
 # So every script this image promises resolves its own interpreter. `env` is
 # unwrapped where it is used, because a shebang of `#!/usr/bin/env python3`
 # names `env` and the thing that is actually missing is the argument.
-RUN for script in /usr/share/steam/compatibilitytools.d/proton-ge/proton; do \
+RUN for script in /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
         head -c 2 "$script" | grep -q '#!' || continue; \
         shebang="$(head -1 "$script" | sed 's/^#!//')"; \
         interpreter="${shebang%% *}"; \

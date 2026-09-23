@@ -39,8 +39,8 @@ IMAGE_NAME   := ghcr.io/nestrilabs/nestri/base
 # forgetting the version is exactly the mistake this removes.
 PROTON_GIT     ?= https://github.com/gloriouseggroll/proton-ge-custom.git
 PROTON_TAG     ?= GE-Proton11-7
-PROTON_VERSION := $(PROTON_TAG:GE-Proton%=%)
-PROTON_IMAGE   ?= ghcr.io/nestrilabs/proton-ge
+PROTON_VERSION := 11.0-20260703
+PROTON_IMAGE   ?= ghcr.io/nestrilabs/proton-cachyos-native-wow64
 PROTON_REF     := $(PROTON_IMAGE):$(PROTON_VERSION)
 # The directory name under compatibilitytools.d, and the name Steam shows.
 PROTON_NAME    := proton-ge
