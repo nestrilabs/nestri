@@ -192,20 +192,6 @@ pub type PFN_vkGetImageSubresourceLayout = unsafe extern "system" fn(
     *mut vk::SubresourceLayout,
 );
 
-// DRM format modifiers. Both optional: without them the capture ring stays
-// linear, which is what it was before it could be anything else.
-pub type PFN_vkGetPhysicalDeviceFormatProperties2 = unsafe extern "system" fn(
-    vk::PhysicalDevice,
-    vk::Format,
-    *mut vk::FormatProperties2<'_>,
-);
-
-pub type PFN_vkGetImageDrmFormatModifierPropertiesEXT = unsafe extern "system" fn(
-    vk::Device,
-    vk::Image,
-    *mut vk::ImageDrmFormatModifierPropertiesEXT<'_>,
-) -> vk::Result;
-
 // Timestamp queries around the capture blit. All optional: without them the
 // blit's GPU cost is simply not reported.
 pub type PFN_vkGetPhysicalDeviceProperties =
@@ -246,13 +232,6 @@ pub type PFN_vkGetQueryPoolResults = unsafe extern "system" fn(
     *mut std::ffi::c_void,
     vk::DeviceSize,
     vk::QueryResultFlags,
-) -> vk::Result;
-
-// DMA-BUF fd export (used to share final_image with pixelforge zero-copy)
-pub type PFN_vkGetMemoryFdKHR = unsafe extern "system" fn(
-    vk::Device,
-    *const vk::MemoryGetFdInfoKHR,
-    *mut std::os::raw::c_int,
 ) -> vk::Result;
 
 // ── Phase 4: Synchronisation ─────────────────────────────────────────────────
@@ -376,10 +355,6 @@ pub struct NextInstanceFn {
     pub get_instance_proc_addr: PFN_vkGetInstanceProcAddr,
     pub destroy_instance: PFN_vkDestroyInstance,
     pub get_physical_device_memory_properties: PFN_vkGetPhysicalDeviceMemoryProperties,
-    /// `None` on an instance below Vulkan 1.1 without
-    /// `VK_KHR_get_physical_device_properties2`. Without it the modifier list
-    /// cannot be queried and the capture ring stays linear.
-    pub get_physical_device_format_properties2: Option<PFN_vkGetPhysicalDeviceFormatProperties2>,
     /// Needed for `timestampPeriod`, which turns device ticks into nanoseconds.
     pub get_physical_device_properties: Option<PFN_vkGetPhysicalDeviceProperties>,
     /// Needed for a queue family's `timestampValidBits`. A family reporting
@@ -431,15 +406,6 @@ pub struct NextDeviceFn {
     pub cmd_pipeline_barrier: PFN_vkCmdPipelineBarrier,
     pub cmd_copy_image: PFN_vkCmdCopyImage,
     pub get_image_subresource_layout: PFN_vkGetImageSubresourceLayout,
-    /// `None` when `VK_KHR_external_memory_fd` is unavailable.
-    /// Required for DMA-BUF export to pixelforge's VkDevice.
-    pub get_memory_fd_khr: Option<PFN_vkGetMemoryFdKHR>,
-    /// `None` when `VK_EXT_image_drm_format_modifier` was not enabled. The
-    /// driver picks the modifier from the list it is offered, so this is how
-    /// the layer learns which one it actually got — and the importer needs the
-    /// exact value, not the list.
-    pub get_image_drm_format_modifier_properties_ext:
-        Option<PFN_vkGetImageDrmFormatModifierPropertiesEXT>,
 
     // Phase 4 — blit timing. All-or-nothing: the ring only times the blit when
     // every one of these loaded and the presenting queue family can timestamp.

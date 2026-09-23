@@ -25,21 +25,10 @@ pub const CAPTURE_SLOTS: usize = 4;
 pub struct CaptureSlot {
     pub image: vk::Image,
     pub memory: vk::DeviceMemory,
-    /// Exported once at allocation and duplicated per frame. -1 if the export
-    /// failed, which sends that frame down the CPU readback path instead.
-    pub dmabuf_fd: std::os::raw::c_int,
-    pub stride: u32,
-    /// The DRM format modifier the driver gave this slot's image.
-    ///
-    /// Carried per slot rather than assumed, and passed to the importer, which
-    /// creates its side with this exact value. It used to be hard-coded to
-    /// `DRM_FORMAT_MOD_LINEAR` on both sides — true at the time, because the
-    /// producer only ever asked for linear.
-    pub modifier: u64,
     /// Signalled when this slot's blit has finished reading the swapchain and
-    /// writing the slot. The capture worker waits on it before handing the
-    /// DMA-BUF to the encoder, which reads it from a different VkDevice and so
-    /// cannot be synchronised with a semaphore.
+    /// writing the slot. Where the encoder has a device of its own, the encoder
+    /// thread waits on it before reading the slot back on the CPU; a device of
+    /// its own shares no timeline with the game's.
     pub fence: vk::Fence,
 }
 
@@ -80,14 +69,8 @@ pub struct CaptureRing {
     /// recordings without invalidating the images.
     pub blit_extent: vk::Extent2D,
     pub size: (u32, u32, vk::Format),
-    /// Which ring this is, counting from the device's first.
-    ///
-    /// A ring's slot images are destroyed when it is replaced, but the encoder
-    /// side caches imports of their DMA-BUFs by *slot index*, and slot indices
-    /// are the same small numbers in every ring. Without something to tell one
-    /// ring's slot 0 from the next one's, that cache hands back a `VkImage`
-    /// backed by memory that has already been freed. This is that something:
-    /// the frame carries it to the encoder, and a change invalidates the cache.
+    /// Which ring this is, counting from the device's first. For the log, so a
+    /// resize shows up as the ring it caused.
     pub generation: u64,
     /// Queue family the command pool was created for. Command buffers may only
     /// be submitted to a queue of the family their pool belongs to, so a
@@ -225,7 +208,7 @@ pub struct DeviceState {
     pub hudless_memory: std::sync::Mutex<Option<vk::DeviceMemory>>,
     pub hudless_size: std::sync::Mutex<(u32, u32, vk::Format)>,
 
-    // Phase 4: final-frame capture (DMA-BUF exportable)
+    // Phase 4: final-frame capture
     pub capture_ring: std::sync::Mutex<Option<CaptureRing>>,
     /// Which ring slots are free. Held separately from the ring itself so a
     /// slot can be returned from the encoder thread without taking the lock

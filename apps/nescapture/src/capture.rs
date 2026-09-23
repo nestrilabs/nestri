@@ -1,20 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  capture.rs — Frame capture helpers
 //
-//  Each ring slot is allocated with VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-//  so that after the GPU blit we can export an fd and import it into pixelforge's
-//  separate VkDevice for zero-copy hardware encoding via DmaBufImporter.
-//
-//  The ring is allocated tiled where the driver offers a single-plane DRM
-//  format modifier, and linear where it does not. The stride and the chosen
-//  modifier come from the image itself, queried once at allocation, and both
-//  travel with every frame: the importer creates its side with that exact
-//  modifier, and a wrong value there is a correctly sized frame of nonsense.
+//  Each ring slot is a destination for the blit out of the presented swapchain
+//  image. Where the encoder shares the game's device, a slot is an image on
+//  that device which the encoder reads in place, ordered by a timeline
+//  semaphore the blit signals. Where it has a device of its own, a slot is a
+//  host-visible image the encoder thread reads back on the CPU.
 // ─────────────────────────────────────────────────────────────────────────────
 
 use crate::state::{CB_STATE, CAPTURE_SLOTS, CaptureRing, CaptureSlot, DEVICE_STATE};
 use ash::vk::{self, Handle};
-use std::os::raw::c_int;
 
 fn make_subresource_range() -> vk::ImageSubresourceRange {
     vk::ImageSubresourceRange {
@@ -73,75 +68,10 @@ unsafe fn find_memory_type(
     crate::memory::pick_memory_type(&types, bits, want)
 }
 
-/// Modifiers the device can both receive a transfer into and have sampled from,
-/// for `fmt`.
-///
-/// Both feature bits matter and for different sides: the layer writes the image
-/// with `vkCmdCopyImage`, and pixelforge samples it in the colour-conversion
-/// compute shader after importing it. A modifier that supports only one of
-/// those is no use to this ring.
-unsafe fn supported_modifiers(
-    ds: &crate::state::DeviceState,
-    fmt: vk::Format,
-) -> Vec<crate::modifiers::ModifierProps> {
-    let k = unsafe { crate::dispatch_key(ds.physical_device.as_raw() as *const std::ffi::c_void) };
-    let Some(istate) = crate::state::INSTANCE_STATE.get(&k) else {
-        return Vec::new();
-    };
-    let Some(get_props2) = istate.get_physical_device_format_properties2 else {
-        return Vec::new();
-    };
-
-    // Two calls: the first to learn the count, the second to fill the list.
-    let mut list = vk::DrmFormatModifierPropertiesListEXT::default();
-    let mut props2 = vk::FormatProperties2 {
-        p_next: &mut list as *mut _ as *mut std::ffi::c_void,
-        ..Default::default()
-    };
-    unsafe { get_props2(ds.physical_device, fmt, &mut props2) };
-
-    let count = list.drm_format_modifier_count as usize;
-    if count == 0 {
-        return Vec::new();
-    }
-    let mut entries = vec![vk::DrmFormatModifierPropertiesEXT::default(); count];
-    list.p_drm_format_modifier_properties = entries.as_mut_ptr();
-    let mut props2 = vk::FormatProperties2 {
-        p_next: &mut list as *mut _ as *mut std::ffi::c_void,
-        ..Default::default()
-    };
-    unsafe { get_props2(ds.physical_device, fmt, &mut props2) };
-
-    let needed =
-        vk::FormatFeatureFlags::TRANSFER_DST | vk::FormatFeatureFlags::SAMPLED_IMAGE;
-    entries
-        .iter()
-        .filter(|e| e.drm_format_modifier_tiling_features.contains(needed))
-        .map(|e| crate::modifiers::ModifierProps {
-            modifier: e.drm_format_modifier,
-            plane_count: e.drm_format_modifier_plane_count,
-        })
-        .collect()
-}
-
-/// Which modifier the driver actually gave an image.
-///
-/// The image is created from a list of acceptable modifiers and the driver
-/// chooses; the importer needs the one it chose, not the list. `None` when the
-/// extension is absent or the call fails, which sends the caller back to the
-/// linear path rather than letting it guess.
-unsafe fn image_modifier(ds: &crate::state::DeviceState, image: vk::Image) -> Option<u64> {
-    let get = ds.fp.get_image_drm_format_modifier_properties_ext?;
-    let mut props = vk::ImageDrmFormatModifierPropertiesEXT::default();
-    if unsafe { get(ds.raw, image, &mut props) } != vk::Result::SUCCESS {
-        return None;
-    }
-    Some(props.drm_format_modifier)
-}
-
 // ── Image allocators ──────────────────────────────────────────────────────────
 
-/// Plain HOST_VISIBLE image (nescapture capture — no cross-device sharing needed).
+/// Plain HOST_VISIBLE image, read back on the CPU when the encoder has a
+/// device of its own.
 unsafe fn allocate_host_image(
     ds: &crate::state::DeviceState,
     w: u32,
@@ -172,141 +102,6 @@ unsafe fn allocate_host_image(
         _marker: std::marker::PhantomData,
     };
     unsafe { alloc_image(ds, &ci, None, label) }
-}
-
-/// DMA-BUF exportable image (final capture — imported into pixelforge for encoding).
-///
-/// Falls back to a plain host image if the driver rejects external memory.
-/// In that case `get_dmabuf_fd` will return `None` and the encoder will use
-/// the CPU pixel-readback fallback.
-unsafe fn allocate_dmabuf_image(
-    ds: &crate::state::DeviceState,
-    w: u32,
-    h: u32,
-    fmt: vk::Format,
-    label: &str,
-) -> Option<(vk::Image, vk::DeviceMemory, u64)> {
-    let export_ai = vk::ExportMemoryAllocateInfo {
-        s_type: vk::StructureType::EXPORT_MEMORY_ALLOCATE_INFO,
-        p_next: std::ptr::null_mut(),
-        handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
-    };
-
-    // Tiled first. A linear destination means the copy detiles a whole frame on
-    // the way in and the encoder samples a linear image on the way out; the
-    // importer has always been able to take a tiled buffer, and only this side
-    // was ever linear.
-    let candidates = unsafe { supported_modifiers(ds, fmt) };
-    if let Some(chosen) = crate::modifiers::pick_modifier(&candidates)
-        && chosen.modifier != crate::modifiers::LINEAR
-    {
-        let mut ext_img = vk::ExternalMemoryImageCreateInfo {
-            s_type: vk::StructureType::EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
-            p_next: std::ptr::null_mut(),
-            handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-            _marker: std::marker::PhantomData,
-        };
-        let modifiers = [chosen.modifier];
-        let mut mod_list = vk::ImageDrmFormatModifierListCreateInfoEXT::default()
-            .drm_format_modifiers(&modifiers);
-        mod_list.p_next = &mut ext_img as *mut _ as *mut std::ffi::c_void;
-
-        let ci = vk::ImageCreateInfo {
-            s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            p_next: &mod_list as *const _ as *const _,
-            flags: vk::ImageCreateFlags::empty(),
-            image_type: vk::ImageType::TYPE_2D,
-            format: fmt,
-            extent: vk::Extent3D {
-                width: w,
-                height: h,
-                depth: 1,
-            },
-            mip_levels: 1,
-            array_layers: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT,
-            usage: vk::ImageUsageFlags::TRANSFER_DST,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            queue_family_index_count: 0,
-            p_queue_family_indices: std::ptr::null(),
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            _marker: std::marker::PhantomData,
-        };
-        if let Some((image, memory)) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
-            // Ask which one it took rather than assuming the one offered: the
-            // importer is given an explicit modifier and a wrong value there is
-            // a correctly sized frame full of nonsense.
-            match unsafe { image_modifier(ds, image) } {
-                Some(actual) => {
-                    log::info!(
-                        "capture '{label}': tiled, modifier {actual:#018x} \
-                         (offered {:#018x}, {} candidate(s))",
-                        chosen.modifier,
-                        candidates.len()
-                    );
-                    return Some((image, memory, actual));
-                }
-                None => {
-                    log::warn!(
-                        "capture '{label}': the driver would not report the modifier it \
-                         chose — falling back to linear rather than importing a guess"
-                    );
-                    unsafe {
-                        (ds.fp.destroy_image)(ds.raw, image, std::ptr::null());
-                        (ds.fp.free_memory)(ds.raw, memory, std::ptr::null());
-                    }
-                }
-            }
-        } else {
-            log::warn!("capture '{label}': tiled allocation refused — falling back to linear");
-        }
-    } else {
-        log::info!(
-            "capture '{label}': no tiled modifier offered ({} candidate(s)) — linear",
-            candidates.len()
-        );
-    }
-
-    let ext_img = vk::ExternalMemoryImageCreateInfo {
-        s_type: vk::StructureType::EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
-        p_next: std::ptr::null_mut(),
-        handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
-    };
-    let ci = vk::ImageCreateInfo {
-        s_type: vk::StructureType::IMAGE_CREATE_INFO,
-        p_next: &ext_img as *const _ as *const _,
-        flags: vk::ImageCreateFlags::empty(),
-        image_type: vk::ImageType::TYPE_2D,
-        format: fmt,
-        extent: vk::Extent3D {
-            width: w,
-            height: h,
-            depth: 1,
-        },
-        mip_levels: 1,
-        array_layers: 1,
-        samples: vk::SampleCountFlags::TYPE_1,
-        tiling: vk::ImageTiling::LINEAR,
-        usage: vk::ImageUsageFlags::TRANSFER_DST,
-        sharing_mode: vk::SharingMode::EXCLUSIVE,
-        queue_family_index_count: 0,
-        p_queue_family_indices: std::ptr::null(),
-        initial_layout: vk::ImageLayout::UNDEFINED,
-        _marker: std::marker::PhantomData,
-    };
-    if let Some((image, memory)) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
-        return Some((image, memory, crate::modifiers::LINEAR));
-    }
-    log::warn!(
-        "DMA-BUF alloc failed for '{}' — using plain host image. \
-         Zero-copy GPU path will be unavailable; CPU readback fallback active.",
-        label
-    );
-    unsafe { allocate_host_image(ds, w, h, fmt, label) }
-        .map(|(i, m)| (i, m, crate::modifiers::LINEAR))
 }
 
 /// A capture slot on a device the encoder shares: device-local, optimally
@@ -464,62 +259,6 @@ unsafe fn alloc_image(
         mr.size
     );
     Some((image, mem))
-}
-
-// ── Stride query ──────────────────────────────────────────────────────────────
-
-/// Row stride in bytes of a LINEAR image, or 0 on failure.
-pub unsafe fn query_stride(ds: &crate::state::DeviceState, image: vk::Image, modifier: u64) -> u32 {
-    // A DRM_FORMAT_MODIFIER image is laid out in memory planes, not colour
-    // planes, and asking it for COLOR is invalid — the aspect has to name the
-    // memory plane. Single-plane is all `pick_modifier` will accept, so plane
-    // zero is the whole image.
-    let aspect_mask = if modifier == crate::modifiers::LINEAR {
-        vk::ImageAspectFlags::COLOR
-    } else {
-        vk::ImageAspectFlags::MEMORY_PLANE_0_EXT
-    };
-    let sub = vk::ImageSubresource {
-        aspect_mask,
-        mip_level: 0,
-        array_layer: 0,
-    };
-    let mut layout = vk::SubresourceLayout::default();
-    unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &sub, &mut layout) };
-    layout.row_pitch as u32
-}
-
-// ── DMA-BUF fd export ─────────────────────────────────────────────────────────
-
-/// Export `memory` as a DMA-BUF fd via vkGetMemoryFdKHR.
-/// Callers own the fd and must close it when done.
-/// Returns `None` if VK_KHR_external_memory_fd is unavailable.
-pub unsafe fn get_dmabuf_fd(
-    ds: &crate::state::DeviceState,
-    memory: vk::DeviceMemory,
-) -> Option<c_int> {
-    let f = match ds.fp.get_memory_fd_khr {
-        Some(f) => f,
-        None => {
-            log::warn!("get_dmabuf_fd: vkGetMemoryFdKHR not available");
-            return None;
-        }
-    };
-    let fi = vk::MemoryGetFdInfoKHR {
-        s_type: vk::StructureType::MEMORY_GET_FD_INFO_KHR,
-        p_next: std::ptr::null(),
-        memory,
-        handle_type: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
-    };
-    let mut fd: c_int = -1;
-    let result = unsafe { f(ds.raw, &fi, &mut fd) };
-    if result == vk::Result::SUCCESS && fd >= 0 {
-        Some(fd)
-    } else {
-        log::warn!("get_dmabuf_fd failed: result={:?} fd={}", result, fd);
-        None
-    }
 }
 
 // ── ensure helpers ────────────────────────────────────────────────────────────
@@ -718,7 +457,7 @@ unsafe fn create_capture_ring(
     };
 
     let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
-    for i in 0..CAPTURE_SLOTS {
+    for _ in 0..CAPTURE_SLOTS {
         let allocated = match shared {
             Some(s) => unsafe {
                 allocate_shared_image(
@@ -729,11 +468,10 @@ unsafe fn create_capture_ring(
                     &s.image_families(queue_family),
                     "capture",
                 )
-            }
-            .map(|(image, memory)| (image, memory, crate::modifiers::LINEAR)),
-            None => unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") },
+            },
+            None => unsafe { allocate_host_image(ds, w, h, f, "capture") },
         };
-        let Some((image, memory, modifier)) = allocated else {
+        let Some((image, memory)) = allocated else {
             if let Some(s) = shared {
                 s.destroy_timeline(blit_timeline);
             }
@@ -752,25 +490,9 @@ unsafe fn create_capture_ring(
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
         }
-        let (stride, dmabuf_fd) = if shared.is_some() {
-            // Read in place on this device; nothing to export.
-            (0, -1)
-        } else {
-            let stride = unsafe { query_stride(ds, image, modifier) };
-            // Export once. Each frame hands the encoder a dup of this fd, which
-            // costs a file-descriptor clone instead of a kernel export per frame.
-            let dmabuf_fd = unsafe { get_dmabuf_fd(ds, memory) }.unwrap_or(-1);
-            if dmabuf_fd < 0 {
-                log::warn!("capture slot {i}: no DMA-BUF export, falling back to CPU readback");
-            }
-            (stride, dmabuf_fd)
-        };
         slots.push(CaptureSlot {
             image,
             memory,
-            dmabuf_fd,
-            stride,
-            modifier,
             fence,
         });
     }
@@ -819,9 +541,6 @@ unsafe fn destroy_partial_ring(
             (ds.fp.destroy_fence)(ds.raw, slot.fence, std::ptr::null());
             (ds.fp.destroy_image)(ds.raw, slot.image, std::ptr::null());
             (ds.fp.free_memory)(ds.raw, slot.memory, std::ptr::null());
-            if slot.dmabuf_fd >= 0 {
-                libc::close(slot.dmabuf_fd);
-            }
         }
         (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null());
     }
@@ -1006,10 +725,6 @@ pub unsafe fn inject_hudless_copy(cb: vk::CommandBuffer, dk: usize) {
 pub struct CaptureSubmission {
     /// Keeps the ring slot reserved until the encoder is finished with it.
     pub slot: crate::slots::SlotGuard,
-    /// Which ring the slot belongs to. See [`CaptureRing::generation`].
-    ///
-    /// [`CaptureRing::generation`]: crate::state::CaptureRing::generation
-    pub generation: u64,
     /// The semaphore the present must now wait on. The application's own wait
     /// semaphores were consumed by the blit submission, so presenting on them
     /// again would be a double wait.
@@ -1358,7 +1073,6 @@ pub unsafe fn capture_present_frame(
         return None;
     }
     let ring = ring_guard.as_mut()?;
-    let ring_generation = ring.generation;
 
     let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
 
@@ -1457,7 +1171,6 @@ pub unsafe fn capture_present_frame(
 
     Some(CaptureSubmission {
         slot: guard,
-        generation: ring_generation,
         present_wait,
         blit: blit_point,
     })
@@ -1544,7 +1257,7 @@ unsafe fn ensure_present_semaphore(
     Some(ring.present_wait[image_index])
 }
 
-// ── CPU pixel readback (fallback when DMA-BUF unavailable) ───────────────────
+// ── CPU pixel readback (when the encoder has a device of its own) ───────────
 
 pub unsafe fn read_frame_pixels(
     ds: &crate::state::DeviceState,

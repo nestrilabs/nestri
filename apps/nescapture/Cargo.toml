@@ -32,9 +32,9 @@ toml  = "0.8"
 serde = { version = "1", features = ["derive"] }
 
 # Vulkan Video hardware encoding.
-pixelforge = { git = "https://github.com/DatCaptainHorse/pixelforge.git", rev = "34aef64b9e49b49b20a7149b22a252c2bddc2858", features = ["dmabuf"] }
+pixelforge = { git = "https://github.com/DatCaptainHorse/pixelforge.git", rev = "34aef64b9e49b49b20a7149b22a252c2bddc2858" }
 
-# libc for DMA-BUF OS primitives
+# libc for socket options
 libc = "0.2"
 
 # Shared IPC protocol

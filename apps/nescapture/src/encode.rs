@@ -1,20 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  encode.rs — Vulkan Video hardware encoding + IPC transmission to neshub
 //
-//  ┌─────────────────── Zero-copy GPU pipeline ──────────────────────────────┐
-//  │                                                                         │
-//  │  Game VkDevice (intercepted by nescapture layer)                           │
-//  │    vkCmdCopyImage(swapchain → final_image)   ← GPU, no CPU             │
-//  │    get_dmabuf_fd(final_memory)               ← export fd               │
-//  │                                                                         │
-//  │  pixelforge VkDevice (separate, video-encode queue)                     │
-//  │    DmaBufImporter::import_or_reuse(fd, ...)  ← import as vk::Image     │
-//  │    ColorConverter::convert(bgra_img,          ← GPU compute shader      │
-//  │                            encoder.input_image())   BGRA/RGB10/FP16    │
-//  │                                                   → NV12/P010/YUV444   │
-//  │    Encoder::encode(encoder.input_image())     ← Vulkan Video encode     │
-//  │    IPC send to neshub                                                   │
-//  └─────────────────────────────────────────────────────────────────────────┘
+//  A frame's path, on the game's own device:
+//
+//    vkCmdCopyImage(swapchain -> ring slot)     the game's queue, signals the
+//                                               ring's timeline
+//    ColorConverter::convert_async(slot, ...)   waits on that, compute shader
+//                                               BGRA/RGB10/FP16 -> NV12/P010/YUV444
+//    Encoder::encode_after(input, ...)          waits on the conversion,
+//                                               Vulkan Video encode
+//    IPC send to neshub
+//
+//  Where the game's device cannot host the encoder, it gets a device of its
+//  own, and the slot is read back on the CPU and uploaded there instead.
 //
 //  Environment variables
 //  ──────────────────────
@@ -40,7 +38,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use anyhow::Result;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixDatagram;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
@@ -58,7 +56,6 @@ use pixelforge::{
     VideoContextBuilder,
 };
 
-use crate::dmabuf_import::{DmaBufImporter, DmaBufPlane};
 
 // ── VkColorSpaceKHR constants ────────────────────────────────────────────────
 //
@@ -181,11 +178,6 @@ pub struct CapturedFrame {
     /// now does the waiting that a separate capture thread used to do, and that
     /// work is per-device.
     pub ds_key: usize,
-    /// Which capture ring the slot belongs to.
-    ///
-    /// Carried so the encoder's DMA-BUF import cache can tell one ring's slot
-    /// from the next one's. Both are slot 0; only one of them still exists.
-    pub ring_generation: u64,
     pub width: u32,
     pub height: u32,
     pub vk_format: u32,
@@ -193,7 +185,7 @@ pub struct CapturedFrame {
     /// When the game presented this frame. Carried all the way to the wire so
     /// the timestamp describes the frame rather than the encoder's backlog.
     pub present_time: Instant,
-    /// Reserves the capture ring slot this frame's DMA-BUF lives in. Dropping
+    /// Reserves the capture ring slot this frame lives in. Dropping
     /// the frame — encoded, skipped, or abandoned — returns the slot, so the
     /// present hook can never blit over a buffer the encoder is still reading.
     pub slot: Option<crate::slots::SlotGuard>,
@@ -306,23 +298,8 @@ pub enum FrameSource {
         image: ash::vk::Image,
         blit: pixelforge::TimelinePoint,
     },
-    DmaBuf {
-        fd: RawFd,
-        stride: u32,
-        modifier: u64,
-    },
     Pixels(Vec<u8>),
 }
-impl Drop for FrameSource {
-    fn drop(&mut self) {
-        if let FrameSource::DmaBuf { fd, .. } = self {
-            if *fd >= 0 {
-                unsafe { libc::close(*fd) };
-            }
-        }
-    }
-}
-
 // ── Codec probing ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1020,14 +997,6 @@ fn encoder_thread(
     // once per frame.
     let mut unsupported_format: Option<u32> = None;
 
-    let mut dmabuf_importer = match DmaBufImporter::new(ctx.clone()) {
-        Ok(i) => Some(i),
-        Err(e) => {
-            log::warn!("DmaBufImporter init failed: {e} — GPU path unavailable");
-            None
-        }
-    };
-
     let mut frame_number = 0u32;
 
     // The slot of the last frame converted in place, until that conversion
@@ -1275,10 +1244,7 @@ fn encoder_thread(
             state.encoder.request_idr();
         }
 
-        // Each ring slot is a distinct DMA-BUF, so the importer caches an
-        // imported image per slot. Importing every frame under index 0 would
-        // have handed the encoder whichever buffer happened to be imported
-        // first, for every frame after it.
+        // Which ring slot the frame is in, for the slot hold below.
         let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
 
         progress.note(epoch, 2);
@@ -1299,38 +1265,6 @@ fn encoder_thread(
                     prev.release();
                 }
                 result
-            }
-            FrameSource::DmaBuf {
-                fd,
-                stride,
-                modifier,
-            } => {
-                let owned_fd = *fd;
-                *fd = -1;
-                match dmabuf_importer.as_mut() {
-                    Some(importer) => gpu_encode_frame(
-                        importer,
-                        &mut state.converter,
-                        &mut state.encoder,
-                        owned_fd,
-                        *stride,
-                        *modifier,
-                        raw.width,
-                        raw.height,
-                        raw.vk_format,
-                        frame_number,
-                        buffer_index,
-                        raw.ring_generation,
-                    ),
-                    None => {
-                        unsafe { libc::close(owned_fd) };
-                        log::warn!(
-                            "DmaBuf fd available but importer is gone — skipping frame {frame_number}"
-                        );
-                        frame_number += 1;
-                        continue;
-                    }
-                }
             }
             FrameSource::Pixels(pixels) => cpu_encode_frame(
                 &ctx,
@@ -1672,59 +1606,6 @@ fn depth_for_codec(codec: HwCodec, requested: EncodeBitDepth, warned: &mut bool)
     }
     *warned = false;
     requested
-}
-
-fn gpu_encode_frame(
-    importer: &mut DmaBufImporter,
-    converter: &mut ColorConverter,
-    encoder: &mut Encoder,
-    fd: RawFd,
-    stride: u32,
-    modifier: u64,
-    width: u32,
-    height: u32,
-    vk_format: u32,
-    frame_number: u32,
-    buffer_index: usize,
-    ring_generation: u64,
-) -> Result<EncodeFuture> {
-    use ash::vk;
-
-    let bgra_vk_fmt = map_vk_format_raw(vk_format);
-
-    let plane = DmaBufPlane {
-        fd,
-        offset: 0,
-        stride,
-        modifier,
-    };
-
-    let (imported_image, needs_layout_transition) = importer
-        .import_or_reuse(
-            ring_generation,
-            buffer_index,
-            width,
-            height,
-            bgra_vk_fmt,
-            &[plane],
-        )
-        .map_err(|e| anyhow::anyhow!("DmaBufImporter: {e}"))?;
-
-    unsafe { libc::close(fd) };
-
-    let src_layout = if needs_layout_transition {
-        vk::ImageLayout::UNDEFINED
-    } else {
-        vk::ImageLayout::GENERAL
-    };
-
-    converter
-        .convert(imported_image, src_layout, encoder.input_image())
-        .map_err(|e| anyhow::anyhow!("ColorConverter::convert frame {frame_number}: {e}"))?;
-
-    encoder
-        .encode(encoder.input_image())
-        .map_err(|e| anyhow::anyhow!("Encoder::encode frame {frame_number}: {e}"))
 }
 
 /// A slot whose image the converter may still be reading.

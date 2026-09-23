@@ -174,7 +174,6 @@ struct Submission {
     slot: SlotGuard,
     present_wait: vk::Semaphore,
     blit: Option<pixelforge::TimelinePoint>,
-    generation: u64,
     width: u32,
     height: u32,
     sc_fmt: vk::Format,
@@ -198,7 +197,7 @@ unsafe fn try_capture(
     };
 
     // Gate before any GPU work is queued. A game presenting faster than the
-    // target would otherwise pay a full blit and DMA-BUF export for frames the
+    // target would otherwise pay a full blit for frames the
     // encoder throws away moments later.
     let present_time = std::time::Instant::now();
     let admitted = match ds.frame_gate.lock() {
@@ -249,7 +248,6 @@ unsafe fn try_capture(
         slot: submission.slot,
         present_wait: submission.present_wait,
         blit: submission.blit,
-        generation: submission.generation,
         width: sc_ext.width,
         height: sc_ext.height,
         sc_fmt,
@@ -271,7 +269,6 @@ fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
     // does, which is the backpressure the ring was always providing.
     handle.push_frame(CapturedFrame {
         ds_key,
-        ring_generation: submission.generation,
         width: submission.width,
         height: submission.height,
         vk_format: submission.sc_fmt.as_raw() as u32,
@@ -366,11 +363,11 @@ pub fn resolve_source(
 
     // Copy the handles out and drop the ring lock before waiting: the present
     // hook needs that lock every frame and must not queue behind a GPU wait.
-    let (fence, dmabuf_fd, stride, modifier, image, memory) = {
+    let (fence, image, memory) = {
         let ring = ds.capture_ring.lock().ok()?;
         ring.as_ref()
             .and_then(|r| r.slots.get(slot_index))
-            .map(|s| (s.fence, s.dmabuf_fd, s.stride, s.modifier, s.image, s.memory))?
+            .map(|s| (s.fence, s.image, s.memory))?
     };
 
     let waited = unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000) };
@@ -385,21 +382,6 @@ pub fn resolve_source(
         && let Some(ref h) = *enc
     {
         h.timing.blit.record(std::time::Duration::from_nanos(ns));
-    }
-
-    if dmabuf_fd >= 0 {
-        let duped = unsafe { libc::dup(dmabuf_fd) };
-        if duped < 0 {
-            log::warn!("dup of capture DMA-BUF failed — frame dropped");
-            return None;
-        }
-        return Some(FrameSource::DmaBuf {
-            fd: duped,
-            stride,
-            // The slot's own modifier. This was hard-coded to zero, which was
-            // true only because the producer could not ask for anything else.
-            modifier,
-        });
     }
 
     match unsafe { capture::read_frame_pixels(ds, image, memory, frame.width, frame.height) } {

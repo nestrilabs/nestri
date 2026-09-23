@@ -63,11 +63,8 @@ pub unsafe extern "system" fn vkCreateDevice(
         }
     };
 
-    // ── Inject DMA-BUF extensions for zero-copy capture ──────────────────
     let ci = unsafe { &*p_create_info };
-
-    // Collect the game's original extensions.
-    let original_extensions: Vec<*const libc::c_char> =
+    let game_extensions: Vec<*const libc::c_char> =
         if ci.enabled_extension_count > 0 && !ci.pp_enabled_extension_names.is_null() {
             unsafe {
                 std::slice::from_raw_parts(
@@ -80,56 +77,15 @@ pub unsafe extern "system" fn vkCreateDevice(
             Vec::new()
         };
 
-    // Extensions we need — static byte strings so pointers stay valid.
-    const EXT_EXTERNAL_MEMORY: &[u8] = b"VK_KHR_external_memory\0";
-    const EXT_EXTERNAL_MEMORY_FD: &[u8] = b"VK_KHR_external_memory_fd\0";
-    const EXT_EXTERNAL_MEMORY_DMABUF: &[u8] = b"VK_EXT_external_memory_dma_buf\0";
-    // Lets the capture ring be allocated tiled. The importer has always created
-    // its side with DRM_FORMAT_MODIFIER_EXT tiling; without this the producer
-    // can only offer it a linear buffer.
-    const EXT_IMAGE_DRM_FORMAT_MODIFIER: &[u8] = b"VK_EXT_image_drm_format_modifier\0";
-
-    let needed: &[&[u8]] = &[
-        EXT_EXTERNAL_MEMORY,
-        EXT_EXTERNAL_MEMORY_FD,
-        EXT_EXTERNAL_MEMORY_DMABUF,
-        EXT_IMAGE_DRM_FORMAT_MODIFIER,
-    ];
-
-    // Build extended list: original + any of ours not already present.
-    let mut extended = original_extensions.clone();
-    for &ext in needed {
-        let name_cstr = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(ext) };
-        let already = extended
-            .iter()
-            .any(|&ptr| unsafe { std::ffi::CStr::from_ptr(ptr) == name_cstr });
-        if !already {
-            extended.push(ext.as_ptr() as *const libc::c_char);
-        }
-    }
-
-    // Try with injected extensions first.
-    //
-    // The device's queue create info is passed through unchanged. An earlier
-    // version bumped the first family's queue count by one to get a dedicated
-    // capture queue, which was then never used — and could not be: the capture
-    // blit has to be submitted to the queue the game presents on, or it gains
-    // no ordering against the present. All the bump did was risk exceeding the
-    // family's available queue count on the way in.
-    let mut modified_ci = *ci;
-    modified_ci.enabled_extension_count = extended.len() as u32;
-    modified_ci.pp_enabled_extension_names = extended.as_ptr();
-
     // Where it can, the encoder runs on this very device, so the device is
     // first created with what that needs. Anything refused falls back to the
-    // device as it would otherwise have been.
+    // device exactly as the game asked for it, and the encoder to a device of
+    // its own.
     let mut shared = None;
-    if let Some(prepared) =
-        unsafe {
-        crate::shared::prepare(&istate, next_gdpa, physical_device, &modified_ci, &extended)
-    }
-    {
-        let shared_ci = prepared.create_info(&modified_ci);
+    if let Some(prepared) = unsafe {
+        crate::shared::prepare(&istate, next_gdpa, physical_device, ci, &game_extensions)
+    } {
+        let shared_ci = prepared.create_info(ci);
         let result =
             unsafe { (istate.create_device)(physical_device, &shared_ci, p_allocator, p_device) };
         let (additions, entry, instance) = unsafe { prepared.finish() };
@@ -138,37 +94,16 @@ pub unsafe extern "system" fn vkCreateDevice(
         } else {
             log::warn!(
                 "vkCreateDevice with the encoder's additions failed ({result:?}), \
-                 retrying without them"
+                 retrying as the game asked"
             );
         }
     }
-
-    let mut dmabuf_available = true;
-    let result = if shared.is_some() {
-        vk::Result::SUCCESS
-    } else {
-        unsafe { (istate.create_device)(physical_device, &modified_ci, p_allocator, p_device) }
-    };
-
-    let result = if result != vk::Result::SUCCESS {
-        // Driver rejected our extensions — retry with original create info.
-        log::warn!(
-            "vkCreateDevice with DMA-BUF extensions failed ({:?}), \
-             retrying without — CPU readback fallback will be used",
-            result
-        );
-        dmabuf_available = false;
-        unsafe { (istate.create_device)(physical_device, p_create_info, p_allocator, p_device) }
-    } else {
-        log::info!("DMA-BUF extensions injected successfully");
-        result
-    };
-    if result != vk::Result::SUCCESS {
-        return result;
-    }
-
-    if !dmabuf_available {
-        log::warn!("DMA-BUF extensions missing — will use CPU readback fallback (expensive!)");
+    if shared.is_none() {
+        let result =
+            unsafe { (istate.create_device)(physical_device, p_create_info, p_allocator, p_device) };
+        if result != vk::Result::SUCCESS {
+            return result;
+        }
     }
 
     let device = unsafe { *p_device };
@@ -225,10 +160,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         cmd_pipeline_barrier: load!(b"vkCmdPipelineBarrier\0"),
         cmd_copy_image: load!(b"vkCmdCopyImage\0"),
         get_image_subresource_layout: load!(b"vkGetImageSubresourceLayout\0"),
-        get_memory_fd_khr: try_load!(b"vkGetMemoryFdKHR\0"),
-        get_image_drm_format_modifier_properties_ext: try_load!(
-            b"vkGetImageDrmFormatModifierPropertiesEXT\0"
-        ),
         create_query_pool: try_load!(b"vkCreateQueryPool\0"),
         destroy_query_pool: try_load!(b"vkDestroyQueryPool\0"),
         cmd_reset_query_pool: try_load!(b"vkCmdResetQueryPool\0"),
