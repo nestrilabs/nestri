@@ -53,12 +53,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "allocator-api2"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
-
-[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1352,8 +1346,6 @@ version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 dependencies = [
- "allocator-api2",
- "equivalent",
  "foldhash",
 ]
 
@@ -1453,9 +1445,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-rustls"
-version = "0.27.9"
+version = "0.27.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33ca68d021ef39cf6463ab54c1d0f5daf03377b70561305bb89a8f83aab66e0f"
+checksum = "dfa8e654703247911e29c23fbeaa261834bd9bb74efba2f9acddc37bfb127f53"
 dependencies = [
  "http",
  "hyper",
@@ -1637,7 +1629,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "log",
- "rand 0.10.2",
+ "rand 0.10.3",
  "tokio",
  "url",
  "xmltree",
@@ -1744,7 +1736,7 @@ dependencies = [
  "pin-project",
  "portable-atomic",
  "portmapper",
- "rand 0.10.2",
+ "rand 0.10.3",
  "reqwest",
  "rustc-hash",
  "rustls",
@@ -1774,7 +1766,7 @@ dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
  "n0-error",
- "rand 0.10.2",
+ "rand 0.10.3",
  "serde",
  "url",
  "zeroize",
@@ -1794,7 +1786,7 @@ dependencies = [
  "n0-error",
  "n0-future",
  "portable-atomic",
- "rand 0.10.2",
+ "rand 0.10.3",
  "rustls",
  "simple-dns",
  "strum",
@@ -1857,7 +1849,7 @@ dependencies = [
  "num_enum",
  "pin-project",
  "postcard",
- "rand 0.10.2",
+ "rand 0.10.3",
  "reqwest",
  "rustls",
  "rustls-pki-types",
@@ -2130,9 +2122,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.18.4"
+version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff9840bcc50b71349309900da0ce7279aa336ae71d73250b07998932c7d97c25"
+checksum = "ef9ac18847474e638e3702b76c65d4eb93428471a74778ef0f1be711717f89b5"
 dependencies = [
  "hashbrown 0.17.1",
 ]
@@ -2249,7 +2241,7 @@ dependencies = [
  "n0-error",
  "n0-future",
  "ndk-context",
- "rand 0.10.2",
+ "rand 0.10.3",
  "reqwest",
  "rustc-hash",
  "rustls",
@@ -2660,7 +2652,7 @@ dependencies = [
  "getrandom 0.4.3",
  "identity-hash",
  "lru-slab",
- "rand 0.10.2",
+ "rand 0.10.3",
  "rand_pcg",
  "ring",
  "rustc-hash",
@@ -2980,7 +2972,7 @@ dependencies = [
 [[package]]
 name = "pixelforge"
 version = "0.9.1"
-source = "git+https://github.com/DatCaptainHorse/pixelforge.git?rev=83fef1f5334e6d83f5ab7cd2b2cfa60596785454#83fef1f5334e6d83f5ab7cd2b2cfa60596785454"
+source = "git+https://github.com/DatCaptainHorse/pixelforge.git?rev=34aef64b9e49b49b20a7149b22a252c2bddc2858#34aef64b9e49b49b20a7149b22a252c2bddc2858"
 dependencies = [
  "ash",
  "futures-channel",
@@ -3085,7 +3077,7 @@ dependencies = [
  "n0-future",
  "netwatch",
  "num_enum",
- "rand 0.10.2",
+ "rand 0.10.3",
  "serde",
  "smallvec",
  "socket2",
@@ -3233,9 +3225,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
+checksum = "65c9fb96cbc91e3478eaae79a69fcd3f1ae4ad052e471fe6732fff548984b4af"
 dependencies = [
  "chacha20",
  "getrandom 0.4.3",
@@ -4158,7 +4150,7 @@ dependencies = [
  "getrandom 0.4.3",
  "http",
  "httparse",
- "rand 0.10.2",
+ "rand 0.10.3",
  "ring",
  "rustls-pki-types",
  "sha1_smol",
