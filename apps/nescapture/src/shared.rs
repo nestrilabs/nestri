@@ -522,6 +522,66 @@ pub fn is_own_device() -> bool {
     OWN_DEVICE.with(|own| own.get())
 }
 
+/// The chain [`instance_view`]'s `ash::Entry` resolves its commands through.
+///
+/// `ash::Entry` loads the instance-global commands — `vkCreateInstance`,
+/// `vkEnumerateInstanceExtensionProperties` and the rest — by calling
+/// `vkGetInstanceProcAddr` with a **null instance**. That is how the loader's
+/// own entry point is meant to be called, and the loader answers such calls
+/// itself. What we hold inside a layer is not the loader's pointer but the
+/// next layer's, and in a well-formed chain a layer's `vkGetInstanceProcAddr`
+/// is never called with a null instance — so a layer is under no obligation to
+/// survive one, and they do not all survive one. Mesa's
+/// `VK_LAYER_MESA_device_select` dereferences the handle to find its own
+/// per-instance state and takes the process down with it, which is a segfault
+/// in `vkCreateDevice` on any machine that has it installed — every Mesa
+/// desktop, so nearly every AMD and Intel one.
+///
+/// So the instance we already have is substituted for the null.
+/// `vkGetInstanceProcAddr(instance, name)` is valid for a global command and
+/// returns the same pointer, and the layer below sees a handle it knows.
+static ENTRY_CHAIN: std::sync::Mutex<Option<EntryChain>> = std::sync::Mutex::new(None);
+
+#[derive(Clone, Copy)]
+struct EntryChain {
+    gipa: crate::dispatch::PFN_vkGetInstanceProcAddr,
+    instance: vk::Instance,
+}
+
+// The handle is an opaque `u64` and the pointer is to code, so the pair is
+// shareable; `vk::Instance` is simply not marked so.
+unsafe impl Send for EntryChain {}
+
+fn set_entry_chain(gipa: crate::dispatch::PFN_vkGetInstanceProcAddr, instance: vk::Instance) {
+    // Last writer wins. A process with two instances resolves the global
+    // commands through whichever chain prepared a device most recently, which
+    // is harmless: the four of them are global, so every chain gives the same
+    // answer. It matters only that the handle passed down belongs to a live
+    // instance, and the one recorded here is live for as long as the device
+    // being created on it.
+    if let Ok(mut chain) = ENTRY_CHAIN.lock() {
+        *chain = Some(EntryChain { gipa, instance });
+    }
+}
+
+/// `vkGetInstanceProcAddr` with the null instance replaced. See [`ENTRY_CHAIN`].
+unsafe extern "system" fn entry_gipa(
+    instance: vk::Instance,
+    name: *const std::ffi::c_char,
+) -> vk::PFN_vkVoidFunction {
+    let Some(chain) = ENTRY_CHAIN.lock().ok().and_then(|c| *c) else {
+        // Nothing has prepared a device, so there is no chain to ask. Reporting
+        // the command as absent is the honest answer and ash treats it as one.
+        return None;
+    };
+    let handle = if instance == vk::Instance::null() {
+        chain.instance
+    } else {
+        instance
+    };
+    unsafe { (chain.gipa)(handle, name) }
+}
+
 /// The layer's view of the instance, as the encoder needs it: `ash` objects
 /// whose calls go to the next layer down, never back into this one.
 ///
@@ -534,11 +594,13 @@ fn instance_view(
     istate: &crate::dispatch::NextInstanceFn,
     next_gdpa: crate::dispatch::PFN_vkGetDeviceProcAddr,
 ) -> (ash::Entry, ash::Instance) {
-    let static_fn = ash::StaticFn {
-        get_instance_proc_addr: istate.get_instance_proc_addr,
-    };
-    let entry = unsafe { ash::Entry::from_static_fn(static_fn.clone()) };
     let gipa = istate.get_instance_proc_addr;
+    // Not `istate.get_instance_proc_addr` directly: see `entry_gipa`.
+    set_entry_chain(gipa, istate.instance);
+    let static_fn = ash::StaticFn {
+        get_instance_proc_addr: entry_gipa,
+    };
+    let entry = unsafe { ash::Entry::from_static_fn(static_fn) };
     let handle = istate.instance;
     let instance = unsafe {
         ash::Instance::load_with(
@@ -1049,5 +1111,50 @@ mod tests {
             ],
         );
         assert_eq!(merged.len(), 2);
+    }
+
+    // ── The null instance a layer below need not survive ─────────────────────
+
+    /// On construction `ash::Entry` asks for the instance-global commands with
+    /// no instance. The layer below must never see that null: Mesa's
+    /// device_select layer dereferences it. A real instance goes down instead,
+    /// and an instance the caller did name is left alone.
+    ///
+    /// One test rather than two because the chain is process-wide, and two
+    /// would race each other for it.
+    #[test]
+    fn the_null_instance_never_reaches_the_layer_below() {
+        use ash::vk::Handle;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEEN: AtomicU64 = AtomicU64::new(u64::MAX);
+
+        unsafe extern "system" fn record(
+            instance: vk::Instance,
+            _name: *const std::ffi::c_char,
+        ) -> vk::PFN_vkVoidFunction {
+            SEEN.store(instance.as_raw(), Ordering::SeqCst);
+            None
+        }
+
+        set_entry_chain(record, vk::Instance::from_raw(0xfeed_beef));
+
+        unsafe {
+            entry_gipa(
+                vk::Instance::null(),
+                c"vkEnumerateInstanceExtensionProperties".as_ptr(),
+            )
+        };
+        assert_eq!(
+            SEEN.load(Ordering::SeqCst),
+            0xfeed_beef,
+            "the null was passed down instead of the instance we hold"
+        );
+
+        unsafe { entry_gipa(vk::Instance::from_raw(0x2222), c"vkCreateDevice".as_ptr()) };
+        assert_eq!(
+            SEEN.load(Ordering::SeqCst),
+            0x2222,
+            "an instance the caller named was substituted"
+        );
     }
 }
