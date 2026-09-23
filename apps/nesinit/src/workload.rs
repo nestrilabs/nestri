@@ -302,6 +302,9 @@ const GRAPHICS: &[(&str, &str)] = &[
     // reach and both are told where. Without this a game renders and plays
     // silently, having looked under its own uid and found nothing.
     ("PIPEWIRE_RUNTIME_DIR", crate::services::AUDIO_DIR),
+    // The same, for a client that speaks PulseAudio instead. It does not read
+    // the variable above, and its default is under its own runtime directory.
+    ("PULSE_SERVER", crate::services::PULSE_SERVER),
 ];
 
 /// Mount one share where the descriptor says to put it.

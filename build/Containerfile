@@ -268,7 +268,7 @@ RUN pacman -Syu --noconfirm --needed \
         libglvnd libdrm libepoxy libxxf86vm libinput wayland \
         expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
-        pipewire pipewire-audio wireplumber opus \
+        pipewire pipewire-audio pipewire-pulse libpulse wireplumber opus \
         python libunwind \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
@@ -280,6 +280,15 @@ RUN pacman -Syu --noconfirm --needed \
 # after the prefix had already been created -- so the session got past every
 # check that Proton was present and usable.
 #
+# `pipewire-pulse` and `libpulse` are Wine's audio. Its driver speaks only the
+# PulseAudio protocol, so without the translation layer a game starts, renders
+# and plays silently, with nothing failing to say why. `libpulse` is what that
+# driver, `winepulse.so`, links, and it would arrive as a dependency of
+# pipewire-pulse anyway. It is named because the dependency is Wine's and not
+# pipewire-pulse's, and a library that only arrives as somebody else's
+# dependency goes away when they do. The check below covers `winepulse.so`, so a
+# missing library fails the build rather than the session.
+
 # `python` is not a build dependency here -- the builder stage has its own for
 # Mesa -- it is a *runtime* one. The compatibility tool's entry point is a
 # Python script, so a box without an interpreter starts a game and the launch
@@ -469,11 +478,17 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # directory. Forty files, every one a false positive, hiding the one real
 # entry.
 #
-# So: the programs in `bin/`, which are ordinary ELF and resolve normally, and
+# So: the programs in `bin/`, which are ordinary ELF and resolve normally,
 # `ntdll.so`, which is the first thing Wine loads and the one that linked the
-# missing library. That is exactly the failure that got through, with none of
-# the noise. The Windows-side DLLs beside them are not ELF and `ldd` skips them
-# anyway.
+# missing library, and `winepulse.so`, which is audio. That is exactly the
+# failure that got through, with none of the noise. The Windows-side DLLs beside
+# them are not ELF and `ldd` skips them anyway.
+#
+# Each file is resolved with its own directory on the library path. That is
+# where Wine's loader finds the siblings a unix object links by soname, so
+# `winepulse.so` naming `ntdll.so` resolves the way it does at run time, and
+# what is left is a library the image really lacks. For every other file in
+# the list it changes nothing.
 # The output is one file per line with its own missing libraries under it, and
 # then every missing library once at the end. That last list is what somebody
 # acts on -- it is the set of packages to add -- and forty files each naming the
@@ -485,13 +500,15 @@ RUN failed=0; \
     : > /tmp/missing-libs; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
              /usr/lib/libnescapture_layer.so \
-             /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
+             /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
+             /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
              /usr/share/steam/compatibilitytools.d/proton-ge/files/bin/* \
-             /usr/share/steam/compatibilitytools.d/proton-ge/files/lib*/wine/*-unix/ntdll.so; do \
+             /usr/share/steam/compatibilitytools.d/proton-ge/files/lib*/wine/*-unix/ntdll.so \
+             /usr/share/steam/compatibilitytools.d/proton-ge/files/lib*/wine/*-unix/winepulse.so; do \
         [ -e "$f" ] || continue; \
-        libs="$(ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
+        libs="$(LD_LIBRARY_PATH="${f%/*}" ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
         [ -n "$libs" ] || continue; \
         failed=1; \
         printf '  %s\n' "$f" >&2; \
@@ -506,8 +523,8 @@ RUN failed=0; \
     fi
 
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
-                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
-                    /usr/bin/python3 \
+                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
+                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 \
                     /usr/share/steam/compatibilitytools.d/proton-ge/proton; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
