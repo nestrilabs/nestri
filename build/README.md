@@ -91,6 +91,59 @@ the virtio-gpu native-context protocol never drift apart. Only Mesa —
 `virglrenderer` is the host half of that protocol and nesbox builds its own,
 patched, from `nesbox/patches/`; nothing in this image carries it.
 
+## The guest kernel
+
+```sh
+make kernel                          # clone if needed, configure, verify, build → output/vmlinux
+make KERNEL_SRC=~/src/linux kernel   # build an existing tree instead
+make kernel-clean                    # drop the tree and the image
+```
+
+CachyOS's fork (`KERNEL_REF` in the `Makefile`), taken for its scheduler
+patches, not its config: theirs is a desktop build with thousands of modules,
+and this guest has `CONFIG_MODULES` off and no `/lib/modules` at all.
+
+- **`kernel/nestri.fragment` is the source of truth**, and says why each entry
+  is there. It is merged onto the tree's `.config`, resolved with
+  `olddefconfig`, and then **checked**: any entry that did not survive fails the
+  build. `merge_config.sh` and `olddefconfig` both drop options quietly, and
+  the worst of these fails as perfectly healthy, perfectly silent audio.
+- **`kernel/base.config` is only a seed** for a tree with no `.config`, so a
+  fresh clone does not start from `defconfig`'s enormous driver set. Change the
+  fragment, not the seed and not a tree's `.config`.
+- **`vmlinux`, not `bzImage`.** The guest is loaded as a raw ELF with no
+  bootloader in the path. It is ~16 MB unstripped, which costs nothing at run
+  time: only the loadable segments are mapped.
+- **`-march=x86-64-v3`** goes in through `KCFLAGS`. It is safe in a kernel:
+  the kernel's own `-mno-sse -mno-avx …` masks every vector extension off
+  whatever the flag order, leaving v3's integer ISA.
+- The tree is off the pinned ref (a bisect, a local patch)? The build warns
+  and builds what is there rather than checking the ref out over your work.
+
+### Experimental: the Infinity scheduler
+
+```sh
+make KERNEL_INFINITY=1 kernel        # → output/vmlinux-infinity
+```
+
+Applies [infinity-sched](https://github.com/galpt/infinity-sched-new)'s
+series (GPL-2), which reworks the fair, RT and DRM schedulers for latency
+under load. It is pinned by commit (`INFINITY_REV`), and the series directory
+comes from `KERNEL_REF`, since upstream publishes one per CachyOS release.
+
+- **Its own tree and its own image.** It builds in `output/kernel-infinity`,
+  so the stock kernel is never patched and switching between the two needs no
+  revert.
+- **All or nothing, zero fuzz.** The whole series is checked against the
+  stacked result before any of it is applied. The applied commit is recorded in
+  the tree; to move `INFINITY_REV`, start over with `make kernel-clean`.
+- **Only the CPU half does anything here.** virtio-gpu does not use the DRM
+  scheduler and `CONFIG_DRM_SCHED` is not built, so the GPU patch is compiled
+  out. It is applied anyway because upstream says a partial series
+  misbehaves.
+- Upstream's `/sys/kernel/debug/infinity_*` counters need `CONFIG_DEBUG_FS`,
+  which this kernel does not have.
+
 ## Two packages that look droppable and are not
 
 `llvm-libs` is 164 MB, the largest single thing in the image after Proton, and
