@@ -1,0 +1,22 @@
+protonfixes pins unzip to Debian revision 6.0-29 and fetches it from the
+live pool. The pool keeps only current revisions, so once 6.0-31 landed the
+download started failing with a 404 and the build with it.
+
+snapshot.debian.org keeps every revision Debian has published, at a stable
+path per timestamp. This is the first snapshot that carries 6.0-29, and the
+orig tarball has been in the pool since 2009, so both files resolve there
+and are the same bytes the pin always meant.
+
+diff --git a/protonfixes/Makefile b/protonfixes/Makefile
+index 4dcd851..8fab279 100644
+--- a/protonfixes/Makefile
++++ b/protonfixes/Makefile
+@@ -146,7 +146,7 @@ DEFINES = -DACORN_FTYPE_NFS -DWILD_STOP_AT_DIR -DLARGE_FILE_SUPPORT \
+  -DNO_WORKING_ISPRINT
+ UNZIP_VERSION := 6.0
+ UNZIP_DEBIAN_REVISION := 29
+-UNZIP_BASE_URL := https://deb.debian.org/debian/pool/main/u/unzip
++UNZIP_BASE_URL := https://snapshot.debian.org/archive/debian/20250311T215724Z/pool/main/u/unzip
+ UNZIP_ORIG_TARBALL := unzip_$(UNZIP_VERSION).orig.tar.gz
+ UNZIP_DEBIAN_TARBALL := unzip_$(UNZIP_VERSION)-$(UNZIP_DEBIAN_REVISION).debian.tar.xz
+ UNZIP_DOWNLOAD_DIR := $(OBJDIR)/downloads/unzip

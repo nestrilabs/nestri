@@ -13,9 +13,9 @@
 #  this image is plain Arch rather than a distribution chosen for its init.
 #  ref(d-0064)
 #
-#  Proton is here, and it is not a closed component: it is proton-cachyos built
-#  from source with --enable-wow64, which is what removes the need for a whole
-#  32-bit host stack. Valve's steamclient.so is a different thing and is NOT
+#  Proton is here, and it is not a closed component: it is proton-ge built
+#  from source wow64-only, which is what removes the need for a whole 32-bit
+#  host stack. Valve's steamclient.so is a different thing and is NOT
 #  here — that one is closed, and nestri/CLAUDE.md is explicit that nothing
 #  closed enters this repo. Whatever layers it on top of runtime_prod is a
 #  closed build outside this repo — see build/README.md.
@@ -31,7 +31,7 @@
 # scoped to one stage instead, `FROM ${PROTON_IMAGE}` expands to nothing, and
 # the build fails with "no FROM statement found" — which says nothing about
 # the actual mistake. See the Proton stage below for what this is.
-ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-cachyos-native-wow64:11.0-20260703
+ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-ge:11-7
 
 
 # ───────────────────────────────────────────────────────────
@@ -173,14 +173,13 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 #  `FROM scratch` over the tree, so its root *is* the tree and there is nothing
 #  in it to run — only something to copy from.
 #
-#  Built with `--enable-wow64`, which is the whole reason it is a build of ours
-#  rather than the distribution's package. wow64 runs 32-bit Windows code
-#  inside a 64-bit unix process, so a box needs no lib32 anything: no 32-bit
-#  glibc, no second Mesa for i686, and — the one that matters most here — no
+#  Built wow64-only, which is the whole reason it is a build of ours rather
+#  than a released one. wow64 runs 32-bit Windows code inside a 64-bit unix
+#  process, so a box needs no lib32 anything: no 32-bit glibc, no second Mesa
+#  for i686, and — the one that matters most here — no
 #  second capture layer, because the game is a 64-bit process and loads the
-#  64-bit Vulkan loader the existing layer already sits in. The distribution's
-#  package is built without the flag, which is exactly why it depends on
-#  lib32-*.
+#  64-bit Vulkan loader the existing layer already sits in. The released builds
+#  carry a 32-bit unix side, which is exactly why they need lib32-*.
 #
 #  Override to build it yourself; the tag is a version and moves deliberately.
 # ───────────────────────────────────────────────────────────
@@ -368,7 +367,7 @@ COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
 
 # The Proton tree, whose image root is the tree, so this lands it at
-# /usr/share/steam/compatibilitytools.d/proton-cachyos.
+# /usr/share/steam/compatibilitytools.d/proton-ge.
 #
 # Deliberately not in the strip manifest above: that list is our own build
 # output, and the two stripping decisions are not the same one. Proton ships
@@ -489,8 +488,8 @@ RUN failed=0; \
              /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/ntdll.so; do \
+             /usr/share/steam/compatibilitytools.d/proton-ge/files/bin/* \
+             /usr/share/steam/compatibilitytools.d/proton-ge/files/lib*/wine/*-unix/ntdll.so; do \
         [ -e "$f" ] || continue; \
         libs="$(ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
         [ -n "$libs" ] || continue; \
@@ -509,7 +508,7 @@ RUN failed=0; \
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/wireplumber /usr/bin/ip \
                     /usr/bin/python3 \
-                    /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+                    /usr/share/steam/compatibilitytools.d/proton-ge/proton; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
 
@@ -524,7 +523,7 @@ RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/n
 # So every script this image promises resolves its own interpreter. `env` is
 # unwrapped where it is used, because a shebang of `#!/usr/bin/env python3`
 # names `env` and the thing that is actually missing is the argument.
-RUN for script in /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+RUN for script in /usr/share/steam/compatibilitytools.d/proton-ge/proton; do \
         head -c 2 "$script" | grep -q '#!' || continue; \
         shebang="$(head -1 "$script" | sed 's/^#!//')"; \
         interpreter="${shebang%% *}"; \
