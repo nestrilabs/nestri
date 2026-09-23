@@ -309,6 +309,93 @@ unsafe fn allocate_dmabuf_image(
         .map(|(i, m)| (i, m, crate::modifiers::LINEAR))
 }
 
+/// A capture slot on a device the encoder shares: device-local, optimally
+/// tiled, and readable by the encoder's queues as well as the presenting one.
+///
+/// Created in the converter's input format rather than the swapchain's, which
+/// differ for an sRGB swapchain: the copy between the two is legal, since they
+/// have the same texel size, and the converter then needs no mutable-format
+/// view to read it.
+unsafe fn allocate_shared_image(
+    ds: &crate::state::DeviceState,
+    w: u32,
+    h: u32,
+    fmt: vk::Format,
+    families: &[u32],
+    label: &str,
+) -> Option<(vk::Image, vk::DeviceMemory)> {
+    let (sharing_mode, count, indices) = if families.len() > 1 {
+        (
+            vk::SharingMode::CONCURRENT,
+            families.len() as u32,
+            families.as_ptr(),
+        )
+    } else {
+        (vk::SharingMode::EXCLUSIVE, 0, std::ptr::null())
+    };
+    let ci = vk::ImageCreateInfo {
+        s_type: vk::StructureType::IMAGE_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::ImageCreateFlags::empty(),
+        image_type: vk::ImageType::TYPE_2D,
+        format: fmt,
+        extent: vk::Extent3D {
+            width: w,
+            height: h,
+            depth: 1,
+        },
+        mip_levels: 1,
+        array_layers: 1,
+        samples: vk::SampleCountFlags::TYPE_1,
+        tiling: vk::ImageTiling::OPTIMAL,
+        // Written by the blit, sampled by the converter, and copied from when
+        // the encoder takes RGB input and converts it itself.
+        usage: vk::ImageUsageFlags::TRANSFER_DST
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_SRC,
+        sharing_mode,
+        queue_family_index_count: count,
+        p_queue_family_indices: indices,
+        initial_layout: vk::ImageLayout::UNDEFINED,
+        _marker: std::marker::PhantomData,
+    };
+    let mut image = vk::Image::null();
+    if unsafe { (ds.fp.create_image)(ds.raw, &ci, std::ptr::null(), &mut image) }
+        != vk::Result::SUCCESS
+    {
+        return None;
+    }
+    let mut mr = vk::MemoryRequirements::default();
+    unsafe { (ds.fp.get_image_memory_requirements)(ds.raw, image, &mut mr) };
+    let Some(mt) =
+        (unsafe { find_memory_type(ds, mr.memory_type_bits, crate::memory::Want::DeviceLocal) })
+    else {
+        log::warn!("no device-local memory type for '{label}' - not allocating");
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        return None;
+    };
+    let ai = vk::MemoryAllocateInfo {
+        s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+        p_next: std::ptr::null(),
+        allocation_size: mr.size,
+        memory_type_index: mt,
+        _marker: std::marker::PhantomData,
+    };
+    let mut mem = vk::DeviceMemory::null();
+    if unsafe { (ds.fp.allocate_memory)(ds.raw, &ai, std::ptr::null(), &mut mem) }
+        != vk::Result::SUCCESS
+    {
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        return None;
+    }
+    if unsafe { (ds.fp.bind_image_memory)(ds.raw, image, mem, 0) } != vk::Result::SUCCESS {
+        unsafe { (ds.fp.free_memory)(ds.raw, mem, std::ptr::null()) };
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        return None;
+    }
+    Some((image, mem))
+}
+
 unsafe fn alloc_image(
     ds: &crate::state::DeviceState,
     ci: &vk::ImageCreateInfo,
@@ -597,11 +684,56 @@ unsafe fn create_capture_ring(
     let (timestamp_pool, timestamp_period) =
         unsafe { create_timestamp_pool(ds, queue_family) };
 
+    // On a device the encoder shares, the slots are images the encoder reads
+    // in place, in the format its converter reads, and every blit advances a
+    // timeline the encoder waits on.
+    let shared = ds.shared_encoder();
+    let slot_format = match shared {
+        Some(_) => match crate::encode::vk_format_to_input_format(f.as_raw() as u32) {
+            Some(input) => input.vk_format(),
+            None => {
+                log::warn!(
+                    "swapchain format {} has no converter input format; not capturing",
+                    f.as_raw()
+                );
+                unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
+                return None;
+            }
+        },
+        None => f,
+    };
+    let blit_timeline = match shared {
+        Some(s) => match s.create_timeline() {
+            Some(t) => t,
+            None => {
+                log::warn!("could not create the capture timeline; not capturing");
+                unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
+                return None;
+            }
+        },
+        None => vk::Semaphore::null(),
+    };
+
     let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
     for i in 0..CAPTURE_SLOTS {
-        let Some((image, memory, modifier)) =
-            (unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") })
-        else {
+        let allocated = match shared {
+            Some(s) => unsafe {
+                allocate_shared_image(
+                    ds,
+                    w,
+                    h,
+                    slot_format,
+                    &s.image_families(queue_family),
+                    "capture",
+                )
+            }
+            .map(|(image, memory)| (image, memory, crate::modifiers::LINEAR)),
+            None => unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") },
+        };
+        let Some((image, memory, modifier)) = allocated else {
+            if let Some(s) = shared {
+                s.destroy_timeline(blit_timeline);
+            }
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
         };
@@ -611,16 +743,25 @@ unsafe fn create_capture_ring(
         {
             unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
             unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+            if let Some(s) = shared {
+                s.destroy_timeline(blit_timeline);
+            }
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
         }
-        let stride = unsafe { query_stride(ds, image, modifier) };
-        // Export once. Each frame hands the encoder a dup of this fd, which
-        // costs a file-descriptor clone instead of a kernel export per frame.
-        let dmabuf_fd = unsafe { get_dmabuf_fd(ds, memory) }.unwrap_or(-1);
-        if dmabuf_fd < 0 {
-            log::warn!("capture slot {i}: no DMA-BUF export, falling back to CPU readback");
-        }
+        let (stride, dmabuf_fd) = if shared.is_some() {
+            // Read in place on this device; nothing to export.
+            (0, -1)
+        } else {
+            let stride = unsafe { query_stride(ds, image, modifier) };
+            // Export once. Each frame hands the encoder a dup of this fd, which
+            // costs a file-descriptor clone instead of a kernel export per frame.
+            let dmabuf_fd = unsafe { get_dmabuf_fd(ds, memory) }.unwrap_or(-1);
+            if dmabuf_fd < 0 {
+                log::warn!("capture slot {i}: no DMA-BUF export, falling back to CPU readback");
+            }
+            (stride, dmabuf_fd)
+        };
         slots.push(CaptureSlot {
             image,
             memory,
@@ -632,8 +773,13 @@ unsafe fn create_capture_ring(
     }
 
     log::info!(
-        "capture ring {generation}: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}",
-        f.as_raw()
+        "capture ring {generation}: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}{}",
+        slot_format.as_raw(),
+        if shared.is_some() {
+            ", read in place by the encoder"
+        } else {
+            ""
+        }
     );
     Some(CaptureRing {
         command_pool,
@@ -655,6 +801,8 @@ unsafe fn create_capture_ring(
         },
         present_wait: Vec::new(),
         retired: Vec::new(),
+        blit_timeline,
+        blit_value: 0,
     })
 }
 
@@ -706,6 +854,14 @@ pub unsafe fn destroy_capture_ring(ds: &crate::state::DeviceState, ring: Capture
         {
             destroy(ds.raw, ring.timestamp_pool, std::ptr::null());
         }
+    }
+    // The fences above cover the blits that signal it, and every slot being
+    // back covers the encoder work that waits on it: a slot returns only once
+    // its conversion has finished.
+    if !ring.blit_timeline.is_null()
+        && let Some(s) = ds.shared.as_ref()
+    {
+        s.destroy_timeline(ring.blit_timeline);
     }
     unsafe { destroy_partial_ring(ds, ring.command_pool, ring.slots) };
 }
@@ -855,6 +1011,10 @@ pub struct CaptureSubmission {
     /// semaphores were consumed by the blit submission, so presenting on them
     /// again would be a double wait.
     pub present_wait: vk::Semaphore,
+    /// The point this blit's timeline signal reaches, on a device the encoder
+    /// shares. The encoder waits on it on the GPU instead of on the slot's
+    /// fence on the CPU.
+    pub blit: Option<pixelforge::TimelinePoint>,
 }
 
 /// Create the blit timestamp pool, or a null handle where it cannot be used.
@@ -934,10 +1094,16 @@ unsafe fn create_timestamp_pool(
 
 /// GPU nanoseconds the last blit into `slot` took.
 ///
-/// Call only after that slot's fence has signalled, so the results are there
-/// and the `WAIT` flag returns immediately. `None` when timing is off, when the
-/// driver refuses the results, or when the counter wrapped between the pair.
-pub unsafe fn blit_gpu_time_ns(ds: &crate::state::DeviceState, slot: usize) -> Option<u64> {
+/// Call only once that blit has finished, so `wait` returns immediately: after
+/// the slot's fence has signalled, or after work that waited on the blit has
+/// itself finished. `None` when timing is off, when the driver refuses the
+/// results, when they are not there yet and `wait` is false, or when the
+/// counter wrapped between the pair.
+pub unsafe fn blit_gpu_time_ns(
+    ds: &crate::state::DeviceState,
+    slot: usize,
+    wait: bool,
+) -> Option<u64> {
     let ring_guard = ds.capture_ring.lock().ok()?;
     let ring = ring_guard.as_ref()?;
     if ring.timestamp_pool.is_null() {
@@ -954,7 +1120,11 @@ pub unsafe fn blit_gpu_time_ns(ds: &crate::state::DeviceState, slot: usize) -> O
             std::mem::size_of_val(&ticks),
             ticks.as_mut_ptr() as *mut std::ffi::c_void,
             std::mem::size_of::<u64>() as vk::DeviceSize,
-            vk::QueryResultFlags::WAIT | vk::QueryResultFlags::TYPE_64,
+            if wait {
+                vk::QueryResultFlags::WAIT | vk::QueryResultFlags::TYPE_64
+            } else {
+                vk::QueryResultFlags::TYPE_64
+            },
         )
     };
     if result != vk::Result::SUCCESS {
@@ -1085,18 +1255,29 @@ unsafe fn record_blit(
         vk::ImageLayout::PRESENT_SRC_KHR,
         si
     );
+    // The slot goes to GENERAL, which every reader accepts: the converter, the
+    // encoder's own copy when it takes RGB input, and the CPU readback, which
+    // maps the memory and may only do so in GENERAL.
+    let b4 = image_barrier!(
+        vk::AccessFlags::TRANSFER_WRITE,
+        vk::AccessFlags::MEMORY_READ | vk::AccessFlags::HOST_READ,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageLayout::GENERAL,
+        fi
+    );
+    let after = [b3, b4];
     unsafe {
         (ds.fp.cmd_pipeline_barrier)(
             cb,
             vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE | vk::PipelineStageFlags::HOST,
             vk::DependencyFlags::empty(),
             0,
             std::ptr::null(),
             0,
             std::ptr::null(),
-            1,
-            &b3,
+            after.len() as u32,
+            after.as_ptr(),
         );
     }
 
@@ -1216,9 +1397,27 @@ pub unsafe fn capture_present_frame(
     }
 
     let wait_stages = vec![vk::PipelineStageFlags::TRANSFER; app_waits.len()];
+
+    // On a shared device the blit also advances the ring's timeline. A
+    // timeline signal needs its value given alongside, and the binary
+    // semaphore next to it a placeholder the driver ignores.
+    let blit_point = (!ring.blit_timeline.is_null()).then(|| {
+        pixelforge::TimelinePoint::new(ring.blit_timeline, ring.blit_value + 1)
+    });
+    let signals = [present_wait, ring.blit_timeline];
+    let signal_values = [0, blit_point.map_or(0, |p| p.value)];
+    let timeline_info = vk::TimelineSemaphoreSubmitInfo {
+        signal_semaphore_value_count: 2,
+        p_signal_semaphore_values: signal_values.as_ptr(),
+        ..Default::default()
+    };
     let subi = vk::SubmitInfo {
         s_type: vk::StructureType::SUBMIT_INFO,
-        p_next: std::ptr::null(),
+        p_next: if blit_point.is_some() {
+            (&raw const timeline_info).cast()
+        } else {
+            std::ptr::null()
+        },
         wait_semaphore_count: app_waits.len() as u32,
         p_wait_semaphores: if app_waits.is_empty() {
             std::ptr::null()
@@ -1232,8 +1431,8 @@ pub unsafe fn capture_present_frame(
         },
         command_buffer_count: 1,
         p_command_buffers: &cb,
-        signal_semaphore_count: 1,
-        p_signal_semaphores: &present_wait,
+        signal_semaphore_count: if blit_point.is_some() { 2 } else { 1 },
+        p_signal_semaphores: signals.as_ptr(),
         _marker: std::marker::PhantomData,
     };
 
@@ -1249,10 +1448,15 @@ pub unsafe fn capture_present_frame(
         }
     }
 
+    if let Some(p) = blit_point {
+        ring.blit_value = p.value;
+    }
+
     Some(CaptureSubmission {
         slot: guard,
         generation: ring_generation,
         present_wait,
+        blit: blit_point,
     })
 }
 

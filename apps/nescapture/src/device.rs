@@ -116,7 +116,9 @@ pub unsafe extern "system" fn vkCreateDevice(
     // device as it would otherwise have been.
     let mut shared = None;
     if let Some(prepared) =
-        unsafe { crate::shared::prepare(&istate, physical_device, &modified_ci, &extended) }
+        unsafe {
+        crate::shared::prepare(&istate, next_gdpa, physical_device, &modified_ci, &extended)
+    }
     {
         let shared_ci = prepared.create_info(&modified_ci);
         let result =
@@ -289,6 +291,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         physical_device,
         fp,
         shared,
+        shared_active: std::sync::atomic::AtomicBool::new(false),
 
         shader_registry: DashMap::new(),
         pipeline_registry: DashMap::new(),
@@ -354,23 +357,20 @@ pub unsafe extern "system" fn vkDestroyDevice(
         ds.pipeline_registry.len(),
     );
 
-    // ── 1. Shut down encoder pipeline (unblocks encoder + RTP threads) ───
-    {
-        let mut enc_guard = ds.encoder.lock().unwrap();
-        if let Some(handle) = enc_guard.take() {
-            handle.shutdown();
-            // `handle` is dropped here → drops `frame_tx` → encoder thread's
-            // recv_timeout returns Disconnected → encoder thread drops
-            // `encoded_tx` → RTP thread exits too.
-            //
-            // Give threads a moment to drain.  In production you'd join the
-            // JoinHandles, but since we don't store them, a short sleep +
-            // the AtomicBool shutdown flag is sufficient.
-            log::info!("encoder pipeline shutdown signaled");
+    // ── 1. Shut down the encode pipeline ──────────────────────────────────
+    //
+    // Waited for, not just signalled. On a shared device the encoder, its
+    // converter and their images are objects on this very device, and
+    // destroying the device under them is a use-after-free. The receive
+    // timeout bounds how long the thread takes to notice.
+    let handle = ds.encoder.lock().ok().and_then(|mut g| g.take());
+    if let Some(handle) = handle {
+        if handle.finish(std::time::Duration::from_secs(2)) {
+            log::info!("encoder pipeline stopped");
+        } else {
+            log::error!("encoder thread did not stop in time; destroying the device anyway");
         }
     }
-    // Brief yield to let threads notice the disconnect.
-    std::thread::sleep(std::time::Duration::from_millis(50));
 
     // ── 2. Tear down the capture ring ─────────────────────────────────────
     //

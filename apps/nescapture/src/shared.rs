@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 use ash::vk;
+use ash::vk::TaggedStructure;
 use pixelforge::vulkan::{DeviceFeatures, DeviceQueue, DeviceRequirements};
 use std::collections::BTreeMap;
 
@@ -523,12 +524,35 @@ pub fn is_own_device() -> bool {
 
 /// The layer's view of the instance, as the encoder needs it: `ash` objects
 /// whose calls go to the next layer down, never back into this one.
-fn instance_view(istate: &crate::dispatch::NextInstanceFn) -> (ash::Entry, ash::Instance) {
+///
+/// `vkGetDeviceProcAddr` is the one entry point taken from the device chain
+/// rather than asked of the instance one. `ash` resolves every extension's
+/// device functions through the instance's copy of it, and inside a layer the
+/// instance chain has no usable answer for that name: the result was a null
+/// pointer, called the first time anything loaded an extension.
+fn instance_view(
+    istate: &crate::dispatch::NextInstanceFn,
+    next_gdpa: crate::dispatch::PFN_vkGetDeviceProcAddr,
+) -> (ash::Entry, ash::Instance) {
     let static_fn = ash::StaticFn {
         get_instance_proc_addr: istate.get_instance_proc_addr,
     };
     let entry = unsafe { ash::Entry::from_static_fn(static_fn.clone()) };
-    let instance = unsafe { ash::Instance::load(&static_fn, istate.instance) };
+    let gipa = istate.get_instance_proc_addr;
+    let handle = istate.instance;
+    let instance = unsafe {
+        ash::Instance::load_with(
+            |name| {
+                if name == c"vkGetDeviceProcAddr" {
+                    next_gdpa as *const std::ffi::c_void
+                } else {
+                    gipa(handle, name.as_ptr())
+                        .map_or(std::ptr::null(), |f| f as *const std::ffi::c_void)
+                }
+            },
+            handle,
+        )
+    };
     (entry, instance)
 }
 
@@ -558,6 +582,7 @@ pub struct PreparedDevice {
 /// pNext chain must stay alive until [`PreparedDevice::finish`].
 pub unsafe fn prepare(
     istate: &crate::dispatch::NextInstanceFn,
+    next_gdpa: crate::dispatch::PFN_vkGetDeviceProcAddr,
     physical_device: vk::PhysicalDevice,
     ci: &vk::DeviceCreateInfo<'_>,
     extensions: &[*const std::ffi::c_char],
@@ -576,7 +601,7 @@ pub unsafe fn prepare(
         log::info!("instance asked for Vulkan 1.0; encoding on a device of its own");
         return None;
     }
-    let (entry, instance) = instance_view(istate);
+    let (entry, instance) = instance_view(istate, next_gdpa);
     let requirements = match pixelforge::VideoContextBuilder::new().encode_device_requirements(
         &entry,
         &instance,
@@ -720,6 +745,9 @@ pub struct SharedDevice {
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     device: ash::Device,
+    /// Timeline semaphore queries through their KHR names, which a device
+    /// created below Vulkan 1.2 still has: the encoder enabled the extension.
+    timeline: ash::khr::timeline_semaphore::Device,
     pub queues: QueuePlan,
 }
 
@@ -756,13 +784,48 @@ impl SharedDevice {
                 device,
             )
         };
+        let timeline = ash::khr::timeline_semaphore::Device::load(&instance, &device);
         Self {
             entry,
             instance,
             physical_device,
             device,
+            timeline,
             queues: additions.queues,
         }
+    }
+
+    /// A new timeline semaphore at zero.
+    pub fn create_timeline(&self) -> Option<vk::Semaphore> {
+        let mut kind = vk::SemaphoreTypeCreateInfo::default()
+            .semaphore_type(vk::SemaphoreType::TIMELINE)
+            .initial_value(0);
+        let info = vk::SemaphoreCreateInfo::default().push(&mut kind);
+        unsafe { self.device.create_semaphore(&info, None) }.ok()
+    }
+
+    pub fn destroy_timeline(&self, semaphore: vk::Semaphore) {
+        unsafe { self.device.destroy_semaphore(semaphore, None) };
+    }
+
+    /// Whether `point` has been reached, without waiting.
+    pub fn reached(&self, point: pixelforge::TimelinePoint) -> bool {
+        unsafe { self.timeline.get_semaphore_counter_value(point.semaphore) }
+            .is_ok_and(|v| v >= point.value)
+    }
+
+    /// Wait up to `timeout` for `point`. Whether it was reached.
+    pub fn wait(&self, point: pixelforge::TimelinePoint, timeout: std::time::Duration) -> bool {
+        let semaphores = [point.semaphore];
+        let values = [point.value];
+        let info = vk::SemaphoreWaitInfo::default()
+            .semaphores(&semaphores)
+            .values(&values);
+        unsafe {
+            self.timeline
+                .wait_semaphores(&info, timeout.as_nanos() as u64)
+        }
+        .is_ok()
     }
 
     /// A pixelforge context on the game's device, submitting to the queues

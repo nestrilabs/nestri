@@ -197,6 +197,9 @@ pub struct CapturedFrame {
     /// the frame — encoded, skipped, or abandoned — returns the slot, so the
     /// present hook can never blit over a buffer the encoder is still reading.
     pub slot: Option<crate::slots::SlotGuard>,
+    /// On a device the encoder shares, the timeline point the slot's blit
+    /// signals. `None` when the frame has to be waited for on the CPU.
+    pub blit: Option<pixelforge::TimelinePoint>,
 }
 
 /// An encode in flight, with the time of the present it came from.
@@ -297,6 +300,12 @@ struct EncodedFrame {
 }
 
 pub enum FrameSource {
+    /// A slot image on the game's own device, read in place once `blit` is
+    /// reached.
+    Shared {
+        image: ash::vk::Image,
+        blit: pixelforge::TimelinePoint,
+    },
     DmaBuf {
         fd: RawFd,
         stride: u32,
@@ -380,6 +389,31 @@ fn resolve_codec(requested: Option<&str>) -> Option<(HwCodec, pixelforge::VideoC
             probe_any()
         }
         None => probe_any(),
+    }
+}
+
+/// The codec to use on a context that already exists: the one asked for if
+/// it can, falling back the way [`resolve_codec`] does.
+fn resolve_codec_on(ctx: &pixelforge::VideoContext, requested: Option<&str>) -> Option<HwCodec> {
+    let has = |c: HwCodec| ctx.supports_encode(c.to_pixelforge());
+    let best = || {
+        [HwCodec::AV1, HwCodec::H265, HwCodec::H264]
+            .into_iter()
+            .find(|&c| has(c))
+    };
+    match requested {
+        Some("av1") if has(HwCodec::AV1) => Some(HwCodec::AV1),
+        Some("h265" | "hevc") if has(HwCodec::H265) => Some(HwCodec::H265),
+        Some("h264" | "avc") => has(HwCodec::H264).then_some(HwCodec::H264),
+        Some("av1" | "h265" | "hevc") => {
+            log::warn!("{} unavailable — falling back to H.264", requested.unwrap());
+            has(HwCodec::H264).then_some(HwCodec::H264)
+        }
+        Some(other) => {
+            log::warn!("unknown NESCAPTURE_CODEC={other} — probing best available");
+            best()
+        }
+        None => best(),
     }
 }
 
@@ -624,6 +658,10 @@ fn env_opt_u32(key: &str) -> Option<u32> {
 
 pub struct PipelineHandle {
     frame_tx: mpsc::SyncSender<CapturedFrame>,
+    /// The encoder thread, which owns every pixelforge object. On a shared
+    /// device those are objects on the game's device, so the game's
+    /// vkDestroyDevice has to wait for this thread first. See [`Self::finish`].
+    encoder_thread: Option<thread::JoinHandle<()>>,
     capture_progress: Arc<Progress>,
     progress_epoch: Instant,
     idr_requested: Arc<AtomicBool>,
@@ -640,9 +678,18 @@ pub struct PipelineHandle {
 }
 
 impl PipelineHandle {
-    pub fn new(config: PipelineConfig) -> Result<Self, String> {
-        let (codec, ctx) = resolve_codec(config.codec_request.as_deref())
-            .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
+    /// Build the pipeline, on `shared` when given: a context on the game's own
+    /// device. Without one the encoder gets a device of its own.
+    pub fn new(
+        config: PipelineConfig,
+        shared: Option<pixelforge::VideoContext>,
+    ) -> Result<Self, String> {
+        let (codec, ctx) = match shared {
+            Some(ctx) => resolve_codec_on(&ctx, config.codec_request.as_deref())
+                .map(|codec| (codec, ctx)),
+            None => resolve_codec(config.codec_request.as_deref()),
+        }
+        .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
 
         // One deep. The frame in it is now an unwaited blit rather than an
         // exported buffer, and the ring's four slots are already the
@@ -695,7 +742,7 @@ impl PipelineHandle {
         };
         let enc_progress = encoder_progress.clone();
         let progress_base = progress_epoch;
-        thread::Builder::new()
+        let encoder_thread = thread::Builder::new()
             .name("nescapture-encoder".into())
             .spawn(move || {
                 encoder_thread(
@@ -708,6 +755,7 @@ impl PipelineHandle {
                 )
             })
             .map_err(|e| format!("spawn encoder: {e}"))?;
+        let encoder_thread = Some(encoder_thread);
 
         let ipc_path = config.ipc_path.clone();
         let ipc_cfg = IpcConfig {
@@ -842,6 +890,7 @@ impl PipelineHandle {
         );
         Ok(Self {
             frame_tx,
+            encoder_thread,
             capture_progress: capture_progress.clone(),
             progress_epoch,
             idr_requested,
@@ -884,6 +933,28 @@ impl PipelineHandle {
 
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
+    }
+
+    /// Stop the pipeline and wait up to `timeout` for the encoder thread to
+    /// have dropped everything it built. Whether it did.
+    ///
+    /// The thread notices within one receive timeout of the flag, or at once
+    /// when the frame channel closes, which dropping the handle does.
+    pub fn finish(mut self, timeout: std::time::Duration) -> bool {
+        self.shutdown();
+        let Some(thread) = self.encoder_thread.take() else {
+            return true;
+        };
+        drop(self);
+        let deadline = Instant::now() + timeout;
+        while !thread.is_finished() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let _ = thread.join();
+        true
     }
 
     pub fn request_idr(&self) {
@@ -959,6 +1030,10 @@ fn encoder_thread(
 
     let mut frame_number = 0u32;
 
+    // The slot of the last frame converted in place, until that conversion
+    // is known to be done. See `HeldSlot`.
+    let mut held: Option<HeldSlot> = None;
+
     let wanted_depth = std::env::var("NESCAPTURE_DEPTH");
     // So the ten-bit refusal is said once per codec rather than per frame.
     let mut warned_depth = false;
@@ -970,6 +1045,14 @@ fn encoder_thread(
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
+        }
+
+        // Also on idle ticks, so the last frame before a pause gives its slot
+        // back: a ring rebuild waits for every slot.
+        if held.as_ref().is_some_and(HeldSlot::done)
+            && let Some(done) = held.take()
+        {
+            done.release();
         }
 
         // Check for dynamic encode settings changes
@@ -1035,7 +1118,7 @@ fn encoder_thread(
                 cfg.wanted_depth_override = Some(depth);
             }
             // Drop old encoder state to force re-creation with new settings
-            encoder_state = None;
+            drop_encoder(&mut encoder_state, &mut held);
             // Signal IPC thread to set FLAG_RECONFIG on next frame
             cfg.needs_reconfig_flag.store(true, Ordering::Relaxed);
             // Update IPC thread with new codec
@@ -1046,7 +1129,7 @@ fn encoder_thread(
         }
 
         progress.note(epoch, 1);
-        let raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        let mut raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(frame) => frame,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -1143,6 +1226,9 @@ fn encoder_thread(
                         raw.height,
                     );
                 }
+                // The old converter may still be reading a held slot, and the
+                // held slot's point is on the old converter's timeline.
+                drop_encoder(&mut encoder_state, &mut held);
                 match PerFrameEncoder::new(
                     &ctx,
                     cfg.codec.to_pixelforge(),
@@ -1197,6 +1283,23 @@ fn encoder_thread(
 
         progress.note(epoch, 2);
         let result = match &mut source {
+            FrameSource::Shared { image, blit } => {
+                let (result, converted) =
+                    shared_encode_frame(&mut state.converter, &mut state.encoder, *image, *blit);
+                // Replacing the held slot is what releases it: a successful
+                // conversion started only once the previous one had finished.
+                if let (Some(converted), Some(guard)) = (converted, raw.slot.take())
+                    && let Some(prev) = held.replace(HeldSlot {
+                        guard,
+                        slot: buffer_index,
+                        converted,
+                        ds: ds.clone(),
+                    })
+                {
+                    prev.release();
+                }
+                result
+            }
             FrameSource::DmaBuf {
                 fd,
                 stride,
@@ -1270,6 +1373,7 @@ fn encoder_thread(
     if let Some(state) = encoder_state.as_mut() {
         let _ = state.encoder.flush();
     }
+    drop_encoder(&mut encoder_state, &mut held);
 
     log::info!("encoder thread exited");
 }
@@ -1621,6 +1725,81 @@ fn gpu_encode_frame(
     encoder
         .encode(encoder.input_image())
         .map_err(|e| anyhow::anyhow!("Encoder::encode frame {frame_number}: {e}"))
+}
+
+/// A slot whose image the converter may still be reading.
+///
+/// On a shared device nothing waits for a conversion on the CPU, so a frame's
+/// slot cannot go back to the ring the moment its conversion is submitted: the
+/// next blit into it would race the read. It is held until the conversion is
+/// known to be done instead, which costs nothing in steady state -- the next
+/// frame's conversion waits for this one before it starts, so the slot is
+/// released right after -- and a timeline poll on idle ticks otherwise.
+///
+/// The point is on the converter's own timeline, so it may only be looked at
+/// while that converter exists. [`drop_encoder`] is what keeps it so.
+struct HeldSlot {
+    guard: crate::slots::SlotGuard,
+    slot: usize,
+    converted: pixelforge::TimelinePoint,
+    ds: Arc<crate::state::DeviceState>,
+}
+
+impl HeldSlot {
+    fn done(&self) -> bool {
+        self.ds
+            .shared_encoder()
+            .is_none_or(|s| s.reached(self.converted))
+    }
+
+    /// Give the slot back. The blit it held finished before the conversion
+    /// that waited on it did, so its timing can be read without waiting.
+    fn release(self) {
+        if let Some(ns) = unsafe { crate::capture::blit_gpu_time_ns(&self.ds, self.slot, false) }
+            && let Ok(enc) = self.ds.encoder.lock()
+            && let Some(ref h) = *enc
+        {
+            h.timing.blit.record(std::time::Duration::from_nanos(ns));
+        }
+        drop(self.guard);
+    }
+}
+
+/// Drop the encoder and its converter, then the held slot.
+///
+/// In that order: dropping the converter waits for its last conversion, after
+/// which the held slot is free and its point, on the converter's timeline,
+/// would be a dangling handle anyway.
+fn drop_encoder(state: &mut Option<PerFrameEncoder>, held: &mut Option<HeldSlot>) {
+    *state = None;
+    if let Some(slot) = held.take() {
+        slot.release();
+    }
+}
+
+/// Convert a slot image in place on the game's device and encode the result,
+/// every step ordered on the GPU: the conversion waits for the blit, the
+/// encode for the conversion.
+///
+/// Also returns the point the conversion signals, whenever it was submitted,
+/// even if the encode then failed: the slot must be held until it is reached
+/// either way.
+fn shared_encode_frame(
+    converter: &mut ColorConverter,
+    encoder: &mut Encoder,
+    image: ash::vk::Image,
+    blit: pixelforge::TimelinePoint,
+) -> (Result<EncodeFuture>, Option<pixelforge::TimelinePoint>) {
+    let target = encoder.input_image();
+    let converted =
+        match converter.convert_async(image, ash::vk::ImageLayout::GENERAL, target, &[blit]) {
+            Ok(p) => p,
+            Err(e) => return (Err(anyhow::anyhow!("ColorConverter::convert_async: {e}")), None),
+        };
+    let result = encoder
+        .encode_after(target, &[converted])
+        .map_err(|e| anyhow::anyhow!("Encoder::encode_after: {e}"));
+    (result, Some(converted))
 }
 
 fn map_vk_format_raw(vk_format: u32) -> ash::vk::Format {

@@ -110,6 +110,15 @@ pub struct CaptureRing {
     /// cannot reacquire it until the present that waited on this semaphore is
     /// done.
     pub present_wait: Vec<vk::Semaphore>,
+    /// Timeline semaphore every blit signals, one value higher each time, or
+    /// null when the encoder does not share this device.
+    ///
+    /// On a shared device this is the whole handover: the frame carries the
+    /// value its blit signals, and the encoder's GPU work waits on it. Nothing
+    /// waits on the CPU.
+    pub blit_timeline: vk::Semaphore,
+    /// The value the last blit signalled.
+    pub blit_value: u64,
 }
 
 /// Index into [`CaptureRing::blits`] for one (swapchain image, slot) pair.
@@ -189,6 +198,10 @@ pub struct DeviceState {
     /// device could not be created with what the encoder needs, in which case
     /// the encoder uses a device of its own.
     pub shared: Option<crate::shared::SharedDevice>,
+    /// Whether the encode pipeline really runs on `shared`. Set once the
+    /// pipeline has been built on it; until then, and for good if that fails,
+    /// capture works as it does for a device of the encoder's own.
+    pub shared_active: std::sync::atomic::AtomicBool,
 
     // Phase 1: shader / pipeline
     pub shader_registry: DashMap<u64, u64>,
@@ -264,6 +277,15 @@ pub struct DeviceState {
     /// The build is slow and happens once; without this latch every present
     /// arriving before it finishes would start another one.
     pub encoder_starting: std::sync::atomic::AtomicBool,
+}
+
+impl DeviceState {
+    /// The shared device, when the encoder is actually running on it.
+    pub fn shared_encoder(&self) -> Option<&crate::shared::SharedDevice> {
+        self.shared
+            .as_ref()
+            .filter(|_| self.shared_active.load(std::sync::atomic::Ordering::Acquire))
+    }
 }
 
 // ── Per-command-buffer state ──────────────────────────────────────────────────

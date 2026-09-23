@@ -173,6 +173,7 @@ fn finish(
 struct Submission {
     slot: SlotGuard,
     present_wait: vk::Semaphore,
+    blit: Option<pixelforge::TimelinePoint>,
     generation: u64,
     width: u32,
     height: u32,
@@ -247,6 +248,7 @@ unsafe fn try_capture(
     Some(Submission {
         slot: submission.slot,
         present_wait: submission.present_wait,
+        blit: submission.blit,
         generation: submission.generation,
         width: sc_ext.width,
         height: sc_ext.height,
@@ -276,6 +278,7 @@ fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
         vk_colorspace: ds.swapchain_colorspace.load(Ordering::Relaxed),
         present_time: submission.present_time,
         slot: Some(submission.slot),
+        blit: submission.blit,
     });
 }
 
@@ -306,10 +309,27 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
                 log::error!("no encode pipeline configuration; capture disabled");
                 return;
             };
-            match PipelineHandle::new(cfg) {
+            // On the game's own device where it was created for that, and
+            // on a device of the encoder's own where it was not, or where
+            // adopting it fails.
+            let shared = ds.shared.as_ref().and_then(|s| match s.video_context() {
+                Ok(ctx) => Some(ctx),
+                Err(e) => {
+                    log::warn!("could not encode on the game's device ({e}); using a device of its own");
+                    None
+                }
+            });
+            let on_shared = shared.is_some();
+            match PipelineHandle::new(cfg, shared) {
                 Ok(h) => {
+                    // Before the handle is published: the first capture after
+                    // it builds the ring, and must build it for this device.
+                    ds.shared_active.store(on_shared, Ordering::Release);
                     if let Ok(mut enc) = ds.encoder.lock() {
                         *enc = Some(h);
+                    }
+                    if on_shared {
+                        log::info!("encoding on the game's own device");
                     }
                 }
                 Err(e) => log::error!("encode pipeline: {e}"),
@@ -319,9 +339,13 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
     false
 }
 
-/// Wait for a frame's blit and turn its slot into something the encoder reads.
+/// Turn a frame's slot into something the encoder reads.
 ///
-/// This is the CPU handover the two devices need: pixelforge's `VkDevice`
+/// On a device the encoder shares this is immediate: the slot's image is read
+/// in place, and the encoder's GPU work waits on the blit's timeline point, so
+/// nothing here waits at all.
+///
+/// Otherwise this is the CPU handover two devices need: pixelforge's `VkDevice`
 /// shares no timeline with the game's, so no semaphore can bridge them and
 /// somebody has to block. It used to be a thread of its own between the present
 /// hook and the encoder; it is now the first thing the encoder thread does with
@@ -333,6 +357,12 @@ pub fn resolve_source(
     frame: &CapturedFrame,
 ) -> Option<FrameSource> {
     let slot_index = frame.slot.as_ref()?.index();
+
+    if let Some(blit) = frame.blit {
+        let ring = ds.capture_ring.lock().ok()?;
+        let image = ring.as_ref()?.slots.get(slot_index)?.image;
+        return Some(FrameSource::Shared { image, blit });
+    }
 
     // Copy the handles out and drop the ring lock before waiting: the present
     // hook needs that lock every frame and must not queue behind a GPU wait.
@@ -350,7 +380,7 @@ pub fn resolve_source(
     }
 
     // After the fence, so the queries have landed and `WAIT` returns at once.
-    if let Some(ns) = unsafe { capture::blit_gpu_time_ns(ds, slot_index) }
+    if let Some(ns) = unsafe { capture::blit_gpu_time_ns(ds, slot_index, true) }
         && let Ok(enc) = ds.encoder.lock()
         && let Some(ref h) = *enc
     {
