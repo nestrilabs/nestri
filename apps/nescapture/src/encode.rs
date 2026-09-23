@@ -1212,6 +1212,7 @@ fn encoder_thread(
                     input_fmt,
                     out_fmt,
                     raw.vk_colorspace,
+                    matches!(source, FrameSource::Shared { .. }),
                 ) {
                     Ok(s) => {
                         init_failed_at = None;
@@ -1249,9 +1250,16 @@ fn encoder_thread(
 
         progress.note(epoch, 2);
         let result = match &mut source {
+            // The encoder converts RGB itself: it copies the slot and waits for
+            // the copy before returning, so the slot needs no holding.
+            FrameSource::Shared { image, blit } if state.converter.is_none() => state
+                .encoder
+                .encode_after(*image, &[*blit])
+                .map_err(|e| anyhow::anyhow!("Encoder::encode_after: {e}")),
             FrameSource::Shared { image, blit } => {
+                let converter = state.converter.as_mut().expect("guarded above");
                 let (result, converted) =
-                    shared_encode_frame(&mut state.converter, &mut state.encoder, *image, *blit);
+                    shared_encode_frame(converter, &mut state.encoder, *image, *blit);
                 // Replacing the held slot is what releases it: a successful
                 // conversion started only once the previous one had finished.
                 if let (Some(converted), Some(guard)) = (converted, raw.slot.take())
@@ -1314,7 +1322,8 @@ fn encoder_thread(
 
 struct PerFrameEncoder {
     encoder: Encoder,
-    converter: ColorConverter,
+    /// `None` when the encoder takes the RGB frame and converts it itself.
+    converter: Option<ColorConverter>,
     bit_depth: EncodeBitDepth,
     pixel_format: PixelFormat,
     /// The geometry this encoder and its converter were built for.
@@ -1342,6 +1351,7 @@ impl PerFrameEncoder {
         input_fmt: InputFormat,
         out_fmt: OutputFormat,
         vk_colorspace: u32,
+        in_place: bool,
     ) -> Result<Self, String> {
         let source = vk_colorspace_to_source_spec(vk_colorspace);
         log::info!(
@@ -1421,11 +1431,50 @@ impl PerFrameEncoder {
                 .with_max_bitrate(bps(max_kbps)),
         };
 
+        // Where the conversion is only the YUV matrix, the encoder can take
+        // the RGB frame and apply it itself, and the converter's dispatch and
+        // copy go out of the frame. Only for frames read in place: the CPU
+        // readback path uploads YUV. A driver can still refuse the format for
+        // this codec and profile, which is only known by trying, so a refusal
+        // falls back to the converter.
+        //
+        // Limited range there, where everything else here is full: the one
+        // driver offering this writes limited range whatever it is asked, so
+        // the stream is labelled to match what it carries.
+        let mut hardware = conv_cfg.clone();
+        hardware.range = ColorRange::Limited;
+        if in_place
+            && std::env::var("NESCAPTURE_RGB_ENCODE").as_deref() != Ok("0")
+            && let Some(rgb) = hardware.rgb_encode_input(ctx)
+            && let Some(description) = hardware.color_description()
+        {
+            let rgb_cfg = enc_cfg
+                .clone()
+                .with_color_description(description)
+                .with_rgb_input(rgb);
+            match Encoder::new(ctx.clone(), rgb_cfg) {
+                Ok(encoder) => {
+                    log::info!("the encoder converts {rgb:?} to YUV itself; no conversion shader");
+                    return Ok(Self {
+                        encoder,
+                        converter: None,
+                        bit_depth,
+                        pixel_format,
+                        width,
+                        height,
+                    });
+                }
+                Err(e) => log::info!("RGB input refused ({e}); converting with the shader"),
+            }
+        }
+
         let encoder =
             Encoder::new(ctx.clone(), enc_cfg).map_err(|e| format!("Encoder::new: {e}"))?;
 
-        let converter = ColorConverter::new(ctx.clone(), conv_cfg)
-            .map_err(|e| format!("ColorConverter::new: {e}"))?;
+        let converter = Some(
+            ColorConverter::new(ctx.clone(), conv_cfg)
+                .map_err(|e| format!("ColorConverter::new: {e}"))?,
+        );
 
         Ok(Self {
             encoder,
