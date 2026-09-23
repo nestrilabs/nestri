@@ -14,6 +14,7 @@ use std::os::raw::c_void;
 use std::sync::Arc;
 
 const VK_LAYER_LINK_INFO: u32 = 0;
+const VK_LOADER_DATA_CALLBACK: u32 = 1;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn vkCreateDevice(
@@ -42,6 +43,14 @@ pub unsafe extern "system" fn vkCreateDevice(
         }
     };
     unsafe { (*layer_info).u.pDeviceLayerInfo = (*dev_link).pNext };
+
+    let set_loader_data = unsafe {
+        find_layer_link::<VkLayerDeviceCreateInfo>(
+            (*p_create_info).p_next as *const c_void,
+            VK_LOADER_DATA_CALLBACK,
+        )
+    }
+    .and_then(|info| unsafe { (*info).u.pfnSetDeviceLoaderData });
 
     let inst_key = unsafe { dispatch_key(physical_device.as_raw() as *const c_void) };
     let istate = match INSTANCE_STATE.get(&inst_key) {
@@ -292,6 +301,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         fp,
         shared,
         shared_active: std::sync::atomic::AtomicBool::new(false),
+        set_loader_data,
 
         shader_registry: DashMap::new(),
         pipeline_registry: DashMap::new(),
@@ -449,9 +459,54 @@ pub unsafe extern "system" fn vkGetDeviceQueue(
             },
         }
         let queue = unsafe { *p_queue };
+        // The encoder's queues reach this hook without the loader in between.
+        // For the game's, the loader stamps them again on the way out.
+        unsafe { stamp(&ds, queue.as_raw() as *mut c_void) };
         QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
         crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), queue_family_index);
     }
+}
+
+/// Give a dispatchable object this layer obtained itself the loader's
+/// dispatch data.
+///
+/// The loader writes its dispatch pointer into every queue and command buffer
+/// that passes through its own entry points. One a layer allocates by calling
+/// the next layer directly never does, and a layer below this one that finds
+/// its per-object state by that pointer then finds nothing: the validation
+/// layer aborts, in the first vkCmd* recorded into such a command buffer. The
+/// loader hands every layer this callback at vkCreateDevice for exactly this.
+///
+/// # Safety
+///
+/// `object` must be a queue or command buffer of `ds`'s device.
+pub unsafe fn stamp(ds: &DeviceState, object: *mut c_void) {
+    if let Some(set) = ds.set_loader_data
+        && unsafe { set(ds.raw, object) } != vk::Result::SUCCESS
+    {
+        log::warn!("vkSetDeviceLoaderData refused an object of the layer's own");
+    }
+}
+
+/// vkAllocateCommandBuffers for the encoder, whose command buffers are the
+/// layer's own: allocated below the loader, so stamped here. See [`stamp`].
+pub unsafe extern "system" fn encoder_allocate_command_buffers(
+    device: vk::Device,
+    p_allocate_info: *const vk::CommandBufferAllocateInfo<'_>,
+    p_command_buffers: *mut vk::CommandBuffer,
+) -> vk::Result {
+    let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
+    let Some(ds) = DEVICE_STATE.get(&key).map(|s| s.clone()) else {
+        return vk::Result::ERROR_INITIALIZATION_FAILED;
+    };
+    let result = unsafe { (ds.fp.allocate_command_buffers)(device, p_allocate_info, p_command_buffers) };
+    if result == vk::Result::SUCCESS {
+        let count = unsafe { (*p_allocate_info).command_buffer_count } as usize;
+        for cb in unsafe { std::slice::from_raw_parts(p_command_buffers, count) } {
+            unsafe { stamp(&ds, cb.as_raw() as *mut c_void) };
+        }
+    }
+    result
 }
 
 /// Whether the game's queues in `family` were created internally synchronized
@@ -483,6 +538,7 @@ pub unsafe extern "system" fn vkGetDeviceQueue2(
     }
     unsafe { get2(device, &info, p_queue) };
     let queue = unsafe { *p_queue };
+    unsafe { stamp(&ds, queue.as_raw() as *mut c_void) };
     QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
     crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), info.queue_family_index);
 }

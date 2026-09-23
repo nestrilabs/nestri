@@ -102,10 +102,16 @@ pub(crate) struct VkLayerDeviceLink {
     pfnNextGetDeviceProcAddr: Option<PFN_vkGetDeviceProcAddr>,
 }
 
+/// Stamps the loader's dispatch data into a dispatchable object a layer
+/// created itself. See [`crate::device::stamp`].
+pub(crate) type PFN_vkSetDeviceLoaderData =
+    unsafe extern "system" fn(vk::Device, *mut c_void) -> vk::Result;
+
 #[repr(C)]
 pub(crate) union VkLayerCreateInfoU {
     pub pLayerInfo: *mut VkLayerInstanceLink,
     pub pDeviceLayerInfo: *mut VkLayerDeviceLink,
+    pub pfnSetDeviceLoaderData: Option<PFN_vkSetDeviceLoaderData>,
 }
 
 const VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO: i32 = 47;

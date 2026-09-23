@@ -754,10 +754,14 @@ pub struct SharedDevice {
 impl SharedDevice {
     /// Wrap the game's freshly created device for the encoder.
     ///
-    /// The device's calls go to the next layer down, except `vkGetDeviceQueue`,
-    /// which comes back to this layer's own hook: a queue created internally
-    /// synchronized can only be fetched with vkGetDeviceQueue2, and the hook is
-    /// what translates, for the encoder exactly as for the game.
+    /// The device's calls go to the next layer down, with two exceptions that
+    /// come back to this layer. `vkGetDeviceQueue`, because a queue created
+    /// internally synchronized can only be fetched with vkGetDeviceQueue2, and
+    /// the hook is what translates, for the encoder exactly as for the game.
+    /// And `vkAllocateCommandBuffers`, because the encoder's command buffers
+    /// never pass through the loader and have to be given its dispatch data by
+    /// hand; see [`crate::device::stamp`]. The hooked `vkGetDeviceQueue` does
+    /// the same for the encoder's queues.
     ///
     /// # Safety
     ///
@@ -776,6 +780,8 @@ impl SharedDevice {
                 |name| {
                     if name == c"vkGetDeviceQueue" {
                         crate::device::vkGetDeviceQueue as *const std::ffi::c_void
+                    } else if name == c"vkAllocateCommandBuffers" {
+                        crate::device::encoder_allocate_command_buffers as *const std::ffi::c_void
                     } else {
                         next_gdpa(device, name.as_ptr())
                             .map_or(std::ptr::null(), |f| f as *const std::ffi::c_void)

@@ -202,6 +202,9 @@ pub struct DeviceState {
     /// pipeline has been built on it; until then, and for good if that fails,
     /// capture works as it does for a device of the encoder's own.
     pub shared_active: std::sync::atomic::AtomicBool,
+    /// The loader's callback for stamping dispatchable objects this layer
+    /// creates itself. See [`crate::device::stamp`].
+    pub set_loader_data: Option<crate::PFN_vkSetDeviceLoaderData>,
 
     // Phase 1: shader / pipeline
     pub shader_registry: DashMap<u64, u64>,

@@ -672,6 +672,9 @@ unsafe fn create_capture_ring(
         unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
         return None;
     }
+    for &cb in &blits {
+        unsafe { crate::device::stamp(ds, cb.as_raw() as *mut std::ffi::c_void) };
+    }
 
     // Pre-signalled: the first wait on a fresh slot must return immediately.
     let fci = vk::FenceCreateInfo {
