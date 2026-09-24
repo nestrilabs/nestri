@@ -1496,26 +1496,48 @@ impl PerFrameEncoder {
         if in_place
             && std::env::var("NESCAPTURE_RGB_ENCODE").as_deref() != Ok("0")
             && let Some(rgb) = conv_cfg.rgb_encode_input(ctx)
-            && let Some(description) = conv_cfg.color_description()
         {
-            let rgb_cfg = enc_cfg
-                .clone()
-                .with_color_description(description)
-                .with_rgb_input(rgb);
-            match Encoder::new(ctx.clone(), rgb_cfg) {
-                Ok(encoder) => {
-                    log::info!("the encoder converts {rgb:?} to YUV itself; no conversion shader");
-                    return Ok(Self {
-                        encoder,
-                        converter: None,
-                        bit_depth,
-                        pixel_format,
-                        width,
-                        height,
-                    });
+            // Full range first, because it is what we would rather send, then
+            // limited -- not as a preference but because some hardware only
+            // does one. VCN 5 converts BT.709 to limited range whatever it is
+            // asked for, and RADV reports that honestly rather than pretending
+            // otherwise, so asking for full range there fails outright.
+            //
+            // Taking limited range is better than it sounds and much better
+            // than the alternative: the samples are the hardware's either way,
+            // the description is derived from the same value the session is
+            // built with so the VUI says what the samples actually are, and the
+            // client expands on read for free. Falling back to the shader would
+            // instead spend GPU time on every frame of every session to avoid
+            // an expansion that costs the client two multiplies.
+            for range in [ColorRange::Full, ColorRange::Limited] {
+                let mut attempt = conv_cfg.clone();
+                attempt.range = range;
+                let Some(description) = attempt.color_description() else {
+                    continue;
+                };
+                let rgb_cfg = enc_cfg
+                    .clone()
+                    .with_color_description(description)
+                    .with_rgb_input(rgb);
+                match Encoder::new(ctx.clone(), rgb_cfg) {
+                    Ok(encoder) => {
+                        log::info!(
+                            "the encoder converts {rgb:?} to {range:?}-range YUV itself; no conversion shader"
+                        );
+                        return Ok(Self {
+                            encoder,
+                            converter: None,
+                            bit_depth,
+                            pixel_format,
+                            width,
+                            height,
+                        });
+                    }
+                    Err(e) => log::debug!("RGB input refused for {range:?} range ({e})"),
                 }
-                Err(e) => log::info!("RGB input refused ({e}); converting with the shader"),
             }
+            log::info!("the encoder does no RGB conversion this device can use; using the shader");
         }
 
         let encoder =
