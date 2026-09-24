@@ -109,6 +109,7 @@ CONFIG_DRM_VIRTIO_GPU=y
 
 # ── Filesystems ──────────────────────────────────────────
 CONFIG_EXT4_FS=y             # output/rootfs.ext4, and a box's writable install layer
+CONFIG_MISC_FILESYSTEMS=y    # the menu EROFS lives under; off in base.config, which drops it silently
 CONFIG_EROFS_FS=y            # a game's build image, the install overlay's lower layer
 CONFIG_OVERLAY_FS=y          # the session overlay over a read-only install
 
