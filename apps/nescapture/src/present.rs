@@ -186,6 +186,13 @@ unsafe fn try_capture(
     pi: &vk::PresentInfoKHR,
 ) -> Option<Submission> {
     let image_index = unsafe { *pi.p_image_indices } as usize;
+    // An image acquired from a retired swapchain may still be presented, and
+    // the tracked images belong to its replacement: the same index there is a
+    // different image, possibly of a different size.
+    let presented = unsafe { *pi.p_swapchains };
+    if !crate::swapchain::is_current(*ds.swapchain.lock().ok()?, presented) {
+        return None;
+    }
     let (sc_image, sc_fmt, sc_ext, image_count) = {
         let images = ds.swapchain_images.lock().ok()?;
         let fmt = *ds.swapchain_format.lock().ok()?;
