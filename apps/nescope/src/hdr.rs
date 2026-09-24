@@ -137,6 +137,97 @@ pub enum Primaries {
     Bt2020,
 }
 
+/// How bright the session says it can go.
+///
+/// A game asks the display what it can do before deciding how to render. Under
+/// wine that question reaches DXGI, DXGI asks the Wayland driver, and the
+/// driver asks the compositor -- so it ends here. An HDR output that answers
+/// with its primaries and transfer function and nothing about luminance tells
+/// a title only that HDR exists, and a title that cannot find out how bright
+/// the display goes renders as though it does not go far: exactly the flat,
+/// SDR-bright picture this was measured producing.
+///
+/// These are the session's numbers, not a panel's. nescope drives a video
+/// stream whose real display is on the other end of a network and is not
+/// knowable here, so the defaults describe an ordinary HDR display and
+/// `NESCOPE_HDR_MAX_NITS` / `NESCOPE_HDR_REFERENCE_NITS` exist for a person
+/// who knows better than the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HdrTarget {
+    /// Peak luminance, cd/m².
+    pub max_nits: u32,
+    /// Peak luminance sustained over a whole frame, cd/m². Real displays
+    /// cannot hold their peak across the panel, and a title that plans its
+    /// tone mapping around the small-area peak alone gets it wrong.
+    pub max_fall_nits: u32,
+    /// Reference white -- what diffuse white renders at. BT.2408 says 203,
+    /// and it is the number a compositor maps its own SDR white onto.
+    pub reference_nits: u32,
+    /// Black level, in units of 0.0001 cd/m², as the protocol carries it.
+    pub min_lum: u32,
+}
+
+impl Default for HdrTarget {
+    fn default() -> Self {
+        Self {
+            // The protocol's own default for PQ, and comfortably above the
+            // 250 nits below which DXVK reads a reported peak as "the driver
+            // did not fill this in".
+            max_nits: 1000,
+            max_fall_nits: 600,
+            reference_nits: 203,
+            // 0.005 cd/m², which is what the protocol documents as the PQ
+            // primary colour volume's minimum.
+            min_lum: 50,
+        }
+    }
+}
+
+impl HdrTarget {
+    /// Read the overrides, falling back to the default for anything absent or
+    /// unreadable rather than refusing to start over a stray environment
+    /// variable.
+    pub fn from_env() -> Self {
+        let read = |key: &str, fallback: u32| {
+            std::env::var(key)
+                .ok()
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .filter(|v| *v > 0)
+                .unwrap_or(fallback)
+        };
+        let default = Self::default();
+        Self {
+            max_nits: read("NESCOPE_HDR_MAX_NITS", default.max_nits),
+            max_fall_nits: read("NESCOPE_HDR_MAX_FALL_NITS", default.max_fall_nits),
+            reference_nits: read("NESCOPE_HDR_REFERENCE_NITS", default.reference_nits),
+            min_lum: default.min_lum,
+        }
+        .clamped()
+    }
+
+    /// Put an override back inside what a display can be.
+    ///
+    /// No panel sustains its small-area peak across the whole frame, so a
+    /// full-frame luminance above the peak describes nothing. Clamped rather
+    /// than refused: the person asked for a bright display and got the
+    /// brightest coherent one.
+    pub fn clamped(self) -> Self {
+        Self {
+            max_fall_nits: self.max_fall_nits.min(self.max_nits),
+            ..self
+        }
+    }
+
+    /// Whether this describes a volume at all.
+    ///
+    /// The protocol raises `invalid_luminance` on a range that does not go
+    /// upwards, and the compositor is the one sending it here, so a bad
+    /// override must be dropped rather than passed on.
+    pub fn is_usable(&self) -> bool {
+        self.max_nits as f64 > self.min_lum as f64 / 10_000.0 && self.max_nits > 0
+    }
+}
+
 /// A resolved per-surface color / HDR description.
 #[derive(Debug, Clone, Copy)]
 pub struct ImageDescription {
@@ -147,6 +238,15 @@ pub struct ImageDescription {
     pub mastering_luminance: Option<(u32, u32)>,
     pub mastering_primaries: Option<[(u32, u32); 3]>,
     pub white_point: Option<(u32, u32)>,
+    /// The primary colour volume's luminance range, as `(min * 10000, max,
+    /// reference)` in cd/m². `None` says nothing, which is what an SDR
+    /// description does and what this said about HDR until it was measured
+    /// costing a title its highlights.
+    pub luminances: Option<(u32, u32, u32)>,
+    /// The target colour volume: what the display this is headed for can
+    /// actually show. A title reads this to size its tone mapping, and wine
+    /// maps it onto the luminance fields of `DXGI_OUTPUT_DESC1`.
+    pub target: Option<HdrTarget>,
 }
 
 impl ImageDescription {
@@ -159,10 +259,17 @@ impl ImageDescription {
             mastering_luminance: None,
             mastering_primaries: None,
             white_point: None,
+            // SDR's luminance is the display's business and always has been.
+            luminances: None,
+            target: None,
         }
     }
 
-    pub fn bt2020_pq() -> Self {
+    /// HDR10, saying how bright it goes.
+    ///
+    /// The luminances are the point: see [`HdrTarget`]. A description without
+    /// them is what a title reads as "HDR, brightness unknown".
+    pub fn bt2020_pq(target: HdrTarget) -> Self {
         Self {
             transfer_function: TransferFunction::St2084Pq,
             primaries: Primaries::Bt2020,
@@ -171,6 +278,12 @@ impl ImageDescription {
             mastering_luminance: None,
             mastering_primaries: None,
             white_point: None,
+            luminances: target.is_usable().then_some((
+                target.min_lum,
+                target.max_nits,
+                target.reference_nits,
+            )),
+            target: target.is_usable().then_some(target),
         }
     }
 
@@ -217,6 +330,7 @@ pub struct CreatorParams {
     mastering_luminance: Option<(u32, u32)>,
     mastering_primaries: Option<[(u32, u32); 3]>,
     white_point: Option<(u32, u32)>,
+    luminances: Option<(u32, u32, u32)>,
 }
 
 pub struct ColorOutputData;
@@ -241,6 +355,8 @@ pub struct SwapchainData {
 pub struct HdrState {
     /// Whether HDR protocols are advertised to clients.
     pub enabled: bool,
+    /// How bright this session says it goes. See [`HdrTarget`].
+    pub target: HdrTarget,
     /// Pending (not-yet-committed) image descriptions keyed by surface.
     pending: HashMap<WlSurface, Option<ImageDescription>>,
     /// Committed image descriptions keyed by surface.
@@ -277,8 +393,19 @@ impl HdrState {
             );
         }
 
+        let target = HdrTarget::from_env();
+        if enabled {
+            tracing::info!(
+                "HDR output advertised at {} nits peak, {} nits full-frame, {} nits reference white",
+                target.max_nits,
+                target.max_fall_nits,
+                target.reference_nits
+            );
+        }
+
         Self {
             enabled,
+            target,
             pending: HashMap::new(),
             current: HashMap::new(),
             pending_information: Vec::new(),
@@ -320,6 +447,23 @@ impl HdrState {
             match desc.primaries {
                 Primaries::Bt2020 => info.primaries_named(wp_color_manager_v1::Primaries::Bt2020),
                 Primaries::Srgb => info.primaries_named(wp_color_manager_v1::Primaries::Srgb),
+            }
+            // Both the volume and the target: the first says what the
+            // description covers, the second what a renderer should aim at.
+            // A title reads one or the other depending on its driver, and
+            // sending only one leaves half of them none the wiser.
+            if let Some((min_lum, max_lum, reference_lum)) = desc.luminances {
+                info.luminances(min_lum, max_lum, reference_lum);
+            }
+            // The target volume is the display's, and it is the half a title
+            // reads to decide how bright to render. Sent whole: wine maps the
+            // range onto `MinLuminance`/`MaxLuminance` and the two light
+            // levels onto the peak and full-frame fields beside them, and a
+            // field it cannot fill is one the title plans around not having.
+            if let Some(target) = desc.target {
+                info.target_luminance(target.min_lum, target.max_nits);
+                info.target_max_cll(target.max_nits);
+                info.target_max_fall(target.max_fall_nits);
             }
             info.done();
         }
@@ -568,9 +712,8 @@ impl Dispatch<GamescopeSwapchain, SwapchainData> for NescopeState {
                 state.vulkan_surfaces.insert(data.surface.clone());
 
                 if vk_colorspace == VK_COLOR_SPACE_HDR10_ST2084_EXT {
-                    state
-                        .hdr
-                        .set_pending(&data.surface, ImageDescription::bt2020_pq());
+                    let desc = ImageDescription::bt2020_pq(state.hdr.target);
+                    state.hdr.set_pending(&data.surface, desc);
                 } else {
                     state
                         .hdr
@@ -627,6 +770,10 @@ impl Dispatch<GamescopeSwapchain, SwapchainData> for NescopeState {
                         (display_primary_blue_x, display_primary_blue_y),
                     ]),
                     white_point: Some((white_point_x, white_point_y)),
+                    // Mastering metadata: what the content was graded on, not
+                    // the volume the surface covers.
+                    luminances: None,
+                    target: None,
                 };
                 state.hdr.set_pending(&data.surface, desc);
             }
@@ -675,7 +822,7 @@ impl GlobalDispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState 
 
 impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
     fn request(
-        _: &mut Self,
+        state: &mut Self,
         _: &Client,
         _: &wp_color_manager_v1::WpColorManagerV1,
         request: wp_color_manager_v1::Request,
@@ -711,7 +858,7 @@ impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
                 let res = data_init.init(
                     image_description,
                     ImageDescriptionUserData {
-                        desc: ImageDescription::bt2020_pq(),
+                        desc: ImageDescription::bt2020_pq(state.hdr.target),
                     },
                 );
                 res.ready(0);
@@ -784,9 +931,21 @@ impl
                     mastering_luminance: p.mastering_luminance,
                     mastering_primaries: p.mastering_primaries,
                     white_point: p.white_point,
+                    luminances: p.luminances,
+                    target: None,
                 };
                 let r = data_init.init(image_description, ImageDescriptionUserData { desc });
                 r.ready(0);
+            }
+            wp_image_description_creator_params_v1::Request::SetLuminances {
+                min_lum,
+                max_lum,
+                reference_lum,
+            } => {
+                // Advertised as a supported feature, so a client that uses it
+                // is entitled to have it mean something. It used to land in
+                // the catch-all and vanish.
+                data.params.lock().unwrap().luminances = Some((min_lum, max_lum, reference_lum));
             }
             wp_image_description_creator_params_v1::Request::SetTfNamed { tf } => {
                 let tf = match tf.into_result() {
@@ -910,7 +1069,7 @@ impl Dispatch<wp_color_management_output_v1::WpColorManagementOutputV1, ColorOut
             request
         {
             let desc = if state.hdr.enabled {
-                ImageDescription::bt2020_pq()
+                ImageDescription::bt2020_pq(state.hdr.target)
             } else {
                 ImageDescription::srgb()
             };
@@ -943,7 +1102,7 @@ impl
                 image_description,
             } => {
                 let desc = if state.hdr.enabled {
-                    ImageDescription::bt2020_pq()
+                    ImageDescription::bt2020_pq(state.hdr.target)
                 } else {
                     ImageDescription::srgb()
                 };
@@ -1040,5 +1199,76 @@ impl
         _: &DisplayHandle,
         _: &mut DataInit<'_, Self>,
     ) {
+    }
+}
+
+#[cfg(test)]
+mod hdr_target_tests {
+    use super::{HdrTarget, ImageDescription, Primaries, TransferFunction};
+
+    /// The default is the protocol's own for PQ, and the peak is deliberately
+    /// well above 250: DXVK reads a reported peak below that as the driver
+    /// having failed to fill the field in, and a title told nothing renders as
+    /// though the display does not go far.
+    #[test]
+    fn the_default_describes_an_ordinary_hdr_display() {
+        let t = HdrTarget::default();
+        assert_eq!(t.reference_nits, 203);
+        assert_eq!(t.min_lum, 50);
+        assert!(t.max_nits > 250);
+        assert!(t.is_usable());
+    }
+
+    /// The bug this exists for: an HDR output that names its primaries and
+    /// transfer function and nothing about luminance tells a title only that
+    /// HDR exists. Measured cost was a game rendering a 203-nit peak.
+    #[test]
+    fn an_hdr_description_says_how_bright_it_goes() {
+        let t = HdrTarget::default();
+        let desc = ImageDescription::bt2020_pq(t);
+        assert_eq!(desc.transfer_function, TransferFunction::St2084Pq);
+        assert_eq!(desc.primaries, Primaries::Bt2020);
+        assert_eq!(
+            desc.luminances,
+            Some((t.min_lum, t.max_nits, t.reference_nits))
+        );
+        assert_eq!(desc.target, Some(t));
+    }
+
+    /// SDR's brightness is the display's business, and saying otherwise would
+    /// make every ordinary surface claim a volume it does not have.
+    #[test]
+    fn an_sdr_description_says_nothing_about_luminance() {
+        let desc = ImageDescription::srgb();
+        assert!(desc.luminances.is_none());
+        assert!(desc.target.is_none());
+    }
+
+    /// A display cannot sustain its peak across the whole panel, so an
+    /// override that claims it does is clamped rather than passed on.
+    #[test]
+    fn full_frame_luminance_never_exceeds_the_peak() {
+        let clamped = HdrTarget {
+            max_nits: 400,
+            max_fall_nits: 4000,
+            ..HdrTarget::default()
+        }
+        .clamped();
+        assert_eq!(clamped.max_fall_nits, 400);
+        assert_eq!(clamped.max_nits, 400);
+    }
+
+    /// The protocol raises `invalid_luminance` on a range that does not go
+    /// upwards. nescope is the one sending it, so a bad override has to be
+    /// dropped here rather than become a protocol error at the client.
+    #[test]
+    fn a_range_that_does_not_go_upwards_is_not_sent() {
+        let bad = HdrTarget {
+            max_nits: 0,
+            ..HdrTarget::default()
+        };
+        assert!(!bad.is_usable());
+        assert!(ImageDescription::bt2020_pq(bad).luminances.is_none());
+        assert!(ImageDescription::bt2020_pq(bad).target.is_none());
     }
 }
