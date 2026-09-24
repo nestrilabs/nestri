@@ -1083,6 +1083,7 @@ pub unsafe fn capture_present_frame(
     let slot = ring.slots.get(slot_index)?;
     let fence = slot.fence;
     let fi = slot.image;
+    let slot_memory = slot.memory;
 
     // A free slot's fence is already signalled — the encoder side waits on it
     // before it ever reads the slot. This covers the paths that abandon a frame
@@ -1166,6 +1167,11 @@ pub unsafe fn capture_present_frame(
     if let Some(p) = blit_point {
         ring.blit_value = p.value;
     }
+
+    // Once per process, and only when asked for: reads this frame back and
+    // says what range its values are in. See `probe_float_range`.
+    let pool = ring.command_pool;
+    unsafe { probe_float_range(ds, pool, queue, fi, slot_memory, fence, fmt, ext) };
 
     Some(CaptureSubmission {
         slot: guard,
@@ -1304,6 +1310,451 @@ pub unsafe fn read_frame_pixels(
     }
     unsafe { (ds.fp.unmap_memory)(ds.raw, mem) };
     Some(pixels)
+}
+
+// ── One-shot float-range probe ────────────────────────────────────────────────
+
+/// Decode one IEEE half into a float.
+fn half_to_f32(bits: u16) -> f32 {
+    let sign = ((bits >> 15) & 1) as u32;
+    let exp = ((bits >> 10) & 0x1f) as u32;
+    let mant = (bits & 0x3ff) as u32;
+    let out = match exp {
+        0 if mant == 0 => sign << 31,
+        // Subnormal: normalise it by hand. Irrelevant to what the probe asks,
+        // but a wrong answer here would be a wrong answer everywhere.
+        0 => {
+            let mut e = -1i32;
+            let mut m = mant;
+            while m & 0x400 == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            m &= 0x3ff;
+            (sign << 31) | (((e + 127 - 15) as u32) << 23) | (m << 13)
+        }
+        0x1f => (sign << 31) | 0x7f80_0000 | (mant << 13),
+        _ => (sign << 31) | ((exp + 127 - 15) << 23) | (mant << 13),
+    };
+    f32::from_bits(out)
+}
+
+/// What the probe found in one frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatRange {
+    pub max: f32,
+    pub above_one: u64,
+    pub components: u64,
+}
+
+impl FloatRange {
+    /// Whether this frame settles it. A single component over 1.0 can only be
+    /// linear extended-range colour: PQ is defined on [0, 1] and nothing that
+    /// encodes it can leave that range.
+    pub fn is_extended(&self) -> bool {
+        self.above_one > 0
+    }
+}
+
+/// Scan a mapped `R16G16B16A16_SFLOAT` image for the largest colour component
+/// and how many exceed 1.0.
+///
+/// Alpha is skipped: it is 1.0 on every opaque frame and would be counted as
+/// evidence of exactly the thing being looked for.
+pub fn scan_float_range(base: &[u8], row_pitch: usize, w: u32, h: u32) -> Option<FloatRange> {
+    let mut max = f32::NEG_INFINITY;
+    let mut above_one = 0u64;
+    let mut components = 0u64;
+    for row in 0..h as usize {
+        let start = row * row_pitch;
+        let end = start + w as usize * 8;
+        let line = base.get(start..end)?;
+        for texel in line.as_chunks::<8>().0 {
+            for c in 0..3 {
+                let v = half_to_f32(u16::from_le_bytes([texel[c * 2], texel[c * 2 + 1]]));
+                if !v.is_finite() {
+                    continue;
+                }
+                components += 1;
+                if v > max {
+                    max = v;
+                }
+                if v > 1.0 {
+                    above_one += 1;
+                }
+            }
+        }
+    }
+    (components > 0).then_some(FloatRange {
+        max,
+        above_one,
+        components,
+    })
+}
+
+fn probe_wanted() -> bool {
+    static WANTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *WANTED.get_or_init(|| std::env::var("NESCAPTURE_FP16_PROBE").as_deref() == Ok("1"))
+}
+
+static PROBE_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Read one captured frame back and say whether it holds extended-range values.
+///
+/// This answers one question and is not part of any path: a float16 swapchain
+/// is how both scRGB and PQ arrive, and they are told apart by what is in the
+/// buffer rather than by anything either side declares. scRGB is linear and
+/// goes past 1.0 for anything brighter than SDR white; PQ is an encoding of
+/// absolute luminance and never leaves [0, 1]. So the largest component in a
+/// frame with any highlight in it decides which one this is.
+///
+/// Runs once per process, behind `NESCAPTURE_FP16_PROBE=1`, and stalls the
+/// present it runs on — it waits for the blit and then for a copy of its own.
+/// Deliberately: a probe that samples asynchronously answers about some frame
+/// rather than this one.
+pub unsafe fn probe_float_range(
+    ds: &crate::state::DeviceState,
+    pool: vk::CommandPool,
+    queue: vk::Queue,
+    slot_image: vk::Image,
+    slot_memory: vk::DeviceMemory,
+    slot_fence: vk::Fence,
+    fmt: vk::Format,
+    ext: vk::Extent2D,
+) {
+    use std::sync::atomic::Ordering;
+
+    if !probe_wanted() || PROBE_DONE.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    if fmt != vk::Format::R16G16B16A16_SFLOAT {
+        log::info!(
+            "float-range probe: capture format is {fmt:?}, which cannot hold values above 1.0 - nothing to ask"
+        );
+        return;
+    }
+
+    // The blit writing this slot was submitted a moment ago.
+    if unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &slot_fence, vk::TRUE, 1_000_000_000) }
+        != vk::Result::SUCCESS
+    {
+        log::warn!("float-range probe: the capture blit did not finish");
+        return;
+    }
+
+    // Where the encoder has a device of its own the slot is already
+    // host-visible and is read in place; a shared slot is device-local and
+    // needs a copy into one that is not.
+    let shared = ds.shared_active.load(Ordering::Acquire);
+    let (image, memory, staged) = if shared {
+        match unsafe { allocate_host_image(ds, ext.width, ext.height, fmt, "float-range probe") } {
+            Some((i, m)) => (i, m, true),
+            None => {
+                log::warn!("float-range probe: no host-visible image to read into");
+                return;
+            }
+        }
+    } else {
+        (slot_image, slot_memory, false)
+    };
+
+    if staged && !unsafe { copy_into_host_image(ds, pool, queue, slot_image, image, ext) } {
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+        log::warn!("float-range probe: the readback copy did not run");
+        return;
+    }
+
+    let subresource = vk::ImageSubresource {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        mip_level: 0,
+        array_layer: 0,
+    };
+    let mut layout = vk::SubresourceLayout::default();
+    unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &subresource, &mut layout) };
+
+    let mut mp: *mut std::os::raw::c_void = std::ptr::null_mut();
+    let mapped = unsafe {
+        (ds.fp.map_memory)(
+            ds.raw,
+            memory,
+            0,
+            vk::WHOLE_SIZE,
+            vk::MemoryMapFlags::empty(),
+            &mut mp,
+        )
+    };
+    if mapped == vk::Result::SUCCESS {
+        let bytes = layout.offset as usize + layout.row_pitch as usize * ext.height as usize;
+        let all = unsafe { std::slice::from_raw_parts(mp as *const u8, bytes) };
+        match scan_float_range(
+            &all[layout.offset as usize..],
+            layout.row_pitch as usize,
+            ext.width,
+            ext.height,
+        ) {
+            Some(found) => {
+                let share = found.above_one as f64 * 100.0 / found.components as f64;
+                log::info!(
+                    "float-range probe: largest component {:.4}, {} of {} above 1.0 ({share:.3}%) - this buffer is {}",
+                    found.max,
+                    found.above_one,
+                    found.components,
+                    if found.is_extended() {
+                        "extended-range linear (scRGB), not PQ"
+                    } else {
+                        "inside [0, 1]; PQ is possible, and so is an SDR frame with no highlight"
+                    }
+                );
+            }
+            None => log::warn!("float-range probe: the mapped image was too small to read"),
+        }
+        unsafe { (ds.fp.unmap_memory)(ds.raw, memory) };
+    } else {
+        log::warn!("float-range probe: could not map the readback image ({mapped:?})");
+    }
+
+    if staged {
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+    }
+}
+
+/// Copy a capture slot into a linear host-visible image, and wait for it.
+unsafe fn copy_into_host_image(
+    ds: &crate::state::DeviceState,
+    pool: vk::CommandPool,
+    queue: vk::Queue,
+    src: vk::Image,
+    dst: vk::Image,
+    ext: vk::Extent2D,
+) -> bool {
+    let ai = vk::CommandBufferAllocateInfo {
+        s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+        p_next: std::ptr::null(),
+        command_pool: pool,
+        level: vk::CommandBufferLevel::PRIMARY,
+        command_buffer_count: 1,
+        _marker: std::marker::PhantomData,
+    };
+    let mut cb = vk::CommandBuffer::null();
+    if unsafe { (ds.fp.allocate_command_buffers)(ds.raw, &ai, &mut cb) } != vk::Result::SUCCESS {
+        return false;
+    }
+
+    let mut ok = true;
+    let begin = vk::CommandBufferBeginInfo {
+        s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+        p_inheritance_info: std::ptr::null(),
+        _marker: std::marker::PhantomData,
+    };
+    if unsafe { (ds.fp.begin_command_buffer)(cb, &begin) } != vk::Result::SUCCESS {
+        ok = false;
+    }
+
+    if ok {
+        // The slot stays in GENERAL, which is what every other reader expects
+        // to find it in. Only the destination transitions.
+        let to_dst = image_barrier!(
+            vk::AccessFlags::empty(),
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            dst
+        );
+        unsafe {
+            (ds.fp.cmd_pipeline_barrier)(
+                cb,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                1,
+                &to_dst,
+            );
+        }
+        let cr = vk::ImageCopy {
+            src_subresource: make_subresource_layers(),
+            src_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            dst_subresource: make_subresource_layers(),
+            dst_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            extent: vk::Extent3D {
+                width: ext.width,
+                height: ext.height,
+                depth: 1,
+            },
+        };
+        unsafe {
+            (ds.fp.cmd_copy_image)(
+                cb,
+                src,
+                vk::ImageLayout::GENERAL,
+                dst,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                1,
+                &cr,
+            );
+        }
+        let to_host = image_barrier!(
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::AccessFlags::HOST_READ,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::GENERAL,
+            dst
+        );
+        unsafe {
+            (ds.fp.cmd_pipeline_barrier)(
+                cb,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::HOST,
+                vk::DependencyFlags::empty(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                1,
+                &to_host,
+            );
+        }
+        if unsafe { (ds.fp.end_command_buffer)(cb) } != vk::Result::SUCCESS {
+            ok = false;
+        }
+    }
+
+    let fence_ci = vk::FenceCreateInfo {
+        s_type: vk::StructureType::FENCE_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::FenceCreateFlags::empty(),
+        _marker: std::marker::PhantomData,
+    };
+    let mut fence = vk::Fence::null();
+    if ok
+        && unsafe { (ds.fp.create_fence)(ds.raw, &fence_ci, std::ptr::null(), &mut fence) }
+            != vk::Result::SUCCESS
+    {
+        ok = false;
+    }
+
+    if ok {
+        let subi = vk::SubmitInfo {
+            s_type: vk::StructureType::SUBMIT_INFO,
+            p_next: std::ptr::null(),
+            wait_semaphore_count: 0,
+            p_wait_semaphores: std::ptr::null(),
+            p_wait_dst_stage_mask: std::ptr::null(),
+            command_buffer_count: 1,
+            p_command_buffers: &cb,
+            signal_semaphore_count: 0,
+            p_signal_semaphores: std::ptr::null(),
+            _marker: std::marker::PhantomData,
+        };
+        ok = unsafe { (ds.fp.queue_submit)(queue, 1, &subi, fence) } == vk::Result::SUCCESS
+            && unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000) }
+                == vk::Result::SUCCESS;
+    }
+
+    if fence != vk::Fence::null() {
+        unsafe { (ds.fp.destroy_fence)(ds.raw, fence, std::ptr::null()) };
+    }
+    unsafe { (ds.fp.free_command_buffers)(ds.raw, pool, 1, &cb) };
+    ok
+}
+
+#[cfg(test)]
+mod float_range_tests {
+    use super::{half_to_f32, scan_float_range};
+
+    fn half(v: f32) -> [u8; 2] {
+        // Round-to-nearest is not needed: every value used here is exact.
+        let bits = v.to_bits();
+        let sign = ((bits >> 16) & 0x8000) as u16;
+        let exp = ((bits >> 23) & 0xff) as i32 - 127 + 15;
+        let mant = ((bits >> 13) & 0x3ff) as u16;
+        let h = if v == 0.0 {
+            sign
+        } else {
+            sign | ((exp as u16) << 10) | mant
+        };
+        h.to_le_bytes()
+    }
+
+    #[test]
+    fn a_half_reads_as_the_value_it_holds() {
+        for v in [0.0f32, 0.5, 1.0, 2.0, 125.0, -1.5] {
+            let [a, b] = half(v);
+            assert_eq!(half_to_f32(u16::from_le_bytes([a, b])), v, "{v}");
+        }
+    }
+
+    fn frame(texels: &[[f32; 4]], w: u32, h: u32, pad: usize) -> Vec<u8> {
+        let pitch = w as usize * 8 + pad;
+        let mut out = vec![0u8; pitch * h as usize];
+        for (i, t) in texels.iter().enumerate() {
+            let row = i / w as usize;
+            let col = i % w as usize;
+            for (c, v) in t.iter().enumerate() {
+                let at = row * pitch + col * 8 + c * 2;
+                out[at..at + 2].copy_from_slice(&half(*v));
+            }
+        }
+        out
+    }
+
+    /// The case the probe exists for: scRGB goes past 1.0 wherever the picture
+    /// is brighter than SDR white, and nothing that encodes PQ can.
+    #[test]
+    fn a_value_above_one_is_extended_range() {
+        let px = [[0.2, 0.3, 4.0, 1.0], [0.1, 0.1, 0.1, 1.0]];
+        let found = scan_float_range(&frame(&px, 2, 1, 0), 16, 2, 1).unwrap();
+        assert!(found.is_extended());
+        assert_eq!(found.above_one, 1);
+        assert_eq!(found.max, 4.0);
+    }
+
+    /// PQ fills [0, 1] and stops there, and so does an SDR frame -- which is
+    /// why this direction is evidence rather than an answer.
+    #[test]
+    fn everything_inside_the_range_is_not_extended() {
+        let px = [[0.0, 0.5, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]];
+        let found = scan_float_range(&frame(&px, 2, 1, 0), 16, 2, 1).unwrap();
+        assert!(!found.is_extended());
+        assert_eq!(found.max, 1.0);
+    }
+
+    /// Alpha is 1.0 on every opaque frame, so counting it would report every
+    /// frame as extended -- the exact false positive that would make the probe
+    /// worthless.
+    #[test]
+    fn alpha_is_not_colour() {
+        let px = [[0.5, 0.5, 0.5, 8.0]];
+        let found = scan_float_range(&frame(&px, 1, 1, 0), 8, 1, 1).unwrap();
+        assert_eq!(found.above_one, 0);
+        assert_eq!(found.components, 3);
+        assert_eq!(found.max, 0.5);
+    }
+
+    /// A linear image's rows are padded to its own pitch, which is not the
+    /// width in bytes. Reading it as tightly packed walks diagonally through
+    /// the picture.
+    #[test]
+    fn rows_are_read_at_the_image_pitch() {
+        let px = [[0.25, 0.25, 0.25, 1.0], [3.0, 0.25, 0.25, 1.0]];
+        let bytes = frame(&px, 1, 2, 24);
+        let found = scan_float_range(&bytes, 32, 1, 2).unwrap();
+        assert_eq!(found.components, 6);
+        assert_eq!(found.max, 3.0);
+    }
+
+    /// A short mapping is a wrong answer, not a smaller one.
+    #[test]
+    fn a_buffer_that_does_not_hold_the_image_reads_as_nothing() {
+        assert!(scan_float_range(&[0u8; 8], 16, 2, 1).is_none());
+    }
 }
 
 #[cfg(test)]
