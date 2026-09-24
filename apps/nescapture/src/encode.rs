@@ -1514,25 +1514,17 @@ impl PerFrameEncoder {
             && std::env::var("NESCAPTURE_RGB_ENCODE").as_deref() != Ok("0")
             && let Some(rgb) = conv_cfg.rgb_encode_input(ctx)
         {
-            // Full range first, because it is what we would rather send, then
-            // limited -- not as a preference but because some hardware only
-            // does one. VCN 5 converts BT.709 to limited range whatever it is
-            // asked for, and RADV reports that honestly rather than pretending
-            // otherwise, so asking for full range there fails outright.
+            // Full range only. The hardware matrix is a whole shader pass
+            // saved on every frame, but not at the cost of the samples: VCN 5
+            // converts BT.709 to limited range whatever it is asked for, which
+            // RADV now reports honestly instead of pretending otherwise, and
+            // taking that offer would mean every session on that hardware
+            // throws away range because of a firmware bug. The shader costs GPU
+            // time; limited range costs picture, everywhere, until AMD fix it.
             //
-            // Taking limited range is better than it sounds and much better
-            // than the alternative: the samples are the hardware's either way,
-            // the description is derived from the same value the session is
-            // built with so the VUI says what the samples actually are, and the
-            // client expands on read for free. Falling back to the shader would
-            // instead spend GPU time on every frame of every session to avoid
-            // an expansion that costs the client two multiplies.
-            for range in [ColorRange::Full, ColorRange::Limited] {
-                let mut attempt = conv_cfg.clone();
-                attempt.range = range;
-                let Some(description) = attempt.color_description() else {
-                    continue;
-                };
+            // Nothing here needs changing when they do - the driver will start
+            // accepting full range and this will start succeeding.
+            if let Some(description) = conv_cfg.color_description() {
                 let rgb_cfg = enc_cfg
                     .clone()
                     .with_color_description(description)
@@ -1540,7 +1532,7 @@ impl PerFrameEncoder {
                 match Encoder::new(ctx.clone(), rgb_cfg) {
                     Ok(encoder) => {
                         log::info!(
-                            "the encoder converts {rgb:?} to {range:?}-range YUV itself; no conversion shader"
+                            "the encoder converts {rgb:?} to full-range YUV itself; no conversion shader"
                         );
                         return Ok(Self {
                             encoder,
@@ -1551,10 +1543,11 @@ impl PerFrameEncoder {
                             height,
                         });
                     }
-                    Err(e) => log::debug!("RGB input refused for {range:?} range ({e})"),
+                    Err(e) => log::info!(
+                        "the encoder will not convert {rgb:?} at full range ({e}); using the shader"
+                    ),
                 }
             }
-            log::info!("the encoder does no RGB conversion this device can use; using the shader");
         }
 
         let encoder =
