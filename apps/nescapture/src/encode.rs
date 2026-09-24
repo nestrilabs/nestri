@@ -2691,23 +2691,41 @@ fn stats_sender_thread(
     // scheduling, the guest's storage, or its memory sizing.
     let mut prev_pressure: Option<[(u64, u64); 3]> = None;
     let mut pressure_said_missing = false;
+    let mut last_colour: Option<nesprotocol::SurfaceColor> = None;
+
+    // The loop runs ten times a second and the statistics every tenth pass, so
+    // they keep the per-second window their counters are reset on. The colour
+    // is checked every pass, because it has to reach the clients before the
+    // frames it describes do: a client still reading a stream as HDR while SDR
+    // frames arrive measures sRGB white as if it were PQ, which is ten
+    // thousand nits.
+    const PASSES_PER_SECOND: u64 = 10;
+    let mut pass: u64 = 0;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        pass += 1;
+        let second = pass.is_multiple_of(PASSES_PER_SECOND);
 
-        // Every tick rather than only on a change. A client that joined after
-        // the compositor last spoke would otherwise never hear it, and the
-        // alternative is tracking who has been told -- eighteen bytes a second
-        // buys not having to.
+        // On a change immediately, and once a second regardless. The heartbeat
+        // is for the client that joined after the compositor last spoke, which
+        // would otherwise never hear it; sending only on change would mean
+        // tracking who has been told.
         if let Some(socket) = socket.as_ref()
             && let Some(colour) = stream_colour(&declared_surface, &stream_colorspace)
+            && (second || last_colour != Some(colour))
         {
+            last_colour = Some(colour);
             let mut payload = vec![nesprotocol::MSG_SURFACE_COLOR];
             nesprotocol::encode_surface_color(&mut payload, &colour);
             let _ = socket.send(&payload);
+        }
+
+        if !second {
+            continue;
         }
 
         let raw_fps = capture_fps.load(Ordering::Relaxed);
