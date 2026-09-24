@@ -91,7 +91,7 @@ pub const FRAME_HDR_LEN: usize = 7;
 pub const MSG_DATA: u8 = 0; // generic data frame (video / audio)
 pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub → hudless)
 pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → hudless)
-pub const MSG_CLIENT_CAPS: u8 = 0x13; // what the client can decode (desktop → hub → hudless)
+pub const MSG_CLIENT_CAPS: u8 = 0x15; // what the client can decode (desktop → hub → hudless)
 /// What the receiver actually got, once a second (desktop → hub).
 ///
 /// The hub cannot see this. Its own view of the path -- RTT, congestion window,
@@ -662,6 +662,37 @@ mod media_control_tests {
         let mut buf = vec![0x7F];
         buf.extend_from_slice(&8_000u32.to_le_bytes());
         assert_eq!(decode_control_mode(&buf), None);
+    }
+
+    #[test]
+    fn every_message_type_is_its_own_number() {
+        // Every type byte that travels on a stream, as `(name, value)`. Listed
+        // by hand because the point is to catch a new one colliding with an
+        // existing one, and anything derived from the constants would agree
+        // with them by construction.
+        //
+        // `MSG_CLIENT_CAPS` was 0x13 when it was added, which is
+        // `MSG_RECEIVER_REPORT`. The hub matches on the type byte and the caps
+        // arm came first, so every receiver report would have been read as
+        // capabilities - taking away the only measurement the bitrate
+        // controller has, silently, on a message sent once per connection.
+        let types = [
+            ("MSG_DATA", MSG_DATA),
+            ("MSG_IDR_REQUEST", MSG_IDR_REQUEST),
+            ("MSG_ENCODE_SETTINGS", MSG_ENCODE_SETTINGS),
+            ("MSG_CLIENT_CAPS", MSG_CLIENT_CAPS),
+            ("MSG_RECEIVER_REPORT", MSG_RECEIVER_REPORT),
+            ("MSG_CONTROL_MODE", MSG_CONTROL_MODE),
+            ("MSG_INPUT_BATCH", MSG_INPUT_BATCH),
+        ];
+        for (i, (name, value)) in types.iter().enumerate() {
+            for (other_name, other_value) in &types[i + 1..] {
+                assert_ne!(
+                    value, other_value,
+                    "{name} and {other_name} are both {value:#04x}"
+                );
+            }
+        }
     }
 
     #[test]
