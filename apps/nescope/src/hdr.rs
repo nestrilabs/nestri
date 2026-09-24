@@ -226,6 +226,12 @@ pub struct HdrState {
     pending: HashMap<WlSurface, Option<ImageDescription>>,
     /// Committed image descriptions keyed by surface.
     current: HashMap<WlSurface, ImageDescription>,
+    /// Information requests waiting to be answered after the request that
+    /// created them has returned. See .
+    pending_information: Vec<(
+        wp_image_description_info_v1::WpImageDescriptionInfoV1,
+        ImageDescription,
+    )>,
 }
 
 impl HdrState {
@@ -244,10 +250,44 @@ impl HdrState {
             enabled,
             pending: HashMap::new(),
             current: HashMap::new(),
+            pending_information: Vec::new(),
         }
     }
 
     // ── Pending state ─────────────────────────────────────────────────────
+
+    /// Remember an information object to answer once the request that made
+    /// it has returned. See the call site for why it cannot be answered there.
+    pub fn queue_information(
+        &mut self,
+        info: wp_image_description_info_v1::WpImageDescriptionInfoV1,
+        desc: ImageDescription,
+    ) {
+        self.pending_information.push((info, desc));
+    }
+
+    /// Answer every queued information request.
+    ///
+    /// Called once per loop iteration. The protocol does not say how promptly
+    /// `done` must follow, only that it ends the sequence, so a client waiting
+    /// on it waits one dispatch longer and nothing else changes.
+    pub fn flush_information(&mut self) {
+        for (info, desc) in self.pending_information.drain(..) {
+            match desc.transfer_function {
+                TransferFunction::St2084Pq => {
+                    info.tf_named(wp_color_manager_v1::TransferFunction::St2084Pq)
+                }
+                TransferFunction::Gamma22 => {
+                    info.tf_named(wp_color_manager_v1::TransferFunction::Gamma22)
+                }
+            }
+            match desc.primaries {
+                Primaries::Bt2020 => info.primaries_named(wp_color_manager_v1::Primaries::Bt2020),
+                Primaries::Srgb => info.primaries_named(wp_color_manager_v1::Primaries::Srgb),
+            }
+            info.done();
+        }
+    }
 
     pub fn set_pending(&mut self, surface: &WlSurface, desc: ImageDescription) {
         tracing::debug!(
@@ -708,7 +748,7 @@ impl Dispatch<wp_image_description_v1::WpImageDescriptionV1, ImageDescriptionUse
     for NescopeState
 {
     fn request(
-        _: &mut Self,
+        state: &mut Self,
         _: &Client,
         _: &wp_image_description_v1::WpImageDescriptionV1,
         request: wp_image_description_v1::Request,
@@ -717,20 +757,14 @@ impl Dispatch<wp_image_description_v1::WpImageDescriptionV1, ImageDescriptionUse
         data_init: &mut DataInit<'_, Self>,
     ) {
         if let wp_image_description_v1::Request::GetInformation { information } = request {
+            // Answered after this returns, not here. `done` destroys the
+            // object, and destroying it inside the request that created it
+            // takes the id out of the client's map before the backend has
+            // attached the data this handler just returned -- which it then
+            // unwraps, and panics on. The whole compositor goes down the first
+            // time a client asks what colour space it has.
             let info = data_init.init(information, ImageDescriptionInfoData);
-            match data.desc.transfer_function {
-                TransferFunction::St2084Pq => {
-                    info.tf_named(wp_color_manager_v1::TransferFunction::St2084Pq)
-                }
-                TransferFunction::Gamma22 => {
-                    info.tf_named(wp_color_manager_v1::TransferFunction::Gamma22)
-                }
-            }
-            match data.desc.primaries {
-                Primaries::Bt2020 => info.primaries_named(wp_color_manager_v1::Primaries::Bt2020),
-                Primaries::Srgb => info.primaries_named(wp_color_manager_v1::Primaries::Srgb),
-            }
-            info.done();
+            state.hdr.queue_information(info, data.desc);
         }
     }
 }

@@ -624,6 +624,12 @@ fn main() {
                 }
             }
 
+            // Answer any colour-management information requests that came in
+            // this iteration. Deferred to here because the event that ends
+            // them destroys the object, and doing that inside the request that
+            // created it panics the backend -- see .
+            data.state.hdr.flush_information();
+
             // ── Flush Wayland clients ─────────────────────────────────
             if let Err(e) = data.display.flush_clients() {
                 tracing::warn!("Error flushing Wayland clients: {e}");
