@@ -80,8 +80,17 @@ CONFIG_PARAVIRT_TIME_ACCOUNTING=y
 CONFIG_HALTPOLL_CPUIDLE=y
 CONFIG_CPU_IDLE_GOV_HALTPOLL=y
 CONFIG_CMDLINE_BOOL=y
-CONFIG_CMDLINE="cpuidle_haltpoll.force=1"
+CONFIG_CMDLINE="cpuidle_haltpoll.force=1 swiotlb=noforce"
 # CONFIG_CMDLINE_OVERRIDE is not set
+
+# ── No bounce buffer ─────────────────────────────────────
+# With more than about 3 GiB of RAM the guest has memory above 4 GiB, and x86
+# then sets aside a 64 MiB SWIOTLB bounce buffer and zeroes it at boot, which
+# makes the host back all of it. Nothing here ever bounces: the virtio devices
+# do not offer ACCESS_PLATFORM, so virtio skips the DMA API entirely, and there
+# is no other DMA-capable device. `swiotlb=noforce` in the command line above
+# skips the allocation. A device that genuinely needs a 32-bit DMA mask would
+# fail to map rather than bounce; there is none.
 
 # ── microVM transport ────────────────────────────────────
 CONFIG_VIRTIO=y
@@ -134,6 +143,40 @@ CONFIG_LRU_GEN_ENABLED=y
 CONFIG_TRANSPARENT_HUGEPAGE=y
 CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 CONFIG_PSI=y
+
+# ── Undoing the minimal seed ─────────────────────────────
+# base.config descends from a size-minimised config with EXPERT on, and EXPERT
+# is what makes each of these promptable. Every one is `default y` (or the
+# default choice) upstream, and every one was off in the built kernel. They
+# are pinned here because nothing else would stop a reseed from bringing them
+# back.
+#
+# SLUB_TINY drops the per-CPU slab caches, so every kmalloc and kfree takes the
+# locked slow path. Its own help text says it is not for performance. This
+# guest allocates constantly: network buffers, GPU ioctls, io_uring, futexes.
+# CONFIG_SLUB_TINY is not set
+#
+# Without ADVISE_SYSCALLS, madvise() and fadvise() return ENOSYS. THP above is
+# madvise-only, so no user mapping could ever get a huge page, and allocators
+# could never hand memory back with MADV_DONTNEED or MADV_FREE.
+CONFIG_ADVISE_SYSCALLS=y
+#
+# Without MEMBARRIER, Wine and the .NET runtime fall back to an mprotect() trick
+# to flush other threads' write buffers, which forces a TLB shootdown across
+# every vCPU -- an IPI storm, and each IPI is a VM exit. RSEQ gives glibc and
+# per-CPU allocators their fast paths.
+CONFIG_MEMBARRIER=y
+CONFIG_RSEQ=y
+#
+# -O2, not -Os: the whole kernel was being compiled for size, and a guest that
+# runs Wine spends much of its time in syscalls.
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
+#
+# Without jump labels, every static key is a memory load and a branch instead
+# of a patched no-op, on paths such as steal-time accounting, the scheduler and
+# cgroup checks.
+CONFIG_JUMP_LABEL=y
 
 # Autogroup is deliberately OFF, which is a departure from CachyOS.
 #
