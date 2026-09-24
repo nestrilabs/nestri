@@ -576,6 +576,18 @@ impl HdrState {
         }
     }
 
+    /// Drop what was remembered about a surface, and say so.
+    ///
+    /// Separate from [`Self::surface_destroyed`] because the `wl_surface` may
+    /// well outlive the colour-management object attached to it: a game
+    /// leaving HDR keeps its window.
+    pub fn forget(&mut self, surface: &WlSurface) {
+        self.pending.remove(surface);
+        if self.current.remove(surface).is_some() {
+            self.tell_capture();
+        }
+    }
+
     pub fn surface_destroyed(&mut self, surface: &WlSurface) {
         self.pending.remove(surface);
         self.current.remove(surface);
@@ -910,8 +922,26 @@ impl Dispatch<wp_color_management_surface_v1::WpColorManagementSurfaceV1, ColorS
             wp_color_management_surface_v1::Request::UnsetImageDescription => {
                 state.hdr.unset_pending(&data.surface);
             }
+            // Destroying the object removes the image description from the
+            // surface as surely as unsetting it does, and a client leaving HDR
+            // may well do it this way. Landing in the catch-all left the
+            // surface remembered as HDR for the rest of the session.
+            wp_color_management_surface_v1::Request::Destroy => {
+                state.hdr.unset_pending(&data.surface);
+                state.hdr.forget(&data.surface);
+            }
             _ => {}
         }
+    }
+
+    fn destroyed(
+        state: &mut Self,
+        _: smithay::reexports::wayland_server::backend::ClientId,
+        _: &wp_color_management_surface_v1::WpColorManagementSurfaceV1,
+        data: &ColorSurfaceData,
+    ) {
+        // Also reached when the client goes away without tidying up.
+        state.hdr.forget(&data.surface);
     }
 }
 

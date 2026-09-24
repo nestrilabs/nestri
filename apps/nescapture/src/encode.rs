@@ -860,6 +860,16 @@ impl PipelineHandle {
         // compositor how bright the picture goes.
         let declared_surface: Arc<std::sync::Mutex<Option<nesprotocol::SurfaceColor>>> =
             Arc::new(std::sync::Mutex::new(None));
+        // The colour space capture resolved for the frames it is encoding.
+        //
+        // Not the same thing as the compositor's declaration, and this is the
+        // one to send: the swapchain has the last word wherever it names a
+        // space, and only a pass-through one defers. A game leaving HDR gets a
+        // plain sRGB swapchain, which says so outright -- while the
+        // compositor's view of the surface may not have caught up, or may
+        // never, if the client dropped the object rather than unsetting it.
+        // `u32::MAX` until the first frame has been encoded.
+        let stream_colorspace = Arc::new(AtomicU32::new(u32::MAX));
         // What the compositor says the surface is, for the frames whose
         // swapchain declines to say. `u32::MAX` until it has said anything;
         // see `effective_colorspace`.
@@ -917,6 +927,7 @@ impl PipelineHandle {
             current_codec: current_codec.clone(),
             wanted_depth_override: None,
             declared_colorspace: declared_colorspace.clone(),
+            stream_colorspace: stream_colorspace.clone(),
             needs_reconfig_flag: needs_reconfig_flag.clone(),
             capture_ms: capture_ms.clone(),
         };
@@ -968,6 +979,7 @@ impl PipelineHandle {
         let ca = capture_attempts.clone();
         let stats_timing = timing.clone();
         let stats_surface = declared_surface.clone();
+        let stats_stream_colour = stream_colorspace.clone();
         thread::Builder::new()
             .name("nescapture-stats".into())
             .spawn(move || {
@@ -980,6 +992,7 @@ impl PipelineHandle {
                     ca,
                     stats_timing,
                     stats_surface,
+                    stats_stream_colour,
                     stats_ipc,
                     stats_shutdown,
                 )
@@ -1267,6 +1280,8 @@ struct EncoderConfig {
     /// What the compositor says the surface's colour is, when the swapchain
     /// does not. See [`effective_colorspace`].
     declared_colorspace: Arc<AtomicU32>,
+    /// What that resolved to for the frames being encoded, for the clients.
+    stream_colorspace: Arc<AtomicU32>,
     needs_reconfig_flag: Arc<AtomicBool>,
     /// Present-to-encoder latency in milliseconds, as `f32` bits. Written here
     /// now that this thread is the one doing the waiting.
@@ -1488,6 +1503,8 @@ fn encoder_thread(
             value => Some(value),
         };
         let frame_colorspace = effective_colorspace(raw.vk_colorspace, declared);
+        cfg.stream_colorspace
+            .store(frame_colorspace, Ordering::Relaxed);
 
         let state = match encoder_state.as_mut() {
             Some(s)
@@ -2594,6 +2611,43 @@ fn pressure_total_us(kind: &str) -> Option<(u64, u64)> {
     Some((some?, full.unwrap_or(0)))
 }
 
+/// What to tell the clients this stream's colour is.
+///
+/// The space comes from what capture resolved for the frames it encoded, not
+/// from the compositor's declaration. Those differ, and when they do the
+/// resolved one is right: the swapchain has the last word wherever it names a
+/// space, and only a pass-through swapchain defers. A game leaving HDR builds
+/// a plain sRGB swapchain that says so outright, which is the case that broke
+/// -- the compositor's view of the surface stayed HDR, so a client told only
+/// that kept presenting sRGB frames through a PQ swapchain.
+///
+/// The mastering numbers still come from the compositor, which is the only
+/// side that has them, and only where the resolved space can carry them. An
+/// SDR stream reports none: its brightness is the display's business, and
+/// leaving HDR's numbers attached would describe a picture that is no longer
+/// being sent.
+fn stream_colour(
+    declared: &std::sync::Mutex<Option<nesprotocol::SurfaceColor>>,
+    resolved: &AtomicU32,
+) -> Option<nesprotocol::SurfaceColor> {
+    let space = match resolved.load(Ordering::Relaxed) {
+        u32::MAX => return None,
+        VK_COLOR_SPACE_HDR10_ST2084_EXT => nesprotocol::SURFACE_COLOR_BT2020_PQ,
+        _ => nesprotocol::SURFACE_COLOR_SRGB,
+    };
+    if space == nesprotocol::SURFACE_COLOR_SRGB {
+        return Some(nesprotocol::SurfaceColor {
+            space,
+            ..Default::default()
+        });
+    }
+    let mastered = declared.lock().ok().and_then(|d| *d);
+    Some(nesprotocol::SurfaceColor {
+        space,
+        ..mastered.unwrap_or_default()
+    })
+}
+
 fn stats_sender_thread(
     capture_fps: Arc<AtomicU32>,
     encode_avg_ms: Arc<AtomicU32>,
@@ -2603,6 +2657,7 @@ fn stats_sender_thread(
     capture_attempts: Arc<AtomicU32>,
     timing: Arc<crate::timing::PresentTiming>,
     declared_surface: Arc<std::sync::Mutex<Option<nesprotocol::SurfaceColor>>>,
+    stream_colorspace: Arc<AtomicU32>,
     ipc_path: std::path::PathBuf,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -2648,11 +2703,10 @@ fn stats_sender_thread(
         // alternative is tracking who has been told -- eighteen bytes a second
         // buys not having to.
         if let Some(socket) = socket.as_ref()
-            && let Ok(colour) = declared_surface.lock()
-            && let Some(colour) = colour.as_ref()
+            && let Some(colour) = stream_colour(&declared_surface, &stream_colorspace)
         {
             let mut payload = vec![nesprotocol::MSG_SURFACE_COLOR];
-            nesprotocol::encode_surface_color(&mut payload, colour);
+            nesprotocol::encode_surface_color(&mut payload, &colour);
             let _ = socket.send(&payload);
         }
 
@@ -3807,5 +3861,81 @@ mod rate_control_tests {
             Some(8_000),
         );
         assert_eq!(RateControl::Cqp { qp: 26 }.target_kbps(), None);
+    }
+}
+
+#[cfg(test)]
+mod stream_colour_tests {
+    use super::{
+        VK_COLOR_SPACE_HDR10_ST2084_EXT, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, stream_colour,
+    };
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicU32;
+
+    fn mastered() -> nesprotocol::SurfaceColor {
+        nesprotocol::SurfaceColor {
+            space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
+            max_cll: 500,
+            max_fall: 100,
+            min_luminance: 1000,
+            max_luminance: 5_000_000,
+        }
+    }
+
+    /// The regression, seen switching Cyberpunk out of HDR. The swapchain came
+    /// back plain sRGB and capture encoded sRGB, but the compositor still had
+    /// the surface down as HDR -- so a client told only the compositor's view
+    /// kept presenting sRGB frames through a PQ swapchain.
+    #[test]
+    fn leaving_hdr_is_reported_even_while_the_compositor_still_says_hdr() {
+        let declared = Mutex::new(Some(mastered()));
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_SRGB);
+    }
+
+    /// An SDR stream carries no mastering numbers. Its brightness is the
+    /// display's business, and leaving HDR's attached would describe a picture
+    /// that is no longer being sent.
+    #[test]
+    fn an_sdr_stream_carries_no_mastering_numbers() {
+        let declared = Mutex::new(Some(mastered()));
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.max_cll, 0);
+        assert_eq!(colour.max_fall, 0);
+        assert_eq!(colour.max_luminance, 0);
+    }
+
+    /// An HDR stream keeps them, because the compositor is the only side that
+    /// has them.
+    #[test]
+    fn an_hdr_stream_keeps_what_the_compositor_said() {
+        let declared = Mutex::new(Some(mastered()));
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_HDR10_ST2084_EXT);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        assert_eq!(colour.max_cll, 500);
+        assert_eq!(colour.max_luminance, 5_000_000);
+    }
+
+    /// An HDR stream whose compositor said nothing is still HDR. Saying so
+    /// with no numbers beats not saying it.
+    #[test]
+    fn an_hdr_stream_with_nothing_declared_is_still_hdr() {
+        let declared = Mutex::new(None);
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_HDR10_ST2084_EXT);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_BT2020_PQ);
+    }
+
+    /// Before the first frame there is nothing to report, and reporting SDR
+    /// would make every session start by telling its clients something that
+    /// may be wrong.
+    #[test]
+    fn nothing_is_said_before_the_first_frame() {
+        let declared = Mutex::new(None);
+        let resolved = AtomicU32::new(u32::MAX);
+        assert!(stream_colour(&declared, &resolved).is_none());
     }
 }
