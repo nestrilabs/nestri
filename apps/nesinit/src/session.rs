@@ -266,19 +266,19 @@ where
                 }
                 booted = true;
 
-                // The drives, then the shares, then the services.
+                // The overlays, then the shares, then the services.
                 //
-                // **Drives first, and one `Mounted` between them.** A drive is
-                // a filesystem this end mounts itself, so a share whose target
-                // lives under one has to find it already there. The host is
+                // **Overlays first, and one `Mounted` between them.** An
+                // overlay is a filesystem this end mounts itself, so a share
+                // whose target lives under one has to find it already there. The host is
                 // told once, after both, because `Mounted` answers "is the
                 // content where the descriptor said" and there is one answer to
                 // that -- sending it twice made the host read the second as a
                 // reply to something it had not asked.
-                if let Err(failure) = workload.mount_drives(&descriptor.drives) {
+                if let Err(failure) = workload.mount_overlays(&descriptor.overlays) {
                     // Said before it is returned. `Refused` ends the session
                     // either way; without the message the host sees a box that
-                    // stopped and has to guess between a drive, a share and a
+                    // stopped and has to guess between an overlay, a share and a
                     // service -- which is the whole reason these are reported
                     // separately.
                     send(
@@ -516,7 +516,7 @@ mod tests {
                 at: "/mnt/user".into(),
                 ro: false,
             }],
-            drives: Vec::new(),
+            overlays: Vec::new(),
             video: Default::default(),
         }
     }

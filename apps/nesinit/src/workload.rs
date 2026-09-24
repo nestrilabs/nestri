@@ -11,7 +11,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 
-use nesprotocol::lifecycle::{Drive, Exec, Exit, Mount};
+use nesprotocol::lifecycle::{Exec, Exit, Mount, Overlay};
 
 use std::os::unix::process::CommandExt;
 
@@ -41,8 +41,9 @@ pub trait Workload {
     /// Make the shares the descriptor names, where it says to put them.
     fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure>;
 
-    /// Mount drives
-    fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure>;
+    /// Stack each overlay the descriptor names: its build image, its writable
+    /// layer, and the two together where it says.
+    fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure>;
 
     /// Start the command the descriptor names.
     ///
@@ -132,9 +133,9 @@ impl Workload for Process {
         Ok(())
     }
 
-    fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure> {
-        for drive in drives {
-            mount_drive(drive)?;
+    fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure> {
+        for overlay in overlays {
+            mount_overlay(overlay)?;
         }
         Ok(())
     }
@@ -343,35 +344,98 @@ fn mount_share(share: &Mount) -> Result<(), Failure> {
 /// filesystem this mounts. A descriptor cannot name another.
 const FSTYPE: &std::ffi::CStr = c"virtiofs";
 
-/// Mounts block device instead of virtiofs share
-fn mount_drive(drive: &Drive) -> Result<(), Failure> {
-    // Checked before anything is created: a descriptor this component cannot
-    // act on should leave no directory behind to confuse whoever reads the
-    // failure.
-    let (source, target, flags) = options_drive(drive)?;
+/// Stack one overlay: the build image, the box's writable layer, and the two
+/// together at `at`.
+///
+/// Each step's failure names the step, because "the install did not mount"
+/// has three different causes and each one is fixed somewhere else: a build
+/// image the kernel cannot read, an upper layer that was never formatted, and
+/// an overlay the kernel refused.
+fn mount_overlay(overlay: &Overlay) -> Result<(), Failure> {
+    // Everything that can be refused without touching the filesystem is
+    // refused first, so a descriptor this cannot act on leaves nothing behind.
+    let plan = OverlayPlan::new(overlay)?;
 
-    // The mount point may not exist yet: a share can land anywhere the
-    // descriptor names, including a directory no image created.
-    std::fs::create_dir_all(&drive.at).map_err(|error| failed_drive(drive, error))?;
+    mount_one(&plan.lower, &plan.lower_at, c"erofs", plan.lower_flags, None)
+        .map_err(|error| plan.failed("the build image", &plan.lower_at, error))?;
+    mount_one(&plan.upper, &plan.rw_at, c"ext4", plan.upper_flags, None)
+        .map_err(|error| plan.failed("the writable layer", &plan.rw_at, error))?;
 
-    // SAFETY: mount takes two paths, a filesystem name and a flag word, all
-    // of which outlive the call, and no options string.
+    for dir in [&plan.upper_dir, &plan.work_dir] {
+        std::fs::create_dir_all(as_path(dir))
+            .map_err(|error| plan.failed("the writable layer", dir, error))?;
+    }
+    // **The upper directory takes the build's root ownership.** overlayfs
+    // shows a merged directory with the attributes of its upper half when it
+    // has one, and this one always does -- so an upper directory this init
+    // created, `root:root 0755`, would make the install's top directory
+    // unwritable to the workload, whatever the build image says. Copied from
+    // the lower root rather than named here: which uid the workload runs as is
+    // the host's decision, and the host already made it when it packed the
+    // image.
+    let (uid, gid, mode) = ownership(&plan.lower_at)
+        .map_err(|error| plan.failed("the build image", &plan.lower_at, error))?;
+    set_ownership(&plan.upper_dir, uid, gid, mode)
+        .map_err(|error| plan.failed("the writable layer", &plan.upper_dir, error))?;
+
+    mount_one(
+        c"overlay",
+        &plan.at,
+        c"overlay",
+        plan.overlay_flags,
+        Some(&plan.overlay_data),
+    )
+    .map_err(|error| plan.failed("the overlay", &plan.at, error))?;
+    Ok(())
+}
+
+/// Mount one filesystem, creating its mount point first.
+fn mount_one(
+    source: &std::ffi::CStr,
+    target: &std::ffi::CStr,
+    fstype: &std::ffi::CStr,
+    flags: libc::c_ulong,
+    data: Option<&std::ffi::CStr>,
+) -> io::Result<()> {
+    // The mount point may not exist yet: the descriptor can name anywhere,
+    // including a directory no image created.
+    std::fs::create_dir_all(as_path(target))?;
+    // SAFETY: every pointer is to a nul-terminated string that outlives the
+    // call, and a null data pointer is what mount(2) takes for "no options".
     let mounted = unsafe {
         libc::mount(
             source.as_ptr(),
             target.as_ptr(),
-            FSTYPE_DRIVE.as_ptr(),
+            fstype.as_ptr(),
             flags,
-            std::ptr::null(),
+            data.map_or(std::ptr::null(), |d| d.as_ptr().cast()),
         )
     };
     if mounted != 0 {
-        return Err(failed_drive(drive, io::Error::last_os_error()));
+        return Err(io::Error::last_os_error());
     }
     Ok(())
 }
 
-const FSTYPE_DRIVE: &std::ffi::CStr = c"ext4";
+/// The same bytes, as a path: lossless, where a round trip through `str` is
+/// not.
+fn as_path(path: &std::ffi::CStr) -> &std::path::Path {
+    use std::os::unix::ffi::OsStrExt;
+    std::path::Path::new(std::ffi::OsStr::from_bytes(path.to_bytes()))
+}
+
+fn ownership(path: &std::ffi::CStr) -> io::Result<(u32, u32, u32)> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = std::fs::metadata(as_path(path))?;
+    Ok((meta.uid(), meta.gid(), meta.mode() & 0o7777))
+}
+
+fn set_ownership(path: &std::ffi::CStr, uid: u32, gid: u32, mode: u32) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = as_path(path);
+    std::os::unix::fs::chown(path, Some(uid), Some(gid))?;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+}
 
 /// What the mount call is given, split out because this is the part worth
 /// asserting: mounting itself needs privileges a test does not have.
@@ -403,48 +467,114 @@ fn options(share: &Mount) -> Result<(CString, CString, libc::c_ulong), Failure> 
     Ok((source, target, flags))
 }
 
-/// What the drive mount call is given.
+/// Everything an overlay's three mounts are given, worked out before any of
+/// them is attempted.
 ///
-/// # No filesystem-specific options, and that is a decision
+/// Split out because this is the part worth asserting: mounting needs
+/// privileges a test does not have.
 ///
-/// `commit=` and `barrier=` were here once and the mount failed outright:
-/// *"can't mount with commit=, fs mounted w/o journal"*, `EINVAL`, and a box
-/// that refused its own descriptor before the session started. Both options
-/// only mean anything to a journal, and a build volume is made without one --
-/// what it holds is one game, re-downloadable, mounted by a clone that is
-/// destroyed with the box. Anything added here has to be an option that is
-/// still true of a journal-less ext4.
+/// # Where the layers go
 ///
-/// `noatime` stays: a game reading its own install has no use for access
-/// times, and writing them turns every read of a clone into a write. It is not
-/// paired with `nodiratime`, which it already implies.
+/// Beside the overlay, in a hidden directory named after it:
+/// `/nestri/install` stacks `/nestri/.install/lower` under
+/// `/nestri/.install/rw/upper`. Beside rather than under, because anything
+/// mounted under `at` is covered the moment the overlay is mounted over it.
 ///
-/// # nosuid and nodev, for the same reason every share has them
+/// # Flags
 ///
-/// What this mounts is the least trusted thing in the box: files a CDN handed
-/// us, checked for the bytes the manifest named and for nothing about what
-/// those bytes are. A setuid binary or a device node inside a depot is not
-/// something a workload should be able to use, and no descriptor has a way to
-/// ask for one.
+/// `nosuid` and `nodev` on every layer and on the result, for the reason every
+/// share has them: what is stacked here is files a CDN handed us, checked for
+/// the bytes the manifest named and for nothing about what those bytes are.
+/// **Not `noexec`** anywhere: the game's executable is in the build.
 ///
-/// **Not `noexec`.** The game's own executable is on this volume and the whole
-/// point is to run it.
-fn options_drive(drive: &Drive) -> Result<(CString, CString, libc::c_ulong), Failure> {
-    let flags = libc::MS_NOSUID | libc::MS_NODEV | libc::MS_NOATIME;
+/// `noatime` on the writable layer and the overlay, so a game reading its own
+/// install does not turn every read into a write. The build image is mounted
+/// read-only and has no access times to write.
+///
+/// No filesystem-specific options on the upper layer: `commit=` and
+/// `barrier=` were once passed to a journal-less ext4 and the mount failed
+/// outright with `EINVAL`.
+#[derive(Debug)]
+struct OverlayPlan {
+    lower: CString,
+    upper: CString,
+    at: CString,
+    lower_at: CString,
+    rw_at: CString,
+    upper_dir: CString,
+    work_dir: CString,
+    lower_flags: libc::c_ulong,
+    upper_flags: libc::c_ulong,
+    overlay_flags: libc::c_ulong,
+    overlay_data: CString,
+}
 
-    let source = CString::new(drive.dev.as_str()).map_err(|_| {
+impl OverlayPlan {
+    fn new(overlay: &Overlay) -> Result<Self, Failure> {
+        let at = std::path::Path::new(&overlay.at);
+        let (Some(parent), Some(name)) = (at.parent(), at.file_name()) else {
+            return Err(Failure::new(format!(
+                "the overlay mount point has no parent to put its layers beside: {:?}",
+                overlay.at
+            )));
+        };
+        let layers = parent.join(format!(".{}", name.to_string_lossy()));
+        let lower_at = layers.join("lower");
+        let rw_at = layers.join("rw");
+        let upper_dir = rw_at.join("upper");
+        let work_dir = rw_at.join("work");
+
+        // overlayfs splits its options on commas and its layer lists on
+        // colons, and has no escape for either that this should rely on. A
+        // path carrying one would mount a different directory than the one
+        // named, so it is refused.
+        for path in [&lower_at, &upper_dir, &work_dir] {
+            let text = path.to_string_lossy();
+            if text.contains([',', ':']) {
+                return Err(Failure::new(format!(
+                    "the overlay mount point cannot carry a comma or a colon: {:?}",
+                    overlay.at
+                )));
+            }
+        }
+        let data = format!(
+            "lowerdir={},upperdir={},workdir={}",
+            lower_at.display(),
+            upper_dir.display(),
+            work_dir.display()
+        );
+
+        let common = libc::MS_NOSUID | libc::MS_NODEV;
+        Ok(Self {
+            lower: c_string(&overlay.lower, "the build image device")?,
+            upper: c_string(&overlay.upper, "the writable layer device")?,
+            at: c_string(&overlay.at, "the overlay mount point")?,
+            lower_at: c_string(&lower_at.to_string_lossy(), "the overlay mount point")?,
+            rw_at: c_string(&rw_at.to_string_lossy(), "the overlay mount point")?,
+            upper_dir: c_string(&upper_dir.to_string_lossy(), "the overlay mount point")?,
+            work_dir: c_string(&work_dir.to_string_lossy(), "the overlay mount point")?,
+            lower_flags: common | libc::MS_RDONLY,
+            upper_flags: common | libc::MS_NOATIME,
+            overlay_flags: common | libc::MS_NOATIME,
+            overlay_data: c_string(&data, "the overlay mount point")?,
+        })
+    }
+
+    /// Which step failed, on which path, in the operating system's words.
+    fn failed(&self, step: &str, path: &std::ffi::CStr, error: io::Error) -> Failure {
         Failure::new(format!(
-            "the drive device contains a nul byte: {:?}",
-            drive.dev
+            "{}: {step}: {}: {error}",
+            self.at.to_string_lossy(),
+            path.to_string_lossy()
         ))
-    })?;
-    let target = CString::new(drive.at.as_str()).map_err(|_| {
-        Failure::new(format!(
-            "the drive mount point contains a nul byte: {:?}",
-            drive.at
-        ))
-    })?;
-    Ok((source, target, flags))
+    }
+}
+
+/// A nul byte inside a path is a descriptor that cannot be carried out under
+/// any flags. Refused by name rather than silently emptied: an empty path turns
+/// up later as a mount failure about something else entirely.
+fn c_string(text: &str, what: &str) -> Result<CString, Failure> {
+    CString::new(text).map_err(|_| Failure::new(format!("{what} contains a nul byte: {text:?}")))
 }
 
 /// A failure names the path, which is what makes it actionable: a permission
@@ -454,9 +584,6 @@ fn failed(share: &Mount, error: io::Error) -> Failure {
     Failure::new(format!("{}: {error}", share.at))
 }
 
-fn failed_drive(drive: &Drive, error: io::Error) -> Failure {
-    Failure::new(format!("{}: {error}", drive.at))
-}
 
 #[cfg(test)]
 mod tests {
@@ -581,28 +708,75 @@ mod tests {
         assert_eq!(flags & libc::MS_RDONLY, 0);
     }
 
-    /// The drive carries the same guard every share carries.
-    ///
-    /// It is the mount that most needs it: a share is a directory this host
-    /// prepared, and a drive is a filesystem built out of whatever a CDN sent.
+    fn overlay(at: &str) -> Overlay {
+        Overlay {
+            lower: "/dev/vdb".into(),
+            upper: "/dev/vdc".into(),
+            at: at.into(),
+        }
+    }
+
+    /// The layers sit beside the overlay, never under it: anything mounted
+    /// under `at` is hidden the moment the overlay covers it.
     #[test]
-    fn a_drive_is_mounted_without_devices_or_setuid_but_can_still_execute() {
-        let drive = Drive {
-            dev: "/dev/vdb".into(),
-            at: "/nestri/install".into(),
-        };
-        let (source, target, flags) = options_drive(&drive).unwrap();
+    fn an_overlays_layers_sit_beside_it_and_the_options_name_them() {
+        let plan = OverlayPlan::new(&overlay("/nestri/install")).unwrap();
+        assert_eq!(plan.lower.to_str().unwrap(), "/dev/vdb");
+        assert_eq!(plan.upper.to_str().unwrap(), "/dev/vdc");
+        assert_eq!(plan.lower_at.to_str().unwrap(), "/nestri/.install/lower");
+        assert_eq!(plan.rw_at.to_str().unwrap(), "/nestri/.install/rw");
         assert_eq!(
-            source.to_str().unwrap(),
-            "/dev/vdb",
-            "the device is the source"
+            plan.overlay_data.to_str().unwrap(),
+            "lowerdir=/nestri/.install/lower,\
+             upperdir=/nestri/.install/rw/upper,\
+             workdir=/nestri/.install/rw/work"
         );
-        assert_eq!(target.to_str().unwrap(), "/nestri/install");
-        assert_eq!(flags & libc::MS_NOSUID, libc::MS_NOSUID);
-        assert_eq!(flags & libc::MS_NODEV, libc::MS_NODEV);
-        assert_eq!(flags & libc::MS_NOATIME, libc::MS_NOATIME);
-        // The game's executable lives here.
-        assert_eq!(flags & libc::MS_NOEXEC, 0);
+    }
+
+    /// Every layer carries the guard every share carries, and none of them
+    /// stops the game's own executable from running.
+    ///
+    /// These are the mounts that most need it: a share is a directory this
+    /// host prepared, and a build is a filesystem made out of whatever a CDN
+    /// sent.
+    #[test]
+    fn every_layer_is_mounted_without_devices_or_setuid_but_can_still_execute() {
+        let plan = OverlayPlan::new(&overlay("/nestri/install")).unwrap();
+        for flags in [plan.lower_flags, plan.upper_flags, plan.overlay_flags] {
+            assert_eq!(flags & libc::MS_NOSUID, libc::MS_NOSUID);
+            assert_eq!(flags & libc::MS_NODEV, libc::MS_NODEV);
+            assert_eq!(flags & libc::MS_NOEXEC, 0);
+        }
+        assert_eq!(plan.lower_flags & libc::MS_RDONLY, libc::MS_RDONLY);
+        assert_eq!(plan.upper_flags & libc::MS_RDONLY, 0);
+        assert_eq!(plan.overlay_flags & libc::MS_RDONLY, 0);
+        assert_eq!(plan.overlay_flags & libc::MS_NOATIME, libc::MS_NOATIME);
+    }
+
+    /// overlayfs splits its options on commas and colons, so a path carrying
+    /// one would stack a different directory than the one named.
+    #[test]
+    fn an_overlay_the_kernel_would_misread_is_refused_before_anything_mounts() {
+        for at in ["/nestri/in,stall", "/nestri/in:stall", "/", "/nestri/ins\0tall"] {
+            assert!(OverlayPlan::new(&overlay(at)).is_err(), "{at:?} was accepted");
+        }
+    }
+
+    #[test]
+    fn a_failed_overlay_step_names_the_overlay_the_step_and_the_path() {
+        let plan = OverlayPlan::new(&overlay("/nestri/install")).unwrap();
+        let failure = plan.failed(
+            "the build image",
+            &plan.lower_at,
+            io::Error::from_raw_os_error(libc::ENODEV),
+        );
+        assert!(
+            failure
+                .reason
+                .starts_with("/nestri/install: the build image: /nestri/.install/lower: "),
+            "{}",
+            failure.reason
+        );
     }
 
     #[test]
@@ -655,7 +829,7 @@ pub mod double {
     /// only thing under test.
     pub struct Double {
         pub mounted: Vec<Vec<Mount>>,
-        pub drives: Vec<Vec<Drive>>,
+        pub overlays: Vec<Vec<Overlay>>,
         pub started: Vec<Exec>,
         pub stops: usize,
         pub mount_failure: Option<Failure>,
@@ -679,7 +853,7 @@ pub mod double {
         fn new(exit: Exit, holds_until_stopped: bool) -> Self {
             Self {
                 mounted: Vec::new(),
-                drives: Vec::new(),
+                overlays: Vec::new(),
                 started: Vec::new(),
                 stops: 0,
                 mount_failure: None,
@@ -700,8 +874,8 @@ pub mod double {
             }
         }
 
-        fn mount_drives(&mut self, drives: &[Drive]) -> Result<(), Failure> {
-            self.drives.push(drives.to_vec());
+        fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure> {
+            self.overlays.push(overlays.to_vec());
             match &self.mount_failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(()),

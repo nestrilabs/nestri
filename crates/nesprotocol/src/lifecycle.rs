@@ -59,7 +59,10 @@ pub const CONTROL_PORT: u32 = 7000;
 /// messages, so a version-2 peer and a version-3 peer do not talk at all.
 /// There is deliberately no shim: nothing is deployed, and a shim would be the
 /// second definition of this wire that one shared crate exists to prevent.
-pub const CONTROL_VERSION: u32 = 3;
+///
+/// Version 4 replaced the descriptor's `drives` with `overlays`: a build is a
+/// read-only image now, and a box writes into a layer of its own over it.
+pub const CONTROL_VERSION: u32 = 4;
 
 /// The command to run, and who runs it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -101,15 +104,29 @@ pub struct Mount {
     pub ro: bool,
 }
 
-/// A block device the guest mounts, rather than a share it is handed.
+/// A read-only block device with a writable one layered over it.
 ///
-/// There are no mount options on this and that is deliberate: what the guest
-/// mounts a build volume with is a property of how the volume was built --
-/// journal-less ext4, `nosuid`, `nodev` -- and not something a descriptor is in
-/// a position to know. A field for options was here and was never read.
+/// This is how a game's install reaches a box. The build is an EROFS image
+/// every box on the host shares, and the box's own writes land on an ext4 of
+/// its own that is thrown away with it; the guest stacks the two with
+/// overlayfs, so a game that writes into its install directory works and the
+/// build under it cannot change.
+///
+/// Stacked in the guest rather than on the host because the host has no
+/// filesystem it can do it on: the host-side equivalent was a ZFS clone, and a
+/// host that needs ZFS is what this replaced.
+///
+/// There are no mount options on this and that is deliberate: how each layer
+/// is mounted is a property of how it was built -- EROFS read-only, a
+/// journal-less ext4 upper, `nosuid`, `nodev` -- and not something a
+/// descriptor is in a position to know.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Drive {
-    pub dev: String,
+pub struct Overlay {
+    /// The read-only build image, as the guest names the device.
+    pub lower: String,
+    /// The box's writable layer, as the guest names the device.
+    pub upper: String,
+    /// Where the stacked result lands.
     pub at: String,
 }
 
@@ -178,7 +195,7 @@ pub struct BootDescriptor {
     #[serde(default)]
     pub mounts: Vec<Mount>,
     #[serde(default)]
-    pub drives: Vec<Drive>,
+    pub overlays: Vec<Overlay>,
     /// What the box may spend on video.
     ///
     /// Here rather than on a launch because its consumer is `neshub`, which is
@@ -423,7 +440,7 @@ mod tests {
                 at: "/mnt/install".into(),
                 ro: true,
             }],
-            drives: Vec::new(),
+            overlays: Vec::new(),
             video: VideoLimits::default(),
         }
     }
@@ -676,7 +693,7 @@ mod video_limits_tests {
     fn a_descriptor_without_video_still_reads() {
         // An older host says nothing about video. That has to keep working, and
         // it has to be distinguishable from a host that said "no limit".
-        let d: BootDescriptor = serde_json::from_str(r#"{"mounts":[],"drives":[]}"#).unwrap();
+        let d: BootDescriptor = serde_json::from_str(r#"{"mounts":[],"overlays":[]}"#).unwrap();
         assert_eq!(d.video.bitrate_kbps, None);
     }
 
@@ -686,7 +703,7 @@ mod video_limits_tests {
         // did, and an older guest keeps accepting it.
         let d = BootDescriptor {
             mounts: Vec::new(),
-            drives: Vec::new(),
+            overlays: Vec::new(),
             video: VideoLimits::default(),
         };
         let json = serde_json::to_string(&d).unwrap();
@@ -697,7 +714,7 @@ mod video_limits_tests {
     fn a_ceiling_survives_the_round_trip() {
         let d = BootDescriptor {
             mounts: Vec::new(),
-            drives: Vec::new(),
+            overlays: Vec::new(),
             video: VideoLimits {
                 bitrate_kbps: Some(8_000),
             },
