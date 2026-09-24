@@ -46,8 +46,9 @@ use std::thread;
 use std::time::Instant;
 
 use nesprotocol::{
-    CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, FLAG_KEYFRAME, FLAG_RECONFIG,
-    MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO, decode_encode_settings, encode_ipc_frame,
+    CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, ClientCaps, FLAG_KEYFRAME, FLAG_RECONFIG,
+    MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO, decode_client_caps,
+    decode_encode_settings, encode_ipc_frame,
 };
 use pixelforge::{
     Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
@@ -411,6 +412,79 @@ fn resolve_codec(requested: Option<&str>) -> Option<(HwCodec, pixelforge::VideoC
 
 /// The codec to use on a context that already exists: the one asked for if
 /// it can, falling back the way [`resolve_codec`] does.
+/// What this device can encode, in the same shape the client sends.
+///
+/// Ten bits is offered for everything but H.264, which matches
+/// [`depth_for_codec`]: the encoder refuses ten-bit H.264, so advertising it
+/// would let a negotiation settle on something that is then quietly downgraded.
+fn host_caps(ctx: &pixelforge::VideoContext) -> ClientCaps {
+    let mut caps = ClientCaps::empty();
+    for (codec, id) in [
+        (HwCodec::AV1, nesprotocol::CODEC_AV1),
+        (HwCodec::H265, nesprotocol::CODEC_H265),
+        (HwCodec::H264, nesprotocol::CODEC_H264),
+    ] {
+        if !ctx.supports_encode(codec.to_pixelforge()) {
+            continue;
+        }
+        caps = caps.with(id, nesprotocol::DEPTH_8);
+        if codec != HwCodec::H264 {
+            caps = caps.with(id, nesprotocol::DEPTH_10);
+        }
+    }
+    caps
+}
+
+/// The codec this host should switch to for `client`, if any.
+///
+/// `None` means "keep what you are doing", which covers three cases that want
+/// the same answer: a client that said nothing, a client sharing nothing with
+/// this encoder, and a negotiation that landed where the encoder already is.
+fn negotiated(
+    client: ClientCaps,
+    host: ClientCaps,
+    forced: Option<&str>,
+) -> Option<(HwCodec, EncodeBitDepth)> {
+    let (codec_id, depth_id) = client.best(host)?;
+    let codec = match codec_id {
+        nesprotocol::CODEC_AV1 => HwCodec::AV1,
+        nesprotocol::CODEC_H265 => HwCodec::H265,
+        _ => HwCodec::H264,
+    };
+    let depth = if depth_id == nesprotocol::DEPTH_10 {
+        EncodeBitDepth::Ten
+    } else {
+        EncodeBitDepth::Eight
+    };
+
+    // An operator who names a codec gets that codec. Second-guessing an
+    // explicit setting is worse than sending something undecodable, because
+    // the undecodable case is visible and this would not be -- but it is worth
+    // saying out loud, since the result is a black screen at the far end.
+    if let Some(name) = forced {
+        let wanted = match name {
+            "av1" => Some(nesprotocol::CODEC_AV1),
+            "h265" | "hevc" => Some(nesprotocol::CODEC_H265),
+            "h264" | "avc" => Some(nesprotocol::CODEC_H264),
+            _ => None,
+        };
+        if let Some(wanted) = wanted {
+            if !client.supports_codec(wanted) {
+                log::warn!(
+                    "NESCAPTURE_CODEC={name} is set and this client cannot decode it; \
+                     sending it anyway, which the client will not be able to show"
+                );
+            }
+            // The depth may still follow the negotiation: it is not what was
+            // pinned. The codec stays whatever the operator named, which
+            // `resolve_codec_on` has already applied.
+            return None;
+        }
+    }
+
+    Some((codec, depth))
+}
+
 fn resolve_codec_on(ctx: &pixelforge::VideoContext, requested: Option<&str>) -> Option<HwCodec> {
     let has = |c: HwCodec| ctx.supports_encode(c.to_pixelforge());
     let best = || {
@@ -710,6 +784,7 @@ impl PipelineHandle {
             None => resolve_codec(config.codec_request.as_deref()),
         }
         .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
+        let device_caps = host_caps(&ctx);
 
         // One deep. The frame in it is now an unwaited blit rather than an
         // exported buffer, and the ring's four slots are already the
@@ -831,6 +906,10 @@ impl PipelineHandle {
 
         // Spawn IDR command listener (separate thread, blocks on recv)
         let idr_thread = idr_requested.clone();
+        // What this device can encode, worked out once here where the context
+        // is, so the listener answers a capability message without needing one.
+        let listener_host_caps = device_caps;
+        let listener_forced = config.codec_request.clone();
         thread::Builder::new()
             .name("nescapture-idr".into())
             .spawn(move || {
@@ -856,6 +935,39 @@ impl PipelineHandle {
                         Ok(1) if buf[0] == MSG_IDR_REQUEST => {
                             log::info!("IDR requested by client");
                             idr_thread.store(true, Ordering::Relaxed);
+                        }
+                        Ok(n) if n >= 2 && buf[0] == MSG_CLIENT_CAPS => {
+                            let Some(client) = decode_client_caps(&buf[1..n]) else {
+                                log::warn!("unreadable client capabilities ({} bytes)", n - 1);
+                                continue;
+                            };
+                            match negotiated(client, listener_host_caps, listener_forced.as_deref())
+                            {
+                                Some((codec, depth)) => {
+                                    log::info!(
+                                        "client decodes {:#08b}; {codec:?} {depth:?} is the best \
+                                         both ends can do",
+                                        client.bits()
+                                    );
+                                    let change = EncodeSettingsChange {
+                                        codec: Some(codec),
+                                        rate_control_mode: None,
+                                        value: 0,
+                                        bit_depth: Some(depth),
+                                    };
+                                    if reconfig_tx.send(change).is_err() {
+                                        log::warn!(
+                                            "reconfig channel closed, stopping cmd listener"
+                                        );
+                                        break;
+                                    }
+                                }
+                                None => log::info!(
+                                    "client decodes {:#08b}, which shares nothing with this \
+                                     encoder; leaving the stream alone",
+                                    client.bits()
+                                ),
+                            }
                         }
                         Ok(n) if n >= 2 && buf[0] == MSG_ENCODE_SETTINGS => {
                             if let Some((codec_id, rc, value, depth)) =
@@ -1110,6 +1222,14 @@ fn encoder_thread(
             // exact moment it is struggling. Everything else here -- a codec, a
             // bit depth, a rate-control *mode* -- changes the video session
             // itself and cannot avoid the rebuild.
+            // A change that asks for what is already happening still costs
+            // a rebuild and an IDR, and the negotiation sends one every time a
+            // client connects -- including the common case where the client
+            // wants exactly what this encoder is already producing.
+            if changes_nothing(&change, cfg.codec, cfg.wanted_depth_override) {
+                log::debug!("reconfig asks for the current settings; nothing to do");
+                continue;
+            }
             if let Some(kbps) = bitrate_only_change(
                 &change,
                 cfg.rate_control,
@@ -1657,6 +1777,29 @@ fn intra_refresh_enabled() -> bool {
             false
         }
     }
+}
+
+/// Whether `change` asks for exactly what the encoder is already doing.
+///
+/// Only true for a change that names no rate control: one that does is either
+/// a retarget, which is handled without a rebuild anyway, or a mode change,
+/// which is never a no-op.
+fn changes_nothing(
+    change: &EncodeSettingsChange,
+    current_codec: HwCodec,
+    current_depth: Option<EncodeBitDepth>,
+) -> bool {
+    if change.rate_control_mode.is_some() {
+        return false;
+    }
+    let codec_same = change.codec.is_none_or(|c| c == current_codec);
+    // `None` for the current depth means nothing has overridden the default,
+    // which is eight bits -- so a request for eight bits is a no-op and a
+    // request for ten is not.
+    let depth_same = change.bit_depth.is_none_or(|d| {
+        Some(d) == current_depth || (current_depth.is_none() && d == EncodeBitDepth::Eight)
+    });
+    codec_same && depth_same
 }
 
 fn bitrate_only_change(
@@ -2764,7 +2907,7 @@ mod depth_tests {
 
 #[cfg(test)]
 mod bitrate_only_tests {
-    use super::{HwCodec, RateControl, bitrate_only_change};
+    use super::{HwCodec, RateControl, bitrate_only_change, changes_nothing, negotiated};
 
     use crate::encode::EncodeSettingsChange;
     use pixelforge::{EncodeBitDepth, RateControlMode};
@@ -2786,6 +2929,131 @@ mod bitrate_only_tests {
     /// The running encode for these: CBR at 8 Mbps, H.264, no depth override.
     fn running(c: &EncodeSettingsChange) -> Option<u32> {
         bitrate_only_change(c, CBR_8M, HwCodec::H264, None)
+    }
+
+    fn caps(pairs: &[(u8, u8)]) -> nesprotocol::ClientCaps {
+        pairs
+            .iter()
+            .fold(nesprotocol::ClientCaps::empty(), |acc, &(c, d)| {
+                acc.with(c, d)
+            })
+    }
+
+    /// A device that encodes all three, ten bits on everything but H.264.
+    fn full_host() -> nesprotocol::ClientCaps {
+        caps(&[
+            (nesprotocol::CODEC_AV1, nesprotocol::DEPTH_8),
+            (nesprotocol::CODEC_AV1, nesprotocol::DEPTH_10),
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_8),
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_10),
+            (nesprotocol::CODEC_H264, nesprotocol::DEPTH_8),
+        ])
+    }
+
+    /// The whole point: a client with no AV1 decoder gets H.265 rather than a
+    /// black screen.
+    #[test]
+    fn a_client_without_av1_is_moved_off_it() {
+        let client = caps(&[
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_8),
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_10),
+            (nesprotocol::CODEC_H264, nesprotocol::DEPTH_8),
+        ]);
+        assert_eq!(
+            negotiated(client, full_host(), None),
+            Some((HwCodec::H265, EncodeBitDepth::Ten))
+        );
+    }
+
+    #[test]
+    fn a_client_with_only_h264_is_moved_all_the_way_down() {
+        let client = caps(&[(nesprotocol::CODEC_H264, nesprotocol::DEPTH_8)]);
+        assert_eq!(
+            negotiated(client, full_host(), None),
+            Some((HwCodec::H264, EncodeBitDepth::Eight))
+        );
+    }
+
+    /// An operator who names a codec keeps it, even against a client that
+    /// cannot decode it. Second-guessing an explicit setting is worse than the
+    /// black screen, which is at least visible.
+    #[test]
+    fn a_forced_codec_is_not_negotiated_away() {
+        let client = caps(&[(nesprotocol::CODEC_H264, nesprotocol::DEPTH_8)]);
+        assert_eq!(negotiated(client, full_host(), Some("av1")), None);
+    }
+
+    /// A client that said nothing, or shares nothing, leaves the stream alone.
+    #[test]
+    fn nothing_in_common_changes_nothing() {
+        assert_eq!(
+            negotiated(nesprotocol::ClientCaps::empty(), full_host(), None),
+            None
+        );
+        let av1_only = caps(&[(nesprotocol::CODEC_AV1, nesprotocol::DEPTH_8)]);
+        let h264_client = caps(&[(nesprotocol::CODEC_H264, nesprotocol::DEPTH_8)]);
+        assert_eq!(negotiated(h264_client, av1_only, None), None);
+    }
+
+    /// A negotiation landing where the encoder already is must not rebuild:
+    /// every rebuild costs an IDR, and this message arrives on every connect.
+    #[test]
+    fn asking_for_the_current_settings_is_a_no_op() {
+        let same = EncodeSettingsChange {
+            codec: Some(HwCodec::AV1),
+            rate_control_mode: None,
+            value: 0,
+            bit_depth: Some(EncodeBitDepth::Ten),
+        };
+        assert!(changes_nothing(
+            &same,
+            HwCodec::AV1,
+            Some(EncodeBitDepth::Ten)
+        ));
+        assert!(!changes_nothing(
+            &same,
+            HwCodec::H265,
+            Some(EncodeBitDepth::Ten)
+        ));
+        assert!(!changes_nothing(
+            &same,
+            HwCodec::AV1,
+            Some(EncodeBitDepth::Eight)
+        ));
+    }
+
+    /// No override recorded means the default, which is eight bits -- so a
+    /// request for eight is a no-op and one for ten is not.
+    #[test]
+    fn an_unset_depth_reads_as_eight_bits() {
+        let eight = EncodeSettingsChange {
+            codec: None,
+            rate_control_mode: None,
+            value: 0,
+            bit_depth: Some(EncodeBitDepth::Eight),
+        };
+        assert!(changes_nothing(&eight, HwCodec::AV1, None));
+        let ten = EncodeSettingsChange {
+            bit_depth: Some(EncodeBitDepth::Ten),
+            ..eight.clone()
+        };
+        assert!(!changes_nothing(&ten, HwCodec::AV1, None));
+    }
+
+    /// A rate-control change is never a no-op, whatever else it carries.
+    #[test]
+    fn a_rate_control_change_always_counts() {
+        let rc = EncodeSettingsChange {
+            codec: Some(HwCodec::AV1),
+            rate_control_mode: Some(RateControlMode::Cbr),
+            value: 5_000,
+            bit_depth: Some(EncodeBitDepth::Ten),
+        };
+        assert!(!changes_nothing(
+            &rc,
+            HwCodec::AV1,
+            Some(EncodeBitDepth::Ten)
+        ));
     }
 
     /// What a client sends on connect to say what it can decode: a depth, and

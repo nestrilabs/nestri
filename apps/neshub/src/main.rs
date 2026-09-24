@@ -231,8 +231,7 @@ async fn main() -> Result<()> {
                 let mgr = mgr.clone();
                 let controller = controller.clone();
                 tokio::spawn(async move {
-                    let mut fast =
-                        tokio::time::interval(std::time::Duration::from_millis(100));
+                    let mut fast = tokio::time::interval(std::time::Duration::from_millis(100));
                     tracing::info!("backlog trace on, 10 Hz");
                     loop {
                         fast.tick().await;

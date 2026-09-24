@@ -10,7 +10,8 @@ use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_
 use nesprotocol::{BIDI_CONTROL, BIDI_INPUT, Carrier, STREAM_CURSOR, STREAM_STATS};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{
-    MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT,
+    MSG_CLIENT_CAPS, MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH,
+    MSG_RECEIVER_REPORT,
 };
 use nesprotocol::{ReceiverReport, decode_control_mode, decode_receiver_report};
 
@@ -178,10 +179,9 @@ impl ClientSession {
             Carrier::Input => {
                 self.other_conns.push(conn.clone());
                 let broadcast = self.input_broadcast.clone();
-                self.tasks
-                    .push(tokio::spawn(
-                        async move { run_input_reader(conn, broadcast).await },
-                    ));
+                self.tasks.push(tokio::spawn(async move {
+                    run_input_reader(conn, broadcast).await
+                }));
             }
             Carrier::Control => {
                 let (Some(cursor_rx), Some(stats_rx)) =
@@ -192,15 +192,13 @@ impl ClientSession {
                 };
                 self.other_conns.push(conn.clone());
                 let conn_c = conn.clone();
-                self.tasks
-                    .push(tokio::spawn(
-                        async move { run_cursor_sender(conn_c, cursor_rx).await },
-                    ));
+                self.tasks.push(tokio::spawn(async move {
+                    run_cursor_sender(conn_c, cursor_rx).await
+                }));
                 let conn_s = conn.clone();
-                self.tasks
-                    .push(tokio::spawn(
-                        async move { run_stats_sender(conn_s, stats_rx).await },
-                    ));
+                self.tasks.push(tokio::spawn(async move {
+                    run_stats_sender(conn_s, stats_rx).await
+                }));
                 let reports = self.latest_report.clone();
                 let awaiting = self.awaiting_keyframe.clone();
                 let idr = self.idr_cmd_tx.clone();
@@ -308,7 +306,11 @@ async fn run_framed_reader<F, Fut>(
     loop {
         match conn.open_bi().await {
             Ok((mut send, mut recv)) => {
-                if send.write_all(&[stream_type, STREAM_VERSION]).await.is_err() {
+                if send
+                    .write_all(&[stream_type, STREAM_VERSION])
+                    .await
+                    .is_err()
+                {
                     debug!("{label} type byte write failed");
                     break;
                 }
@@ -428,6 +430,25 @@ async fn run_control_reader(
                     // See `dgram::ResyncGate`.
                     awaiting_keyframe.store(true, Ordering::Relaxed);
                     let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
+                }
+                MSG_CLIENT_CAPS => {
+                    // Passed through untouched, and in particular *without*
+                    // taking the controller off automatic the way encode
+                    // settings do. This is the client stating a fact about
+                    // itself, not a person overriding a decision, and reading
+                    // it as the latter would silently stop the bitrate
+                    // controller the first time a client said what it can
+                    // decode.
+                    match nesprotocol::decode_client_caps(&payload) {
+                        Some(caps) => {
+                            info!("client decodes {:#08b}", caps.bits());
+                            let mut cmd = Vec::with_capacity(1 + payload.len());
+                            cmd.push(MSG_CLIENT_CAPS);
+                            cmd.extend_from_slice(&payload);
+                            let _ = idr_cmd_tx.send(cmd);
+                        }
+                        None => debug!("unreadable client capabilities ({} bytes)", payload.len()),
+                    }
                 }
                 MSG_ENCODE_SETTINGS => {
                     info!(
@@ -683,7 +704,12 @@ impl SessionManager {
         let mut sessions = self.sessions.lock().await;
         let fresh = !sessions.contains_key(&id);
         let session = sessions.entry(id).or_insert_with(|| {
-            ClientSession::new(input_broadcast, self.relay_ms.clone(), idr_cmd_tx, controller)
+            ClientSession::new(
+                input_broadcast,
+                self.relay_ms.clone(),
+                idr_cmd_tx,
+                controller,
+            )
         });
         session.attach(carrier, conn);
         if fresh {

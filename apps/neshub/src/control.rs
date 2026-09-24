@@ -543,7 +543,12 @@ mod tests {
             let target = c.target_kbps();
             // Whatever was asked for above 2 Mbps piles up; the rest drains.
             backlog = (backlog + (i64::from(target) - 2_000) * 1000 / 8).clamp(0, 4 * 1024 * 1024);
-            c.tick(1, Some(report(60, 0, 2_000)), backlogged(backlog as u64), false);
+            c.tick(
+                1,
+                Some(report(60, 0, 2_000)),
+                backlogged(backlog as u64),
+                false,
+            );
             seen.push(c.target_kbps());
         }
 

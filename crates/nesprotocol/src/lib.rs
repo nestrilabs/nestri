@@ -91,6 +91,7 @@ pub const FRAME_HDR_LEN: usize = 7;
 pub const MSG_DATA: u8 = 0; // generic data frame (video / audio)
 pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub → hudless)
 pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → hudless)
+pub const MSG_CLIENT_CAPS: u8 = 0x13; // what the client can decode (desktop → hub → hudless)
 /// What the receiver actually got, once a second (desktop → hub).
 ///
 /// The hub cannot see this. Its own view of the path -- RTT, congestion window,
@@ -297,6 +298,120 @@ pub fn encode_bitrate_only(buf: &mut Vec<u8>, kbps: u32) {
     buf.push(CODEC_KEEP);
     buf.push(RC_CBR);
     buf.extend_from_slice(&kbps.to_le_bytes());
+}
+
+// ── What the client can decode ──────────────────────────────────────────
+
+/// The codec and depth combinations a client can decode, as one bitmask.
+///
+/// A host that picks something the far end cannot decode produces a black
+/// screen and no error, so it needs the client's whole set rather than its
+/// favourite: knowing only "this one prefers AV1" leaves nowhere to fall back
+/// to when the host cannot encode AV1 either.
+///
+/// Sent once, on connect, before any picture. That is early enough that the
+/// host never sends a codec the client cannot read, which reacting to the
+/// first frame could not manage.
+///
+/// One bit per pair, at `codec * 2 + depth`, so the layout follows from the
+/// codec ids rather than from a table that can disagree with them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ClientCaps(u16);
+
+/// Best first. The same order the host uses to pick among its own encoders,
+/// stated once so the two cannot drift apart.
+pub const CODEC_PREFERENCE: [u8; 3] = [CODEC_AV1, CODEC_H265, CODEC_H264];
+
+impl ClientCaps {
+    /// Nothing supported. What a client that never spoke is assumed to have,
+    /// which is why [`Self::best`] treats an empty set as "no opinion" rather
+    /// than as "decodes nothing".
+    pub fn empty() -> Self {
+        Self(0)
+    }
+
+    pub fn from_bits(bits: u16) -> Self {
+        Self(bits)
+    }
+
+    pub fn bits(self) -> u16 {
+        self.0
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    fn bit(codec: u8, depth: u8) -> Option<u16> {
+        // `CODEC_KEEP` and the audio codec have no place in a video capability
+        // set, and shifting by them would be nonsense rather than a small
+        // error.
+        if !matches!(codec, CODEC_H264 | CODEC_H265 | CODEC_AV1) {
+            return None;
+        }
+        if !matches!(depth, DEPTH_8 | DEPTH_10) {
+            return None;
+        }
+        Some(1u16 << (codec * 2 + depth))
+    }
+
+    /// Add one pair. Unknown codecs and depths are ignored rather than
+    /// panicking: this is built from what a device probe reported.
+    #[must_use]
+    pub fn with(mut self, codec: u8, depth: u8) -> Self {
+        if let Some(bit) = Self::bit(codec, depth) {
+            self.0 |= bit;
+        }
+        self
+    }
+
+    pub fn supports(self, codec: u8, depth: u8) -> bool {
+        Self::bit(codec, depth).is_some_and(|bit| self.0 & bit != 0)
+    }
+
+    /// Whether this set can decode `codec` at any depth.
+    pub fn supports_codec(self, codec: u8) -> bool {
+        self.supports(codec, DEPTH_8) || self.supports(codec, DEPTH_10)
+    }
+
+    /// The best codec and depth both ends can manage.
+    ///
+    /// Walks [`CODEC_PREFERENCE`], takes the first codec present in both sets,
+    /// and within it prefers ten bits -- deeper coefficients carry less
+    /// rounding error through the transform, so it is usually a small win on
+    /// efficiency rather than a trade against it.
+    ///
+    /// `None` when nothing overlaps, which is a real possibility rather than a
+    /// theoretical one: an old client that sends no capabilities at all reads
+    /// as empty. The caller keeps whatever it was already doing.
+    pub fn best(self, host: Self) -> Option<(u8, u8)> {
+        if self.is_empty() || host.is_empty() {
+            return None;
+        }
+        for codec in CODEC_PREFERENCE {
+            for depth in [DEPTH_10, DEPTH_8] {
+                if self.supports(codec, depth) && host.supports(codec, depth) {
+                    return Some((codec, depth));
+                }
+            }
+        }
+        None
+    }
+}
+
+/// Encode a capability set: `[2B bits LE]`.
+pub fn encode_client_caps(buf: &mut Vec<u8>, caps: ClientCaps) {
+    buf.extend_from_slice(&caps.bits().to_le_bytes());
+}
+
+/// Decode a capability set. `None` when the payload is too short to be one.
+pub fn decode_client_caps(payload: &[u8]) -> Option<ClientCaps> {
+    if payload.len() < 2 {
+        return None;
+    }
+    Some(ClientCaps::from_bits(u16::from_le_bytes([
+        payload[0], payload[1],
+    ])))
 }
 
 /// A settings payload that changes the bit depth and nothing else.
@@ -547,6 +662,109 @@ mod media_control_tests {
         let mut buf = vec![0x7F];
         buf.extend_from_slice(&8_000u32.to_le_bytes());
         assert_eq!(decode_control_mode(&buf), None);
+    }
+
+    #[test]
+    fn every_codec_and_depth_has_its_own_bit() {
+        let all = [CODEC_H264, CODEC_H265, CODEC_AV1]
+            .into_iter()
+            .flat_map(|c| [DEPTH_8, DEPTH_10].map(move |d| (c, d)));
+        let mut seen = Vec::new();
+        for (codec, depth) in all {
+            let caps = ClientCaps::empty().with(codec, depth);
+            assert!(caps.supports(codec, depth));
+            assert!(!seen.contains(&caps.bits()), "{codec}/{depth} collides");
+            seen.push(caps.bits());
+        }
+    }
+
+    /// Nothing outside the video codecs belongs in a capability set, and a
+    /// shift by `CODEC_KEEP` would be nonsense rather than a small error.
+    #[test]
+    fn nonsense_pairs_are_ignored_rather_than_stored() {
+        let caps = ClientCaps::empty()
+            .with(CODEC_KEEP, DEPTH_8)
+            .with(CODEC_OPUS, DEPTH_8)
+            .with(CODEC_AV1, 7);
+        assert!(caps.is_empty());
+        assert!(!caps.supports(CODEC_KEEP, DEPTH_8));
+    }
+
+    fn host_all() -> ClientCaps {
+        ClientCaps::empty()
+            .with(CODEC_AV1, DEPTH_8)
+            .with(CODEC_AV1, DEPTH_10)
+            .with(CODEC_H265, DEPTH_8)
+            .with(CODEC_H265, DEPTH_10)
+            .with(CODEC_H264, DEPTH_8)
+    }
+
+    #[test]
+    fn the_best_shared_codec_wins_at_the_deeper_depth() {
+        assert_eq!(host_all().best(host_all()), Some((CODEC_AV1, DEPTH_10)));
+    }
+
+    /// The case this exists for: a client with no AV1 decoder must not be sent
+    /// AV1 just because the host prefers it.
+    #[test]
+    fn a_client_without_av1_gets_h265() {
+        let client = ClientCaps::empty()
+            .with(CODEC_H265, DEPTH_8)
+            .with(CODEC_H265, DEPTH_10)
+            .with(CODEC_H264, DEPTH_8);
+        assert_eq!(client.best(host_all()), Some((CODEC_H265, DEPTH_10)));
+    }
+
+    #[test]
+    fn a_client_with_only_h264_gets_h264() {
+        let client = ClientCaps::empty().with(CODEC_H264, DEPTH_8);
+        assert_eq!(client.best(host_all()), Some((CODEC_H264, DEPTH_8)));
+    }
+
+    /// Ten bits is preferred, not required: a client that decodes H.265 at
+    /// eight bits only still gets H.265 rather than being pushed to H.264.
+    #[test]
+    fn eight_bit_is_taken_when_that_is_all_there_is() {
+        let client = ClientCaps::empty()
+            .with(CODEC_H265, DEPTH_8)
+            .with(CODEC_H264, DEPTH_8);
+        assert_eq!(client.best(host_all()), Some((CODEC_H265, DEPTH_8)));
+    }
+
+    /// A host that can only encode AV1 and a client that cannot decode it
+    /// share nothing. The caller keeps what it was doing rather than picking
+    /// something neither end asked for.
+    #[test]
+    fn no_overlap_is_no_answer() {
+        let host = ClientCaps::empty().with(CODEC_AV1, DEPTH_8);
+        let client = ClientCaps::empty().with(CODEC_H264, DEPTH_8);
+        assert_eq!(client.best(host), None);
+    }
+
+    /// A client that never sent capabilities reads as empty, which must mean
+    /// "said nothing" and not "decodes nothing".
+    #[test]
+    fn silence_is_not_an_answer_either() {
+        assert_eq!(ClientCaps::empty().best(host_all()), None);
+        assert_eq!(host_all().best(ClientCaps::empty()), None);
+    }
+
+    #[test]
+    fn capabilities_survive_the_wire() {
+        let caps = ClientCaps::empty()
+            .with(CODEC_AV1, DEPTH_10)
+            .with(CODEC_H264, DEPTH_8);
+        let mut buf = Vec::new();
+        encode_client_caps(&mut buf, caps);
+        assert_eq!(decode_client_caps(&buf), Some(caps));
+        assert_eq!(decode_client_caps(&buf[..1]), None, "too short to read");
+    }
+
+    /// The host walks its own encoders in this order; stating it once is what
+    /// keeps the two ends agreeing about what "best" means.
+    #[test]
+    fn the_preference_order_is_av1_first() {
+        assert_eq!(CODEC_PREFERENCE, [CODEC_AV1, CODEC_H265, CODEC_H264]);
     }
 
     #[test]
