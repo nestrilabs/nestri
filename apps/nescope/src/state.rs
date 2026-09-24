@@ -24,6 +24,7 @@ use calloop::channel::Sender;
 use smithay::desktop::utils::{
     OutputPresentationFeedback, send_frames_surface_tree,
     surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
+    take_presentation_feedback_surface_tree,
 };
 use smithay::desktop::{Space, Window};
 use smithay::input::pointer::CursorImageStatus;
@@ -769,12 +770,34 @@ impl NescopeState {
         // 1. Release the held buffer → frees a swapchain image for the game.
         self.held_buffer.take();
 
-        // 2. Presentation feedback — tell clients about vsync timing.
+        // 2. Presentation feedback — every frame committed since the last tick
+        //    is reported presented, on the one output there is.
+        //
+        //    Not filtered by primary scan-out output: that is recorded by a
+        //    renderer, and nothing here renders, so the filter matched no
+        //    surface ever. Feedback then resolved only as `discarded`, when the
+        //    next commit superseded it -- which never happens for a client that
+        //    waits for its last present before drawing the next. A Vulkan
+        //    client with present-wait under FIFO does exactly that: Control on
+        //    VKD3D-Proton froze on leaving its title screen, GPU idle, the game
+        //    still running behind a stream that no longer moved.
         let mut output_presentation_feedback = OutputPresentationFeedback::new(&output);
+        let on_output =
+            |_: &WlSurface, _: &smithay::wayland::compositor::SurfaceData| Some(output.clone());
         for window in self.space.elements().cloned().collect::<Vec<_>>() {
             window.take_presentation_feedback(
                 &mut output_presentation_feedback,
-                surface_primary_scanout_output,
+                on_output,
+                |_, _| wp_presentation_feedback::Kind::Vsync,
+            );
+        }
+        // The gamescope WSI surface is not a window in the space, but a client
+        // presenting through it waits on its feedback all the same.
+        if let Some(ref s) = self.override_surface {
+            take_presentation_feedback_surface_tree(
+                s,
+                &mut output_presentation_feedback,
+                on_output,
                 |_, _| wp_presentation_feedback::Kind::Vsync,
             );
         }
