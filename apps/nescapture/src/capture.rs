@@ -1397,7 +1397,32 @@ fn probe_wanted() -> bool {
     *WANTED.get_or_init(|| std::env::var("NESCAPTURE_FP16_PROBE").as_deref() == Ok("1"))
 }
 
-static PROBE_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// How often a sample is taken, in captured frames, and how many are taken
+/// before the probe gives up and reports what it saw.
+///
+/// One sample would land on whatever is on screen when the game's first frame
+/// reaches the swapchain, which is a loading screen or a black frame -- and an
+/// image with no highlight in it is inside [0, 1] whichever encoding it is, so
+/// that sample answers nothing. Spreading them out gets the probe as far as
+/// actual gameplay.
+const PROBE_EVERY: u64 = 120;
+const PROBE_SAMPLES: u64 = 40;
+
+static PROBE_FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PROBE_TAKEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The largest component seen so far, as bits, so it survives between samples.
+static PROBE_MAX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Whether this frame is one to sample, and whether it is the last.
+///
+/// Split out so the schedule is testable without a device.
+fn probe_schedule(frames: u64, taken: u64) -> (bool, bool) {
+    if taken >= PROBE_SAMPLES {
+        return (false, false);
+    }
+    let sample = frames.is_multiple_of(PROBE_EVERY);
+    (sample, sample && taken + 1 == PROBE_SAMPLES)
+}
 
 /// Read one captured frame back and say whether it holds extended-range values.
 ///
@@ -1424,13 +1449,24 @@ pub unsafe fn probe_float_range(
 ) {
     use std::sync::atomic::Ordering;
 
-    if !probe_wanted() || PROBE_DONE.swap(true, Ordering::Relaxed) {
+    if !probe_wanted() {
         return;
     }
+    let frames = PROBE_FRAMES.fetch_add(1, Ordering::Relaxed);
+    let taken = PROBE_TAKEN.load(Ordering::Relaxed);
+    let (sample, last) = probe_schedule(frames, taken);
+    if !sample {
+        return;
+    }
+    PROBE_TAKEN.store(taken + 1, Ordering::Relaxed);
+
     if fmt != vk::Format::R16G16B16A16_SFLOAT {
-        log::info!(
-            "float-range probe: capture format is {fmt:?}, which cannot hold values above 1.0 - nothing to ask"
-        );
+        if taken == 0 {
+            log::info!(
+                "float-range probe: capture format is {fmt:?}, which cannot hold values above 1.0 - nothing to ask"
+            );
+        }
+        PROBE_TAKEN.store(PROBE_SAMPLES, Ordering::Relaxed);
         return;
     }
 
@@ -1495,17 +1531,32 @@ pub unsafe fn probe_float_range(
         ) {
             Some(found) => {
                 let share = found.above_one as f64 * 100.0 / found.components as f64;
-                log::info!(
-                    "float-range probe: largest component {:.4}, {} of {} above 1.0 ({share:.3}%) - this buffer is {}",
+                let best = f32::from_bits(PROBE_MAX.load(Ordering::Relaxed)).max(found.max);
+                PROBE_MAX.store(best.to_bits(), Ordering::Relaxed);
+                log::debug!(
+                    "float-range probe sample {}: largest component {:.4}, {} of {} above 1.0 ({share:.3}%)",
+                    taken + 1,
                     found.max,
                     found.above_one,
-                    found.components,
-                    if found.is_extended() {
-                        "extended-range linear (scRGB), not PQ"
-                    } else {
-                        "inside [0, 1]; PQ is possible, and so is an SDR frame with no highlight"
-                    }
+                    found.components
                 );
+                // Above 1.0 settles it, so say so and stop sampling. Staying
+                // inside the range never settles anything -- an SDR frame with
+                // no highlight looks the same -- so that only gets reported
+                // once the samples run out.
+                if found.is_extended() {
+                    log::info!(
+                        "float-range probe: largest component {:.4}, {} of {} above 1.0 ({share:.3}%) - this buffer is extended-range linear (scRGB), not PQ",
+                        found.max,
+                        found.above_one,
+                        found.components
+                    );
+                    PROBE_TAKEN.store(PROBE_SAMPLES, Ordering::Relaxed);
+                } else if last {
+                    log::info!(
+                        "float-range probe: nothing above 1.0 in {PROBE_SAMPLES} samples, largest component {best:.4} - consistent with PQ, and with an SDR picture that never got bright"
+                    );
+                }
             }
             None => log::warn!("float-range probe: the mapped image was too small to read"),
         }
@@ -1754,6 +1805,29 @@ mod float_range_tests {
     #[test]
     fn a_buffer_that_does_not_hold_the_image_reads_as_nothing() {
         assert!(scan_float_range(&[0u8; 8], 16, 2, 1).is_none());
+    }
+
+    /// The regression this guards: sampling only the first frame reads a
+    /// loading screen, which is inside [0, 1] whichever encoding it is.
+    #[test]
+    fn samples_are_spread_out_rather_than_all_at_the_start() {
+        use super::{PROBE_EVERY, probe_schedule};
+        assert_eq!(probe_schedule(0, 0), (true, false));
+        assert_eq!(probe_schedule(1, 1), (false, false));
+        assert_eq!(probe_schedule(PROBE_EVERY, 1), (true, false));
+    }
+
+    /// The last sample is the one that gets to report a negative, and it has
+    /// to know it is the last.
+    #[test]
+    fn the_final_sample_says_so_and_nothing_follows_it() {
+        use super::{PROBE_EVERY, PROBE_SAMPLES, probe_schedule};
+        let at = PROBE_EVERY * (PROBE_SAMPLES - 1);
+        assert_eq!(probe_schedule(at, PROBE_SAMPLES - 1), (true, true));
+        assert_eq!(
+            probe_schedule(at + PROBE_EVERY, PROBE_SAMPLES),
+            (false, false)
+        );
     }
 }
 
