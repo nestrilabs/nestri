@@ -873,9 +873,21 @@ impl PipelineHandle {
                                         continue;
                                     }
                                 };
+                                // `RC_KEEP` is not a mode, it is the
+                                // absence of one: a depth-only message must
+                                // not take the bitrate away from whoever is
+                                // managing it. Read as a mode it would have
+                                // meant CQP at quality zero.
                                 let rate_control = match rc {
-                                    0 => RateControlMode::Cbr,
-                                    _ => RateControlMode::Cqp,
+                                    nesprotocol::RC_KEEP => None,
+                                    nesprotocol::RC_CBR => Some(RateControlMode::Cbr),
+                                    nesprotocol::RC_CQP => Some(RateControlMode::Cqp),
+                                    other => {
+                                        log::warn!(
+                                            "unknown rate control mode {other} in encode settings; keeping current"
+                                        );
+                                        None
+                                    }
                                 };
                                 let bit_depth = depth.and_then(|d| match d {
                                     0 => Some(EncodeBitDepth::Eight),
@@ -1039,7 +1051,9 @@ struct EncodedPacket {
 #[derive(Debug, Clone)]
 pub struct EncodeSettingsChange {
     pub codec: Option<HwCodec>,
-    pub rate_control_mode: RateControlMode,
+    /// `None` leaves rate control exactly as it is, which is what a message
+    /// that only means to change something else says.
+    pub rate_control_mode: Option<RateControlMode>,
     pub value: u32,
     pub bit_depth: Option<EncodeBitDepth>,
 }
@@ -1123,16 +1137,19 @@ fn encoder_thread(
                 change.value,
             );
             match change.rate_control_mode {
+                // Said nothing about rate control, so nothing changes. The
+                // rebuild below still happens: a depth change needs one.
+                None => {}
                 // `retargeted` rather than an outright CBR, so a VBR encode
                 // keeps its ceiling across a rebuild it is having for some
                 // other reason -- a codec change, say. The settings message has
                 // no way to name VBR, so every bitrate arrives labelled CBR;
                 // reading that label as a mode would mean a ceiling asked for
                 // at launch survived only until the first codec switch.
-                RateControlMode::Cbr => {
+                Some(RateControlMode::Cbr) => {
                     cfg.rate_control = cfg.rate_control.retargeted(change.value);
                 }
-                RateControlMode::Cqp => {
+                Some(RateControlMode::Cqp) => {
                     cfg.rate_control = RateControl::Cqp { qp: change.value };
                 }
                 _ => {
@@ -1655,7 +1672,7 @@ fn bitrate_only_change(
     current_codec: HwCodec,
     current_depth_override: Option<EncodeBitDepth>,
 ) -> Option<u32> {
-    if change.rate_control_mode != RateControlMode::Cbr {
+    if change.rate_control_mode != Some(RateControlMode::Cbr) {
         return None;
     }
     // Already under a bitrate. Coming *from* constant QP is a mode change, and
@@ -2117,7 +2134,7 @@ fn ipc_send_thread(
                     log::info!("rate probe: stepping to {kbps} kbps");
                     let change = EncodeSettingsChange {
                         codec: None,
-                        rate_control_mode: RateControlMode::Cbr,
+                        rate_control_mode: Some(RateControlMode::Cbr),
                         value: kbps,
                         bit_depth: None,
                     };
@@ -2767,7 +2784,7 @@ mod bitrate_only_tests {
     ) -> EncodeSettingsChange {
         EncodeSettingsChange {
             codec,
-            rate_control_mode: mode,
+            rate_control_mode: Some(mode),
             value,
             bit_depth,
         }
@@ -2776,6 +2793,37 @@ mod bitrate_only_tests {
     /// The running encode for these: CBR at 8 Mbps, H.264, no depth override.
     fn running(c: &EncodeSettingsChange) -> Option<u32> {
         bitrate_only_change(c, CBR_8M, HwCodec::H264, None)
+    }
+
+    /// What a client sends on connect to say what it can decode: a depth, and
+    /// nothing else. It must not read as a bitrate change, or the rebuild it
+    /// needs would be skipped in favour of a live retune to zero.
+    #[test]
+    fn a_depth_only_change_is_not_a_bitrate_change() {
+        let depth_only = EncodeSettingsChange {
+            codec: None,
+            rate_control_mode: None,
+            value: 0,
+            bit_depth: Some(EncodeBitDepth::Ten),
+        };
+        assert_eq!(
+            running(&depth_only),
+            None,
+            "a change that names no rate control cannot be retuned live"
+        );
+    }
+
+    /// And the wire form of it decodes to exactly that.
+    #[test]
+    fn the_depth_only_payload_names_no_rate_control() {
+        let mut buf = Vec::new();
+        nesprotocol::encode_depth_only(&mut buf, nesprotocol::DEPTH_10);
+        let (codec, rc, value, depth) =
+            nesprotocol::decode_encode_settings(&buf).expect("readable");
+        assert_eq!(codec, nesprotocol::CODEC_KEEP);
+        assert_eq!(rc, nesprotocol::RC_KEEP);
+        assert_eq!(value, 0);
+        assert_eq!(depth, Some(nesprotocol::DEPTH_10));
     }
 
     const CBR_8M: RateControl = RateControl::Cbr { kbps: 8_000 };

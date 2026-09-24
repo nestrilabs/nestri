@@ -170,6 +170,13 @@ pub const CODEC_KEEP: u8 = 0xFF; // "keep current" sentinel for dynamic encoder 
 // Rate control modes (encode settings)
 pub const RC_CBR: u8 = 0;
 pub const RC_CQP: u8 = 1;
+/// "Keep current" sentinel, the rate-control counterpart of [`CODEC_KEEP`].
+///
+/// A settings message says four things at once, and until this existed there
+/// was no way to say only one of them: a client wanting a different bit depth
+/// had to name a rate control mode and a value too, which in Auto mode means
+/// overruling the controller that owns the bitrate.
+pub const RC_KEEP: u8 = 0xFF;
 
 // Bit-depth (encode settings)
 pub const DEPTH_8: u8 = 0;
@@ -290,6 +297,18 @@ pub fn encode_bitrate_only(buf: &mut Vec<u8>, kbps: u32) {
     buf.push(CODEC_KEEP);
     buf.push(RC_CBR);
     buf.extend_from_slice(&kbps.to_le_bytes());
+}
+
+/// A settings payload that changes the bit depth and nothing else.
+///
+/// What a client sends once, on connect, to say what it can actually decode.
+/// The codec and the rate control are both left alone, so this is safe to send
+/// in Auto mode, where the controller owns the bitrate.
+///
+/// Seven bytes, because the depth byte is the seventh: see
+/// [`encode_bitrate_only`] for why its absence means something.
+pub fn encode_depth_only(buf: &mut Vec<u8>, bit_depth: u8) {
+    encode_encode_settings(buf, CODEC_KEEP, RC_KEEP, 0, bit_depth);
 }
 
 /// Decode an encode-settings payload. Returns `(codec_id, rate_control_mode, value, bit_depth)`.
@@ -528,6 +547,28 @@ mod media_control_tests {
         let mut buf = vec![0x7F];
         buf.extend_from_slice(&8_000u32.to_le_bytes());
         assert_eq!(decode_control_mode(&buf), None);
+    }
+
+    #[test]
+    fn a_depth_only_change_touches_nothing_else() {
+        let mut buf = Vec::new();
+        encode_depth_only(&mut buf, DEPTH_10);
+        let (codec, rc, value, depth) = decode_encode_settings(&buf).expect("readable");
+        assert_eq!(codec, CODEC_KEEP, "the codec is the host's business");
+        assert_eq!(rc, RC_KEEP, "the controller keeps the bitrate it chose");
+        assert_eq!(value, 0, "and there is no value to read");
+        assert_eq!(depth, Some(DEPTH_10), "the depth is the whole message");
+    }
+
+    /// The two sentinels have to be distinguishable from real values, or a
+    /// "keep this" reads as a request for something.
+    #[test]
+    fn the_keep_sentinels_are_not_real_settings() {
+        assert_ne!(RC_KEEP, RC_CBR);
+        assert_ne!(RC_KEEP, RC_CQP);
+        assert_ne!(CODEC_KEEP, CODEC_H264);
+        assert_ne!(CODEC_KEEP, CODEC_H265);
+        assert_ne!(CODEC_KEEP, CODEC_AV1);
     }
 
     #[test]
