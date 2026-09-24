@@ -401,6 +401,20 @@ impl HdrState {
                 target.max_fall_nits,
                 target.reference_nits
             );
+            // The clients cannot be told this one. A client declares its
+            // stream through `VK_EXT_hdr_metadata`, which carries a luminance
+            // range and two light levels and has no field for a reference
+            // white -- so a compositor at the far end assumes PQ's default of
+            // 203 nits whatever was used here. Moving it makes the game render
+            // its diffuse white somewhere the far end will not look for it,
+            // and the picture arrives uniformly too bright or too dim.
+            if target.reference_nits != HdrTarget::default().reference_nits {
+                tracing::warn!(
+                    "reference white moved to {} nits; the clients will still read the stream as {} and show it that much brighter or darker",
+                    target.reference_nits,
+                    HdrTarget::default().reference_nits
+                );
+            }
         }
 
         Self {
