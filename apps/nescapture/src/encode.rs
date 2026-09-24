@@ -854,6 +854,12 @@ impl PipelineHandle {
         }
         .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
         let device_caps = host_caps(&ctx);
+        // The surface colour as the compositor last stated it, for the clients.
+        // They need it for two things the host cannot do for them: picking a
+        // swapchain that reads the values the right way, and telling their own
+        // compositor how bright the picture goes.
+        let declared_surface: Arc<std::sync::Mutex<Option<nesprotocol::SurfaceColor>>> =
+            Arc::new(std::sync::Mutex::new(None));
         // What the compositor says the surface is, for the frames whose
         // swapchain declines to say. `u32::MAX` until it has said anything;
         // see `effective_colorspace`.
@@ -961,6 +967,7 @@ impl PipelineHandle {
         let pa = present_attempts.clone();
         let ca = capture_attempts.clone();
         let stats_timing = timing.clone();
+        let stats_surface = declared_surface.clone();
         thread::Builder::new()
             .name("nescapture-stats".into())
             .spawn(move || {
@@ -972,6 +979,7 @@ impl PipelineHandle {
                     pa,
                     ca,
                     stats_timing,
+                    stats_surface,
                     stats_ipc,
                     stats_shutdown,
                 )
@@ -981,6 +989,7 @@ impl PipelineHandle {
         // Spawn IDR command listener (separate thread, blocks on recv)
         let idr_thread = idr_requested.clone();
         let declared_listener = declared_colorspace.clone();
+        let surface_listener = declared_surface.clone();
         // What this device can encode, worked out once here where the context
         // is, so the listener answers a capability message without needing one.
         let listener_host_caps = device_caps;
@@ -1015,6 +1024,9 @@ impl PipelineHandle {
                             match nesprotocol::decode_surface_color(&buf[1..n]) {
                                 Some(colour) => {
                                     let vk = surface_color_to_vk(colour.space);
+                                    if let Ok(mut slot) = surface_listener.lock() {
+                                        *slot = Some(colour);
+                                    }
                                     let previous =
                                         declared_listener.swap(vk, Ordering::Relaxed);
                                     if previous != vk {
@@ -2560,6 +2572,7 @@ fn stats_sender_thread(
     present_attempts: Arc<AtomicU32>,
     capture_attempts: Arc<AtomicU32>,
     timing: Arc<crate::timing::PresentTiming>,
+    declared_surface: Arc<std::sync::Mutex<Option<nesprotocol::SurfaceColor>>>,
     ipc_path: std::path::PathBuf,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -2599,6 +2612,19 @@ fn stats_sender_thread(
             break;
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Every tick rather than only on a change. A client that joined after
+        // the compositor last spoke would otherwise never hear it, and the
+        // alternative is tracking who has been told -- eighteen bytes a second
+        // buys not having to.
+        if let Some(socket) = socket.as_ref()
+            && let Ok(colour) = declared_surface.lock()
+            && let Some(colour) = colour.as_ref()
+        {
+            let mut payload = vec![nesprotocol::MSG_SURFACE_COLOR];
+            nesprotocol::encode_surface_color(&mut payload, colour);
+            let _ = socket.send(&payload);
+        }
 
         let raw_fps = capture_fps.load(Ordering::Relaxed);
         let fps = raw_fps.min(255) as u8;

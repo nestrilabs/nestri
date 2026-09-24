@@ -526,6 +526,8 @@ impl HdrState {
                 tracing::info!(
                     space = colour.space,
                     max_cll = colour.max_cll,
+                    max_fall = colour.max_fall,
+                    max_luminance = colour.max_luminance,
                     "told capture what this surface is"
                 );
                 self.last_sent = Some(colour);
@@ -548,12 +550,24 @@ impl HdrState {
             .values()
             .find(|desc| desc.color_space() == ColorSpace::Bt2020Pq);
         match hdr {
+            // A game that states its own mastering metadata is believed. One
+            // that states none is not unknown: it asked what the session could
+            // do, was told, and rendered for that -- so the session's target
+            // is what its frames were mastered for, and saying nothing instead
+            // leaves the far end to assume the PQ default of 10000 nits and
+            // tone map a range the picture never uses.
             Some(desc) => nesprotocol::SurfaceColor {
                 space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
-                max_cll: desc.max_cll.unwrap_or(0),
-                max_fall: desc.max_fall.unwrap_or(0),
-                min_luminance: desc.mastering_luminance.map(|(min, _)| min).unwrap_or(0),
-                max_luminance: desc.mastering_luminance.map(|(_, max)| max).unwrap_or(0),
+                max_cll: desc.max_cll.unwrap_or(self.target.max_nits),
+                max_fall: desc.max_fall.unwrap_or(self.target.max_fall_nits),
+                min_luminance: desc
+                    .mastering_luminance
+                    .map(|(min, _)| min)
+                    .unwrap_or(self.target.min_lum),
+                max_luminance: desc
+                    .mastering_luminance
+                    .map(|(_, max)| max)
+                    .unwrap_or(self.target.max_nits.saturating_mul(10_000)),
             },
             None => nesprotocol::SurfaceColor {
                 space: nesprotocol::SURFACE_COLOR_SRGB,
