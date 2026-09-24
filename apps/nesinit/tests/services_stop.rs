@@ -50,7 +50,9 @@ fn alive(pid: i32) -> bool {
 async fn a_stack_that_goes_away_takes_its_services_with_it() {
     let waiters = Waiters::new();
     let mut stack = Stack::from_table(waiters, SLEEPERS);
-    let up = stack.bring_up(Default::default()).expect("two sleeps did not start");
+    let up = stack
+        .bring_up(Default::default())
+        .expect("two sleeps did not start");
     assert_eq!(up.len(), 2);
 
     let pids = stack.pids();

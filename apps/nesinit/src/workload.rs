@@ -356,8 +356,14 @@ fn mount_overlay(overlay: &Overlay) -> Result<(), Failure> {
     // refused first, so a descriptor this cannot act on leaves nothing behind.
     let plan = OverlayPlan::new(overlay)?;
 
-    mount_one(&plan.lower, &plan.lower_at, c"erofs", plan.lower_flags, None)
-        .map_err(|error| plan.failed("the build image", &plan.lower_at, error))?;
+    mount_one(
+        &plan.lower,
+        &plan.lower_at,
+        c"erofs",
+        plan.lower_flags,
+        None,
+    )
+    .map_err(|error| plan.failed("the build image", &plan.lower_at, error))?;
     mount_one(&plan.upper, &plan.rw_at, c"ext4", plan.upper_flags, None)
         .map_err(|error| plan.failed("the writable layer", &plan.rw_at, error))?;
 
@@ -584,7 +590,6 @@ fn failed(share: &Mount, error: io::Error) -> Failure {
     Failure::new(format!("{}: {error}", share.at))
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -757,8 +762,16 @@ mod tests {
     /// one would stack a different directory than the one named.
     #[test]
     fn an_overlay_the_kernel_would_misread_is_refused_before_anything_mounts() {
-        for at in ["/nestri/in,stall", "/nestri/in:stall", "/", "/nestri/ins\0tall"] {
-            assert!(OverlayPlan::new(&overlay(at)).is_err(), "{at:?} was accepted");
+        for at in [
+            "/nestri/in,stall",
+            "/nestri/in:stall",
+            "/",
+            "/nestri/ins\0tall",
+        ] {
+            assert!(
+                OverlayPlan::new(&overlay(at)).is_err(),
+                "{at:?} was accepted"
+            );
         }
     }
 
