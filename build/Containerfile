@@ -71,8 +71,8 @@ ENV ARTIFACTS=/artifacts
 # ───────────────────────────────────────────────────────────
 FROM builder AS mesa-build
 
-ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
-ARG MESA_COMMIT=6ac7466d40be92bfec4fe3dfe21376a6af45a8e0
+ARG MESA_GIT=https://gitlab.freedesktop.org/nowrep/mesa.git
+ARG MESA_COMMIT=1af89bea491deabc4741700f8df4d41edfd22f7a
 ARG JOBS=
 
 # Our patches to the amdgpu native-context path, applied on top of the pinned
