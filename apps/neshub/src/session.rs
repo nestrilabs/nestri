@@ -8,12 +8,12 @@ use tracing::{debug, info};
 use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_BUFFER_BYTES, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
 use nesprotocol::{BIDI_CONTROL, BIDI_INPUT, Carrier, STREAM_CURSOR, STREAM_STATS};
+use nesprotocol::{ControlMode, ReceiverReport, decode_control_mode, decode_receiver_report};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{
     MSG_CLIENT_CAPS, MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH,
     MSG_RECEIVER_REPORT,
 };
-use nesprotocol::{ReceiverReport, decode_control_mode, decode_receiver_report};
 
 use crate::control::{Controller, PathView};
 
@@ -441,11 +441,25 @@ async fn run_control_reader(
                     // decode.
                     match nesprotocol::decode_client_caps(&payload) {
                         Some(caps) => {
-                            info!("client decodes {:#08b}", caps.bits());
-                            let mut cmd = Vec::with_capacity(1 + payload.len());
-                            cmd.push(MSG_CLIENT_CAPS);
-                            cmd.extend_from_slice(&payload);
-                            let _ = idr_cmd_tx.send(cmd);
+                            // Manual means a person is choosing, and the panel
+                            // they chose in sets the codec and the depth
+                            // together. A client joining afterwards must not
+                            // renegotiate either of them: that is the same
+                            // override the controller itself stops doing in
+                            // this mode, and for the same reason.
+                            if controller.lock().await.mode() == ControlMode::Manual {
+                                info!(
+                                    "client decodes {:#08b}, but the encoder is set by hand; \
+                                     leaving it alone",
+                                    caps.bits()
+                                );
+                            } else {
+                                info!("client decodes {:#08b}", caps.bits());
+                                let mut cmd = Vec::with_capacity(1 + payload.len());
+                                cmd.push(MSG_CLIENT_CAPS);
+                                cmd.extend_from_slice(&payload);
+                                let _ = idr_cmd_tx.send(cmd);
+                            }
                         }
                         None => debug!("unreadable client capabilities ({} bytes)", payload.len()),
                     }
