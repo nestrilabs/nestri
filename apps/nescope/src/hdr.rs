@@ -117,6 +117,14 @@ pub enum ColorSpace {
 pub enum TransferFunction {
     Gamma22,
     St2084Pq,
+    /// Extended-range linear light, which is what scRGB is.
+    ///
+    /// Needed because it is the transfer a Windows title asks for when it
+    /// turns HDR on: DXGI's HDR path is scRGB in FP16, and DXVK maps that to
+    /// `VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT`. Mesa only offers that colour
+    /// space when the compositor names this transfer, so a compositor that
+    /// does not is one where HDR silently does not happen.
+    ExtLinear,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +170,13 @@ impl ImageDescription {
         }
     }
 
+    /// Which of the two colour spaces this description is.
+    ///
+    /// scRGB reads as  here, which is not what it is: extended-range
+    /// linear light is HDR, and this type has no way to say so. Left alone
+    /// because nothing outside this module reads it -- capture takes the
+    /// colour space from the game swapchain, not from here -- and inventing a
+    /// third variant for a question nobody asks would be worse than the note.
     pub fn color_space(self) -> ColorSpace {
         if self.primaries == Primaries::Bt2020
             && self.transfer_function == TransferFunction::St2084Pq
@@ -276,6 +291,9 @@ impl HdrState {
             match desc.transfer_function {
                 TransferFunction::St2084Pq => {
                     info.tf_named(wp_color_manager_v1::TransferFunction::St2084Pq)
+                }
+                TransferFunction::ExtLinear => {
+                    info.tf_named(wp_color_manager_v1::TransferFunction::ExtLinear)
                 }
                 TransferFunction::Gamma22 => {
                     info.tf_named(wp_color_manager_v1::TransferFunction::Gamma22)
@@ -564,6 +582,12 @@ impl GlobalDispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState 
         res.supported_tf_named(wp_color_manager_v1::TransferFunction::Srgb);
         res.supported_tf_named(wp_color_manager_v1::TransferFunction::Gamma22);
         res.supported_tf_named(wp_color_manager_v1::TransferFunction::St2084Pq);
+        // scRGB. Mesa pairs this with sRGB primaries to offer
+        // `EXTENDED_SRGB_LINEAR`, which is the colour space DXVK asks for when
+        // a Windows title enables HDR -- see `TransferFunction::ExtLinear`.
+        // Without it a game gets its float16 swapchain tagged SRGB_NONLINEAR
+        // and every value in it read as if it were ordinary sRGB.
+        res.supported_tf_named(wp_color_manager_v1::TransferFunction::ExtLinear);
         res.supported_primaries_named(wp_color_manager_v1::Primaries::Srgb);
         res.supported_primaries_named(wp_color_manager_v1::Primaries::Bt2020);
         res.done();
@@ -689,6 +713,9 @@ impl
                 let tf = match tf.into_result() {
                     Ok(wp_color_manager_v1::TransferFunction::St2084Pq) => {
                         TransferFunction::St2084Pq
+                    }
+                    Ok(wp_color_manager_v1::TransferFunction::ExtLinear) => {
+                        TransferFunction::ExtLinear
                     }
                     _ => TransferFunction::Gamma22,
                 };
