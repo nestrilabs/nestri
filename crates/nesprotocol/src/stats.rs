@@ -13,9 +13,9 @@ pub fn encode_nescope_stats(buf: &mut Vec<u8>, game_fps: u8, frame_count: u32) {
     buf.extend_from_slice(&frame_count.to_le_bytes());
 }
 
-/// Hudless stats: capture FPS, encode time, dropped frames, diagnostics, capture latency.
+/// nescapture stats: capture FPS, encode time, dropped frames, diagnostics, capture latency.
 /// [1][capture_fps: u8][encode_avg_ms: f32 LE][dropped: u32 LE][present_attempts: u32 LE][capture_attempts: u32 LE][capture_ms: f32 LE]
-pub fn encode_hudless_stats(
+pub fn encode_nescapture_stats(
     buf: &mut Vec<u8>,
     capture_fps: u8,
     encode_avg_ms: f32,
@@ -148,10 +148,10 @@ pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
 pub struct PipelineStats {
     pub nescope_fps: u8,
     pub nescope_frames: u32,
-    pub hudless_fps: u8,
-    pub hudless_encode_ms: f32,
-    pub hudless_capture_ms: f32,
-    pub hudless_dropped: u32,
+    pub nescapture_fps: u8,
+    pub nescapture_encode_ms: f32,
+    pub nescapture_capture_ms: f32,
+    pub nescapture_dropped: u32,
     pub hub_clients: u8,
     pub hub_video_mb: u32,
     pub hub_relay_ms: f32,
@@ -172,13 +172,13 @@ pub fn decode_stats(msg_type: u8, data: &[u8], stats: &mut PipelineStats) {
             stats.nescope_frames = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
         }
         STATS_HUDLESS if data.len() >= 17 => {
-            stats.hudless_fps = data[0];
-            stats.hudless_encode_ms = f32::from_le_bytes([data[1], data[2], data[3], data[4]]);
-            stats.hudless_dropped = u32::from_le_bytes([data[5], data[6], data[7], data[8]]);
+            stats.nescapture_fps = data[0];
+            stats.nescapture_encode_ms = f32::from_le_bytes([data[1], data[2], data[3], data[4]]);
+            stats.nescapture_dropped = u32::from_le_bytes([data[5], data[6], data[7], data[8]]);
             stats.present_attempts = u32::from_le_bytes([data[9], data[10], data[11], data[12]]);
             stats.capture_attempts = u32::from_le_bytes([data[13], data[14], data[15], data[16]]);
             if data.len() >= 21 {
-                stats.hudless_capture_ms =
+                stats.nescapture_capture_ms =
                     f32::from_le_bytes([data[17], data[18], data[19], data[20]]);
             }
         }

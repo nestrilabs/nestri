@@ -139,7 +139,7 @@ impl DmabufHandler for NescopeState {
         _dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) {
-        // Accept unconditionally — libhudless reads buffers
+        // Accept unconditionally — the nescapture layer reads buffers
         // directly from the game's Vulkan queue; nescope doesn't need to.
         let _ = notifier.successful::<NescopeState>();
     }

@@ -89,9 +89,9 @@ pub const FRAME_HDR_LEN: usize = 7;
 /// For single-purpose streams (video, audio) the type is redundant but included
 /// for uniformity.
 pub const MSG_DATA: u8 = 0; // generic data frame (video / audio)
-pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub → hudless)
-pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → hudless)
-pub const MSG_CLIENT_CAPS: u8 = 0x15; // what the client can decode (desktop → hub → hudless)
+pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub → nescapture)
+pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → nescapture)
+pub const MSG_CLIENT_CAPS: u8 = 0x15; // what the client can decode (desktop → hub → nescapture)
 /// What the receiver actually got, once a second (desktop → hub).
 ///
 /// The hub cannot see this. Its own view of the path -- RTT, congestion window,
@@ -138,7 +138,7 @@ pub fn decode_frame(frame: &[u8]) -> Option<(u8, u16, &[u8])> {
 // ── Stream types ────────────────────────────────────────────────
 //
 // These name a media kind, not a transport. `STREAM_VIDEO` and `STREAM_AUDIO`
-// still tag IPC frames on the hudless→hub unix sockets, but over QUIC their
+// still tag IPC frames on the nescapture→hub unix sockets, but over QUIC their
 // media now travels as datagrams; only cursor and stats still open a uni
 // stream and send this as its first byte.
 

@@ -4,7 +4,7 @@
 //!
 //! nescope creates a virtual Wayland output, starts XWayland, and gives games
 //! a complete compositor environment.  Frames are captured externally by a
-//! Vulkan interception library (`hudless`); nescope itself
+//! Vulkan interception library (`nescapture`); nescope itself
 //! never allocates a GBM pool or forwards DMA-BUFs.
 //!
 //! # Usage

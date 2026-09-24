@@ -2560,7 +2560,7 @@ fn stats_sender_thread(
 
         if let Some(ref socket) = socket {
             let mut buf = Vec::with_capacity(22);
-            nesprotocol::stats::encode_hudless_stats(
+            nesprotocol::stats::encode_nescapture_stats(
                 &mut buf, fps, enc_ms, dropped, pa, ca, cap_ms,
             );
             let _ = socket.send(&buf);
