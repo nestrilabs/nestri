@@ -1492,13 +1492,21 @@ fn encoder_thread(
         let state = match encoder_state.as_mut() {
             Some(s)
                 if encoder_still_serves(
-                    (s.width, s.height, s.bit_depth, s.pixel_format, s.colorspace),
+                    (
+                        s.width,
+                        s.height,
+                        s.bit_depth,
+                        s.pixel_format,
+                        s.colorspace,
+                        s.input_fmt,
+                    ),
                     (
                         raw.width,
                         raw.height,
                         bit_depth,
                         cfg.pixel_format,
                         frame_colorspace,
+                        input_fmt,
                     ),
                 ) =>
             {
@@ -1517,16 +1525,27 @@ fn encoder_thread(
                     frame_number += 1;
                     continue;
                 }
-                if let Some(old) = encoder_state.as_ref()
-                    && (old.width != raw.width || old.height != raw.height)
-                {
-                    log::info!(
-                        "resolution changed {}x{} -> {}x{}, rebuilding the encoder",
-                        old.width,
-                        old.height,
-                        raw.width,
-                        raw.height,
-                    );
+                if let Some(old) = encoder_state.as_ref() {
+                    if old.width != raw.width || old.height != raw.height {
+                        log::info!(
+                            "resolution changed {}x{} -> {}x{}, rebuilding the encoder",
+                            old.width,
+                            old.height,
+                            raw.width,
+                            raw.height,
+                        );
+                    }
+                    // Said out loud because a game can change this without
+                    // changing anything else about the surface -- Cyberpunk's
+                    // HDR10 and scRGB modes differ in the format and in
+                    // nothing the old check looked at.
+                    if old.input_fmt != input_fmt {
+                        log::info!(
+                            "surface format changed {:?} -> {:?}, rebuilding the encoder",
+                            old.input_fmt,
+                            input_fmt,
+                        );
+                    }
                 }
                 // The old converter may still be reading a held slot, and the
                 // held slot's point is on the old converter's timeline.
@@ -1661,6 +1680,15 @@ struct PerFrameEncoder {
     /// in its own metadata and the converter is built around it, so a surface
     /// that changes colour needs a new one rather than a relabelled old one.
     colorspace: u32,
+    /// The swapchain format this encoder and its converter were built to
+    /// read.
+    ///
+    /// Part of what decides whether it still serves, and the part whose
+    /// absence corrupted the picture: a converter reads its input at a fixed
+    /// bytes-per-pixel, so one built for a packed 10-bit surface fed a float16
+    /// one reads every row at half its length. That is not a colour error, it
+    /// is the picture sheared into stripes.
+    input_fmt: InputFormat,
     /// `None` when the encoder takes the RGB frame and converts it itself.
     converter: Option<ColorConverter>,
     bit_depth: EncodeBitDepth,
@@ -1797,6 +1825,7 @@ impl PerFrameEncoder {
                         return Ok(Self {
                             encoder,
                             colorspace: vk_colorspace,
+                            input_fmt,
                             converter: None,
                             bit_depth,
                             pixel_format,
@@ -1822,6 +1851,7 @@ impl PerFrameEncoder {
         Ok(Self {
             encoder,
             colorspace: vk_colorspace,
+            input_fmt,
             converter,
             bit_depth,
             pixel_format,
@@ -1984,8 +2014,8 @@ fn bitrate_only_change(
 /// it built with came from whatever the *first* frame happened to be. A game
 /// that changed resolution went on being encoded at the old one.
 fn encoder_still_serves(
-    existing: (u32, u32, EncodeBitDepth, PixelFormat, u32),
-    wanted: (u32, u32, EncodeBitDepth, PixelFormat, u32),
+    existing: (u32, u32, EncodeBitDepth, PixelFormat, u32, InputFormat),
+    wanted: (u32, u32, EncodeBitDepth, PixelFormat, u32, InputFormat),
 ) -> bool {
     existing == wanted
 }
@@ -3094,11 +3124,18 @@ mod surface_colour_tests {
 #[cfg(test)]
 mod encoder_identity_tests {
     use super::encoder_still_serves;
-    use pixelforge::{EncodeBitDepth, PixelFormat};
+    use pixelforge::{EncodeBitDepth, InputFormat, PixelFormat};
 
     const SDR: u32 = 0;
-    const HD: (u32, u32, EncodeBitDepth, PixelFormat, u32) =
-        (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR);
+    type Identity = (u32, u32, EncodeBitDepth, PixelFormat, u32, InputFormat);
+    const HD: Identity = (
+        1920,
+        1080,
+        EncodeBitDepth::Eight,
+        PixelFormat::Yuv420,
+        SDR,
+        InputFormat::BGRA,
+    );
 
     #[test]
     fn an_unchanged_frame_reuses_the_encoder() {
@@ -3109,7 +3146,14 @@ mod encoder_identity_tests {
     fn a_resolution_change_rebuilds_in_either_direction() {
         // The regression. Shrinking left the encoder sending the old geometry
         // with stale margins; growing had no surface big enough for the frame.
-        let smaller = (1280, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR);
+        let smaller = (
+            1280,
+            720,
+            EncodeBitDepth::Eight,
+            PixelFormat::Yuv420,
+            SDR,
+            InputFormat::BGRA,
+        );
         assert!(!encoder_still_serves(HD, smaller));
         assert!(!encoder_still_serves(smaller, HD));
     }
@@ -3118,23 +3162,98 @@ mod encoder_identity_tests {
     fn one_axis_moving_is_still_a_change() {
         assert!(!encoder_still_serves(
             HD,
-            (1920, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR)
+            (
+                1920,
+                720,
+                EncodeBitDepth::Eight,
+                PixelFormat::Yuv420,
+                SDR,
+                InputFormat::BGRA
+            )
         ));
         assert!(!encoder_still_serves(
             HD,
-            (1280, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR)
+            (
+                1280,
+                1080,
+                EncodeBitDepth::Eight,
+                PixelFormat::Yuv420,
+                SDR,
+                InputFormat::BGRA
+            )
         ));
+    }
+
+    /// The regression this guards, seen in Cyberpunk switching from its HDR10
+    /// mode to its scRGB one. Both are HDR, both declare BT.2020 PQ to the
+    /// compositor, both are ten bit at the same size -- so every other part of
+    /// the identity matched and the encoder was reused. Its converter reads a
+    /// fixed bytes-per-pixel, and a packed 10-bit surface is four where a
+    /// float16 one is eight, so every row was read at half its length: the
+    /// picture came out sheared into stripes rather than merely the wrong
+    /// colour.
+    #[test]
+    fn a_surface_format_change_rebuilds_even_when_nothing_else_moves() {
+        let float16 = (
+            1920,
+            1080,
+            EncodeBitDepth::Eight,
+            PixelFormat::Yuv420,
+            SDR,
+            InputFormat::RGBA16F,
+        );
+        assert!(!encoder_still_serves(HD, float16));
+        assert!(!encoder_still_serves(float16, HD));
+    }
+
+    /// Specifically the pair that did it: the same colour space either way,
+    /// because pass-through defers to what the compositor was told and the
+    /// compositor was told PQ both times.
+    #[test]
+    fn packed_ten_bit_and_float16_are_not_the_same_surface() {
+        const PQ: u32 = 1000104;
+        let packed = (
+            1920,
+            1080,
+            EncodeBitDepth::Ten,
+            PixelFormat::Yuv420,
+            PQ,
+            InputFormat::ABGR2101010,
+        );
+        let float16 = (
+            1920,
+            1080,
+            EncodeBitDepth::Ten,
+            PixelFormat::Yuv420,
+            PQ,
+            InputFormat::RGBA16F,
+        );
+        assert!(!encoder_still_serves(packed, float16));
     }
 
     #[test]
     fn depth_and_pixel_format_still_rebuild() {
         assert!(!encoder_still_serves(
             HD,
-            (1920, 1080, EncodeBitDepth::Ten, PixelFormat::Yuv420, SDR)
+            (
+                1920,
+                1080,
+                EncodeBitDepth::Ten,
+                PixelFormat::Yuv420,
+                SDR,
+                InputFormat::BGRA
+            )
         ));
         assert!(!encoder_still_serves(
             HD,
-            (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv444, SDR)
+            (
+                1920,
+                1080,
+                EncodeBitDepth::Eight,
+                PixelFormat::Yuv444,
+                SDR,
+                InputFormat::BGRA
+            )
         ));
     }
 }
