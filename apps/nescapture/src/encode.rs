@@ -100,13 +100,6 @@ pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
     }
 }
 
-/// What a swapchain's pixels already are, from its `VkColorSpaceKHR`.
-///
-/// Only the source. What the stream should be is a separate decision --
-/// [`stream_spec`] -- and keeping them apart is what fixed `BT2020_LINEAR_EXT`:
-/// with one fused source-to-target enum there was no arm for linear light on
-/// BT.2020 primaries, so it borrowed scRGB's and took a gamut error to avoid a
-/// gamma one. Now it says what it is.
 /// The colour space to believe, given what the swapchain says and what the
 /// compositor was told.
 ///
@@ -122,10 +115,10 @@ pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
 /// declining to say, which makes it the one case where asking elsewhere is
 /// reading rather than guessing.
 pub fn effective_colorspace(vk_colorspace: u32, declared: Option<u32>) -> u32 {
-    if vk_colorspace == VK_COLOR_SPACE_PASS_THROUGH_EXT {
-        if let Some(declared) = declared {
-            return declared;
-        }
+    if vk_colorspace == VK_COLOR_SPACE_PASS_THROUGH_EXT
+        && let Some(declared) = declared
+    {
+        return declared;
     }
     vk_colorspace
 }
@@ -141,6 +134,16 @@ pub fn surface_color_to_vk(space: u8) -> u32 {
     }
 }
 
+/// What a swapchain's pixels already are, from its `VkColorSpaceKHR`.
+///
+/// Only the source. What the stream should be is a separate decision --
+/// [`stream_spec`] -- and keeping them apart is what fixed `BT2020_LINEAR_EXT`:
+/// with one fused source-to-target enum there was no arm for linear light on
+/// BT.2020 primaries, so it borrowed scRGB's and took a gamut error to avoid a
+/// gamma one. Now it says what it is.
+///
+/// Says nothing about the transfer a float buffer actually holds; see
+/// [`source_spec`], which is what capture uses.
 pub fn vk_colorspace_to_source_spec(vk_colorspace: u32) -> ColorSpec {
     match vk_colorspace {
         VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpec::Bt2020Pq,
@@ -149,6 +152,37 @@ pub fn vk_colorspace_to_source_spec(vk_colorspace: u32) -> ColorSpec {
         VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT => ColorSpec::Bt709Linear,
         VK_COLOR_SPACE_BT2020_LINEAR_EXT => ColorSpec::Bt2020Linear,
         _ => ColorSpec::Srgb,
+    }
+}
+
+/// What the pixels in a capture actually are, from the colour space that was
+/// declared and the format they are stored in.
+///
+/// The format decides the transfer function, because only an integer format
+/// can carry an encoded one. A float colour buffer holds linear light: that is
+/// the whole reason to spend sixteen bits a channel on it, and there is no
+/// float convention that stores PQ. So a float surface declared BT.2020 PQ is
+/// not PQ -- it is scRGB, which is what every Windows title turning on HDR
+/// hands DXVK, and what a probe of Control's own frames measured directly:
+/// components up to 2.54, which PQ has no way to represent at all.
+///
+/// Believing the declaration there was the bug. It made the converter do
+/// matrix work only, so linear light was read as if it were already PQ and
+/// every highlight clipped -- a picture that blows out to yellow rather than
+/// one that looks merely wrong.
+///
+/// The declaration still decides the primaries, since that part it can say.
+pub fn source_spec(vk_colorspace: u32, input_fmt: InputFormat) -> ColorSpec {
+    let declared = vk_colorspace_to_source_spec(vk_colorspace);
+    if !matches!(input_fmt, InputFormat::RGBA16F) {
+        return declared;
+    }
+    match declared {
+        // Already linear, and already says which primaries.
+        ColorSpec::Bt709Linear | ColorSpec::Bt2020Linear => declared,
+        // PQ or sRGB over float samples. scRGB is the only thing this is in
+        // practice, and scRGB is BT.709 primaries with a linear transfer.
+        ColorSpec::Bt2020Pq | ColorSpec::Srgb => ColorSpec::Bt709Linear,
     }
 }
 
@@ -179,7 +213,7 @@ pub fn converter_config(
     out_fmt: OutputFormat,
     vk_colorspace: u32,
 ) -> ColorConverterConfig {
-    let source = vk_colorspace_to_source_spec(vk_colorspace);
+    let source = source_spec(vk_colorspace, input_fmt);
     ColorConverterConfig::new(
         width,
         height,
@@ -1636,7 +1670,7 @@ impl PerFrameEncoder {
         vk_colorspace: u32,
         in_place: bool,
     ) -> Result<Self, String> {
-        let source = vk_colorspace_to_source_spec(vk_colorspace);
+        let source = source_spec(vk_colorspace, input_fmt);
         log::info!(
             "(re)init encoder: {codec:?} {width}x{height} {pixel_format:?} {bit_depth:?} \
              {rate_control} {source:?} → {:?} {out_fmt:?}",
@@ -2874,6 +2908,80 @@ mod tests {
                 "{cs:?} produced a limited-range description"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod source_spec_tests {
+    use super::{source_spec, stream_spec};
+    use ash::vk::ColorSpaceKHR as Cs;
+    use pixelforge::{ColorSpec, InputFormat};
+
+    fn raw(cs: Cs) -> u32 {
+        cs.as_raw() as u32
+    }
+
+    /// The bug this exists for, measured rather than argued: Control through
+    /// wine hands a float16 swapchain declared BT.2020 PQ, and a probe of its
+    /// frames found components up to 2.54. PQ cannot represent that, so the
+    /// buffer is scRGB and the declaration is about the volume, not the
+    /// encoding. Believing it made the converter skip the transfer entirely.
+    #[test]
+    fn a_float_surface_declared_pq_is_scrgb() {
+        assert_eq!(
+            source_spec(raw(Cs::HDR10_ST2084_EXT), InputFormat::RGBA16F),
+            ColorSpec::Bt709Linear
+        );
+        // And the stream is still HDR10, because linear light is not encodable.
+        assert_eq!(stream_spec(ColorSpec::Bt709Linear), ColorSpec::Bt2020Pq);
+    }
+
+    /// An integer surface can carry an encoded transfer, so there the
+    /// declaration is the answer and nothing overrides it.
+    #[test]
+    fn an_integer_surface_declared_pq_really_is_pq() {
+        for fmt in [InputFormat::ABGR2101010, InputFormat::BGRA] {
+            assert_eq!(
+                source_spec(raw(Cs::HDR10_ST2084_EXT), fmt),
+                ColorSpec::Bt2020Pq,
+                "{fmt:?}"
+            );
+        }
+    }
+
+    /// A float surface that declares linear already agrees, and must keep the
+    /// primaries it named -- BT.2020 linear is not scRGB.
+    #[test]
+    fn a_float_surface_that_declares_linear_keeps_its_primaries() {
+        assert_eq!(
+            source_spec(raw(Cs::EXTENDED_SRGB_LINEAR_EXT), InputFormat::RGBA16F),
+            ColorSpec::Bt709Linear
+        );
+        assert_eq!(
+            source_spec(raw(Cs::BT2020_LINEAR_EXT), InputFormat::RGBA16F),
+            ColorSpec::Bt2020Linear
+        );
+    }
+
+    /// Float samples with nothing said about them are still linear: no float
+    /// convention stores an encoded curve, so reading them as sRGB applies an
+    /// inverse EOTF to data that never had one.
+    #[test]
+    fn float_samples_are_linear_even_when_nothing_says_so() {
+        assert_eq!(
+            source_spec(raw(Cs::SRGB_NONLINEAR), InputFormat::RGBA16F),
+            ColorSpec::Bt709Linear
+        );
+    }
+
+    /// The ordinary SDR path is untouched.
+    #[test]
+    fn eight_bit_srgb_is_left_alone() {
+        assert_eq!(
+            source_spec(raw(Cs::SRGB_NONLINEAR), InputFormat::BGRA),
+            ColorSpec::Srgb
+        );
+        assert_eq!(stream_spec(ColorSpec::Srgb), ColorSpec::Srgb);
     }
 }
 
