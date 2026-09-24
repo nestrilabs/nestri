@@ -268,9 +268,10 @@ pub struct DeviceState {
 impl DeviceState {
     /// The shared device, when the encoder is actually running on it.
     pub fn shared_encoder(&self) -> Option<&crate::shared::SharedDevice> {
-        self.shared
-            .as_ref()
-            .filter(|_| self.shared_active.load(std::sync::atomic::Ordering::Acquire))
+        self.shared.as_ref().filter(|_| {
+            self.shared_active
+                .load(std::sync::atomic::Ordering::Acquire)
+        })
     }
 }
 

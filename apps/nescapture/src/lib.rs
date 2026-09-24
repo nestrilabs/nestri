@@ -39,8 +39,8 @@ mod shader;
 mod shared;
 mod slots;
 mod state;
-mod timing;
 mod swapchain;
+mod timing;
 
 use commands::{
     vkCmdBeginRenderPass, vkCmdBeginRenderingKHR, vkCmdBindPipeline, vkCmdDraw, vkCmdDrawIndexed,

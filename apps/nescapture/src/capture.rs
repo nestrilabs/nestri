@@ -8,7 +8,7 @@
 //  host-visible image the encoder thread reads back on the CPU.
 // ─────────────────────────────────────────────────────────────────────────────
 
-use crate::state::{CB_STATE, CAPTURE_SLOTS, CaptureRing, CaptureSlot, DEVICE_STATE};
+use crate::state::{CAPTURE_SLOTS, CB_STATE, CaptureRing, CaptureSlot, DEVICE_STATE};
 use ash::vk::{self, Handle};
 
 fn make_subresource_range() -> vk::ImageSubresourceRange {
@@ -423,8 +423,7 @@ unsafe fn create_capture_ring(
         _marker: std::marker::PhantomData,
     };
 
-    let (timestamp_pool, timestamp_period) =
-        unsafe { create_timestamp_pool(ds, queue_family) };
+    let (timestamp_pool, timestamp_period) = unsafe { create_timestamp_pool(ds, queue_family) };
 
     // On a device the encoder shares, the slots are images the encoder reads
     // in place, in the format its converter reads, and every blit advances a
@@ -1118,9 +1117,8 @@ pub unsafe fn capture_present_frame(
     // On a shared device the blit also advances the ring's timeline. A
     // timeline signal needs its value given alongside, and the binary
     // semaphore next to it a placeholder the driver ignores.
-    let blit_point = (!ring.blit_timeline.is_null()).then(|| {
-        pixelforge::TimelinePoint::new(ring.blit_timeline, ring.blit_value + 1)
-    });
+    let blit_point = (!ring.blit_timeline.is_null())
+        .then(|| pixelforge::TimelinePoint::new(ring.blit_timeline, ring.blit_value + 1));
     let signals = [present_wait, ring.blit_timeline];
     let signal_values = [0, blit_point.map_or(0, |p| p.value)];
     let timeline_info = vk::TimelineSemaphoreSubmitInfo {
@@ -1239,7 +1237,8 @@ unsafe fn ensure_present_semaphore(
 ) -> Option<vk::Semaphore> {
     let create = ds.fp.create_semaphore?;
     if ring.present_wait.len() <= image_index {
-        ring.present_wait.resize(image_index + 1, vk::Semaphore::null());
+        ring.present_wait
+            .resize(image_index + 1, vk::Semaphore::null());
     }
     if ring.present_wait[image_index] == vk::Semaphore::null() {
         let ci = vk::SemaphoreCreateInfo {

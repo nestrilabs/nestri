@@ -82,9 +82,9 @@ pub unsafe extern "system" fn vkCreateDevice(
     // device exactly as the game asked for it, and the encoder to a device of
     // its own.
     let mut shared = None;
-    if let Some(prepared) = unsafe {
-        crate::shared::prepare(&istate, next_gdpa, physical_device, ci, &game_extensions)
-    } {
+    if let Some(prepared) =
+        unsafe { crate::shared::prepare(&istate, next_gdpa, physical_device, ci, &game_extensions) }
+    {
         let shared_ci = prepared.create_info(ci);
         let result =
             unsafe { (istate.create_device)(physical_device, &shared_ci, p_allocator, p_device) };
@@ -99,8 +99,9 @@ pub unsafe extern "system" fn vkCreateDevice(
         }
     }
     if shared.is_none() {
-        let result =
-            unsafe { (istate.create_device)(physical_device, p_create_info, p_allocator, p_device) };
+        let result = unsafe {
+            (istate.create_device)(physical_device, p_create_info, p_allocator, p_device)
+        };
         if result != vk::Result::SUCCESS {
             return result;
         }
@@ -430,7 +431,8 @@ pub unsafe extern "system" fn encoder_allocate_command_buffers(
     let Some(ds) = DEVICE_STATE.get(&key).map(|s| s.clone()) else {
         return vk::Result::ERROR_INITIALIZATION_FAILED;
     };
-    let result = unsafe { (ds.fp.allocate_command_buffers)(device, p_allocate_info, p_command_buffers) };
+    let result =
+        unsafe { (ds.fp.allocate_command_buffers)(device, p_allocate_info, p_command_buffers) };
     if result == vk::Result::SUCCESS {
         let count = unsafe { (*p_allocate_info).command_buffer_count } as usize;
         for cb in unsafe { std::slice::from_raw_parts(p_command_buffers, count) } {

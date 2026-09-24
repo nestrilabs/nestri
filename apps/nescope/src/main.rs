@@ -422,8 +422,7 @@ fn main() {
     // wrong way round, and it capped them at 60 while sessions asked for 120.
     // The capture layer holds the game instead, and this runs fast enough to
     // stay out of the way.
-    let frame_interval =
-        Duration::from_micros(1_000_000 / args.frame_callback_hz.max(1) as u64);
+    let frame_interval = Duration::from_micros(1_000_000 / args.frame_callback_hz.max(1) as u64);
     loop_handle
         .insert_source(Timer::from_duration(frame_interval), move |_, _, data| {
             if let Some(ref mut li) = data.libinput {

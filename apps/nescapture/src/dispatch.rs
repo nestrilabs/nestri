@@ -207,21 +207,14 @@ pub type PFN_vkCreateQueryPool = unsafe extern "system" fn(
     *mut vk::QueryPool,
 ) -> vk::Result;
 
-pub type PFN_vkDestroyQueryPool = unsafe extern "system" fn(
-    vk::Device,
-    vk::QueryPool,
-    *const vk::AllocationCallbacks,
-);
+pub type PFN_vkDestroyQueryPool =
+    unsafe extern "system" fn(vk::Device, vk::QueryPool, *const vk::AllocationCallbacks);
 
 pub type PFN_vkCmdResetQueryPool =
     unsafe extern "system" fn(vk::CommandBuffer, vk::QueryPool, u32, u32);
 
-pub type PFN_vkCmdWriteTimestamp = unsafe extern "system" fn(
-    vk::CommandBuffer,
-    vk::PipelineStageFlags,
-    vk::QueryPool,
-    u32,
-);
+pub type PFN_vkCmdWriteTimestamp =
+    unsafe extern "system" fn(vk::CommandBuffer, vk::PipelineStageFlags, vk::QueryPool, u32);
 
 pub type PFN_vkGetQueryPoolResults = unsafe extern "system" fn(
     vk::Device,

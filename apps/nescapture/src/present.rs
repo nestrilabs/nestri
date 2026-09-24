@@ -55,9 +55,8 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     // Rewriting the wait semaphores is only well defined for a single
     // swapchain. A multi-swapchain present is rare enough that passing it
     // through untouched beats getting the interposition subtly wrong.
-    let single_swapchain = pi.swapchain_count == 1
-        && !pi.p_swapchains.is_null()
-        && !pi.p_image_indices.is_null();
+    let single_swapchain =
+        pi.swapchain_count == 1 && !pi.p_swapchains.is_null() && !pi.p_image_indices.is_null();
 
     let submission = if single_swapchain {
         unsafe { try_capture(&ds, queue, pi) }
@@ -81,7 +80,6 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         finish(&ds, entered, down_us.get());
         return r;
     };
-
 
     // The blit consumed the application's wait semaphores, so the present waits
     // on ours instead. Presenting on the originals as well would be a second
@@ -121,11 +119,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
 /// `layer` is everything in this hook that is not the down-call, both sides of
 /// it added together, so `gap + layer + down` accounts for the wall clock
 /// between one present and the next with nothing unattributed.
-fn finish(
-    ds: &crate::state::DeviceState,
-    entered: std::time::Instant,
-    down: std::time::Duration,
-) {
+fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std::time::Duration) {
     // Everything this hook cost, before any deliberate waiting.
     let worked = std::time::Instant::now();
 
@@ -229,14 +223,14 @@ unsafe fn try_capture(
         }
     }
 
-    let app_waits: &[vk::Semaphore] = if pi.wait_semaphore_count == 0 || pi.p_wait_semaphores.is_null()
-    {
-        &[]
-    } else {
-        unsafe {
-            std::slice::from_raw_parts(pi.p_wait_semaphores, pi.wait_semaphore_count as usize)
-        }
-    };
+    let app_waits: &[vk::Semaphore] =
+        if pi.wait_semaphore_count == 0 || pi.p_wait_semaphores.is_null() {
+            &[]
+        } else {
+            unsafe {
+                std::slice::from_raw_parts(pi.p_wait_semaphores, pi.wait_semaphore_count as usize)
+            }
+        };
 
     let submission = unsafe {
         capture::capture_present_frame(
@@ -319,7 +313,9 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
             let shared = ds.shared.as_ref().and_then(|s| match s.video_context() {
                 Ok(ctx) => Some(ctx),
                 Err(e) => {
-                    log::warn!("could not encode on the game's device ({e}); using a device of its own");
+                    log::warn!(
+                        "could not encode on the game's device ({e}); using a device of its own"
+                    );
                     None
                 }
             });

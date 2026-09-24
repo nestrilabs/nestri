@@ -176,7 +176,8 @@ impl RateProbe {
         let Some(rate) = self.measured_kbps(now) else {
             return;
         };
-        let drift = (rate as f32 - self.current_kbps as f32).abs() / self.current_kbps.max(1) as f32;
+        let drift =
+            (rate as f32 - self.current_kbps as f32).abs() / self.current_kbps.max(1) as f32;
         if drift > TOLERANCE {
             // Left the band, so whatever it was doing was not settling.
             self.inside_since = None;
@@ -251,8 +252,8 @@ impl RateProbe {
             steady_ratio: (steady_kbps / f64::from(self.current_kbps.max(1))) as f32,
             keyframes: self.keyframes,
             keyframe_bytes: self.keyframe_bytes,
-            keyframe_ms: (u64::from(self.keyframe_bytes) * 8
-                / u64::from(self.current_kbps.max(1))) as u32,
+            keyframe_ms: (u64::from(self.keyframe_bytes) * 8 / u64::from(self.current_kbps.max(1)))
+                as u32,
         });
     }
 
@@ -323,8 +324,14 @@ mod tests {
         now = feed(&mut p, now, 5.1, 6_000);
         p.due_step(now);
         let r = p.reports();
-        let step = r.iter().find(|r| r.to_kbps == 1_500).expect("the 1500 rung");
-        assert_eq!(step.settle_ms, None, "an encoder that ignored us looked settled");
+        let step = r
+            .iter()
+            .find(|r| r.to_kbps == 1_500)
+            .expect("the 1500 rung");
+        assert_eq!(
+            step.settle_ms, None,
+            "an encoder that ignored us looked settled"
+        );
         assert!(
             step.steady_ratio > 3.0,
             "steady ratio {} did not show it producing four times the target",
@@ -399,7 +406,10 @@ mod tests {
             p.due_step(now);
         }
         assert!(p.finished());
-        assert!(!p.owns_the_bitrate(), "a finished sweep still holds the dial");
+        assert!(
+            !p.owns_the_bitrate(),
+            "a finished sweep still holds the dial"
+        );
         assert_eq!(p.reports().len(), LADDER.len());
     }
 }
