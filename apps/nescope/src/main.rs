@@ -80,6 +80,22 @@ use state::{CalloopData, ClientState, NescopeState};
 // CLI
 // ---------------------------------------------------------------------------
 
+/// A flag that can also arrive as an environment variable.
+///
+/// `--hdr` on its own still means true. The difference is what a value may be:
+/// clap's own bool parser takes `true` and `false` and nothing else, so
+/// `NESCOPE_HDR=1` -- which is how every other environment variable in this
+/// stack is written, and the first thing anyone tries -- was rejected outright.
+fn flag_value(value: &str) -> Result<bool, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" | "" => Ok(false),
+        other => Err(std::format!(
+            "expected 1 or 0 (true/false, yes/no and on/off are also taken), got {other:?}"
+        )),
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "nescope",
@@ -126,7 +142,14 @@ struct Args {
     frame_callback_hz: u32,
 
     /// Enable HDR protocols (wp_color_management_v1 + gamescope_swapchain_factory_v2).
-    #[arg(long, env = "NESCOPE_HDR")]
+    #[arg(
+        long,
+        env = "NESCOPE_HDR",
+        num_args = 0..=1,
+        default_value_t = false,
+        default_missing_value = "true",
+        value_parser = flag_value,
+    )]
     hdr: bool,
 
     /// Run XWayland, for Linux-native software with no Wayland support.
@@ -137,7 +160,14 @@ struct Args {
     /// which is what the launch environment does -- and HDR is only offered on
     /// the Wayland surface, so a game routed through XWayland loses it too.
     /// Turn this on for the shrinking set of X11-only native software.
-    #[arg(long, env = "NESCOPE_XWAYLAND")]
+    #[arg(
+        long,
+        env = "NESCOPE_XWAYLAND",
+        num_args = 0..=1,
+        default_value_t = false,
+        default_missing_value = "true",
+        value_parser = flag_value,
+    )]
     xwayland: bool,
 
     /// Wayland socket name (created in $XDG_RUNTIME_DIR).
