@@ -199,7 +199,24 @@ impl DmaBufImporter {
         let memory_type_index = self
             .context
             .find_memory_type(memory_type_bits, vk::MemoryPropertyFlags::empty())
-            .ok_or_else(|| anyhow::anyhow!("No suitable memory type for DMA-BUF import"))?;
+            .ok_or_else(|| {
+                // The numbers, in the error rather than in the debug! above
+                // it: fd_type_bits=0 means the driver could not resolve the
+                // descriptor at all, which is a different fault from a
+                // mismatch, and the difference is the whole diagnosis.
+                anyhow::anyhow!(
+                    "No suitable memory type for DMA-BUF import: \
+                     image_type_bits={:#x} & fd_type_bits={:#x} = {:#x}, \
+                     size={}, format={:?}, modifier={:#x}, stride={}",
+                    mem_requirements.memory_type_bits,
+                    memory_fd_properties.memory_type_bits,
+                    memory_type_bits,
+                    mem_requirements.size,
+                    format,
+                    planes[0].modifier,
+                    planes[0].stride
+                )
+            })?;
 
         // Dedicated allocation (required by many drivers for external memory).
         let mut dedicated_alloc_info = vk::MemoryDedicatedAllocateInfo::default().image(image);
