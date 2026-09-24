@@ -1018,9 +1018,19 @@ impl PipelineHandle {
                                     let previous =
                                         declared_listener.swap(vk, Ordering::Relaxed);
                                     if previous != vk {
+                                        // The mastering numbers go out with it:
+                                        // they are not applied yet, and whether
+                                        // wine even supplies any decides
+                                        // whether applying them is worth
+                                        // anything. All zero means it said
+                                        // nothing.
                                         log::info!(
-                                            "the compositor says this surface is {:?}",
-                                            ash::vk::ColorSpaceKHR::from_raw(vk as i32)
+                                            "the compositor says this surface is {:?}, mastered at max_cll={} max_fall={} luminance={}..{}",
+                                            ash::vk::ColorSpaceKHR::from_raw(vk as i32),
+                                            colour.max_cll,
+                                            colour.max_fall,
+                                            colour.min_luminance,
+                                            colour.max_luminance
                                         );
                                     }
                                 }
