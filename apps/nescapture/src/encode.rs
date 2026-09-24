@@ -214,7 +214,7 @@ struct Progress {
 }
 
 /// The steps a media thread can be waiting in, named for the log.
-const STEPS: [&str; 8] = [
+const STEPS: [&str; 13] = [
     "starting",
     "waiting for a captured frame",
     "encoding",
@@ -223,7 +223,32 @@ const STEPS: [&str; 8] = [
     "writing to the socket",
     "waiting for an encoded frame",
     "offering a captured frame",
+    "in the present hook",
+    "presenting, in the driver",
+    "holding to the target rate",
+    "back in the game, not presenting",
+    "acquiring an image, in the driver",
 ];
+
+/// What the device looks like, asked for when a stall is noticed.
+///
+/// Where a thread is says what it is waiting for; this says whether the GPU is
+/// still getting through the work in front of it, which the thread cannot.
+type StallProbe = Arc<std::sync::Mutex<Option<Box<dyn Fn() -> String + Send>>>>;
+
+/// Where the game's present thread is, as far as this layer can see it.
+///
+/// The capture watchdog says frames stopped arriving; this says whether the
+/// game is stuck inside a call of ours, inside the driver below us, or simply
+/// stopped calling. Those three need looking for in three different places.
+#[derive(Debug, Clone, Copy)]
+pub enum PresentStep {
+    InHook = 8,
+    Presenting = 9,
+    Holding = 10,
+    InGame = 11,
+    Acquiring = 12,
+}
 
 impl Progress {
     fn note(&self, epoch: Instant, step: u32) {
@@ -252,28 +277,44 @@ impl Progress {
 /// still being said.
 fn spawn_stall_watchdog(
     epoch: Instant,
+    present: Arc<Progress>,
     capture: Arc<Progress>,
     encoder: Arc<Progress>,
     ipc: Arc<Progress>,
+    probe: StallProbe,
     shutdown: Arc<AtomicBool>,
 ) {
     const STALL_MS: u64 = 2_000;
     let _ = thread::Builder::new()
         .name("nescapture-watchdog".into())
         .spawn(move || {
-            let mut said = [false; 3];
+            let mut said = [false; 4];
             while !shutdown.load(Ordering::Relaxed) {
                 thread::sleep(std::time::Duration::from_millis(500));
-                // Capture first, because it is upstream of the other two and
-                // its stopping makes both of them look idle rather than stuck.
-                for (i, (name, p)) in [("capture", &capture), ("encoder", &encoder), ("ipc", &ipc)]
-                    .iter()
-                    .enumerate()
+                // Upstream first: the game's present thread, then capture, then
+                // the two after it. Each stopping makes everything after it look
+                // idle rather than stuck.
+                for (i, (name, p)) in [
+                    ("present", &present),
+                    ("capture", &capture),
+                    ("encoder", &encoder),
+                    ("ipc", &ipc),
+                ]
+                .iter()
+                .enumerate()
                 {
                     let (stalled, step) = p.stalled_for(epoch);
                     if stalled >= STALL_MS {
                         if !said[i] {
                             log::warn!("{name} thread has not moved for {stalled} ms, {step}");
+                            // Once per stall, from the first thread to report
+                            // it: the state is the device's, not the thread's.
+                            if !said.iter().any(|&s| s)
+                                && let Ok(probe) = probe.lock()
+                                && let Some(f) = probe.as_ref()
+                            {
+                                log::warn!("at the stall: {}", f());
+                            }
                             said[i] = true;
                         }
                     } else if said[i] {
@@ -639,6 +680,8 @@ pub struct PipelineHandle {
     /// vkDestroyDevice has to wait for this thread first. See [`Self::finish`].
     encoder_thread: Option<thread::JoinHandle<()>>,
     capture_progress: Arc<Progress>,
+    present_progress: Arc<Progress>,
+    stall_probe: StallProbe,
     progress_epoch: Instant,
     idr_requested: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
@@ -679,11 +722,16 @@ impl PipelineHandle {
         let encoder_progress = Arc::new(Progress::default());
         let ipc_progress = Arc::new(Progress::default());
         let capture_progress = Arc::new(Progress::default());
+        let present_progress = Arc::new(Progress::default());
+        present_progress.note(progress_epoch, PresentStep::InGame as u32);
+        let stall_probe: StallProbe = Arc::default();
         spawn_stall_watchdog(
             progress_epoch,
+            present_progress.clone(),
             capture_progress.clone(),
             encoder_progress.clone(),
             ipc_progress.clone(),
+            stall_probe.clone(),
             shutdown.clone(),
         );
         let idr_requested = Arc::new(AtomicBool::new(false));
@@ -869,6 +917,8 @@ impl PipelineHandle {
             frame_tx,
             encoder_thread,
             capture_progress: capture_progress.clone(),
+            present_progress,
+            stall_probe,
             progress_epoch,
             idr_requested,
             shutdown,
@@ -881,6 +931,18 @@ impl PipelineHandle {
             capture_attempts,
             timing,
         })
+    }
+
+    /// Say where the game's present thread has got to.
+    pub fn note_present(&self, step: PresentStep) {
+        self.present_progress.note(self.progress_epoch, step as u32);
+    }
+
+    /// What to describe the device with when a stall is noticed.
+    pub fn set_stall_probe(&self, probe: Box<dyn Fn() -> String + Send>) {
+        if let Ok(mut p) = self.stall_probe.lock() {
+            *p = Some(probe);
+        }
     }
 
     pub fn push_frame(&self, frame: CapturedFrame) -> bool {

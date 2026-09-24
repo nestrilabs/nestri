@@ -876,6 +876,11 @@ impl SharedDevice {
         unsafe { self.device.destroy_semaphore(semaphore, None) };
     }
 
+    /// The value `semaphore` has reached, without waiting.
+    pub fn counter(&self, semaphore: vk::Semaphore) -> Option<u64> {
+        unsafe { self.timeline.get_semaphore_counter_value(semaphore) }.ok()
+    }
+
     /// Whether `point` has been reached, without waiting.
     pub fn reached(&self, point: pixelforge::TimelinePoint) -> bool {
         unsafe { self.timeline.get_semaphore_counter_value(point.semaphore) }

@@ -248,9 +248,11 @@ pub unsafe extern "system" fn vkAcquireNextImageKHR(
         return vk::Result::ERROR_EXTENSION_NOT_PRESENT;
     };
 
+    crate::present::note_present(&ds, crate::encode::PresentStep::Acquiring);
     let started = std::time::Instant::now();
     let result = unsafe { acquire(device, swapchain, timeout, semaphore, fence, p_image_index) };
     record_acquire(&ds, started.elapsed());
+    crate::present::note_present(&ds, crate::encode::PresentStep::InGame);
     result
 }
 
@@ -267,9 +269,11 @@ pub unsafe extern "system" fn vkAcquireNextImage2KHR(
         return vk::Result::ERROR_EXTENSION_NOT_PRESENT;
     };
 
+    crate::present::note_present(&ds, crate::encode::PresentStep::Acquiring);
     let started = std::time::Instant::now();
     let result = unsafe { acquire(device, p_acquire_info, p_image_index) };
     record_acquire(&ds, started.elapsed());
+    crate::present::note_present(&ds, crate::encode::PresentStep::InGame);
     result
 }
 

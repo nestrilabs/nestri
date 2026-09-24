@@ -1,5 +1,5 @@
 use crate::capture;
-use crate::encode::{CapturedFrame, FrameSource, PipelineConfig, PipelineHandle};
+use crate::encode::{CapturedFrame, FrameSource, PipelineConfig, PipelineHandle, PresentStep};
 use crate::slots::SlotGuard;
 use crate::state::{DEVICE_STATE, QUEUE_TO_DEVICE_KEY};
 use ash::vk::{self, Handle};
@@ -32,6 +32,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     // it is the game's own frame time with this layer's cost excluded — the
     // three spans then partition the wall clock between presents exactly.
     let entered = std::time::Instant::now();
+    note_present(&ds, PresentStep::InHook);
 
     ds.frame_counter.fetch_add(1, Ordering::Relaxed);
     ds.hud_detected_frame.store(false, Ordering::Relaxed);
@@ -67,9 +68,11 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     let down_us = std::cell::Cell::new(std::time::Duration::ZERO);
     let call_down = |info: *const vk::PresentInfoKHR| match ds.fp.queue_present_khr {
         Some(f) => {
+            note_present(&ds, PresentStep::Presenting);
             let t = std::time::Instant::now();
             let r = unsafe { f(queue, info) };
             down_us.set(t.elapsed());
+            note_present(&ds, PresentStep::InHook);
             r
         }
         None => vk::Result::ERROR_EXTENSION_NOT_PRESENT,
@@ -132,6 +135,7 @@ fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std
         Err(_) => std::time::Duration::ZERO,
     };
     if !held.is_zero() {
+        note_present(ds, PresentStep::Holding);
         std::thread::sleep(held);
     }
 
@@ -160,6 +164,17 @@ fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std
     // work and not the waiting this layer asked it to do.
     if let Ok(mut last) = ds.last_present_return.lock() {
         *last = Some(now);
+    }
+    note_present(ds, PresentStep::InGame);
+}
+
+/// Tell the stall watchdog where the game's present thread is. A no-op until
+/// the pipeline exists.
+pub fn note_present(ds: &crate::state::DeviceState, step: PresentStep) {
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.note_present(step);
     }
 }
 
@@ -322,6 +337,7 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
             let on_shared = shared.is_some();
             match PipelineHandle::new(cfg, shared) {
                 Ok(h) => {
+                    h.set_stall_probe(Box::new(move || describe_gpu(ds_key)));
                     // Before the handle is published: the first capture after
                     // it builds the ring, and must build it for this device.
                     ds.shared_active.store(on_shared, Ordering::Release);
@@ -391,4 +407,48 @@ pub fn resolve_source(
         Some(p) if !p.is_empty() => Some(FrameSource::Pixels(p)),
         _ => None,
     }
+}
+
+/// Whether the GPU has got through the capture work this layer gave it, for
+/// the stall watchdog.
+///
+/// A blit is queued behind the game's frame on the game's own queue, so a blit
+/// that never completes means that queue stopped: the game is waiting on the
+/// GPU. One that did complete means the GPU finished everything in front of
+/// it, and whatever the game is waiting for is not GPU work on that queue.
+///
+/// Never blocks. It runs exactly when something may be holding a lock forever.
+fn describe_gpu(ds_key: usize) -> String {
+    let Some(ds) = DEVICE_STATE.get(&ds_key).map(|s| s.clone()) else {
+        return "device gone".into();
+    };
+    let slots = format!(
+        "{} of {} capture slots free",
+        ds.capture_slots.available(),
+        crate::state::CAPTURE_SLOTS
+    );
+    let Ok(ring) = ds.capture_ring.try_lock() else {
+        return format!("{slots}; capture ring locked");
+    };
+    let Some(ring) = ring.as_ref() else {
+        return format!("{slots}; no capture ring");
+    };
+    if let Some(shared) = ds.shared.as_ref()
+        && !ring.blit_timeline.is_null()
+    {
+        let reached = shared
+            .counter(ring.blit_timeline)
+            .map_or("unknown".to_string(), |v| v.to_string());
+        return format!(
+            "{slots}; last blit submitted signals {}, the GPU has reached {reached}",
+            ring.blit_value
+        );
+    }
+    let pending = ring
+        .slots
+        .iter()
+        .filter(|s| unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &s.fence, vk::TRUE, 0) }
+            == vk::Result::TIMEOUT)
+        .count();
+    format!("{slots}; {pending} blits submitted and not yet complete")
 }
