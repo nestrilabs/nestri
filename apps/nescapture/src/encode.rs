@@ -74,6 +74,7 @@ const VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT: u32 =
     colorspace(ash::vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT);
 const VK_COLOR_SPACE_BT2020_LINEAR_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::BT2020_LINEAR_EXT);
 const VK_COLOR_SPACE_HDR10_HLG_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::HDR10_HLG_EXT);
+const VK_COLOR_SPACE_PASS_THROUGH_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::PASS_THROUGH_EXT);
 
 /// The converter input format for a swapchain's `VkFormat`, or `None` when
 /// there is no correct one.
@@ -106,6 +107,40 @@ pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
 /// with one fused source-to-target enum there was no arm for linear light on
 /// BT.2020 primaries, so it borrowed scRGB's and took a gamut error to avoid a
 /// gamma one. Now it says what it is.
+/// The colour space to believe, given what the swapchain says and what the
+/// compositor was told.
+///
+/// The swapchain is the right source whenever it names a colour space. It does
+/// not always: `PASS_THROUGH` means "do not convert my values" and carries no
+/// colour information at all -- the surface's real colour space is declared
+/// separately, to the compositor, over `wp_color_manager_v1`. A Windows title
+/// turning on HDR through wine arrives exactly that way: BT.2020 PQ pixels in a
+/// swapchain that says nothing.
+///
+/// So `PASS_THROUGH` defers and everything else does not. That distinction is
+/// the whole rule: it is the one case where the swapchain is explicitly
+/// declining to say, which makes it the one case where asking elsewhere is
+/// reading rather than guessing.
+pub fn effective_colorspace(vk_colorspace: u32, declared: Option<u32>) -> u32 {
+    if vk_colorspace == VK_COLOR_SPACE_PASS_THROUGH_EXT {
+        if let Some(declared) = declared {
+            return declared;
+        }
+    }
+    vk_colorspace
+}
+
+/// A surface colour from the compositor, as a Vulkan colour space.
+///
+/// Mapped into the swapchain's own vocabulary so there is one thing to reason
+/// about downstream rather than two spellings of the same fact.
+pub fn surface_color_to_vk(space: u8) -> u32 {
+    match space {
+        nesprotocol::SURFACE_COLOR_BT2020_PQ => VK_COLOR_SPACE_HDR10_ST2084_EXT,
+        _ => VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+    }
+}
+
 pub fn vk_colorspace_to_source_spec(vk_colorspace: u32) -> ColorSpec {
     match vk_colorspace {
         VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpec::Bt2020Pq,
@@ -785,6 +820,10 @@ impl PipelineHandle {
         }
         .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
         let device_caps = host_caps(&ctx);
+        // What the compositor says the surface is, for the frames whose
+        // swapchain declines to say. `u32::MAX` until it has said anything;
+        // see `effective_colorspace`.
+        let declared_colorspace = Arc::new(AtomicU32::new(u32::MAX));
 
         // One deep. The frame in it is now an unwaited blit rather than an
         // exported buffer, and the ring's four slots are already the
@@ -837,6 +876,7 @@ impl PipelineHandle {
             reconfig_rx,
             current_codec: current_codec.clone(),
             wanted_depth_override: None,
+            declared_colorspace: declared_colorspace.clone(),
             needs_reconfig_flag: needs_reconfig_flag.clone(),
             capture_ms: capture_ms.clone(),
         };
@@ -906,6 +946,7 @@ impl PipelineHandle {
 
         // Spawn IDR command listener (separate thread, blocks on recv)
         let idr_thread = idr_requested.clone();
+        let declared_listener = declared_colorspace.clone();
         // What this device can encode, worked out once here where the context
         // is, so the listener answers a capability message without needing one.
         let listener_host_caps = device_caps;
@@ -935,6 +976,25 @@ impl PipelineHandle {
                         Ok(1) if buf[0] == MSG_IDR_REQUEST => {
                             log::info!("IDR requested by client");
                             idr_thread.store(true, Ordering::Relaxed);
+                        }
+                        Ok(n) if n >= 2 && buf[0] == nesprotocol::MSG_SURFACE_COLOR => {
+                            match nesprotocol::decode_surface_color(&buf[1..n]) {
+                                Some(colour) => {
+                                    let vk = surface_color_to_vk(colour.space);
+                                    let previous =
+                                        declared_listener.swap(vk, Ordering::Relaxed);
+                                    if previous != vk {
+                                        log::info!(
+                                            "the compositor says this surface is {:?}",
+                                            ash::vk::ColorSpaceKHR::from_raw(vk as i32)
+                                        );
+                                    }
+                                }
+                                None => log::warn!(
+                                    "unreadable surface colour from the compositor ({} bytes)",
+                                    n - 1
+                                ),
+                            }
                         }
                         Ok(n) if n >= 2 && buf[0] == MSG_CLIENT_CAPS => {
                             let Some(client) = decode_client_caps(&buf[1..n]) else {
@@ -1148,6 +1208,9 @@ struct EncoderConfig {
     reconfig_rx: mpsc::Receiver<EncodeSettingsChange>,
     current_codec: Arc<AtomicU8>,
     wanted_depth_override: Option<EncodeBitDepth>,
+    /// What the compositor says the surface's colour is, when the swapchain
+    /// does not. See [`effective_colorspace`].
+    declared_colorspace: Arc<AtomicU32>,
     needs_reconfig_flag: Arc<AtomicBool>,
     /// Present-to-encoder latency in milliseconds, as `f32` bits. Written here
     /// now that this thread is the one doing the waiting.
@@ -1361,11 +1424,26 @@ fn encoder_thread(
         // that changed resolution kept being encoded at the old one: shrinking
         // left a band of the previous picture down the right edge and along the
         // bottom, and growing had no surface large enough to hold the frame.
+        // Resolved per frame, because the compositor can say what a surface
+        // is after the swapchain that carries it was created -- and on the
+        // path that needs this, it always does.
+        let declared = match cfg.declared_colorspace.load(Ordering::Relaxed) {
+            u32::MAX => None,
+            value => Some(value),
+        };
+        let frame_colorspace = effective_colorspace(raw.vk_colorspace, declared);
+
         let state = match encoder_state.as_mut() {
             Some(s)
                 if encoder_still_serves(
-                    (s.width, s.height, s.bit_depth, s.pixel_format),
-                    (raw.width, raw.height, bit_depth, cfg.pixel_format),
+                    (s.width, s.height, s.bit_depth, s.pixel_format, s.colorspace),
+                    (
+                        raw.width,
+                        raw.height,
+                        bit_depth,
+                        cfg.pixel_format,
+                        frame_colorspace,
+                    ),
                 ) =>
             {
                 s
@@ -1410,7 +1488,7 @@ fn encoder_thread(
                     bit_depth,
                     input_fmt,
                     out_fmt,
-                    raw.vk_colorspace,
+                    frame_colorspace,
                     matches!(source, FrameSource::Shared { .. }),
                 ) {
                     Ok(s) => {
@@ -1521,6 +1599,12 @@ fn encoder_thread(
 
 struct PerFrameEncoder {
     encoder: Encoder,
+    /// The colour space this encoder and its converter were built for.
+    ///
+    /// Part of what decides whether it still serves: the stream declares this
+    /// in its own metadata and the converter is built around it, so a surface
+    /// that changes colour needs a new one rather than a relabelled old one.
+    colorspace: u32,
     /// `None` when the encoder takes the RGB frame and converts it itself.
     converter: Option<ColorConverter>,
     bit_depth: EncodeBitDepth,
@@ -1656,6 +1740,7 @@ impl PerFrameEncoder {
                         );
                         return Ok(Self {
                             encoder,
+                            colorspace: vk_colorspace,
                             converter: None,
                             bit_depth,
                             pixel_format,
@@ -1680,6 +1765,7 @@ impl PerFrameEncoder {
 
         Ok(Self {
             encoder,
+            colorspace: vk_colorspace,
             converter,
             bit_depth,
             pixel_format,
@@ -1842,8 +1928,8 @@ fn bitrate_only_change(
 /// it built with came from whatever the *first* frame happened to be. A game
 /// that changed resolution went on being encoded at the old one.
 fn encoder_still_serves(
-    existing: (u32, u32, EncodeBitDepth, PixelFormat),
-    wanted: (u32, u32, EncodeBitDepth, PixelFormat),
+    existing: (u32, u32, EncodeBitDepth, PixelFormat, u32),
+    wanted: (u32, u32, EncodeBitDepth, PixelFormat, u32),
 ) -> bool {
     existing == wanted
 }
@@ -2792,12 +2878,83 @@ mod tests {
 }
 
 #[cfg(test)]
+mod surface_colour_tests {
+    use super::{
+        VK_COLOR_SPACE_HDR10_ST2084_EXT, VK_COLOR_SPACE_PASS_THROUGH_EXT,
+        VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, effective_colorspace, surface_color_to_vk,
+        vk_colorspace_to_source_spec,
+    };
+    use pixelforge::ColorSpec;
+
+    /// The case this exists for: a Windows title turning HDR on through wine
+    /// gets a swapchain that says nothing and a surface declared BT.2020 PQ.
+    /// Read from the swapchain alone it encodes as SDR, which is what it did.
+    #[test]
+    fn pass_through_takes_what_the_compositor_was_told() {
+        let declared = surface_color_to_vk(nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        let effective = effective_colorspace(VK_COLOR_SPACE_PASS_THROUGH_EXT, Some(declared));
+        assert_eq!(effective, VK_COLOR_SPACE_HDR10_ST2084_EXT);
+        assert_eq!(vk_colorspace_to_source_spec(effective), ColorSpec::Bt2020Pq);
+    }
+
+    /// A swapchain that names a colour space is the authority. The compositor
+    /// is told about a surface, which may carry something else entirely, so
+    /// letting it override a swapchain that has spoken would be guessing.
+    #[test]
+    fn a_swapchain_that_names_one_is_not_overridden() {
+        let declared = surface_color_to_vk(nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, Some(declared)),
+            VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+        );
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_HDR10_ST2084_EXT, Some(declared)),
+            VK_COLOR_SPACE_HDR10_ST2084_EXT
+        );
+    }
+
+    /// Nothing said yet is the first few frames of every session, and it must
+    /// read as the swapchain's own answer rather than as HDR.
+    #[test]
+    fn pass_through_with_nothing_declared_stays_as_it_is() {
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_PASS_THROUGH_EXT, None),
+            VK_COLOR_SPACE_PASS_THROUGH_EXT
+        );
+        assert_eq!(
+            vk_colorspace_to_source_spec(VK_COLOR_SPACE_PASS_THROUGH_EXT),
+            ColorSpec::Srgb
+        );
+    }
+
+    /// An SDR surface says so, and must not be read as "said nothing" -- that
+    /// is the difference between a deliberate answer and a missing one.
+    #[test]
+    fn an_sdr_surface_is_an_answer() {
+        let declared = surface_color_to_vk(nesprotocol::SURFACE_COLOR_SRGB);
+        assert_eq!(declared, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_PASS_THROUGH_EXT, Some(declared)),
+            VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+        );
+    }
+
+    /// An unknown space from a newer compositor reads as SDR rather than as
+    /// something unencodable.
+    #[test]
+    fn an_unknown_surface_colour_falls_back_to_sdr() {
+        assert_eq!(surface_color_to_vk(200), VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+    }
+}
+
+#[cfg(test)]
 mod encoder_identity_tests {
     use super::encoder_still_serves;
     use pixelforge::{EncodeBitDepth, PixelFormat};
 
-    const HD: (u32, u32, EncodeBitDepth, PixelFormat) =
-        (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420);
+    const SDR: u32 = 0;
+    const HD: (u32, u32, EncodeBitDepth, PixelFormat, u32) =
+        (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR);
 
     #[test]
     fn an_unchanged_frame_reuses_the_encoder() {
@@ -2808,7 +2965,7 @@ mod encoder_identity_tests {
     fn a_resolution_change_rebuilds_in_either_direction() {
         // The regression. Shrinking left the encoder sending the old geometry
         // with stale margins; growing had no surface big enough for the frame.
-        let smaller = (1280, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420);
+        let smaller = (1280, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR);
         assert!(!encoder_still_serves(HD, smaller));
         assert!(!encoder_still_serves(smaller, HD));
     }
@@ -2817,11 +2974,11 @@ mod encoder_identity_tests {
     fn one_axis_moving_is_still_a_change() {
         assert!(!encoder_still_serves(
             HD,
-            (1920, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420)
+            (1920, 720, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR)
         ));
         assert!(!encoder_still_serves(
             HD,
-            (1280, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420)
+            (1280, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv420, SDR)
         ));
     }
 
@@ -2829,11 +2986,11 @@ mod encoder_identity_tests {
     fn depth_and_pixel_format_still_rebuild() {
         assert!(!encoder_still_serves(
             HD,
-            (1920, 1080, EncodeBitDepth::Ten, PixelFormat::Yuv420)
+            (1920, 1080, EncodeBitDepth::Ten, PixelFormat::Yuv420, SDR)
         ));
         assert!(!encoder_still_serves(
             HD,
-            (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv444)
+            (1920, 1080, EncodeBitDepth::Eight, PixelFormat::Yuv444, SDR)
         ));
     }
 }

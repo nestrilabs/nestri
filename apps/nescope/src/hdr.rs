@@ -105,6 +105,10 @@ use crate::state::NescopeState;
 // ---------------------------------------------------------------------------
 
 /// Simplified color space used by the external capture library.
+/// Where capture listens. Fixed rather than configurable: both ends are ours,
+/// and a mismatch would be silent.
+const CAPTURE_SOCKET: &str = "/tmp/nescapture-cmd.sock";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSpace {
     /// BT.709 primaries, sRGB EOTF.
@@ -242,11 +246,23 @@ pub struct HdrState {
     /// Committed image descriptions keyed by surface.
     current: HashMap<WlSurface, ImageDescription>,
     /// Information requests waiting to be answered after the request that
-    /// created them has returned. See .
+    /// created them has returned. See [`HdrState::queue_information`].
     pending_information: Vec<(
         wp_image_description_info_v1::WpImageDescriptionInfoV1,
         ImageDescription,
     )>,
+    /// Where capture is told what the compositor was told.
+    ///
+    /// Capture reads the colour space from the game's Vulkan swapchain, and a
+    /// swapchain set to `PASS_THROUGH` carries none -- the surface's colour is
+    /// declared here instead, and only here. So it goes across.
+    ///
+    /// `None` when a socket cannot be opened at all, which is not worth
+    /// failing a compositor over.
+    capture_socket: Option<std::os::unix::net::UnixDatagram>,
+    /// The last thing sent, so an unchanged surface does not resend on every
+    /// commit -- which is every frame.
+    last_sent: Option<nesprotocol::SurfaceColor>,
 }
 
 impl HdrState {
@@ -266,6 +282,8 @@ impl HdrState {
             pending: HashMap::new(),
             current: HashMap::new(),
             pending_information: Vec::new(),
+            capture_socket: std::os::unix::net::UnixDatagram::unbound().ok(),
+            last_sent: None,
         }
     }
 
@@ -336,6 +354,67 @@ impl HdrState {
                     self.current.remove(surface);
                 }
             }
+            self.tell_capture();
+        }
+    }
+
+    /// Tell capture what the active surface's colour is, when it changes.
+    ///
+    /// Sent rather than asked for, because capture lives inside the game's
+    /// process and has no way to reach a compositor object. Unreliable by
+    /// construction -- a datagram to a socket that may not be bound yet -- and
+    /// that is the right trade here: the next commit sends it again, and
+    /// commits are frequent. Blocking a compositor commit on a process that
+    /// may not exist would not be.
+    fn tell_capture(&mut self) {
+        let Some(socket) = self.capture_socket.as_ref() else {
+            return;
+        };
+        let colour = self.surface_color_message();
+        if self.last_sent == Some(colour) {
+            return;
+        }
+
+        let mut payload = vec![nesprotocol::MSG_SURFACE_COLOR];
+        nesprotocol::encode_surface_color(&mut payload, &colour);
+        match socket.send_to(&payload, CAPTURE_SOCKET) {
+            Ok(_) => {
+                tracing::info!(
+                    space = colour.space,
+                    max_cll = colour.max_cll,
+                    "told capture what this surface is"
+                );
+                self.last_sent = Some(colour);
+            }
+            // Not a warning. No capture attached is the ordinary state for a
+            // compositor running on its own, and this fires per commit.
+            Err(e) => tracing::trace!("capture is not listening: {e}"),
+        }
+    }
+
+    /// What to tell capture, from the surfaces currently mapped.
+    ///
+    /// Any HDR surface makes the answer HDR. A session is one game on one
+    /// screen, so "any" and "the one that matters" are the same set, and
+    /// picking between several would need a notion of active this does not
+    /// have.
+    fn surface_color_message(&self) -> nesprotocol::SurfaceColor {
+        let hdr = self
+            .current
+            .values()
+            .find(|desc| desc.color_space() == ColorSpace::Bt2020Pq);
+        match hdr {
+            Some(desc) => nesprotocol::SurfaceColor {
+                space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
+                max_cll: desc.max_cll.unwrap_or(0),
+                max_fall: desc.max_fall.unwrap_or(0),
+                min_luminance: desc.mastering_luminance.map(|(min, _)| min).unwrap_or(0),
+                max_luminance: desc.mastering_luminance.map(|(_, max)| max).unwrap_or(0),
+            },
+            None => nesprotocol::SurfaceColor {
+                space: nesprotocol::SURFACE_COLOR_SRGB,
+                ..Default::default()
+            },
         }
     }
 

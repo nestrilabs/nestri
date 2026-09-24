@@ -92,6 +92,7 @@ pub const MSG_DATA: u8 = 0; // generic data frame (video / audio)
 pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub → nescapture)
 pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → nescapture)
 pub const MSG_CLIENT_CAPS: u8 = 0x15; // what the client can decode (desktop → hub → nescapture)
+pub const MSG_SURFACE_COLOR: u8 = 0x16; // what the compositor was told a surface is (nescope → nescapture)
 /// What the receiver actually got, once a second (desktop → hub).
 ///
 /// The hub cannot see this. Its own view of the path -- RTT, congestion window,
@@ -298,6 +299,66 @@ pub fn encode_bitrate_only(buf: &mut Vec<u8>, kbps: u32) {
     buf.push(CODEC_KEEP);
     buf.push(RC_CBR);
     buf.extend_from_slice(&kbps.to_le_bytes());
+}
+
+// ── What colour the compositor was told a surface is ────────────────────
+
+/// SDR: BT.709 primaries, sRGB transfer.
+pub const SURFACE_COLOR_SRGB: u8 = 0;
+/// HDR10: BT.2020 primaries, PQ transfer.
+pub const SURFACE_COLOR_BT2020_PQ: u8 = 1;
+
+/// What a Wayland client declared about its surface's colour.
+///
+/// Capture normally reads the colour space from the game's Vulkan swapchain,
+/// and that is the right source when the swapchain names one. It does not
+/// always: `VK_COLOR_SPACE_PASS_THROUGH_EXT` means "do not convert my values"
+/// and carries no colour information at all, while the surface's real colour
+/// space is declared separately, over `wp_color_manager_v1`, to the
+/// compositor. A Windows title turning on HDR through wine arrives exactly
+/// that way -- the pixels are BT.2020 PQ and the swapchain says nothing.
+///
+/// So the compositor, which is told, passes it to capture, which is not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SurfaceColor {
+    /// One of the `SURFACE_COLOR_*` constants.
+    pub space: u8,
+    /// Mastering metadata, as the client gave it. Zero where it said nothing.
+    ///
+    /// Carried now and not yet applied: it belongs in the stream's own
+    /// metadata, and sending it from the start means that can be wired up
+    /// without a second protocol change and a second pin.
+    pub max_cll: u32,
+    pub max_fall: u32,
+    pub min_luminance: u32,
+    pub max_luminance: u32,
+}
+
+/// Encode a surface colour declaration:
+/// `[1B space] [4B max_cll] [4B max_fall] [4B min_lum] [4B max_lum]`, LE.
+pub fn encode_surface_color(buf: &mut Vec<u8>, colour: &SurfaceColor) {
+    buf.reserve(17);
+    buf.push(colour.space);
+    buf.extend_from_slice(&colour.max_cll.to_le_bytes());
+    buf.extend_from_slice(&colour.max_fall.to_le_bytes());
+    buf.extend_from_slice(&colour.min_luminance.to_le_bytes());
+    buf.extend_from_slice(&colour.max_luminance.to_le_bytes());
+}
+
+/// Decode one. `None` when the payload is too short to be one.
+pub fn decode_surface_color(payload: &[u8]) -> Option<SurfaceColor> {
+    if payload.len() < 17 {
+        return None;
+    }
+    let u32_at =
+        |i: usize| u32::from_le_bytes([payload[i], payload[i + 1], payload[i + 2], payload[i + 3]]);
+    Some(SurfaceColor {
+        space: payload[0],
+        max_cll: u32_at(1),
+        max_fall: u32_at(5),
+        min_luminance: u32_at(9),
+        max_luminance: u32_at(13),
+    })
 }
 
 // ── What the client can decode ──────────────────────────────────────────
@@ -665,6 +726,32 @@ mod media_control_tests {
     }
 
     #[test]
+    fn a_surface_colour_survives_the_wire() {
+        let colour = SurfaceColor {
+            space: SURFACE_COLOR_BT2020_PQ,
+            max_cll: 1000,
+            max_fall: 400,
+            min_luminance: 0,
+            max_luminance: 1000,
+        };
+        let mut buf = Vec::new();
+        encode_surface_color(&mut buf, &colour);
+        assert_eq!(buf.len(), 17);
+        assert_eq!(decode_surface_color(&buf), Some(colour));
+    }
+
+    /// A truncated payload is not a surface that is suddenly SDR. Reading one
+    /// as though it were would turn a dropped byte into a wrong picture.
+    #[test]
+    fn a_short_surface_colour_is_not_read() {
+        let mut buf = Vec::new();
+        encode_surface_color(&mut buf, &SurfaceColor::default());
+        for len in 0..17 {
+            assert_eq!(decode_surface_color(&buf[..len]), None, "len {len}");
+        }
+    }
+
+    #[test]
     fn every_message_type_is_its_own_number() {
         // Every type byte that travels on a stream, as `(name, value)`. Listed
         // by hand because the point is to catch a new one colliding with an
@@ -681,6 +768,7 @@ mod media_control_tests {
             ("MSG_IDR_REQUEST", MSG_IDR_REQUEST),
             ("MSG_ENCODE_SETTINGS", MSG_ENCODE_SETTINGS),
             ("MSG_CLIENT_CAPS", MSG_CLIENT_CAPS),
+            ("MSG_SURFACE_COLOR", MSG_SURFACE_COLOR),
             ("MSG_RECEIVER_REPORT", MSG_RECEIVER_REPORT),
             ("MSG_CONTROL_MODE", MSG_CONTROL_MODE),
             ("MSG_INPUT_BATCH", MSG_INPUT_BATCH),
