@@ -76,6 +76,13 @@ INFINITY_REV    ?= e6c85d841f25e21393a7ea47fdef286318915d8c
 INFINITY_SERIES := patches/cachyos/tuned-eevdf/$(KERNEL_REF:cachyos-%=%)
 INFINITY_WORK   := $(OUTPUT_DIR)/infinity-sched
 
+# The guest half of NVIDIA forwarding, built into the kernel. A branch, so each
+# kernel build takes the driver as it is now; set NVGPU_REF to a tag or commit
+# to pin it. The commit built is recorded as $(KERNEL_OUTPUT).nvgpu-rev.
+NVGPU_GIT  ?= https://github.com/nestrilabs/virtio-nvgpu.git
+NVGPU_REF  ?= dev
+NVGPU_WORK := $(OUTPUT_DIR)/virtio-nvgpu
+
 ifneq ($(KERNEL_INFINITY),)
 KERNEL_SRC    ?= $(OUTPUT_DIR)/kernel-infinity
 KERNEL_OUTPUT := $(OUTPUT_DIR)/vmlinux-infinity
@@ -136,6 +143,7 @@ kernel:
 		KERNEL_INFINITY=$(KERNEL_INFINITY) INFINITY_GIT=$(INFINITY_GIT) \
 		INFINITY_REV=$(INFINITY_REV) INFINITY_SERIES=$(INFINITY_SERIES) \
 		INFINITY_WORK=$(INFINITY_WORK) \
+		NVGPU_GIT=$(NVGPU_GIT) NVGPU_REF=$(NVGPU_REF) NVGPU_WORK=$(NVGPU_WORK) \
 		bash scripts/kernel-build.sh
 
 # Leaves $(PROTON_WORK) and the kernel alone: one is hours of build and ccache,
@@ -143,11 +151,11 @@ kernel:
 # proton-clean and kernel-clean are the ones that drop them.
 clean:
 	find $(OUTPUT_DIR) -mindepth 1 -maxdepth 1 ! -name proton ! -name 'kernel*' \
-		! -name 'vmlinux*' ! -name infinity-sched -exec rm -rf {} + 2>/dev/null || true
+		! -name 'vmlinux*' ! -name infinity-sched ! -name virtio-nvgpu -exec rm -rf {} + 2>/dev/null || true
 
 kernel-clean:
-	rm -rf $(OUTPUT_DIR)/kernel $(OUTPUT_DIR)/kernel-infinity $(INFINITY_WORK) \
-		$(OUTPUT_DIR)/vmlinux $(OUTPUT_DIR)/vmlinux-infinity
+	rm -rf $(OUTPUT_DIR)/kernel $(OUTPUT_DIR)/kernel-infinity $(INFINITY_WORK) $(NVGPU_WORK) \
+		$(OUTPUT_DIR)/vmlinux $(OUTPUT_DIR)/vmlinux-infinity $(OUTPUT_DIR)/vmlinux*.nvgpu-rev
 
 proton-clean:
 	rm -rf $(PROTON_WORK)

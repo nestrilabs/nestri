@@ -120,6 +120,33 @@ and this guest has `CONFIG_MODULES` off and no `/lib/modules` at all.
 - The tree is off the pinned ref (a bisect, a local patch)? The build warns
   and builds what is there rather than checking the ref out over your work.
 
+### NVIDIA: the forwarding driver
+
+```sh
+make kernel                          # fetches virtio-nvgpu's dev branch and builds its driver in
+make NVGPU_REF=<tag-or-commit> kernel
+```
+
+On an NVIDIA host the guest has no GPU of its own. It gets a virtio device
+that carries the NVIDIA driver's ioctls to the host, and it runs NVIDIA's own
+user-mode libraries against it. The guest half of that is a kernel driver from
+[virtio-nvgpu](https://github.com/nestrilabs/virtio-nvgpu), which every build
+fetches into `output/virtio-nvgpu` and builds into the kernel as
+`CONFIG_VIRTIO_GPU_NV`. It has to be built in, because this kernel cannot load
+modules. The driver's parameters therefore go on the command line as
+`virtio_gpu_nv.<name>=`.
+
+- **`NVGPU_REF` is a branch by default**, so a build takes the driver as it is
+  that day. The commit that went in is written to `output/vmlinux.nvgpu-rev`,
+  because a branch name does not tell you which driver a given `vmlinux`
+  contains. If the fetch fails, the build uses the checkout it already has and
+  warns that it is doing so.
+- An AMD or Intel host is unaffected. The driver binds only to the forwarding
+  device, and nothing offers that device to those guests.
+- The NVIDIA libraries are **not** part of the image. They must be the same
+  build as the host's kernel module, so the host shares its own copy with the
+  guest at run time.
+
 ### Experimental: the Infinity scheduler
 
 ```sh
