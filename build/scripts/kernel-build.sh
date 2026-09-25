@@ -128,7 +128,12 @@ echo "kernel: virtio-nvgpu driver at ${nvgpu_rev}"
 # symlinked directory would put them in the checkout. A file is only copied
 # when it differs, so an unchanged driver does not relink the kernel.
 nvgpu_src="${NVGPU_WORK}/driver"
-nvgpu_dst="drivers/virtio/nvgpu"
+# Under drm/, not virtio/, although it binds a virtio device. Built in, a
+# driver initialises in link order, and drivers/virtio links before
+# drivers/gpu: there, its probe runs before the DRM core exists and its render
+# node fails with "DRM core is not initialized". Loaded as a module, the order
+# never came up.
+nvgpu_dst="drivers/gpu/drm/nvgpu"
 mkdir -p "${nvgpu_dst}/gen"
 for dst in "${nvgpu_dst}"/*.[ch] "${nvgpu_dst}"/gen/*.h; do
     [[ -e "${dst}" && ! -e "${nvgpu_src}/${dst#"${nvgpu_dst}"/}" ]] && rm -f "${dst}"
@@ -148,12 +153,22 @@ if [[ -z "${kbuild}" ]]; then
 fi
 [[ "$(cat "${nvgpu_dst}/Kbuild" 2>/dev/null)" == "${kbuild}" ]] || printf '%s\n' "${kbuild}" > "${nvgpu_dst}/Kbuild"
 
-# Hooked into drivers/virtio once. If this is ever skipped, the fragment check
-# below catches it: CONFIG_VIRTIO_GPU_NV cannot be set without its Kconfig.
-grep -qx 'source "drivers/virtio/nvgpu/Kconfig"' drivers/virtio/Kconfig \
-    || printf '\nsource "drivers/virtio/nvgpu/Kconfig"\n' >> drivers/virtio/Kconfig
-grep -qx 'obj-$(CONFIG_VIRTIO_GPU_NV) += nvgpu/' drivers/virtio/Makefile \
-    || printf 'obj-$(CONFIG_VIRTIO_GPU_NV) += nvgpu/\n' >> drivers/virtio/Makefile
+# A tree this script hooked into drivers/virtio before the move above still
+# has that hook, and building both would define the driver twice.
+sed -i '/^source "drivers\/virtio\/nvgpu\/Kconfig"$/d' drivers/virtio/Kconfig
+sed -i '/^obj-\$(CONFIG_VIRTIO_GPU_NV) += nvgpu\/$/d' drivers/virtio/Makefile
+rm -rf drivers/virtio/nvgpu
+
+# Hooked in beside DRM's own virtio-gpu, once. Inside the DRM menu's `if DRM`,
+# which is also what makes it depend on DRM. If this is ever skipped, the
+# fragment check below catches it: CONFIG_VIRTIO_GPU_NV cannot be set without
+# its Kconfig.
+grep -qx 'source "drivers/gpu/drm/nvgpu/Kconfig"' drivers/gpu/drm/Kconfig \
+    || sed -i '\|^source "drivers/gpu/drm/virtio/Kconfig"$|a source "drivers/gpu/drm/nvgpu/Kconfig"' \
+        drivers/gpu/drm/Kconfig
+grep -qx 'obj-$(CONFIG_VIRTIO_GPU_NV) += nvgpu/' drivers/gpu/drm/Makefile \
+    || sed -i '/^obj-\$(CONFIG_DRM_VIRTIO_GPU) += virtio\/$/a obj-$(CONFIG_VIRTIO_GPU_NV) += nvgpu/' \
+        drivers/gpu/drm/Makefile
 
 # ── Config ──────────────────────────────────────────────
 # A fresh tree has no .config. The seed is a known-good minimal config that
