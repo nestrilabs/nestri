@@ -106,6 +106,7 @@ CONFIG_VIRTIO_VSOCKETS=y
 CONFIG_VIRTIO_BALLOON=y
 CONFIG_DRM=y
 CONFIG_DRM_VIRTIO_GPU=y
+CONFIG_VIRTIO_GPU_NV=y       # NVIDIA hosts: the ioctl forwarder, from virtio-nvgpu
 
 # ── Filesystems ──────────────────────────────────────────
 CONFIG_EXT4_FS=y             # output/rootfs.ext4, and a box's writable install layer
