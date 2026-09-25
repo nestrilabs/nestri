@@ -30,33 +30,6 @@
 //! advertised the opaque FourCC spellings alongside the alpha ones. See the
 //! list in `state.rs`, which is where that constraint lives.
 //!
-//! # `gamescope_swapchain_factory_v2` is the legacy route, and stays off
-//!
-//! Also implemented here, because it costs little and a host may deliberately
-//! want it. It predates Wayland colour management and works the other way
-//! round: a WSI layer inside the game's process appends HDR colour spaces Mesa
-//! never offered, rewrites `imageColorSpace` to `SRGB_NONLINEAR` so the driver
-//! is never told HDR is happening, and reports the real colour space to the
-//! compositor over this protocol instead.
-//!
-//! It is not how we do HDR, for three reasons that all point the same way:
-//!
-//! - It needs a Vulkan layer this tree does not ship. Verified working with
-//!   gamescope's own, unmodified -- the XML here is byte-identical to theirs,
-//!   and the atoms written in `state.rs` are what it reads.
-//! - It only helps the XWayland path, which is the path without HDR anyway.
-//! - **Capture reads the colour space it hides.** A game asking for HDR10
-//!   through it has its ten-bit PQ samples encoded and tagged BT.709 SDR, at
-//!   full frame rate, decoding cleanly. Recorded where that value is read, in
-//!   the capture layer's swapchain hook.
-//!
-//! That last one makes enabling it worse than leaving it off: it trades no HDR
-//! for wrong HDR. So `GAMESCOPE_WAYLAND_DISPLAY` is set for the child but
-//! `ENABLE_GAMESCOPE_WSI` deliberately is not, which leaves the layer inert
-//! unless someone opts in. If anyone ever does want this path, the colour space
-//! it reports arrives here and the capture layer cannot see it, so it would
-//! need a channel from this process to that one.
-//!
 //! # What HDR does not cover
 //!
 //! A game that cannot be a Wayland client gets SDR, and XWayland is off by
@@ -66,18 +39,23 @@
 //! without HDR: Mesa offers no HDR colour space on the XWayland surface, and
 //! nothing in this module can change that.
 //!
-//! Still unexercised: no game has run, and the scRGB/FP16 arm has had no pixels
-//! through it -- only HDR10 PQ.
+//! Exercised end to end since: Control and Cyberpunk 2077, through both the
+//! HDR10 PQ and the scRGB arms, with the colour read back out of the stream on
+//! the far side to check it arrived as what was sent.
 //!
-//! # Signalling paths, for reference
+//! # One signalling path
 //!
-//! Both feed [`HdrState`], which tracks the colour space the active surface has
-//! declared. This module never converts anything itself.
+//! `wp_color_manager_v1` feeds [`HdrState`], which tracks what the active
+//! surface has declared. This module never converts anything itself.
 //!
-//! 1. **`wp_color_manager_v1`** -- the standard protocol, and the live one.
-//! 2. **`gamescope_swapchain_factory_v2`** -- the legacy route described above,
-//!    reachable only if a WSI layer is present and opted into.
-#![allow(unused)]
+//! There used to be a second: gamescope's `swapchain_factory_v2`, where a WSI
+//! layer inside the game rewrote `imageColorSpace` to `SRGB_NONLINEAR` so the
+//! driver was never told HDR was happening, and reported the real colour space
+//! here instead. It needed a Vulkan layer this tree does not ship, only helped
+//! the XWayland path, and hid the colour space from capture -- which reads the
+//! swapchain, so a game asking for HDR10 through it had ten-bit PQ samples
+//! encoded and tagged BT.709. It was never enabled, and now that colour
+//! management carries this properly it is gone rather than left inert.
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -94,10 +72,6 @@ use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use crate::protocols::{
-    gamescope_swapchain::GamescopeSwapchain,
-    gamescope_swapchain_factory_v2::GamescopeSwapchainFactoryV2,
-};
 use crate::state::NescopeState;
 
 // ---------------------------------------------------------------------------
@@ -105,6 +79,10 @@ use crate::state::NescopeState;
 // ---------------------------------------------------------------------------
 
 /// Simplified color space used by the external capture library.
+/// Where capture listens. Fixed rather than configurable: both ends are ours,
+/// and a mismatch would be silent.
+const CAPTURE_SOCKET: &str = "/tmp/nescapture-cmd.sock";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSpace {
     /// BT.709 primaries, sRGB EOTF.
@@ -117,12 +95,111 @@ pub enum ColorSpace {
 pub enum TransferFunction {
     Gamma22,
     St2084Pq,
+    /// Extended-range linear light, which is what scRGB is.
+    ///
+    /// Needed because it is the transfer a Windows title asks for when it
+    /// turns HDR on: DXGI's HDR path is scRGB in FP16, and DXVK maps that to
+    /// `VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT`. Mesa only offers that colour
+    /// space when the compositor names this transfer, so a compositor that
+    /// does not is one where HDR silently does not happen.
+    ExtLinear,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Primaries {
     Srgb,
     Bt2020,
+}
+
+/// How bright the session says it can go.
+///
+/// A game asks the display what it can do before deciding how to render. Under
+/// wine that question reaches DXGI, DXGI asks the Wayland driver, and the
+/// driver asks the compositor -- so it ends here. An HDR output that answers
+/// with its primaries and transfer function and nothing about luminance tells
+/// a title only that HDR exists, and a title that cannot find out how bright
+/// the display goes renders as though it does not go far: exactly the flat,
+/// SDR-bright picture this was measured producing.
+///
+/// These are the session's numbers, not a panel's. nescope drives a video
+/// stream whose real display is on the other end of a network and is not
+/// knowable here, so the defaults describe an ordinary HDR display and
+/// `NESCOPE_HDR_MAX_NITS` / `NESCOPE_HDR_REFERENCE_NITS` exist for a person
+/// who knows better than the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HdrTarget {
+    /// Peak luminance, cd/m².
+    pub max_nits: u32,
+    /// Peak luminance sustained over a whole frame, cd/m². Real displays
+    /// cannot hold their peak across the panel, and a title that plans its
+    /// tone mapping around the small-area peak alone gets it wrong.
+    pub max_fall_nits: u32,
+    /// Reference white -- what diffuse white renders at. BT.2408 says 203,
+    /// and it is the number a compositor maps its own SDR white onto.
+    pub reference_nits: u32,
+    /// Black level, in units of 0.0001 cd/m², as the protocol carries it.
+    pub min_lum: u32,
+}
+
+impl Default for HdrTarget {
+    fn default() -> Self {
+        Self {
+            // The protocol's own default for PQ, and comfortably above the
+            // 250 nits below which DXVK reads a reported peak as "the driver
+            // did not fill this in".
+            max_nits: 1000,
+            max_fall_nits: 600,
+            reference_nits: 203,
+            // 0.005 cd/m², which is what the protocol documents as the PQ
+            // primary colour volume's minimum.
+            min_lum: 50,
+        }
+    }
+}
+
+impl HdrTarget {
+    /// Read the overrides, falling back to the default for anything absent or
+    /// unreadable rather than refusing to start over a stray environment
+    /// variable.
+    pub fn from_env() -> Self {
+        let read = |key: &str, fallback: u32| {
+            std::env::var(key)
+                .ok()
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .filter(|v| *v > 0)
+                .unwrap_or(fallback)
+        };
+        let default = Self::default();
+        Self {
+            max_nits: read("NESCOPE_HDR_MAX_NITS", default.max_nits),
+            max_fall_nits: read("NESCOPE_HDR_MAX_FALL_NITS", default.max_fall_nits),
+            reference_nits: read("NESCOPE_HDR_REFERENCE_NITS", default.reference_nits),
+            min_lum: default.min_lum,
+        }
+        .clamped()
+    }
+
+    /// Put an override back inside what a display can be.
+    ///
+    /// No panel sustains its small-area peak across the whole frame, so a
+    /// full-frame luminance above the peak describes nothing. Clamped rather
+    /// than refused: the person asked for a bright display and got the
+    /// brightest coherent one.
+    pub fn clamped(self) -> Self {
+        Self {
+            max_fall_nits: self.max_fall_nits.min(self.max_nits),
+            ..self
+        }
+    }
+
+    /// Whether this describes a volume at all.
+    ///
+    /// The protocol raises `invalid_luminance` on a range that does not go
+    /// upwards, and the compositor is the one sending it here, so a bad
+    /// override must be dropped rather than passed on.
+    pub fn is_usable(&self) -> bool {
+        self.max_nits as f64 > self.min_lum as f64 / 10_000.0 && self.max_nits > 0
+    }
 }
 
 /// A resolved per-surface color / HDR description.
@@ -133,8 +210,28 @@ pub struct ImageDescription {
     pub max_cll: Option<u32>,
     pub max_fall: Option<u32>,
     pub mastering_luminance: Option<(u32, u32)>,
+    /// The gamut and white point of the display the content was graded on.
+    ///
+    /// Recorded faithfully and not passed on, because there is nowhere to put
+    /// it: the surface colour message carries a luminance range and two light
+    /// levels, and the client declares BT.2020 primaries because that is what
+    /// the stream is by the time it presents. A game graded on a P3 display
+    /// therefore has its gamut slightly overstated downstream. Carrying it
+    /// properly means widening the message and re-pinning it on both sides,
+    /// which is worth doing if anything is ever found to care.
+    #[allow(dead_code)]
     pub mastering_primaries: Option<[(u32, u32); 3]>,
+    #[allow(dead_code)]
     pub white_point: Option<(u32, u32)>,
+    /// The primary colour volume's luminance range, as `(min * 10000, max,
+    /// reference)` in cd/m². `None` says nothing, which is what an SDR
+    /// description does and what this said about HDR until it was measured
+    /// costing a title its highlights.
+    pub luminances: Option<(u32, u32, u32)>,
+    /// The target colour volume: what the display this is headed for can
+    /// actually show. A title reads this to size its tone mapping, and wine
+    /// maps it onto the luminance fields of `DXGI_OUTPUT_DESC1`.
+    pub target: Option<HdrTarget>,
 }
 
 impl ImageDescription {
@@ -147,10 +244,17 @@ impl ImageDescription {
             mastering_luminance: None,
             mastering_primaries: None,
             white_point: None,
+            // SDR's luminance is the display's business and always has been.
+            luminances: None,
+            target: None,
         }
     }
 
-    pub fn bt2020_pq() -> Self {
+    /// HDR10, saying how bright it goes.
+    ///
+    /// The luminances are the point: see [`HdrTarget`]. A description without
+    /// them is what a title reads as "HDR, brightness unknown".
+    pub fn bt2020_pq(target: HdrTarget) -> Self {
         Self {
             transfer_function: TransferFunction::St2084Pq,
             primaries: Primaries::Bt2020,
@@ -159,9 +263,22 @@ impl ImageDescription {
             mastering_luminance: None,
             mastering_primaries: None,
             white_point: None,
+            luminances: target.is_usable().then_some((
+                target.min_lum,
+                target.max_nits,
+                target.reference_nits,
+            )),
+            target: target.is_usable().then_some(target),
         }
     }
 
+    /// Which of the two colour spaces this description is.
+    ///
+    /// scRGB reads as  here, which is not what it is: extended-range
+    /// linear light is HDR, and this type has no way to say so. Left alone
+    /// because nothing outside this module reads it -- capture takes the
+    /// colour space from the game swapchain, not from here -- and inventing a
+    /// third variant for a question nobody asks would be worse than the note.
     pub fn color_space(self) -> ColorSpace {
         if self.primaries == Primaries::Bt2020
             && self.transfer_function == TransferFunction::St2084Pq
@@ -198,21 +315,16 @@ pub struct CreatorParams {
     mastering_luminance: Option<(u32, u32)>,
     mastering_primaries: Option<[(u32, u32); 3]>,
     white_point: Option<(u32, u32)>,
+    luminances: Option<(u32, u32, u32)>,
 }
 
 pub struct ColorOutputData;
-pub struct ColorSurfaceFeedbackData {
-    pub surface: WlSurface,
-}
+/// The feedback object itself carries no state: every surface is told the
+/// same preferred description, because there is one output and one session.
+pub struct ColorSurfaceFeedbackData;
 pub struct ImageDescriptionInfoData;
 pub struct IccCreatorData;
 pub struct ColorRepresentationSurfaceData;
-
-// User data for gamescope protocol objects.
-pub struct SwapchainFactoryData;
-pub struct SwapchainData {
-    pub surface: WlSurface,
-}
 
 // ---------------------------------------------------------------------------
 // HdrState
@@ -222,10 +334,30 @@ pub struct SwapchainData {
 pub struct HdrState {
     /// Whether HDR protocols are advertised to clients.
     pub enabled: bool,
+    /// How bright this session says it goes. See [`HdrTarget`].
+    pub target: HdrTarget,
     /// Pending (not-yet-committed) image descriptions keyed by surface.
     pending: HashMap<WlSurface, Option<ImageDescription>>,
     /// Committed image descriptions keyed by surface.
     current: HashMap<WlSurface, ImageDescription>,
+    /// Information requests waiting to be answered after the request that
+    /// created them has returned. See [`HdrState::queue_information`].
+    pending_information: Vec<(
+        wp_image_description_info_v1::WpImageDescriptionInfoV1,
+        ImageDescription,
+    )>,
+    /// Where capture is told what the compositor was told.
+    ///
+    /// Capture reads the colour space from the game's Vulkan swapchain, and a
+    /// swapchain set to `PASS_THROUGH` carries none -- the surface's colour is
+    /// declared here instead, and only here. So it goes across.
+    ///
+    /// `None` when a socket cannot be opened at all, which is not worth
+    /// failing a compositor over.
+    capture_socket: Option<std::os::unix::net::UnixDatagram>,
+    /// The last thing sent, so an unchanged surface does not resend on every
+    /// commit -- which is every frame.
+    last_sent: Option<nesprotocol::SurfaceColor>,
 }
 
 impl HdrState {
@@ -234,20 +366,98 @@ impl HdrState {
         if enabled {
             display.create_global::<NescopeState, wp_color_manager_v1::WpColorManagerV1, _>(1, ());
             display.create_global::<NescopeState, wp_color_representation_manager_v1::WpColorRepresentationManagerV1, _>(1, ());
-            register_gamescope_swapchain(display);
+            tracing::info!("HDR protocols registered (wp_color_management_v1)");
+        }
+
+        let target = HdrTarget::from_env();
+        if enabled {
             tracing::info!(
-                "HDR protocols registered (wp_color_management_v1 + gamescope_swapchain)"
+                "HDR output advertised at {} nits peak, {} nits full-frame, {} nits reference white",
+                target.max_nits,
+                target.max_fall_nits,
+                target.reference_nits
             );
+            // The clients cannot be told this one. A client declares its
+            // stream through `VK_EXT_hdr_metadata`, which carries a luminance
+            // range and two light levels and has no field for a reference
+            // white -- so a compositor at the far end assumes PQ's default of
+            // 203 nits whatever was used here. Moving it makes the game render
+            // its diffuse white somewhere the far end will not look for it,
+            // and the picture arrives uniformly too bright or too dim.
+            if target.reference_nits != HdrTarget::default().reference_nits {
+                tracing::warn!(
+                    "reference white moved to {} nits; the clients will still read the stream as {} and show it that much brighter or darker",
+                    target.reference_nits,
+                    HdrTarget::default().reference_nits
+                );
+            }
         }
 
         Self {
             enabled,
+            target,
             pending: HashMap::new(),
             current: HashMap::new(),
+            pending_information: Vec::new(),
+            capture_socket: std::os::unix::net::UnixDatagram::unbound().ok(),
+            last_sent: None,
         }
     }
 
     // ── Pending state ─────────────────────────────────────────────────────
+
+    /// Remember an information object to answer once the request that made
+    /// it has returned. See the call site for why it cannot be answered there.
+    pub fn queue_information(
+        &mut self,
+        info: wp_image_description_info_v1::WpImageDescriptionInfoV1,
+        desc: ImageDescription,
+    ) {
+        self.pending_information.push((info, desc));
+    }
+
+    /// Answer every queued information request.
+    ///
+    /// Called once per loop iteration. The protocol does not say how promptly
+    /// `done` must follow, only that it ends the sequence, so a client waiting
+    /// on it waits one dispatch longer and nothing else changes.
+    pub fn flush_information(&mut self) {
+        for (info, desc) in self.pending_information.drain(..) {
+            match desc.transfer_function {
+                TransferFunction::St2084Pq => {
+                    info.tf_named(wp_color_manager_v1::TransferFunction::St2084Pq)
+                }
+                TransferFunction::ExtLinear => {
+                    info.tf_named(wp_color_manager_v1::TransferFunction::ExtLinear)
+                }
+                TransferFunction::Gamma22 => {
+                    info.tf_named(wp_color_manager_v1::TransferFunction::Gamma22)
+                }
+            }
+            match desc.primaries {
+                Primaries::Bt2020 => info.primaries_named(wp_color_manager_v1::Primaries::Bt2020),
+                Primaries::Srgb => info.primaries_named(wp_color_manager_v1::Primaries::Srgb),
+            }
+            // Both the volume and the target: the first says what the
+            // description covers, the second what a renderer should aim at.
+            // A title reads one or the other depending on its driver, and
+            // sending only one leaves half of them none the wiser.
+            if let Some((min_lum, max_lum, reference_lum)) = desc.luminances {
+                info.luminances(min_lum, max_lum, reference_lum);
+            }
+            // The target volume is the display's, and it is the half a title
+            // reads to decide how bright to render. Sent whole: wine maps the
+            // range onto `MinLuminance`/`MaxLuminance` and the two light
+            // levels onto the peak and full-frame fields beside them, and a
+            // field it cannot fill is one the title plans around not having.
+            if let Some(target) = desc.target {
+                info.target_luminance(target.min_lum, target.max_nits);
+                info.target_max_cll(target.max_nits);
+                info.target_max_fall(target.max_fall_nits);
+            }
+            info.done();
+        }
+    }
 
     pub fn set_pending(&mut self, surface: &WlSurface, desc: ImageDescription) {
         tracing::debug!(
@@ -278,224 +488,76 @@ impl HdrState {
                     self.current.remove(surface);
                 }
             }
+            self.tell_capture();
+        }
+    }
+
+    /// Tell capture what the active surface's colour is, when it changes.
+    ///
+    /// Sent rather than asked for, because capture lives inside the game's
+    /// process and has no way to reach a compositor object. Unreliable by
+    /// construction -- a datagram to a socket that may not be bound yet -- and
+    /// that is the right trade here: the next commit sends it again, and
+    /// commits are frequent. Blocking a compositor commit on a process that
+    /// may not exist would not be.
+    fn tell_capture(&mut self) {
+        let Some(socket) = self.capture_socket.as_ref() else {
+            return;
+        };
+        let colour = self.surface_color_message();
+        if self.last_sent == Some(colour) {
+            return;
+        }
+
+        let mut payload = vec![nesprotocol::MSG_SURFACE_COLOR];
+        nesprotocol::encode_surface_color(&mut payload, &colour);
+        match socket.send_to(&payload, CAPTURE_SOCKET) {
+            Ok(_) => {
+                tracing::info!(
+                    space = colour.space,
+                    max_cll = colour.max_cll,
+                    max_fall = colour.max_fall,
+                    max_luminance = colour.max_luminance,
+                    "told capture what this surface is"
+                );
+                self.last_sent = Some(colour);
+            }
+            // Not a warning. No capture attached is the ordinary state for a
+            // compositor running on its own, and this fires per commit.
+            Err(e) => tracing::trace!("capture is not listening: {e}"),
+        }
+    }
+
+    /// What to tell capture, from the surfaces currently mapped.
+    ///
+    /// Any HDR surface makes the answer HDR. A session is one game on one
+    /// screen, so "any" and "the one that matters" are the same set, and
+    /// picking between several would need a notion of active this does not
+    /// have.
+    fn surface_color_message(&self) -> nesprotocol::SurfaceColor {
+        surface_colour_from(
+            self.current
+                .values()
+                .find(|desc| desc.color_space() == ColorSpace::Bt2020Pq),
+            self.target,
+        )
+    }
+
+    /// Drop what was remembered about a surface, and say so.
+    ///
+    /// Separate from [`Self::surface_destroyed`] because the `wl_surface` may
+    /// well outlive the colour-management object attached to it: a game
+    /// leaving HDR keeps its window.
+    pub fn forget(&mut self, surface: &WlSurface) {
+        self.pending.remove(surface);
+        if self.current.remove(surface).is_some() {
+            self.tell_capture();
         }
     }
 
     pub fn surface_destroyed(&mut self, surface: &WlSurface) {
         self.pending.remove(surface);
         self.current.remove(surface);
-    }
-
-    // ── Queries ───────────────────────────────────────────────────────────
-
-    /// Active color space of the fullscreen surface.
-    ///
-    /// Returns `Bt2020Pq` if any mapped surface has declared BT.2020+PQ,
-    /// otherwise `Srgb`.
-    pub fn color_space(&self) -> ColorSpace {
-        for desc in self.current.values() {
-            if desc.color_space() == ColorSpace::Bt2020Pq {
-                return ColorSpace::Bt2020Pq;
-            }
-        }
-        ColorSpace::Srgb
-    }
-
-    /// HDR metadata from the active surface, if available.
-    pub fn hdr_metadata(&self) -> Option<HdrMetadata> {
-        for desc in self.current.values() {
-            if desc.color_space() != ColorSpace::Bt2020Pq {
-                continue;
-            }
-            if desc.max_cll.is_none()
-                && desc.max_fall.is_none()
-                && desc.mastering_luminance.is_none()
-            {
-                continue;
-            }
-            let sat = |v: u32| v.min(u16::MAX as u32) as u16;
-            return Some(HdrMetadata {
-                display_primaries: desc.mastering_primaries.map_or([(0, 0); 3], |p| {
-                    [
-                        (sat(p[0].0), sat(p[0].1)),
-                        (sat(p[1].0), sat(p[1].1)),
-                        (sat(p[2].0), sat(p[2].1)),
-                    ]
-                }),
-                white_point: desc.white_point.map_or((0, 0), |(x, y)| (sat(x), sat(y))),
-                max_luminance: desc.mastering_luminance.map_or(0, |(_, max)| max),
-                min_luminance: desc.mastering_luminance.map_or(0, |(min, _)| min),
-                max_cll: sat(desc.max_cll.unwrap_or(0)),
-                max_fall: sat(desc.max_fall.unwrap_or(0)),
-            });
-        }
-        None
-    }
-}
-
-/// Static HDR10 metadata for the capture layer.
-#[derive(Debug, Clone, Copy)]
-pub struct HdrMetadata {
-    /// CIE 1931 xy primaries in 0.00002 units.
-    pub display_primaries: [(u16, u16); 3],
-    /// CIE 1931 xy white point in 0.00002 units.
-    pub white_point: (u16, u16),
-    /// Max mastering luminance in 0.0001 cd/m².
-    pub max_luminance: u32,
-    /// Min mastering luminance in 0.0001 cd/m².
-    pub min_luminance: u32,
-    /// Max content light level in cd/m².
-    pub max_cll: u16,
-    /// Max frame-average light level in cd/m².
-    pub max_fall: u16,
-}
-
-// ---------------------------------------------------------------------------
-// gamescope_swapchain — register global
-// ---------------------------------------------------------------------------
-
-const VK_COLOR_SPACE_HDR10_ST2084_EXT: u32 = 1000104008;
-
-pub fn register_gamescope_swapchain(display: &DisplayHandle) {
-    display.create_global::<NescopeState, GamescopeSwapchainFactoryV2, _>(1, ());
-}
-
-// ---------------------------------------------------------------------------
-// gamescope_swapchain_factory_v2 — Global + Dispatch
-// ---------------------------------------------------------------------------
-
-impl GlobalDispatch<GamescopeSwapchainFactoryV2, ()> for NescopeState {
-    fn bind(
-        _: &mut Self,
-        _: &DisplayHandle,
-        _: &Client,
-        resource: New<GamescopeSwapchainFactoryV2>,
-        _: &(),
-        data_init: &mut DataInit<'_, Self>,
-    ) {
-        tracing::debug!("gamescope_swapchain_factory_v2 bound");
-        data_init.init(resource, SwapchainFactoryData);
-    }
-}
-
-impl Dispatch<GamescopeSwapchainFactoryV2, SwapchainFactoryData> for NescopeState {
-    fn request(
-        _: &mut Self,
-        _: &Client,
-        _: &GamescopeSwapchainFactoryV2,
-        request: <GamescopeSwapchainFactoryV2 as Resource>::Request,
-        _: &SwapchainFactoryData,
-        _: &DisplayHandle,
-        data_init: &mut DataInit<'_, Self>,
-    ) {
-        use crate::protocols::gamescope_swapchain_factory_v2::Request;
-        match request {
-            Request::CreateSwapchain { surface, callback } => {
-                tracing::debug!("gamescope_swapchain_factory_v2: create_swapchain");
-                data_init.init(callback, SwapchainData { surface });
-            }
-            Request::Destroy => {}
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// gamescope_swapchain — Dispatch
-// ---------------------------------------------------------------------------
-
-impl Dispatch<GamescopeSwapchain, SwapchainData> for NescopeState {
-    fn request(
-        state: &mut Self,
-        _: &Client,
-        _: &GamescopeSwapchain,
-        request: <GamescopeSwapchain as Resource>::Request,
-        data: &SwapchainData,
-        _: &DisplayHandle,
-        _: &mut DataInit<'_, Self>,
-    ) {
-        use crate::protocols::gamescope_swapchain::Request;
-        match request {
-            Request::SwapchainFeedback {
-                vk_colorspace,
-                vk_format,
-                vk_engine_name,
-                ..
-            } => {
-                tracing::debug!(
-                    vk_colorspace,
-                    vk_format,
-                    vk_engine_name,
-                    "gamescope_swapchain: swapchain_feedback — registering as Vulkan surface"
-                );
-                // Record this as a known Vulkan surface (used for focus routing).
-                state.vulkan_surfaces.insert(data.surface.clone());
-
-                if vk_colorspace == VK_COLOR_SPACE_HDR10_ST2084_EXT {
-                    state
-                        .hdr
-                        .set_pending(&data.surface, ImageDescription::bt2020_pq());
-                } else {
-                    state
-                        .hdr
-                        .set_pending(&data.surface, ImageDescription::srgb());
-                }
-            }
-
-            Request::OverrideWindowContent {
-                x11_window,
-                gamescope_xwayland_server_id: _,
-            } => {
-                tracing::debug!(
-                    x11_window,
-                    "gamescope_swapchain: override_window_content — WSI bypass surface"
-                );
-                state.vulkan_surfaces.insert(data.surface.clone());
-                state.override_window_surface(x11_window, data.surface.clone());
-            }
-
-            Request::SetHdrMetadata {
-                display_primary_red_x,
-                display_primary_red_y,
-                display_primary_green_x,
-                display_primary_green_y,
-                display_primary_blue_x,
-                display_primary_blue_y,
-                white_point_x,
-                white_point_y,
-                max_display_mastering_luminance,
-                min_display_mastering_luminance,
-                max_cll,
-                max_fall,
-            } => {
-                tracing::debug!(
-                    max_cll,
-                    max_fall,
-                    max_display_mastering_luminance,
-                    min_display_mastering_luminance,
-                    "gamescope_swapchain: set_hdr_metadata"
-                );
-                let desc = ImageDescription {
-                    transfer_function: TransferFunction::St2084Pq,
-                    primaries: Primaries::Bt2020,
-                    max_cll: Some(max_cll),
-                    max_fall: Some(max_fall),
-                    // max_display_mastering_luminance is in cd/m², normalize to 0.0001 units.
-                    mastering_luminance: Some((
-                        min_display_mastering_luminance,
-                        max_display_mastering_luminance.saturating_mul(10000),
-                    )),
-                    mastering_primaries: Some([
-                        (display_primary_red_x, display_primary_red_y),
-                        (display_primary_green_x, display_primary_green_y),
-                        (display_primary_blue_x, display_primary_blue_y),
-                    ]),
-                    white_point: Some((white_point_x, white_point_y)),
-                };
-                state.hdr.set_pending(&data.surface, desc);
-            }
-
-            Request::SetPresentMode { .. } | Request::SetPresentTime { .. } | Request::Destroy => {}
-        }
     }
 }
 
@@ -524,6 +586,12 @@ impl GlobalDispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState 
         res.supported_tf_named(wp_color_manager_v1::TransferFunction::Srgb);
         res.supported_tf_named(wp_color_manager_v1::TransferFunction::Gamma22);
         res.supported_tf_named(wp_color_manager_v1::TransferFunction::St2084Pq);
+        // scRGB. Mesa pairs this with sRGB primaries to offer
+        // `EXTENDED_SRGB_LINEAR`, which is the colour space DXVK asks for when
+        // a Windows title enables HDR -- see `TransferFunction::ExtLinear`.
+        // Without it a game gets its float16 swapchain tagged SRGB_NONLINEAR
+        // and every value in it read as if it were ordinary sRGB.
+        res.supported_tf_named(wp_color_manager_v1::TransferFunction::ExtLinear);
         res.supported_primaries_named(wp_color_manager_v1::Primaries::Srgb);
         res.supported_primaries_named(wp_color_manager_v1::Primaries::Bt2020);
         res.done();
@@ -532,7 +600,7 @@ impl GlobalDispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState 
 
 impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
     fn request(
-        _: &mut Self,
+        state: &mut Self,
         _: &Client,
         _: &wp_color_manager_v1::WpColorManagerV1,
         request: wp_color_manager_v1::Request,
@@ -548,8 +616,8 @@ impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
             wp_color_manager_v1::Request::GetOutput { id, .. } => {
                 data_init.init(id, ColorOutputData);
             }
-            wp_color_manager_v1::Request::GetSurfaceFeedback { id, surface } => {
-                data_init.init(id, ColorSurfaceFeedbackData { surface });
+            wp_color_manager_v1::Request::GetSurfaceFeedback { id, .. } => {
+                data_init.init(id, ColorSurfaceFeedbackData);
             }
             wp_color_manager_v1::Request::CreateParametricCreator { obj } => {
                 data_init.init(
@@ -563,12 +631,12 @@ impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
                 data_init.init(obj, IccCreatorData);
             }
             wp_color_manager_v1::Request::CreateWindowsScrgb { image_description } => {
-                // Windows scRGB is declared as BT.2020+PQ by Proton's gamescope WSI
-                // after converting the surface, so treat it as HDR.
+                // Windows scRGB, which wine converts before presenting, so
+                // it arrives declared as BT.2020 PQ.
                 let res = data_init.init(
                     image_description,
                     ImageDescriptionUserData {
-                        desc: ImageDescription::bt2020_pq(),
+                        desc: ImageDescription::bt2020_pq(state.hdr.target),
                     },
                 );
                 res.ready(0);
@@ -606,8 +674,26 @@ impl Dispatch<wp_color_management_surface_v1::WpColorManagementSurfaceV1, ColorS
             wp_color_management_surface_v1::Request::UnsetImageDescription => {
                 state.hdr.unset_pending(&data.surface);
             }
+            // Destroying the object removes the image description from the
+            // surface as surely as unsetting it does, and a client leaving HDR
+            // may well do it this way. Landing in the catch-all left the
+            // surface remembered as HDR for the rest of the session.
+            wp_color_management_surface_v1::Request::Destroy => {
+                state.hdr.unset_pending(&data.surface);
+                state.hdr.forget(&data.surface);
+            }
             _ => {}
         }
+    }
+
+    fn destroyed(
+        state: &mut Self,
+        _: smithay::reexports::wayland_server::backend::ClientId,
+        _: &wp_color_management_surface_v1::WpColorManagementSurfaceV1,
+        data: &ColorSurfaceData,
+    ) {
+        // Also reached when the client goes away without tidying up.
+        state.hdr.forget(&data.surface);
     }
 }
 
@@ -641,14 +727,29 @@ impl
                     mastering_luminance: p.mastering_luminance,
                     mastering_primaries: p.mastering_primaries,
                     white_point: p.white_point,
+                    luminances: p.luminances,
+                    target: None,
                 };
                 let r = data_init.init(image_description, ImageDescriptionUserData { desc });
                 r.ready(0);
+            }
+            wp_image_description_creator_params_v1::Request::SetLuminances {
+                min_lum,
+                max_lum,
+                reference_lum,
+            } => {
+                // Advertised as a supported feature, so a client that uses it
+                // is entitled to have it mean something. It used to land in
+                // the catch-all and vanish.
+                data.params.lock().unwrap().luminances = Some((min_lum, max_lum, reference_lum));
             }
             wp_image_description_creator_params_v1::Request::SetTfNamed { tf } => {
                 let tf = match tf.into_result() {
                     Ok(wp_color_manager_v1::TransferFunction::St2084Pq) => {
                         TransferFunction::St2084Pq
+                    }
+                    Ok(wp_color_manager_v1::TransferFunction::ExtLinear) => {
+                        TransferFunction::ExtLinear
                     }
                     _ => TransferFunction::Gamma22,
                 };
@@ -708,7 +809,7 @@ impl Dispatch<wp_image_description_v1::WpImageDescriptionV1, ImageDescriptionUse
     for NescopeState
 {
     fn request(
-        _: &mut Self,
+        state: &mut Self,
         _: &Client,
         _: &wp_image_description_v1::WpImageDescriptionV1,
         request: wp_image_description_v1::Request,
@@ -717,20 +818,14 @@ impl Dispatch<wp_image_description_v1::WpImageDescriptionV1, ImageDescriptionUse
         data_init: &mut DataInit<'_, Self>,
     ) {
         if let wp_image_description_v1::Request::GetInformation { information } = request {
+            // Answered after this returns, not here. `done` destroys the
+            // object, and destroying it inside the request that created it
+            // takes the id out of the client's map before the backend has
+            // attached the data this handler just returned -- which it then
+            // unwraps, and panics on. The whole compositor goes down the first
+            // time a client asks what colour space it has.
             let info = data_init.init(information, ImageDescriptionInfoData);
-            match data.desc.transfer_function {
-                TransferFunction::St2084Pq => {
-                    info.tf_named(wp_color_manager_v1::TransferFunction::St2084Pq)
-                }
-                TransferFunction::Gamma22 => {
-                    info.tf_named(wp_color_manager_v1::TransferFunction::Gamma22)
-                }
-            }
-            match data.desc.primaries {
-                Primaries::Bt2020 => info.primaries_named(wp_color_manager_v1::Primaries::Bt2020),
-                Primaries::Srgb => info.primaries_named(wp_color_manager_v1::Primaries::Srgb),
-            }
-            info.done();
+            state.hdr.queue_information(info, data.desc);
         }
     }
 }
@@ -770,7 +865,7 @@ impl Dispatch<wp_color_management_output_v1::WpColorManagementOutputV1, ColorOut
             request
         {
             let desc = if state.hdr.enabled {
-                ImageDescription::bt2020_pq()
+                ImageDescription::bt2020_pq(state.hdr.target)
             } else {
                 ImageDescription::srgb()
             };
@@ -803,7 +898,7 @@ impl
                 image_description,
             } => {
                 let desc = if state.hdr.enabled {
-                    ImageDescription::bt2020_pq()
+                    ImageDescription::bt2020_pq(state.hdr.target)
                 } else {
                     ImageDescription::srgb()
                 };
@@ -900,5 +995,188 @@ impl
         _: &DisplayHandle,
         _: &mut DataInit<'_, Self>,
     ) {
+    }
+}
+
+/// What to tell capture about a surface's colour.
+///
+/// Two different kinds of number, and only one of them can be answered from
+/// here.
+///
+/// The mastering luminance is a decision, not a guess: it is what the session
+/// told the game its display could do, so it is what the frames were graded
+/// for -- which is exactly what the measure means. Saying nothing instead
+/// leaves the far end to assume PQ's default of 10000 nits and tone map a
+/// range the picture never uses.
+///
+/// The light levels are measurements of the *content*, and nothing here has
+/// looked at the content. Filling them in from the mastering display answers a
+/// different question: it says the picture contains what the display can show,
+/// which for a dark game is wrong by more than an order of magnitude, and
+/// wrong in the direction that costs brightness -- a display told the frame
+/// average is high dims to protect itself. Zero is what CTA-861 reserves for
+/// "not known", and not known is the truth. The client measures the peak for
+/// itself and fills that one in.
+fn surface_colour_from(
+    hdr: Option<&ImageDescription>,
+    target: HdrTarget,
+) -> nesprotocol::SurfaceColor {
+    match hdr {
+        Some(desc) => nesprotocol::SurfaceColor {
+            space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
+            // A game that states its own has looked, and is believed.
+            max_cll: desc.max_cll.unwrap_or(0),
+            max_fall: desc.max_fall.unwrap_or(0),
+            min_luminance: desc
+                .mastering_luminance
+                .map(|(min, _)| min)
+                .unwrap_or(target.min_lum),
+            max_luminance: desc
+                .mastering_luminance
+                .map(|(_, max)| max)
+                .unwrap_or(target.max_nits.saturating_mul(10_000)),
+        },
+        None => nesprotocol::SurfaceColor {
+            space: nesprotocol::SURFACE_COLOR_SRGB,
+            ..Default::default()
+        },
+    }
+}
+
+#[cfg(test)]
+mod hdr_target_tests {
+    use super::{HdrTarget, ImageDescription, Primaries, TransferFunction};
+
+    /// The default is the protocol's own for PQ, and the peak is deliberately
+    /// well above 250: DXVK reads a reported peak below that as the driver
+    /// having failed to fill the field in, and a title told nothing renders as
+    /// though the display does not go far.
+    #[test]
+    fn the_default_describes_an_ordinary_hdr_display() {
+        let t = HdrTarget::default();
+        assert_eq!(t.reference_nits, 203);
+        assert_eq!(t.min_lum, 50);
+        assert!(t.max_nits > 250);
+        assert!(t.is_usable());
+    }
+
+    /// The bug this exists for: an HDR output that names its primaries and
+    /// transfer function and nothing about luminance tells a title only that
+    /// HDR exists. Measured cost was a game rendering a 203-nit peak.
+    #[test]
+    fn an_hdr_description_says_how_bright_it_goes() {
+        let t = HdrTarget::default();
+        let desc = ImageDescription::bt2020_pq(t);
+        assert_eq!(desc.transfer_function, TransferFunction::St2084Pq);
+        assert_eq!(desc.primaries, Primaries::Bt2020);
+        assert_eq!(
+            desc.luminances,
+            Some((t.min_lum, t.max_nits, t.reference_nits))
+        );
+        assert_eq!(desc.target, Some(t));
+    }
+
+    /// SDR's brightness is the display's business, and saying otherwise would
+    /// make every ordinary surface claim a volume it does not have.
+    #[test]
+    fn an_sdr_description_says_nothing_about_luminance() {
+        let desc = ImageDescription::srgb();
+        assert!(desc.luminances.is_none());
+        assert!(desc.target.is_none());
+    }
+
+    /// A display cannot sustain its peak across the whole panel, so an
+    /// override that claims it does is clamped rather than passed on.
+    #[test]
+    fn full_frame_luminance_never_exceeds_the_peak() {
+        let clamped = HdrTarget {
+            max_nits: 400,
+            max_fall_nits: 4000,
+            ..HdrTarget::default()
+        }
+        .clamped();
+        assert_eq!(clamped.max_fall_nits, 400);
+        assert_eq!(clamped.max_nits, 400);
+    }
+
+    /// The protocol raises `invalid_luminance` on a range that does not go
+    /// upwards. nescope is the one sending it, so a bad override has to be
+    /// dropped here rather than become a protocol error at the client.
+    #[test]
+    fn a_range_that_does_not_go_upwards_is_not_sent() {
+        let bad = HdrTarget {
+            max_nits: 0,
+            ..HdrTarget::default()
+        };
+        assert!(!bad.is_usable());
+        assert!(ImageDescription::bt2020_pq(bad).luminances.is_none());
+        assert!(ImageDescription::bt2020_pq(bad).target.is_none());
+    }
+}
+
+#[cfg(test)]
+mod surface_colour_tests {
+    use super::{HdrTarget, ImageDescription, surface_colour_from};
+
+    /// The mastering range is a decision this side actually made: it is what
+    /// the game was told its display could do, so it is what the frames were
+    /// graded for.
+    #[test]
+    fn the_mastering_range_comes_from_the_session() {
+        let target = HdrTarget::default();
+        let colour = surface_colour_from(Some(&ImageDescription::bt2020_pq(target)), target);
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        assert_eq!(colour.min_luminance, target.min_lum);
+        assert_eq!(colour.max_luminance, target.max_nits * 10_000);
+    }
+
+    /// The light levels are measurements of the content, and nothing here has
+    /// looked at the content. Taking them from the mastering display says the
+    /// picture contains what the display can show, which for a dark game is
+    /// wrong by more than an order of magnitude -- and wrong in the direction
+    /// that costs brightness.
+    #[test]
+    fn the_light_levels_are_not_invented() {
+        let target = HdrTarget::default();
+        let colour = surface_colour_from(Some(&ImageDescription::bt2020_pq(target)), target);
+        assert_eq!(colour.max_cll, 0, "zero is CTA-861 for 'not known'");
+        assert_eq!(colour.max_fall, 0);
+    }
+
+    /// A game that states its own is believed, because it has looked.
+    #[test]
+    fn a_games_own_light_levels_are_kept() {
+        let target = HdrTarget::default();
+        let desc = ImageDescription {
+            max_cll: Some(500),
+            max_fall: Some(100),
+            ..ImageDescription::bt2020_pq(target)
+        };
+        let colour = surface_colour_from(Some(&desc), target);
+        assert_eq!(colour.max_cll, 500);
+        assert_eq!(colour.max_fall, 100);
+    }
+
+    /// And so is its mastering range, which is a claim about how it was
+    /// graded rather than about this session.
+    #[test]
+    fn a_games_own_mastering_range_is_kept() {
+        let target = HdrTarget::default();
+        let desc = ImageDescription {
+            mastering_luminance: Some((1000, 5_000_000)),
+            ..ImageDescription::bt2020_pq(target)
+        };
+        let colour = surface_colour_from(Some(&desc), target);
+        assert_eq!(colour.min_luminance, 1000);
+        assert_eq!(colour.max_luminance, 5_000_000);
+    }
+
+    /// An SDR session says nothing about luminance at all; that is the
+    /// display's business.
+    #[test]
+    fn an_sdr_session_reports_no_luminance() {
+        let colour = surface_colour_from(None, HdrTarget::default());
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_SRGB);
+        assert_eq!(colour.max_luminance, 0);
     }
 }

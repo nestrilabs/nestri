@@ -25,21 +25,10 @@ pub const CAPTURE_SLOTS: usize = 4;
 pub struct CaptureSlot {
     pub image: vk::Image,
     pub memory: vk::DeviceMemory,
-    /// Exported once at allocation and duplicated per frame. -1 if the export
-    /// failed, which sends that frame down the CPU readback path instead.
-    pub dmabuf_fd: std::os::raw::c_int,
-    pub stride: u32,
-    /// The DRM format modifier the driver gave this slot's image.
-    ///
-    /// Carried per slot rather than assumed, and passed to the importer, which
-    /// creates its side with this exact value. It used to be hard-coded to
-    /// `DRM_FORMAT_MOD_LINEAR` on both sides — true at the time, because the
-    /// producer only ever asked for linear.
-    pub modifier: u64,
     /// Signalled when this slot's blit has finished reading the swapchain and
-    /// writing the slot. The capture worker waits on it before handing the
-    /// DMA-BUF to the encoder, which reads it from a different VkDevice and so
-    /// cannot be synchronised with a semaphore.
+    /// writing the slot. Where the encoder has a device of its own, the encoder
+    /// thread waits on it before reading the slot back on the CPU; a device of
+    /// its own shares no timeline with the game's.
     pub fence: vk::Fence,
 }
 
@@ -75,12 +64,14 @@ pub struct CaptureRing {
     pub timestamp_period: f32,
     /// The extent `blits` were recorded for.
     ///
-    /// The ring is kept when the swapchain shrinks — `ensure_capture_ring`
-    /// accepts a ring at least as large as the request — so the extent can
-    /// change under a ring that is not rebuilt, and the recordings have to
-    /// follow it even though the images do not.
+    /// Kept separate from `size` because a swapchain can be recreated at the
+    /// same extent — on a format or present-mode change — which invalidates the
+    /// recordings without invalidating the images.
     pub blit_extent: vk::Extent2D,
     pub size: (u32, u32, vk::Format),
+    /// Which ring this is, counting from the device's first. For the log, so a
+    /// resize shows up as the ring it caused.
+    pub generation: u64,
     /// Queue family the command pool was created for. Command buffers may only
     /// be submitted to a queue of the family their pool belongs to, so a
     /// present arriving on a different family rebuilds the ring rather than
@@ -102,6 +93,15 @@ pub struct CaptureRing {
     /// cannot reacquire it until the present that waited on this semaphore is
     /// done.
     pub present_wait: Vec<vk::Semaphore>,
+    /// Timeline semaphore every blit signals, one value higher each time, or
+    /// null when the encoder does not share this device.
+    ///
+    /// On a shared device this is the whole handover: the frame carries the
+    /// value its blit signals, and the encoder's GPU work waits on it. Nothing
+    /// waits on the CPU.
+    pub blit_timeline: vk::Semaphore,
+    /// The value the last blit signalled.
+    pub blit_value: u64,
 }
 
 /// Index into [`CaptureRing::blits`] for one (swapchain image, slot) pair.
@@ -177,6 +177,17 @@ pub struct DeviceState {
     pub raw: vk::Device,
     pub physical_device: vk::PhysicalDevice,
     pub fp: NextDeviceFn,
+    /// The encoder's view of this device, when it runs on it. `None` when the
+    /// device could not be created with what the encoder needs, in which case
+    /// the encoder uses a device of its own.
+    pub shared: Option<crate::shared::SharedDevice>,
+    /// Whether the encode pipeline really runs on `shared`. Set once the
+    /// pipeline has been built on it; until then, and for good if that fails,
+    /// capture works as it does for a device of the encoder's own.
+    pub shared_active: std::sync::atomic::AtomicBool,
+    /// The loader's callback for stamping dispatchable objects this layer
+    /// creates itself. See [`crate::device::stamp`].
+    pub set_loader_data: Option<crate::PFN_vkSetDeviceLoaderData>,
 
     // Phase 1: shader / pipeline
     pub shader_registry: DashMap<u64, u64>,
@@ -197,7 +208,7 @@ pub struct DeviceState {
     pub hudless_memory: std::sync::Mutex<Option<vk::DeviceMemory>>,
     pub hudless_size: std::sync::Mutex<(u32, u32, vk::Format)>,
 
-    // Phase 4: final-frame capture (DMA-BUF exportable)
+    // Phase 4: final-frame capture
     pub capture_ring: std::sync::Mutex<Option<CaptureRing>>,
     /// Which ring slots are free. Held separately from the ring itself so a
     /// slot can be returned from the encoder thread without taking the lock
@@ -219,6 +230,9 @@ pub struct DeviceState {
     pub swapchain_transfer_src: std::sync::atomic::AtomicBool,
 
     pub frame_counter: std::sync::atomic::AtomicU64,
+    /// Rings built for this device so far. Names the current one; see
+    /// [`CaptureRing::generation`].
+    pub ring_generation: std::sync::atomic::AtomicU64,
 
     // Phase 3/4: per-frame HUD detection flags
     pub hud_detected_frame: std::sync::atomic::AtomicBool,
@@ -228,7 +242,6 @@ pub struct DeviceState {
 
     // Phase 7: encode + IPC pipeline (lazy-init on first frame)
     pub encoder: std::sync::Mutex<Option<PipelineHandle>>,
-
 
     // ── Frame-rate throttle ───────────────────────────────────────────
     /// Decides which presented frames are worth capturing. Consulted in the
@@ -250,6 +263,16 @@ pub struct DeviceState {
     /// The build is slow and happens once; without this latch every present
     /// arriving before it finishes would start another one.
     pub encoder_starting: std::sync::atomic::AtomicBool,
+}
+
+impl DeviceState {
+    /// The shared device, when the encoder is actually running on it.
+    pub fn shared_encoder(&self) -> Option<&crate::shared::SharedDevice> {
+        self.shared.as_ref().filter(|_| {
+            self.shared_active
+                .load(std::sync::atomic::Ordering::Acquire)
+        })
+    }
 }
 
 // ── Per-command-buffer state ──────────────────────────────────────────────────

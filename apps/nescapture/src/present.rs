@@ -1,5 +1,5 @@
 use crate::capture;
-use crate::encode::{CapturedFrame, FrameSource, PipelineConfig, PipelineHandle};
+use crate::encode::{CapturedFrame, FrameSource, PipelineConfig, PipelineHandle, PresentStep};
 use crate::slots::SlotGuard;
 use crate::state::{DEVICE_STATE, QUEUE_TO_DEVICE_KEY};
 use ash::vk::{self, Handle};
@@ -32,6 +32,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     // it is the game's own frame time with this layer's cost excluded — the
     // three spans then partition the wall clock between presents exactly.
     let entered = std::time::Instant::now();
+    note_present(&ds, PresentStep::InHook);
 
     ds.frame_counter.fetch_add(1, Ordering::Relaxed);
     ds.hud_detected_frame.store(false, Ordering::Relaxed);
@@ -55,9 +56,8 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     // Rewriting the wait semaphores is only well defined for a single
     // swapchain. A multi-swapchain present is rare enough that passing it
     // through untouched beats getting the interposition subtly wrong.
-    let single_swapchain = pi.swapchain_count == 1
-        && !pi.p_swapchains.is_null()
-        && !pi.p_image_indices.is_null();
+    let single_swapchain =
+        pi.swapchain_count == 1 && !pi.p_swapchains.is_null() && !pi.p_image_indices.is_null();
 
     let submission = if single_swapchain {
         unsafe { try_capture(&ds, queue, pi) }
@@ -68,9 +68,11 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     let down_us = std::cell::Cell::new(std::time::Duration::ZERO);
     let call_down = |info: *const vk::PresentInfoKHR| match ds.fp.queue_present_khr {
         Some(f) => {
+            note_present(&ds, PresentStep::Presenting);
             let t = std::time::Instant::now();
             let r = unsafe { f(queue, info) };
             down_us.set(t.elapsed());
+            note_present(&ds, PresentStep::InHook);
             r
         }
         None => vk::Result::ERROR_EXTENSION_NOT_PRESENT,
@@ -81,7 +83,6 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         finish(&ds, entered, down_us.get());
         return r;
     };
-
 
     // The blit consumed the application's wait semaphores, so the present waits
     // on ours instead. Presenting on the originals as well would be a second
@@ -121,11 +122,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
 /// `layer` is everything in this hook that is not the down-call, both sides of
 /// it added together, so `gap + layer + down` accounts for the wall clock
 /// between one present and the next with nothing unattributed.
-fn finish(
-    ds: &crate::state::DeviceState,
-    entered: std::time::Instant,
-    down: std::time::Duration,
-) {
+fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std::time::Duration) {
     // Everything this hook cost, before any deliberate waiting.
     let worked = std::time::Instant::now();
 
@@ -138,6 +135,7 @@ fn finish(
         Err(_) => std::time::Duration::ZERO,
     };
     if !held.is_zero() {
+        note_present(ds, PresentStep::Holding);
         std::thread::sleep(held);
     }
 
@@ -167,12 +165,24 @@ fn finish(
     if let Ok(mut last) = ds.last_present_return.lock() {
         *last = Some(now);
     }
+    note_present(ds, PresentStep::InGame);
+}
+
+/// Tell the stall watchdog where the game's present thread is. A no-op until
+/// the pipeline exists.
+pub fn note_present(ds: &crate::state::DeviceState, step: PresentStep) {
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+    {
+        h.note_present(step);
+    }
 }
 
 /// Everything the present hook needs to carry from the blit to the worker.
 struct Submission {
     slot: SlotGuard,
     present_wait: vk::Semaphore,
+    blit: Option<pixelforge::TimelinePoint>,
     width: u32,
     height: u32,
     sc_fmt: vk::Format,
@@ -185,6 +195,13 @@ unsafe fn try_capture(
     pi: &vk::PresentInfoKHR,
 ) -> Option<Submission> {
     let image_index = unsafe { *pi.p_image_indices } as usize;
+    // An image acquired from a retired swapchain may still be presented, and
+    // the tracked images belong to its replacement: the same index there is a
+    // different image, possibly of a different size.
+    let presented = unsafe { *pi.p_swapchains };
+    if !crate::swapchain::is_current(*ds.swapchain.lock().ok()?, presented) {
+        return None;
+    }
     let (sc_image, sc_fmt, sc_ext, image_count) = {
         let images = ds.swapchain_images.lock().ok()?;
         let fmt = *ds.swapchain_format.lock().ok()?;
@@ -196,7 +213,7 @@ unsafe fn try_capture(
     };
 
     // Gate before any GPU work is queued. A game presenting faster than the
-    // target would otherwise pay a full blit and DMA-BUF export for frames the
+    // target would otherwise pay a full blit for frames the
     // encoder throws away moments later.
     let present_time = std::time::Instant::now();
     let admitted = match ds.frame_gate.lock() {
@@ -221,14 +238,14 @@ unsafe fn try_capture(
         }
     }
 
-    let app_waits: &[vk::Semaphore] = if pi.wait_semaphore_count == 0 || pi.p_wait_semaphores.is_null()
-    {
-        &[]
-    } else {
-        unsafe {
-            std::slice::from_raw_parts(pi.p_wait_semaphores, pi.wait_semaphore_count as usize)
-        }
-    };
+    let app_waits: &[vk::Semaphore] =
+        if pi.wait_semaphore_count == 0 || pi.p_wait_semaphores.is_null() {
+            &[]
+        } else {
+            unsafe {
+                std::slice::from_raw_parts(pi.p_wait_semaphores, pi.wait_semaphore_count as usize)
+            }
+        };
 
     let submission = unsafe {
         capture::capture_present_frame(
@@ -246,6 +263,7 @@ unsafe fn try_capture(
     Some(Submission {
         slot: submission.slot,
         present_wait: submission.present_wait,
+        blit: submission.blit,
         width: sc_ext.width,
         height: sc_ext.height,
         sc_fmt,
@@ -273,6 +291,7 @@ fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
         vk_colorspace: ds.swapchain_colorspace.load(Ordering::Relaxed),
         present_time: submission.present_time,
         slot: Some(submission.slot),
+        blit: submission.blit,
     });
 }
 
@@ -303,10 +322,30 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
                 log::error!("no encode pipeline configuration; capture disabled");
                 return;
             };
-            match PipelineHandle::new(cfg) {
+            // On the game's own device where it was created for that, and
+            // on a device of the encoder's own where it was not, or where
+            // adopting it fails.
+            let shared = ds.shared.as_ref().and_then(|s| match s.video_context() {
+                Ok(ctx) => Some(ctx),
+                Err(e) => {
+                    log::warn!(
+                        "could not encode on the game's device ({e}); using a device of its own"
+                    );
+                    None
+                }
+            });
+            let on_shared = shared.is_some();
+            match PipelineHandle::new(cfg, shared) {
                 Ok(h) => {
+                    h.set_stall_probe(Box::new(move || describe_gpu(ds_key)));
+                    // Before the handle is published: the first capture after
+                    // it builds the ring, and must build it for this device.
+                    ds.shared_active.store(on_shared, Ordering::Release);
                     if let Ok(mut enc) = ds.encoder.lock() {
                         *enc = Some(h);
+                    }
+                    if on_shared {
+                        log::info!("encoding on the game's own device");
                     }
                 }
                 Err(e) => log::error!("encode pipeline: {e}"),
@@ -316,9 +355,13 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
     false
 }
 
-/// Wait for a frame's blit and turn its slot into something the encoder reads.
+/// Turn a frame's slot into something the encoder reads.
 ///
-/// This is the CPU handover the two devices need: pixelforge's `VkDevice`
+/// On a device the encoder shares this is immediate: the slot's image is read
+/// in place, and the encoder's GPU work waits on the blit's timeline point, so
+/// nothing here waits at all.
+///
+/// Otherwise this is the CPU handover two devices need: pixelforge's `VkDevice`
 /// shares no timeline with the game's, so no semaphore can bridge them and
 /// somebody has to block. It used to be a thread of its own between the present
 /// hook and the encoder; it is now the first thing the encoder thread does with
@@ -331,13 +374,19 @@ pub fn resolve_source(
 ) -> Option<FrameSource> {
     let slot_index = frame.slot.as_ref()?.index();
 
+    if let Some(blit) = frame.blit {
+        let ring = ds.capture_ring.lock().ok()?;
+        let image = ring.as_ref()?.slots.get(slot_index)?.image;
+        return Some(FrameSource::Shared { image, blit });
+    }
+
     // Copy the handles out and drop the ring lock before waiting: the present
     // hook needs that lock every frame and must not queue behind a GPU wait.
-    let (fence, dmabuf_fd, stride, modifier, image, memory) = {
+    let (fence, image, memory) = {
         let ring = ds.capture_ring.lock().ok()?;
         ring.as_ref()
             .and_then(|r| r.slots.get(slot_index))
-            .map(|s| (s.fence, s.dmabuf_fd, s.stride, s.modifier, s.image, s.memory))?
+            .map(|s| (s.fence, s.image, s.memory))?
     };
 
     let waited = unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000) };
@@ -347,30 +396,59 @@ pub fn resolve_source(
     }
 
     // After the fence, so the queries have landed and `WAIT` returns at once.
-    if let Some(ns) = unsafe { capture::blit_gpu_time_ns(ds, slot_index) }
+    if let Some(ns) = unsafe { capture::blit_gpu_time_ns(ds, slot_index, true) }
         && let Ok(enc) = ds.encoder.lock()
         && let Some(ref h) = *enc
     {
         h.timing.blit.record(std::time::Duration::from_nanos(ns));
     }
 
-    if dmabuf_fd >= 0 {
-        let duped = unsafe { libc::dup(dmabuf_fd) };
-        if duped < 0 {
-            log::warn!("dup of capture DMA-BUF failed — frame dropped");
-            return None;
-        }
-        return Some(FrameSource::DmaBuf {
-            fd: duped,
-            stride,
-            // The slot's own modifier. This was hard-coded to zero, which was
-            // true only because the producer could not ask for anything else.
-            modifier,
-        });
-    }
-
     match unsafe { capture::read_frame_pixels(ds, image, memory, frame.width, frame.height) } {
         Some(p) if !p.is_empty() => Some(FrameSource::Pixels(p)),
         _ => None,
     }
+}
+
+/// Whether the GPU has got through the capture work this layer gave it, for
+/// the stall watchdog.
+///
+/// A blit is queued behind the game's frame on the game's own queue, so a blit
+/// that never completes means that queue stopped: the game is waiting on the
+/// GPU. One that did complete means the GPU finished everything in front of
+/// it, and whatever the game is waiting for is not GPU work on that queue.
+///
+/// Never blocks. It runs exactly when something may be holding a lock forever.
+fn describe_gpu(ds_key: usize) -> String {
+    let Some(ds) = DEVICE_STATE.get(&ds_key).map(|s| s.clone()) else {
+        return "device gone".into();
+    };
+    let slots = format!(
+        "{} of {} capture slots free",
+        ds.capture_slots.available(),
+        crate::state::CAPTURE_SLOTS
+    );
+    let Ok(ring) = ds.capture_ring.try_lock() else {
+        return format!("{slots}; capture ring locked");
+    };
+    let Some(ring) = ring.as_ref() else {
+        return format!("{slots}; no capture ring");
+    };
+    if let Some(shared) = ds.shared.as_ref()
+        && !ring.blit_timeline.is_null()
+    {
+        let reached = shared
+            .counter(ring.blit_timeline)
+            .map_or("unknown".to_string(), |v| v.to_string());
+        return format!(
+            "{slots}; last blit submitted signals {}, the GPU has reached {reached}",
+            ring.blit_value
+        );
+    }
+    let pending = ring
+        .slots
+        .iter()
+        .filter(|s| unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &s.fence, vk::TRUE, 0) }
+            == vk::Result::TIMEOUT)
+        .count();
+    format!("{slots}; {pending} blits submitted and not yet complete")
 }

@@ -4,7 +4,7 @@
 # Runs a Vulkan workload under the compositor with the layer active, then checks
 # the encoded result against the compositor's own readback of the same frames.
 # Two independent paths see the same content: the compositor reads the surface
-# back to the CPU, the layer exports it as a DMA-BUF and encodes it on the GPU.
+# back to the CPU, the layer encodes it on the GPU without it leaving the device.
 # Agreement between them is the evidence; a single path cannot tell a correct
 # frame from a plausible-looking wrong one.
 #
@@ -96,7 +96,8 @@ wait $RECV || true
 FRAMES="$(cat "$WORK/frames.txt")"
 echo
 echo "frames encoded:   $FRAMES"
-grep -m1 "First import" "$WORK/run.log" || echo "  (no DMA-BUF import logged)"
+grep -m1 "encoding on the game's own device" "$WORK/run.log" \
+  || echo "  (encoding on a device of its own, with CPU readback)"
 
 python3 - "$WORK" "$STREAM" "$FRAMES" <<'PY'
 import glob, subprocess, sys

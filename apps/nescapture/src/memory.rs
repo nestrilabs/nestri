@@ -43,7 +43,12 @@ pub fn pick_memory_type(types: &[MemoryType], bits: u32, want: Want) -> Option<u
 
     match want {
         Want::DeviceLocal => (0..types.len())
-            .find(|&i| allowed(i) && types[i].flags.contains(vk::MemoryPropertyFlags::DEVICE_LOCAL))
+            .find(|&i| {
+                allowed(i)
+                    && types[i]
+                        .flags
+                        .contains(vk::MemoryPropertyFlags::DEVICE_LOCAL)
+            })
             .or_else(|| (0..types.len()).find(|&i| allowed(i)))
             .map(|i| i as u32),
         Want::HostCoherent => (0..types.len())

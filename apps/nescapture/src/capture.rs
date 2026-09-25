@@ -1,20 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  capture.rs — Frame capture helpers
 //
-//  Each ring slot is allocated with VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-//  so that after the GPU blit we can export an fd and import it into pixelforge's
-//  separate VkDevice for zero-copy hardware encoding via DmaBufImporter.
-//
-//  The ring is allocated tiled where the driver offers a single-plane DRM
-//  format modifier, and linear where it does not. The stride and the chosen
-//  modifier come from the image itself, queried once at allocation, and both
-//  travel with every frame: the importer creates its side with that exact
-//  modifier, and a wrong value there is a correctly sized frame of nonsense.
+//  Each ring slot is a destination for the blit out of the presented swapchain
+//  image. Where the encoder shares the game's device, a slot is an image on
+//  that device which the encoder reads in place, ordered by a timeline
+//  semaphore the blit signals. Where it has a device of its own, a slot is a
+//  host-visible image the encoder thread reads back on the CPU.
 // ─────────────────────────────────────────────────────────────────────────────
 
-use crate::state::{CB_STATE, CAPTURE_SLOTS, CaptureRing, CaptureSlot, DEVICE_STATE};
+use crate::state::{CAPTURE_SLOTS, CB_STATE, CaptureRing, CaptureSlot, DEVICE_STATE};
 use ash::vk::{self, Handle};
-use std::os::raw::c_int;
 
 fn make_subresource_range() -> vk::ImageSubresourceRange {
     vk::ImageSubresourceRange {
@@ -73,75 +68,10 @@ unsafe fn find_memory_type(
     crate::memory::pick_memory_type(&types, bits, want)
 }
 
-/// Modifiers the device can both receive a transfer into and have sampled from,
-/// for `fmt`.
-///
-/// Both feature bits matter and for different sides: the layer writes the image
-/// with `vkCmdCopyImage`, and pixelforge samples it in the colour-conversion
-/// compute shader after importing it. A modifier that supports only one of
-/// those is no use to this ring.
-unsafe fn supported_modifiers(
-    ds: &crate::state::DeviceState,
-    fmt: vk::Format,
-) -> Vec<crate::modifiers::ModifierProps> {
-    let k = unsafe { crate::dispatch_key(ds.physical_device.as_raw() as *const std::ffi::c_void) };
-    let Some(istate) = crate::state::INSTANCE_STATE.get(&k) else {
-        return Vec::new();
-    };
-    let Some(get_props2) = istate.get_physical_device_format_properties2 else {
-        return Vec::new();
-    };
-
-    // Two calls: the first to learn the count, the second to fill the list.
-    let mut list = vk::DrmFormatModifierPropertiesListEXT::default();
-    let mut props2 = vk::FormatProperties2 {
-        p_next: &mut list as *mut _ as *mut std::ffi::c_void,
-        ..Default::default()
-    };
-    unsafe { get_props2(ds.physical_device, fmt, &mut props2) };
-
-    let count = list.drm_format_modifier_count as usize;
-    if count == 0 {
-        return Vec::new();
-    }
-    let mut entries = vec![vk::DrmFormatModifierPropertiesEXT::default(); count];
-    list.p_drm_format_modifier_properties = entries.as_mut_ptr();
-    let mut props2 = vk::FormatProperties2 {
-        p_next: &mut list as *mut _ as *mut std::ffi::c_void,
-        ..Default::default()
-    };
-    unsafe { get_props2(ds.physical_device, fmt, &mut props2) };
-
-    let needed =
-        vk::FormatFeatureFlags::TRANSFER_DST | vk::FormatFeatureFlags::SAMPLED_IMAGE;
-    entries
-        .iter()
-        .filter(|e| e.drm_format_modifier_tiling_features.contains(needed))
-        .map(|e| crate::modifiers::ModifierProps {
-            modifier: e.drm_format_modifier,
-            plane_count: e.drm_format_modifier_plane_count,
-        })
-        .collect()
-}
-
-/// Which modifier the driver actually gave an image.
-///
-/// The image is created from a list of acceptable modifiers and the driver
-/// chooses; the importer needs the one it chose, not the list. `None` when the
-/// extension is absent or the call fails, which sends the caller back to the
-/// linear path rather than letting it guess.
-unsafe fn image_modifier(ds: &crate::state::DeviceState, image: vk::Image) -> Option<u64> {
-    let get = ds.fp.get_image_drm_format_modifier_properties_ext?;
-    let mut props = vk::ImageDrmFormatModifierPropertiesEXT::default();
-    if unsafe { get(ds.raw, image, &mut props) } != vk::Result::SUCCESS {
-        return None;
-    }
-    Some(props.drm_format_modifier)
-}
-
 // ── Image allocators ──────────────────────────────────────────────────────────
 
-/// Plain HOST_VISIBLE image (nescapture capture — no cross-device sharing needed).
+/// Plain HOST_VISIBLE image, read back on the CPU when the encoder has a
+/// device of its own.
 unsafe fn allocate_host_image(
     ds: &crate::state::DeviceState,
     w: u32,
@@ -174,110 +104,33 @@ unsafe fn allocate_host_image(
     unsafe { alloc_image(ds, &ci, None, label) }
 }
 
-/// DMA-BUF exportable image (final capture — imported into pixelforge for encoding).
+/// A capture slot on a device the encoder shares: device-local, optimally
+/// tiled, and readable by the encoder's queues as well as the presenting one.
 ///
-/// Falls back to a plain host image if the driver rejects external memory.
-/// In that case `get_dmabuf_fd` will return `None` and the encoder will use
-/// the CPU pixel-readback fallback.
-unsafe fn allocate_dmabuf_image(
+/// Created in the converter's input format rather than the swapchain's, which
+/// differ for an sRGB swapchain: the copy between the two is legal, since they
+/// have the same texel size, and the converter then needs no mutable-format
+/// view to read it.
+unsafe fn allocate_shared_image(
     ds: &crate::state::DeviceState,
     w: u32,
     h: u32,
     fmt: vk::Format,
+    families: &[u32],
     label: &str,
-) -> Option<(vk::Image, vk::DeviceMemory, u64)> {
-    let export_ai = vk::ExportMemoryAllocateInfo {
-        s_type: vk::StructureType::EXPORT_MEMORY_ALLOCATE_INFO,
-        p_next: std::ptr::null_mut(),
-        handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
-    };
-
-    // Tiled first. A linear destination means the copy detiles a whole frame on
-    // the way in and the encoder samples a linear image on the way out; the
-    // importer has always been able to take a tiled buffer, and only this side
-    // was ever linear.
-    let candidates = unsafe { supported_modifiers(ds, fmt) };
-    if let Some(chosen) = crate::modifiers::pick_modifier(&candidates)
-        && chosen.modifier != crate::modifiers::LINEAR
-    {
-        let mut ext_img = vk::ExternalMemoryImageCreateInfo {
-            s_type: vk::StructureType::EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
-            p_next: std::ptr::null_mut(),
-            handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-            _marker: std::marker::PhantomData,
-        };
-        let modifiers = [chosen.modifier];
-        let mut mod_list = vk::ImageDrmFormatModifierListCreateInfoEXT::default()
-            .drm_format_modifiers(&modifiers);
-        mod_list.p_next = &mut ext_img as *mut _ as *mut std::ffi::c_void;
-
-        let ci = vk::ImageCreateInfo {
-            s_type: vk::StructureType::IMAGE_CREATE_INFO,
-            p_next: &mod_list as *const _ as *const _,
-            flags: vk::ImageCreateFlags::empty(),
-            image_type: vk::ImageType::TYPE_2D,
-            format: fmt,
-            extent: vk::Extent3D {
-                width: w,
-                height: h,
-                depth: 1,
-            },
-            mip_levels: 1,
-            array_layers: 1,
-            samples: vk::SampleCountFlags::TYPE_1,
-            tiling: vk::ImageTiling::DRM_FORMAT_MODIFIER_EXT,
-            usage: vk::ImageUsageFlags::TRANSFER_DST,
-            sharing_mode: vk::SharingMode::EXCLUSIVE,
-            queue_family_index_count: 0,
-            p_queue_family_indices: std::ptr::null(),
-            initial_layout: vk::ImageLayout::UNDEFINED,
-            _marker: std::marker::PhantomData,
-        };
-        if let Some((image, memory)) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
-            // Ask which one it took rather than assuming the one offered: the
-            // importer is given an explicit modifier and a wrong value there is
-            // a correctly sized frame full of nonsense.
-            match unsafe { image_modifier(ds, image) } {
-                Some(actual) => {
-                    log::info!(
-                        "capture '{label}': tiled, modifier {actual:#018x} \
-                         (offered {:#018x}, {} candidate(s))",
-                        chosen.modifier,
-                        candidates.len()
-                    );
-                    return Some((image, memory, actual));
-                }
-                None => {
-                    log::warn!(
-                        "capture '{label}': the driver would not report the modifier it \
-                         chose — falling back to linear rather than importing a guess"
-                    );
-                    unsafe {
-                        (ds.fp.destroy_image)(ds.raw, image, std::ptr::null());
-                        (ds.fp.free_memory)(ds.raw, memory, std::ptr::null());
-                    }
-                }
-            }
-        } else {
-            log::warn!("capture '{label}': tiled allocation refused — falling back to linear");
-        }
+) -> Option<(vk::Image, vk::DeviceMemory)> {
+    let (sharing_mode, count, indices) = if families.len() > 1 {
+        (
+            vk::SharingMode::CONCURRENT,
+            families.len() as u32,
+            families.as_ptr(),
+        )
     } else {
-        log::info!(
-            "capture '{label}': no tiled modifier offered ({} candidate(s)) — linear",
-            candidates.len()
-        );
-    }
-
-    let ext_img = vk::ExternalMemoryImageCreateInfo {
-        s_type: vk::StructureType::EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
-        p_next: std::ptr::null_mut(),
-        handle_types: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
+        (vk::SharingMode::EXCLUSIVE, 0, std::ptr::null())
     };
     let ci = vk::ImageCreateInfo {
         s_type: vk::StructureType::IMAGE_CREATE_INFO,
-        p_next: &ext_img as *const _ as *const _,
+        p_next: std::ptr::null(),
         flags: vk::ImageCreateFlags::empty(),
         image_type: vk::ImageType::TYPE_2D,
         format: fmt,
@@ -289,24 +142,53 @@ unsafe fn allocate_dmabuf_image(
         mip_levels: 1,
         array_layers: 1,
         samples: vk::SampleCountFlags::TYPE_1,
-        tiling: vk::ImageTiling::LINEAR,
-        usage: vk::ImageUsageFlags::TRANSFER_DST,
-        sharing_mode: vk::SharingMode::EXCLUSIVE,
-        queue_family_index_count: 0,
-        p_queue_family_indices: std::ptr::null(),
+        tiling: vk::ImageTiling::OPTIMAL,
+        // Written by the blit, sampled by the converter, and copied from when
+        // the encoder takes RGB input and converts it itself.
+        usage: vk::ImageUsageFlags::TRANSFER_DST
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_SRC,
+        sharing_mode,
+        queue_family_index_count: count,
+        p_queue_family_indices: indices,
         initial_layout: vk::ImageLayout::UNDEFINED,
         _marker: std::marker::PhantomData,
     };
-    if let Some((image, memory)) = unsafe { alloc_image(ds, &ci, Some(&export_ai), label) } {
-        return Some((image, memory, crate::modifiers::LINEAR));
+    let mut image = vk::Image::null();
+    if unsafe { (ds.fp.create_image)(ds.raw, &ci, std::ptr::null(), &mut image) }
+        != vk::Result::SUCCESS
+    {
+        return None;
     }
-    log::warn!(
-        "DMA-BUF alloc failed for '{}' — using plain host image. \
-         Zero-copy GPU path will be unavailable; CPU readback fallback active.",
-        label
-    );
-    unsafe { allocate_host_image(ds, w, h, fmt, label) }
-        .map(|(i, m)| (i, m, crate::modifiers::LINEAR))
+    let mut mr = vk::MemoryRequirements::default();
+    unsafe { (ds.fp.get_image_memory_requirements)(ds.raw, image, &mut mr) };
+    let Some(mt) =
+        (unsafe { find_memory_type(ds, mr.memory_type_bits, crate::memory::Want::DeviceLocal) })
+    else {
+        log::warn!("no device-local memory type for '{label}' - not allocating");
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        return None;
+    };
+    let ai = vk::MemoryAllocateInfo {
+        s_type: vk::StructureType::MEMORY_ALLOCATE_INFO,
+        p_next: std::ptr::null(),
+        allocation_size: mr.size,
+        memory_type_index: mt,
+        _marker: std::marker::PhantomData,
+    };
+    let mut mem = vk::DeviceMemory::null();
+    if unsafe { (ds.fp.allocate_memory)(ds.raw, &ai, std::ptr::null(), &mut mem) }
+        != vk::Result::SUCCESS
+    {
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        return None;
+    }
+    if unsafe { (ds.fp.bind_image_memory)(ds.raw, image, mem, 0) } != vk::Result::SUCCESS {
+        unsafe { (ds.fp.free_memory)(ds.raw, mem, std::ptr::null()) };
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        return None;
+    }
+    Some((image, mem))
 }
 
 unsafe fn alloc_image(
@@ -379,62 +261,6 @@ unsafe fn alloc_image(
     Some((image, mem))
 }
 
-// ── Stride query ──────────────────────────────────────────────────────────────
-
-/// Row stride in bytes of a LINEAR image, or 0 on failure.
-pub unsafe fn query_stride(ds: &crate::state::DeviceState, image: vk::Image, modifier: u64) -> u32 {
-    // A DRM_FORMAT_MODIFIER image is laid out in memory planes, not colour
-    // planes, and asking it for COLOR is invalid — the aspect has to name the
-    // memory plane. Single-plane is all `pick_modifier` will accept, so plane
-    // zero is the whole image.
-    let aspect_mask = if modifier == crate::modifiers::LINEAR {
-        vk::ImageAspectFlags::COLOR
-    } else {
-        vk::ImageAspectFlags::MEMORY_PLANE_0_EXT
-    };
-    let sub = vk::ImageSubresource {
-        aspect_mask,
-        mip_level: 0,
-        array_layer: 0,
-    };
-    let mut layout = vk::SubresourceLayout::default();
-    unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &sub, &mut layout) };
-    layout.row_pitch as u32
-}
-
-// ── DMA-BUF fd export ─────────────────────────────────────────────────────────
-
-/// Export `memory` as a DMA-BUF fd via vkGetMemoryFdKHR.
-/// Callers own the fd and must close it when done.
-/// Returns `None` if VK_KHR_external_memory_fd is unavailable.
-pub unsafe fn get_dmabuf_fd(
-    ds: &crate::state::DeviceState,
-    memory: vk::DeviceMemory,
-) -> Option<c_int> {
-    let f = match ds.fp.get_memory_fd_khr {
-        Some(f) => f,
-        None => {
-            log::warn!("get_dmabuf_fd: vkGetMemoryFdKHR not available");
-            return None;
-        }
-    };
-    let fi = vk::MemoryGetFdInfoKHR {
-        s_type: vk::StructureType::MEMORY_GET_FD_INFO_KHR,
-        p_next: std::ptr::null(),
-        memory,
-        handle_type: vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT,
-        _marker: std::marker::PhantomData,
-    };
-    let mut fd: c_int = -1;
-    let result = unsafe { f(ds.raw, &fi, &mut fd) };
-    if result == vk::Result::SUCCESS && fd >= 0 {
-        Some(fd)
-    } else {
-        log::warn!("get_dmabuf_fd failed: result={:?} fd={}", result, fd);
-        None
-    }
-}
-
 // ── ensure helpers ────────────────────────────────────────────────────────────
 
 pub unsafe fn ensure_hudless_image(ds: &crate::state::DeviceState, w: u32, h: u32, f: vk::Format) {
@@ -467,6 +293,34 @@ pub unsafe fn ensure_hudless_image(ds: &crate::state::DeviceState, w: u32, h: u3
 /// A rebuild destroys images the encoder may still be reading, so it only
 /// happens when every slot has come back. Resolution changes are rare and one
 /// dropped frame at a resize is not worth a use-after-free.
+/// Whether an existing ring can serve a request, or has to be rebuilt.
+///
+/// **The extent must match exactly.** This used to accept any ring at least as
+/// large as the request, which sounds like a saving and is a corruption: the
+/// blit follows the new, smaller extent while the slot image stays the old
+/// size, so everything outside the copied region keeps whatever the previous
+/// resolution left there. The encoder then sends the whole image, stale margins
+/// and all -- a band of the old picture down the right edge and along the
+/// bottom. A resolution change is rare enough that rebuilding is the cheaper
+/// mistake.
+///
+/// `image_count` is part of the identity because the blit buffers are allocated
+/// one per (image, slot) pair. A swapchain that gained an image needs more of
+/// them, and a ring that kept the old count would silently stop capturing
+/// whenever that image came round.
+fn ring_still_serves(
+    existing: (u32, u32, vk::Format),
+    existing_family: u32,
+    existing_image_count: usize,
+    wanted: (u32, u32, vk::Format),
+    wanted_family: u32,
+    wanted_image_count: usize,
+) -> bool {
+    existing == wanted
+        && existing_family == wanted_family
+        && existing_image_count == wanted_image_count
+}
+
 unsafe fn ensure_capture_ring(
     ds: &crate::state::DeviceState,
     ring: &mut Option<CaptureRing>,
@@ -482,12 +336,15 @@ unsafe fn ensure_capture_ring(
         // allocated one per (image, slot) pair. A swapchain that gained an
         // image needs more of them, and a ring that kept the old count would
         // silently stop capturing whenever that image came round.
-        if ew >= w
-            && eh >= h
-            && ef == f
-            && existing.queue_family == queue_family
-            && existing.image_count == image_count
-        {
+        //
+        if ring_still_serves(
+            (ew, eh, ef),
+            existing.queue_family,
+            existing.image_count,
+            (w, h, f),
+            queue_family,
+            image_count,
+        ) {
             return true;
         }
         if !ds.capture_slots.all_free() {
@@ -497,7 +354,11 @@ unsafe fn ensure_capture_ring(
             unsafe { destroy_capture_ring(ds, old) };
         }
     }
-    match unsafe { create_capture_ring(ds, w, h, f, queue_family, image_count) } {
+    let generation = ds
+        .ring_generation
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        + 1;
+    match unsafe { create_capture_ring(ds, w, h, f, queue_family, image_count, generation) } {
         Some(fresh) => {
             *ring = Some(fresh);
             true
@@ -513,6 +374,7 @@ unsafe fn create_capture_ring(
     f: vk::Format,
     queue_family: u32,
     image_count: usize,
+    generation: u64,
 ) -> Option<CaptureRing> {
     let pci = vk::CommandPoolCreateInfo {
         s_type: vk::StructureType::COMMAND_POOL_CREATE_INFO,
@@ -549,6 +411,9 @@ unsafe fn create_capture_ring(
         unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
         return None;
     }
+    for &cb in &blits {
+        unsafe { crate::device::stamp(ds, cb.as_raw() as *mut std::ffi::c_void) };
+    }
 
     // Pre-signalled: the first wait on a fresh slot must return immediately.
     let fci = vk::FenceCreateInfo {
@@ -558,14 +423,57 @@ unsafe fn create_capture_ring(
         _marker: std::marker::PhantomData,
     };
 
-    let (timestamp_pool, timestamp_period) =
-        unsafe { create_timestamp_pool(ds, queue_family) };
+    let (timestamp_pool, timestamp_period) = unsafe { create_timestamp_pool(ds, queue_family) };
+
+    // On a device the encoder shares, the slots are images the encoder reads
+    // in place, in the format its converter reads, and every blit advances a
+    // timeline the encoder waits on.
+    let shared = ds.shared_encoder();
+    let slot_format = match shared {
+        Some(_) => match crate::encode::vk_format_to_input_format(f.as_raw() as u32) {
+            Some(input) => input.vk_format(),
+            None => {
+                log::warn!(
+                    "swapchain format {} has no converter input format; not capturing",
+                    f.as_raw()
+                );
+                unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
+                return None;
+            }
+        },
+        None => f,
+    };
+    let blit_timeline = match shared {
+        Some(s) => match s.create_timeline() {
+            Some(t) => t,
+            None => {
+                log::warn!("could not create the capture timeline; not capturing");
+                unsafe { (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null()) };
+                return None;
+            }
+        },
+        None => vk::Semaphore::null(),
+    };
 
     let mut slots = Vec::with_capacity(CAPTURE_SLOTS);
-    for i in 0..CAPTURE_SLOTS {
-        let Some((image, memory, modifier)) =
-            (unsafe { allocate_dmabuf_image(ds, w, h, f, "capture") })
-        else {
+    for _ in 0..CAPTURE_SLOTS {
+        let allocated = match shared {
+            Some(s) => unsafe {
+                allocate_shared_image(
+                    ds,
+                    w,
+                    h,
+                    slot_format,
+                    &s.image_families(queue_family),
+                    "capture",
+                )
+            },
+            None => unsafe { allocate_host_image(ds, w, h, f, "capture") },
+        };
+        let Some((image, memory)) = allocated else {
+            if let Some(s) = shared {
+                s.destroy_timeline(blit_timeline);
+            }
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
         };
@@ -575,29 +483,27 @@ unsafe fn create_capture_ring(
         {
             unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
             unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+            if let Some(s) = shared {
+                s.destroy_timeline(blit_timeline);
+            }
             unsafe { destroy_partial_ring(ds, command_pool, slots) };
             return None;
-        }
-        let stride = unsafe { query_stride(ds, image, modifier) };
-        // Export once. Each frame hands the encoder a dup of this fd, which
-        // costs a file-descriptor clone instead of a kernel export per frame.
-        let dmabuf_fd = unsafe { get_dmabuf_fd(ds, memory) }.unwrap_or(-1);
-        if dmabuf_fd < 0 {
-            log::warn!("capture slot {i}: no DMA-BUF export, falling back to CPU readback");
         }
         slots.push(CaptureSlot {
             image,
             memory,
-            dmabuf_fd,
-            stride,
-            modifier,
             fence,
         });
     }
 
     log::info!(
-        "capture ring: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}",
-        f.as_raw()
+        "capture ring {generation}: {CAPTURE_SLOTS} slots of {w}x{h} fmt={} on queue family {queue_family}{}",
+        slot_format.as_raw(),
+        if shared.is_some() {
+            ", read in place by the encoder"
+        } else {
+            ""
+        }
     );
     Some(CaptureRing {
         command_pool,
@@ -608,6 +514,7 @@ unsafe fn create_capture_ring(
         timestamp_pool,
         timestamp_period,
         size: (w, h, f),
+        generation,
         queue_family,
         // Zero so the first frame always records: no real extent equals it, so
         // the invalidation check in `capture_present_frame` fires once and then
@@ -618,6 +525,8 @@ unsafe fn create_capture_ring(
         },
         present_wait: Vec::new(),
         retired: Vec::new(),
+        blit_timeline,
+        blit_value: 0,
     })
 }
 
@@ -631,9 +540,6 @@ unsafe fn destroy_partial_ring(
             (ds.fp.destroy_fence)(ds.raw, slot.fence, std::ptr::null());
             (ds.fp.destroy_image)(ds.raw, slot.image, std::ptr::null());
             (ds.fp.free_memory)(ds.raw, slot.memory, std::ptr::null());
-            if slot.dmabuf_fd >= 0 {
-                libc::close(slot.dmabuf_fd);
-            }
         }
         (ds.fp.destroy_command_pool)(ds.raw, command_pool, std::ptr::null());
     }
@@ -669,6 +575,14 @@ pub unsafe fn destroy_capture_ring(ds: &crate::state::DeviceState, ring: Capture
         {
             destroy(ds.raw, ring.timestamp_pool, std::ptr::null());
         }
+    }
+    // The fences above cover the blits that signal it, and every slot being
+    // back covers the encoder work that waits on it: a slot returns only once
+    // its conversion has finished.
+    if !ring.blit_timeline.is_null()
+        && let Some(s) = ds.shared.as_ref()
+    {
+        s.destroy_timeline(ring.blit_timeline);
     }
     unsafe { destroy_partial_ring(ds, ring.command_pool, ring.slots) };
 }
@@ -814,6 +728,10 @@ pub struct CaptureSubmission {
     /// semaphores were consumed by the blit submission, so presenting on them
     /// again would be a double wait.
     pub present_wait: vk::Semaphore,
+    /// The point this blit's timeline signal reaches, on a device the encoder
+    /// shares. The encoder waits on it on the GPU instead of on the slot's
+    /// fence on the CPU.
+    pub blit: Option<pixelforge::TimelinePoint>,
 }
 
 /// Create the blit timestamp pool, or a null handle where it cannot be used.
@@ -893,10 +811,16 @@ unsafe fn create_timestamp_pool(
 
 /// GPU nanoseconds the last blit into `slot` took.
 ///
-/// Call only after that slot's fence has signalled, so the results are there
-/// and the `WAIT` flag returns immediately. `None` when timing is off, when the
-/// driver refuses the results, or when the counter wrapped between the pair.
-pub unsafe fn blit_gpu_time_ns(ds: &crate::state::DeviceState, slot: usize) -> Option<u64> {
+/// Call only once that blit has finished, so `wait` returns immediately: after
+/// the slot's fence has signalled, or after work that waited on the blit has
+/// itself finished. `None` when timing is off, when the driver refuses the
+/// results, when they are not there yet and `wait` is false, or when the
+/// counter wrapped between the pair.
+pub unsafe fn blit_gpu_time_ns(
+    ds: &crate::state::DeviceState,
+    slot: usize,
+    wait: bool,
+) -> Option<u64> {
     let ring_guard = ds.capture_ring.lock().ok()?;
     let ring = ring_guard.as_ref()?;
     if ring.timestamp_pool.is_null() {
@@ -913,7 +837,11 @@ pub unsafe fn blit_gpu_time_ns(ds: &crate::state::DeviceState, slot: usize) -> O
             std::mem::size_of_val(&ticks),
             ticks.as_mut_ptr() as *mut std::ffi::c_void,
             std::mem::size_of::<u64>() as vk::DeviceSize,
-            vk::QueryResultFlags::WAIT | vk::QueryResultFlags::TYPE_64,
+            if wait {
+                vk::QueryResultFlags::WAIT | vk::QueryResultFlags::TYPE_64
+            } else {
+                vk::QueryResultFlags::TYPE_64
+            },
         )
     };
     if result != vk::Result::SUCCESS {
@@ -1044,18 +972,29 @@ unsafe fn record_blit(
         vk::ImageLayout::PRESENT_SRC_KHR,
         si
     );
+    // The slot goes to GENERAL, which every reader accepts: the converter, the
+    // encoder's own copy when it takes RGB input, and the CPU readback, which
+    // maps the memory and may only do so in GENERAL.
+    let b4 = image_barrier!(
+        vk::AccessFlags::TRANSFER_WRITE,
+        vk::AccessFlags::MEMORY_READ | vk::AccessFlags::HOST_READ,
+        vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+        vk::ImageLayout::GENERAL,
+        fi
+    );
+    let after = [b3, b4];
     unsafe {
         (ds.fp.cmd_pipeline_barrier)(
             cb,
             vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+            vk::PipelineStageFlags::BOTTOM_OF_PIPE | vk::PipelineStageFlags::HOST,
             vk::DependencyFlags::empty(),
             0,
             std::ptr::null(),
             0,
             std::ptr::null(),
-            1,
-            &b3,
+            after.len() as u32,
+            after.as_ptr(),
         );
     }
 
@@ -1144,6 +1083,7 @@ pub unsafe fn capture_present_frame(
     let slot = ring.slots.get(slot_index)?;
     let fence = slot.fence;
     let fi = slot.image;
+    let slot_memory = slot.memory;
 
     // A free slot's fence is already signalled — the encoder side waits on it
     // before it ever reads the slot. This covers the paths that abandon a frame
@@ -1156,9 +1096,9 @@ pub unsafe fn capture_present_frame(
     }
 
     // The recording depends on the source image, the destination image and the
-    // extent. A ring survives the swapchain shrinking, so the extent can move
-    // under recordings whose images are still valid — invalidate on it here
-    // rather than trusting every caller to have noticed.
+    // extent. A swapchain recreated at the same extent keeps the ring but
+    // replaces the source images, so invalidate here rather than trusting every
+    // caller to have noticed.
     if ring.blit_extent != ext {
         ring.blits_recorded.iter_mut().for_each(|r| *r = false);
         ring.blit_extent = ext;
@@ -1173,11 +1113,27 @@ pub unsafe fn capture_present_frame(
         ring.blits_recorded[blit] = true;
     }
 
-
     let wait_stages = vec![vk::PipelineStageFlags::TRANSFER; app_waits.len()];
+
+    // On a shared device the blit also advances the ring's timeline. A
+    // timeline signal needs its value given alongside, and the binary
+    // semaphore next to it a placeholder the driver ignores.
+    let blit_point = (!ring.blit_timeline.is_null())
+        .then(|| pixelforge::TimelinePoint::new(ring.blit_timeline, ring.blit_value + 1));
+    let signals = [present_wait, ring.blit_timeline];
+    let signal_values = [0, blit_point.map_or(0, |p| p.value)];
+    let timeline_info = vk::TimelineSemaphoreSubmitInfo {
+        signal_semaphore_value_count: 2,
+        p_signal_semaphore_values: signal_values.as_ptr(),
+        ..Default::default()
+    };
     let subi = vk::SubmitInfo {
         s_type: vk::StructureType::SUBMIT_INFO,
-        p_next: std::ptr::null(),
+        p_next: if blit_point.is_some() {
+            (&raw const timeline_info).cast()
+        } else {
+            std::ptr::null()
+        },
         wait_semaphore_count: app_waits.len() as u32,
         p_wait_semaphores: if app_waits.is_empty() {
             std::ptr::null()
@@ -1191,8 +1147,8 @@ pub unsafe fn capture_present_frame(
         },
         command_buffer_count: 1,
         p_command_buffers: &cb,
-        signal_semaphore_count: 1,
-        p_signal_semaphores: &present_wait,
+        signal_semaphore_count: if blit_point.is_some() { 2 } else { 1 },
+        p_signal_semaphores: signals.as_ptr(),
         _marker: std::marker::PhantomData,
     };
 
@@ -1208,9 +1164,19 @@ pub unsafe fn capture_present_frame(
         }
     }
 
+    if let Some(p) = blit_point {
+        ring.blit_value = p.value;
+    }
+
+    // Once per process, and only when asked for: reads this frame back and
+    // says what range its values are in. See `probe_float_range`.
+    let pool = ring.command_pool;
+    unsafe { probe_float_range(ds, pool, queue, fi, slot_memory, fence, fmt, ext) };
+
     Some(CaptureSubmission {
         slot: guard,
         present_wait,
+        blit: blit_point,
     })
 }
 
@@ -1277,7 +1243,8 @@ unsafe fn ensure_present_semaphore(
 ) -> Option<vk::Semaphore> {
     let create = ds.fp.create_semaphore?;
     if ring.present_wait.len() <= image_index {
-        ring.present_wait.resize(image_index + 1, vk::Semaphore::null());
+        ring.present_wait
+            .resize(image_index + 1, vk::Semaphore::null());
     }
     if ring.present_wait[image_index] == vk::Semaphore::null() {
         let ci = vk::SemaphoreCreateInfo {
@@ -1295,7 +1262,7 @@ unsafe fn ensure_present_semaphore(
     Some(ring.present_wait[image_index])
 }
 
-// ── CPU pixel readback (fallback when DMA-BUF unavailable) ───────────────────
+// ── CPU pixel readback (when the encoder has a device of its own) ───────────
 
 pub unsafe fn read_frame_pixels(
     ds: &crate::state::DeviceState,
@@ -1343,4 +1310,568 @@ pub unsafe fn read_frame_pixels(
     }
     unsafe { (ds.fp.unmap_memory)(ds.raw, mem) };
     Some(pixels)
+}
+
+// ── One-shot float-range probe ────────────────────────────────────────────────
+
+/// Decode one IEEE half into a float.
+fn half_to_f32(bits: u16) -> f32 {
+    let sign = ((bits >> 15) & 1) as u32;
+    let exp = ((bits >> 10) & 0x1f) as u32;
+    let mant = (bits & 0x3ff) as u32;
+    let out = match exp {
+        0 if mant == 0 => sign << 31,
+        // Subnormal: normalise it by hand. Irrelevant to what the probe asks,
+        // but a wrong answer here would be a wrong answer everywhere.
+        0 => {
+            let mut e = -1i32;
+            let mut m = mant;
+            while m & 0x400 == 0 {
+                m <<= 1;
+                e -= 1;
+            }
+            m &= 0x3ff;
+            (sign << 31) | (((e + 127 - 15) as u32) << 23) | (m << 13)
+        }
+        0x1f => (sign << 31) | 0x7f80_0000 | (mant << 13),
+        _ => (sign << 31) | ((exp + 127 - 15) << 23) | (mant << 13),
+    };
+    f32::from_bits(out)
+}
+
+/// What the probe found in one frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FloatRange {
+    pub max: f32,
+    pub above_one: u64,
+    pub components: u64,
+}
+
+impl FloatRange {
+    /// Whether this frame settles it. A single component over 1.0 can only be
+    /// linear extended-range colour: PQ is defined on [0, 1] and nothing that
+    /// encodes it can leave that range.
+    pub fn is_extended(&self) -> bool {
+        self.above_one > 0
+    }
+}
+
+/// Scan a mapped `R16G16B16A16_SFLOAT` image for the largest colour component
+/// and how many exceed 1.0.
+///
+/// Alpha is skipped: it is 1.0 on every opaque frame and would be counted as
+/// evidence of exactly the thing being looked for.
+pub fn scan_float_range(base: &[u8], row_pitch: usize, w: u32, h: u32) -> Option<FloatRange> {
+    let mut max = f32::NEG_INFINITY;
+    let mut above_one = 0u64;
+    let mut components = 0u64;
+    for row in 0..h as usize {
+        let start = row * row_pitch;
+        let end = start + w as usize * 8;
+        let line = base.get(start..end)?;
+        for texel in line.as_chunks::<8>().0 {
+            for c in 0..3 {
+                let v = half_to_f32(u16::from_le_bytes([texel[c * 2], texel[c * 2 + 1]]));
+                if !v.is_finite() {
+                    continue;
+                }
+                components += 1;
+                if v > max {
+                    max = v;
+                }
+                if v > 1.0 {
+                    above_one += 1;
+                }
+            }
+        }
+    }
+    (components > 0).then_some(FloatRange {
+        max,
+        above_one,
+        components,
+    })
+}
+
+fn probe_wanted() -> bool {
+    static WANTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *WANTED.get_or_init(|| std::env::var("NESCAPTURE_FP16_PROBE").as_deref() == Ok("1"))
+}
+
+/// How often a sample is taken, in captured frames, and how many are taken
+/// before the probe gives up and reports what it saw.
+///
+/// One sample would land on whatever is on screen when the game's first frame
+/// reaches the swapchain, which is a loading screen or a black frame -- and an
+/// image with no highlight in it is inside [0, 1] whichever encoding it is, so
+/// that sample answers nothing. Spreading them out gets the probe as far as
+/// actual gameplay.
+const PROBE_EVERY: u64 = 120;
+const PROBE_SAMPLES: u64 = 40;
+
+static PROBE_FRAMES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PROBE_TAKEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// The largest component seen so far, as bits, so it survives between samples.
+static PROBE_MAX: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Whether this frame is one to sample, and whether it is the last.
+///
+/// Split out so the schedule is testable without a device.
+fn probe_schedule(frames: u64, taken: u64) -> (bool, bool) {
+    if taken >= PROBE_SAMPLES {
+        return (false, false);
+    }
+    let sample = frames.is_multiple_of(PROBE_EVERY);
+    (sample, sample && taken + 1 == PROBE_SAMPLES)
+}
+
+/// Read one captured frame back and say whether it holds extended-range values.
+///
+/// This answers one question and is not part of any path: a float16 swapchain
+/// is how both scRGB and PQ arrive, and they are told apart by what is in the
+/// buffer rather than by anything either side declares. scRGB is linear and
+/// goes past 1.0 for anything brighter than SDR white; PQ is an encoding of
+/// absolute luminance and never leaves [0, 1]. So the largest component in a
+/// frame with any highlight in it decides which one this is.
+///
+/// Runs once per process, behind `NESCAPTURE_FP16_PROBE=1`, and stalls the
+/// present it runs on — it waits for the blit and then for a copy of its own.
+/// Deliberately: a probe that samples asynchronously answers about some frame
+/// rather than this one.
+pub unsafe fn probe_float_range(
+    ds: &crate::state::DeviceState,
+    pool: vk::CommandPool,
+    queue: vk::Queue,
+    slot_image: vk::Image,
+    slot_memory: vk::DeviceMemory,
+    slot_fence: vk::Fence,
+    fmt: vk::Format,
+    ext: vk::Extent2D,
+) {
+    use std::sync::atomic::Ordering;
+
+    if !probe_wanted() {
+        return;
+    }
+    let frames = PROBE_FRAMES.fetch_add(1, Ordering::Relaxed);
+    let taken = PROBE_TAKEN.load(Ordering::Relaxed);
+    let (sample, last) = probe_schedule(frames, taken);
+    if !sample {
+        return;
+    }
+    PROBE_TAKEN.store(taken + 1, Ordering::Relaxed);
+
+    if fmt != vk::Format::R16G16B16A16_SFLOAT {
+        if taken == 0 {
+            log::info!(
+                "float-range probe: capture format is {fmt:?}, which cannot hold values above 1.0 - nothing to ask"
+            );
+        }
+        PROBE_TAKEN.store(PROBE_SAMPLES, Ordering::Relaxed);
+        return;
+    }
+
+    // The blit writing this slot was submitted a moment ago.
+    if unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &slot_fence, vk::TRUE, 1_000_000_000) }
+        != vk::Result::SUCCESS
+    {
+        log::warn!("float-range probe: the capture blit did not finish");
+        return;
+    }
+
+    // Where the encoder has a device of its own the slot is already
+    // host-visible and is read in place; a shared slot is device-local and
+    // needs a copy into one that is not.
+    let shared = ds.shared_active.load(Ordering::Acquire);
+    let (image, memory, staged) = if shared {
+        match unsafe { allocate_host_image(ds, ext.width, ext.height, fmt, "float-range probe") } {
+            Some((i, m)) => (i, m, true),
+            None => {
+                log::warn!("float-range probe: no host-visible image to read into");
+                return;
+            }
+        }
+    } else {
+        (slot_image, slot_memory, false)
+    };
+
+    if staged && !unsafe { copy_into_host_image(ds, pool, queue, slot_image, image, ext) } {
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+        log::warn!("float-range probe: the readback copy did not run");
+        return;
+    }
+
+    let subresource = vk::ImageSubresource {
+        aspect_mask: vk::ImageAspectFlags::COLOR,
+        mip_level: 0,
+        array_layer: 0,
+    };
+    let mut layout = vk::SubresourceLayout::default();
+    unsafe { (ds.fp.get_image_subresource_layout)(ds.raw, image, &subresource, &mut layout) };
+
+    let mut mp: *mut std::os::raw::c_void = std::ptr::null_mut();
+    let mapped = unsafe {
+        (ds.fp.map_memory)(
+            ds.raw,
+            memory,
+            0,
+            vk::WHOLE_SIZE,
+            vk::MemoryMapFlags::empty(),
+            &mut mp,
+        )
+    };
+    if mapped == vk::Result::SUCCESS {
+        let bytes = layout.offset as usize + layout.row_pitch as usize * ext.height as usize;
+        let all = unsafe { std::slice::from_raw_parts(mp as *const u8, bytes) };
+        match scan_float_range(
+            &all[layout.offset as usize..],
+            layout.row_pitch as usize,
+            ext.width,
+            ext.height,
+        ) {
+            Some(found) => {
+                let share = found.above_one as f64 * 100.0 / found.components as f64;
+                let best = f32::from_bits(PROBE_MAX.load(Ordering::Relaxed)).max(found.max);
+                PROBE_MAX.store(best.to_bits(), Ordering::Relaxed);
+                log::debug!(
+                    "float-range probe sample {}: largest component {:.4}, {} of {} above 1.0 ({share:.3}%)",
+                    taken + 1,
+                    found.max,
+                    found.above_one,
+                    found.components
+                );
+                // Above 1.0 settles it, so say so and stop sampling. Staying
+                // inside the range never settles anything -- an SDR frame with
+                // no highlight looks the same -- so that only gets reported
+                // once the samples run out.
+                if found.is_extended() {
+                    log::info!(
+                        "float-range probe: largest component {:.4}, {} of {} above 1.0 ({share:.3}%) - this buffer is extended-range linear (scRGB), not PQ",
+                        found.max,
+                        found.above_one,
+                        found.components
+                    );
+                    PROBE_TAKEN.store(PROBE_SAMPLES, Ordering::Relaxed);
+                } else if last {
+                    log::info!(
+                        "float-range probe: nothing above 1.0 in {PROBE_SAMPLES} samples, largest component {best:.4} - consistent with PQ, and with an SDR picture that never got bright"
+                    );
+                }
+            }
+            None => log::warn!("float-range probe: the mapped image was too small to read"),
+        }
+        unsafe { (ds.fp.unmap_memory)(ds.raw, memory) };
+    } else {
+        log::warn!("float-range probe: could not map the readback image ({mapped:?})");
+    }
+
+    if staged {
+        unsafe { (ds.fp.destroy_image)(ds.raw, image, std::ptr::null()) };
+        unsafe { (ds.fp.free_memory)(ds.raw, memory, std::ptr::null()) };
+    }
+}
+
+/// Copy a capture slot into a linear host-visible image, and wait for it.
+unsafe fn copy_into_host_image(
+    ds: &crate::state::DeviceState,
+    pool: vk::CommandPool,
+    queue: vk::Queue,
+    src: vk::Image,
+    dst: vk::Image,
+    ext: vk::Extent2D,
+) -> bool {
+    let ai = vk::CommandBufferAllocateInfo {
+        s_type: vk::StructureType::COMMAND_BUFFER_ALLOCATE_INFO,
+        p_next: std::ptr::null(),
+        command_pool: pool,
+        level: vk::CommandBufferLevel::PRIMARY,
+        command_buffer_count: 1,
+        _marker: std::marker::PhantomData,
+    };
+    let mut cb = vk::CommandBuffer::null();
+    if unsafe { (ds.fp.allocate_command_buffers)(ds.raw, &ai, &mut cb) } != vk::Result::SUCCESS {
+        return false;
+    }
+
+    let mut ok = true;
+    let begin = vk::CommandBufferBeginInfo {
+        s_type: vk::StructureType::COMMAND_BUFFER_BEGIN_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT,
+        p_inheritance_info: std::ptr::null(),
+        _marker: std::marker::PhantomData,
+    };
+    if unsafe { (ds.fp.begin_command_buffer)(cb, &begin) } != vk::Result::SUCCESS {
+        ok = false;
+    }
+
+    if ok {
+        // The slot stays in GENERAL, which is what every other reader expects
+        // to find it in. Only the destination transitions.
+        let to_dst = image_barrier!(
+            vk::AccessFlags::empty(),
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::ImageLayout::UNDEFINED,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            dst
+        );
+        unsafe {
+            (ds.fp.cmd_pipeline_barrier)(
+                cb,
+                vk::PipelineStageFlags::TOP_OF_PIPE,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                1,
+                &to_dst,
+            );
+        }
+        let cr = vk::ImageCopy {
+            src_subresource: make_subresource_layers(),
+            src_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            dst_subresource: make_subresource_layers(),
+            dst_offset: vk::Offset3D { x: 0, y: 0, z: 0 },
+            extent: vk::Extent3D {
+                width: ext.width,
+                height: ext.height,
+                depth: 1,
+            },
+        };
+        unsafe {
+            (ds.fp.cmd_copy_image)(
+                cb,
+                src,
+                vk::ImageLayout::GENERAL,
+                dst,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                1,
+                &cr,
+            );
+        }
+        let to_host = image_barrier!(
+            vk::AccessFlags::TRANSFER_WRITE,
+            vk::AccessFlags::HOST_READ,
+            vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            vk::ImageLayout::GENERAL,
+            dst
+        );
+        unsafe {
+            (ds.fp.cmd_pipeline_barrier)(
+                cb,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::HOST,
+                vk::DependencyFlags::empty(),
+                0,
+                std::ptr::null(),
+                0,
+                std::ptr::null(),
+                1,
+                &to_host,
+            );
+        }
+        if unsafe { (ds.fp.end_command_buffer)(cb) } != vk::Result::SUCCESS {
+            ok = false;
+        }
+    }
+
+    let fence_ci = vk::FenceCreateInfo {
+        s_type: vk::StructureType::FENCE_CREATE_INFO,
+        p_next: std::ptr::null(),
+        flags: vk::FenceCreateFlags::empty(),
+        _marker: std::marker::PhantomData,
+    };
+    let mut fence = vk::Fence::null();
+    if ok
+        && unsafe { (ds.fp.create_fence)(ds.raw, &fence_ci, std::ptr::null(), &mut fence) }
+            != vk::Result::SUCCESS
+    {
+        ok = false;
+    }
+
+    if ok {
+        let subi = vk::SubmitInfo {
+            s_type: vk::StructureType::SUBMIT_INFO,
+            p_next: std::ptr::null(),
+            wait_semaphore_count: 0,
+            p_wait_semaphores: std::ptr::null(),
+            p_wait_dst_stage_mask: std::ptr::null(),
+            command_buffer_count: 1,
+            p_command_buffers: &cb,
+            signal_semaphore_count: 0,
+            p_signal_semaphores: std::ptr::null(),
+            _marker: std::marker::PhantomData,
+        };
+        ok = unsafe { (ds.fp.queue_submit)(queue, 1, &subi, fence) } == vk::Result::SUCCESS
+            && unsafe { (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 1_000_000_000) }
+                == vk::Result::SUCCESS;
+    }
+
+    if fence != vk::Fence::null() {
+        unsafe { (ds.fp.destroy_fence)(ds.raw, fence, std::ptr::null()) };
+    }
+    unsafe { (ds.fp.free_command_buffers)(ds.raw, pool, 1, &cb) };
+    ok
+}
+
+#[cfg(test)]
+mod float_range_tests {
+    use super::{half_to_f32, scan_float_range};
+
+    fn half(v: f32) -> [u8; 2] {
+        // Round-to-nearest is not needed: every value used here is exact.
+        let bits = v.to_bits();
+        let sign = ((bits >> 16) & 0x8000) as u16;
+        let exp = ((bits >> 23) & 0xff) as i32 - 127 + 15;
+        let mant = ((bits >> 13) & 0x3ff) as u16;
+        let h = if v == 0.0 {
+            sign
+        } else {
+            sign | ((exp as u16) << 10) | mant
+        };
+        h.to_le_bytes()
+    }
+
+    #[test]
+    fn a_half_reads_as_the_value_it_holds() {
+        for v in [0.0f32, 0.5, 1.0, 2.0, 125.0, -1.5] {
+            let [a, b] = half(v);
+            assert_eq!(half_to_f32(u16::from_le_bytes([a, b])), v, "{v}");
+        }
+    }
+
+    fn frame(texels: &[[f32; 4]], w: u32, h: u32, pad: usize) -> Vec<u8> {
+        let pitch = w as usize * 8 + pad;
+        let mut out = vec![0u8; pitch * h as usize];
+        for (i, t) in texels.iter().enumerate() {
+            let row = i / w as usize;
+            let col = i % w as usize;
+            for (c, v) in t.iter().enumerate() {
+                let at = row * pitch + col * 8 + c * 2;
+                out[at..at + 2].copy_from_slice(&half(*v));
+            }
+        }
+        out
+    }
+
+    /// The case the probe exists for: scRGB goes past 1.0 wherever the picture
+    /// is brighter than SDR white, and nothing that encodes PQ can.
+    #[test]
+    fn a_value_above_one_is_extended_range() {
+        let px = [[0.2, 0.3, 4.0, 1.0], [0.1, 0.1, 0.1, 1.0]];
+        let found = scan_float_range(&frame(&px, 2, 1, 0), 16, 2, 1).unwrap();
+        assert!(found.is_extended());
+        assert_eq!(found.above_one, 1);
+        assert_eq!(found.max, 4.0);
+    }
+
+    /// PQ fills [0, 1] and stops there, and so does an SDR frame -- which is
+    /// why this direction is evidence rather than an answer.
+    #[test]
+    fn everything_inside_the_range_is_not_extended() {
+        let px = [[0.0, 0.5, 1.0, 1.0], [1.0, 1.0, 1.0, 1.0]];
+        let found = scan_float_range(&frame(&px, 2, 1, 0), 16, 2, 1).unwrap();
+        assert!(!found.is_extended());
+        assert_eq!(found.max, 1.0);
+    }
+
+    /// Alpha is 1.0 on every opaque frame, so counting it would report every
+    /// frame as extended -- the exact false positive that would make the probe
+    /// worthless.
+    #[test]
+    fn alpha_is_not_colour() {
+        let px = [[0.5, 0.5, 0.5, 8.0]];
+        let found = scan_float_range(&frame(&px, 1, 1, 0), 8, 1, 1).unwrap();
+        assert_eq!(found.above_one, 0);
+        assert_eq!(found.components, 3);
+        assert_eq!(found.max, 0.5);
+    }
+
+    /// A linear image's rows are padded to its own pitch, which is not the
+    /// width in bytes. Reading it as tightly packed walks diagonally through
+    /// the picture.
+    #[test]
+    fn rows_are_read_at_the_image_pitch() {
+        let px = [[0.25, 0.25, 0.25, 1.0], [3.0, 0.25, 0.25, 1.0]];
+        let bytes = frame(&px, 1, 2, 24);
+        let found = scan_float_range(&bytes, 32, 1, 2).unwrap();
+        assert_eq!(found.components, 6);
+        assert_eq!(found.max, 3.0);
+    }
+
+    /// A short mapping is a wrong answer, not a smaller one.
+    #[test]
+    fn a_buffer_that_does_not_hold_the_image_reads_as_nothing() {
+        assert!(scan_float_range(&[0u8; 8], 16, 2, 1).is_none());
+    }
+
+    /// The regression this guards: sampling only the first frame reads a
+    /// loading screen, which is inside [0, 1] whichever encoding it is.
+    #[test]
+    fn samples_are_spread_out_rather_than_all_at_the_start() {
+        use super::{PROBE_EVERY, probe_schedule};
+        assert_eq!(probe_schedule(0, 0), (true, false));
+        assert_eq!(probe_schedule(1, 1), (false, false));
+        assert_eq!(probe_schedule(PROBE_EVERY, 1), (true, false));
+    }
+
+    /// The last sample is the one that gets to report a negative, and it has
+    /// to know it is the last.
+    #[test]
+    fn the_final_sample_says_so_and_nothing_follows_it() {
+        use super::{PROBE_EVERY, PROBE_SAMPLES, probe_schedule};
+        let at = PROBE_EVERY * (PROBE_SAMPLES - 1);
+        assert_eq!(probe_schedule(at, PROBE_SAMPLES - 1), (true, true));
+        assert_eq!(
+            probe_schedule(at + PROBE_EVERY, PROBE_SAMPLES),
+            (false, false)
+        );
+    }
+}
+
+#[cfg(test)]
+mod ring_identity_tests {
+    use super::ring_still_serves;
+    use ash::vk;
+
+    const FMT: vk::Format = vk::Format::B8G8R8A8_UNORM;
+    const OTHER: vk::Format = vk::Format::R8G8B8A8_UNORM;
+
+    fn serves(existing: (u32, u32, vk::Format), wanted: (u32, u32, vk::Format)) -> bool {
+        ring_still_serves(existing, 0, 3, wanted, 0, 3)
+    }
+
+    #[test]
+    fn an_identical_request_reuses_the_ring() {
+        assert!(serves((1920, 1080, FMT), (1920, 1080, FMT)));
+    }
+
+    #[test]
+    fn a_smaller_request_rebuilds() {
+        // The regression this guards. A ring that is merely large enough leaves
+        // the area outside the new extent holding the old resolution's picture,
+        // and the encoder sends it.
+        assert!(!serves((1920, 1080, FMT), (1280, 720, FMT)));
+        assert!(!serves((1920, 1080, FMT), (1920, 720, FMT)));
+        assert!(!serves((1920, 1080, FMT), (1280, 1080, FMT)));
+    }
+
+    #[test]
+    fn a_larger_request_rebuilds() {
+        assert!(!serves((1280, 720, FMT), (1920, 1080, FMT)));
+    }
+
+    #[test]
+    fn a_different_format_rebuilds() {
+        assert!(!serves((1920, 1080, FMT), (1920, 1080, OTHER)));
+    }
+
+    #[test]
+    fn a_different_queue_family_or_image_count_rebuilds() {
+        let g = (1920, 1080, FMT);
+        assert!(!ring_still_serves(g, 0, 3, g, 1, 3));
+        assert!(!ring_still_serves(g, 0, 3, g, 0, 4));
+    }
 }

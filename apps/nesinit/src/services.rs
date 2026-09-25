@@ -41,6 +41,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use crate::reap::{Waiters, Watched};
 use crate::workload::Failure;
+use nesprotocol::lifecycle::VideoLimits;
 
 /// A service that died, and how.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +61,13 @@ pub trait Services {
     /// Called once, after the shares are mounted and before anything may be
     /// launched. An empty stack is legitimate: a box with no services still
     /// boots, and a caller can still launch something that needs none.
-    fn bring_up(&mut self) -> Result<Vec<String>, Failure>;
+    ///
+    /// `video` comes from the descriptor and reaches the services that read it.
+    /// It has to arrive here rather than later because a service configured
+    /// after it is already running has a window in which it is not configured,
+    /// and for a bitrate ceiling that window is a session streaming at whatever
+    /// default it started with.
+    fn bring_up(&mut self, video: VideoLimits) -> Result<Vec<String>, Failure>;
 
     /// Deaths, as they happen.
     ///
@@ -160,6 +167,17 @@ pub const SERVICE_UID: u32 = 1000;
 /// here: the directory belongs to the service user and is not writable by the
 /// workload, which is the property [`crate::ticket::Untrusted`] depends on.
 pub const AUDIO_DIR: &str = "/run/pipewire";
+
+/// Where the PulseAudio protocol is served, in [`AUDIO_DIR`] for the reason
+/// audio's own socket is.
+///
+/// pipewire-pulse is told this path by its configuration file in the image,
+/// which is not something this program can pass it, so the two are compared by
+/// a test rather than trusted to agree.
+pub const PULSE_SOCKET: &str = "/run/pipewire/pulse-native";
+
+/// [`PULSE_SOCKET`] as a PulseAudio client is told it.
+pub const PULSE_SERVER: &str = "unix:/run/pipewire/pulse-native";
 pub const SERVICE_GID: u32 = 1000;
 
 /// Where a service's runtime sockets live.
@@ -274,6 +292,26 @@ pub const STACK: &[Service] = &[
         ready: None,
     },
     Service {
+        name: "pipewire-pulse",
+        argv: &["/usr/bin/pipewire-pulse"],
+        env: &[
+            ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+            ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
+        ],
+        user: Some((SERVICE_UID, SERVICE_GID)),
+        // Optional for the reason the sender is: everything that speaks
+        // PipeWire itself is unaffected, and a session with sound missing is
+        // degraded rather than unusable.
+        cost: "anything that only speaks PulseAudio plays silently, and Wine is one",
+        required: false,
+        // The workload is its client, and is not this user.
+        umask: Some(0),
+        // Nothing in this table connects to it, but the workload does, and the
+        // workload is started after the table.
+        ready: Some(PULSE_SOCKET),
+    },
+    Service {
         name: "neswire",
         argv: &["/usr/bin/neswire"],
         env: &[
@@ -308,6 +346,13 @@ pub struct Stack {
     running: Vec<(&'static str, Watched)>,
     deaths: Receiver<Died>,
     reported: Sender<Died>,
+    /// What the host said this box may spend on video, from the descriptor.
+    ///
+    /// Held here because `spawn` is where it reaches a service, and `spawn`
+    /// takes a `&'static Service` whose `env` is a fixed table -- a value that
+    /// arrives at runtime has no route through it otherwise. The same problem
+    /// `RUST_LOG` has, solved the same way.
+    video: VideoLimits,
 }
 
 impl Stack {
@@ -328,6 +373,7 @@ impl Stack {
             running: Vec::new(),
             deaths,
             reported,
+            video: VideoLimits::default(),
         }
     }
 
@@ -390,6 +436,15 @@ impl Stack {
         if let Ok(filter) = std::env::var("RUST_LOG") {
             command.env("RUST_LOG", filter);
         }
+        // The descriptor's video limits, for the services that read them. Same
+        // shape of problem as `RUST_LOG` above -- `env_clear` drops everything
+        // and the service table is a fixed list of literals, so a value that
+        // only exists at runtime has no other route in. `neshub` reads this
+        // through the clap `env =` attribute it already uses for every other
+        // setting.
+        if let Some(kbps) = self.video.bitrate_kbps {
+            command.env("NESTRI_MAX_BITRATE", kbps.to_string());
+        }
         // The service's own entry last, so a service that states one of these
         // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
@@ -451,7 +506,8 @@ impl Stack {
 }
 
 impl Services for Stack {
-    fn bring_up(&mut self) -> Result<Vec<String>, Failure> {
+    fn bring_up(&mut self, video: VideoLimits) -> Result<Vec<String>, Failure> {
+        self.video = video;
         let mut up = Vec::new();
         // Lifted out so the loop does not hold a borrow of `self` across the
         // start it is asking for.
@@ -604,6 +660,9 @@ pub mod double {
     /// only thing under test.
     pub struct Double {
         pub brought_up: usize,
+        /// What the last `bring_up` was told, so a test can assert the limits
+        /// reached the stack rather than assuming they did.
+        pub video: VideoLimits,
         pub failure: Option<Failure>,
         pub names: Vec<String>,
         deaths: Receiver<Died>,
@@ -625,6 +684,7 @@ pub mod double {
                 names: vec!["dbus-system".into(), "neshub".into()],
                 deaths,
                 report,
+                video: VideoLimits::default(),
             }
         }
 
@@ -637,8 +697,9 @@ pub mod double {
     }
 
     impl Services for Double {
-        fn bring_up(&mut self) -> Result<Vec<String>, Failure> {
+        fn bring_up(&mut self, video: VideoLimits) -> Result<Vec<String>, Failure> {
             self.brought_up += 1;
+            self.video = video;
             match &self.failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(self.names.clone()),
@@ -853,14 +914,42 @@ mod tests {
     /// owner -- and the workload is not the owner.
     #[test]
     fn the_audio_socket_is_reachable_by_a_user_who_does_not_own_it() {
-        let pipewire = STACK
+        for name in ["pipewire", "pipewire-pulse"] {
+            let service = STACK
+                .iter()
+                .find(|s| s.name == name)
+                .unwrap_or_else(|| panic!("{name} is in the table"));
+            assert_eq!(
+                service.umask,
+                Some(0),
+                "with any other umask the game finds {name}'s socket and cannot open it"
+            );
+        }
+    }
+
+    /// The PulseAudio socket's path is written three times: here, in the
+    /// client address the workload is given, and in pipewire-pulse's own
+    /// configuration in the image. If any of them moves on its own, the game
+    /// finds no server and plays silently, and nothing fails.
+    #[test]
+    fn pulse_is_served_where_the_workload_is_told_to_look() {
+        assert!(
+            PULSE_SOCKET.starts_with(AUDIO_DIR),
+            "the workload can only reach sockets in {AUDIO_DIR}"
+        );
+        assert_eq!(PULSE_SERVER, format!("unix:{PULSE_SOCKET}"));
+
+        let pulse = STACK
             .iter()
-            .find(|s| s.name == "pipewire")
-            .expect("audio is in the table");
-        assert_eq!(
-            pipewire.umask,
-            Some(0),
-            "with any other umask the game finds the socket and cannot open it"
+            .find(|s| s.name == "pipewire-pulse")
+            .expect("pulse is in the table");
+        assert_eq!(pulse.ready, Some(PULSE_SOCKET));
+
+        let config =
+            include_str!("../../../build/etc/pipewire/pipewire-pulse.conf.d/50-nestri.conf");
+        assert!(
+            config.contains(&format!("\"{PULSE_SERVER}\"")),
+            "pipewire-pulse is configured to listen somewhere other than {PULSE_SOCKET}"
         );
     }
 

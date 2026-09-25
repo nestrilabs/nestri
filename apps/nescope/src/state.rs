@@ -24,6 +24,7 @@ use calloop::channel::Sender;
 use smithay::desktop::utils::{
     OutputPresentationFeedback, send_frames_surface_tree,
     surface_presentation_feedback_flags_from_states, surface_primary_scanout_output,
+    take_presentation_feedback_surface_tree,
 };
 use smithay::desktop::{Space, Window};
 use smithay::input::pointer::CursorImageStatus;
@@ -96,13 +97,18 @@ impl ClientData for ClientState {
 // X11 atoms + connection
 // ---------------------------------------------------------------------------
 
-/// Gamescope-compatible X11 atoms used for focus and HDR signalling.
+/// Gamescope-compatible X11 atoms, for focus.
+///
+/// Focus only. HDR used to be signalled through one of these as well, back
+/// when a WSI layer inside the game reported the colour space out of band;
+/// that route is gone and `wp_color_manager_v1` carries it. These remain
+/// because Steam reads them to work out which window it is looking at, and
+/// that is unrelated to colour.
 pub struct CachedAtoms {
     pub net_active_window: u32,
     pub gamescope_focused_app: u32,
     pub gamescope_focusable_apps: u32,
     pub gamescope_focusable_windows: u32,
-    pub gamescope_hdr_output_feedback: u32,
     pub gamescope_xwayland_server_id: u32,
     pub xa_window: u32,
     pub xa_cardinal: u32,
@@ -157,10 +163,6 @@ pub struct NescopeState {
     pub focused_app_id: u32,
     /// True when X11 focus needs to be re-synced on the next input event.
     pub x11_focus_needs_reset: bool,
-    /// Gamescope WSI override surface (direct Vulkan → Wayland bypass).
-    pub override_surface: Option<WlSurface>,
-    /// Surfaces that have announced themselves as Vulkan via gamescope protocol.
-    pub vulkan_surfaces: HashSet<WlSurface>,
 
     // ── Input ─────────────────────────────────────────────────────────────
     /// Sender half of the input channel — clone and hand to callers.
@@ -267,7 +269,7 @@ impl NescopeState {
         let (dmabuf_state, dmabuf_global) =
             build_dmabuf_global::<Self>(&display_handle, render_device.as_deref());
 
-        // HDR + gamescope swapchain globals (optional).
+        // Colour management, when asked for.
         let hdr_state = HdrState::new(&display_handle, hdr);
 
         // Input channel — the Sender is returned to the caller.
@@ -309,8 +311,6 @@ impl NescopeState {
             focused_x11_window: None,
             focused_app_id: 0,
             x11_focus_needs_reset: false,
-            override_surface: None,
-            vulkan_surfaces: HashSet::new(),
             input_tx: input_tx.clone(),
             cursor_position: Point::from((0.0f64, 0.0f64)),
             cursor_status: CursorImageStatus::default_named(),
@@ -398,10 +398,6 @@ impl NescopeState {
                     gamescope_focused_app: intern_atom(&conn, b"GAMESCOPE_FOCUSED_APP"),
                     gamescope_focusable_apps: intern_atom(&conn, b"GAMESCOPE_FOCUSABLE_APPS"),
                     gamescope_focusable_windows: intern_atom(&conn, b"GAMESCOPE_FOCUSABLE_WINDOWS"),
-                    gamescope_hdr_output_feedback: intern_atom(
-                        &conn,
-                        b"GAMESCOPE_HDR_OUTPUT_FEEDBACK",
-                    ),
                     gamescope_xwayland_server_id: intern_atom(
                         &conn,
                         b"GAMESCOPE_XWAYLAND_SERVER_ID",
@@ -422,8 +418,10 @@ impl NescopeState {
         }
     }
 
-    /// Write gamescope-specific X11 root window properties so the WSI layer
-    /// can discover this compositor as a gamescope-compatible server.
+    /// Write the gamescope-compatible X11 root window properties.
+    ///
+    /// These say which application has focus and what could take it, which is
+    /// what Steam looks for. Nothing here concerns colour.
     pub fn set_gamescope_atoms(
         &self,
         conn: &smithay::reexports::x11rb::rust_connection::RustConnection,
@@ -438,14 +436,6 @@ impl NescopeState {
         let replace = PropMode::REPLACE;
         let cardinal = AtomEnum::CARDINAL;
 
-        // HDR output feedback — set to 1 when HDR is active.
-        let _ = conn.change_property32(
-            replace,
-            root,
-            atoms.gamescope_hdr_output_feedback,
-            cardinal,
-            &[1u32],
-        );
         // XWayland server ID — always 0 for a standalone compositor.
         let _ = conn.change_property32(
             replace,
@@ -463,16 +453,6 @@ impl NescopeState {
         );
         let _ = conn.flush();
         tracing::debug!("Set gamescope atoms on display :{display_number}");
-    }
-
-    // -----------------------------------------------------------------------
-    // Override surface (gamescope WSI bypass)
-    // -----------------------------------------------------------------------
-
-    /// Register the gamescope WSI override surface for an X11 window.
-    pub fn override_window_surface(&mut self, x11_window: u32, surface: WlSurface) {
-        tracing::debug!(x11_window, "Registered gamescope WSI override surface");
-        self.override_surface = Some(surface);
     }
 
     // -----------------------------------------------------------------------
@@ -769,12 +749,24 @@ impl NescopeState {
         // 1. Release the held buffer → frees a swapchain image for the game.
         self.held_buffer.take();
 
-        // 2. Presentation feedback — tell clients about vsync timing.
+        // 2. Presentation feedback — every frame committed since the last tick
+        //    is reported presented, on the one output there is.
+        //
+        //    Not filtered by primary scan-out output: that is recorded by a
+        //    renderer, and nothing here renders, so the filter matched no
+        //    surface ever. Feedback then resolved only as `discarded`, when the
+        //    next commit superseded it -- which never happens for a client that
+        //    waits for its last present before drawing the next. A Vulkan
+        //    client with present-wait under FIFO does exactly that: Control on
+        //    VKD3D-Proton froze on leaving its title screen, GPU idle, the game
+        //    still running behind a stream that no longer moved.
         let mut output_presentation_feedback = OutputPresentationFeedback::new(&output);
+        let on_output =
+            |_: &WlSurface, _: &smithay::wayland::compositor::SurfaceData| Some(output.clone());
         for window in self.space.elements().cloned().collect::<Vec<_>>() {
             window.take_presentation_feedback(
                 &mut output_presentation_feedback,
-                surface_primary_scanout_output,
+                on_output,
                 |_, _| wp_presentation_feedback::Kind::Vsync,
             );
         }
@@ -795,12 +787,6 @@ impl NescopeState {
                     Some(output.clone())
                 });
             }
-        }
-
-        if let Some(ref s) = self.override_surface {
-            send_frames_surface_tree(s, &output, now, Some(Duration::ZERO), |_, _| {
-                Some(output.clone())
-            });
         }
 
         // 4. Send periodic stats over IPC

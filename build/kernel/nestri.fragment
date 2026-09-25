@@ -1,0 +1,207 @@
+# Kconfig fragment for the guest kernel.
+#
+# Merged onto the tree's config by scripts/kernel-build.sh with the kernel's own
+# merge_config.sh, then resolved with `make olddefconfig`, then checked: every
+# entry below must hold in the final .config or the build stops. A fragment
+# rather than a saved full config: a full .config pins thousands of symbols and
+# rots the moment the tree is bumped, while this says only what the guest
+# actually requires and lets the version's own defaults handle the rest.
+#
+# Every entry here is load-bearing or a deliberate performance choice. Nothing
+# is speculative.
+
+# ── Gaming needs ─────────────────────────────────────────
+# NTSYNC is a great improvement over fsync and esync approaches.
+CONFIG_NTSYNC=y
+
+# ── Timers ───────────────────────────────────────────────
+# The one that cost a day of silent audio. The guest has no sound hardware, so
+# PipeWire drives its whole graph off a timerfd at a 2.67ms cycle, which a
+# HZ_PERIODIC/250 kernel cannot express. Symptom: everything reports healthy,
+# neswire sends a steady ~3 kbps of Opus, and every sample is zero.
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_NO_HZ_IDLE=y
+CONFIG_HZ_1000=y
+
+# ── Shared memory ────────────────────────────────────────
+# PipeWire moves audio through memfd, not through its socket. Wine uses POSIX
+# shm and semaphores directly. /dev/shm itself is mounted by nesinit --
+# devtmpfs does not provide it.
+CONFIG_SHMEM=y
+CONFIG_MEMFD_CREATE=y
+CONFIG_TMPFS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+
+# ── What PipeWire schedules on ───────────────────────────
+# FUTEX_PI is also what Proton's fsync uses.
+CONFIG_TIMERFD=y
+CONFIG_EVENTFD=y
+CONFIG_EPOLL=y
+CONFIG_SIGNALFD=y
+CONFIG_FUTEX=y
+CONFIG_FUTEX_PI=y
+
+# ── Clock sources ────────────────────────────────────────
+# Listed because they were correct throughout the silent-audio episode. A good
+# clock *source* says nothing about whether the kernel can schedule a timer
+# *event* at the resolution asked for; only the block above governs that.
+CONFIG_KVM_GUEST=y
+CONFIG_PARAVIRT_CLOCK=y
+CONFIG_X86_TSC=y
+
+# ── Steal time ───────────────────────────────────────────
+# Time the host spends running something else on a vCPU is subtracted from
+# whatever task was on it, rather than charged to it. vCPUs share a set of host
+# cores instead of owning one each, so steal happens, and without this the
+# scheduler reads it as the task having run -- a frame thread preempted by the
+# host looks, to the fair class, like one that used its slice.
+CONFIG_PARAVIRT_TIME_ACCOUNTING=y
+
+# ── Idle: poll before halting ────────────────────────────
+# An idle vCPU that halts exits to the host, and waking it costs an IPI and a
+# VM entry. The frame pipeline sleeps and wakes every few milliseconds, so that
+# is paid constantly. haltpoll spins for a bounded, adaptive window first
+# (guest_halt_poll_ns, 200us), so a wakeup that comes quickly never leaves the
+# guest. When the host offers it, the guest also switches host-side polling
+# off, so the two never poll at once.
+#
+# Built in but inert: it loads only if the host sets KVM_HINTS_REALTIME or the
+# command line forces it. The hint is the wrong tool -- it also promises the
+# vCPUs are never preempted, and the guest drops paravirt spinlocks on the
+# strength of that, which a shared set of host cores cannot promise. Forcing
+# the idle driver gets the polling and nothing else. Built into the command
+# line, which is prepended to what the host passes, so no caller has to know.
+# The cost is host CPU spent spinning on an idle vCPU.
+#
+# Prepended, not replacing: with OVERRIDE off the host's arguments come after
+# this and the last value wins, so `cpuidle_haltpoll.force=0` from the host
+# still turns it off.
+CONFIG_HALTPOLL_CPUIDLE=y
+CONFIG_CPU_IDLE_GOV_HALTPOLL=y
+CONFIG_CMDLINE_BOOL=y
+CONFIG_CMDLINE="cpuidle_haltpoll.force=1 swiotlb=noforce"
+# CONFIG_CMDLINE_OVERRIDE is not set
+
+# ── No bounce buffer ─────────────────────────────────────
+# With more than about 3 GiB of RAM the guest has memory above 4 GiB, and x86
+# then sets aside a 64 MiB SWIOTLB bounce buffer and zeroes it at boot, which
+# makes the host back all of it. Nothing here ever bounces: the virtio devices
+# do not offer ACCESS_PLATFORM, so virtio skips the DMA API entirely, and there
+# is no other DMA-capable device. `swiotlb=noforce` in the command line above
+# skips the allocation. A device that genuinely needs a 32-bit DMA mask would
+# fail to map rather than bounce; there is none.
+
+# ── microVM transport ────────────────────────────────────
+CONFIG_VIRTIO=y
+CONFIG_VIRTIO_PCI=y
+CONFIG_VIRTIO_MMIO=y
+CONFIG_VIRTIO_BLK=y          # root on /dev/vda
+CONFIG_VIRTIO_CONSOLE=y      # hvc0, the only way into a guest that will not boot
+CONFIG_VIRTIO_NET=y
+CONFIG_VIRTIO_FS=y           # the shares the boot descriptor names
+CONFIG_FUSE_FS=y             # virtiofs needs it
+CONFIG_VSOCKETS=y            # neshub's link to the host
+CONFIG_VIRTIO_VSOCKETS=y
+CONFIG_VIRTIO_BALLOON=y
+CONFIG_DRM=y
+CONFIG_DRM_VIRTIO_GPU=y
+
+# ── Filesystems ──────────────────────────────────────────
+CONFIG_EXT4_FS=y             # output/rootfs.ext4, and a box's writable install layer
+CONFIG_MISC_FILESYSTEMS=y    # the menu EROFS lives under; off in base.config, which drops it silently
+CONFIG_EROFS_FS=y            # a game's build image, the install overlay's lower layer
+CONFIG_OVERLAY_FS=y          # the session overlay over a read-only install
+
+# ── Memory typing ────────────────────────────────────────
+# Page Attribute Table, and the MTRR support it depends on.
+#
+# Both are `def_bool y` upstream, promptable only under EXPERT -- so they were
+# switched off deliberately at some point, and the guest booted logging
+# "PAT support disabled because CONFIG_X86_PAT is disabled in the kernel".
+#
+# Without PAT there are no write-combining mappings. This guest exists to push
+# frames through virtio-gpu, and WC on the GPU aperture is precisely what PAT
+# provides; every frame would go through uncached or writeback mappings
+# instead. Not a correctness problem, which is why it went unnoticed.
+CONFIG_MTRR=y
+CONFIG_X86_PAT=y
+
+# ── POSIX ACLs ───────────────────────────────────────────
+# Nothing depends on the ACLs themselves; without them, anything that sets one
+# on a device node or a file logs "Operation not supported" at every boot, and
+# a boot log full of failures that do not matter hides the ones that do.
+CONFIG_EXT4_FS_POSIX_ACL=y
+CONFIG_TMPFS_POSIX_ACL=y
+
+# ── Performance ──────────────────────────────────────────
+# Chosen, not required. The mainline subset of what CachyOS enables, minus
+# anything needing patches. PREEMPT_LAZY is the tree's own default and is left
+# alone; PREEMPT_DYNAMIC on top allows `preempt=full` from the command line
+# without a rebuild.
+CONFIG_PREEMPT_DYNAMIC=y
+CONFIG_LRU_GEN=y
+CONFIG_LRU_GEN_ENABLED=y
+CONFIG_TRANSPARENT_HUGEPAGE=y
+CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
+CONFIG_PSI=y
+
+# ── Undoing the minimal seed ─────────────────────────────
+# base.config descends from a size-minimised config with EXPERT on, and EXPERT
+# is what makes each of these promptable. Every one is `default y` (or the
+# default choice) upstream, and every one was off in the built kernel. They
+# are pinned here because nothing else would stop a reseed from bringing them
+# back.
+#
+# SLUB_TINY drops the per-CPU slab caches, so every kmalloc and kfree takes the
+# locked slow path. Its own help text says it is not for performance. This
+# guest allocates constantly: network buffers, GPU ioctls, io_uring, futexes.
+# CONFIG_SLUB_TINY is not set
+#
+# Without ADVISE_SYSCALLS, madvise() and fadvise() return ENOSYS. THP above is
+# madvise-only, so no user mapping could ever get a huge page, and allocators
+# could never hand memory back with MADV_DONTNEED or MADV_FREE.
+CONFIG_ADVISE_SYSCALLS=y
+#
+# Without MEMBARRIER, Wine and the .NET runtime fall back to an mprotect() trick
+# to flush other threads' write buffers, which forces a TLB shootdown across
+# every vCPU -- an IPI storm, and each IPI is a VM exit. RSEQ gives glibc and
+# per-CPU allocators their fast paths.
+CONFIG_MEMBARRIER=y
+CONFIG_RSEQ=y
+#
+# -O2, not -Os: the whole kernel was being compiled for size, and a guest that
+# runs Wine spends much of its time in syscalls.
+CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE=y
+# CONFIG_CC_OPTIMIZE_FOR_SIZE is not set
+#
+# Without jump labels, every static key is a memory load and a branch instead
+# of a patched no-op, on paths such as steal-time accounting, the scheduler and
+# cgroup checks.
+CONFIG_JUMP_LABEL=y
+
+# Autogroup is deliberately OFF, which is a departure from CachyOS.
+#
+# It groups tasks by session id, which is a desktop tuning: it keeps a
+# terminal's `make -j` from starving the browser. This guest is a
+# single-application appliance with no interactive sessions to balance
+# against each other, so there is nothing for it to do but add overhead.
+# CONFIG_SCHED_AUTOGROUP is not set
+
+# ── Deliberately absent ──────────────────────────────────
+# No CONFIG_SND of any kind. The guest has no sound hardware and wants none:
+# neswire is a virtual PipeWire sink, and an ALSA stack would only add a second
+# thing that could claim to be the default output.
+
+# Speculation mitigations are off, as a decision rather than an oversight.
+#
+# `lscpu` in the guest reports Spectre v1/v2, SSB, SRSO and TSA as Vulnerable,
+# and that is intended. This is a single-tenant sandbox: one player's session,
+# torn down at the end of it, with the VM boundary as the isolation. The
+# attacks these defend against are cross-tenant side channels, and the cost is
+# paid on every syscall and context switch in a workload that is latency
+# bound.
+#
+# What would change this: running two players' sessions on one box at the same
+# time, or anything of value living inside the guest. Neither is true today.
+# CONFIG_CPU_MITIGATIONS is not set

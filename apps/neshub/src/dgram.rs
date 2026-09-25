@@ -143,6 +143,73 @@ impl DatagramSender {
     }
 }
 
+/// How long deltas may be withheld from a client waiting to resynchronise.
+///
+/// A bound rather than a belief. Withholding is correct only while the keyframe
+/// is actually coming, and if the encoder never produces one -- it refused, it
+/// died, the request never reached it -- then withholding forever turns a
+/// recoverable freeze into a permanent black screen. Past this the deltas go out
+/// again: useless to a desynchronised decoder, but "useless" beats "nothing at
+/// all, forever" when the assumption behind the suppression has been proven
+/// wrong.
+const MAX_RESYNC_WITHHOLD: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Whether to send delta frames to a client that cannot decode them yet.
+///
+/// A client that has lost synchronisation asks for a keyframe, and until one
+/// arrives every delta frame sent to it is undecodable -- it predicts from
+/// pictures that client does not have. Those frames are not merely wasted: quinn
+/// writes DATAGRAM frames into a packet before STREAM frames, so a steady stream
+/// of deltas takes the space the keyframe needs and starves the one frame that
+/// would end the freeze. That is the loop behind "26 keyframe fallbacks, 19 IDR
+/// requests": the recovery frame could not get out past the frames that needed
+/// it to arrive first.
+///
+/// So while a client is waiting, its deltas are dropped rather than sent.
+#[derive(Debug, Default)]
+pub struct ResyncGate {
+    /// When this client started waiting, or `None` if it is not.
+    waiting_since: Option<std::time::Instant>,
+    /// Deltas dropped during the current wait.
+    withheld: u64,
+    /// Set once the withhold bound is passed, so it is said once per wait.
+    gave_up: bool,
+}
+
+impl ResyncGate {
+    /// Whether this delta frame should go out.
+    ///
+    /// `awaiting` is whether the client has asked for a keyframe and not yet
+    /// been sent one.
+    pub fn admit_delta(&mut self, awaiting: bool, now: std::time::Instant) -> bool {
+        if !awaiting {
+            self.end_wait();
+            return true;
+        }
+        let since = *self.waiting_since.get_or_insert(now);
+        if now.duration_since(since) >= MAX_RESYNC_WITHHOLD {
+            self.gave_up = true;
+            return true;
+        }
+        self.withheld += 1;
+        false
+    }
+
+    /// A keyframe has gone out, so the wait is over.
+    pub fn note_keyframe(&mut self) -> Option<(u64, bool)> {
+        let withheld = self.withheld;
+        let gave_up = self.gave_up;
+        self.end_wait();
+        (withheld > 0).then_some((withheld, gave_up))
+    }
+
+    fn end_wait(&mut self) {
+        self.waiting_since = None;
+        self.withheld = 0;
+        self.gave_up = false;
+    }
+}
+
 /// Frames arriving on `rx` are numbered and sent — deltas as datagrams,
 /// keyframes on a reliable stream each when `keyframes_reliable` is set.
 ///
@@ -161,6 +228,12 @@ pub async fn run_datagram_writer(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
     relay_ms: Option<Arc<AtomicU32>>,
     keyframes_reliable: bool,
+    // Set while this client has asked for a keyframe and not yet been sent
+    // one. Video only; audio has no such notion.
+    awaiting_keyframe: Option<Arc<std::sync::atomic::AtomicBool>>,
+    // Counts frames withheld during a resynchronisation, so the bitrate
+    // controller can tell a second it starved from a second the path did.
+    withheld: Option<Arc<std::sync::atomic::AtomicU64>>,
 ) {
     let sender = DatagramSender::new(conn.clone(), kind);
     let keyframes = keyframes_reliable.then(|| KeyframeSender::new(conn, sender.clone()));
@@ -170,33 +243,54 @@ pub async fn run_datagram_writer(
     // debug. Losing datagram support entirely is not, and is worth a warning —
     // but only the first time, since it will then be true for every frame.
     let mut warned_unsupported = false;
-
-    // Where this writer's second went.
-    //
-    // The pair that matters is the first two: if frames arrive here already
-    // 43 ms apart then the hole was made upstream, in the encoder or on the IPC
-    // hop, and nothing in this file can be the cause. If they arrive evenly and
-    // leave unevenly, it is made here. A client measured exactly that hole in
-    // video datagram arrivals while audio — same connection, same congestion
-    // window, its own writer — stayed at 8 ms.
-    let mut last_in = std::time::Instant::now();
-    let mut worst_in_gap = std::time::Duration::ZERO;
-    let mut worst_send = std::time::Duration::ZERO;
-    let mut frames: u32 = 0;
-    let mut last_pace = std::time::Instant::now();
+    let mut resync = ResyncGate::default();
 
     while let Some(payload) = rx.recv().await {
         let t0 = std::time::Instant::now();
-        worst_in_gap = worst_in_gap.max(t0.duration_since(last_in));
-        last_in = t0;
-        frames += 1;
-
         body.clear();
         nesprotocol::encode_frame_body(&mut body, MSG_DATA, seq, &payload);
 
         // A keyframe goes on a stream of its own when one will take it. The
         // relay timing below is not recorded for it: the write is asynchronous
         // by design, so the time this loop spent on it says nothing.
+        // A client that cannot decode has asked for a keyframe; until it gets
+        // one, everything else sent to it is undecodable and takes the space the
+        // keyframe needs. See `ResyncGate`.
+        if let Some(ref awaiting) = awaiting_keyframe {
+            if nesprotocol::reliable::video_is_keyframe(&payload) {
+                awaiting.store(false, Ordering::Relaxed);
+                if let Some((withheld, gave_up)) = resync.note_keyframe() {
+                    debug!(
+                        "{label}: resynchronised after withholding {withheld} frame(s){}",
+                        if gave_up {
+                            ", having given up waiting"
+                        } else {
+                            ""
+                        }
+                    );
+                }
+            } else if !resync
+                .admit_delta(awaiting.load(Ordering::Relaxed), std::time::Instant::now())
+            {
+                // The sequence number deliberately does *not* advance. A
+                // withheld frame was never sent, so leaving a hole would make
+                // the receiver count it as lost -- and that count is what the
+                // bitrate controller reads. The hub would then lower the
+                // bitrate because of frames it chose not to send, which is a
+                // controller reacting to its own decision rather than to the
+                // path. Reusing the number is safe precisely because nothing
+                // went out under it.
+                //
+                // Saying so is the other half: the receiver still reports fewer
+                // frames this second, and without this count the controller has
+                // no way to tell that second from one the path ruined.
+                if let Some(ref withheld) = withheld {
+                    withheld.fetch_add(1, Ordering::Relaxed);
+                }
+                continue;
+            }
+        }
+
         if let Some(ref keyframes) = keyframes
             && video_wants_reliable(&payload)
         {
@@ -229,19 +323,6 @@ pub async fn run_datagram_writer(
             }
             Err(e) => debug!("{label}: dropping frame {seq}: {e}"),
         }
-        worst_send = worst_send.max(t0.elapsed());
-
-        if last_pace.elapsed() >= std::time::Duration::from_secs(1) {
-            last_pace = std::time::Instant::now();
-            debug!(
-                "{label}: {frames} frames, worst gap between frames in {:.1}ms,                  worst send {:.1}ms",
-                worst_in_gap.as_secs_f64() * 1000.0,
-                worst_send.as_secs_f64() * 1000.0,
-            );
-            worst_in_gap = std::time::Duration::ZERO;
-            worst_send = std::time::Duration::ZERO;
-            frames = 0;
-        }
 
         seq = seq.wrapping_add(1);
     }
@@ -251,4 +332,96 @@ pub async fn run_datagram_writer(
         debug!("{label}: {on_streams} keyframes on streams, {fell_back} fell back to datagrams");
     }
     debug!("{label} datagram writer exiting (channel closed)");
+}
+
+#[cfg(test)]
+mod resync_gate_tests {
+    use super::{MAX_RESYNC_WITHHOLD, ResyncGate};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_client_that_can_decode_gets_everything() {
+        // The negative that matters: nothing is withheld from a healthy client.
+        let mut gate = ResyncGate::default();
+        let now = Instant::now();
+        for i in 0..1000 {
+            assert!(gate.admit_delta(false, now + Duration::from_millis(i)));
+        }
+    }
+
+    #[test]
+    fn a_waiting_client_is_not_sent_frames_it_cannot_decode() {
+        let mut gate = ResyncGate::default();
+        let now = Instant::now();
+        for i in 0..60 {
+            assert!(
+                !gate.admit_delta(true, now + Duration::from_millis(i * 16)),
+                "frame {i} went to a client with no reference to decode it against",
+            );
+        }
+    }
+
+    #[test]
+    fn the_keyframe_ends_the_wait_and_reports_the_cost() {
+        let mut gate = ResyncGate::default();
+        let now = Instant::now();
+        for i in 0..5 {
+            gate.admit_delta(true, now + Duration::from_millis(i * 16));
+        }
+        assert_eq!(gate.note_keyframe(), Some((5, false)));
+        // And the next delta goes out immediately.
+        assert!(gate.admit_delta(false, now + Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn a_keyframe_with_nothing_withheld_says_nothing() {
+        // So an ordinary periodic keyframe does not log a recovery that did not
+        // happen.
+        let mut gate = ResyncGate::default();
+        assert_eq!(gate.note_keyframe(), None);
+    }
+
+    #[test]
+    fn withholding_gives_up_rather_than_going_dark_forever() {
+        // The bound. Withholding is only correct while the keyframe is actually
+        // coming; if the encoder never produces one, suppressing forever turns a
+        // recoverable freeze into a permanent black screen. Undecodable frames
+        // beat no frames once the assumption is disproven.
+        let mut gate = ResyncGate::default();
+        let now = Instant::now();
+        assert!(!gate.admit_delta(true, now));
+        assert!(!gate.admit_delta(true, now + MAX_RESYNC_WITHHOLD - Duration::from_millis(1)));
+        assert!(
+            gate.admit_delta(true, now + MAX_RESYNC_WITHHOLD),
+            "still withholding after the keyframe plainly is not coming",
+        );
+    }
+
+    #[test]
+    fn giving_up_is_reported_when_the_keyframe_finally_lands() {
+        let mut gate = ResyncGate::default();
+        let now = Instant::now();
+        gate.admit_delta(true, now);
+        gate.admit_delta(true, now + MAX_RESYNC_WITHHOLD);
+        let (withheld, gave_up) = gate.note_keyframe().expect("something was withheld");
+        assert_eq!(withheld, 1);
+        assert!(gave_up, "the wait timed out and nothing said so");
+    }
+
+    #[test]
+    fn a_second_wait_starts_fresh() {
+        // Otherwise the first wait's elapsed time carries over and the second is
+        // abandoned immediately, or its count reports the wrong recovery.
+        let mut gate = ResyncGate::default();
+        let now = Instant::now();
+        gate.admit_delta(true, now);
+        gate.note_keyframe();
+
+        let later = now + Duration::from_secs(60);
+        assert!(
+            !gate.admit_delta(true, later),
+            "the new wait was not honoured"
+        );
+        assert_eq!(gate.note_keyframe(), Some((1, false)));
+    }
 }

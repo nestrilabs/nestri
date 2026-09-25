@@ -1,3 +1,4 @@
+mod control;
 mod dgram;
 mod ipc_listener;
 mod keyframe;
@@ -14,7 +15,7 @@ use iroh::endpoint::presets;
 
 use crate::session::SessionManager;
 use crate::ticket::NestriTicket;
-use nesprotocol::ALPN;
+use nesprotocol::{ALPNS, Carrier};
 
 #[derive(Parser, Debug)]
 #[command(name = "neshub")]
@@ -73,6 +74,16 @@ struct Args {
     #[arg(long, env = "NESTRI_AUDIO_BITRATE", default_value_t = 64)]
     audio_bitrate_per_channel: u32,
 
+    /// Ceiling on the video bitrate, in kbps.
+    ///
+    /// Set by `nesinit` from the boot descriptor's video limits, which come
+    /// from the tier the box was sized for. Absent means nobody said -- which is
+    /// not a licence to send whatever the encoder defaults to, since that is
+    /// precisely how every session came to offer 10 Mbps regardless of what the
+    /// path could carry. Unset is reported, and a conservative ceiling is used.
+    #[arg(long, env = "NESTRI_MAX_BITRATE")]
+    max_bitrate_kbps: Option<u32>,
+
     /// Socket nescope sends screenshots on. neshub listens; nescope dials out.
     #[arg(
         long,
@@ -81,6 +92,14 @@ struct Args {
     )]
     screenshot_ipc: PathBuf,
 }
+
+/// What to assume when nobody said.
+///
+/// Deliberately modest. A ceiling that was never set should not behave like an
+/// unlimited one: the whole failure this exists to fix was a session offering
+/// 10 Mbps into a path carrying under three, because no number had ever been
+/// chosen and the encoder's own default stood in for one.
+const DEFAULT_MAX_BITRATE_KBPS: u32 = 4_000;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -93,7 +112,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     let mut builder = iroh::Endpoint::builder(presets::N0)
-        .alpns(vec![ALPN.to_vec()])
+        .alpns(ALPNS.iter().map(|a| a.to_vec()).collect::<Vec<_>>())
         .transport_config(crate::dgram::media_transport_config());
 
     match args.relay.as_str() {
@@ -117,6 +136,15 @@ async fn main() -> Result<()> {
         }
     }
 
+    match args.max_bitrate_kbps {
+        Some(kbps) => tracing::info!("video ceiling: {kbps} kbps, from the boot descriptor"),
+        None => tracing::warn!(
+            "no video ceiling on the boot descriptor; using {DEFAULT_MAX_BITRATE_KBPS} kbps. \
+             A box sized by a tier is told its ceiling -- if this is one, the descriptor did \
+             not carry it."
+        ),
+    }
+
     let endpoint = builder.bind().await?;
     let endpoint_addr = endpoint.addr();
     let ep_id = endpoint_addr.id;
@@ -133,6 +161,14 @@ async fn main() -> Result<()> {
         tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
     let session_manager = Arc::new(SessionManager::new());
+
+    // One controller for the box, not one per client: there is one encoder, so
+    // there is one bitrate, and the client having the worst time is the one it
+    // has to answer.
+    let box_ceiling_kbps = args.max_bitrate_kbps.unwrap_or(DEFAULT_MAX_BITRATE_KBPS);
+    let controller = Arc::new(tokio::sync::Mutex::new(control::Controller::new(
+        control::Limits::new(box_ceiling_kbps),
+    )));
 
     // IDR / encode settings command channel: input reader → nescapture
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -181,23 +217,105 @@ async fn main() -> Result<()> {
             args.audio_channels,
             args.audio_bitrate_per_channel
         );
+        let controller = controller.clone();
+        let cmd_tx = cmd_tx.clone();
         tokio::spawn(async move {
+            // Ten times a second, and only when asked for. Pairs with
+            // nescapture's rate probe: that measures how fast the encoder
+            // follows a new bitrate, this shows how fast the queue downstream
+            // of it responds, and the slower of the two is the fastest a
+            // control loop can usefully run. At one sample a second neither is
+            // visible -- a queue that fills and drains inside a second looks
+            // like a queue that was never there.
+            if std::env::var("NESHUB_BACKLOG_TRACE").is_ok_and(|v| v != "0" && !v.is_empty()) {
+                let mgr = mgr.clone();
+                let controller = controller.clone();
+                tokio::spawn(async move {
+                    let mut fast = tokio::time::interval(std::time::Duration::from_millis(100));
+                    tracing::info!("backlog trace on, 10 Hz");
+                    loop {
+                        fast.tick().await;
+                        let backlogs = mgr.backlog_bytes().await;
+                        if backlogs.is_empty() {
+                            continue;
+                        }
+                        let target = controller.lock().await.target_kbps();
+                        for bytes in backlogs {
+                            // Against the target rather than a measured drain:
+                            // this is a trace to read afterwards, and a number
+                            // divided by a second measurement is two things
+                            // moving at once.
+                            let ms = bytes.saturating_mul(8) / u64::from(target.max(1));
+                            tracing::info!("backlog {ms} ms ({bytes} bytes) at {target} kbps");
+                        }
+                    }
+                });
+            }
+
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             loop {
                 interval.tick().await;
+
+                // One decision a second, on the same tick as the stats, because
+                // a report describes the second that just passed and there is
+                // nothing to gain from deciding more often than they arrive.
+                {
+                    let clients = mgr.client_count().await;
+                    let (report, path, self_inflicted) = mgr.worst_report().await;
+                    let mut controller = controller.lock().await;
+                    if let Some(kbps) = controller.tick(clients, report, path, self_inflicted) {
+                        let mut cmd = vec![nesprotocol::MSG_ENCODE_SETTINGS];
+                        nesprotocol::encode_bitrate_only(&mut cmd, kbps);
+                        if cmd_tx.send(cmd).is_err() {
+                            tracing::warn!("encoder command channel closed");
+                        } else {
+                            // Trace, not info: under a path that keeps moving
+                            // this fires every second, and a per-second line at
+                            // info buries everything worth reading.
+                            tracing::trace!(
+                                "video ceiling {}/{} kbps: {:?}",
+                                kbps,
+                                controller.limits().ceiling_kbps,
+                                controller.reason(),
+                            );
+                        }
+                    }
+                }
+
                 let clients = mgr.client_count().await as u8;
-                let bitrate = mgr.video_bitrate_bps();
+                let (key_bps, delta_bps, keyframes) = mgr.video_breakdown();
+                let (pipeline_p50_ms, pipeline_p95_ms, pipeline_max_ms) = mgr.pipeline_delays();
                 let audio_kbps = mgr.audio_bitrate_kbps();
                 let relay_ms = mgr.relay_ms();
-                let mut buf = Vec::with_capacity(15);
+                let mut buf = Vec::with_capacity(34);
                 nesprotocol::stats::encode_hub_stats(
                     &mut buf,
                     clients,
-                    bitrate,
+                    key_bps.saturating_add(delta_bps),
                     relay_ms,
                     audio_kbps,
                     audio_channels,
                 );
+                {
+                    let controller = controller.lock().await;
+                    nesprotocol::stats::encode_video_breakdown(
+                        &mut buf,
+                        &nesprotocol::stats::VideoBreakdown {
+                            key_bps,
+                            delta_bps,
+                            keyframes,
+                            target_kbps: controller.target_kbps(),
+                            ceiling_kbps: controller.limits().ceiling_kbps,
+                            reason: controller.reason() as u8,
+                            manual: u8::from(controller.mode() == nesprotocol::ControlMode::Manual),
+                            box_ceiling_kbps: controller.box_ceiling_kbps(),
+                            pipeline_p50_ms,
+                            pipeline_p95_ms,
+                            pipeline_max_ms,
+                            backlog_ms: controller.backlog_ms().min(u32::from(u16::MAX)) as u16,
+                        },
+                    );
+                }
                 mgr.broadcast_stats(buf).await;
             }
         });
@@ -262,18 +380,43 @@ async fn main() -> Result<()> {
             match incoming.await {
                 Ok(conn) => {
                     let remote_id = conn.remote_id();
-                    tracing::info!(remote = %remote_id.fmt_short(), "client connected");
-                    let session = session::ClientSession::new(
+                    // A client opens one connection per kind of traffic, so the
+                    // ALPN says which this is and the endpoint id says whose.
+                    let Some(carrier) = Carrier::from_alpn(conn.alpn()) else {
+                        tracing::warn!(
+                            remote = %remote_id.fmt_short(),
+                            "connection with an unknown ALPN; closing"
+                        );
+                        conn.close(0u32.into(), b"unknown alpn");
+                        continue;
+                    };
+                    tracing::info!(
+                        remote = %remote_id.fmt_short(),
+                        carrier = carrier.label(),
+                        "client connected"
+                    );
+                    mgr.attach(
+                        remote_id,
+                        carrier,
                         conn.clone(),
                         input_broadcast_tx.clone(),
-                        session_manager.relay_ms_atomic(),
                         cmd_tx.clone(),
-                    );
-                    mgr.add_session(remote_id, session).await;
+                        controller.clone(),
+                    )
+                    .await;
                     let mgr_clone = mgr.clone();
-                    let conn_clone = conn.clone();
                     tokio::spawn(async move {
-                        conn_clone.closed().await;
+                        conn.closed().await;
+                        // Any one of them going means the session goes. A client
+                        // left holding audio and input but no video is not a
+                        // degraded session, it is a stuck one, and a clean
+                        // reconnect is both simpler to reason about and quicker
+                        // than whatever partial recovery would be built here.
+                        tracing::debug!(
+                            remote = %remote_id.fmt_short(),
+                            carrier = carrier.label(),
+                            "carrier closed, ending session"
+                        );
                         mgr_clone.remove_session(&remote_id).await;
                     });
                 }

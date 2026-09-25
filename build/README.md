@@ -66,17 +66,16 @@ wrong about Proton: it is compiled from source, which is not a thing you can
 do with closed software. Keeping it out cost a box the only way it has to run
 a Windows title, for a rule that did not apply to it.
 
-What it is: **proton-cachyos built with `--enable-wow64`**, pulled by tag as a
+What it is: **proton-ge built wow64-only**, pulled by tag as a
 published image rather than rebuilt here, because it takes hours and moves
 only when its own tag does. `PROTON_IMAGE` overrides the tag, and it has to be
-declared before the first `FROM` — an `ARG` a `FROM` expands is global or it
+declared before the first `FROM`: an `ARG` a `FROM` expands is global or it
 is nothing, and getting that wrong fails with `no FROM statement found`, which
-says nothing about the actual mistake. wow64 is the whole reason it is a build of ours
-and not the distribution's package — it runs 32-bit Windows code inside a
-64-bit unix process, so a box needs no lib32 glibc, no second Mesa for i686,
-and no second capture layer for 32-bit titles to be captured. The
-distribution's package is built without the flag, which is exactly why it
-depends on `lib32-*`.
+says nothing about the actual mistake. wow64 is the whole reason it is a build
+of ours and not a released one. It runs 32-bit Windows code inside a 64-bit
+unix process, so a box needs no lib32 glibc, no second Mesa for i686, and no
+second capture layer for 32-bit titles to be captured. The released builds
+carry a 32-bit unix side, which is exactly why they need `lib32-*`.
 
 It costs about 1.4 GB of image, and it is the one thing in here that is
 payload-shaped: a compatibility layer for Windows games in an image that is
@@ -91,6 +90,59 @@ and also the shared foundation other builds start from: nesbox's jail image
 the virtio-gpu native-context protocol never drift apart. Only Mesa —
 `virglrenderer` is the host half of that protocol and nesbox builds its own,
 patched, from `nesbox/patches/`; nothing in this image carries it.
+
+## The guest kernel
+
+```sh
+make kernel                          # clone if needed, configure, verify, build → output/vmlinux
+make KERNEL_SRC=~/src/linux kernel   # build an existing tree instead
+make kernel-clean                    # drop the tree and the image
+```
+
+CachyOS's fork (`KERNEL_REF` in the `Makefile`), taken for its scheduler
+patches, not its config: theirs is a desktop build with thousands of modules,
+and this guest has `CONFIG_MODULES` off and no `/lib/modules` at all.
+
+- **`kernel/nestri.fragment` is the source of truth**, and says why each entry
+  is there. It is merged onto the tree's `.config`, resolved with
+  `olddefconfig`, and then **checked**: any entry that did not survive fails the
+  build. `merge_config.sh` and `olddefconfig` both drop options quietly, and
+  the worst of these fails as perfectly healthy, perfectly silent audio.
+- **`kernel/base.config` is only a seed** for a tree with no `.config`, so a
+  fresh clone does not start from `defconfig`'s enormous driver set. Change the
+  fragment, not the seed and not a tree's `.config`.
+- **`vmlinux`, not `bzImage`.** The guest is loaded as a raw ELF with no
+  bootloader in the path. It is ~16 MB unstripped, which costs nothing at run
+  time: only the loadable segments are mapped.
+- **`-march=x86-64-v3`** goes in through `KCFLAGS`. It is safe in a kernel:
+  the kernel's own `-mno-sse -mno-avx …` masks every vector extension off
+  whatever the flag order, leaving v3's integer ISA.
+- The tree is off the pinned ref (a bisect, a local patch)? The build warns
+  and builds what is there rather than checking the ref out over your work.
+
+### Experimental: the Infinity scheduler
+
+```sh
+make KERNEL_INFINITY=1 kernel        # → output/vmlinux-infinity
+```
+
+Applies [infinity-sched](https://github.com/galpt/infinity-sched-new)'s
+series (GPL-2), which reworks the fair, RT and DRM schedulers for latency
+under load. It is pinned by commit (`INFINITY_REV`), and the series directory
+comes from `KERNEL_REF`, since upstream publishes one per CachyOS release.
+
+- **Its own tree and its own image.** It builds in `output/kernel-infinity`,
+  so the stock kernel is never patched and switching between the two needs no
+  revert.
+- **All or nothing, zero fuzz.** The whole series is checked against the
+  stacked result before any of it is applied. The applied commit is recorded in
+  the tree; to move `INFINITY_REV`, start over with `make kernel-clean`.
+- **Only the CPU half does anything here.** virtio-gpu does not use the DRM
+  scheduler and `CONFIG_DRM_SCHED` is not built, so the GPU patch is compiled
+  out. It is applied anyway because upstream says a partial series
+  misbehaves.
+- Upstream's `/sys/kernel/debug/infinity_*` counters need `CONFIG_DEBUG_FS`,
+  which this kernel does not have.
 
 ## Two packages that look droppable and are not
 
@@ -109,13 +161,14 @@ a package list says that; the check below is what said it.
 
 `make build` **pulls** Proton by tag; it does not build it. Building it takes
 hours and it changes only when its tag moves, so it is one image published
-once and copied into every guest image after that. `Containerfile.proton` is
+once and copied into every guest image after that. `make proton-image` is
 that build, and it lives here so the published tag stays reproducible from
 this tree rather than from somebody's laptop.
 
 ```sh
-make proton-image                              # the current tag
-make PROTON_TAG=cachyos-11.1-20261115-native proton-image
+make proton-image                    # the current tag
+make PROTON_TAG=GE-Proton11-8 proton-image
+make proton-clean                    # drop the source, build tree and ccache
 ```
 
 **`PROTON_TAG` is the only thing to change.** The published version is derived
@@ -125,23 +178,38 @@ which Proton is inside it is worse than no image. The `Containerfile`'s own
 `PROTON_IMAGE` default is a fallback for a bare container build; going through
 `make` is what keeps them in step.
 
-Its **context is `build/`**, not the repository root the guest build uses. All
-it needs is the two scripts beside it, and `Containerfile.proton.containerignore`
-keeps `output/` out of that context — a build context is copied before the
-first instruction runs, so without it every Proton build would begin by moving
-the last rootfs image it produced.
+**The build runs on the host, not in a `podman build`.** proton-ge's build is
+container-driven itself: `make` runs outside, and every step runs in the Steam
+Runtime SDK image through the container engine, so the host needs only git,
+make and podman. Wrapping that in a container build would mean nested
+containers. So there are two steps:
 
-Two things in the recipe are worth knowing before changing it:
+1. `scripts/proton-build.sh` clones the tag with its submodules, applies
+   proton-ge's patch set, and runs its build with one change: the arch list
+   drops the 32-bit unix side, which is what makes it wow64-only. Everything
+   happens under `output/proton/`, which is tens of gigabytes.
+2. `Containerfile.proton` is `FROM scratch` with the built tree as its whole
+   context, so the image is the tree and nothing else.
 
-- **Fetch and build are separate layers on purpose.** The submodule checkout
-  runs well past ten minutes, and a build that fails on a flag or a missing
-  tool must not pay for that again. Keep anything that can fail *fast* in
-  `proton-build.sh`.
-- **`widl` is built by hand from the mingw-w64 release.** Without it autoconf
-  quietly sets `HAVE_WIDL` to false, vkd3d's public headers are never
-  generated, and the build dies an hour later on a missing header. Arch ships
-  `widl` only inside `wine`, which wants multilib — which is the thing
-  `--enable-wow64` exists to avoid.
+Things worth knowing before changing it:
+
+- **A rerun of the same tag resumes.** The clone, the patching and the
+  configure step each run once per tag, and proton-ge's own make picks up
+  where it stopped. A new tag or `FORCE_REBUILD=1` starts the tree over;
+  ccache and the cargo downloads survive both. `make clean` leaves all of it
+  alone, and `make proton-clean` removes it.
+- **The patch script does not fail on a patch that does not apply.** It
+  carries on and exits 0, so `proton-build.sh` greps its output
+  (`output/proton/patch.log`) and stops. Otherwise the result is an image
+  that looks fine and is missing a fix.
+- **`patches/proton-ge/` is ours, applied after proton-ge's own set.** It holds
+  what wow64-only needs that proton-ge's makefile does not handle, and fixes
+  for things a tag pinned that have since moved. Each patch says why it exists
+  at its top, and each one fails the build outright once it stops applying,
+  which on a tag bump is usually upstream having fixed it.
+- **The patch script is not idempotent**, so a tree is patched exactly once.
+  An interrupted run resets every submodule to the commits the tag pins before
+  patching again.
 
 ## There is no init system in here, and that is the design
 

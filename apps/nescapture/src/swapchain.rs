@@ -125,6 +125,13 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     vk::Result::SUCCESS
 }
 
+/// Whether `swapchain` is the one this layer tracks, which is the one most
+/// recently created. A swapchain retired through `oldSwapchain` stays valid
+/// until destroyed, and calls on it must not touch the tracked state.
+pub fn is_current(tracked: Option<vk::SwapchainKHR>, swapchain: vk::SwapchainKHR) -> bool {
+    swapchain != vk::SwapchainKHR::null() && tracked == Some(swapchain)
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn vkDestroySwapchainKHR(
     device: vk::Device,
@@ -133,8 +140,17 @@ pub unsafe extern "system" fn vkDestroySwapchainKHR(
 ) {
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
     if let Some(ds) = DEVICE_STATE.get(&key) {
-        *ds.swapchain.lock().unwrap() = None;
-        *ds.swapchain_images.lock().unwrap() = Vec::new();
+        // Only the swapchain being tracked. A game recreating through
+        // `oldSwapchain` destroys the retired one after its replacement is
+        // created and its images fetched, and clearing then would leave the
+        // live swapchain with no images: every present after would skip
+        // capture, silently, until the next recreation.
+        let mut current = ds.swapchain.lock().unwrap();
+        if is_current(*current, swapchain) {
+            *current = None;
+            *ds.swapchain_images.lock().unwrap() = Vec::new();
+        }
+        drop(current);
         if let Some(destroy_fn) = ds.fp.destroy_swapchain_khr {
             unsafe { destroy_fn(device, swapchain, p_allocator) };
         }
@@ -171,7 +187,8 @@ pub unsafe extern "system" fn vkGetSwapchainImagesKHR(
         return result;
     }
 
-    if !p_swapchain_images.is_null() {
+    // Images of a retired swapchain are not the ones capture reads.
+    if !p_swapchain_images.is_null() && is_current(*ds.swapchain.lock().unwrap(), swapchain) {
         let count = unsafe { *p_swapchain_image_count as usize };
         let images = unsafe { std::slice::from_raw_parts(p_swapchain_images, count) };
         *ds.swapchain_images.lock().unwrap() = images.to_vec();
@@ -231,9 +248,11 @@ pub unsafe extern "system" fn vkAcquireNextImageKHR(
         return vk::Result::ERROR_EXTENSION_NOT_PRESENT;
     };
 
+    crate::present::note_present(&ds, crate::encode::PresentStep::Acquiring);
     let started = std::time::Instant::now();
     let result = unsafe { acquire(device, swapchain, timeout, semaphore, fence, p_image_index) };
     record_acquire(&ds, started.elapsed());
+    crate::present::note_present(&ds, crate::encode::PresentStep::InGame);
     result
 }
 
@@ -250,8 +269,37 @@ pub unsafe extern "system" fn vkAcquireNextImage2KHR(
         return vk::Result::ERROR_EXTENSION_NOT_PRESENT;
     };
 
+    crate::present::note_present(&ds, crate::encode::PresentStep::Acquiring);
     let started = std::time::Instant::now();
     let result = unsafe { acquire(device, p_acquire_info, p_image_index) };
     record_acquire(&ds, started.elapsed());
+    crate::present::note_present(&ds, crate::encode::PresentStep::InGame);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sc(raw: u64) -> vk::SwapchainKHR {
+        vk::SwapchainKHR::from_raw(raw)
+    }
+
+    #[test]
+    fn the_tracked_swapchain_is_current() {
+        assert!(is_current(Some(sc(2)), sc(2)));
+    }
+
+    #[test]
+    fn a_retired_swapchain_is_not() {
+        // Created 2 with oldSwapchain = 1; destroying 1 afterwards must leave
+        // 2's state alone.
+        assert!(!is_current(Some(sc(2)), sc(1)));
+    }
+
+    #[test]
+    fn nothing_is_current_once_the_tracked_one_is_gone() {
+        assert!(!is_current(None, sc(1)));
+        assert!(!is_current(None, vk::SwapchainKHR::null()));
+    }
 }

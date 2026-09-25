@@ -14,6 +14,7 @@
 
 pub mod filesystems;
 pub mod payload;
+pub mod platform;
 pub mod reap;
 pub mod services;
 pub mod session;

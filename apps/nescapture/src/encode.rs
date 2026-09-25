@@ -1,53 +1,61 @@
 // ─────────────────────────────────────────────────────────────────────────────
 //  encode.rs — Vulkan Video hardware encoding + IPC transmission to neshub
 //
-//  ┌─────────────────── Zero-copy GPU pipeline ──────────────────────────────┐
-//  │                                                                         │
-//  │  Game VkDevice (intercepted by nescapture layer)                           │
-//  │    vkCmdCopyImage(swapchain → final_image)   ← GPU, no CPU             │
-//  │    get_dmabuf_fd(final_memory)               ← export fd               │
-//  │                                                                         │
-//  │  pixelforge VkDevice (separate, video-encode queue)                     │
-//  │    DmaBufImporter::import_or_reuse(fd, ...)  ← import as vk::Image     │
-//  │    ColorConverter::convert(bgra_img,          ← GPU compute shader      │
-//  │                            encoder.input_image())   BGRA/RGB10/FP16    │
-//  │                                                   → NV12/P010/YUV444   │
-//  │    Encoder::encode(encoder.input_image())     ← Vulkan Video encode     │
-//  │    IPC send to neshub                                                   │
-//  └─────────────────────────────────────────────────────────────────────────┘
+//  A frame's path, on the game's own device:
+//
+//    vkCmdCopyImage(swapchain -> ring slot)     the game's queue, signals the
+//                                               ring's timeline
+//    ColorConverter::convert_async(slot, ...)   waits on that, compute shader
+//                                               BGRA/RGB10/FP16 -> NV12/P010/YUV444
+//    Encoder::encode_after(input, ...)          waits on the conversion,
+//                                               Vulkan Video encode
+//    IPC send to neshub
+//
+//  Where the game's device cannot host the encoder, it gets a device of its
+//  own, and the slot is read back on the CPU and uploaded there instead.
 //
 //  Environment variables
 //  ──────────────────────
 //  NESCAPTURE_CODEC         "h264" | "h265" | "av1"          (default: best available)
 //  NESCAPTURE_FORMAT        "yuv420" | "yuv444"              (default: yuv420)
-//  NESCAPTURE_DEPTH         "8" | "10"                       (default: auto from VkFormat)
-//  NESCAPTURE_BITRATE       CBR target kbps                  (default: 10000)
-//  NESCAPTURE_QP            Constant QP (overrides BITRATE)  (default: unset)
+//  NESCAPTURE_DEPTH         "8" | "10"                       (default: 8)
+//  NESCAPTURE_RC            "cqp" | "cbr" | "vbr"            (default: inferred)
+//  NESCAPTURE_BITRATE       Target kbps, under cbr and vbr   (default: 10000)
+//  NESCAPTURE_BITRATE_MAX   Ceiling kbps, vbr only           (default: 1.5x target)
+//  NESCAPTURE_QP            Constant QP, under cqp           (default: unset)
 //  NESCAPTURE_FPS           Frame rate                       (default: 60)
 //  NESCAPTURE_IDR_INTERVAL  Force IDR every N seconds        (default: 4)
+//  NESCAPTURE_INTRA_REFRESH_SHAPE
+//                           auto | rows | columns | partitions (default: auto)
+//  NESCAPTURE_INTRA_REFRESH Replace periodic key frames with an intra refresh
+//                           cycle. The cycle length follows from the codec,
+//                           the picture and the device                (default: off)
+//  NESCAPTURE_INTRA_REFRESH_QP_DELTA
+//                           QP shift inside the refresh band, negative to
+//                           spend bits on it                          (default: -4)
 //  NESCAPTURE_TUNE          "highquality" | "lowlatency" | "ultralowlatency" | "lossless" (default: unset)
 //  NESCAPTURE_IPC_PATH      Unix socket path for hub IPC     (default: /tmp/nestri-video.sock)
 // ─────────────────────────────────────────────────────────────────────────────
 
 use anyhow::Result;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixDatagram;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Instant;
 
 use nesprotocol::{
-    CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, FLAG_KEYFRAME, FLAG_RECONFIG,
-    MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO, decode_encode_settings, encode_ipc_frame,
+    CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, ClientCaps, FLAG_KEYFRAME, FLAG_RECONFIG,
+    MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO, decode_client_caps,
+    decode_encode_settings, encode_ipc_frame,
 };
 use pixelforge::{
-    Codec, ColorConverter, ColorConverterConfig, ColorDescription, ColorSpace, EncodeBitDepth,
+    Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
     EncodeConfig, EncodeContentHint, EncodeFuture, EncodeUsageHint, Encoder, EncoderTuningMode,
-    InputFormat, OutputFormat, PixelFormat, RateControlMode, VideoContextBuilder,
+    InputFormat, IntraRefresh, IntraRefreshShape, OutputFormat, PixelFormat, RateControlMode,
+    VideoContextBuilder,
 };
-
-use crate::dmabuf_import::{DmaBufImporter, DmaBufPlane};
 
 // ── VkColorSpaceKHR constants ────────────────────────────────────────────────
 //
@@ -66,6 +74,7 @@ const VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT: u32 =
     colorspace(ash::vk::ColorSpaceKHR::EXTENDED_SRGB_LINEAR_EXT);
 const VK_COLOR_SPACE_BT2020_LINEAR_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::BT2020_LINEAR_EXT);
 const VK_COLOR_SPACE_HDR10_HLG_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::HDR10_HLG_EXT);
+const VK_COLOR_SPACE_PASS_THROUGH_EXT: u32 = colorspace(ash::vk::ColorSpaceKHR::PASS_THROUGH_EXT);
 
 /// The converter input format for a swapchain's `VkFormat`, or `None` when
 /// there is no correct one.
@@ -91,72 +100,132 @@ pub fn vk_format_to_input_format(vk_format: u32) -> Option<InputFormat> {
     }
 }
 
-pub fn vk_colorspace_to_color_space(vk_colorspace: u32) -> ColorSpace {
+/// The colour space to believe, given what the swapchain says and what the
+/// compositor was told.
+///
+/// The swapchain is the right source whenever it names a colour space. It does
+/// not always: `PASS_THROUGH` means "do not convert my values" and carries no
+/// colour information at all -- the surface's real colour space is declared
+/// separately, to the compositor, over `wp_color_manager_v1`. A Windows title
+/// turning on HDR through wine arrives exactly that way: BT.2020 PQ pixels in a
+/// swapchain that says nothing.
+///
+/// So `PASS_THROUGH` defers and everything else does not. That distinction is
+/// the whole rule: it is the one case where the swapchain is explicitly
+/// declining to say, which makes it the one case where asking elsewhere is
+/// reading rather than guessing.
+pub fn effective_colorspace(vk_colorspace: u32, declared: Option<u32>) -> u32 {
+    if vk_colorspace == VK_COLOR_SPACE_PASS_THROUGH_EXT
+        && let Some(declared) = declared
+    {
+        return declared;
+    }
+    vk_colorspace
+}
+
+/// A surface colour from the compositor, as a Vulkan colour space.
+///
+/// Mapped into the swapchain's own vocabulary so there is one thing to reason
+/// about downstream rather than two spellings of the same fact.
+pub fn surface_color_to_vk(space: u8) -> u32 {
+    match space {
+        nesprotocol::SURFACE_COLOR_BT2020_PQ => VK_COLOR_SPACE_HDR10_ST2084_EXT,
+        _ => VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+    }
+}
+
+/// What a swapchain's pixels already are, from its `VkColorSpaceKHR`.
+///
+/// Only the source. What the stream should be is a separate decision --
+/// [`stream_spec`] -- and keeping them apart is what fixed `BT2020_LINEAR_EXT`:
+/// with one fused source-to-target enum there was no arm for linear light on
+/// BT.2020 primaries, so it borrowed scRGB's and took a gamut error to avoid a
+/// gamma one. Now it says what it is.
+///
+/// Says nothing about the transfer a float buffer actually holds; see
+/// [`source_spec`], which is what capture uses.
+pub fn vk_colorspace_to_source_spec(vk_colorspace: u32) -> ColorSpec {
     match vk_colorspace {
-        VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpace::Bt2020,
-
-        // Both are linear, so the inverse sRGB EOTF that `SrgbToBt2020Pq` applies
-        // would decode data that was never encoded. `Bt709LinearToBt2020Pq` is
-        // documented for `EXTENDED_SRGB_LINEAR_EXT` exactly. `BT2020_LINEAR_EXT`
-        // is linear on BT.2020 primaries and there is no arm for that yet, so it
-        // borrows this one and takes a gamut error rather than a gamma one.
-        VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT | VK_COLOR_SPACE_BT2020_LINEAR_EXT => {
-            ColorSpace::Bt709LinearToBt2020Pq
-        }
-
-        _ => ColorSpace::Bt709,
+        VK_COLOR_SPACE_HDR10_ST2084_EXT | VK_COLOR_SPACE_HDR10_HLG_EXT => ColorSpec::Bt2020Pq,
+        // Linear, so no inverse sRGB EOTF on the way out -- applying one would
+        // decode data that was never encoded.
+        VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT => ColorSpec::Bt709Linear,
+        VK_COLOR_SPACE_BT2020_LINEAR_EXT => ColorSpec::Bt2020Linear,
+        _ => ColorSpec::Srgb,
     }
 }
 
-/// SDR reference white for the PQ conversions, in nits.
+/// What the pixels in a capture actually are, from the colour space that was
+/// declared and the format they are stored in.
 ///
-/// Only the two arms that write PQ consume this. They disagree on what 1.0 means:
-/// sRGB content is gamma-encoded and its white sits at the BT.2408 reference of
-/// 203 nits, while scRGB is linear and IEC 61966-2-2 puts 1.0 at 80 nits.
-/// pixelforge defaults to 203 for both, which maps scRGB white about 2.5x too
-/// bright.
-pub fn sdr_reference_white_nits(color_space: ColorSpace) -> f32 {
-    match color_space {
-        ColorSpace::Bt709LinearToBt2020Pq => 80.0,
-        _ => 203.0,
-    }
-}
-
-/// Bit depth implied by a converter input format.
+/// The format decides the transfer function, because only an integer format
+/// can carry an encoded one. A float colour buffer holds linear light: that is
+/// the whole reason to spend sixteen bits a channel on it, and there is no
+/// float convention that stores PQ. So a float surface declared BT.2020 PQ is
+/// not PQ -- it is scRGB, which is what every Windows title turning on HDR
+/// hands DXVK, and what a probe of Control's own frames measured directly:
+/// components up to 2.54, which PQ has no way to represent at all.
 ///
-/// Taken from the input format rather than matched against the `VkFormat` a
-/// second time. The two matches had drifted: `A2R10G10B10` counted as ten-bit
-/// here while the input-format mapping above had no entry for it and fell back
-/// to eight-bit BGRA, so the encoder was configured for ten-bit while the
-/// converter read the buffer as eight. Deriving one from the other makes that
-/// particular disagreement unrepresentable.
-pub fn input_format_bit_depth(input_fmt: InputFormat) -> EncodeBitDepth {
-    match input_fmt {
-        InputFormat::ABGR2101010 | InputFormat::RGBA16F => EncodeBitDepth::Ten,
-        _ => EncodeBitDepth::Eight,
+/// Believing the declaration there was the bug. It made the converter do
+/// matrix work only, so linear light was read as if it were already PQ and
+/// every highlight clipped -- a picture that blows out to yellow rather than
+/// one that looks merely wrong.
+///
+/// The declaration still decides the primaries, since that part it can say.
+pub fn source_spec(vk_colorspace: u32, input_fmt: InputFormat) -> ColorSpec {
+    let declared = vk_colorspace_to_source_spec(vk_colorspace);
+    if !matches!(input_fmt, InputFormat::RGBA16F) {
+        return declared;
+    }
+    match declared {
+        // Already linear, and already says which primaries.
+        ColorSpec::Bt709Linear | ColorSpec::Bt2020Linear => declared,
+        // PQ or sRGB over float samples. scRGB is the only thing this is in
+        // practice, and scRGB is BT.709 primaries with a linear transfer.
+        ColorSpec::Bt2020Pq | ColorSpec::Srgb => ColorSpec::Bt709Linear,
     }
 }
 
-pub fn vk_colorspace_to_color_description(vk_colorspace: u32) -> Option<ColorDescription> {
-    // Derived from the conversion rather than matched separately: the VUI has to
-    // describe what the shader actually wrote, and two independent matches on the
-    // same input drift the moment one gains an arm the other doesn't.
-    //
-    // Full range on every arm, because the converter is configured full-range
-    // unconditionally. pixelforge's constructors are limited-range per
-    // ITU-R BT.709-6, so leaving the flag off tags full-range luma as limited and
-    // every compliant decoder expands it again — darkening midtones and clipping
-    // both ends.
-    let desc = match vk_colorspace_to_color_space(vk_colorspace) {
-        ColorSpace::Bt709 => ColorDescription::bt709(),
-        // BT.2020 passthrough carries PQ-encoded input; the other two write PQ.
-        // HLG swapchains are tagged PQ here because pixelforge has no HLG transfer
-        // constant — a pre-existing approximation, not a consequence of this.
-        ColorSpace::Bt2020 | ColorSpace::SrgbToBt2020Pq | ColorSpace::Bt709LinearToBt2020Pq => {
-            ColorDescription::bt2020_pq()
+/// What to encode a given source as.
+///
+/// Video has no way to record that it holds linear light, so neither linear
+/// space can be a target -- [`ColorSpec::is_encodable`] says as much. Anything
+/// wide or linear goes out as HDR10; everything else stays SDR.
+pub fn stream_spec(source: ColorSpec) -> ColorSpec {
+    match source {
+        ColorSpec::Srgb => ColorSpec::Srgb,
+        ColorSpec::Bt709Linear | ColorSpec::Bt2020Linear | ColorSpec::Bt2020Pq => {
+            ColorSpec::Bt2020Pq
         }
-    };
-    Some(desc.with_full_range(true))
+    }
+}
+
+/// The converter configuration for one capture.
+///
+/// One place decides source, target and range, and the colour description the
+/// encoder declares is then derived from this same value rather than matched
+/// separately -- so the matrix the shader applies and the one the VUI announces
+/// cannot disagree.
+pub fn converter_config(
+    width: u32,
+    height: u32,
+    input_fmt: InputFormat,
+    out_fmt: OutputFormat,
+    vk_colorspace: u32,
+) -> ColorConverterConfig {
+    let source = source_spec(vk_colorspace, input_fmt);
+    ColorConverterConfig::new(
+        width,
+        height,
+        input_fmt,
+        out_fmt,
+        source,
+        stream_spec(source),
+        // Capture is always full-range, and the description derived from this
+        // config says so. A limited-range tag over full-range samples is
+        // expanded again by the decoder.
+        ColorRange::Full,
+    )
 }
 
 pub fn output_format(pixel_fmt: PixelFormat, bit_depth: EncodeBitDepth) -> OutputFormat {
@@ -185,36 +254,162 @@ pub struct CapturedFrame {
     /// When the game presented this frame. Carried all the way to the wire so
     /// the timestamp describes the frame rather than the encoder's backlog.
     pub present_time: Instant,
-    /// Reserves the capture ring slot this frame's DMA-BUF lives in. Dropping
+    /// Reserves the capture ring slot this frame lives in. Dropping
     /// the frame — encoded, skipped, or abandoned — returns the slot, so the
     /// present hook can never blit over a buffer the encoder is still reading.
     pub slot: Option<crate::slots::SlotGuard>,
+    /// On a device the encoder shares, the timeline point the slot's blit
+    /// signals. `None` when the frame has to be waited for on the CPU.
+    pub blit: Option<pixelforge::TimelinePoint>,
 }
 
 /// An encode in flight, with the time of the present it came from.
+/// Where each media thread last got to, and when.
+///
+/// A freeze with nothing in the log is the worst shape a fault can take: the
+/// capture layer stops, the session stays up, and no counter moves. Both media
+/// threads are serial and both have a step that can wait indefinitely -- the
+/// encoder thread blocks handing a frame to a full channel, and the IPC thread
+/// blocks awaiting an encode. Neither can report being stuck, because being
+/// stuck is precisely not reaching the next line.
+///
+/// So each says where it is and when it got there, and something else does the
+/// noticing.
+#[derive(Default)]
+struct Progress {
+    /// Milliseconds since the process epoch at the last step.
+    at_ms: AtomicU64,
+    /// Which step, as an index into `STEPS`.
+    step: AtomicU32,
+}
+
+/// The steps a media thread can be waiting in, named for the log.
+const STEPS: [&str; 13] = [
+    "starting",
+    "waiting for a captured frame",
+    "encoding",
+    "handing the encoded frame on",
+    "awaiting the encoder",
+    "writing to the socket",
+    "waiting for an encoded frame",
+    "offering a captured frame",
+    "in the present hook",
+    "presenting, in the driver",
+    "holding to the target rate",
+    "back in the game, not presenting",
+    "acquiring an image, in the driver",
+];
+
+/// What the device looks like, asked for when a stall is noticed.
+///
+/// Where a thread is says what it is waiting for; this says whether the GPU is
+/// still getting through the work in front of it, which the thread cannot.
+type StallProbe = Arc<std::sync::Mutex<Option<Box<dyn Fn() -> String + Send>>>>;
+
+/// Where the game's present thread is, as far as this layer can see it.
+///
+/// The capture watchdog says frames stopped arriving; this says whether the
+/// game is stuck inside a call of ours, inside the driver below us, or simply
+/// stopped calling. Those three need looking for in three different places.
+#[derive(Debug, Clone, Copy)]
+pub enum PresentStep {
+    InHook = 8,
+    Presenting = 9,
+    Holding = 10,
+    InGame = 11,
+    Acquiring = 12,
+}
+
+impl Progress {
+    fn note(&self, epoch: Instant, step: u32) {
+        self.at_ms
+            .store(epoch.elapsed().as_millis() as u64, Ordering::Relaxed);
+        self.step.store(step, Ordering::Relaxed);
+    }
+
+    /// How long this thread has been where it is, and what it is doing.
+    fn stalled_for(&self, epoch: Instant) -> (u64, &'static str) {
+        let at = self.at_ms.load(Ordering::Relaxed);
+        let now = epoch.elapsed().as_millis() as u64;
+        let step = self.step.load(Ordering::Relaxed) as usize;
+        (
+            now.saturating_sub(at),
+            STEPS.get(step).copied().unwrap_or("unknown"),
+        )
+    }
+}
+
+/// Say where the media threads are if either stops moving.
+///
+/// Warn rather than error: a stall is not necessarily fatal and may clear.
+/// Once per thread per stall, not once a second, because a frozen pipeline
+/// would otherwise fill the log with the same line and bury whatever else is
+/// still being said.
+fn spawn_stall_watchdog(
+    epoch: Instant,
+    present: Arc<Progress>,
+    capture: Arc<Progress>,
+    encoder: Arc<Progress>,
+    ipc: Arc<Progress>,
+    probe: StallProbe,
+    shutdown: Arc<AtomicBool>,
+) {
+    const STALL_MS: u64 = 2_000;
+    let _ = thread::Builder::new()
+        .name("nescapture-watchdog".into())
+        .spawn(move || {
+            let mut said = [false; 4];
+            while !shutdown.load(Ordering::Relaxed) {
+                thread::sleep(std::time::Duration::from_millis(500));
+                // Upstream first: the game's present thread, then capture, then
+                // the two after it. Each stopping makes everything after it look
+                // idle rather than stuck.
+                for (i, (name, p)) in [
+                    ("present", &present),
+                    ("capture", &capture),
+                    ("encoder", &encoder),
+                    ("ipc", &ipc),
+                ]
+                .iter()
+                .enumerate()
+                {
+                    let (stalled, step) = p.stalled_for(epoch);
+                    if stalled >= STALL_MS {
+                        if !said[i] {
+                            log::warn!("{name} thread has not moved for {stalled} ms, {step}");
+                            // Once per stall, from the first thread to report
+                            // it: the state is the device's, not the thread's.
+                            if !said.iter().any(|&s| s)
+                                && let Ok(probe) = probe.lock()
+                                && let Some(f) = probe.as_ref()
+                            {
+                                log::warn!("at the stall: {}", f());
+                            }
+                            said[i] = true;
+                        }
+                    } else if said[i] {
+                        log::warn!("{name} thread moving again after a stall");
+                        said[i] = false;
+                    }
+                }
+            }
+        });
+}
+
 struct EncodedFrame {
     future: EncodeFuture,
     present_time: Instant,
 }
 
 pub enum FrameSource {
-    DmaBuf {
-        fd: RawFd,
-        stride: u32,
-        modifier: u64,
+    /// A slot image on the game's own device, read in place once `blit` is
+    /// reached.
+    Shared {
+        image: ash::vk::Image,
+        blit: pixelforge::TimelinePoint,
     },
     Pixels(Vec<u8>),
 }
-impl Drop for FrameSource {
-    fn drop(&mut self) {
-        if let FrameSource::DmaBuf { fd, .. } = self {
-            if *fd >= 0 {
-                unsafe { libc::close(*fd) };
-            }
-        }
-    }
-}
-
 // ── Codec probing ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,12 +444,14 @@ fn probe_any() -> Option<(HwCodec, pixelforge::VideoContext)> {
 }
 
 fn probe_specific(codec: HwCodec) -> Option<(HwCodec, pixelforge::VideoContext)> {
-    let ctx = VideoContextBuilder::new()
-        .app_name("nescapture")
-        .enable_validation(false)
-        .require_encode(codec.to_pixelforge())
-        .build()
-        .ok()?;
+    let ctx = crate::shared::creating_own_device(|| {
+        VideoContextBuilder::new()
+            .app_name("nescapture")
+            .enable_validation(false)
+            .require_encode(codec.to_pixelforge())
+            .build()
+    })
+    .ok()?;
     if ctx.supports_encode(codec.to_pixelforge()) {
         log::info!("hardware {:?} encode available", codec);
         Some((codec, ctx))
@@ -282,14 +479,274 @@ fn resolve_codec(requested: Option<&str>) -> Option<(HwCodec, pixelforge::VideoC
     }
 }
 
+/// The codec to use on a context that already exists: the one asked for if
+/// it can, falling back the way [`resolve_codec`] does.
+/// What this device can encode, in the same shape the client sends.
+///
+/// Ten bits is offered for everything but H.264, which matches
+/// [`depth_for_codec`]: the encoder refuses ten-bit H.264, so advertising it
+/// would let a negotiation settle on something that is then quietly downgraded.
+fn host_caps(ctx: &pixelforge::VideoContext) -> ClientCaps {
+    let mut caps = ClientCaps::empty();
+    for (codec, id) in [
+        (HwCodec::AV1, nesprotocol::CODEC_AV1),
+        (HwCodec::H265, nesprotocol::CODEC_H265),
+        (HwCodec::H264, nesprotocol::CODEC_H264),
+    ] {
+        if !ctx.supports_encode(codec.to_pixelforge()) {
+            continue;
+        }
+        caps = caps.with(id, nesprotocol::DEPTH_8);
+        if codec != HwCodec::H264 {
+            caps = caps.with(id, nesprotocol::DEPTH_10);
+        }
+    }
+    caps
+}
+
+/// The codec this host should switch to for `client`, if any.
+///
+/// `None` means "keep what you are doing", which covers three cases that want
+/// the same answer: a client that said nothing, a client sharing nothing with
+/// this encoder, and a negotiation that landed where the encoder already is.
+fn negotiated(
+    client: ClientCaps,
+    host: ClientCaps,
+    forced: Option<&str>,
+) -> Option<(HwCodec, EncodeBitDepth)> {
+    let (codec_id, depth_id) = client.best(host)?;
+    let codec = match codec_id {
+        nesprotocol::CODEC_AV1 => HwCodec::AV1,
+        nesprotocol::CODEC_H265 => HwCodec::H265,
+        _ => HwCodec::H264,
+    };
+    let depth = if depth_id == nesprotocol::DEPTH_10 {
+        EncodeBitDepth::Ten
+    } else {
+        EncodeBitDepth::Eight
+    };
+
+    // An operator who names a codec gets that codec. Second-guessing an
+    // explicit setting is worse than sending something undecodable, because
+    // the undecodable case is visible and this would not be -- but it is worth
+    // saying out loud, since the result is a black screen at the far end.
+    if let Some(name) = forced {
+        let wanted = match name {
+            "av1" => Some(nesprotocol::CODEC_AV1),
+            "h265" | "hevc" => Some(nesprotocol::CODEC_H265),
+            "h264" | "avc" => Some(nesprotocol::CODEC_H264),
+            _ => None,
+        };
+        if let Some(wanted) = wanted {
+            if !client.supports_codec(wanted) {
+                log::warn!(
+                    "NESCAPTURE_CODEC={name} is set and this client cannot decode it; \
+                     sending it anyway, which the client will not be able to show"
+                );
+            }
+            // The depth may still follow the negotiation: it is not what was
+            // pinned. The codec stays whatever the operator named, which
+            // `resolve_codec_on` has already applied.
+            return None;
+        }
+    }
+
+    Some((codec, depth))
+}
+
+fn resolve_codec_on(ctx: &pixelforge::VideoContext, requested: Option<&str>) -> Option<HwCodec> {
+    let has = |c: HwCodec| ctx.supports_encode(c.to_pixelforge());
+    let best = || {
+        [HwCodec::AV1, HwCodec::H265, HwCodec::H264]
+            .into_iter()
+            .find(|&c| has(c))
+    };
+    match requested {
+        Some("av1") if has(HwCodec::AV1) => Some(HwCodec::AV1),
+        Some("h265" | "hevc") if has(HwCodec::H265) => Some(HwCodec::H265),
+        Some("h264" | "avc") => has(HwCodec::H264).then_some(HwCodec::H264),
+        Some("av1" | "h265" | "hevc") => {
+            log::warn!("{} unavailable — falling back to H.264", requested.unwrap());
+            has(HwCodec::H264).then_some(HwCodec::H264)
+        }
+        Some(other) => {
+            log::warn!("unknown NESCAPTURE_CODEC={other} — probing best available");
+            best()
+        }
+        None => best(),
+    }
+}
+
+// ── Rate control ──────────────────────────────────────────────────────────────
+
+/// The bitrate used when nothing asks for one.
+const DEFAULT_BITRATE_KBPS: u32 = 10_000;
+
+/// How the encoder decides what a frame may spend.
+///
+/// One value rather than the pair of `Option`s this used to be. The pair could
+/// say "both" and "neither", and an encoder can be built for neither of those;
+/// the mode was carried by which of the two happened to be set, which left
+/// nowhere to put a second number when a mode needed one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateControl {
+    /// Constant quality. Frame size follows the content, unbounded.
+    Cqp { qp: u32 },
+    /// Constant bitrate: every frame is pushed toward the same size.
+    Cbr { kbps: u32 },
+    /// Variable bitrate: `target_kbps` on average, with frames that need it
+    /// allowed up to `max_kbps`.
+    Vbr { target_kbps: u32, max_kbps: u32 },
+}
+
+impl RateControl {
+    /// The target in kbps, or `None` under constant QP, which has no bitrate.
+    fn target_kbps(self) -> Option<u32> {
+        match self {
+            Self::Cqp { .. } => None,
+            Self::Cbr { kbps } => Some(kbps),
+            Self::Vbr { target_kbps, .. } => Some(target_kbps),
+        }
+    }
+
+    /// The same mode, aimed at `kbps`.
+    ///
+    /// VBR keeps its ceiling. The ceiling describes what the path can carry,
+    /// which is not a function of what the encode is currently aiming at --
+    /// scaling it with the target would shrink the headroom at exactly the
+    /// moment the target dropped because frames were being lost.
+    ///
+    /// Constant QP becomes constant bitrate, because there is no target inside
+    /// it to move: a caller asking for one is asking for a mode that has one.
+    fn retargeted(self, kbps: u32) -> Self {
+        match self {
+            Self::Cqp { .. } | Self::Cbr { .. } => Self::Cbr { kbps },
+            Self::Vbr { max_kbps, .. } => Self::Vbr {
+                target_kbps: kbps,
+                max_kbps,
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for RateControl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cqp { qp } => write!(f, "QP {qp}"),
+            Self::Cbr { kbps } => write!(f, "CBR {kbps} kbps"),
+            Self::Vbr {
+                target_kbps,
+                max_kbps,
+            } => write!(f, "VBR {target_kbps} kbps, up to {max_kbps}"),
+        }
+    }
+}
+
+/// Bits per second from kilobits, saturating. The encoder's unit is bits; the
+/// environment's is kilobits, because that is the unit a bitrate is quoted in.
+fn bps(kbps: u32) -> u32 {
+    kbps.saturating_mul(1_000)
+}
+
+/// The ceiling a VBR encode gets when it is not given one: half again the
+/// target. Enough headroom that a scene change is coded rather than smeared,
+/// and still a bound the path can be planned around -- which is the whole
+/// reason to name a ceiling instead of leaving the encode unbounded.
+fn default_ceiling_kbps(target_kbps: u32) -> u32 {
+    // Divided before multiplied so a target near the top of the range
+    // saturates instead of wrapping. A wrapped ceiling is a *small* one, and a
+    // small ceiling silently throttles the encode -- the one failure here that
+    // would not look like a failure.
+    (target_kbps / 2).saturating_mul(3).max(target_kbps)
+}
+
+/// Resolve the rate control from what the environment said.
+///
+/// Pure, and takes the parsed values rather than reading them, so the decision
+/// can be tested without a process-wide environment.
+///
+/// `rc` is authoritative when it names a mode this understands. When it does
+/// not -- unset, or a word this does not know -- the mode is inferred the way
+/// it was before the variable existed: a QP means constant QP, anything else
+/// means a bitrate. That fallback is what keeps every configuration written
+/// before this working unchanged.
+fn resolve_rate_control(
+    rc: Option<&str>,
+    qp: Option<u32>,
+    bitrate_kbps: Option<u32>,
+    max_kbps: Option<u32>,
+) -> RateControl {
+    #[derive(Clone, Copy, PartialEq)]
+    enum Mode {
+        Cqp,
+        Cbr,
+        Vbr,
+    }
+
+    let named = match rc.map(str::trim) {
+        None => None,
+        Some(s) if s.eq_ignore_ascii_case("cqp") => Some(Mode::Cqp),
+        Some(s) if s.eq_ignore_ascii_case("cbr") => Some(Mode::Cbr),
+        Some(s) if s.eq_ignore_ascii_case("vbr") => Some(Mode::Vbr),
+        Some(other) => {
+            log::warn!(
+                "NESCAPTURE_RC={other:?} is not a rate control mode \
+                 (cqp, cbr or vbr) — choosing one from the other settings"
+            );
+            None
+        }
+    };
+
+    let mode = named.unwrap_or(if qp.is_some() { Mode::Cqp } else { Mode::Cbr });
+
+    if mode != Mode::Vbr && max_kbps.is_some() {
+        log::warn!("NESCAPTURE_BITRATE_MAX is a VBR ceiling and this encode is not VBR — ignored");
+    }
+
+    let target = bitrate_kbps.unwrap_or(DEFAULT_BITRATE_KBPS);
+
+    match mode {
+        Mode::Cqp => match qp {
+            Some(qp) => RateControl::Cqp { qp },
+            // Inventing a QP would encode at a quality nobody chose, and
+            // constant quality is the one mode where that number *is* the
+            // setting. Say what happened and encode at a bitrate instead.
+            None => {
+                log::warn!(
+                    "NESCAPTURE_RC=cqp needs a NESCAPTURE_QP to hold constant — \
+                     encoding at {target} kbps instead"
+                );
+                RateControl::Cbr { kbps: target }
+            }
+        },
+        Mode::Cbr => RateControl::Cbr { kbps: target },
+        Mode::Vbr => {
+            let max = match max_kbps {
+                Some(m) if m < target => {
+                    log::warn!(
+                        "NESCAPTURE_BITRATE_MAX={m} is below the {target} kbps target, \
+                         which is not a ceiling — raising it to the target"
+                    );
+                    target
+                }
+                Some(m) => m,
+                None => default_ceiling_kbps(target),
+            };
+            RateControl::Vbr {
+                target_kbps: target,
+                max_kbps: max,
+            }
+        }
+    }
+}
+
 // ── Pipeline config ───────────────────────────────────────────────────────────
 
 pub struct PipelineConfig {
     pub width: u32,
     pub height: u32,
     pub fps: u32,
-    pub bitrate_kbps: Option<u32>,
-    pub qp: Option<u32>,
+    pub rate_control: RateControl,
     pub idr_interval: u32,
     pub encoder_tuning_mode: EncoderTuningMode,
     pub pixel_format: PixelFormat,
@@ -308,11 +765,6 @@ impl PipelineConfig {
             .unwrap_or_else(|_| "/tmp/nestri-video.sock".to_string())
             .into();
 
-        let mut bitrate: Option<u32> = None;
-        if std::env::var("NESCAPTURE_QP").is_err() {
-            bitrate = Some(env_u64("NESCAPTURE_BITRATE", 10_000) as u32);
-        }
-
         let encoder_tuning_mode = match std::env::var("NESCAPTURE_TUNE").as_deref() {
             Ok("highquality") => EncoderTuningMode::HighQuality,
             Ok("lowlatency") => EncoderTuningMode::LowLatency,
@@ -325,10 +777,12 @@ impl PipelineConfig {
             width,
             height,
             fps: env_u64("NESCAPTURE_FPS", 60) as u32,
-            bitrate_kbps: bitrate,
-            qp: std::env::var("NESCAPTURE_QP")
-                .ok()
-                .and_then(|s| s.parse().ok()),
+            rate_control: resolve_rate_control(
+                std::env::var("NESCAPTURE_RC").ok().as_deref(),
+                env_opt_u32("NESCAPTURE_QP"),
+                env_opt_u32("NESCAPTURE_BITRATE"),
+                env_opt_u32("NESCAPTURE_BITRATE_MAX"),
+            ),
             idr_interval: (env_u64("NESCAPTURE_FPS", 60) * env_u64("NESCAPTURE_IDR_INTERVAL", 4))
                 as u32,
             encoder_tuning_mode,
@@ -347,10 +801,31 @@ fn env_u64(key: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+/// A setting that has no default, so that "unset" and "set to something
+/// unreadable" can be told apart from a value.
+fn env_opt_u32(key: &str) -> Option<u32> {
+    let raw = std::env::var(key).ok()?;
+    match raw.trim().parse() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log::warn!("{key}={raw:?} is not a number — ignored");
+            None
+        }
+    }
+}
+
 // ── Pipeline handle ───────────────────────────────────────────────────────────
 
 pub struct PipelineHandle {
     frame_tx: mpsc::SyncSender<CapturedFrame>,
+    /// The encoder thread, which owns every pixelforge object. On a shared
+    /// device those are objects on the game's device, so the game's
+    /// vkDestroyDevice has to wait for this thread first. See [`Self::finish`].
+    encoder_thread: Option<thread::JoinHandle<()>>,
+    capture_progress: Arc<Progress>,
+    present_progress: Arc<Progress>,
+    stall_probe: StallProbe,
+    progress_epoch: Instant,
     idr_requested: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     pub codec: HwCodec,
@@ -365,9 +840,40 @@ pub struct PipelineHandle {
 }
 
 impl PipelineHandle {
-    pub fn new(config: PipelineConfig) -> Result<Self, String> {
-        let (codec, ctx) = resolve_codec(config.codec_request.as_deref())
-            .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
+    /// Build the pipeline, on `shared` when given: a context on the game's own
+    /// device. Without one the encoder gets a device of its own.
+    pub fn new(
+        config: PipelineConfig,
+        shared: Option<pixelforge::VideoContext>,
+    ) -> Result<Self, String> {
+        let (codec, ctx) = match shared {
+            Some(ctx) => {
+                resolve_codec_on(&ctx, config.codec_request.as_deref()).map(|codec| (codec, ctx))
+            }
+            None => resolve_codec(config.codec_request.as_deref()),
+        }
+        .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
+        let device_caps = host_caps(&ctx);
+        // The surface colour as the compositor last stated it, for the clients.
+        // They need it for two things the host cannot do for them: picking a
+        // swapchain that reads the values the right way, and telling their own
+        // compositor how bright the picture goes.
+        let declared_surface: Arc<std::sync::Mutex<Option<nesprotocol::SurfaceColor>>> =
+            Arc::new(std::sync::Mutex::new(None));
+        // The colour space capture resolved for the frames it is encoding.
+        //
+        // Not the same thing as the compositor's declaration, and this is the
+        // one to send: the swapchain has the last word wherever it names a
+        // space, and only a pass-through one defers. A game leaving HDR gets a
+        // plain sRGB swapchain, which says so outright -- while the
+        // compositor's view of the surface may not have caught up, or may
+        // never, if the client dropped the object rather than unsetting it.
+        // `u32::MAX` until the first frame has been encoded.
+        let stream_colorspace = Arc::new(AtomicU32::new(u32::MAX));
+        // What the compositor says the surface is, for the frames whose
+        // swapchain declines to say. `u32::MAX` until it has said anything;
+        // see `effective_colorspace`.
+        let declared_colorspace = Arc::new(AtomicU32::new(u32::MAX));
 
         // One deep. The frame in it is now an unwaited blit rather than an
         // exported buffer, and the ring's four slots are already the
@@ -376,6 +882,22 @@ impl PipelineHandle {
         let (encoded_tx, encoded_rx) = mpsc::sync_channel::<EncodedFrame>(2);
         let (reconfig_tx, reconfig_rx) = mpsc::channel::<EncodeSettingsChange>();
         let shutdown = Arc::new(AtomicBool::new(false));
+        let progress_epoch = Instant::now();
+        let encoder_progress = Arc::new(Progress::default());
+        let ipc_progress = Arc::new(Progress::default());
+        let capture_progress = Arc::new(Progress::default());
+        let present_progress = Arc::new(Progress::default());
+        present_progress.note(progress_epoch, PresentStep::InGame as u32);
+        let stall_probe: StallProbe = Arc::default();
+        spawn_stall_watchdog(
+            progress_epoch,
+            present_progress.clone(),
+            capture_progress.clone(),
+            encoder_progress.clone(),
+            ipc_progress.clone(),
+            stall_probe.clone(),
+            shutdown.clone(),
+        );
         let idr_requested = Arc::new(AtomicBool::new(false));
         let capture_fps = Arc::new(AtomicU32::new(0));
         let encode_avg_ms = Arc::new(AtomicU32::new(0));
@@ -394,8 +916,7 @@ impl PipelineHandle {
             width: config.width,
             height: config.height,
             fps: config.fps,
-            bitrate_kbps: config.bitrate_kbps,
-            qp: config.qp,
+            rate_control: config.rate_control,
             idr_interval: config.idr_interval,
             encoder_tuning_mode: config.encoder_tuning_mode,
             pixel_format: config.pixel_format,
@@ -405,13 +926,27 @@ impl PipelineHandle {
             reconfig_rx,
             current_codec: current_codec.clone(),
             wanted_depth_override: None,
+            declared_colorspace: declared_colorspace.clone(),
+            stream_colorspace: stream_colorspace.clone(),
             needs_reconfig_flag: needs_reconfig_flag.clone(),
             capture_ms: capture_ms.clone(),
         };
-        thread::Builder::new()
+        let enc_progress = encoder_progress.clone();
+        let progress_base = progress_epoch;
+        let encoder_thread = thread::Builder::new()
             .name("nescapture-encoder".into())
-            .spawn(move || encoder_thread(enc_cfg, frame_rx, encoded_tx, enc_shutdown))
+            .spawn(move || {
+                encoder_thread(
+                    enc_cfg,
+                    frame_rx,
+                    encoded_tx,
+                    enc_shutdown,
+                    progress_base,
+                    enc_progress,
+                )
+            })
             .map_err(|e| format!("spawn encoder: {e}"))?;
+        let encoder_thread = Some(encoder_thread);
 
         let ipc_path = config.ipc_path.clone();
         let ipc_cfg = IpcConfig {
@@ -423,10 +958,14 @@ impl PipelineHandle {
             encode_ms: encode_avg_ms.clone(),
             idr_requested: idr_requested.clone(),
             epoch: Instant::now(),
+            reconfig_tx: reconfig_tx.clone(),
         };
+        let ipc_prog = ipc_progress.clone();
         thread::Builder::new()
             .name("nescapture-ipc".into())
-            .spawn(move || ipc_send_thread(ipc_cfg, encoded_rx, ipc_shutdown))
+            .spawn(move || {
+                ipc_send_thread(ipc_cfg, encoded_rx, ipc_shutdown, progress_base, ipc_prog)
+            })
             .map_err(|e| format!("spawn ipc: {e}"))?;
 
         // Spawn periodic stats sender
@@ -439,6 +978,8 @@ impl PipelineHandle {
         let pa = present_attempts.clone();
         let ca = capture_attempts.clone();
         let stats_timing = timing.clone();
+        let stats_surface = declared_surface.clone();
+        let stats_stream_colour = stream_colorspace.clone();
         thread::Builder::new()
             .name("nescapture-stats".into())
             .spawn(move || {
@@ -450,6 +991,8 @@ impl PipelineHandle {
                     pa,
                     ca,
                     stats_timing,
+                    stats_surface,
+                    stats_stream_colour,
                     stats_ipc,
                     stats_shutdown,
                 )
@@ -458,6 +1001,12 @@ impl PipelineHandle {
 
         // Spawn IDR command listener (separate thread, blocks on recv)
         let idr_thread = idr_requested.clone();
+        let declared_listener = declared_colorspace.clone();
+        let surface_listener = declared_surface.clone();
+        // What this device can encode, worked out once here where the context
+        // is, so the listener answers a capability message without needing one.
+        let listener_host_caps = device_caps;
+        let listener_forced = config.codec_request.clone();
         thread::Builder::new()
             .name("nescapture-idr".into())
             .spawn(move || {
@@ -484,6 +1033,71 @@ impl PipelineHandle {
                             log::info!("IDR requested by client");
                             idr_thread.store(true, Ordering::Relaxed);
                         }
+                        Ok(n) if n >= 2 && buf[0] == nesprotocol::MSG_SURFACE_COLOR => {
+                            match nesprotocol::decode_surface_color(&buf[1..n]) {
+                                Some(colour) => {
+                                    let vk = surface_color_to_vk(colour.space);
+                                    if let Ok(mut slot) = surface_listener.lock() {
+                                        *slot = Some(colour);
+                                    }
+                                    let previous =
+                                        declared_listener.swap(vk, Ordering::Relaxed);
+                                    if previous != vk {
+                                        // The mastering numbers go out with it:
+                                        // they are not applied yet, and whether
+                                        // wine even supplies any decides
+                                        // whether applying them is worth
+                                        // anything. All zero means it said
+                                        // nothing.
+                                        log::info!(
+                                            "the compositor says this surface is {:?}, mastered at max_cll={} max_fall={} luminance={}..{}",
+                                            ash::vk::ColorSpaceKHR::from_raw(vk as i32),
+                                            colour.max_cll,
+                                            colour.max_fall,
+                                            colour.min_luminance,
+                                            colour.max_luminance
+                                        );
+                                    }
+                                }
+                                None => log::warn!(
+                                    "unreadable surface colour from the compositor ({} bytes)",
+                                    n - 1
+                                ),
+                            }
+                        }
+                        Ok(n) if n >= 2 && buf[0] == MSG_CLIENT_CAPS => {
+                            let Some(client) = decode_client_caps(&buf[1..n]) else {
+                                log::warn!("unreadable client capabilities ({} bytes)", n - 1);
+                                continue;
+                            };
+                            match negotiated(client, listener_host_caps, listener_forced.as_deref())
+                            {
+                                Some((codec, depth)) => {
+                                    log::info!(
+                                        "client decodes {:#08b}; {codec:?} {depth:?} is the best \
+                                         both ends can do",
+                                        client.bits()
+                                    );
+                                    let change = EncodeSettingsChange {
+                                        codec: Some(codec),
+                                        rate_control_mode: None,
+                                        value: 0,
+                                        bit_depth: Some(depth),
+                                    };
+                                    if reconfig_tx.send(change).is_err() {
+                                        log::warn!(
+                                            "reconfig channel closed, stopping cmd listener"
+                                        );
+                                        break;
+                                    }
+                                }
+                                None => log::info!(
+                                    "client decodes {:#08b}, which shares nothing with this \
+                                     encoder; leaving the stream alone",
+                                    client.bits()
+                                ),
+                            }
+                        }
                         Ok(n) if n >= 2 && buf[0] == MSG_ENCODE_SETTINGS => {
                             if let Some((codec_id, rc, value, depth)) =
                                 decode_encode_settings(&buf[1..n])
@@ -500,9 +1114,21 @@ impl PipelineHandle {
                                         continue;
                                     }
                                 };
+                                // `RC_KEEP` is not a mode, it is the
+                                // absence of one: a depth-only message must
+                                // not take the bitrate away from whoever is
+                                // managing it. Read as a mode it would have
+                                // meant CQP at quality zero.
                                 let rate_control = match rc {
-                                    0 => RateControlMode::Cbr,
-                                    _ => RateControlMode::Cqp,
+                                    nesprotocol::RC_KEEP => None,
+                                    nesprotocol::RC_CBR => Some(RateControlMode::Cbr),
+                                    nesprotocol::RC_CQP => Some(RateControlMode::Cqp),
+                                    other => {
+                                        log::warn!(
+                                            "unknown rate control mode {other} in encode settings; keeping current"
+                                        );
+                                        None
+                                    }
                                 };
                                 let bit_depth = depth.and_then(|d| match d {
                                     0 => Some(EncodeBitDepth::Eight),
@@ -532,22 +1158,21 @@ impl PipelineHandle {
             .map_err(|e| format!("spawn idr: {e}"))?;
 
         log::info!(
-            "pipeline ready — {:?} {}x{} @ {}FPS {} -> {}",
+            "pipeline ready — {:?} {}x{} @ {}FPS, {} -> {}",
             codec,
             config.width,
             config.height,
             config.fps,
-            (if config.bitrate_kbps.is_some() {
-                std::format!("- CBR: {}kbps", config.bitrate_kbps.unwrap())
-            } else if config.qp.is_some() {
-                std::format!("- QP: {}", config.qp.unwrap())
-            } else {
-                "".to_string()
-            }),
+            config.rate_control,
             ipc_path.display(),
         );
         Ok(Self {
             frame_tx,
+            encoder_thread,
+            capture_progress: capture_progress.clone(),
+            present_progress,
+            stall_probe,
+            progress_epoch,
             idr_requested,
             shutdown,
             codec,
@@ -561,12 +1186,31 @@ impl PipelineHandle {
         })
     }
 
+    /// Say where the game's present thread has got to.
+    pub fn note_present(&self, step: PresentStep) {
+        self.present_progress.note(self.progress_epoch, step as u32);
+    }
+
+    /// What to describe the device with when a stall is noticed.
+    pub fn set_stall_probe(&self, probe: Box<dyn Fn() -> String + Send>) {
+        if let Ok(mut p) = self.stall_probe.lock() {
+            *p = Some(probe);
+        }
+    }
+
     pub fn push_frame(&self, frame: CapturedFrame) -> bool {
         // Counted on success only. It used to be incremented before the send,
         // so a frame the channel refused was reported both as captured and as
         // dropped, and the capture rate read as the rate the ring offered
         // rather than the rate the encoder accepted — which is the number
         // anyone reading it wants.
+        // The game's own thread, reached from the present hook. It is the
+        // start of the chain and the only part nothing else can speak for: if
+        // the game stops presenting, or the layer stops capturing what it
+        // presents, every thread downstream sits idle waiting and none of them
+        // is stuck. An idle thread looks healthy, which is how a stopped
+        // capture reads as a working encoder.
+        self.capture_progress.note(self.progress_epoch, 7);
         match self.frame_tx.try_send(frame) {
             Ok(()) => {
                 self.capture_fps.fetch_add(1, Ordering::Relaxed);
@@ -581,6 +1225,28 @@ impl PipelineHandle {
 
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
+    }
+
+    /// Stop the pipeline and wait up to `timeout` for the encoder thread to
+    /// have dropped everything it built. Whether it did.
+    ///
+    /// The thread notices within one receive timeout of the flag, or at once
+    /// when the frame channel closes, which dropping the handle does.
+    pub fn finish(mut self, timeout: std::time::Duration) -> bool {
+        self.shutdown();
+        let Some(thread) = self.encoder_thread.take() else {
+            return true;
+        };
+        drop(self);
+        let deadline = Instant::now() + timeout;
+        while !thread.is_finished() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let _ = thread.join();
+        true
     }
 
     pub fn request_idr(&self) {
@@ -601,8 +1267,7 @@ struct EncoderConfig {
     width: u32,
     height: u32,
     fps: u32,
-    bitrate_kbps: Option<u32>,
-    qp: Option<u32>,
+    rate_control: RateControl,
     idr_interval: u32,
     encoder_tuning_mode: EncoderTuningMode,
     pixel_format: PixelFormat,
@@ -612,6 +1277,11 @@ struct EncoderConfig {
     reconfig_rx: mpsc::Receiver<EncodeSettingsChange>,
     current_codec: Arc<AtomicU8>,
     wanted_depth_override: Option<EncodeBitDepth>,
+    /// What the compositor says the surface's colour is, when the swapchain
+    /// does not. See [`effective_colorspace`].
+    declared_colorspace: Arc<AtomicU32>,
+    /// What that resolved to for the frames being encoded, for the clients.
+    stream_colorspace: Arc<AtomicU32>,
     needs_reconfig_flag: Arc<AtomicBool>,
     /// Present-to-encoder latency in milliseconds, as `f32` bits. Written here
     /// now that this thread is the one doing the waiting.
@@ -627,7 +1297,9 @@ struct EncodedPacket {
 #[derive(Debug, Clone)]
 pub struct EncodeSettingsChange {
     pub codec: Option<HwCodec>,
-    pub rate_control_mode: RateControlMode,
+    /// `None` leaves rate control exactly as it is, which is what a message
+    /// that only means to change something else says.
+    pub rate_control_mode: Option<RateControlMode>,
     pub value: u32,
     pub bit_depth: Option<EncodeBitDepth>,
 }
@@ -637,6 +1309,8 @@ fn encoder_thread(
     frame_rx: mpsc::Receiver<CapturedFrame>,
     encoded_tx: mpsc::SyncSender<EncodedFrame>,
     shutdown: Arc<AtomicBool>,
+    epoch: Instant,
+    progress: Arc<Progress>,
 ) {
     let ctx = cfg.ctx;
 
@@ -645,25 +1319,71 @@ fn encoder_thread(
     // once per frame.
     let mut unsupported_format: Option<u32> = None;
 
-    let mut dmabuf_importer = match DmaBufImporter::new(ctx.clone()) {
-        Ok(i) => Some(i),
-        Err(e) => {
-            log::warn!("DmaBufImporter init failed: {e} — GPU path unavailable");
-            None
-        }
-    };
-
     let mut frame_number = 0u32;
 
+    // The slot of the last frame converted in place, until that conversion
+    // is known to be done. See `HeldSlot`.
+    let mut held: Option<HeldSlot> = None;
+
     let wanted_depth = std::env::var("NESCAPTURE_DEPTH");
+    // So the ten-bit refusal is said once per codec rather than per frame.
+    let mut warned_depth = false;
+    // When the last encoder build failed, and what it said, so a configuration
+    // the device refuses is not rebuilt on every frame.
+    let mut init_failed_at: Option<std::time::Instant> = None;
+    let mut last_init_error: Option<String> = None;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
 
+        // Also on idle ticks, so the last frame before a pause gives its slot
+        // back: a ring rebuild waits for every slot.
+        if held.as_ref().is_some_and(HeldSlot::done)
+            && let Some(done) = held.take()
+        {
+            done.release();
+        }
+
         // Check for dynamic encode settings changes
         if let Ok(change) = cfg.reconfig_rx.try_recv() {
+            // A bitrate is the one setting that can move without rebuilding
+            // anything, and it is the one that moves most often -- a congestion
+            // controller adjusts it continuously, and every rebuild costs an IDR.
+            // An IDR is the largest frame there is, so paying one per adjustment
+            // would spend the most on the path least able to afford it, at the
+            // exact moment it is struggling. Everything else here -- a codec, a
+            // bit depth, a rate-control *mode* -- changes the video session
+            // itself and cannot avoid the rebuild.
+            // A change that asks for what is already happening still costs
+            // a rebuild and an IDR, and the negotiation sends one every time a
+            // client connects -- including the common case where the client
+            // wants exactly what this encoder is already producing.
+            if changes_nothing(&change, cfg.codec, cfg.wanted_depth_override) {
+                log::debug!("reconfig asks for the current settings; nothing to do");
+                continue;
+            }
+            if let Some(kbps) = bitrate_only_change(
+                &change,
+                cfg.rate_control,
+                cfg.codec,
+                cfg.wanted_depth_override,
+            ) && let Some(state) = encoder_state.as_mut()
+            {
+                match state.encoder.set_target_bitrate(bps(kbps)) {
+                    Ok(()) => {
+                        cfg.rate_control = cfg.rate_control.retargeted(kbps);
+                        // Same reasoning as the hub's own line: a controller
+                        // tracking a moving path retunes every second.
+                        log::trace!("bitrate → {kbps} kbps (no rebuild, no IDR)");
+                        continue;
+                    }
+                    // Refused means this encode has no bitrate to retarget, so
+                    // fall through and rebuild it as one that does.
+                    Err(e) => log::info!("live retune refused ({e}), rebuilding"),
+                }
+            }
             log::info!(
                 "reconfig: codec={:?}, rc={:?}, value={}",
                 change.codec,
@@ -671,13 +1391,20 @@ fn encoder_thread(
                 change.value,
             );
             match change.rate_control_mode {
-                RateControlMode::Cbr => {
-                    cfg.bitrate_kbps = Some(change.value);
-                    cfg.qp = None;
+                // Said nothing about rate control, so nothing changes. The
+                // rebuild below still happens: a depth change needs one.
+                None => {}
+                // `retargeted` rather than an outright CBR, so a VBR encode
+                // keeps its ceiling across a rebuild it is having for some
+                // other reason -- a codec change, say. The settings message has
+                // no way to name VBR, so every bitrate arrives labelled CBR;
+                // reading that label as a mode would mean a ceiling asked for
+                // at launch survived only until the first codec switch.
+                Some(RateControlMode::Cbr) => {
+                    cfg.rate_control = cfg.rate_control.retargeted(change.value);
                 }
-                RateControlMode::Cqp => {
-                    cfg.bitrate_kbps = None;
-                    cfg.qp = Some(change.value);
+                Some(RateControlMode::Cqp) => {
+                    cfg.rate_control = RateControl::Cqp { qp: change.value };
                 }
                 _ => {
                     log::warn!(
@@ -693,7 +1420,7 @@ fn encoder_thread(
                 cfg.wanted_depth_override = Some(depth);
             }
             // Drop old encoder state to force re-creation with new settings
-            encoder_state = None;
+            drop_encoder(&mut encoder_state, &mut held);
             // Signal IPC thread to set FLAG_RECONFIG on next frame
             cfg.needs_reconfig_flag.store(true, Ordering::Relaxed);
             // Update IPC thread with new codec
@@ -703,7 +1430,8 @@ fn encoder_thread(
             cfg.idr_requested.store(true, Ordering::Relaxed);
         }
 
-        let raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+        progress.note(epoch, 1);
+        let mut raw = match frame_rx.recv_timeout(std::time::Duration::from_millis(100)) {
             Ok(frame) => frame,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -713,7 +1441,10 @@ fn encoder_thread(
         // its own between the present hook and here; it is cheaper on this one,
         // because the blit it waits for was submitted a frame earlier and has
         // already completed, and every frame saves a channel and a wakeup.
-        let Some(ds) = crate::state::DEVICE_STATE.get(&raw.ds_key).map(|s| s.clone()) else {
+        let Some(ds) = crate::state::DEVICE_STATE
+            .get(&raw.ds_key)
+            .map(|s| s.clone())
+        else {
             log::error!("encoder: device state gone");
             break;
         };
@@ -741,45 +1472,132 @@ fn encoder_thread(
             continue;
         };
 
-        let bit_depth = if let Some(ov) = cfg.wanted_depth_override {
+        let requested_depth = if let Some(ov) = cfg.wanted_depth_override {
             ov
         } else {
             match wanted_depth.as_deref() {
                 Ok("10") => EncodeBitDepth::Ten,
-                Ok("8") => EncodeBitDepth::Eight,
-                _ => input_format_bit_depth(input_fmt),
+                // Eight rather than the source's own depth. What the game chose
+                // to render into says what *it* wanted, not what this stream
+                // should carry or what the encoder can produce -- and deriving
+                // one from the other means a game opening a 10-bit swapchain
+                // silently selects an encode profile the hardware may not have.
+                // Control does exactly that, and picked a profile that does not
+                // exist.
+                _ => EncodeBitDepth::Eight,
             }
         };
-        let color_space = vk_colorspace_to_color_space(raw.vk_colorspace);
+        let bit_depth = depth_for_codec(cfg.codec, requested_depth, &mut warned_depth);
         let out_fmt = output_format(cfg.pixel_format, bit_depth);
 
+        // The geometry joins the guard. It used to be absent, and `cfg.width` /
+        // `cfg.height` were whatever the *first* frame happened to be, so a game
+        // that changed resolution kept being encoded at the old one: shrinking
+        // left a band of the previous picture down the right edge and along the
+        // bottom, and growing had no surface large enough to hold the frame.
+        // Resolved per frame, because the compositor can say what a surface
+        // is after the swapchain that carries it was created -- and on the
+        // path that needs this, it always does.
+        let declared = match cfg.declared_colorspace.load(Ordering::Relaxed) {
+            u32::MAX => None,
+            value => Some(value),
+        };
+        let frame_colorspace = effective_colorspace(raw.vk_colorspace, declared);
+        cfg.stream_colorspace
+            .store(frame_colorspace, Ordering::Relaxed);
+
         let state = match encoder_state.as_mut() {
-            Some(s) if s.bit_depth == bit_depth && s.pixel_format == cfg.pixel_format => s,
+            Some(s)
+                if encoder_still_serves(
+                    (
+                        s.width,
+                        s.height,
+                        s.bit_depth,
+                        s.pixel_format,
+                        s.colorspace,
+                        s.input_fmt,
+                    ),
+                    (
+                        raw.width,
+                        raw.height,
+                        bit_depth,
+                        cfg.pixel_format,
+                        frame_colorspace,
+                        input_fmt,
+                    ),
+                ) =>
+            {
+                s
+            }
             _ => {
-                let color_desc = vk_colorspace_to_color_description(raw.vk_colorspace);
+                // Building an encoder is expensive and a configuration the
+                // device cannot do will not start working on the next frame.
+                // Without this, a refused profile is retried sixty times a
+                // second forever -- which is how an unsupported ten-bit H.264
+                // request turned into a log with nothing else in it and a
+                // session that never recovered.
+                if let Some(failed_at) = init_failed_at
+                    && failed_at.elapsed() < INIT_RETRY_INTERVAL
+                {
+                    frame_number += 1;
+                    continue;
+                }
+                if let Some(old) = encoder_state.as_ref() {
+                    if old.width != raw.width || old.height != raw.height {
+                        log::info!(
+                            "resolution changed {}x{} -> {}x{}, rebuilding the encoder",
+                            old.width,
+                            old.height,
+                            raw.width,
+                            raw.height,
+                        );
+                    }
+                    // Said out loud because a game can change this without
+                    // changing anything else about the surface -- Cyberpunk's
+                    // HDR10 and scRGB modes differ in the format and in
+                    // nothing the old check looked at.
+                    if old.input_fmt != input_fmt {
+                        log::info!(
+                            "surface format changed {:?} -> {:?}, rebuilding the encoder",
+                            old.input_fmt,
+                            input_fmt,
+                        );
+                    }
+                }
+                // The old converter may still be reading a held slot, and the
+                // held slot's point is on the old converter's timeline.
+                drop_encoder(&mut encoder_state, &mut held);
                 match PerFrameEncoder::new(
                     &ctx,
                     cfg.codec.to_pixelforge(),
-                    cfg.width,
-                    cfg.height,
+                    raw.width,
+                    raw.height,
                     cfg.fps,
-                    cfg.bitrate_kbps,
-                    cfg.qp,
+                    cfg.rate_control,
                     cfg.idr_interval,
                     cfg.encoder_tuning_mode,
                     cfg.pixel_format,
                     bit_depth,
-                    color_desc,
                     input_fmt,
                     out_fmt,
-                    color_space,
+                    frame_colorspace,
+                    matches!(source, FrameSource::Shared { .. }),
                 ) {
                     Ok(s) => {
+                        init_failed_at = None;
+                        last_init_error = None;
                         encoder_state = Some(s);
                         encoder_state.as_mut().unwrap()
                     }
                     Err(e) => {
-                        log::error!("encoder (re)init: {e}");
+                        // Said once per distinct failure. The same refusal every
+                        // second says nothing the first one did not, and buries
+                        // the one that is different.
+                        if last_init_error.as_deref() != Some(e.as_str()) {
+                            log::error!("encoder (re)init: {e}");
+                            last_init_error = Some(e);
+                        }
+                        init_failed_at = Some(std::time::Instant::now());
                         frame_number += 1;
                         continue;
                     }
@@ -787,51 +1605,43 @@ fn encoder_thread(
             }
         };
 
-        let mut force_idr = cfg.idr_requested.swap(false, Ordering::Relaxed);
-        if cfg.idr_interval > 0 {
-            force_idr = force_idr || frame_number % cfg.idr_interval == 0;
-        }
-        if force_idr {
+        // Only when something asked. Periodic key frames are the encoder's own
+        // schedule, set by `with_gop_size` -- counting frames here as well
+        // meant two mechanisms driving one thing, and the encoder's schedule
+        // being the one that could be turned off. Turning it off changed
+        // nothing, because this kept asking every four seconds regardless.
+        if cfg.idr_requested.swap(false, Ordering::Relaxed) {
             state.encoder.request_idr();
         }
 
-        // Each ring slot is a distinct DMA-BUF, so the importer caches an
-        // imported image per slot. Importing every frame under index 0 would
-        // have handed the encoder whichever buffer happened to be imported
-        // first, for every frame after it.
+        // Which ring slot the frame is in, for the slot hold below.
         let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
 
+        progress.note(epoch, 2);
         let result = match &mut source {
-            FrameSource::DmaBuf {
-                fd,
-                stride,
-                modifier,
-            } => {
-                let owned_fd = *fd;
-                *fd = -1;
-                match dmabuf_importer.as_mut() {
-                    Some(importer) => gpu_encode_frame(
-                        importer,
-                        &mut state.converter,
-                        &mut state.encoder,
-                        owned_fd,
-                        *stride,
-                        *modifier,
-                        raw.width,
-                        raw.height,
-                        raw.vk_format,
-                        frame_number,
-                        buffer_index,
-                    ),
-                    None => {
-                        unsafe { libc::close(owned_fd) };
-                        log::warn!(
-                            "DmaBuf fd available but importer is gone — skipping frame {frame_number}"
-                        );
-                        frame_number += 1;
-                        continue;
-                    }
+            // The encoder converts RGB itself: it copies the slot and waits for
+            // the copy before returning, so the slot needs no holding.
+            FrameSource::Shared { image, blit } if state.converter.is_none() => state
+                .encoder
+                .encode_after(*image, &[*blit])
+                .map_err(|e| anyhow::anyhow!("Encoder::encode_after: {e}")),
+            FrameSource::Shared { image, blit } => {
+                let converter = state.converter.as_mut().expect("guarded above");
+                let (result, converted) =
+                    shared_encode_frame(converter, &mut state.encoder, *image, *blit);
+                // Replacing the held slot is what releases it: a successful
+                // conversion started only once the previous one had finished.
+                if let (Some(converted), Some(guard)) = (converted, raw.slot.take())
+                    && let Some(prev) = held.replace(HeldSlot {
+                        guard,
+                        slot: buffer_index,
+                        converted,
+                        ds: ds.clone(),
+                    })
+                {
+                    prev.release();
                 }
+                result
             }
             FrameSource::Pixels(pixels) => cpu_encode_frame(
                 &ctx,
@@ -858,6 +1668,9 @@ fn encoder_thread(
                     future,
                     present_time: raw.present_time,
                 };
+                // The blocking send. If the thread draining this stops, every
+                // frame after the second one waits here forever.
+                progress.note(epoch, 3);
                 if encoded_tx.send(pending).is_err() {
                     break;
                 }
@@ -871,15 +1684,39 @@ fn encoder_thread(
     if let Some(state) = encoder_state.as_mut() {
         let _ = state.encoder.flush();
     }
+    drop_encoder(&mut encoder_state, &mut held);
 
     log::info!("encoder thread exited");
 }
 
 struct PerFrameEncoder {
     encoder: Encoder,
-    converter: ColorConverter,
+    /// The colour space this encoder and its converter were built for.
+    ///
+    /// Part of what decides whether it still serves: the stream declares this
+    /// in its own metadata and the converter is built around it, so a surface
+    /// that changes colour needs a new one rather than a relabelled old one.
+    colorspace: u32,
+    /// The swapchain format this encoder and its converter were built to
+    /// read.
+    ///
+    /// Part of what decides whether it still serves, and the part whose
+    /// absence corrupted the picture: a converter reads its input at a fixed
+    /// bytes-per-pixel, so one built for a packed 10-bit surface fed a float16
+    /// one reads every row at half its length. That is not a colour error, it
+    /// is the picture sheared into stripes.
+    input_fmt: InputFormat,
+    /// `None` when the encoder takes the RGB frame and converts it itself.
+    converter: Option<ColorConverter>,
     bit_depth: EncodeBitDepth,
     pixel_format: PixelFormat,
+    /// The geometry this encoder and its converter were built for.
+    ///
+    /// A Vulkan video session pins its coded extent at creation and the
+    /// converter is sized to match, so a frame of a different size cannot be
+    /// encoded by either -- it has to be rebuilt.
+    width: u32,
+    height: u32,
 }
 
 impl PerFrameEncoder {
@@ -890,24 +1727,21 @@ impl PerFrameEncoder {
         width: u32,
         height: u32,
         fps: u32,
-        bitrate_kbps: Option<u32>,
-        qp: Option<u32>,
+        rate_control: RateControl,
         idr_interval: u32,
         encoder_tuning_mode: EncoderTuningMode,
         pixel_format: PixelFormat,
         bit_depth: EncodeBitDepth,
-        color_desc: Option<ColorDescription>,
         input_fmt: InputFormat,
         out_fmt: OutputFormat,
-        color_space: ColorSpace,
+        vk_colorspace: u32,
+        in_place: bool,
     ) -> Result<Self, String> {
+        let source = source_spec(vk_colorspace, input_fmt);
         log::info!(
-            "(re)init encoder: {:?} {:?} {:?} {:?} → {:?}",
-            codec,
-            pixel_format,
-            bit_depth,
-            color_space,
-            out_fmt
+            "(re)init encoder: {codec:?} {width}x{height} {pixel_format:?} {bit_depth:?} \
+             {rate_control} {source:?} → {:?} {out_fmt:?}",
+            stream_spec(source),
         );
 
         let mut enc_cfg = match codec {
@@ -924,99 +1758,397 @@ impl PerFrameEncoder {
             .with_encode_usage_hint(EncodeUsageHint::Streaming)
             .with_encode_content_hint(EncodeContentHint::Rendered)
             .with_encoder_tuning_mode(encoder_tuning_mode);
-        if let Some(desc) = color_desc {
-            enc_cfg = enc_cfg.with_color_description(desc);
-        } else {
-            // GPU framebuffer captures are always full-range — use BT.709 full-range
-            // so the decoder doesn't apply limited‑range expansion.
-            enc_cfg =
-                enc_cfg.with_color_description(ColorDescription::bt709().with_full_range(true));
+        // Derived from the conversion rather than matched separately: the VUI
+        // has to describe what the shader actually wrote, and two independent
+        // matches on the same input drift the moment one gains an arm the other
+        // does not. `color_description` answers from the same source, target and
+        // range the converter is about to be built with.
+        let conv_cfg = converter_config(width, height, input_fmt, out_fmt, vk_colorspace);
+        enc_cfg =
+            enc_cfg.with_color_description(conv_cfg.color_description().ok_or_else(|| {
+                format!("colour space {vk_colorspace} has no encodable stream description")
+            })?);
+        // `Smooth` rather than `Recovering`, because this stream already has a
+        // way to recover: the client asks for an IDR on the command socket
+        // when it needs one. `Recovering` would restrict prediction on every
+        // picture forever to buy a guarantee that is wanted seconds at a time,
+        // and the restriction is expensive -- it is what turns the refreshed
+        // band into a visible quality discontinuity.
+        //
+        // The cycle length is not set here on purpose. It follows the key
+        // frame interval, bounded by the device and by how many refresh
+        // regions the picture has, and that last bound is not visible from
+        // this side: at 1080p an H.265 picture has 17 CTB rows, so a cycle
+        // named in seconds was routinely asking for regions that do not exist.
+        let refresh = intra_refresh_enabled().then_some(IntraRefresh::Smooth);
+        let shape = intra_refresh_shape();
+        if refresh.is_some() {
+            log::info!(
+                "intra refresh on, replacing periodic key frames{}",
+                match shape {
+                    Some(shape) => std::format!(" — shape {shape:?}"),
+                    None => String::new(),
+                }
+            );
         }
-        enc_cfg = if let Some(q) = qp {
-            enc_cfg
+        enc_cfg = enc_cfg
+            .with_intra_refresh(refresh)
+            .with_intra_refresh_mode(shape)
+            .with_intra_refresh_qp_delta(intra_refresh_qp_delta());
+
+        // The rate-control buffer is left unset: the encoder derives it from
+        // the streaming usage hint above and the frame rate, which is the same
+        // answer this used to compute and one fewer place to disagree.
+        enc_cfg = match rate_control {
+            RateControl::Cqp { qp } => enc_cfg
                 .with_rate_control(RateControlMode::Cqp)
-                .with_quality_level(q)
-        } else {
-            if let Some(bitrate) = bitrate_kbps {
-                enc_cfg
-                    .with_rate_control(RateControlMode::Cbr)
-                    .with_target_bitrate(bitrate * 1_000)
-            } else {
-                enc_cfg
-                    .with_rate_control(RateControlMode::Cbr)
-                    .with_target_bitrate(1000 * 1_000)
-            }
+                .with_quality_level(qp),
+            RateControl::Cbr { kbps } => enc_cfg
+                .with_rate_control(RateControlMode::Cbr)
+                .with_target_bitrate(bps(kbps)),
+            RateControl::Vbr {
+                target_kbps,
+                max_kbps,
+            } => enc_cfg
+                .with_rate_control(RateControlMode::Vbr)
+                .with_target_bitrate(bps(target_kbps))
+                .with_max_bitrate(bps(max_kbps)),
         };
+
+        if in_place
+            && std::env::var("NESCAPTURE_RGB_ENCODE").as_deref() != Ok("0")
+            && let Some(rgb) = conv_cfg.rgb_encode_input(ctx)
+        {
+            // Full range only. The hardware matrix is a whole shader pass
+            // saved on every frame, but not at the cost of the samples: VCN 5
+            // converts BT.709 to limited range whatever it is asked for, which
+            // RADV now reports honestly instead of pretending otherwise, and
+            // taking that offer would mean every session on that hardware
+            // throws away range because of a firmware bug. The shader costs GPU
+            // time; limited range costs picture, everywhere, until AMD fix it.
+            //
+            // Nothing here needs changing when they do - the driver will start
+            // accepting full range and this will start succeeding.
+            if let Some(description) = conv_cfg.color_description() {
+                let rgb_cfg = enc_cfg
+                    .clone()
+                    .with_color_description(description)
+                    .with_rgb_input(rgb);
+                match Encoder::new(ctx.clone(), rgb_cfg) {
+                    Ok(encoder) => {
+                        log::info!(
+                            "the encoder converts {rgb:?} to full-range YUV itself; no conversion shader"
+                        );
+                        return Ok(Self {
+                            encoder,
+                            colorspace: vk_colorspace,
+                            input_fmt,
+                            converter: None,
+                            bit_depth,
+                            pixel_format,
+                            width,
+                            height,
+                        });
+                    }
+                    Err(e) => log::info!(
+                        "the encoder will not convert {rgb:?} at full range ({e}); using the shader"
+                    ),
+                }
+            }
+        }
 
         let encoder =
             Encoder::new(ctx.clone(), enc_cfg).map_err(|e| format!("Encoder::new: {e}"))?;
 
-        let mut conv_cfg = ColorConverterConfig::new(width, height, input_fmt, out_fmt);
-        // The matrix the shader applies has to be the one the VUI declares. The
-        // colour space was previously computed, logged and then dropped on the
-        // floor, so BT.2020 captures were converted with the BT.709 matrix and
-        // the scRGB→PQ arm never ran at all.
-        conv_cfg.color_space = color_space;
-        conv_cfg.sdr_reference_white_nits = sdr_reference_white_nits(color_space);
-        // Capture is always full-range; `vk_colorspace_to_color_description` tags
-        // the stream to match.
-        conv_cfg.full_range = true;
-
-        let converter = ColorConverter::new(ctx.clone(), conv_cfg)
-            .map_err(|e| format!("ColorConverter::new: {e}"))?;
+        let converter = Some(
+            ColorConverter::new(ctx.clone(), conv_cfg)
+                .map_err(|e| format!("ColorConverter::new: {e}"))?,
+        );
 
         Ok(Self {
             encoder,
+            colorspace: vk_colorspace,
+            input_fmt,
             converter,
             bit_depth,
             pixel_format,
+            width,
+            height,
         })
     }
 }
 
-fn gpu_encode_frame(
-    importer: &mut DmaBufImporter,
+/// The new target in kbps when a settings change is nothing but a bitrate.
+///
+/// `None` when anything else moved, in which case the session has to be rebuilt.
+/// The comparisons against the running configuration matter: the debug overlay
+/// sends every field on every apply, so a change that only moved the slider
+/// still arrives carrying a codec and a bit depth. Treating those as changes
+/// would rebuild the encoder -- and emit an IDR -- every time somebody nudged
+/// the bitrate.
+/// Pictures in one intra refresh cycle, or `None` for periodic key frames.
+///
+/// Intra refresh spreads a key frame's work across a cycle: each picture codes
+/// one slice of the image as intra, so after a full cycle every part has been
+/// refreshed and a decoder joining anywhere is correct within one cycle. The
+/// same recovery, with no picture much larger than any other.
+///
+/// The cycle is expressed in *seconds* and converted, for the same reason the
+/// rate-control buffer is expressed in frames: it is a recovery interval, and
+/// how many pictures that is depends on the frame rate. It defaults to the IDR
+/// interval it replaces, so the recovery guarantee does not quietly change
+/// when this is turned on -- what changes is that the cost is paid evenly
+/// rather than all at once.
+///
+/// Measured on RADV, H.264 1080p: the largest picture went from twice the
+/// median to 1.2 times it, and the only one above the median was the opening
+/// IDR. AV1 is not yet worth turning this on for; see the pixelforge test.
+/// How much to shift QP inside the refresh band, or `None` for the encoder's
+/// own default.
+///
+/// The band is freshly intra-coded every cycle and carries none of the
+/// refinement its neighbours have built up, so it reads as a strip of lower
+/// quality sweeping across the picture. A negative delta spends bits back into
+/// it, out of the rest of the frame — which is a perceptual trade with no
+/// closed form, so the number worth using is whichever looks best on the
+/// content being streamed.
+///
+/// Ignored where the device cannot express it; the encoder says so and carries
+/// on without one.
+fn intra_refresh_qp_delta() -> Option<i32> {
+    let raw = std::env::var("NESCAPTURE_INTRA_REFRESH_QP_DELTA").ok()?;
+    match raw.trim().parse() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            log::warn!("NESCAPTURE_INTRA_REFRESH_QP_DELTA={raw:?} is not a number — ignored");
+            None
+        }
+    }
+}
+
+/// Which shape the refresh regions take, from the environment.
+///
+/// `auto` (the default) lets the driver divide the picture and choose the
+/// direction of the sweep, which is what the spec recommends when there is no
+/// preference. `rows` sweeps a horizontal band down the picture and `columns`
+/// a vertical band across it -- which of those looks better depends on how the
+/// content moves, so it is a question for whoever is watching rather than one
+/// answerable here. An unknown value is refused rather than guessed at.
+fn intra_refresh_shape() -> Option<IntraRefreshShape> {
+    let v = std::env::var("NESCAPTURE_INTRA_REFRESH_SHAPE").ok()?;
+    match v.trim().to_ascii_lowercase().as_str() {
+        "auto" | "" => None,
+        "blocks" => Some(IntraRefreshShape::Blocks),
+        "rows" | "row" => Some(IntraRefreshShape::Rows),
+        "columns" | "column" | "cols" => Some(IntraRefreshShape::Columns),
+        "partitions" | "partition" => Some(IntraRefreshShape::Partitions),
+        other => {
+            log::warn!("unknown intra refresh shape {other:?}; letting the driver choose");
+            None
+        }
+    }
+}
+
+/// Whether to replace periodic key frames with an intra refresh cycle.
+///
+/// A plain switch. It used to name a cycle length in seconds, which turned out
+/// to be a number this side cannot get right: the cycle is bounded by how many
+/// refresh regions the picture has, and that depends on the codec's block size
+/// and the device's capabilities. At 1080p an H.265 picture has 17 CTB rows
+/// against H.264's 68 macroblock rows, so the same duration was valid for one
+/// codec and impossible for the other. The encoder knows both and derives it.
+fn intra_refresh_enabled() -> bool {
+    match std::env::var("NESCAPTURE_INTRA_REFRESH").as_deref() {
+        Ok("1" | "true" | "yes" | "on") => true,
+        Ok("0" | "false" | "no" | "off") | Err(_) => false,
+        Ok(other) => {
+            log::warn!("NESCAPTURE_INTRA_REFRESH={other:?} is not a yes or a no — off");
+            false
+        }
+    }
+}
+
+/// Whether `change` asks for exactly what the encoder is already doing.
+///
+/// Only true for a change that names no rate control: one that does is either
+/// a retarget, which is handled without a rebuild anyway, or a mode change,
+/// which is never a no-op.
+fn changes_nothing(
+    change: &EncodeSettingsChange,
+    current_codec: HwCodec,
+    current_depth: Option<EncodeBitDepth>,
+) -> bool {
+    if change.rate_control_mode.is_some() {
+        return false;
+    }
+    let codec_same = change.codec.is_none_or(|c| c == current_codec);
+    // `None` for the current depth means nothing has overridden the default,
+    // which is eight bits -- so a request for eight bits is a no-op and a
+    // request for ten is not.
+    let depth_same = change.bit_depth.is_none_or(|d| {
+        Some(d) == current_depth || (current_depth.is_none() && d == EncodeBitDepth::Eight)
+    });
+    codec_same && depth_same
+}
+
+fn bitrate_only_change(
+    change: &EncodeSettingsChange,
+    current: RateControl,
+    current_codec: HwCodec,
+    current_depth_override: Option<EncodeBitDepth>,
+) -> Option<u32> {
+    if change.rate_control_mode != Some(RateControlMode::Cbr) {
+        return None;
+    }
+    // Already under a bitrate. Coming *from* constant QP is a mode change, and
+    // the session was built for the other one.
+    //
+    // A VBR encode qualifies, and that is the point. The settings message can
+    // only say CBR or constant QP, so every bitrate a controller sends arrives
+    // labelled CBR -- and reading the label rather than the number would tear
+    // down a VBR session and rebuild it as CBR on the first adjustment, so a
+    // ceiling asked for at launch would last exactly until the path moved.
+    // What the message carries is a target; the mode is what was asked for.
+    current.target_kbps()?;
+    if change.codec.is_some_and(|c| c != current_codec) {
+        return None;
+    }
+    if change
+        .bit_depth
+        .is_some_and(|d| Some(d) != current_depth_override)
+    {
+        return None;
+    }
+    Some(change.value)
+}
+
+/// Whether an existing encoder can take this frame, or has to be rebuilt.
+///
+/// **The geometry is part of the answer**, and it used to be missing. A Vulkan
+/// video session pins its coded extent when it is created and the colour
+/// converter is sized to match, so neither can take a frame of another size --
+/// but the guard only compared bit depth and pixel format, and the dimensions
+/// it built with came from whatever the *first* frame happened to be. A game
+/// that changed resolution went on being encoded at the old one.
+fn encoder_still_serves(
+    existing: (u32, u32, EncodeBitDepth, PixelFormat, u32, InputFormat),
+    wanted: (u32, u32, EncodeBitDepth, PixelFormat, u32, InputFormat),
+) -> bool {
+    existing == wanted
+}
+
+/// The bit depth a codec can actually encode, given what was asked for.
+///
+/// **H.264 has no ten-bit encode.** Main 10 exists on paper for H.264 only as a
+/// vendor extension that no Vulkan Video implementation here offers, so asking
+/// for it does not produce a worse stream, it produces
+/// `ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR` and no stream at all. H.265 and
+/// AV1 have it properly.
+///
+/// Clamped here rather than refused, because the caller asking is often not a
+/// person: a client may send a depth alongside a codec change, and a session
+/// that stops encoding is worse than one that encodes eight-bit.
+/// How long to wait before rebuilding an encoder whose last build failed.
+const INIT_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// How long a write to the IPC socket may wait before the frame is dropped.
+///
+/// Long enough to ride out a consumer that is briefly busy -- rebuilding a
+/// decoder after a resolution change, say -- and short enough that it cannot
+/// stop capture. There is no value here worth freezing the pipeline for: a
+/// frame nobody could take in a quarter of a second is one nobody wanted.
+const IPC_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(250);
+
+fn depth_for_codec(codec: HwCodec, requested: EncodeBitDepth, warned: &mut bool) -> EncodeBitDepth {
+    if codec == HwCodec::H264 && requested == EncodeBitDepth::Ten {
+        if !*warned {
+            *warned = true;
+            log::warn!("H.264 has no ten-bit encode; using eight-bit");
+        }
+        return EncodeBitDepth::Eight;
+    }
+    *warned = false;
+    requested
+}
+
+/// A slot whose image the converter may still be reading.
+///
+/// On a shared device nothing waits for a conversion on the CPU, so a frame's
+/// slot cannot go back to the ring the moment its conversion is submitted: the
+/// next blit into it would race the read. It is held until the conversion is
+/// known to be done instead, which costs nothing in steady state -- the next
+/// frame's conversion waits for this one before it starts, so the slot is
+/// released right after -- and a timeline poll on idle ticks otherwise.
+///
+/// The point is on the converter's own timeline, so it may only be looked at
+/// while that converter exists. [`drop_encoder`] is what keeps it so.
+struct HeldSlot {
+    guard: crate::slots::SlotGuard,
+    slot: usize,
+    converted: pixelforge::TimelinePoint,
+    ds: Arc<crate::state::DeviceState>,
+}
+
+impl HeldSlot {
+    fn done(&self) -> bool {
+        self.ds
+            .shared_encoder()
+            .is_none_or(|s| s.reached(self.converted))
+    }
+
+    /// Give the slot back. The blit it held finished before the conversion
+    /// that waited on it did, so its timing can be read without waiting.
+    fn release(self) {
+        if let Some(ns) = unsafe { crate::capture::blit_gpu_time_ns(&self.ds, self.slot, false) }
+            && let Ok(enc) = self.ds.encoder.lock()
+            && let Some(ref h) = *enc
+        {
+            h.timing.blit.record(std::time::Duration::from_nanos(ns));
+        }
+        drop(self.guard);
+    }
+}
+
+/// Drop the encoder and its converter, then the held slot.
+///
+/// In that order: dropping the converter waits for its last conversion, after
+/// which the held slot is free and its point, on the converter's timeline,
+/// would be a dangling handle anyway.
+fn drop_encoder(state: &mut Option<PerFrameEncoder>, held: &mut Option<HeldSlot>) {
+    *state = None;
+    if let Some(slot) = held.take() {
+        slot.release();
+    }
+}
+
+/// Convert a slot image in place on the game's device and encode the result,
+/// every step ordered on the GPU: the conversion waits for the blit, the
+/// encode for the conversion.
+///
+/// Also returns the point the conversion signals, whenever it was submitted,
+/// even if the encode then failed: the slot must be held until it is reached
+/// either way.
+fn shared_encode_frame(
     converter: &mut ColorConverter,
     encoder: &mut Encoder,
-    fd: RawFd,
-    stride: u32,
-    modifier: u64,
-    width: u32,
-    height: u32,
-    vk_format: u32,
-    frame_number: u32,
-    buffer_index: usize,
-) -> Result<EncodeFuture> {
-    use ash::vk;
-
-    let bgra_vk_fmt = map_vk_format_raw(vk_format);
-
-    let plane = DmaBufPlane {
-        fd,
-        offset: 0,
-        stride,
-        modifier,
-    };
-
-    let (imported_image, needs_layout_transition) = importer
-        .import_or_reuse(buffer_index, width, height, bgra_vk_fmt, &[plane])
-        .map_err(|e| anyhow::anyhow!("DmaBufImporter: {e}"))?;
-
-    unsafe { libc::close(fd) };
-
-    let src_layout = if needs_layout_transition {
-        vk::ImageLayout::UNDEFINED
-    } else {
-        vk::ImageLayout::GENERAL
-    };
-
-    converter
-        .convert(imported_image, src_layout, encoder.input_image())
-        .map_err(|e| anyhow::anyhow!("ColorConverter::convert frame {frame_number}: {e}"))?;
-
-    encoder
-        .encode(encoder.input_image())
-        .map_err(|e| anyhow::anyhow!("Encoder::encode frame {frame_number}: {e}"))
+    image: ash::vk::Image,
+    blit: pixelforge::TimelinePoint,
+) -> (Result<EncodeFuture>, Option<pixelforge::TimelinePoint>) {
+    let target = encoder.input_image();
+    let converted =
+        match converter.convert_async(image, ash::vk::ImageLayout::GENERAL, target, &[blit]) {
+            Ok(p) => p,
+            Err(e) => {
+                return (
+                    Err(anyhow::anyhow!("ColorConverter::convert_async: {e}")),
+                    None,
+                );
+            }
+        };
+    let result = encoder
+        .encode_after(target, &[converted])
+        .map_err(|e| anyhow::anyhow!("Encoder::encode_after: {e}"));
+    (result, Some(converted))
 }
 
 fn map_vk_format_raw(vk_format: u32) -> ash::vk::Format {
@@ -1125,12 +2257,23 @@ struct IpcConfig {
     idr_requested: Arc<AtomicBool>,
     /// Zero point for wire timestamps.
     epoch: Instant,
+    /// For the rate probe to command its own steps.
+    ///
+    /// The probe has to live where the encoded sizes are, which is here, and
+    /// has to drive the bitrate, which happens in the encoder thread -- so it
+    /// sends down the same channel every other bitrate change uses. Measuring
+    /// through the real path rather than beside it is the point: a probe that
+    /// called the encoder directly would not measure the path the controller
+    /// will actually use.
+    reconfig_tx: mpsc::Sender<EncodeSettingsChange>,
 }
 
 fn ipc_send_thread(
     cfg: IpcConfig,
     encoded_rx: mpsc::Receiver<EncodedFrame>,
     shutdown: Arc<AtomicBool>,
+    epoch: Instant,
+    progress: Arc<Progress>,
 ) {
     let socket = match UnixDatagram::unbound() {
         Ok(s) => {
@@ -1142,6 +2285,24 @@ fn ipc_send_thread(
                     libc::SO_SNDBUF,
                     &so_sndbuf as *const _ as *const libc::c_void,
                     std::mem::size_of::<libc::c_int>() as libc::socklen_t,
+                );
+            }
+            // A datagram socket whose peer has stopped reading blocks the
+            // sender once its buffer fills, and blocks it forever. This thread
+            // is serial and the channel feeding it is two deep, so that stops
+            // the encoder thread as well -- the whole capture layer frozen
+            // behind one write, which is what a game changing resolution was
+            // doing: the consumer pauses to rebuild its decoder, the buffer
+            // fills, and nothing here ever returns.
+            //
+            // Waiting a bounded time and giving up is the right answer for
+            // live media anyway. A frame nobody could take for a quarter of a
+            // second is a frame not worth having, and intra refresh means the
+            // picture recovers continuously rather than waiting for a key
+            // frame.
+            if let Err(e) = s.set_write_timeout(Some(IPC_WRITE_TIMEOUT)) {
+                log::warn!(
+                    "IPC socket write timeout could not be set ({e}); a stalled consumer will block capture"
                 );
             }
             s
@@ -1185,6 +2346,9 @@ fn ipc_send_thread(
         // Send loop
         let mut last_warn = Instant::now();
         let mut error_count: u64 = 0;
+        // Set while the consumer is refusing frames, so the recovery is said
+        // once as well rather than being left to be inferred from silence.
+        let mut blocked_consumer = false;
 
         // Where this loop's time goes, per second.
         //
@@ -1204,6 +2368,17 @@ fn ipc_send_thread(
         let mut worst_key_wait = std::time::Duration::ZERO;
         let mut keyframes: u32 = 0;
         let mut last_pace = Instant::now();
+        // Off unless asked for. A sweep takes the bitrate away from whatever
+        // else is steering it, so it must never start by accident.
+        let mut rate_probe = match std::env::var("NESCAPTURE_RATE_PROBE") {
+            Ok(v) if v != "0" && !v.is_empty() => {
+                log::info!(
+                    "rate probe armed: the encoder's bitrate is under this sweep, not the hub's control"
+                );
+                Some(crate::rate_probe::RateProbe::new(Instant::now(), 0))
+            }
+            _ => None,
+        };
 
         loop {
             if shutdown.load(Ordering::Relaxed) {
@@ -1214,6 +2389,13 @@ fn ipc_send_thread(
             // loop waiting for the capture side to submit anything at all;
             // `awaited` is the encoder finishing work already submitted. A
             // single timer around both reported 40 ms and named neither.
+            // Noted every time round, including the timeout path below.
+            // Without this the last step recorded was the socket write, so a
+            // thread sitting idle here -- because whatever feeds it stopped --
+            // reported itself as stuck writing to the socket. A watchdog that
+            // names the wrong thread is worse than none: it sends the next
+            // hour after the wrong bug.
+            progress.note(epoch, 6);
             let recv_start = Instant::now();
             let pending = match encoded_rx.recv_timeout(std::time::Duration::from_millis(100)) {
                 Ok(p) => p,
@@ -1223,6 +2405,11 @@ fn ipc_send_thread(
             let queued = recv_start.elapsed();
             let present_time = pending.present_time;
             let encode_start = Instant::now();
+            // The other indefinite wait. An encode that never completes stops
+            // this thread, which fills the channel, which stops the encoder
+            // thread -- a whole pipeline stalled behind one frame, with
+            // nothing said anywhere.
+            progress.note(epoch, 4);
             let result = pollster::block_on(pending.future);
             let awaited = encode_start.elapsed();
             let waited = queued + awaited;
@@ -1265,6 +2452,59 @@ fn ipc_send_thread(
                 &pkt.data,
             );
 
+            if let Some(probe) = rate_probe.as_mut() {
+                let now = Instant::now();
+                probe.observe(now, pkt.data.len() as u32, pkt.is_key_frame);
+                if let Some(kbps) = probe.due_step(now) {
+                    log::info!("rate probe: stepping to {kbps} kbps");
+                    let change = EncodeSettingsChange {
+                        codec: None,
+                        rate_control_mode: Some(RateControlMode::Cbr),
+                        value: kbps,
+                        bit_depth: None,
+                    };
+                    let _ = cfg.reconfig_tx.send(change);
+                }
+                if probe.finished() {
+                    // One line per rung, said once, at the end. This is the
+                    // whole point of the run, not per-tick reporting.
+                    log::info!("rate probe: finished");
+                    for r in probe.reports() {
+                        match r.settle_ms {
+                            Some(ms) => log::info!(
+                                "rate probe: {} -> {} kbps settled in {} ms ({} frames), steady {:.2}x target, {} keyframe(s) worst {} bytes = {} ms of link",
+                                r.from_kbps,
+                                r.to_kbps,
+                                ms,
+                                r.settle_frames.unwrap_or(0),
+                                r.steady_ratio,
+                                r.keyframes,
+                                r.keyframe_bytes,
+                                r.keyframe_ms
+                            ),
+                            None => log::warn!(
+                                "rate probe: {} -> {} kbps NEVER settled, steady {:.2}x target, {} keyframe(s) worst {} bytes = {} ms of link",
+                                r.from_kbps,
+                                r.to_kbps,
+                                r.steady_ratio,
+                                r.keyframes,
+                                r.keyframe_bytes,
+                                r.keyframe_ms
+                            ),
+                        }
+                    }
+                    match probe.worst_settle_ms() {
+                        Some(ms) => log::info!(
+                            "rate probe: worst settle {ms} ms -- a control loop cannot usefully run faster than this"
+                        ),
+                        None => log::warn!(
+                            "rate probe: nothing settled; the encoder does not follow its target"
+                        ),
+                    }
+                    rate_probe = None;
+                }
+            }
+
             if pkt.is_key_frame {
                 keyframes += 1;
                 worst_key_wait = worst_key_wait.max(waited);
@@ -1273,7 +2513,21 @@ fn ipc_send_thread(
             worst_awaited = worst_awaited.max(awaited);
 
             let send_start = Instant::now();
+            progress.note(epoch, 5);
             if let Err(e) = socket.send(&ipc_frame) {
+                // Said on the edges only. A stalled consumer fails every frame,
+                // and sixty identical lines a second bury whatever else is
+                // being said about why it stalled.
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut
+                {
+                    if !blocked_consumer {
+                        log::warn!("IPC consumer is not reading; dropping frames until it does");
+                        blocked_consumer = true;
+                    }
+                    frame_count += 1;
+                    continue;
+                }
                 error_count += 1;
                 if last_warn.elapsed() > std::time::Duration::from_secs(5) {
                     log::warn!("IPC send failed ({} frames dropped): {e}", error_count);
@@ -1288,6 +2542,11 @@ fn ipc_send_thread(
                 break;
             }
 
+            if blocked_consumer {
+                log::warn!("IPC consumer is reading again");
+                blocked_consumer = false;
+            }
+
             worst_send = worst_send.max(send_start.elapsed());
             let out = Instant::now();
             worst_out_gap = worst_out_gap.max(out.duration_since(last_out));
@@ -1295,8 +2554,8 @@ fn ipc_send_thread(
 
             if last_pace.elapsed() >= std::time::Duration::from_secs(1) {
                 last_pace = Instant::now();
-                log::info!(
-                    "  ipc: worst gap between frames out {:.1}ms = worst wait for a \
+                log::trace!(
+                    "ipc: worst gap between frames out {:.1}ms = worst wait for a \
                      submission {:.1}ms + worst wait for the encoder {:.1}ms, worst \
                      socket send {:.1}ms, {keyframes} keyframe(s) (worst wait on one \
                      {:.1}ms)",
@@ -1352,6 +2611,43 @@ fn pressure_total_us(kind: &str) -> Option<(u64, u64)> {
     Some((some?, full.unwrap_or(0)))
 }
 
+/// What to tell the clients this stream's colour is.
+///
+/// The space comes from what capture resolved for the frames it encoded, not
+/// from the compositor's declaration. Those differ, and when they do the
+/// resolved one is right: the swapchain has the last word wherever it names a
+/// space, and only a pass-through swapchain defers. A game leaving HDR builds
+/// a plain sRGB swapchain that says so outright, which is the case that broke
+/// -- the compositor's view of the surface stayed HDR, so a client told only
+/// that kept presenting sRGB frames through a PQ swapchain.
+///
+/// The mastering numbers still come from the compositor, which is the only
+/// side that has them, and only where the resolved space can carry them. An
+/// SDR stream reports none: its brightness is the display's business, and
+/// leaving HDR's numbers attached would describe a picture that is no longer
+/// being sent.
+fn stream_colour(
+    declared: &std::sync::Mutex<Option<nesprotocol::SurfaceColor>>,
+    resolved: &AtomicU32,
+) -> Option<nesprotocol::SurfaceColor> {
+    let space = match resolved.load(Ordering::Relaxed) {
+        u32::MAX => return None,
+        VK_COLOR_SPACE_HDR10_ST2084_EXT => nesprotocol::SURFACE_COLOR_BT2020_PQ,
+        _ => nesprotocol::SURFACE_COLOR_SRGB,
+    };
+    if space == nesprotocol::SURFACE_COLOR_SRGB {
+        return Some(nesprotocol::SurfaceColor {
+            space,
+            ..Default::default()
+        });
+    }
+    let mastered = declared.lock().ok().and_then(|d| *d);
+    Some(nesprotocol::SurfaceColor {
+        space,
+        ..mastered.unwrap_or_default()
+    })
+}
+
 fn stats_sender_thread(
     capture_fps: Arc<AtomicU32>,
     encode_avg_ms: Arc<AtomicU32>,
@@ -1360,6 +2656,8 @@ fn stats_sender_thread(
     present_attempts: Arc<AtomicU32>,
     capture_attempts: Arc<AtomicU32>,
     timing: Arc<crate::timing::PresentTiming>,
+    declared_surface: Arc<std::sync::Mutex<Option<nesprotocol::SurfaceColor>>>,
+    stream_colorspace: Arc<AtomicU32>,
     ipc_path: std::path::PathBuf,
     shutdown: Arc<AtomicBool>,
 ) {
@@ -1373,9 +2671,7 @@ fn stats_sender_thread(
             Some(s)
         }
         Ok(_) => {
-            log::warn!(
-                "stats socket connect failed; rates are logged but not sent to the hub"
-            );
+            log::warn!("stats socket connect failed; rates are logged but not sent to the hub");
             None
         }
         Err(e) => {
@@ -1395,12 +2691,42 @@ fn stats_sender_thread(
     // scheduling, the guest's storage, or its memory sizing.
     let mut prev_pressure: Option<[(u64, u64); 3]> = None;
     let mut pressure_said_missing = false;
+    let mut last_colour: Option<nesprotocol::SurfaceColor> = None;
+
+    // The loop runs ten times a second and the statistics every tenth pass, so
+    // they keep the per-second window their counters are reset on. The colour
+    // is checked every pass, because it has to reach the clients before the
+    // frames it describes do: a client still reading a stream as HDR while SDR
+    // frames arrive measures sRGB white as if it were PQ, which is ten
+    // thousand nits.
+    const PASSES_PER_SECOND: u64 = 10;
+    let mut pass: u64 = 0;
 
     loop {
         if shutdown.load(Ordering::Relaxed) {
             break;
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        pass += 1;
+        let second = pass.is_multiple_of(PASSES_PER_SECOND);
+
+        // On a change immediately, and once a second regardless. The heartbeat
+        // is for the client that joined after the compositor last spoke, which
+        // would otherwise never hear it; sending only on change would mean
+        // tracking who has been told.
+        if let Some(socket) = socket.as_ref()
+            && let Some(colour) = stream_colour(&declared_surface, &stream_colorspace)
+            && (second || last_colour != Some(colour))
+        {
+            last_colour = Some(colour);
+            let mut payload = vec![nesprotocol::MSG_SURFACE_COLOR];
+            nesprotocol::encode_surface_color(&mut payload, &colour);
+            let _ = socket.send(&payload);
+        }
+
+        if !second {
+            continue;
+        }
 
         let raw_fps = capture_fps.load(Ordering::Relaxed);
         let fps = raw_fps.min(255) as u8;
@@ -1435,13 +2761,13 @@ fn stats_sender_thread(
         let (hold_avg, hold_max) = timing.hold.take();
         let long_gaps = timing.take_long_gaps();
 
-        log::info!(
+        log::trace!(
             "present {pa}/s, admitted {ca}/s, encoded {raw_fps}/s, \
              starved {starved}, dropped {dropped}, capture {cap_ms:.1}ms, \
              encode {enc_ms:.1}ms"
         );
-        log::info!(
-            "  gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
+        log::trace!(
+            "gap {gap_avg:.1}/{gap_max:.1}ms, layer {layer_avg:.2}/{layer_max:.2}ms, \
              down {down_avg:.2}/{down_max:.2}ms, acquire {acq_avg:.1}/{acq_max:.1}ms, \
              hold {hold_avg:.2}/{hold_max:.2}ms, blit-gpu {blit_avg:.3}/{blit_max:.3}ms \
              (avg/max), hitches {long_gaps}"
@@ -1468,8 +2794,8 @@ fn stats_sender_thread(
                         };
                         a.saturating_sub(b) as f64 / 1000.0
                     };
-                    log::info!(
-                        "  pressure: cpu {:.1}ms, io {:.1}/{:.1}ms, memory {:.1}/{:.1}ms \
+                    log::trace!(
+                        "pressure: cpu {:.1}ms, io {:.1}/{:.1}ms, memory {:.1}/{:.1}ms \
                          (some/full, stalled in the last second)",
                         ms(0, false),
                         ms(1, false),
@@ -1481,8 +2807,8 @@ fn stats_sender_thread(
                 prev_pressure = Some(now);
             }
             None if !pressure_said_missing => {
-                log::info!(
-                    "  pressure: /proc/pressure is unreadable, so this guest cannot say \
+                log::trace!(
+                    "pressure: /proc/pressure is unreadable, so this guest cannot say \
                      whether a stall was cpu, io or memory (CONFIG_PSI off, or psi=0)"
                 );
                 pressure_said_missing = true;
@@ -1492,7 +2818,9 @@ fn stats_sender_thread(
 
         if let Some(ref socket) = socket {
             let mut buf = Vec::with_capacity(22);
-            nesprotocol::stats::encode_hudless_stats(&mut buf, fps, enc_ms, dropped, pa, ca, cap_ms);
+            nesprotocol::stats::encode_nescapture_stats(
+                &mut buf, fps, enc_ms, dropped, pa, ca, cap_ms,
+            );
             let _ = socket.send(&buf);
         }
     }
@@ -1504,6 +2832,7 @@ fn stats_sender_thread(
 mod tests {
     use super::*;
     use ash::vk::ColorSpaceKHR as Cs;
+    use pixelforge::ColorDescription;
 
     /// The colour space values were once written out by hand and two were wrong,
     /// which routed every HDR swapchain into the SDR arm silently. Deriving them
@@ -1531,31 +2860,6 @@ mod tests {
     }
 
     #[test]
-    fn bit_depth_agrees_with_the_input_format() {
-        // The two used to be separate matches on VkFormat and had drifted.
-        // Ten-bit in means ten-bit out, eight means eight, for every format
-        // the converter accepts.
-        let ten = [64u32, 97];
-        let eight = [37u32, 43, 44, 50];
-        for f in ten {
-            let fmt = vk_format_to_input_format(f).expect("mapped");
-            assert_eq!(
-                input_format_bit_depth(fmt),
-                EncodeBitDepth::Ten,
-                "VkFormat {f} is a ten-bit format"
-            );
-        }
-        for f in eight {
-            let fmt = vk_format_to_input_format(f).expect("mapped");
-            assert_eq!(
-                input_format_bit_depth(fmt),
-                EncodeBitDepth::Eight,
-                "VkFormat {f} is an eight-bit format"
-            );
-        }
-    }
-
-    #[test]
     fn hdr_formats_map_to_their_converter_inputs() {
         // The two pairs a WSI layer injects that we can actually consume.
         assert_eq!(
@@ -1570,18 +2874,31 @@ mod tests {
         );
     }
 
+    /// A description for one colour space, through the same path the encoder
+    /// uses. The geometry and formats are irrelevant to the answer.
+    fn description(vk_colorspace: u32) -> ColorDescription {
+        converter_config(
+            1920,
+            1080,
+            InputFormat::BGRA,
+            OutputFormat::NV12,
+            vk_colorspace,
+        )
+        .color_description()
+        .expect("every source we accept has an encodable stream")
+    }
+
     #[test]
-    fn hdr_colour_spaces_select_the_hdr_arm() {
+    fn hdr_colour_spaces_are_already_pq() {
         for cs in [Cs::HDR10_ST2084_EXT, Cs::HDR10_HLG_EXT] {
             let raw = cs.as_raw() as u32;
             assert_eq!(
-                vk_colorspace_to_color_space(raw),
-                ColorSpace::Bt2020,
-                "{cs:?} must convert as BT.2020, not BT.709"
+                vk_colorspace_to_source_spec(raw),
+                ColorSpec::Bt2020Pq,
+                "{cs:?} must convert as BT.2020 PQ, not BT.709"
             );
-            let desc = vk_colorspace_to_color_description(raw).expect("a description");
             assert_eq!(
-                desc,
+                description(raw),
                 ColorDescription::bt2020_pq().with_full_range(true),
                 "{cs:?}"
             );
@@ -1589,35 +2906,61 @@ mod tests {
     }
 
     /// Linear swapchains must not be run through an inverse sRGB EOTF on the way
-    /// to PQ; `Bt709LinearToBt2020Pq` is the arm that skips it.
+    /// to PQ, and they are not the same linear space as each other.
     #[test]
-    fn scrgb_and_bt2020_linear_select_the_pq_conversion() {
+    fn the_two_linear_spaces_are_told_apart() {
+        // They used to share an arm: there was no source for linear light on
+        // BT.2020 primaries, so BT2020_LINEAR borrowed scRGB's and took a gamut
+        // error to avoid a gamma one. Splitting source from target gives it one.
+        assert_eq!(
+            vk_colorspace_to_source_spec(Cs::EXTENDED_SRGB_LINEAR_EXT.as_raw() as u32),
+            ColorSpec::Bt709Linear,
+        );
+        assert_eq!(
+            vk_colorspace_to_source_spec(Cs::BT2020_LINEAR_EXT.as_raw() as u32),
+            ColorSpec::Bt2020Linear,
+        );
+        // Both still leave as HDR10: video cannot carry linear light.
         for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
+            let raw = cs.as_raw() as u32;
             assert_eq!(
-                vk_colorspace_to_color_space(cs.as_raw() as u32),
-                ColorSpace::Bt709LinearToBt2020Pq,
+                stream_spec(vk_colorspace_to_source_spec(raw)),
+                ColorSpec::Bt2020Pq,
+                "{cs:?}"
+            );
+            assert!(
+                stream_spec(vk_colorspace_to_source_spec(raw)).is_encodable(),
                 "{cs:?}"
             );
         }
     }
 
-    /// scRGB is linear with 1.0 at 80 nits; everything else that reaches PQ is
-    /// gamma-encoded sRGB with white at the BT.2408 reference of 203.
+    /// scRGB is linear with 1.0 at 80 nits; gamma-encoded sRGB puts white at the
+    /// BT.2408 reference of 203.
     #[test]
     fn scrgb_white_is_not_the_srgb_reference() {
+        assert_eq!(ColorSpec::Bt709Linear.reference_white_nits(), Some(80.0));
+        assert_eq!(ColorSpec::Srgb.reference_white_nits(), Some(203.0));
         assert_eq!(
-            sdr_reference_white_nits(ColorSpace::Bt709LinearToBt2020Pq),
-            80.0
+            vk_colorspace_to_source_spec(Cs::EXTENDED_SRGB_LINEAR_EXT.as_raw() as u32)
+                .reference_white_nits(),
+            Some(80.0),
         );
-        assert_eq!(sdr_reference_white_nits(ColorSpace::SrgbToBt2020Pq), 203.0);
-        for cs in [Cs::EXTENDED_SRGB_LINEAR_EXT, Cs::BT2020_LINEAR_EXT] {
-            let nits = sdr_reference_white_nits(vk_colorspace_to_color_space(cs.as_raw() as u32));
-            assert_eq!(nits, 80.0, "{cs:?}");
-        }
+        // BT.2020 linear now answers 203 rather than scRGB's 80, because it is
+        // no longer pretending to be scRGB. That is a deliberate change of
+        // behaviour: 80 was a side effect of the borrowed arm, not a decision
+        // about this space.
+        assert_eq!(
+            vk_colorspace_to_source_spec(Cs::BT2020_LINEAR_EXT.as_raw() as u32)
+                .reference_white_nits(),
+            Some(203.0),
+        );
+        // PQ already carries absolute brightness, so there is nothing to map.
+        assert_eq!(ColorSpec::Bt2020Pq.reference_white_nits(), None);
     }
 
     /// The matrix and transfer the shader applies and the ones the VUI declares
-    /// come from the same match, so they cannot disagree.
+    /// come from one config, so they cannot disagree.
     #[test]
     fn conversion_and_declaration_agree() {
         for cs in [
@@ -1629,8 +2972,8 @@ mod tests {
             Cs::BT2020_LINEAR_EXT,
         ] {
             let raw = cs.as_raw() as u32;
-            let desc = vk_colorspace_to_color_description(raw).expect("a description");
-            let writes_bt2020 = vk_colorspace_to_color_space(raw) != ColorSpace::Bt709;
+            let desc = description(raw);
+            let writes_bt2020 = stream_spec(vk_colorspace_to_source_spec(raw)) != ColorSpec::Srgb;
             assert_eq!(desc.is_hdr(), writes_bt2020, "{cs:?}");
             assert_eq!(
                 desc,
@@ -1647,11 +2990,9 @@ mod tests {
     #[test]
     fn sdr_colour_spaces_stay_on_bt709() {
         for cs in [Cs::SRGB_NONLINEAR, Cs::PASS_THROUGH_EXT] {
-            assert_eq!(
-                vk_colorspace_to_color_space(cs.as_raw() as u32),
-                ColorSpace::Bt709,
-                "{cs:?}"
-            );
+            let raw = cs.as_raw() as u32;
+            assert_eq!(vk_colorspace_to_source_spec(raw), ColorSpec::Srgb, "{cs:?}");
+            assert_eq!(stream_spec(ColorSpec::Srgb), ColorSpec::Srgb);
         }
     }
 
@@ -1700,12 +3041,919 @@ mod tests {
             Cs::EXTENDED_SRGB_LINEAR_EXT,
             Cs::PASS_THROUGH_EXT,
         ] {
-            let desc =
-                vk_colorspace_to_color_description(cs.as_raw() as u32).expect("a description");
             assert!(
-                desc.full_range,
+                description(cs.as_raw() as u32).full_range,
                 "{cs:?} produced a limited-range description"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod source_spec_tests {
+    use super::{source_spec, stream_spec};
+    use ash::vk::ColorSpaceKHR as Cs;
+    use pixelforge::{ColorSpec, InputFormat};
+
+    fn raw(cs: Cs) -> u32 {
+        cs.as_raw() as u32
+    }
+
+    /// The bug this exists for, measured rather than argued: Control through
+    /// wine hands a float16 swapchain declared BT.2020 PQ, and a probe of its
+    /// frames found components up to 2.54. PQ cannot represent that, so the
+    /// buffer is scRGB and the declaration is about the volume, not the
+    /// encoding. Believing it made the converter skip the transfer entirely.
+    #[test]
+    fn a_float_surface_declared_pq_is_scrgb() {
+        assert_eq!(
+            source_spec(raw(Cs::HDR10_ST2084_EXT), InputFormat::RGBA16F),
+            ColorSpec::Bt709Linear
+        );
+        // And the stream is still HDR10, because linear light is not encodable.
+        assert_eq!(stream_spec(ColorSpec::Bt709Linear), ColorSpec::Bt2020Pq);
+    }
+
+    /// An integer surface can carry an encoded transfer, so there the
+    /// declaration is the answer and nothing overrides it.
+    #[test]
+    fn an_integer_surface_declared_pq_really_is_pq() {
+        for fmt in [InputFormat::ABGR2101010, InputFormat::BGRA] {
+            assert_eq!(
+                source_spec(raw(Cs::HDR10_ST2084_EXT), fmt),
+                ColorSpec::Bt2020Pq,
+                "{fmt:?}"
+            );
+        }
+    }
+
+    /// A float surface that declares linear already agrees, and must keep the
+    /// primaries it named -- BT.2020 linear is not scRGB.
+    #[test]
+    fn a_float_surface_that_declares_linear_keeps_its_primaries() {
+        assert_eq!(
+            source_spec(raw(Cs::EXTENDED_SRGB_LINEAR_EXT), InputFormat::RGBA16F),
+            ColorSpec::Bt709Linear
+        );
+        assert_eq!(
+            source_spec(raw(Cs::BT2020_LINEAR_EXT), InputFormat::RGBA16F),
+            ColorSpec::Bt2020Linear
+        );
+    }
+
+    /// Float samples with nothing said about them are still linear: no float
+    /// convention stores an encoded curve, so reading them as sRGB applies an
+    /// inverse EOTF to data that never had one.
+    #[test]
+    fn float_samples_are_linear_even_when_nothing_says_so() {
+        assert_eq!(
+            source_spec(raw(Cs::SRGB_NONLINEAR), InputFormat::RGBA16F),
+            ColorSpec::Bt709Linear
+        );
+    }
+
+    /// The ordinary SDR path is untouched.
+    #[test]
+    fn eight_bit_srgb_is_left_alone() {
+        assert_eq!(
+            source_spec(raw(Cs::SRGB_NONLINEAR), InputFormat::BGRA),
+            ColorSpec::Srgb
+        );
+        assert_eq!(stream_spec(ColorSpec::Srgb), ColorSpec::Srgb);
+    }
+}
+
+#[cfg(test)]
+mod surface_colour_tests {
+    use super::{
+        VK_COLOR_SPACE_HDR10_ST2084_EXT, VK_COLOR_SPACE_PASS_THROUGH_EXT,
+        VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, effective_colorspace, surface_color_to_vk,
+        vk_colorspace_to_source_spec,
+    };
+    use pixelforge::ColorSpec;
+
+    /// The case this exists for: a Windows title turning HDR on through wine
+    /// gets a swapchain that says nothing and a surface declared BT.2020 PQ.
+    /// Read from the swapchain alone it encodes as SDR, which is what it did.
+    #[test]
+    fn pass_through_takes_what_the_compositor_was_told() {
+        let declared = surface_color_to_vk(nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        let effective = effective_colorspace(VK_COLOR_SPACE_PASS_THROUGH_EXT, Some(declared));
+        assert_eq!(effective, VK_COLOR_SPACE_HDR10_ST2084_EXT);
+        assert_eq!(vk_colorspace_to_source_spec(effective), ColorSpec::Bt2020Pq);
+    }
+
+    /// A swapchain that names a colour space is the authority. The compositor
+    /// is told about a surface, which may carry something else entirely, so
+    /// letting it override a swapchain that has spoken would be guessing.
+    #[test]
+    fn a_swapchain_that_names_one_is_not_overridden() {
+        let declared = surface_color_to_vk(nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, Some(declared)),
+            VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+        );
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_HDR10_ST2084_EXT, Some(declared)),
+            VK_COLOR_SPACE_HDR10_ST2084_EXT
+        );
+    }
+
+    /// Nothing said yet is the first few frames of every session, and it must
+    /// read as the swapchain's own answer rather than as HDR.
+    #[test]
+    fn pass_through_with_nothing_declared_stays_as_it_is() {
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_PASS_THROUGH_EXT, None),
+            VK_COLOR_SPACE_PASS_THROUGH_EXT
+        );
+        assert_eq!(
+            vk_colorspace_to_source_spec(VK_COLOR_SPACE_PASS_THROUGH_EXT),
+            ColorSpec::Srgb
+        );
+    }
+
+    /// An SDR surface says so, and must not be read as "said nothing" -- that
+    /// is the difference between a deliberate answer and a missing one.
+    #[test]
+    fn an_sdr_surface_is_an_answer() {
+        let declared = surface_color_to_vk(nesprotocol::SURFACE_COLOR_SRGB);
+        assert_eq!(declared, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        assert_eq!(
+            effective_colorspace(VK_COLOR_SPACE_PASS_THROUGH_EXT, Some(declared)),
+            VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+        );
+    }
+
+    /// An unknown space from a newer compositor reads as SDR rather than as
+    /// something unencodable.
+    #[test]
+    fn an_unknown_surface_colour_falls_back_to_sdr() {
+        assert_eq!(surface_color_to_vk(200), VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+    }
+}
+
+#[cfg(test)]
+mod encoder_identity_tests {
+    use super::encoder_still_serves;
+    use pixelforge::{EncodeBitDepth, InputFormat, PixelFormat};
+
+    const SDR: u32 = 0;
+    type Identity = (u32, u32, EncodeBitDepth, PixelFormat, u32, InputFormat);
+    const HD: Identity = (
+        1920,
+        1080,
+        EncodeBitDepth::Eight,
+        PixelFormat::Yuv420,
+        SDR,
+        InputFormat::BGRA,
+    );
+
+    #[test]
+    fn an_unchanged_frame_reuses_the_encoder() {
+        assert!(encoder_still_serves(HD, HD));
+    }
+
+    #[test]
+    fn a_resolution_change_rebuilds_in_either_direction() {
+        // The regression. Shrinking left the encoder sending the old geometry
+        // with stale margins; growing had no surface big enough for the frame.
+        let smaller = (
+            1280,
+            720,
+            EncodeBitDepth::Eight,
+            PixelFormat::Yuv420,
+            SDR,
+            InputFormat::BGRA,
+        );
+        assert!(!encoder_still_serves(HD, smaller));
+        assert!(!encoder_still_serves(smaller, HD));
+    }
+
+    #[test]
+    fn one_axis_moving_is_still_a_change() {
+        assert!(!encoder_still_serves(
+            HD,
+            (
+                1920,
+                720,
+                EncodeBitDepth::Eight,
+                PixelFormat::Yuv420,
+                SDR,
+                InputFormat::BGRA
+            )
+        ));
+        assert!(!encoder_still_serves(
+            HD,
+            (
+                1280,
+                1080,
+                EncodeBitDepth::Eight,
+                PixelFormat::Yuv420,
+                SDR,
+                InputFormat::BGRA
+            )
+        ));
+    }
+
+    /// The regression this guards, seen in Cyberpunk switching from its HDR10
+    /// mode to its scRGB one. Both are HDR, both declare BT.2020 PQ to the
+    /// compositor, both are ten bit at the same size -- so every other part of
+    /// the identity matched and the encoder was reused. Its converter reads a
+    /// fixed bytes-per-pixel, and a packed 10-bit surface is four where a
+    /// float16 one is eight, so every row was read at half its length: the
+    /// picture came out sheared into stripes rather than merely the wrong
+    /// colour.
+    #[test]
+    fn a_surface_format_change_rebuilds_even_when_nothing_else_moves() {
+        let float16 = (
+            1920,
+            1080,
+            EncodeBitDepth::Eight,
+            PixelFormat::Yuv420,
+            SDR,
+            InputFormat::RGBA16F,
+        );
+        assert!(!encoder_still_serves(HD, float16));
+        assert!(!encoder_still_serves(float16, HD));
+    }
+
+    /// Specifically the pair that did it: the same colour space either way,
+    /// because pass-through defers to what the compositor was told and the
+    /// compositor was told PQ both times.
+    #[test]
+    fn packed_ten_bit_and_float16_are_not_the_same_surface() {
+        const PQ: u32 = 1000104;
+        let packed = (
+            1920,
+            1080,
+            EncodeBitDepth::Ten,
+            PixelFormat::Yuv420,
+            PQ,
+            InputFormat::ABGR2101010,
+        );
+        let float16 = (
+            1920,
+            1080,
+            EncodeBitDepth::Ten,
+            PixelFormat::Yuv420,
+            PQ,
+            InputFormat::RGBA16F,
+        );
+        assert!(!encoder_still_serves(packed, float16));
+    }
+
+    #[test]
+    fn depth_and_pixel_format_still_rebuild() {
+        assert!(!encoder_still_serves(
+            HD,
+            (
+                1920,
+                1080,
+                EncodeBitDepth::Ten,
+                PixelFormat::Yuv420,
+                SDR,
+                InputFormat::BGRA
+            )
+        ));
+        assert!(!encoder_still_serves(
+            HD,
+            (
+                1920,
+                1080,
+                EncodeBitDepth::Eight,
+                PixelFormat::Yuv444,
+                SDR,
+                InputFormat::BGRA
+            )
+        ));
+    }
+}
+
+#[cfg(test)]
+mod depth_tests {
+    use super::{HwCodec, depth_for_codec};
+    use pixelforge::EncodeBitDepth;
+
+    #[test]
+    fn h264_is_never_asked_for_ten_bit() {
+        // There is no H.264 ten-bit encode to ask for. Asking does not produce a
+        // worse stream, it produces ERROR_VIDEO_PROFILE_CODEC_NOT_SUPPORTED_KHR
+        // and no stream at all -- which is what the game Control caused by
+        // opening a ten-bit swapchain.
+        let mut warned = false;
+        assert_eq!(
+            depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned),
+            EncodeBitDepth::Eight,
+        );
+        assert!(warned, "it was clamped silently");
+    }
+
+    #[test]
+    fn the_refusal_is_said_once_and_not_per_frame() {
+        let mut warned = false;
+        for _ in 0..600 {
+            depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned);
+        }
+        assert!(warned);
+    }
+
+    #[test]
+    fn the_codecs_that_have_ten_bit_keep_it() {
+        let mut warned = false;
+        for codec in [HwCodec::H265, HwCodec::AV1] {
+            assert_eq!(
+                depth_for_codec(codec, EncodeBitDepth::Ten, &mut warned),
+                EncodeBitDepth::Ten,
+                "{codec:?} lost its ten-bit",
+            );
+            assert!(!warned);
+        }
+    }
+
+    #[test]
+    fn eight_bit_passes_through_every_codec() {
+        let mut warned = false;
+        for codec in [HwCodec::H264, HwCodec::H265, HwCodec::AV1] {
+            assert_eq!(
+                depth_for_codec(codec, EncodeBitDepth::Eight, &mut warned),
+                EncodeBitDepth::Eight,
+            );
+            assert!(!warned, "{codec:?} warned about a depth it supports");
+        }
+    }
+
+    #[test]
+    fn moving_off_h264_lets_the_warning_be_said_again() {
+        // The flag is about not repeating one refusal, not about never
+        // mentioning it twice in a session: a codec switch is a new situation.
+        let mut warned = false;
+        depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned);
+        assert!(warned);
+        depth_for_codec(HwCodec::AV1, EncodeBitDepth::Ten, &mut warned);
+        assert!(!warned);
+        depth_for_codec(HwCodec::H264, EncodeBitDepth::Ten, &mut warned);
+        assert!(warned);
+    }
+}
+
+#[cfg(test)]
+mod bitrate_only_tests {
+    use super::{HwCodec, RateControl, bitrate_only_change, changes_nothing, negotiated};
+
+    use crate::encode::EncodeSettingsChange;
+    use pixelforge::{EncodeBitDepth, RateControlMode};
+
+    fn change(
+        mode: RateControlMode,
+        value: u32,
+        codec: Option<HwCodec>,
+        bit_depth: Option<EncodeBitDepth>,
+    ) -> EncodeSettingsChange {
+        EncodeSettingsChange {
+            codec,
+            rate_control_mode: Some(mode),
+            value,
+            bit_depth,
+        }
+    }
+
+    /// The running encode for these: CBR at 8 Mbps, H.264, no depth override.
+    fn running(c: &EncodeSettingsChange) -> Option<u32> {
+        bitrate_only_change(c, CBR_8M, HwCodec::H264, None)
+    }
+
+    fn caps(pairs: &[(u8, u8)]) -> nesprotocol::ClientCaps {
+        pairs
+            .iter()
+            .fold(nesprotocol::ClientCaps::empty(), |acc, &(c, d)| {
+                acc.with(c, d)
+            })
+    }
+
+    /// A device that encodes all three, ten bits on everything but H.264.
+    fn full_host() -> nesprotocol::ClientCaps {
+        caps(&[
+            (nesprotocol::CODEC_AV1, nesprotocol::DEPTH_8),
+            (nesprotocol::CODEC_AV1, nesprotocol::DEPTH_10),
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_8),
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_10),
+            (nesprotocol::CODEC_H264, nesprotocol::DEPTH_8),
+        ])
+    }
+
+    /// The whole point: a client with no AV1 decoder gets H.265 rather than a
+    /// black screen.
+    #[test]
+    fn a_client_without_av1_is_moved_off_it() {
+        let client = caps(&[
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_8),
+            (nesprotocol::CODEC_H265, nesprotocol::DEPTH_10),
+            (nesprotocol::CODEC_H264, nesprotocol::DEPTH_8),
+        ]);
+        assert_eq!(
+            negotiated(client, full_host(), None),
+            Some((HwCodec::H265, EncodeBitDepth::Ten))
+        );
+    }
+
+    #[test]
+    fn a_client_with_only_h264_is_moved_all_the_way_down() {
+        let client = caps(&[(nesprotocol::CODEC_H264, nesprotocol::DEPTH_8)]);
+        assert_eq!(
+            negotiated(client, full_host(), None),
+            Some((HwCodec::H264, EncodeBitDepth::Eight))
+        );
+    }
+
+    /// An operator who names a codec keeps it, even against a client that
+    /// cannot decode it. Second-guessing an explicit setting is worse than the
+    /// black screen, which is at least visible.
+    #[test]
+    fn a_forced_codec_is_not_negotiated_away() {
+        let client = caps(&[(nesprotocol::CODEC_H264, nesprotocol::DEPTH_8)]);
+        assert_eq!(negotiated(client, full_host(), Some("av1")), None);
+    }
+
+    /// A client that said nothing, or shares nothing, leaves the stream alone.
+    #[test]
+    fn nothing_in_common_changes_nothing() {
+        assert_eq!(
+            negotiated(nesprotocol::ClientCaps::empty(), full_host(), None),
+            None
+        );
+        let av1_only = caps(&[(nesprotocol::CODEC_AV1, nesprotocol::DEPTH_8)]);
+        let h264_client = caps(&[(nesprotocol::CODEC_H264, nesprotocol::DEPTH_8)]);
+        assert_eq!(negotiated(h264_client, av1_only, None), None);
+    }
+
+    /// A negotiation landing where the encoder already is must not rebuild:
+    /// every rebuild costs an IDR, and this message arrives on every connect.
+    #[test]
+    fn asking_for_the_current_settings_is_a_no_op() {
+        let same = EncodeSettingsChange {
+            codec: Some(HwCodec::AV1),
+            rate_control_mode: None,
+            value: 0,
+            bit_depth: Some(EncodeBitDepth::Ten),
+        };
+        assert!(changes_nothing(
+            &same,
+            HwCodec::AV1,
+            Some(EncodeBitDepth::Ten)
+        ));
+        assert!(!changes_nothing(
+            &same,
+            HwCodec::H265,
+            Some(EncodeBitDepth::Ten)
+        ));
+        assert!(!changes_nothing(
+            &same,
+            HwCodec::AV1,
+            Some(EncodeBitDepth::Eight)
+        ));
+    }
+
+    /// No override recorded means the default, which is eight bits -- so a
+    /// request for eight is a no-op and one for ten is not.
+    #[test]
+    fn an_unset_depth_reads_as_eight_bits() {
+        let eight = EncodeSettingsChange {
+            codec: None,
+            rate_control_mode: None,
+            value: 0,
+            bit_depth: Some(EncodeBitDepth::Eight),
+        };
+        assert!(changes_nothing(&eight, HwCodec::AV1, None));
+        let ten = EncodeSettingsChange {
+            bit_depth: Some(EncodeBitDepth::Ten),
+            ..eight.clone()
+        };
+        assert!(!changes_nothing(&ten, HwCodec::AV1, None));
+    }
+
+    /// A rate-control change is never a no-op, whatever else it carries.
+    #[test]
+    fn a_rate_control_change_always_counts() {
+        let rc = EncodeSettingsChange {
+            codec: Some(HwCodec::AV1),
+            rate_control_mode: Some(RateControlMode::Cbr),
+            value: 5_000,
+            bit_depth: Some(EncodeBitDepth::Ten),
+        };
+        assert!(!changes_nothing(
+            &rc,
+            HwCodec::AV1,
+            Some(EncodeBitDepth::Ten)
+        ));
+    }
+
+    /// What a client sends on connect to say what it can decode: a depth, and
+    /// nothing else. It must not read as a bitrate change, or the rebuild it
+    /// needs would be skipped in favour of a live retune to zero.
+    #[test]
+    fn a_depth_only_change_is_not_a_bitrate_change() {
+        let depth_only = EncodeSettingsChange {
+            codec: None,
+            rate_control_mode: None,
+            value: 0,
+            bit_depth: Some(EncodeBitDepth::Ten),
+        };
+        assert_eq!(
+            running(&depth_only),
+            None,
+            "a change that names no rate control cannot be retuned live"
+        );
+    }
+
+    /// And the wire form of it decodes to exactly that.
+    #[test]
+    fn the_depth_only_payload_names_no_rate_control() {
+        let mut buf = Vec::new();
+        nesprotocol::encode_depth_only(&mut buf, nesprotocol::DEPTH_10);
+        let (codec, rc, value, depth) =
+            nesprotocol::decode_encode_settings(&buf).expect("readable");
+        assert_eq!(codec, nesprotocol::CODEC_KEEP);
+        assert_eq!(rc, nesprotocol::RC_KEEP);
+        assert_eq!(value, 0);
+        assert_eq!(depth, Some(nesprotocol::DEPTH_10));
+    }
+
+    const CBR_8M: RateControl = RateControl::Cbr { kbps: 8_000 };
+    const VBR_8M: RateControl = RateControl::Vbr {
+        target_kbps: 8_000,
+        max_kbps: 12_000,
+    };
+
+    #[test]
+    fn a_bare_bitrate_change_is_taken() {
+        let c = change(RateControlMode::Cbr, 2_000, None, None);
+        assert_eq!(running(&c), Some(2_000));
+    }
+
+    #[test]
+    fn restating_the_current_codec_and_depth_is_not_a_change() {
+        // The debug overlay sends every field on every apply, so a change that
+        // only moved the slider still arrives carrying a codec. Treating that as
+        // a codec change would rebuild the encoder, and an IDR with it, every
+        // time somebody nudged the bitrate.
+        let c = change(RateControlMode::Cbr, 2_000, Some(HwCodec::H264), None);
+        assert_eq!(running(&c), Some(2_000));
+
+        // Same, with the depth restated as what is already in force.
+        let c = change(
+            RateControlMode::Cbr,
+            2_000,
+            Some(HwCodec::H264),
+            Some(EncodeBitDepth::Eight),
+        );
+        assert_eq!(
+            bitrate_only_change(&c, CBR_8M, HwCodec::H264, Some(EncodeBitDepth::Eight)),
+            Some(2_000),
+        );
+    }
+
+    #[test]
+    fn a_stated_depth_against_no_override_rebuilds() {
+        // Deliberately conservative. With no override in force the running depth
+        // came from the input format or the environment, and this cannot tell
+        // whether the stated value matches it -- so it rebuilds rather than
+        // assume. The cost is one rebuild on the first manual apply; the cost of
+        // assuming wrongly is a stream whose depth silently disagrees with the
+        // encoder's.
+        let c = change(
+            RateControlMode::Cbr,
+            2_000,
+            None,
+            Some(EncodeBitDepth::Eight),
+        );
+        assert_eq!(bitrate_only_change(&c, CBR_8M, HwCodec::H264, None), None);
+    }
+
+    #[test]
+    fn a_different_codec_rebuilds() {
+        // A codec is the video session's profile; there is no retuning it.
+        for codec in [HwCodec::H265, HwCodec::AV1] {
+            let c = change(RateControlMode::Cbr, 2_000, Some(codec), None);
+            assert_eq!(running(&c), None, "{codec:?}");
+        }
+    }
+
+    #[test]
+    fn a_different_bit_depth_rebuilds() {
+        let c = change(RateControlMode::Cbr, 2_000, None, Some(EncodeBitDepth::Ten));
+        assert_eq!(running(&c), None);
+    }
+
+    #[test]
+    fn switching_to_constant_qp_rebuilds() {
+        let c = change(RateControlMode::Cqp, 28, None, None);
+        assert_eq!(running(&c), None);
+    }
+
+    #[test]
+    fn coming_back_from_constant_qp_rebuilds() {
+        // The session was built without a bitrate, so there is nothing to
+        // retarget -- it has to become an encode that has one.
+        let c = change(RateControlMode::Cbr, 2_000, None, None);
+        assert_eq!(
+            bitrate_only_change(&c, RateControl::Cqp { qp: 26 }, HwCodec::H264, None),
+            None,
+        );
+    }
+
+    /// The one that makes launch-time VBR survive a session. A controller has
+    /// no way to say VBR, so its bitrates arrive labelled CBR; taken as a mode
+    /// this would rebuild the encode as CBR and drop the ceiling on the first
+    /// adjustment.
+    #[test]
+    fn a_bitrate_under_vbr_is_a_retune_not_a_mode_change() {
+        let c = change(RateControlMode::Cbr, 2_000, None, None);
+        assert_eq!(
+            bitrate_only_change(&c, VBR_8M, HwCodec::H264, None),
+            Some(2_000),
+        );
+    }
+
+    /// Everything else that rebuilds still rebuilds under VBR -- the reprieve
+    /// is for the rate control label alone, not for a codec or a depth.
+    #[test]
+    fn a_vbr_encode_rebuilds_for_the_same_reasons_any_other_does() {
+        let c = change(RateControlMode::Cbr, 2_000, Some(HwCodec::AV1), None);
+        assert_eq!(bitrate_only_change(&c, VBR_8M, HwCodec::H264, None), None);
+
+        let c = change(RateControlMode::Cqp, 28, None, None);
+        assert_eq!(bitrate_only_change(&c, VBR_8M, HwCodec::H264, None), None);
+    }
+}
+
+#[cfg(test)]
+mod rate_control_tests {
+    use super::{DEFAULT_BITRATE_KBPS, RateControl, resolve_rate_control};
+
+    /// Nothing in the environment: the historical behaviour, which is a
+    /// bitrate at the default.
+    #[test]
+    fn an_empty_environment_is_the_default_bitrate() {
+        assert_eq!(
+            resolve_rate_control(None, None, None, None),
+            RateControl::Cbr {
+                kbps: DEFAULT_BITRATE_KBPS
+            },
+        );
+    }
+
+    /// The inference this replaced, preserved exactly: a QP and no mode is
+    /// constant QP. Anyone who set only `NESCAPTURE_QP` before this existed
+    /// gets what they got before.
+    #[test]
+    fn a_bare_qp_still_means_constant_qp() {
+        assert_eq!(
+            resolve_rate_control(None, Some(26), None, None),
+            RateControl::Cqp { qp: 26 },
+        );
+    }
+
+    /// And the mode wins over the inference, in the direction that makes the
+    /// QP the ignored one -- otherwise asking for a bitrate while a stale QP
+    /// sits in the environment would silently not give you one.
+    #[test]
+    fn an_explicit_bitrate_mode_outranks_a_qp_in_the_environment() {
+        assert_eq!(
+            resolve_rate_control(Some("cbr"), Some(26), Some(8_000), None),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+    }
+
+    #[test]
+    fn a_mode_is_read_without_regard_to_case_or_surrounding_space() {
+        assert_eq!(
+            resolve_rate_control(Some("  VbR "), None, Some(8_000), Some(12_000)),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    #[test]
+    fn vbr_takes_both_numbers() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, Some(8_000), Some(12_000)),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    /// A ceiling is optional, and the one it gets is headroom over the target
+    /// rather than the target itself -- a VBR encode whose ceiling is its
+    /// target is a CBR encode with extra steps.
+    #[test]
+    fn vbr_without_a_ceiling_gets_headroom_over_the_target() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, Some(8_000), None),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    /// A ceiling under the target is not a ceiling. Raised to the target
+    /// rather than refused: the target is the number the operator was more
+    /// specific about, and an encode that runs is worth more than one that
+    /// does not.
+    #[test]
+    fn a_ceiling_below_the_target_is_raised_to_it() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, Some(8_000), Some(3_000)),
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 8_000,
+            },
+        );
+    }
+
+    /// Constant QP asked for without a QP has no quality to hold constant.
+    /// Falling back to a bitrate says so; inventing a QP would encode at a
+    /// quality nobody chose.
+    #[test]
+    fn constant_qp_without_a_qp_falls_back_to_a_bitrate() {
+        assert_eq!(
+            resolve_rate_control(Some("cqp"), None, Some(8_000), None),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+    }
+
+    #[test]
+    fn an_unreadable_mode_falls_back_to_the_inference() {
+        assert_eq!(
+            resolve_rate_control(Some("adaptive"), Some(26), None, None),
+            RateControl::Cqp { qp: 26 },
+        );
+        assert_eq!(
+            resolve_rate_control(Some(""), None, Some(8_000), None),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+    }
+
+    /// A ceiling has nowhere to go under a mode with no ceiling. It is
+    /// dropped, not quietly turned into VBR -- the mode is the operator's to
+    /// pick, and one var implying another is how a config becomes unreadable.
+    #[test]
+    fn a_ceiling_outside_vbr_changes_nothing() {
+        assert_eq!(
+            resolve_rate_control(Some("cbr"), None, Some(8_000), Some(12_000)),
+            RateControl::Cbr { kbps: 8_000 },
+        );
+        assert_eq!(
+            resolve_rate_control(None, Some(26), None, Some(12_000)),
+            RateControl::Cqp { qp: 26 },
+        );
+    }
+
+    /// The ceiling scales off whatever target is in force, including the
+    /// default one.
+    #[test]
+    fn vbr_with_nothing_at_all_still_has_a_target_and_a_ceiling() {
+        assert_eq!(
+            resolve_rate_control(Some("vbr"), None, None, None),
+            RateControl::Vbr {
+                target_kbps: DEFAULT_BITRATE_KBPS,
+                max_kbps: DEFAULT_BITRATE_KBPS / 2 * 3,
+            },
+        );
+    }
+
+    /// A target large enough to overflow the headroom arithmetic is nonsense,
+    /// but nonsense that wraps is worse than nonsense that saturates: a
+    /// wrapped ceiling is a *small* one, which silently throttles the encode.
+    #[test]
+    fn an_absurd_target_saturates_rather_than_wraps() {
+        let RateControl::Vbr { max_kbps, .. } =
+            resolve_rate_control(Some("vbr"), None, Some(u32::MAX), None)
+        else {
+            panic!("asked for vbr, got something else");
+        };
+        assert!(max_kbps >= u32::MAX / 2);
+    }
+
+    /// Retargeting is what a congestion controller does, and it must not
+    /// disturb the ceiling: the ceiling describes the path, not the target.
+    #[test]
+    fn retargeting_vbr_keeps_the_ceiling() {
+        let rc = RateControl::Vbr {
+            target_kbps: 8_000,
+            max_kbps: 12_000,
+        };
+        assert_eq!(
+            rc.retargeted(2_000),
+            RateControl::Vbr {
+                target_kbps: 2_000,
+                max_kbps: 12_000,
+            },
+        );
+    }
+
+    /// There is no target inside constant QP to move, so a caller asking for
+    /// one is asking for the mode that has one.
+    #[test]
+    fn retargeting_constant_qp_gives_a_bitrate() {
+        assert_eq!(
+            RateControl::Cqp { qp: 26 }.retargeted(2_000),
+            RateControl::Cbr { kbps: 2_000 },
+        );
+    }
+
+    #[test]
+    fn only_a_bitrate_mode_reports_a_target() {
+        assert_eq!(RateControl::Cbr { kbps: 8_000 }.target_kbps(), Some(8_000));
+        assert_eq!(
+            RateControl::Vbr {
+                target_kbps: 8_000,
+                max_kbps: 12_000,
+            }
+            .target_kbps(),
+            Some(8_000),
+        );
+        assert_eq!(RateControl::Cqp { qp: 26 }.target_kbps(), None);
+    }
+}
+
+#[cfg(test)]
+mod stream_colour_tests {
+    use super::{
+        VK_COLOR_SPACE_HDR10_ST2084_EXT, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, stream_colour,
+    };
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicU32;
+
+    fn mastered() -> nesprotocol::SurfaceColor {
+        nesprotocol::SurfaceColor {
+            space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
+            max_cll: 500,
+            max_fall: 100,
+            min_luminance: 1000,
+            max_luminance: 5_000_000,
+        }
+    }
+
+    /// The regression, seen switching Cyberpunk out of HDR. The swapchain came
+    /// back plain sRGB and capture encoded sRGB, but the compositor still had
+    /// the surface down as HDR -- so a client told only the compositor's view
+    /// kept presenting sRGB frames through a PQ swapchain.
+    #[test]
+    fn leaving_hdr_is_reported_even_while_the_compositor_still_says_hdr() {
+        let declared = Mutex::new(Some(mastered()));
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_SRGB);
+    }
+
+    /// An SDR stream carries no mastering numbers. Its brightness is the
+    /// display's business, and leaving HDR's attached would describe a picture
+    /// that is no longer being sent.
+    #[test]
+    fn an_sdr_stream_carries_no_mastering_numbers() {
+        let declared = Mutex::new(Some(mastered()));
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.max_cll, 0);
+        assert_eq!(colour.max_fall, 0);
+        assert_eq!(colour.max_luminance, 0);
+    }
+
+    /// An HDR stream keeps them, because the compositor is the only side that
+    /// has them.
+    #[test]
+    fn an_hdr_stream_keeps_what_the_compositor_said() {
+        let declared = Mutex::new(Some(mastered()));
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_HDR10_ST2084_EXT);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        assert_eq!(colour.max_cll, 500);
+        assert_eq!(colour.max_luminance, 5_000_000);
+    }
+
+    /// An HDR stream whose compositor said nothing is still HDR. Saying so
+    /// with no numbers beats not saying it.
+    #[test]
+    fn an_hdr_stream_with_nothing_declared_is_still_hdr() {
+        let declared = Mutex::new(None);
+        let resolved = AtomicU32::new(VK_COLOR_SPACE_HDR10_ST2084_EXT);
+        let colour = stream_colour(&declared, &resolved).unwrap();
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_BT2020_PQ);
+    }
+
+    /// Before the first frame there is nothing to report, and reporting SDR
+    /// would make every session start by telling its clients something that
+    /// may be wrong.
+    #[test]
+    fn nothing_is_said_before_the_first_frame() {
+        let declared = Mutex::new(None);
+        let resolved = AtomicU32::new(u32::MAX);
+        assert!(stream_colour(&declared, &resolved).is_none());
     }
 }
