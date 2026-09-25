@@ -120,7 +120,6 @@ impl CompositorHandler for NescopeState {
 
     fn destroyed(&mut self, surface: &WlSurface) {
         self.hdr.surface_destroyed(surface);
-        self.vulkan_surfaces.remove(surface);
     }
 }
 

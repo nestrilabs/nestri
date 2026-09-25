@@ -30,33 +30,6 @@
 //! advertised the opaque FourCC spellings alongside the alpha ones. See the
 //! list in `state.rs`, which is where that constraint lives.
 //!
-//! # `gamescope_swapchain_factory_v2` is the legacy route, and stays off
-//!
-//! Also implemented here, because it costs little and a host may deliberately
-//! want it. It predates Wayland colour management and works the other way
-//! round: a WSI layer inside the game's process appends HDR colour spaces Mesa
-//! never offered, rewrites `imageColorSpace` to `SRGB_NONLINEAR` so the driver
-//! is never told HDR is happening, and reports the real colour space to the
-//! compositor over this protocol instead.
-//!
-//! It is not how we do HDR, for three reasons that all point the same way:
-//!
-//! - It needs a Vulkan layer this tree does not ship. Verified working with
-//!   gamescope's own, unmodified -- the XML here is byte-identical to theirs,
-//!   and the atoms written in `state.rs` are what it reads.
-//! - It only helps the XWayland path, which is the path without HDR anyway.
-//! - **Capture reads the colour space it hides.** A game asking for HDR10
-//!   through it has its ten-bit PQ samples encoded and tagged BT.709 SDR, at
-//!   full frame rate, decoding cleanly. Recorded where that value is read, in
-//!   the capture layer's swapchain hook.
-//!
-//! That last one makes enabling it worse than leaving it off: it trades no HDR
-//! for wrong HDR. So `GAMESCOPE_WAYLAND_DISPLAY` is set for the child but
-//! `ENABLE_GAMESCOPE_WSI` deliberately is not, which leaves the layer inert
-//! unless someone opts in. If anyone ever does want this path, the colour space
-//! it reports arrives here and the capture layer cannot see it, so it would
-//! need a channel from this process to that one.
-//!
 //! # What HDR does not cover
 //!
 //! A game that cannot be a Wayland client gets SDR, and XWayland is off by
@@ -66,18 +39,23 @@
 //! without HDR: Mesa offers no HDR colour space on the XWayland surface, and
 //! nothing in this module can change that.
 //!
-//! Still unexercised: no game has run, and the scRGB/FP16 arm has had no pixels
-//! through it -- only HDR10 PQ.
+//! Exercised end to end since: Control and Cyberpunk 2077, through both the
+//! HDR10 PQ and the scRGB arms, with the colour read back out of the stream on
+//! the far side to check it arrived as what was sent.
 //!
-//! # Signalling paths, for reference
+//! # One signalling path
 //!
-//! Both feed [`HdrState`], which tracks the colour space the active surface has
-//! declared. This module never converts anything itself.
+//! `wp_color_manager_v1` feeds [`HdrState`], which tracks what the active
+//! surface has declared. This module never converts anything itself.
 //!
-//! 1. **`wp_color_manager_v1`** -- the standard protocol, and the live one.
-//! 2. **`gamescope_swapchain_factory_v2`** -- the legacy route described above,
-//!    reachable only if a WSI layer is present and opted into.
-#![allow(unused)]
+//! There used to be a second: gamescope's `swapchain_factory_v2`, where a WSI
+//! layer inside the game rewrote `imageColorSpace` to `SRGB_NONLINEAR` so the
+//! driver was never told HDR was happening, and reported the real colour space
+//! here instead. It needed a Vulkan layer this tree does not ship, only helped
+//! the XWayland path, and hid the colour space from capture -- which reads the
+//! swapchain, so a game asking for HDR10 through it had ten-bit PQ samples
+//! encoded and tagged BT.709. It was never enabled, and now that colour
+//! management carries this properly it is gone rather than left inert.
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -94,10 +72,6 @@ use smithay::reexports::wayland_server::{
     Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
-use crate::protocols::{
-    gamescope_swapchain::GamescopeSwapchain,
-    gamescope_swapchain_factory_v2::GamescopeSwapchainFactoryV2,
-};
 use crate::state::NescopeState;
 
 // ---------------------------------------------------------------------------
@@ -236,7 +210,18 @@ pub struct ImageDescription {
     pub max_cll: Option<u32>,
     pub max_fall: Option<u32>,
     pub mastering_luminance: Option<(u32, u32)>,
+    /// The gamut and white point of the display the content was graded on.
+    ///
+    /// Recorded faithfully and not passed on, because there is nowhere to put
+    /// it: the surface colour message carries a luminance range and two light
+    /// levels, and the client declares BT.2020 primaries because that is what
+    /// the stream is by the time it presents. A game graded on a P3 display
+    /// therefore has its gamut slightly overstated downstream. Carrying it
+    /// properly means widening the message and re-pinning it on both sides,
+    /// which is worth doing if anything is ever found to care.
+    #[allow(dead_code)]
     pub mastering_primaries: Option<[(u32, u32); 3]>,
+    #[allow(dead_code)]
     pub white_point: Option<(u32, u32)>,
     /// The primary colour volume's luminance range, as `(min * 10000, max,
     /// reference)` in cd/m². `None` says nothing, which is what an SDR
@@ -334,18 +319,12 @@ pub struct CreatorParams {
 }
 
 pub struct ColorOutputData;
-pub struct ColorSurfaceFeedbackData {
-    pub surface: WlSurface,
-}
+/// The feedback object itself carries no state: every surface is told the
+/// same preferred description, because there is one output and one session.
+pub struct ColorSurfaceFeedbackData;
 pub struct ImageDescriptionInfoData;
 pub struct IccCreatorData;
 pub struct ColorRepresentationSurfaceData;
-
-// User data for gamescope protocol objects.
-pub struct SwapchainFactoryData;
-pub struct SwapchainData {
-    pub surface: WlSurface,
-}
 
 // ---------------------------------------------------------------------------
 // HdrState
@@ -387,10 +366,7 @@ impl HdrState {
         if enabled {
             display.create_global::<NescopeState, wp_color_manager_v1::WpColorManagerV1, _>(1, ());
             display.create_global::<NescopeState, wp_color_representation_manager_v1::WpColorRepresentationManagerV1, _>(1, ());
-            register_gamescope_swapchain(display);
-            tracing::info!(
-                "HDR protocols registered (wp_color_management_v1 + gamescope_swapchain)"
-            );
+            tracing::info!("HDR protocols registered (wp_color_management_v1)");
         }
 
         let target = HdrTarget::from_env();
@@ -583,221 +559,6 @@ impl HdrState {
         self.pending.remove(surface);
         self.current.remove(surface);
     }
-
-    // ── Queries ───────────────────────────────────────────────────────────
-
-    /// Active color space of the fullscreen surface.
-    ///
-    /// Returns `Bt2020Pq` if any mapped surface has declared BT.2020+PQ,
-    /// otherwise `Srgb`.
-    pub fn color_space(&self) -> ColorSpace {
-        for desc in self.current.values() {
-            if desc.color_space() == ColorSpace::Bt2020Pq {
-                return ColorSpace::Bt2020Pq;
-            }
-        }
-        ColorSpace::Srgb
-    }
-
-    /// HDR metadata from the active surface, if available.
-    pub fn hdr_metadata(&self) -> Option<HdrMetadata> {
-        for desc in self.current.values() {
-            if desc.color_space() != ColorSpace::Bt2020Pq {
-                continue;
-            }
-            if desc.max_cll.is_none()
-                && desc.max_fall.is_none()
-                && desc.mastering_luminance.is_none()
-            {
-                continue;
-            }
-            let sat = |v: u32| v.min(u16::MAX as u32) as u16;
-            return Some(HdrMetadata {
-                display_primaries: desc.mastering_primaries.map_or([(0, 0); 3], |p| {
-                    [
-                        (sat(p[0].0), sat(p[0].1)),
-                        (sat(p[1].0), sat(p[1].1)),
-                        (sat(p[2].0), sat(p[2].1)),
-                    ]
-                }),
-                white_point: desc.white_point.map_or((0, 0), |(x, y)| (sat(x), sat(y))),
-                max_luminance: desc.mastering_luminance.map_or(0, |(_, max)| max),
-                min_luminance: desc.mastering_luminance.map_or(0, |(min, _)| min),
-                max_cll: sat(desc.max_cll.unwrap_or(0)),
-                max_fall: sat(desc.max_fall.unwrap_or(0)),
-            });
-        }
-        None
-    }
-}
-
-/// Static HDR10 metadata for the capture layer.
-#[derive(Debug, Clone, Copy)]
-pub struct HdrMetadata {
-    /// CIE 1931 xy primaries in 0.00002 units.
-    pub display_primaries: [(u16, u16); 3],
-    /// CIE 1931 xy white point in 0.00002 units.
-    pub white_point: (u16, u16),
-    /// Max mastering luminance in 0.0001 cd/m².
-    pub max_luminance: u32,
-    /// Min mastering luminance in 0.0001 cd/m².
-    pub min_luminance: u32,
-    /// Max content light level in cd/m².
-    pub max_cll: u16,
-    /// Max frame-average light level in cd/m².
-    pub max_fall: u16,
-}
-
-// ---------------------------------------------------------------------------
-// gamescope_swapchain — register global
-// ---------------------------------------------------------------------------
-
-const VK_COLOR_SPACE_HDR10_ST2084_EXT: u32 = 1000104008;
-
-pub fn register_gamescope_swapchain(display: &DisplayHandle) {
-    display.create_global::<NescopeState, GamescopeSwapchainFactoryV2, _>(1, ());
-}
-
-// ---------------------------------------------------------------------------
-// gamescope_swapchain_factory_v2 — Global + Dispatch
-// ---------------------------------------------------------------------------
-
-impl GlobalDispatch<GamescopeSwapchainFactoryV2, ()> for NescopeState {
-    fn bind(
-        _: &mut Self,
-        _: &DisplayHandle,
-        _: &Client,
-        resource: New<GamescopeSwapchainFactoryV2>,
-        _: &(),
-        data_init: &mut DataInit<'_, Self>,
-    ) {
-        tracing::debug!("gamescope_swapchain_factory_v2 bound");
-        data_init.init(resource, SwapchainFactoryData);
-    }
-}
-
-impl Dispatch<GamescopeSwapchainFactoryV2, SwapchainFactoryData> for NescopeState {
-    fn request(
-        _: &mut Self,
-        _: &Client,
-        _: &GamescopeSwapchainFactoryV2,
-        request: <GamescopeSwapchainFactoryV2 as Resource>::Request,
-        _: &SwapchainFactoryData,
-        _: &DisplayHandle,
-        data_init: &mut DataInit<'_, Self>,
-    ) {
-        use crate::protocols::gamescope_swapchain_factory_v2::Request;
-        match request {
-            Request::CreateSwapchain { surface, callback } => {
-                tracing::debug!("gamescope_swapchain_factory_v2: create_swapchain");
-                data_init.init(callback, SwapchainData { surface });
-            }
-            Request::Destroy => {}
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// gamescope_swapchain — Dispatch
-// ---------------------------------------------------------------------------
-
-impl Dispatch<GamescopeSwapchain, SwapchainData> for NescopeState {
-    fn request(
-        state: &mut Self,
-        _: &Client,
-        _: &GamescopeSwapchain,
-        request: <GamescopeSwapchain as Resource>::Request,
-        data: &SwapchainData,
-        _: &DisplayHandle,
-        _: &mut DataInit<'_, Self>,
-    ) {
-        use crate::protocols::gamescope_swapchain::Request;
-        match request {
-            Request::SwapchainFeedback {
-                vk_colorspace,
-                vk_format,
-                vk_engine_name,
-                ..
-            } => {
-                tracing::debug!(
-                    vk_colorspace,
-                    vk_format,
-                    vk_engine_name,
-                    "gamescope_swapchain: swapchain_feedback — registering as Vulkan surface"
-                );
-                // Record this as a known Vulkan surface (used for focus routing).
-                state.vulkan_surfaces.insert(data.surface.clone());
-
-                if vk_colorspace == VK_COLOR_SPACE_HDR10_ST2084_EXT {
-                    let desc = ImageDescription::bt2020_pq(state.hdr.target);
-                    state.hdr.set_pending(&data.surface, desc);
-                } else {
-                    state
-                        .hdr
-                        .set_pending(&data.surface, ImageDescription::srgb());
-                }
-            }
-
-            Request::OverrideWindowContent {
-                x11_window,
-                gamescope_xwayland_server_id: _,
-            } => {
-                tracing::debug!(
-                    x11_window,
-                    "gamescope_swapchain: override_window_content — WSI bypass surface"
-                );
-                state.vulkan_surfaces.insert(data.surface.clone());
-                state.override_window_surface(x11_window, data.surface.clone());
-            }
-
-            Request::SetHdrMetadata {
-                display_primary_red_x,
-                display_primary_red_y,
-                display_primary_green_x,
-                display_primary_green_y,
-                display_primary_blue_x,
-                display_primary_blue_y,
-                white_point_x,
-                white_point_y,
-                max_display_mastering_luminance,
-                min_display_mastering_luminance,
-                max_cll,
-                max_fall,
-            } => {
-                tracing::debug!(
-                    max_cll,
-                    max_fall,
-                    max_display_mastering_luminance,
-                    min_display_mastering_luminance,
-                    "gamescope_swapchain: set_hdr_metadata"
-                );
-                let desc = ImageDescription {
-                    transfer_function: TransferFunction::St2084Pq,
-                    primaries: Primaries::Bt2020,
-                    max_cll: Some(max_cll),
-                    max_fall: Some(max_fall),
-                    // max_display_mastering_luminance is in cd/m², normalize to 0.0001 units.
-                    mastering_luminance: Some((
-                        min_display_mastering_luminance,
-                        max_display_mastering_luminance.saturating_mul(10000),
-                    )),
-                    mastering_primaries: Some([
-                        (display_primary_red_x, display_primary_red_y),
-                        (display_primary_green_x, display_primary_green_y),
-                        (display_primary_blue_x, display_primary_blue_y),
-                    ]),
-                    white_point: Some((white_point_x, white_point_y)),
-                    // Mastering metadata: what the content was graded on, not
-                    // the volume the surface covers.
-                    luminances: None,
-                    target: None,
-                };
-                state.hdr.set_pending(&data.surface, desc);
-            }
-
-            Request::SetPresentMode { .. } | Request::SetPresentTime { .. } | Request::Destroy => {}
-        }
-    }
 }
 
 // ===========================================================================
@@ -855,8 +616,8 @@ impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
             wp_color_manager_v1::Request::GetOutput { id, .. } => {
                 data_init.init(id, ColorOutputData);
             }
-            wp_color_manager_v1::Request::GetSurfaceFeedback { id, surface } => {
-                data_init.init(id, ColorSurfaceFeedbackData { surface });
+            wp_color_manager_v1::Request::GetSurfaceFeedback { id, .. } => {
+                data_init.init(id, ColorSurfaceFeedbackData);
             }
             wp_color_manager_v1::Request::CreateParametricCreator { obj } => {
                 data_init.init(
@@ -870,8 +631,8 @@ impl Dispatch<wp_color_manager_v1::WpColorManagerV1, ()> for NescopeState {
                 data_init.init(obj, IccCreatorData);
             }
             wp_color_manager_v1::Request::CreateWindowsScrgb { image_description } => {
-                // Windows scRGB is declared as BT.2020+PQ by Proton's gamescope WSI
-                // after converting the surface, so treat it as HDR.
+                // Windows scRGB, which wine converts before presenting, so
+                // it arrives declared as BT.2020 PQ.
                 let res = data_init.init(
                     image_description,
                     ImageDescriptionUserData {
