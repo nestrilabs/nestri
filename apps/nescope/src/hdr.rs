@@ -559,35 +559,12 @@ impl HdrState {
     /// picking between several would need a notion of active this does not
     /// have.
     fn surface_color_message(&self) -> nesprotocol::SurfaceColor {
-        let hdr = self
-            .current
-            .values()
-            .find(|desc| desc.color_space() == ColorSpace::Bt2020Pq);
-        match hdr {
-            // A game that states its own mastering metadata is believed. One
-            // that states none is not unknown: it asked what the session could
-            // do, was told, and rendered for that -- so the session's target
-            // is what its frames were mastered for, and saying nothing instead
-            // leaves the far end to assume the PQ default of 10000 nits and
-            // tone map a range the picture never uses.
-            Some(desc) => nesprotocol::SurfaceColor {
-                space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
-                max_cll: desc.max_cll.unwrap_or(self.target.max_nits),
-                max_fall: desc.max_fall.unwrap_or(self.target.max_fall_nits),
-                min_luminance: desc
-                    .mastering_luminance
-                    .map(|(min, _)| min)
-                    .unwrap_or(self.target.min_lum),
-                max_luminance: desc
-                    .mastering_luminance
-                    .map(|(_, max)| max)
-                    .unwrap_or(self.target.max_nits.saturating_mul(10_000)),
-            },
-            None => nesprotocol::SurfaceColor {
-                space: nesprotocol::SURFACE_COLOR_SRGB,
-                ..Default::default()
-            },
-        }
+        surface_colour_from(
+            self.current
+                .values()
+                .find(|desc| desc.color_space() == ColorSpace::Bt2020Pq),
+            self.target,
+        )
     }
 
     /// Drop what was remembered about a surface, and say so.
@@ -1260,6 +1237,51 @@ impl
     }
 }
 
+/// What to tell capture about a surface's colour.
+///
+/// Two different kinds of number, and only one of them can be answered from
+/// here.
+///
+/// The mastering luminance is a decision, not a guess: it is what the session
+/// told the game its display could do, so it is what the frames were graded
+/// for -- which is exactly what the measure means. Saying nothing instead
+/// leaves the far end to assume PQ's default of 10000 nits and tone map a
+/// range the picture never uses.
+///
+/// The light levels are measurements of the *content*, and nothing here has
+/// looked at the content. Filling them in from the mastering display answers a
+/// different question: it says the picture contains what the display can show,
+/// which for a dark game is wrong by more than an order of magnitude, and
+/// wrong in the direction that costs brightness -- a display told the frame
+/// average is high dims to protect itself. Zero is what CTA-861 reserves for
+/// "not known", and not known is the truth. The client measures the peak for
+/// itself and fills that one in.
+fn surface_colour_from(
+    hdr: Option<&ImageDescription>,
+    target: HdrTarget,
+) -> nesprotocol::SurfaceColor {
+    match hdr {
+        Some(desc) => nesprotocol::SurfaceColor {
+            space: nesprotocol::SURFACE_COLOR_BT2020_PQ,
+            // A game that states its own has looked, and is believed.
+            max_cll: desc.max_cll.unwrap_or(0),
+            max_fall: desc.max_fall.unwrap_or(0),
+            min_luminance: desc
+                .mastering_luminance
+                .map(|(min, _)| min)
+                .unwrap_or(target.min_lum),
+            max_luminance: desc
+                .mastering_luminance
+                .map(|(_, max)| max)
+                .unwrap_or(target.max_nits.saturating_mul(10_000)),
+        },
+        None => nesprotocol::SurfaceColor {
+            space: nesprotocol::SURFACE_COLOR_SRGB,
+            ..Default::default()
+        },
+    }
+}
+
 #[cfg(test)]
 mod hdr_target_tests {
     use super::{HdrTarget, ImageDescription, Primaries, TransferFunction};
@@ -1328,5 +1350,72 @@ mod hdr_target_tests {
         assert!(!bad.is_usable());
         assert!(ImageDescription::bt2020_pq(bad).luminances.is_none());
         assert!(ImageDescription::bt2020_pq(bad).target.is_none());
+    }
+}
+
+#[cfg(test)]
+mod surface_colour_tests {
+    use super::{HdrTarget, ImageDescription, surface_colour_from};
+
+    /// The mastering range is a decision this side actually made: it is what
+    /// the game was told its display could do, so it is what the frames were
+    /// graded for.
+    #[test]
+    fn the_mastering_range_comes_from_the_session() {
+        let target = HdrTarget::default();
+        let colour = surface_colour_from(Some(&ImageDescription::bt2020_pq(target)), target);
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_BT2020_PQ);
+        assert_eq!(colour.min_luminance, target.min_lum);
+        assert_eq!(colour.max_luminance, target.max_nits * 10_000);
+    }
+
+    /// The light levels are measurements of the content, and nothing here has
+    /// looked at the content. Taking them from the mastering display says the
+    /// picture contains what the display can show, which for a dark game is
+    /// wrong by more than an order of magnitude -- and wrong in the direction
+    /// that costs brightness.
+    #[test]
+    fn the_light_levels_are_not_invented() {
+        let target = HdrTarget::default();
+        let colour = surface_colour_from(Some(&ImageDescription::bt2020_pq(target)), target);
+        assert_eq!(colour.max_cll, 0, "zero is CTA-861 for 'not known'");
+        assert_eq!(colour.max_fall, 0);
+    }
+
+    /// A game that states its own is believed, because it has looked.
+    #[test]
+    fn a_games_own_light_levels_are_kept() {
+        let target = HdrTarget::default();
+        let desc = ImageDescription {
+            max_cll: Some(500),
+            max_fall: Some(100),
+            ..ImageDescription::bt2020_pq(target)
+        };
+        let colour = surface_colour_from(Some(&desc), target);
+        assert_eq!(colour.max_cll, 500);
+        assert_eq!(colour.max_fall, 100);
+    }
+
+    /// And so is its mastering range, which is a claim about how it was
+    /// graded rather than about this session.
+    #[test]
+    fn a_games_own_mastering_range_is_kept() {
+        let target = HdrTarget::default();
+        let desc = ImageDescription {
+            mastering_luminance: Some((1000, 5_000_000)),
+            ..ImageDescription::bt2020_pq(target)
+        };
+        let colour = surface_colour_from(Some(&desc), target);
+        assert_eq!(colour.min_luminance, 1000);
+        assert_eq!(colour.max_luminance, 5_000_000);
+    }
+
+    /// An SDR session says nothing about luminance at all; that is the
+    /// display's business.
+    #[test]
+    fn an_sdr_session_reports_no_luminance() {
+        let colour = surface_colour_from(None, HdrTarget::default());
+        assert_eq!(colour.space, nesprotocol::SURFACE_COLOR_SRGB);
+        assert_eq!(colour.max_luminance, 0);
     }
 }
