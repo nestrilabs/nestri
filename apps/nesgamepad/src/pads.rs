@@ -34,6 +34,12 @@ struct Pad {
     records: Vec<Record>,
     /// Reads the device for rumble. Stopped before the device goes.
     feedback: tokio::task::JoinHandle<()>,
+    /// Whether any state has arrived for it yet.
+    ///
+    /// Said once, at info: from a log alone, a controller that is plugged in
+    /// and never moves is otherwise indistinguishable from one whose state
+    /// reaches a device no game is reading.
+    moved: bool,
 }
 
 pub struct Pads {
@@ -60,7 +66,7 @@ impl Pads {
             PadMessage::Connect { slot, identity } => self.connect((session, slot), identity),
             PadMessage::State { slot, state } => {
                 let key = (session, slot);
-                let Some(pad) = self.pads.get(&key) else {
+                let Some(pad) = self.pads.get_mut(&key) else {
                     if self.asked.insert(key) {
                         debug!(
                             session,
@@ -73,6 +79,10 @@ impl Pads {
                     return;
                 };
                 trace!(session, slot, ?state, "state");
+                if !pad.moved {
+                    pad.moved = true;
+                    info!(session, slot, "first input from the controller");
+                }
                 if let Err(e) = pad.device.write(&pad.layout.events(&state)) {
                     // Per state, so debug: a device that stopped taking writes
                     // fails every one of them.
@@ -136,6 +146,7 @@ impl Pads {
                         identity,
                         records,
                         feedback,
+                        moved: false,
                     },
                 );
             }
