@@ -1,0 +1,17 @@
+[package]
+name = "nesgamepad"
+version = "0.1.0"
+description = "Turns the controllers plugged into a client into input devices inside the box"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+libc.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+nesprotocol = { path = "../../crates/nesprotocol" }
