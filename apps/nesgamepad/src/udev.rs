@@ -93,7 +93,7 @@ impl Record {
     ///
     /// The kernel's own `uevent` file is the base, because that is exactly
     /// what udevd starts from; `extra` is the classification on top.
-    pub fn read(syspath: &Path, extra: &[(&str, String)]) -> io::Result<Self> {
+    pub fn read(syspath: &Path, subsystem: &str, extra: &[(&str, String)]) -> io::Result<Self> {
         let mut properties = BTreeMap::new();
         for line in std::fs::read_to_string(syspath.join("uevent"))?.lines() {
             if let Some((key, value)) = line.split_once('=') {
@@ -108,7 +108,7 @@ impl Record {
 
         let db_name = match (properties.get("MAJOR"), properties.get("MINOR")) {
             (Some(major), Some(minor)) => format!("c{major}:{minor}"),
-            _ => format!("+input:{sysname}"),
+            _ => format!("+{subsystem}:{sysname}"),
         };
         // The kernel names the node relative to /dev; udev names it in full.
         if let Some(devname) = properties.get_mut("DEVNAME")
@@ -117,7 +117,7 @@ impl Record {
             *devname = format!("/dev/{devname}");
         }
         properties.insert("DEVPATH".into(), devpath.clone());
-        properties.insert("SUBSYSTEM".into(), "input".into());
+        properties.insert("SUBSYSTEM".into(), subsystem.into());
         properties.insert("USEC_INITIALIZED".into(), monotonic_usec().to_string());
         let tags = format!(":{}:", TAGS.join(":"));
         properties.insert("TAGS".into(), tags.clone());
@@ -286,8 +286,13 @@ fn encode(action: &str, seqnum: u64, record: &Record) -> Vec<u8> {
     message.extend_from_slice(&HEADER_LEN.to_ne_bytes());
     message.extend_from_slice(&HEADER_LEN.to_ne_bytes());
     message.extend_from_slice(&(properties.len() as u32).to_ne_bytes());
-    message.extend_from_slice(&murmur2(b"input", 0).to_be_bytes());
-    // Input devices have no devtype, and zero is what udevd sends for none.
+    let subsystem = record
+        .properties
+        .get("SUBSYSTEM")
+        .map_or("", String::as_str);
+    message.extend_from_slice(&murmur2(subsystem.as_bytes(), 0).to_be_bytes());
+    // Neither input nor hidraw devices have a devtype, and zero is what udevd
+    // sends for none.
     message.extend_from_slice(&0u32.to_be_bytes());
     message.extend_from_slice(&((tags >> 32) as u32).to_be_bytes());
     message.extend_from_slice(&(tags as u32).to_be_bytes());

@@ -18,6 +18,7 @@ mod kernel_tests;
 mod layout;
 mod pads;
 mod udev;
+mod uhid;
 mod uinput;
 
 use std::path::PathBuf;
@@ -30,7 +31,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tracing::{debug, info, warn};
 
-use crate::pads::{Feedback, Pads};
+use crate::pads::{Feedback, HidNotice, Key, Pads};
 
 #[derive(Parser, Debug)]
 #[command(name = "nesgamepad")]
@@ -69,7 +70,8 @@ async fn main() -> Result<()> {
     };
 
     let (feedback_tx, mut feedback_rx) = tokio::sync::mpsc::unbounded_channel::<Feedback>();
-    let mut pads = Pads::new(udev, feedback_tx);
+    let (hid_tx, mut hid_rx) = tokio::sync::mpsc::unbounded_channel::<(Key, HidNotice)>();
+    let mut pads = Pads::new(udev, feedback_tx, hid_tx);
     info!("waiting for the hub on {}", args.ipc.display());
 
     let mut failures = 0u32;
@@ -92,15 +94,17 @@ async fn main() -> Result<()> {
         };
         failures = 0;
         info!("connected to the hub");
-        if let Err(e) = serve(stream, &mut pads, &mut feedback_rx).await {
+        if let Err(e) = serve(stream, &mut pads, &mut feedback_rx, &mut hid_rx).await {
             debug!("hub connection ended: {e}");
         }
         // Every controller belonged to a client of that hub, and the hub has
         // gone -- so have they. Leaving them would leave a game holding
         // controllers that nobody is on the other end of.
         pads.clear();
-        // Rumble queued for clients that no longer exist.
+        // Feedback queued for clients that no longer exist, and notices from
+        // devices that no longer do.
         while feedback_rx.try_recv().is_ok() {}
+        while hid_rx.try_recv().is_ok() {}
         info!("lost the hub; every controller unplugged");
         tokio::time::sleep(REDIAL).await;
     }
@@ -110,6 +114,7 @@ async fn serve(
     stream: UnixStream,
     pads: &mut Pads,
     feedback: &mut tokio::sync::mpsc::UnboundedReceiver<Feedback>,
+    hid: &mut tokio::sync::mpsc::UnboundedReceiver<(Key, HidNotice)>,
 ) -> Result<()> {
     let (mut read, mut write) = stream.into_split();
     // Reading on a task of its own: a read of a frame is several awaits, and
@@ -142,10 +147,11 @@ async fn serve(
                 Some((session, message)) => pads.handle(session, message),
                 None => break Ok(()),
             },
+            Some((key, notice)) = hid.recv() => pads.hid_notice(key, notice),
             Some((session, message)) = feedback.recv() => {
-                let mut body = Vec::with_capacity(8);
+                let mut body = Vec::with_capacity(16);
                 message.encode(&mut body);
-                let mut frame = Vec::with_capacity(16);
+                let mut frame = Vec::with_capacity(6 + body.len());
                 encode_ipc(&mut frame, session, &body);
                 if let Err(e) = write.write_all(&frame).await {
                     break Err(e.into());

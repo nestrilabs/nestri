@@ -9,6 +9,7 @@
 use std::fs::OpenOptions;
 use std::os::fd::AsRawFd;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use nesprotocol::gamepad::{BUS_USB, PadIdentity, PadState, button};
@@ -203,4 +204,132 @@ fn a_game_uploading_rumble_is_answered_and_heard() {
             .any(|r| matches!(r, Request::Play { id: played, on: true } if *played == id)),
         "{seen:?}"
     );
+}
+
+/// A small gamepad, written by hand: report 1 is eight buttons and two axes,
+/// report 2 a four-byte feature, report 3 a one-byte output.
+#[rustfmt::skip]
+const GAMEPAD_DESCRIPTOR: &[u8] = &[
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01,
+    0x85, 0x01,
+    0x05, 0x09, 0x19, 0x01, 0x29, 0x08, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
+    0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x02, 0x81, 0x02,
+    0x85, 0x02,
+    0x06, 0x00, 0xff, 0x09, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x04, 0xb1, 0x02,
+    0x85, 0x03,
+    0x09, 0x02, 0x75, 0x08, 0x95, 0x01, 0x91, 0x02,
+    0xc0,
+];
+
+/// The device, started and with its hidraw node found.
+fn build_hid() -> (Arc<crate::uhid::Device>, std::path::PathBuf) {
+    use crate::uhid::{Device, Event, Spec};
+    let device = Arc::new(
+        Device::create(&Spec {
+            name: "nesgamepad test pad",
+            uniq: "test",
+            bus: BUS_USB,
+            vendor: 0x1234,
+            product: 0x5678,
+            version: 0x0100,
+            country: 0,
+            descriptor: GAMEPAD_DESCRIPTOR,
+        })
+        .expect("create a HID device; this needs root for /dev/uhid"),
+    );
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !device.drain().unwrap().contains(&Event::Start) {
+        assert!(Instant::now() < deadline, "the kernel never started it");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let announced = nesprotocol::gamepad::HidDevice {
+        identity: PadIdentity {
+            bus: BUS_USB,
+            vendor: 0x1234,
+            product: 0x5678,
+            version: 0x0100,
+            name: String::new(),
+        },
+        uniq: String::new(),
+        country: 0,
+        descriptor: GAMEPAD_DESCRIPTOR.to_vec(),
+    };
+    loop {
+        if let Some((_, nodes)) = crate::pads::discover(&announced, &Default::default()) {
+            let name = nodes.hidraw[0].file_name().unwrap().to_owned();
+            return (device, Path::new("/dev").join(name));
+        }
+        assert!(Instant::now() < deadline, "no hidraw node appeared");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+#[test]
+#[ignore = "needs root: creates a device through /dev/uhid"]
+fn a_report_written_is_the_report_a_game_reads() {
+    use std::io::Read;
+    let (device, node) = build_hid();
+    let mut hidraw = open(&node, false);
+    device.input(&[0x01, 0b1000_0001, 0x10, 0xf0]).unwrap();
+    let mut buf = [0u8; 64];
+    let n = hidraw.read(&mut buf).unwrap();
+    assert_eq!(&buf[..n], &[0x01, 0b1000_0001, 0x10, 0xf0]);
+}
+
+#[test]
+#[ignore = "needs root: creates a device through /dev/uhid"]
+fn a_game_reading_a_feature_report_gets_the_real_devices_answer() {
+    use crate::uhid::Event;
+    let (device, node) = build_hid();
+    let hidraw = open(&node, true);
+    let game = std::thread::spawn(move || {
+        // HIDIOCGFEATURE(5): report id in, report out.
+        let mut buf = [0x02u8, 0, 0, 0, 0];
+        let request = (3u64 << 30) | (5u64 << 16) | ((b'H' as u64) << 8) | 0x07;
+        let n = unsafe { libc::ioctl(hidraw.as_raw_fd(), request as _, buf.as_mut_ptr()) };
+        assert!(n >= 0, "{}", std::io::Error::last_os_error());
+        buf
+    });
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let events = device.drain().unwrap();
+        if let Some(Event::GetReport { id, number, kind }) = events
+            .into_iter()
+            .find(|e| matches!(e, Event::GetReport { .. }))
+        {
+            assert_eq!((number, kind), (0x02, nesprotocol::gamepad::REPORT_FEATURE));
+            // What the client would answer with, from the real device.
+            device
+                .get_report_reply(id, 0, &[0x02, 0xde, 0xad, 0xbe, 0xef])
+                .unwrap();
+            break;
+        }
+        assert!(Instant::now() < deadline, "the request never arrived");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(game.join().unwrap(), [0x02, 0xde, 0xad, 0xbe, 0xef]);
+}
+
+#[test]
+#[ignore = "needs root: creates a device through /dev/uhid"]
+fn a_report_a_game_writes_comes_out_for_the_real_device() {
+    use crate::uhid::Event;
+    use std::io::Write;
+    let (device, node) = build_hid();
+    let mut hidraw = open(&node, true);
+    hidraw.write_all(&[0x03, 0xaa]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let events = device.drain().unwrap();
+        if let Some(Event::Output { kind, data }) = events
+            .into_iter()
+            .find(|e| matches!(e, Event::Output { .. }))
+        {
+            assert_eq!(kind, nesprotocol::gamepad::REPORT_OUTPUT);
+            assert_eq!(data, [0x03, 0xaa]);
+            return;
+        }
+        assert!(Instant::now() < deadline, "the output never arrived");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 }
