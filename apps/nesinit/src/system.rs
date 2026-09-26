@@ -13,6 +13,10 @@
 // compositor handles input through Wayland and opens nothing udev provides, so
 // dropping it costs a box nothing and saves it a daemon and a settle.
 //
+// The one thing in a box that does need udev is a game looking for
+// controllers, and those are devices `nesgamepad` creates itself -- so it
+// stands in for udev for exactly those, and nothing else has to.
+//
 // # Best effort, one line per failure, each naming a cost
 //
 // Same discipline as the early filesystems: refusing to boot over any one of

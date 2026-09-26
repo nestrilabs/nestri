@@ -1,10 +1,10 @@
 # build/ — the guest rootfs
 
 Builds a bootable Arch image for the box's virtio-blk root: Mesa (virtio-gpu
-native context) plus the five open guest components —
+native context) plus the six open guest components —
 [`nesinit`](../apps/nesinit), [`nescope`](../apps/nescope),
 [`neshub`](../apps/neshub), [`neswire`](../apps/neswire),
-[`nescapture`](../apps/nescapture) — laid out
+[`nescapture`](../apps/nescapture), [`nesgamepad`](../apps/nesgamepad) — laid out
 the way [borealis](https://chromium.googlesource.com/chromiumos/overlays/board-overlays/+/main/project-borealis)
 lays out its `build/`: one big multi-stage `Containerfile`, `--target` picks the
 flavor, `etc/` holds the files that get overlaid onto the image verbatim.
@@ -49,7 +49,7 @@ Three things worth knowing about how this is put together:
    explicit sanity check for doesn't exist here to check for.
 
 3. **One `cargo build --release --workspace`, not one stage per binary.**
-   `nescope`, `neshub`, `neswire` and `nescapture` share one Cargo workspace
+   `nescope`, `neshub`, `neswire`, `nescapture` and `nesgamepad` share one Cargo workspace
    and one `Cargo.lock` — a BuildKit cache mount on `target/` gives cargo's
    own incremental compiler per-crate isolation without needing a separate
    Docker stage (and a separate full rebuild of `nesprotocol`) per binary.
@@ -254,9 +254,9 @@ needs — was paid for an init system that is no longer here.
 
 | was | now |
 |---|---|
-| `devfs`, `dmesg`, `udev`, `udev-trigger` | `devtmpfs` makes the nodes; init sets the two modes that matter. The compositor takes input through Wayland and opens nothing `udev` provides |
+| `devfs`, `dmesg`, `udev`, `udev-trigger` | `devtmpfs` makes the nodes; init sets the two modes that matter. The compositor takes input through Wayland and opens nothing `udev` provides. Controllers are the one thing a game finds through `udev`, and `nesgamepad` announces the ones it creates itself |
 | `guest-net`, `hostname`, `xdg-runtime`, `cgroups` | init, before it dials out |
-| `dbus`, `dbus-session`, `pipewire`, `wireplumber`, `neshub`, `neswire` | a table compiled into `nesinit` |
+| `dbus`, `dbus-session`, `pipewire`, `wireplumber`, `neshub`, `neswire`, `nesgamepad` | a table compiled into `nesinit` |
 | `nescope` in the `default` runlevel | **not a service.** It wraps the workload and is started by a launch, with that launch's geometry, and dies with it |
 | `agetty` on `hvc0` | nothing. See below |
 | `/etc/fstab` | init's own mounts, and shares named in the boot descriptor |
