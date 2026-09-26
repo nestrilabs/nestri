@@ -249,6 +249,94 @@ pub async fn run_input_ipc_listener(
     tracing::info!("input IPC listener exited");
 }
 
+/// The box's gamepad side, which dials in here.
+///
+/// Every client's gamepad messages go out already tagged with which client
+/// (see `nesprotocol::gamepad`), and feedback comes back tagged the same way
+/// and is routed to that client. Nothing here reads a message: what a
+/// controller is belongs to the other end of this socket.
+///
+/// One peer at a time, like the input socket. Messages sent while none is
+/// connected are dropped, which costs nothing: the gamepad side asks for any
+/// controller it has not heard of the next time that controller's state
+/// arrives.
+pub async fn run_gamepad_ipc_listener(socket_path: PathBuf, mgr: Arc<SessionManager>) {
+    if socket_path.exists() {
+        let _ = std::fs::remove_file(&socket_path);
+    }
+    let listener = match UnixListener::bind(&socket_path) {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!(
+                "Failed to bind gamepad IPC socket {}: {e}",
+                socket_path.display()
+            );
+            return;
+        }
+    };
+    tracing::info!("Gamepad IPC listening on {}", socket_path.display());
+
+    loop {
+        let stream = match listener.accept().await {
+            Ok((stream, _)) => stream,
+            Err(e) => {
+                tracing::error!("gamepad IPC accept error: {e}");
+                break;
+            }
+        };
+        tracing::info!("gamepad service connected");
+        let (mut read_half, mut write_half) = stream.into_split();
+        let mut messages = mgr.gamepad_messages();
+
+        let write_handle = tokio::spawn(async move {
+            loop {
+                match messages.recv().await {
+                    Ok(frame) => {
+                        if write_half.write_all(&frame).await.is_err() {
+                            tracing::debug!("gamepad IPC write failed");
+                            break;
+                        }
+                    }
+                    // A controller's state is a snapshot, so a lost one is
+                    // superseded by the next; a lost connect is asked for
+                    // again. Lagging is survivable, and worth knowing about.
+                    Err(RecvError::Lagged(n)) => {
+                        tracing::warn!("gamepad messages lagged by {n}");
+                    }
+                    Err(RecvError::Closed) => break,
+                }
+            }
+        });
+
+        let read_mgr = mgr.clone();
+        let read_handle = tokio::spawn(async move {
+            let mut len_buf = [0u8; 2];
+            loop {
+                if read_half.read_exact(&mut len_buf).await.is_err() {
+                    break;
+                }
+                let mut body = vec![0u8; u16::from_le_bytes(len_buf) as usize];
+                if read_half.read_exact(&mut body).await.is_err() {
+                    break;
+                }
+                let Some((session, message)) = nesprotocol::gamepad::decode_ipc(&body) else {
+                    tracing::debug!("short gamepad feedback frame");
+                    continue;
+                };
+                read_mgr
+                    .send_gamepad_feedback(session, message.to_vec())
+                    .await;
+            }
+        });
+
+        tokio::select! {
+            _ = write_handle => {}
+            _ = read_handle => {}
+        }
+        tracing::info!("gamepad service disconnected");
+    }
+}
+
 pub async fn run_stats_ipc_listener(
     socket_path: PathBuf,
     stats_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
