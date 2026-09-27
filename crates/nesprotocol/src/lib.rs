@@ -4,6 +4,7 @@
 
 pub mod datagram;
 pub mod delay;
+pub mod gamepad;
 pub mod input;
 #[cfg(feature = "lifecycle")]
 pub mod lifecycle;
@@ -105,6 +106,16 @@ pub const MSG_RECEIVER_REPORT: u8 = 0x13;
 /// Who decides the bitrate, and the ceiling to decide within (desktop → hub).
 pub const MSG_CONTROL_MODE: u8 = 0x14;
 pub const MSG_INPUT_BATCH: u8 = 0xFE; // batched input events (desktop → hub)
+/// One gamepad message (desktop → hub → the box's gamepad service), on the input
+/// stream. See the [`gamepad`] module.
+///
+/// A frame of its own rather than an event inside an input batch: a batch is a
+/// run of fixed-width events the hub splits by type, and a controller's name
+/// has no fixed width.
+pub const MSG_GAMEPAD: u8 = 0xFD;
+/// Rumble and re-announce requests (box → hub → desktop), on the input
+/// stream's return half.
+pub const MSG_GAMEPAD_FEEDBACK: u8 = 0xFC;
 
 /// Build a frame body: `[u8 type] [u16 LE seq] [payload]`.
 ///

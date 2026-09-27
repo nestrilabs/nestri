@@ -11,8 +11,8 @@ use nesprotocol::{BIDI_CONTROL, BIDI_INPUT, Carrier, STREAM_CURSOR, STREAM_STATS
 use nesprotocol::{ControlMode, ReceiverReport, decode_control_mode, decode_receiver_report};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{
-    MSG_CLIENT_CAPS, MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_INPUT_BATCH,
-    MSG_RECEIVER_REPORT,
+    MSG_CLIENT_CAPS, MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_GAMEPAD, MSG_GAMEPAD_FEEDBACK,
+    MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT,
 };
 
 use crate::control::{Controller, PathView};
@@ -60,6 +60,14 @@ pub struct ClientSession {
     latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
     relay_ms: Arc<AtomicU32>,
     input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
+    /// This client's number on the gamepad socket, so the box's side can tell
+    /// two clients' controllers apart. Assigned by the manager, never reused
+    /// within one hub's lifetime.
+    gamepad_session: u32,
+    gamepad_tx: tokio::sync::broadcast::Sender<Vec<u8>>,
+    /// Rumble and the like, for this client's input stream to carry back.
+    send_gamepad_feedback: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    pending_gamepad_feedback: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
     idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     controller: Arc<Mutex<Controller>>,
     send_video: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
@@ -92,10 +100,13 @@ impl ClientSession {
     /// A client with no connections yet. They attach as they are accepted.
     pub fn new(
         input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
+        gamepad_session: u32,
+        gamepad_tx: tokio::sync::broadcast::Sender<Vec<u8>>,
         relay_ms: Arc<AtomicU32>,
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         controller: Arc<Mutex<Controller>>,
     ) -> Self {
+        let (gamepad_feedback_tx, gamepad_feedback_rx) = tokio::sync::mpsc::unbounded_channel();
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -108,6 +119,10 @@ impl ClientSession {
             latest_report: Arc::new(std::sync::Mutex::new(None)),
             relay_ms,
             input_broadcast,
+            gamepad_session,
+            gamepad_tx,
+            send_gamepad_feedback: gamepad_feedback_tx,
+            pending_gamepad_feedback: Some(gamepad_feedback_rx),
             idr_cmd_tx,
             controller,
             send_video: video_tx,
@@ -177,10 +192,18 @@ impl ClientSession {
                 }));
             }
             Carrier::Input => {
+                let Some(feedback) = self.pending_gamepad_feedback.take() else {
+                    debug!("input carrier attached twice; ignoring the second");
+                    return;
+                };
                 self.other_conns.push(conn.clone());
                 let broadcast = self.input_broadcast.clone();
+                let gamepad = Gamepads {
+                    session: self.gamepad_session,
+                    to_box: self.gamepad_tx.clone(),
+                };
                 self.tasks.push(tokio::spawn(async move {
-                    run_input_reader(conn, broadcast).await
+                    run_input_reader(conn, broadcast, gamepad, feedback).await
                 }));
             }
             Carrier::Control => {
@@ -279,6 +302,13 @@ impl ClientSession {
         }
     }
 
+    /// Hand one gamepad feedback message to this client's input stream.
+    pub fn send_gamepad_feedback(&self, message: Vec<u8>) {
+        if let Err(e) = self.send_gamepad_feedback.send(message) {
+            debug!("failed to send gamepad feedback: {e}");
+        }
+    }
+
     pub fn send_stats_data(&self, data: Vec<u8>) {
         if let Err(e) = self.send_stats.send(data) {
             debug!("failed to send stats data: {e}");
@@ -293,10 +323,14 @@ impl ClientSession {
 /// Shared because input and control differ only in which messages they expect:
 /// the framing, the announcement and the reconnect behaviour are the same, and
 /// two copies of that would drift.
+///
+/// With `outbound`, the stream's other half stays open and carries those
+/// frames back to the client; without, it is finished once announced.
 async fn run_framed_reader<F, Fut>(
     conn: Connection,
     stream_type: u8,
     label: &'static str,
+    mut outbound: Option<(u8, tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>)>,
     mut handle: F,
 ) where
     F: FnMut(u8, Vec<u8>) -> Fut,
@@ -314,24 +348,60 @@ async fn run_framed_reader<F, Fut>(
                     debug!("{label} type byte write failed");
                     break;
                 }
-                let _ = send.finish();
-                debug!("{label} bidi stream ready, reading framed messages");
-                loop {
-                    // [4B len][1B type][2B seq][payload]
-                    let mut len_buf = [0u8; 4];
-                    if recv.read_exact(&mut len_buf).await.is_err() {
-                        break;
-                    }
-                    let frame_len = u32::from_le_bytes(len_buf) as usize;
-                    if frame_len < 3 || frame_len > 65536 {
-                        break;
-                    }
-                    let mut frame = vec![0u8; frame_len];
-                    if recv.read_exact(&mut frame).await.is_err() {
-                        break;
-                    }
-                    handle(frame[0], frame[3..].to_vec()).await;
+                if outbound.is_none() {
+                    let _ = send.finish();
                 }
+                debug!("{label} bidi stream ready, reading framed messages");
+                // Frames are read on a task of their own. Reading one is
+                // several awaits, and a read cancelled halfway -- which is what
+                // waiting on outbound frames beside it would do -- loses the
+                // framing for the rest of the stream.
+                let (frames_tx, mut frames) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+                let reader = tokio::spawn(async move {
+                    loop {
+                        // [4B len][1B type][2B seq][payload]
+                        let mut len_buf = [0u8; 4];
+                        if recv.read_exact(&mut len_buf).await.is_err() {
+                            break;
+                        }
+                        let frame_len = u32::from_le_bytes(len_buf) as usize;
+                        if frame_len < 3 || frame_len > 65536 {
+                            break;
+                        }
+                        let mut frame = vec![0u8; frame_len];
+                        if recv.read_exact(&mut frame).await.is_err() {
+                            break;
+                        }
+                        if frames_tx.send(frame).is_err() {
+                            break;
+                        }
+                    }
+                });
+                let mut seq: u16 = 0;
+                loop {
+                    let outgoing = async {
+                        match outbound.as_mut() {
+                            Some((_, rx)) => rx.recv().await,
+                            None => std::future::pending().await,
+                        }
+                    };
+                    tokio::select! {
+                        frame = frames.recv() => match frame {
+                            Some(frame) => handle(frame[0], frame[3..].to_vec()).await,
+                            None => break,
+                        },
+                        Some(payload) = outgoing => {
+                            let msg_type = outbound.as_ref().map_or(0, |(t, _)| *t);
+                            let mut buf = Vec::with_capacity(FRAME_HDR_LEN + payload.len());
+                            encode_frame(&mut buf, msg_type, seq, &payload);
+                            seq = seq.wrapping_add(1);
+                            if send.write_all(&buf).await.is_err() {
+                                break;
+                            }
+                        }
+                    }
+                }
+                reader.abort();
             }
             Err(e) => {
                 debug!("{label} open_bi failed: {e}");
@@ -383,22 +453,46 @@ fn split_input_events(payload: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
-/// Input events, and nothing else.
+/// Where one client's gamepad messages go.
+struct Gamepads {
+    session: u32,
+    to_box: tokio::sync::broadcast::Sender<Vec<u8>>,
+}
+
+/// Input events and gamepad messages, and nothing else.
 ///
 /// On its own connection so a keypress never waits behind a video keyframe.
+/// Gamepad messages are forwarded unread, tagged with the client: what a
+/// controller is and what to make of it is the box's side to decide, not the
+/// hub's. The stream's return half carries that side's feedback -- rumble --
+/// back.
 async fn run_input_reader(
     conn: Connection,
     input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
+    gamepads: Gamepads,
+    feedback: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
 ) {
-    run_framed_reader(conn, BIDI_INPUT, "input", |msg_type, payload| {
+    let outbound = Some((MSG_GAMEPAD_FEEDBACK, feedback));
+    run_framed_reader(conn, BIDI_INPUT, "input", outbound, |msg_type, payload| {
         let input_broadcast = input_broadcast.clone();
+        let to_box = gamepads.to_box.clone();
+        let session = gamepads.session;
         async move {
-            if msg_type != MSG_INPUT_BATCH {
-                debug!("unknown input msg type: {msg_type}");
-                return;
-            }
-            for event in split_input_events(&payload) {
-                let _ = input_broadcast.send(event);
+            match msg_type {
+                MSG_INPUT_BATCH => {
+                    for event in split_input_events(&payload) {
+                        let _ = input_broadcast.send(event);
+                    }
+                }
+                MSG_GAMEPAD => {
+                    let mut frame = Vec::with_capacity(6 + payload.len());
+                    nesprotocol::gamepad::encode_ipc(&mut frame, session, &payload);
+                    // An error is nobody listening: the box's gamepad side is
+                    // not up, and a controller it never heard of will be asked
+                    // for again once it is.
+                    let _ = to_box.send(frame);
+                }
+                other => debug!("unknown input msg type: {other}"),
             }
         }
     })
@@ -413,7 +507,7 @@ async fn run_control_reader(
     controller: Arc<Mutex<Controller>>,
     awaiting_keyframe: Arc<AtomicBool>,
 ) {
-    run_framed_reader(conn, BIDI_CONTROL, "control", |msg_type, payload| {
+    run_framed_reader(conn, BIDI_CONTROL, "control", None, |msg_type, payload| {
         let idr_cmd_tx = idr_cmd_tx.clone();
         let latest_report = latest_report.clone();
         let controller = controller.clone();
@@ -658,6 +752,9 @@ fn is_keyframe(payload: &[u8]) -> bool {
 
 pub struct SessionManager {
     sessions: Arc<Mutex<HashMap<iroh::EndpointId, ClientSession>>>,
+    /// Every client's gamepad messages, already framed for the gamepad socket.
+    gamepad_tx: tokio::sync::broadcast::Sender<Vec<u8>>,
+    next_gamepad_session: AtomicU32,
     /// Video bytes, split by what they were.
     ///
     /// One counter could not tell an encoder ignoring its bitrate target from a
@@ -685,8 +782,11 @@ pub struct SessionManager {
 
 impl SessionManager {
     pub fn new() -> Self {
+        let (gamepad_tx, _) = tokio::sync::broadcast::channel(256);
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            gamepad_tx,
+            next_gamepad_session: AtomicU32::new(1),
             video_key_bytes: AtomicU64::new(0),
             video_delta_bytes: AtomicU64::new(0),
             keyframes: AtomicU64::new(0),
@@ -720,6 +820,8 @@ impl SessionManager {
         let session = sessions.entry(id).or_insert_with(|| {
             ClientSession::new(
                 input_broadcast,
+                self.next_gamepad_session.fetch_add(1, Ordering::Relaxed),
+                self.gamepad_tx.clone(),
                 self.relay_ms.clone(),
                 idr_cmd_tx,
                 controller,
@@ -740,8 +842,35 @@ impl SessionManager {
         // session as removed four times over -- three of them describing a
         // session that had already gone, which reads like four clients
         // leaving.
-        if sessions.remove(id).is_some() {
+        if let Some(session) = sessions.remove(id) {
             info!(remote = %id.fmt_short(), "client session removed ({} remaining)", sessions.len());
+            // Its controllers go with it. The client cannot say so itself --
+            // it is the thing that went -- and a controller left plugged in
+            // would still be there for the game, held by nobody.
+            let mut message = Vec::with_capacity(1);
+            nesprotocol::gamepad::PadMessage::SessionEnd.encode(&mut message);
+            let mut frame = Vec::with_capacity(7);
+            nesprotocol::gamepad::encode_ipc(&mut frame, session.gamepad_session, &message);
+            let _ = self.gamepad_tx.send(frame);
+        }
+    }
+
+    /// A receiver for every client's gamepad messages, for the gamepad socket.
+    pub fn gamepad_messages(&self) -> tokio::sync::broadcast::Receiver<Vec<u8>> {
+        self.gamepad_tx.subscribe()
+    }
+
+    /// Route gamepad feedback to the client it names.
+    ///
+    /// A client that has gone is not an error: rumble a game started a moment
+    /// before its player left has nowhere to go, and that is fine.
+    pub async fn send_gamepad_feedback(&self, gamepad_session: u32, message: Vec<u8>) {
+        let sessions = self.sessions.lock().await;
+        if let Some(session) = sessions
+            .values()
+            .find(|s| s.gamepad_session == gamepad_session)
+        {
+            session.send_gamepad_feedback(message);
         }
     }
 

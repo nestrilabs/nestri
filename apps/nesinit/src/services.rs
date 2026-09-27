@@ -221,7 +221,8 @@ const WRITABLE: &[(&str, &str)] = &[
 ///
 /// Ported from the nine init scripts this replaces, and the ordering is theirs:
 /// the bus before anything that speaks on it, audio before whatever plays into
-/// it, and the hub last because it binds the sockets the rest connect to.
+/// it, and the hub after them because it binds the sockets the rest connect to.
+/// Only something that dials the hub, and waits for it, comes after.
 pub const STACK: &[Service] = &[
     Service {
         name: "dbus-system",
@@ -335,6 +336,23 @@ pub const STACK: &[Service] = &[
         cost: "the session has no address, so no client can reach it",
         required: true,
         umask: None,
+        ready: None,
+    },
+    Service {
+        name: "nesgamepad",
+        argv: &["/usr/bin/nesgamepad"],
+        env: &[],
+        // Root, and it has to be: it creates devices through /dev/uinput,
+        // opens their nodes to the workload, and announces them the way udev
+        // would -- and libudev ignores an announcement from anyone but root.
+        user: None,
+        // Optional: a session without controllers is still played with a
+        // keyboard and mouse.
+        cost: "controllers plugged into the client do not reach the game",
+        required: false,
+        umask: None,
+        // It dials the hub rather than the other way round, and redials until
+        // the hub is there, so nothing waits on it.
         ready: None,
     },
 ];

@@ -2,8 +2,8 @@
 #  nestri guest rootfs — the open half
 #
 #  Builds a bootable Arch image containing Mesa (virtio-gpu native context)
-#  and the five open guest components: nesinit, nescope, neshub, neswire,
-#  nescapture. Two leaf targets, selected with `--target`:
+#  and the six open guest components: nesinit, nescope, neshub, neswire,
+#  nescapture, nesgamepad. Two leaf targets, selected with `--target`:
 #
 #    runtime_prod    stripped, root locked          (default: `make build`)
 #    runtime_debug    debug tools, autologin root    (`make build-debug`)
@@ -141,18 +141,20 @@ COPY apps/nescope apps/nescope
 COPY apps/neshub apps/neshub
 COPY apps/neswire apps/neswire
 COPY apps/nescapture apps/nescapture
+COPY apps/nesgamepad apps/nesgamepad
 
 FROM nestri-src AS nestri-build
 RUN --mount=type=cache,target=/root/.cargo/registry \
     --mount=type=cache,target=/build/nestri/target \
     cargo build --release \
-        -p nesinit -p nescope -p neshub -p neswire -p nescapture && \
+        -p nesinit -p nescope -p neshub -p neswire -p nescapture -p nesgamepad && \
     mkdir -p /artifacts/nestri/usr/bin /artifacts/nestri/usr/lib \
              /artifacts/nestri/usr/share/vulkan/implicit_layer.d && \
     install -Dm755 target/release/nesinit  /artifacts/nestri/usr/bin/nesinit && \
     install -Dm755 target/release/nescope  /artifacts/nestri/usr/bin/nescope && \
     install -Dm755 target/release/neshub   /artifacts/nestri/usr/bin/neshub && \
     install -Dm755 target/release/neswire  /artifacts/nestri/usr/bin/neswire && \
+    install -Dm755 target/release/nesgamepad /artifacts/nestri/usr/bin/nesgamepad && \
     install -Dm755 target/release/libnescapture_layer.so \
         /artifacts/nestri/usr/lib/libnescapture_layer.so && \
     install -Dm644 apps/nescapture/manifest/VK_LAYER_nescapture.json \
@@ -264,7 +266,7 @@ RUN pacman -Syu --noconfirm --needed \
         expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
         pipewire pipewire-audio pipewire-pulse libpulse wireplumber opus \
-        python libunwind \
+        python libunwind sdl2-compat \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
     && pacman -Scc --noconfirm
@@ -290,6 +292,16 @@ RUN pacman -Syu --noconfirm --needed \
 # ends with `env: 'python3': No such file or directory` and an exit status that
 # reads like an ordinary finish. Found 2026-09-12, on the first session that
 # got as far as launching one.
+
+# `sdl2-compat` is Wine's controller support, and the only one there is for a
+# controller that is not a Steam Input one. Proton's device bus reads evdev
+# controllers through SDL2 and nothing else -- its udev backend defers every
+# evdev device to the SDL one on purpose -- and it loads the library with
+# `dlopen`, so its absence fails nothing at build time or at launch. A game
+# simply sees no controller, while `nesgamepad` reports it plugged in. Found
+# 2026-09-27, on the first session with one. Real Steam brings SDL in its
+# runtime, which is why this is never missed anywhere else. On Arch the
+# library is SDL2's API over SDL3, which arrives as its dependency.
 
 # `dbus-reload.hook` is deleted above, before the removal rather than after,
 # and it is the whole reason that line is there: the hook runs
@@ -494,7 +506,7 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 RUN failed=0; \
     : > /tmp/missing-libs; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
-             /usr/lib/libnescapture_layer.so \
+             /usr/bin/nesgamepad /usr/lib/libnescapture_layer.so /usr/lib/libSDL2-2.0.so.0 \
              /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
              /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
@@ -517,6 +529,7 @@ RUN failed=0; \
     fi
 
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
+                    /usr/bin/nesgamepad /usr/lib/libSDL2-2.0.so.0 \
                     /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
                     /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 \
                     /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \

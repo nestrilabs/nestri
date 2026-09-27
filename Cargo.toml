@@ -16,6 +16,7 @@ members = [
   "apps/nescapture",
   "apps/nescope",
   "apps/nesdoctor",
+  "apps/nesgamepad",
   "apps/neshub",
   "apps/nesinit",
   "apps/neswire",

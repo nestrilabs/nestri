@@ -84,6 +84,15 @@ struct Args {
     #[arg(long, env = "NESTRI_MAX_BITRATE")]
     max_bitrate_kbps: Option<u32>,
 
+    /// Path for the gamepad IPC socket (neshub ↔ nesgamepad). neshub
+    /// listens; the gamepad service dials in.
+    #[arg(
+        long,
+        env = "NESTRI_GAMEPAD_IPC",
+        default_value = "/tmp/nestri-gamepad.sock"
+    )]
+    gamepad_ipc: PathBuf,
+
     /// Socket nescope sends screenshots on. neshub listens; nescope dials out.
     #[arg(
         long,
@@ -362,6 +371,12 @@ async fn main() -> Result<()> {
         async move { ipc_listener::run_stats_ipc_listener(stats_ipc, stx).await }
     });
 
+    tokio::spawn({
+        let mgr = session_manager.clone();
+        let gamepad_ipc = args.gamepad_ipc.clone();
+        async move { ipc_listener::run_gamepad_ipc_listener(gamepad_ipc, mgr).await }
+    });
+
     let ticket_ipc = args.ticket_ipc.clone();
     tokio::spawn({
         // The endpoint rather than a ticket made from it: the addresses it can
@@ -449,6 +464,7 @@ async fn main() -> Result<()> {
     let _ = std::fs::remove_file(&args.audio_ipc);
     let _ = std::fs::remove_file(&args.input_ipc);
     let _ = std::fs::remove_file(&args.stats_ipc);
+    let _ = std::fs::remove_file(&args.gamepad_ipc);
     let _ = std::fs::remove_file("/tmp/nescapture-cmd.sock");
     let _ = std::fs::remove_file(&args.ticket_ipc);
     Ok(())

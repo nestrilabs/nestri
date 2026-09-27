@@ -2362,6 +2362,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "nesgamepad"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "libc",
+ "nesprotocol",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "neshub"
 version = "0.2.0"
 dependencies = [
