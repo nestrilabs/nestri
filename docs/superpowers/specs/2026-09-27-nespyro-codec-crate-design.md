@@ -355,3 +355,82 @@ Found while reading nesrecon, to fix when part 4 opens the convert shader:
 - One `vk::Queue` per family is shared between the render thread and
   pixelforge's decode thread with no lock (`vulkan/mod.rs:555-578`). nespyro's
   `QueueLock` is where that gets fixed.
+
+## Found while building
+
+Recorded after part 1 was built, for parts 2 to 4 to start from.
+
+### Where the crate differs from this design
+
+- `Context::from_existing` takes the `Roles` the device was created for.
+  Vulkan cannot say which features a device was created with, and the decoder
+  needs to know whether `shaderFloat16` is on before choosing its FP16 tile.
+  Decode-only requirements ask for FP16 only where the device has it.
+- `Encoder::encode_planes_after` encodes the caller's own YCbCr planes. It
+  exists so the encoder can be compared with the reference on identical input,
+  and it lets a caller with its own conversion skip ours.
+- Decoder output planes are padded to the codec's alignment. The final inverse
+  transform writes whole 32×32 tiles; upstream relies on out-of-bounds stores
+  being discarded, which core Vulkan only promises with `robustImageAccess`.
+  `PlaneView` gives both the picture size and the image size.
+- `Decoder::stats` reports the GPU time of the last finished decode.
+- Both halves record their many dispatches once and reuse them. On Mesa's ANV
+  recording costs 6 to 14 µs per dispatch; per frame it was 416 µs of a
+  decode. Per-frame values reach the shaders through a small parameters buffer.
+- Device requirements also check each plane and wavelet format for sampled
+  and format-less storage use, which core Vulkan guarantees only for
+  `R32_SFLOAT`.
+
+### Measured, Arc A310, Mesa ANV
+
+| | nespyro | reference |
+|---|---|---|
+| encode 1080p 4:2:0, GPU, excluding colour conversion | 0.94 ms | 1.05 ms |
+| encode 4K 4:2:0 | 3.07 ms | 3.22 ms |
+| encode 1080p 4:4:4 | 1.36 ms | 1.50 ms |
+| decode 1080p 4:2:0, GPU | 0.56 ms | |
+| `encode_after` / `decode_after` CPU, 1080p 4:2:0 | 140 / 134 µs | |
+
+Both decoders give bit-identical planes on every stream either encoder wrote.
+On identical input the encoders tie on smooth content and nespyro is level or
+ahead on edges and noise.
+
+Subgroup sizes follow Granite's rule, which upstream's shaders were tuned
+under: varying when a pass's range covers the device's, otherwise the smallest
+in range. Taking the largest made rate-control analysis 73% slower on Intel.
+
+### Upstream bugs, worth reporting to PyroWave
+
+1. **Scratch payload undersized.** The quantizer's scratch is sized at aligned
+   width × height × 2 bytes. High-entropy 4:4:4 content needs more (3.4 MB
+   against 2.1 MB at 1366×768), and the encoder then packs blocks from bytes it
+   never wrote: a block whose header claims 115 words holds 95. nespyro sizes
+   it by the real bound, 136 bytes per 8×8 block.
+2. **Rate-control prefix sum stops short.** `analyze_rate_control_finalize`
+   steps while `step < 512 / 2`, so the upper half of its lanes miss part of
+   the running total. Frames land under target, not over. Ported unchanged.
+3. **Out-of-bounds shared read.** `analyze_rate_control` reads
+   `shared_rate_cost[gl_SubgroupInvocationID]` past its 16 entries on wider
+   subgroups. The value is unused; nespyro clamps the index.
+4. **Stale bytes in the stream.** A block's unused sign bits come from
+   uninitialised shared memory and its padding from whatever an earlier frame
+   left. Harmless to decoders, but non-deterministic and leaks old memory;
+   nespyro writes zeros.
+
+### Toolchain and driver bugs
+
+- **Slang 2026.17** emits `OpGroupNonUniformShuffleXor` without declaring
+  `GroupNonUniformShuffle` when nothing else in the shader does. `spirv-val`
+  catches it; `shuffle_xor` in `common.slang` works around it. `build.rs`
+  requires `spirv-val` for that reason.
+- **Mesa ANV** spends 12.6 ms of CPU recording `vkCmdFillBuffer` of an
+  8,396,864-byte buffer, and 3 µs for a 16,785,472-byte one. nespyro records
+  its fills once, so it no longer matters here, but it is worth a Mesa report.
+
+### For the parts that follow
+
+- Part 2: a frame at 200 Mbit/s and 60 fps is about 416 KB in 1200-byte
+  packets, a few hundred per frame. `EncodedFrame::critical_packets` is small,
+  typically one to a few packets.
+- Part 4: nesrecon's convert shader takes two planes; nespyro gives three, in
+  `GENERAL`, padded, with the picture size in `PlaneView`.
