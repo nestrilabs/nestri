@@ -53,7 +53,7 @@ RUN pacman -S --noconfirm --needed \
         xcb-util-keysyms xorgproto \
         wayland wayland-protocols \
         expat zlib zstd libxml2 lm_sensors \
-        llvm clang libclc spirv-tools spirv-llvm-translator glslang \
+        llvm clang libclc spirv-tools spirv-llvm-translator glslang shader-slang \
         elfutils libva libdrm directx-headers \
         rust rust-bindgen cbindgen \
         curl openssl \
@@ -131,6 +131,7 @@ FROM builder AS nestri-src
 WORKDIR /build/nestri
 COPY Cargo.toml Cargo.lock ./
 COPY crates/nesprotocol crates/nesprotocol
+COPY crates/nespyro crates/nespyro
 # Not a guest component and not installed below — it runs on a stranger's own
 # machine. It is here because `cargo` loads every workspace member's manifest
 # before it builds anything, so a member missing from the context fails the

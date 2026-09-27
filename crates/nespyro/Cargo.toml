@@ -1,0 +1,20 @@
+[package]
+name = "nespyro"
+version = "0.1.0"
+description = "PyroWave, a compute-shader wavelet video codec, on ash"
+edition.workspace = true
+# PyroWave's own licence, not the workspace's: this crate is a port of it.
+license = "MIT"
+repository.workspace = true
+
+[dependencies]
+# The same rev nescapture and nescore pin, so a `vk::Device` handed in by
+# either is the type this crate expects.
+ash = { git = "https://github.com/ash-rs/ash", rev = "f4c2ca3e4f6b998d5254ad101a32f024d87cdec2", default-features = false, features = ["std", "debug"] }
+futures-channel = "0.3"
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+ash = { git = "https://github.com/ash-rs/ash", rev = "f4c2ca3e4f6b998d5254ad101a32f024d87cdec2", features = ["loaded"] }
+pollster = "1.0"

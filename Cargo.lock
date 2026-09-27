@@ -2394,6 +2394,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nespyro"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "futures-channel",
+ "pollster",
+ "thiserror 2.0.20",
+ "tracing",
+]
+
+[[package]]
 name = "neswire"
 version = "0.1.0"
 dependencies = [
