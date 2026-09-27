@@ -22,7 +22,7 @@ use crate::bitstream::{
     Chroma, ColourDescription, DECOMPOSITION_LEVELS, GpuPacket, Layout, NUM_COMPONENTS,
     SEQUENCE_MASK, SequenceHeader, packetize,
 };
-use crate::device::{Context, DeviceRequirements, Roles};
+use crate::device::Context;
 use crate::error::{Error, Result};
 use crate::gpu::{
     Buffer, Commands, Image, ImageDesc, Location, OwnedView, Timeline, Timestamps, compute_barrier,
@@ -529,9 +529,10 @@ pub struct Encoder {
 impl Encoder {
     pub fn new(ctx: Context, config: EncodeConfig) -> Result<Self> {
         config.validate()?;
-        {
-            let inner = ctx.inner();
-            DeviceRequirements::query(&inner.instance, inner.physical_device, Roles::ENCODE)?;
+        if !ctx.supports_encode() {
+            return Err(Error::Config(
+                "the context's device was not created for encoding (Roles::ENCODE)".into(),
+            ));
         }
         let layout = Arc::new(Layout::new(config.width, config.height, config.chroma)?);
         if layout.blocks_32x32() > u32::from(u16::MAX) {
@@ -1183,7 +1184,9 @@ fn complete(
     let bitstream = words(rb.bitstream, w.copied_words as usize);
 
     let mut table: Vec<GpuPacket> = raw_table
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|p| GpuPacket {
             offset_words: p[0],
             num_words: p[1],

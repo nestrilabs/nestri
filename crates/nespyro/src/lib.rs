@@ -10,6 +10,7 @@
 //! which makes it the codec for a direct, wired path.
 
 pub mod bitstream;
+mod decoder;
 mod device;
 mod encoder;
 mod error;
@@ -20,6 +21,7 @@ mod sync;
 mod wavelet;
 
 pub use bitstream::{Chroma, ColourDescription, Matrix, Primaries, Range, Siting, Transfer};
+pub use decoder::{DecodeConfig, DecodedFrame, Decoder, PlaneView};
 pub use device::{Context, DeviceFeatures, DeviceQueue, DeviceRequirements, Roles};
 pub use encoder::{Depth, EncodeConfig, EncodeFuture, EncodeStats, EncodedFrame, Encoder, Source};
 pub use error::{Error, Result};

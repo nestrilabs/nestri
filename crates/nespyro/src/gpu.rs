@@ -75,6 +75,8 @@ pub(crate) struct Buffer {
     pub address: u64,
     mapped: *mut u8,
     coherent: bool,
+    /// Whether the memory is device local, so shaders read it at full speed.
+    pub device_local: bool,
 }
 
 // SAFETY: the mapping is plain memory owned by this buffer; synchronising its
@@ -146,6 +148,7 @@ impl Buffer {
             address,
             mapped,
             coherent: flags.contains(M::HOST_COHERENT),
+            device_local: flags.contains(M::DEVICE_LOCAL),
         })
     }
 
@@ -313,17 +316,6 @@ impl Image {
         };
         self.views.push(view);
         Ok(view)
-    }
-
-    /// Every mip and layer.
-    pub fn whole(&self) -> vk::ImageSubresourceRange {
-        vk::ImageSubresourceRange {
-            aspect_mask: vk::ImageAspectFlags::COLOR,
-            base_mip_level: 0,
-            level_count: vk::REMAINING_MIP_LEVELS,
-            base_array_layer: 0,
-            layer_count: vk::REMAINING_ARRAY_LAYERS,
-        }
     }
 }
 
@@ -494,14 +486,6 @@ impl Timeline {
             )?
         };
         Ok(())
-    }
-
-    pub fn value(&self) -> Result<u64> {
-        Ok(unsafe {
-            self.ctx
-                .device()
-                .get_semaphore_counter_value(self.semaphore)?
-        })
     }
 }
 

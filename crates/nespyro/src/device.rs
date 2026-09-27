@@ -53,7 +53,9 @@ pub struct DeviceFeatures {
     /// Vulkan 1.2.
     pub storage_buffer_8bit_access: bool,
     pub shader_int8: bool,
-    /// Encoder only: its quantizer and rate control compute in FP16.
+    /// Required by the encoder, whose quantizer and rate control compute in
+    /// FP16. Asked of a decode-only device only when it has it: the inverse
+    /// transform then keeps its tile in native half2 rather than packing it.
     pub shader_float16: bool,
     pub timeline_semaphore: bool,
     pub buffer_device_address: bool,
@@ -64,14 +66,14 @@ pub struct DeviceFeatures {
 }
 
 impl DeviceFeatures {
-    fn for_roles(roles: Roles) -> Self {
+    fn for_roles(roles: Roles, available: &Self) -> Self {
         Self {
             shader_int16: true,
             shader_storage_image_write_without_format: true,
             storage_buffer_16bit_access: true,
             storage_buffer_8bit_access: true,
             shader_int8: true,
-            shader_float16: roles.encode,
+            shader_float16: roles.encode || available.shader_float16,
             timeline_semaphore: true,
             buffer_device_address: true,
             synchronization2: true,
@@ -282,8 +284,8 @@ impl DeviceRequirements {
             ));
         }
 
-        let features = DeviceFeatures::for_roles(roles);
         let available = DeviceFeatures::query(instance, physical_device);
+        let features = DeviceFeatures::for_roles(roles, &available);
         missing.extend(
             features
                 .missing_from(&available)
@@ -322,6 +324,29 @@ impl DeviceRequirements {
             missing.push("required subgroup sizes in compute shaders".into());
         }
         check_subgroup_sizes(roles, &subgroups, &mut missing);
+
+        // Formats the codec writes as storage images without a declared format,
+        // and samples. Only R32_SFLOAT storage is guaranteed by core Vulkan.
+        use vk::FormatFeatureFlags2 as F;
+        let needed = F::STORAGE_IMAGE | F::STORAGE_WRITE_WITHOUT_FORMAT | F::SAMPLED_IMAGE;
+        for format in [
+            vk::Format::R8_UNORM,
+            vk::Format::R16_UNORM,
+            vk::Format::R16_SFLOAT,
+            vk::Format::R32_SFLOAT,
+        ] {
+            let mut props3 = vk::FormatProperties3::default();
+            let mut props = vk::FormatProperties2::default().push(&mut props3);
+            unsafe {
+                instance.get_physical_device_format_properties2(physical_device, format, &mut props)
+            };
+            if !props3.optimal_tiling_features.contains(needed) {
+                missing.push(format!(
+                    "{format:?} as a sampled and format-less storage image (has {:?})",
+                    props3.optimal_tiling_features & needed
+                ));
+            }
+        }
 
         let families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
@@ -367,8 +392,6 @@ impl DeviceQueue {
 pub struct Context(pub(crate) Arc<ContextInner>);
 
 pub(crate) struct ContextInner {
-    pub instance: ash::Instance,
-    pub physical_device: vk::PhysicalDevice,
     pub device: ash::Device,
     pub queue: vk::Queue,
     pub queue_family: u32,
@@ -376,7 +399,9 @@ pub(crate) struct ContextInner {
     pub push_descriptor: ash::khr::push_descriptor::Device,
     pub memory: vk::PhysicalDeviceMemoryProperties,
     pub subgroups: Subgroups,
-    pub features: DeviceFeatures,
+    /// What the device was created with, as the caller said.
+    pub roles: Roles,
+    pub enabled: DeviceFeatures,
     pub timestamp_period: f32,
     pub timestamps: bool,
 }
@@ -385,10 +410,11 @@ impl Context {
     /// Wraps a device the caller created and still owns.
     ///
     /// The device must have been created with everything
-    /// [`DeviceRequirements::query`] returned for the roles it will be used
-    /// for, and a queue at `queue`. Vulkan offers no way to ask a device
-    /// which features it was created with, so this trusts the caller for
-    /// those; it does check that the physical device supports them.
+    /// [`DeviceRequirements::query`] returned for `roles`, and a queue at
+    /// `queue`. Vulkan offers no way to ask a device which features it was
+    /// created with, so this trusts the caller for those; it does check that
+    /// the physical device supports them, and an encoder on a context not
+    /// created for encoding is refused.
     ///
     /// The context never destroys the device. Everything nespyro creates on
     /// it must be dropped before the caller destroys it.
@@ -398,10 +424,9 @@ impl Context {
         device: ash::Device,
         queue: DeviceQueue,
         queue_lock: QueueLock,
+        roles: Roles,
     ) -> Result<Self> {
-        // What both halves share. The encoder's extra needs are checked when an
-        // encoder is made.
-        DeviceRequirements::query(&instance, physical_device, Roles::DECODE)?;
+        let requirements = DeviceRequirements::query(&instance, physical_device, roles)?;
 
         let families =
             unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
@@ -429,9 +454,8 @@ impl Context {
 
         Ok(Self(Arc::new(ContextInner {
             subgroups: Subgroups::query(&instance, physical_device),
-            features: DeviceFeatures::query(&instance, physical_device),
-            instance,
-            physical_device,
+            roles,
+            enabled: requirements.features,
             device,
             queue: vk_queue,
             queue_family: queue.family,
@@ -443,14 +467,14 @@ impl Context {
         })))
     }
 
-    /// Whether the device can run the encoder.
+    /// Whether an encoder can be made on this context.
     pub fn supports_encode(&self) -> bool {
-        DeviceRequirements::query(&self.0.instance, self.0.physical_device, Roles::ENCODE).is_ok()
+        self.0.roles.encode
     }
 
-    /// Whether the device can run the decoder.
+    /// Whether a decoder can be made on this context.
     pub fn supports_decode(&self) -> bool {
-        DeviceRequirements::query(&self.0.instance, self.0.physical_device, Roles::DECODE).is_ok()
+        self.0.roles.decode
     }
 
     /// The queue family nespyro submits on.

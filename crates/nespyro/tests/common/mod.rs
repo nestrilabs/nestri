@@ -179,6 +179,7 @@ impl Gpu {
             device.clone(),
             DeviceQueue::new(family, 0),
             lock.clone(),
+            Roles::BOTH,
         )
         .unwrap();
         let pool = unsafe {
@@ -236,6 +237,22 @@ impl Gpu {
                 bits & (1 << i) != 0 && props.memory_types[i as usize].property_flags.contains(want)
             })
             .expect("no suitable memory type")
+    }
+
+    /// Blocks until a timeline point is reached.
+    pub fn wait(&self, point: nespyro::TimelinePoint) {
+        let semaphores = [point.semaphore];
+        let values = [point.value];
+        unsafe {
+            self.device
+                .wait_semaphores(
+                    &vk::SemaphoreWaitInfo::default()
+                        .semaphores(&semaphores)
+                        .values(&values),
+                    u64::MAX,
+                )
+                .unwrap()
+        };
     }
 
     /// Records into a one-off command buffer, submits it and waits.
@@ -572,4 +589,98 @@ pub fn rgba8(content: Content, width: u32, height: u32) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Full-range YCbCr from 8-bit sRGB, as the encoder's conversion computes it,
+/// written independently of it. 4:2:0 chroma is the mean of each 2×2 quad.
+pub fn reference_ycbcr(rgba: &[u8], w: u32, h: u32, yuv420: bool, bt2020: bool) -> [Vec<f32>; 3] {
+    let (yr, cbr, crr) = if bt2020 {
+        (
+            [0.2627, 0.6780, 0.0593],
+            [-0.1396, -0.3604, 0.5],
+            [0.5, -0.4598, -0.0402],
+        )
+    } else {
+        (
+            [0.2126, 0.7152, 0.0722],
+            [-0.1146, -0.3854, 0.5],
+            [0.5, -0.4542, -0.0458],
+        )
+    };
+    let dot = |a: [f32; 3], b: [f32; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let at = |x: u32, y: u32| {
+        let i = ((y * w + x) * 4) as usize;
+        let c = [rgba[i], rgba[i + 1], rgba[i + 2]].map(|v| f32::from(v) / 255.0);
+        [
+            dot(yr, c).clamp(0.0, 1.0),
+            (0.5 + dot(cbr, c)).clamp(0.0, 1.0),
+            (0.5 + dot(crr, c)).clamp(0.0, 1.0),
+        ]
+    };
+    let mut y = Vec::with_capacity((w * h) as usize);
+    for j in 0..h {
+        for i in 0..w {
+            y.push(at(i, j)[0]);
+        }
+    }
+    let (cw, ch) = if yuv420 { (w / 2, h / 2) } else { (w, h) };
+    let mut cb = Vec::with_capacity((cw * ch) as usize);
+    let mut cr = Vec::with_capacity((cw * ch) as usize);
+    for j in 0..ch {
+        for i in 0..cw {
+            let v = if yuv420 {
+                let q = [
+                    at(2 * i, 2 * j),
+                    at(2 * i + 1, 2 * j),
+                    at(2 * i, 2 * j + 1),
+                    at(2 * i + 1, 2 * j + 1),
+                ];
+                [1, 2].map(|k| q.iter().map(|p| p[k]).sum::<f32>() / 4.0)
+            } else {
+                let p = at(i, j);
+                [p[1], p[2]]
+            };
+            cb.push(v[0]);
+            cr.push(v[1]);
+        }
+    }
+    [y, cb, cr]
+}
+
+/// A decoded plane as floats in [0, 1], cropped to the picture.
+pub fn plane_values(gpu: &Gpu, plane: &nespyro::PlaneView) -> Vec<f32> {
+    let texel = if plane.format == vk::Format::R16_UNORM {
+        2
+    } else {
+        1
+    };
+    let raw = gpu.download(plane.image, plane.image_width, plane.image_height, texel);
+    let mut out = Vec::with_capacity((plane.width * plane.height) as usize);
+    for y in 0..plane.height {
+        for x in 0..plane.width {
+            let i = ((y * plane.image_width + x) * texel) as usize;
+            out.push(if texel == 2 {
+                f32::from(u16::from_le_bytes([raw[i], raw[i + 1]])) / 65535.0
+            } else {
+                f32::from(raw[i]) / 255.0
+            });
+        }
+    }
+    out
+}
+
+/// PSNR in dB against a peak of 1.0.
+pub fn psnr(a: &[f32], b: &[f32]) -> f64 {
+    assert_eq!(a.len(), b.len());
+    let mse = a
+        .iter()
+        .zip(b)
+        .map(|(x, y)| (f64::from(*x) - f64::from(*y)).powi(2))
+        .sum::<f64>()
+        / a.len() as f64;
+    if mse == 0.0 {
+        f64::INFINITY
+    } else {
+        -10.0 * mse.log10()
+    }
 }

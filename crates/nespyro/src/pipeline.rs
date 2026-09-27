@@ -28,8 +28,6 @@ pub(crate) struct Pipeline {
     layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     push_size: u32,
-    /// The subgroup size the pipeline runs at, when it was fixed.
-    pub subgroup_size: Option<u32>,
 }
 
 pub(crate) struct PipelineDesc<'a> {
@@ -112,16 +110,12 @@ impl Pipeline {
             .module(module)
             .name(desc.entry)
             .specialization_info(&specialization);
-        let subgroup_size = match desc.subgroup {
-            SubgroupSize::Any => None,
-            SubgroupSize::Full(size) => {
-                required = required.required_subgroup_size(size);
-                stage = stage
-                    .flags(vk::PipelineShaderStageCreateFlags::REQUIRE_FULL_SUBGROUPS)
-                    .push(&mut required);
-                Some(size)
-            }
-        };
+        if let SubgroupSize::Full(size) = desc.subgroup {
+            required = required.required_subgroup_size(size);
+            stage = stage
+                .flags(vk::PipelineShaderStageCreateFlags::REQUIRE_FULL_SUBGROUPS)
+                .push(&mut required);
+        }
 
         let created = unsafe {
             device.create_compute_pipelines(
@@ -150,7 +144,6 @@ impl Pipeline {
             layout,
             pipeline,
             push_size: desc.push_size,
-            subgroup_size,
         })
     }
 
