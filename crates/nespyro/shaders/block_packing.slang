@@ -37,11 +37,13 @@ struct Registers
     uint8_t *payload_data;
     BlockStats *block_stats;
     int *quant_data;
+    // What changes per frame, written by the frame's own commands so the
+    // rest can be recorded once: [0] is the 3-bit sequence number.
+    uint *frame_params;
     int2 resolution;
     int2 resolution_32x32_blocks;
     int2 resolution_8x8_blocks;
     uint quant_resolution_code;
-    uint sequence_code;
     int block_offset_32x32;
     int block_stride_32x32;
     int block_offset_8x8;
@@ -276,7 +278,7 @@ void block_packing()
         if (payload_total_words != 0 && fits)
         {
             registers.bitstream_data[global_payload_offset + 0] =
-                local_ballot | (payload_total_words << 16) | (registers.sequence_code << 28);
+                local_ballot | (payload_total_words << 16) | (registers.frame_params[0] << 28);
             registers.bitstream_data[global_payload_offset + 1] =
                 modify_quant_code(registers.quant_resolution_code, quant) | (block_index << 8);
         }

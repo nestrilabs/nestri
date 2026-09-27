@@ -187,6 +187,7 @@ impl EncodeConfig {
 pub struct EncodeStats {
     pub convert_ns: f64,
     pub dwt_ns: f64,
+    /// Includes clearing the buffers rate control accumulates into.
     pub quant_ns: f64,
     pub analyze_ns: f64,
     pub resolve_ns: f64,
@@ -333,8 +334,9 @@ struct ResolvePush {
     total_savings_per_bucket: u64,
     rdo_operations: u64,
     quant_data: u64,
-    target_payload_size: u32,
+    frame_params: u64,
     num_blocks_per_subdivision: u32,
+    _pad: u32,
 }
 
 #[repr(C)]
@@ -349,19 +351,19 @@ struct PackingPush {
     payload_data: u64,
     block_stats: u64,
     quant_data: u64,
+    frame_params: u64,
     resolution: [i32; 2],
     resolution_32x32_blocks: [i32; 2],
     resolution_8x8_blocks: [i32; 2],
     quant_resolution_code: u32,
-    sequence_code: u32,
     block_offset_32x32: i32,
     block_stride_32x32: i32,
     block_offset_8x8: i32,
     block_stride_8x8: i32,
     bitstream_capacity_words: u32,
-    _pad: u32,
 }
 
+// Vulkan guarantees 128 bytes of push constants and no more.
 const _: () = assert!(std::mem::size_of::<PackingPush>() <= 128);
 
 struct Pipelines {
@@ -554,7 +556,11 @@ pub struct Encoder {
     bitstream: Buffer,
     table: Buffer,
     readback_layout: Arc<ReadbackLayout>,
+    /// What changes per frame: the sequence number and the target size.
+    frame_params: Buffer,
     commands: Commands,
+    /// Which bodies each slot has recorded.
+    recorded: [[bool; 2]; DEPTH],
     timeline: Arc<Timeline>,
     submitted: u64,
     sequence: u8,
@@ -676,7 +682,13 @@ impl Encoder {
         };
         let slots = Arc::new([make_slot()?, make_slot()?]);
 
-        let commands = Commands::new(&ctx, DEPTH as u32)?;
+        let commands = Commands::new(&ctx, (DEPTH * COMMANDS_PER_SLOT) as u32)?;
+        let frame_params = Buffer::new(
+            &ctx,
+            16,
+            storage | vk::BufferUsageFlags::TRANSFER_DST,
+            Location::Device,
+        )?;
         let timeline = Arc::new(Timeline::new(&ctx)?);
 
         let (free_tx, free_slots) = mpsc::channel();
@@ -728,7 +740,9 @@ impl Encoder {
             bitstream,
             table,
             readback_layout,
+            frame_params,
             commands,
+            recorded: [[false; 2]; DEPTH],
             timeline,
             submitted: 0,
             sequence: 0,
@@ -822,7 +836,7 @@ impl Encoder {
 
     fn submit(&mut self, input: Input, wait: &[TimelinePoint]) -> Result<EncodeFuture> {
         // A free slot means its previous frame has been read back, so its
-        // command buffer and read-back buffer are no longer in use.
+        // command buffers and read-back buffer are no longer in use.
         let slot = self.free_slots.recv().map_err(|_| Error::Cancelled)?;
 
         self.sequence = (self.sequence + 1) & SEQUENCE_MASK;
@@ -841,8 +855,23 @@ impl Encoder {
             }
         }
 
-        let cmd = self.commands.buffers[slot];
-        self.record(cmd, slot, &input, target_bytes, copy_bytes)?;
+        // Only what changes per frame is recorded per frame: the prologue
+        // (the frame's parameters, and whatever reads the caller's images)
+        // and the epilogue (the read-back, sized to the target). The body,
+        // tens of dispatches, is recorded once per slot.
+        let kind = match input {
+            Input::Rgb { .. } => MainKind::Rgb,
+            Input::Planes { .. } => MainKind::Planes,
+        };
+        let prologue = self.commands.buffers[slot * COMMANDS_PER_SLOT];
+        let epilogue = self.commands.buffers[slot * COMMANDS_PER_SLOT + 1];
+        let main = self.commands.buffers[slot * COMMANDS_PER_SLOT + 2 + kind as usize];
+        self.record_prologue(prologue, slot, &input, target_bytes)?;
+        if !self.recorded[slot][kind as usize] {
+            self.record_main(main, slot, kind)?;
+            self.recorded[slot][kind as usize] = true;
+        }
+        self.record_epilogue(epilogue, slot, copy_bytes)?;
 
         let value = self.submitted + 1;
         // The previous frame shares every scratch resource with this one, so
@@ -853,7 +882,8 @@ impl Encoder {
             .semaphore(self.timeline.semaphore)
             .value(value)
             .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)];
-        let cmds = [vk::CommandBufferSubmitInfo::default().command_buffer(cmd)];
+        let cmds = [prologue, main, epilogue]
+            .map(|c| vk::CommandBufferSubmitInfo::default().command_buffer(c));
         let submit = vk::SubmitInfo2::default()
             .wait_semaphore_infos(&waits)
             .command_buffer_infos(&cmds)
@@ -904,42 +934,49 @@ impl Encoder {
         TimelinePoint::new(self.timeline.semaphore, self.submitted)
     }
 
-    fn record(
+    fn begin(&self, cmd: vk::CommandBuffer, once: bool) -> Result<()> {
+        let device = self.ctx.device();
+        unsafe {
+            device.reset_command_buffer(cmd, vk::CommandBufferResetFlags::empty())?;
+            device.begin_command_buffer(
+                cmd,
+                &vk::CommandBufferBeginInfo::default().flags(if once {
+                    vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT
+                } else {
+                    vk::CommandBufferUsageFlags::empty()
+                }),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn stamp(&self, cmd: vk::CommandBuffer, slot: usize, i: u32) {
+        if let Some(t) = &self.slots[slot].timestamps {
+            unsafe {
+                self.ctx.device().cmd_write_timestamp2(
+                    cmd,
+                    vk::PipelineStageFlags2::ALL_COMMANDS,
+                    t.pool,
+                    i,
+                )
+            };
+        }
+    }
+
+    /// Per frame: fresh scratch, the frame's parameters, and every pass that
+    /// reads the caller's images, since those change from frame to frame.
+    fn record_prologue(
         &self,
         cmd: vk::CommandBuffer,
         slot: usize,
         input: &Input,
         target_bytes: u64,
-        copy_bytes: u64,
     ) -> Result<()> {
         let ctx = &self.ctx;
         let device = ctx.device();
-        let layout = &*self.layout;
         let config = &self.config;
-        let p = &self.pipelines;
-        let slot_ref = &self.slots[slot];
-
-        unsafe {
-            device.reset_command_buffer(cmd, vk::CommandBufferResetFlags::empty())?;
-            device.begin_command_buffer(
-                cmd,
-                &vk::CommandBufferBeginInfo::default()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-        }
-        let stamp = |i: u32| {
-            if let Some(t) = &slot_ref.timestamps {
-                unsafe {
-                    device.cmd_write_timestamp2(
-                        cmd,
-                        vk::PipelineStageFlags2::ALL_COMMANDS,
-                        t.pool,
-                        i,
-                    )
-                };
-            }
-        };
-        if let Some(t) = &slot_ref.timestamps {
+        self.begin(cmd, true)?;
+        if let Some(t) = &self.slots[slot].timestamps {
             unsafe { device.cmd_reset_query_pool(cmd, t.pool, 0, t.count) };
         }
 
@@ -963,26 +1000,27 @@ impl Encoder {
             vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE,
         );
 
-        unsafe {
-            device.cmd_fill_buffer(cmd, self.payload.buffer, 0, 8, 0);
-            device.cmd_fill_buffer(cmd, self.buckets.buffer, 0, vk::WHOLE_SIZE, 0);
-            device.cmd_fill_buffer(cmd, self.quant.buffer, 0, vk::WHOLE_SIZE, 0);
-        }
+        let params = [
+            u32::from(self.sequence),
+            (target_bytes.saturating_sub(8) / 4) as u32,
+            0,
+            0,
+        ];
+        let params: Vec<u8> = params.iter().flat_map(|v| v.to_le_bytes()).collect();
+        unsafe { device.cmd_update_buffer(cmd, self.frame_params.buffer, 0, &params) };
         memory_barrier(
             ctx,
             cmd,
-            vk::PipelineStageFlags2::CLEAR,
+            vk::PipelineStageFlags2::ALL_TRANSFER,
             vk::AccessFlags2::TRANSFER_WRITE,
             vk::PipelineStageFlags2::COMPUTE_SHADER,
             vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE,
         );
 
-        stamp(0);
-
-        // RGB to three planes, unless the caller brought its own.
-        let (planes, planes_layout) = match input {
+        self.stamp(cmd, slot, 0);
+        match input {
             Input::Rgb { view, layout } => {
-                p.rgb.dispatch(
+                self.pipelines.rgb.dispatch(
                     cmd,
                     &[
                         Bind::texture(view.view, *layout),
@@ -1004,67 +1042,67 @@ impl Encoder {
                     ),
                 );
                 compute_barrier(ctx, cmd);
-                (self.plane_views, vk::ImageLayout::GENERAL)
+                self.stamp(cmd, slot, 1);
             }
-            Input::Planes { views, layout } => (views.each_ref().map(|v| v.view), *layout),
-        };
-        stamp(1);
-
-        // Forward transforms, one level at a time.
-        let mirror = self.wavelet.mirror.sampler;
-        for level in 0..DECOMPOSITION_LEVELS {
-            // A component indexes the planes, their views and the wavelet
-            // bands alike.
-            #[allow(clippy::needless_range_loop)]
-            for component in 0..NUM_COMPONENTS {
-                // What this component's transform at this level reads.
-                let (view, view_layout, resolution, aligned, shift) = if level == 0 {
-                    if !config.chroma.has_level(component, 0) {
-                        continue;
-                    }
-                    (
-                        planes[component],
-                        planes_layout,
-                        [self.planes[component].width, self.planes[component].height],
-                        [layout.aligned_width, layout.aligned_height],
-                        true,
-                    )
-                } else if !config.chroma.has_level(component, 0) && level == 1 {
-                    // 4:2:0 chroma enters at level 1, from its half-size plane.
-                    (
-                        planes[component],
-                        planes_layout,
-                        [self.planes[component].width, self.planes[component].height],
-                        [layout.aligned_width >> 1, layout.aligned_height >> 1],
-                        true,
-                    )
-                } else {
-                    let (w, h) = layout.level_size(level - 1);
-                    (
-                        self.wavelet.ll[component][level - 1],
-                        vk::ImageLayout::GENERAL,
-                        [w, h],
-                        [w, h],
-                        false,
-                    )
-                };
-                p.dwt[usize::from(shift)].dispatch(
-                    cmd,
-                    &[
-                        Bind::sampled_in(view, mirror, view_layout),
-                        Bind::storage(self.wavelet.bands[component][level]),
-                    ],
-                    &DwtPush {
-                        resolution: [resolution[0] as i32, resolution[1] as i32],
-                        inv_resolution: [1.0 / resolution[0] as f32, 1.0 / resolution[1] as f32],
-                        aligned_resolution: [aligned[0] as i32, aligned[1] as i32],
-                    },
-                    (aligned[0].div_ceil(32), aligned[1].div_ceil(32), 1),
-                );
+            Input::Planes { views, layout } => {
+                self.stamp(cmd, slot, 1);
+                let views = views.each_ref().map(|v| v.view);
+                self.record_dwt(cmd, &views, *layout, |level, component| {
+                    reads_plane(config.chroma, level, component)
+                });
             }
-            compute_barrier(ctx, cmd);
         }
-        stamp(2);
+
+        unsafe { device.end_command_buffer(cmd)? };
+        Ok(())
+    }
+
+    /// Once per slot and input kind: every pass after the first transforms
+    /// of the planes. Nothing in it changes between frames; what does is
+    /// read from `frame_params`.
+    fn record_main(&self, cmd: vk::CommandBuffer, slot: usize, kind: MainKind) -> Result<()> {
+        let ctx = &self.ctx;
+        let device = ctx.device();
+        let layout = &*self.layout;
+        let config = &self.config;
+        let p = &self.pipelines;
+        self.begin(cmd, false)?;
+
+        // Forward transforms. From the encoder's own planes they all run
+        // here; from the caller's, the ones reading its planes ran in the
+        // prologue.
+        match kind {
+            MainKind::Rgb => {
+                self.record_dwt(cmd, &self.plane_views, vk::ImageLayout::GENERAL, |_, _| {
+                    true
+                })
+            }
+            MainKind::Planes => self.record_dwt(
+                cmd,
+                &self.plane_views,
+                vk::ImageLayout::GENERAL,
+                |level, component| !reads_plane(config.chroma, level, component),
+            ),
+        }
+        self.stamp(cmd, slot, 2);
+
+        // Clear what the quantizer and rate control accumulate into. Here,
+        // recorded once, rather than per frame: Mesa's ANV spends 12 ms of CPU
+        // recording a fill of the 8 MB bucket buffer 1080p 4:4:4 has, though
+        // not the 16 MB one at 4K.
+        unsafe {
+            device.cmd_fill_buffer(cmd, self.payload.buffer, 0, 8, 0);
+            device.cmd_fill_buffer(cmd, self.buckets.buffer, 0, vk::WHOLE_SIZE, 0);
+            device.cmd_fill_buffer(cmd, self.quant.buffer, 0, vk::WHOLE_SIZE, 0);
+        }
+        memory_barrier(
+            ctx,
+            cmd,
+            vk::PipelineStageFlags2::CLEAR,
+            vk::AccessFlags2::TRANSFER_WRITE,
+            vk::PipelineStageFlags2::COMPUTE_SHADER,
+            vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE,
+        );
 
         // Quantize every band.
         let border = self.wavelet.border.sampler;
@@ -1101,7 +1139,7 @@ impl Encoder {
             );
         }
         compute_barrier(ctx, cmd);
-        stamp(3);
+        self.stamp(cmd, slot, 3);
 
         // Rate control: sort every possible saving into buckets.
         let per_sub = rate::blocks_per_subdivision(layout.blocks_32x32());
@@ -1144,7 +1182,7 @@ impl Encoder {
             (1, 1, 1),
         );
         compute_barrier(ctx, cmd);
-        stamp(4);
+        self.stamp(cmd, slot, 4);
 
         // Rate control: spend buckets until the frame fits.
         p.resolve.dispatch(
@@ -1155,13 +1193,14 @@ impl Encoder {
                 total_savings_per_bucket: savings,
                 rdo_operations: operations,
                 quant_data: self.quant.address,
-                target_payload_size: (target_bytes.saturating_sub(8) / 4) as u32,
+                frame_params: self.frame_params.address,
                 num_blocks_per_subdivision: per_sub,
+                _pad: 0,
             },
             (rate::NUM_RDO_BUCKETS * rate::BLOCK_SPACE_SUBDIVISION, 1, 1),
         );
         compute_barrier(ctx, cmd);
-        stamp(5);
+        self.stamp(cmd, slot, 5);
 
         // Pack the final blocks.
         let capacity_words = (self.bitstream.size / 4) as u32;
@@ -1181,6 +1220,7 @@ impl Encoder {
                     payload_data: self.payload.address + 8,
                     block_stats: self.block_stats.address,
                     quant_data: self.quant.address,
+                    frame_params: self.frame_params.address,
                     resolution: [b.width as i32, b.height as i32],
                     resolution_32x32_blocks: [bx as i32, by as i32],
                     resolution_8x8_blocks: [
@@ -1188,13 +1228,11 @@ impl Encoder {
                         b.height.div_ceil(8) as i32,
                     ],
                     quant_resolution_code: u32::from(rate::encode_quant(1.0 / res)),
-                    sequence_code: u32::from(self.sequence),
                     block_offset_32x32: b.offset_32x32 as i32,
                     block_stride_32x32: b.stride_32x32 as i32,
                     block_offset_8x8: b.offset_8x8 as i32,
                     block_stride_8x8: b.stride_8x8 as i32,
                     bitstream_capacity_words: capacity_words,
-                    _pad: 0,
                 },
                 (bx.div_ceil(2), by.div_ceil(2), 1),
             );
@@ -1207,12 +1245,20 @@ impl Encoder {
             vk::PipelineStageFlags2::COPY,
             vk::AccessFlags2::TRANSFER_READ,
         );
-        stamp(6);
+        self.stamp(cmd, slot, 6);
 
-        // Read back the table, the counters, and the bitstream up to the
-        // target plus headroom.
+        unsafe { device.end_command_buffer(cmd)? };
+        Ok(())
+    }
+
+    /// Per frame: the table, the counters, and the bitstream up to the
+    /// target plus headroom, into the slot's read-back buffer.
+    fn record_epilogue(&self, cmd: vk::CommandBuffer, slot: usize, copy_bytes: u64) -> Result<()> {
+        let ctx = &self.ctx;
+        let device = ctx.device();
         let rb = &*self.readback_layout;
-        let readback = slot_ref.readback.lock().unwrap().buffer;
+        let readback = self.slots[slot].readback.lock().unwrap().buffer;
+        self.begin(cmd, true)?;
         unsafe {
             device.cmd_copy_buffer(
                 cmd,
@@ -1253,11 +1299,97 @@ impl Encoder {
             vk::PipelineStageFlags2::HOST,
             vk::AccessFlags2::HOST_READ,
         );
-
         unsafe { device.end_command_buffer(cmd)? };
         Ok(())
     }
+
+    /// The forward transforms `include` selects, level by level, reading the
+    /// planes through `planes` in `planes_layout`.
+    fn record_dwt(
+        &self,
+        cmd: vk::CommandBuffer,
+        planes: &[vk::ImageView; 3],
+        planes_layout: vk::ImageLayout,
+        include: impl Fn(usize, usize) -> bool,
+    ) {
+        let ctx = &self.ctx;
+        let layout = &*self.layout;
+        let chroma = self.config.chroma;
+        let mirror = self.wavelet.mirror.sampler;
+        for level in 0..DECOMPOSITION_LEVELS {
+            let mut any = false;
+            // A component indexes the planes, their views and the wavelet
+            // bands alike.
+            #[allow(clippy::needless_range_loop)]
+            for component in 0..NUM_COMPONENTS {
+                if !chroma.has_level(component, level) || !include(level, component) {
+                    continue;
+                }
+                // What this component's transform at this level reads: its
+                // plane where it enters the transform, otherwise the LL band
+                // the level above left.
+                let (view, view_layout, resolution, aligned, shift) =
+                    if reads_plane(chroma, level, component) {
+                        let aligned = if level == 0 {
+                            [layout.aligned_width, layout.aligned_height]
+                        } else {
+                            [layout.aligned_width >> 1, layout.aligned_height >> 1]
+                        };
+                        (
+                            planes[component],
+                            planes_layout,
+                            [self.planes[component].width, self.planes[component].height],
+                            aligned,
+                            true,
+                        )
+                    } else {
+                        let (w, h) = layout.level_size(level - 1);
+                        (
+                            self.wavelet.ll[component][level - 1],
+                            vk::ImageLayout::GENERAL,
+                            [w, h],
+                            [w, h],
+                            false,
+                        )
+                    };
+                self.pipelines.dwt[usize::from(shift)].dispatch(
+                    cmd,
+                    &[
+                        Bind::sampled_in(view, mirror, view_layout),
+                        Bind::storage(self.wavelet.bands[component][level]),
+                    ],
+                    &DwtPush {
+                        resolution: [resolution[0] as i32, resolution[1] as i32],
+                        inv_resolution: [1.0 / resolution[0] as f32, 1.0 / resolution[1] as f32],
+                        aligned_resolution: [aligned[0] as i32, aligned[1] as i32],
+                    },
+                    (aligned[0].div_ceil(32), aligned[1].div_ceil(32), 1),
+                );
+                any = true;
+            }
+            if any {
+                compute_barrier(ctx, cmd);
+            }
+        }
+    }
 }
+
+/// Whether a component's transform at `level` reads its plane: at level 0,
+/// or at level 1 for 4:2:0 chroma, whose half-size plane enters there.
+fn reads_plane(chroma: Chroma, level: usize, component: usize) -> bool {
+    level == 0 || (level == 1 && !chroma.has_level(component, 0))
+}
+
+/// Which body a frame runs: after the encoder's own conversion, or after the
+/// first transforms of the caller's planes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MainKind {
+    Rgb = 0,
+    Planes = 1,
+}
+
+/// Prologue, epilogue, and one body for each kind of input.
+const COMMANDS_PER_SLOT: usize = 4;
 
 /// Reads one frame back and packetizes it, on the completion thread.
 fn complete(

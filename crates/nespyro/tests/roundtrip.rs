@@ -398,3 +398,105 @@ fn configurations_the_encoder_cannot_honour_are_refused() {
     drop(encoder);
     gpu.assert_clean();
 }
+
+#[test]
+#[ignore = "needs a Vulkan 1.3 GPU that can run nespyro"]
+fn a_live_bitrate_change_takes_effect_on_the_next_frame() {
+    let gpu = Gpu::new();
+    let (w, h) = (1920, 1080);
+    let image = gpu.upload(
+        vk::Format::R8G8B8A8_UNORM,
+        w,
+        h,
+        &rgba8(Content::Noise, w, h),
+    );
+    let mut encoder = Encoder::new(gpu.ctx(), EncodeConfig::new(w, h)).unwrap();
+    // The encoder records its passes once and reuses them; what changes
+    // between frames reaches the GPU through the frame's own parameters.
+    for mbps in [200, 50, 400, 50, 200] {
+        encoder.set_target_bitrate(mbps * 1_000_000);
+        let f = encoder
+            .encode_after(image.image, image.format, vk::ImageLayout::GENERAL, &[])
+            .unwrap();
+        let frame = pollster::block_on(f).unwrap();
+        let target = frame.stats.target_bytes as usize;
+        assert_eq!(target as u64, (mbps * 1_000_000 / 60 / 8) & !3);
+        assert!(
+            frame.data.len() <= target && frame.data.len() * 100 >= target * 95,
+            "{mbps} Mbit/s: {} bytes of {target}",
+            frame.data.len()
+        );
+    }
+    drop(encoder);
+    gpu.assert_clean();
+}
+
+#[test]
+#[ignore = "needs a Vulkan 1.3 GPU that can run nespyro"]
+fn one_decoder_across_many_frames() {
+    use nespyro::Error;
+    let gpu = Gpu::new();
+    let (w, h) = (1920, 1080);
+    let config = EncodeConfig::new(w, h);
+    // Small frames first, then large ones, so the upload buffers have to
+    // grow and the recorded passes that read them have to follow.
+    let contents = [
+        Content::Flat,
+        Content::Gradient,
+        Content::Edges,
+        Content::Noise,
+        Content::Gradient,
+        Content::Flat,
+    ];
+    // One encoder, so the frames carry consecutive sequence numbers as a real
+    // stream does.
+    let mut encoder = Encoder::new(gpu.ctx(), config.clone()).unwrap();
+    let frames: Vec<_> = contents
+        .iter()
+        .map(|&c| {
+            let rgba = rgba8(c, w, h);
+            let image = gpu.upload(vk::Format::R8G8B8A8_UNORM, w, h, &rgba);
+            let f = encoder
+                .encode_after(image.image, image.format, vk::ImageLayout::GENERAL, &[])
+                .unwrap();
+            let frame = pollster::block_on(f).unwrap();
+            (c, frame, reference_ycbcr(&rgba, w, h, true, false))
+        })
+        .collect();
+    drop(encoder);
+
+    let mut decoder = Decoder::new(
+        gpu.ctx(),
+        DecodeConfig::new(w, h, Chroma::Yuv420, Depth::Eight),
+    )
+    .unwrap();
+    let mut held = Vec::new();
+    for (i, (content, frame, reference)) in frames.iter().enumerate() {
+        for p in &frame.packets {
+            assert_eq!(
+                decoder.push_packet(&frame.data[p.clone()]).unwrap(),
+                Push::Accepted
+            );
+        }
+        // Three outputs: a consumer holding all three gets Busy, not a stall
+        // and not one of its own frames overwritten.
+        if held.len() == 3 {
+            assert!(matches!(decoder.decode_after(&[]), Err(Error::Busy)));
+            held.remove(0);
+        }
+        let decoded = decoder.decode_after(&[]).unwrap();
+        gpu.wait(decoded.ready);
+        let y = plane_values(&gpu, &decoded.y);
+        let db = psnr(&y, &reference[0]);
+        let floor = if frame.data.len() * 100 < frame.stats.target_bytes as usize * 95 {
+            54.0
+        } else {
+            14.0
+        };
+        assert!(db >= floor, "frame {i} ({content:?}): {db:.1} dB");
+        held.push(decoded);
+    }
+    drop(held);
+    drop(decoder);
+    gpu.assert_clean();
+}

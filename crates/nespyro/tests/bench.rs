@@ -42,14 +42,19 @@ fn latency_beside_the_reference() {
             Decoder::new(gpu.ctx(), DecodeConfig::new(w, h, chroma, Depth::Eight)).unwrap();
 
         let mut passes: Vec<[f64; 6]> = Vec::new();
+        let mut encode_ms = Vec::new();
+        let mut encode_cpu_ms = Vec::new();
         let mut decode_ms = Vec::new();
         let mut decode_cpu_ms = Vec::new();
         let mut decode_gpu: Vec<[f64; 3]> = Vec::new();
         for _ in 0..FRAMES {
+            let start = Instant::now();
             let f = encoder
                 .encode_after(image.image, image.format, vk::ImageLayout::GENERAL, &[])
                 .unwrap();
+            encode_cpu_ms.push(start.elapsed().as_secs_f64() * 1e3);
             let frame = pollster::block_on(f).unwrap();
+            encode_ms.push(start.elapsed().as_secs_f64() * 1e3);
             let s = frame.stats;
             passes.push([
                 s.convert_ns,
@@ -83,9 +88,11 @@ fn latency_beside_the_reference() {
             eprintln!("  {n:8} {m:8.1}");
         }
         eprintln!(
-            "  encode   {:8.1} (without convert {:.1})",
+            "  encode   {:8.1} (without convert {:.1}); {:.1} submit to packetized, wall clock, of which {:.1} in encode_after",
             medians.iter().sum::<f64>(),
-            medians[1..].iter().sum::<f64>()
+            medians[1..].iter().sum::<f64>(),
+            median(encode_ms) * 1000.0,
+            median(encode_cpu_ms) * 1000.0
         );
         let d: Vec<f64> = (0..3)
             .map(|i| median(decode_gpu.iter().map(|p| p[i]).collect()) / 1000.0)

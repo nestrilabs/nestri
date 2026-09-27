@@ -198,7 +198,10 @@ pub struct Decoder {
     outputs: [Output; OUTPUTS],
     uploads: [Upload; UPLOADS],
     next_upload: usize,
+    /// A prologue per upload, then a body per upload and output.
     commands: Commands,
+    /// Which bodies are recorded against the current upload buffers.
+    recorded: [[bool; OUTPUTS]; UPLOADS],
     timeline: Timeline,
     submitted: u64,
 }
@@ -295,7 +298,8 @@ impl Decoder {
 
         Ok(Self {
             depacketizer: Depacketizer::new(layout.clone()),
-            commands: Commands::new(&ctx, UPLOADS as u32)?,
+            commands: Commands::new(&ctx, (UPLOADS + UPLOADS * OUTPUTS) as u32)?,
+            recorded: [[false; OUTPUTS]; UPLOADS],
             timeline: Timeline::new(&ctx)?,
             ctx,
             config,
@@ -410,6 +414,8 @@ impl Decoder {
         if offsets_bytes + payload_bytes + PAYLOAD_PADDING > self.uploads[u].host.size {
             let grown = (payload_bytes * 2).max(256 * 1024);
             self.uploads[u] = Self::upload_buffers(&self.ctx, &self.layout, grown)?;
+            // The bodies recorded for this upload read the old buffer.
+            self.recorded[u] = [false; OUTPUTS];
         }
         {
             let host = &mut self.uploads[u].host;
@@ -427,8 +433,16 @@ impl Decoder {
         }
         let upload_size = offsets_bytes + payload_bytes + PAYLOAD_PADDING;
 
-        let cmd = self.commands.buffers[u];
-        self.record(cmd, u, output, offsets_bytes, upload_size)?;
+        // Only the prologue is recorded per frame: the copy to device memory,
+        // when the upload is not there already, is sized to this frame. The
+        // body, tens of dispatches, is recorded once per upload and output.
+        let prologue = self.commands.buffers[u];
+        let main = self.commands.buffers[UPLOADS + u * OUTPUTS + output];
+        self.record_prologue(prologue, u, upload_size)?;
+        if !self.recorded[u][output] {
+            self.record_main(main, u, output, offsets_bytes)?;
+            self.recorded[u][output] = true;
+        }
 
         let value = self.submitted + 1;
         let mut waits: Vec<_> = wait.iter().map(TimelinePoint::wait_info).collect();
@@ -438,7 +452,8 @@ impl Decoder {
             .semaphore(self.timeline.semaphore)
             .value(value)
             .stage_mask(vk::PipelineStageFlags2::ALL_COMMANDS)];
-        let cmds = [vk::CommandBufferSubmitInfo::default().command_buffer(cmd)];
+        let cmds =
+            [prologue, main].map(|c| vk::CommandBufferSubmitInfo::default().command_buffer(c));
         let submit = vk::SubmitInfo2::default()
             .wait_semaphore_infos(&waits)
             .command_buffer_infos(&cmds)
@@ -485,13 +500,87 @@ impl Decoder {
         })
     }
 
-    fn record(
+    fn begin(&self, cmd: vk::CommandBuffer, once: bool) -> Result<()> {
+        let device = self.ctx.device();
+        unsafe {
+            device.reset_command_buffer(cmd, vk::CommandBufferResetFlags::empty())?;
+            device.begin_command_buffer(
+                cmd,
+                &vk::CommandBufferBeginInfo::default().flags(if once {
+                    vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT
+                } else {
+                    vk::CommandBufferUsageFlags::empty()
+                }),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn stamp(&self, cmd: vk::CommandBuffer, upload: usize, i: u32) {
+        if let Some(t) = &self.uploads[upload].timestamps {
+            unsafe {
+                self.ctx.device().cmd_write_timestamp2(
+                    cmd,
+                    vk::PipelineStageFlags2::ALL_COMMANDS,
+                    t.pool,
+                    i,
+                )
+            };
+        }
+    }
+
+    /// Per frame: the copy of this frame's upload into device memory, when
+    /// the upload is not device local.
+    fn record_prologue(
+        &self,
+        cmd: vk::CommandBuffer,
+        upload: usize,
+        upload_size: u64,
+    ) -> Result<()> {
+        let ctx = &self.ctx;
+        let device = ctx.device();
+        let up = &self.uploads[upload];
+        self.begin(cmd, true)?;
+        if let Some(t) = &up.timestamps {
+            unsafe { device.cmd_reset_query_pool(cmd, t.pool, 0, t.count) };
+        }
+        self.stamp(cmd, upload, 0);
+        if let Some(dst) = &up.device {
+            unsafe {
+                device.cmd_copy_buffer(
+                    cmd,
+                    up.host.buffer,
+                    dst.buffer,
+                    &[vk::BufferCopy {
+                        src_offset: 0,
+                        dst_offset: 0,
+                        size: upload_size,
+                    }],
+                )
+            };
+            memory_barrier(
+                ctx,
+                cmd,
+                vk::PipelineStageFlags2::COPY,
+                vk::AccessFlags2::TRANSFER_WRITE,
+                vk::PipelineStageFlags2::COMPUTE_SHADER,
+                vk::AccessFlags2::SHADER_READ,
+            );
+        }
+        self.stamp(cmd, upload, 1);
+        unsafe { device.end_command_buffer(cmd)? };
+        Ok(())
+    }
+
+    /// Once per upload and output: dequantize every band, then the inverse
+    /// transforms into the output planes. Nothing in it changes between
+    /// frames that use the same upload buffer and output.
+    fn record_main(
         &self,
         cmd: vk::CommandBuffer,
         upload: usize,
         output: usize,
         offsets_bytes: u64,
-        upload_size: u64,
     ) -> Result<()> {
         let ctx = &self.ctx;
         let device = ctx.device();
@@ -499,58 +588,9 @@ impl Decoder {
         let chroma = self.config.chroma;
         let out = &self.outputs[output];
         let up = &self.uploads[upload];
+        self.begin(cmd, false)?;
 
-        unsafe {
-            device.reset_command_buffer(cmd, vk::CommandBufferResetFlags::empty())?;
-            device.begin_command_buffer(
-                cmd,
-                &vk::CommandBufferBeginInfo::default()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-        }
-        let stamp = |i: u32| {
-            if let Some(t) = &up.timestamps {
-                unsafe {
-                    device.cmd_write_timestamp2(
-                        cmd,
-                        vk::PipelineStageFlags2::ALL_COMMANDS,
-                        t.pool,
-                        i,
-                    )
-                };
-            }
-        };
-        if let Some(t) = &up.timestamps {
-            unsafe { device.cmd_reset_query_pool(cmd, t.pool, 0, t.count) };
-        }
-        stamp(0);
-
-        let source = match &up.device {
-            Some(dst) => {
-                unsafe {
-                    device.cmd_copy_buffer(
-                        cmd,
-                        up.host.buffer,
-                        dst.buffer,
-                        &[vk::BufferCopy {
-                            src_offset: 0,
-                            dst_offset: 0,
-                            size: upload_size,
-                        }],
-                    )
-                };
-                memory_barrier(
-                    ctx,
-                    cmd,
-                    vk::PipelineStageFlags2::COPY,
-                    vk::AccessFlags2::TRANSFER_WRITE,
-                    vk::PipelineStageFlags2::COMPUTE_SHADER,
-                    vk::AccessFlags2::SHADER_READ,
-                );
-                dst.address
-            }
-            None => up.host.address,
-        };
+        let source = up.device.as_ref().map_or(up.host.address, |d| d.address);
         let offsets = source;
         let payload = source + offsets_bytes;
 
@@ -572,8 +612,6 @@ impl Decoder {
             vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE,
         );
 
-        stamp(1);
-
         // Every band's coefficients.
         for (component, level, band, b) in layout.bands() {
             self.dequant.dispatch(
@@ -594,7 +632,7 @@ impl Decoder {
             );
         }
         compute_barrier(ctx, cmd);
-        stamp(2);
+        self.stamp(cmd, upload, 2);
 
         // Inverse transforms, coarsest level first.
         let mirror = self.wavelet.mirror.sampler;
@@ -629,7 +667,7 @@ impl Decoder {
             }
             compute_barrier(ctx, cmd);
         }
-        stamp(3);
+        self.stamp(cmd, upload, 3);
 
         unsafe { device.end_command_buffer(cmd)? };
         Ok(())

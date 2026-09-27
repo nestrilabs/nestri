@@ -21,7 +21,9 @@ struct Registers
     int *total_savings_per_bucket;
     RDOperation *rdo_operations;
     int *quant_data;
-    uint target_payload_size;
+    // What changes per frame, written by the frame's own commands so the
+    // rest can be recorded once: [1] is the target size in words.
+    uint *frame_params;
     uint num_blocks_per_subdivision;
 };
 [[vk::push_constant]] ConstantBuffer<Registers> registers;
@@ -30,7 +32,7 @@ struct Registers
 [numthreads(WG_SIZE, 1, 1)]
 void resolve_rate_control()
 {
-    int required_savings_per_bucket = int(registers.buckets[1]) - int(registers.target_payload_size);
+    int required_savings_per_bucket = int(registers.buckets[1]) - int(registers.frame_params[1]);
     if (gl_WorkGroupID.x != 0)
     {
         int prev_bucket_total = registers.total_savings_per_bucket[gl_WorkGroupID.x - 1];
