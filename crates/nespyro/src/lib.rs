@@ -10,3 +10,9 @@
 //! which makes it the codec for a direct, wired path.
 
 pub mod bitstream;
+
+/// The SPIR-V `build.rs` compiled, one module per pass and variant.
+#[allow(dead_code)]
+mod shaders {
+    include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
+}
