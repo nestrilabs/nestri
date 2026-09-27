@@ -19,17 +19,28 @@ exists.
 
 ## What a controller becomes
 
-**The device itself**, for a family nesgamepad can rebuild -- today the
-DualShock 4. Some games read a controller as a HID device and parse its reports
-by hand, to tell one family from another and show the right buttons, and
-Proton hands them the raw device only when it has a hidraw node. So
-nesgamepad makes one through `/dev/uhid`, from the real controller's report
-descriptor, and writes the reports the real one would send for the state the
-client reports, at the rate it sends them. What a game asks of the device --
-calibration, firmware, its address -- is answered from values read off real
-hardware, and rumble it writes goes back to the client. What the snapshot
-cannot carry, motion and touch, reads as a controller at rest. See
-[`replica.rs`](src/replica.rs).
+Each controller is matched to a template by vendor and product
+([`template.rs`](src/template.rs)). One that matches no template, from a vendor
+the box knows, gets that vendor's default, so it still reads as its vendor's in
+a game; only one the box cannot tell at all is generic.
+
+| Vendor | Templates | Default |
+| --- | --- | --- |
+| Sony | DualShock 4 (the original, v2, wireless adapter), DualSense | DualShock 4 |
+| Microsoft | Xbox 360 pad, Xbox One S pad | Xbox 360 pad |
+| Nintendo | Pro Controller | Pro Controller |
+| Anything else | | generic |
+
+**The DualShock 4 is rebuilt as the device itself.** Some games read a
+controller as a HID device and parse its reports by hand, to tell one family
+from another and show the right buttons, and Proton hands them the raw device
+only when it has a hidraw node. So nesgamepad makes one through `/dev/uhid`,
+from the real controller's report descriptor, and writes the reports the real
+one would send for the state the client reports, at the rate it sends them.
+What a game asks of the device -- calibration, firmware, its address -- is
+answered from values read off real hardware, and rumble it writes goes back to
+the client. What the snapshot cannot carry, motion and touch, reads as a
+controller at rest. See [`replica.rs`](src/replica.rs).
 
 Beside it goes **a gamepad under a neutral identity**, for games that read only
 XInput. Proton gives XInput only to controllers it reads through SDL, and drops
@@ -38,14 +49,14 @@ carries neither -- which also keeps a game that recognises the family by those
 numbers from mistaking the copy for the device. A game that can read a
 controller both ways uses one at a time, so no press is answered twice.
 
-**Anything else** becomes one uinput gamepad. A game rarely reads a controller
-by its raw codes -- SDL, Wine and Steam look the identity up in a mapping
-database written against the exact layout the Linux driver for that device
-produces -- so the device is either built the way that driver builds it, from
-the table in [`layout.rs`](src/layout.rs), or presented with the kernel's
-generic gamepad layout under a neutral identity. Claiming a real device's
+**Every other template is one uinput gamepad**, built the way the Linux driver
+for it builds its device (hid-playstation, xpad, hid-nintendo), from
+[`layout.rs`](src/layout.rs). A game rarely reads a controller by its raw
+codes -- SDL, Wine and Steam look the identity up in a mapping database written
+against the exact layout that driver produces -- and claiming a real device's
 identity with a different layout scrambles its buttons, which is worse than
-being unrecognised.
+being unrecognised. So a fallback presents its template's identity, not the
+client's, and a generic controller gives up its identity altogether.
 
 ## Standing in for udev
 
@@ -78,11 +89,12 @@ Every state change is logged at `trace`.
 cargo test -p nesgamepad
 ```
 
-Three more build a real device through `/dev/uinput` and read it back the way
-a game would, including a rumble upload, and four build one through
-`/dev/uhid` -- one of them a rebuilt DualShock 4 -- and check reports in both
-directions and a feature report a game asks for. They are ignored by default because they create a device on whatever
-machine runs them, and the uhid ones need root:
+Four more build real devices through `/dev/uinput` -- every template among them
+-- and read them back the way a game would, including a rumble upload, and four
+build one through `/dev/uhid` -- one of them a rebuilt DualShock 4 -- and check
+reports in both directions and a feature report a game asks for. They are
+ignored by default because they create a device on whatever machine runs them,
+and the uhid ones need root:
 
 ```bash
 cargo test -p nesgamepad kernel_tests -- --ignored

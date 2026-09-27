@@ -28,6 +28,7 @@ use tracing::{debug, info, trace, warn};
 
 use crate::layout::{self, Layout};
 use crate::replica::{self, Model, Reporter};
+use crate::template::{self, Template};
 use crate::udev::{Record, Udev};
 use crate::uhid;
 use crate::uinput::{Device, Request, Spec, code};
@@ -72,6 +73,8 @@ struct Gamepad {
 /// A device rebuilt as itself.
 struct Replica {
     model: Model,
+    vendor: u16,
+    product: u16,
     device: Arc<uhid::Device>,
     address: [u8; 6],
     reporter: Arc<Mutex<Reporter>>,
@@ -216,10 +219,17 @@ impl Pads {
             gamepad: None,
             moved: false,
         };
-        match Model::for_identity(&pad.identity) {
+        let template = template::for_identity(&pad.identity);
+        debug!(
+            session,
+            slot,
+            template = template.describe(),
+            "template chosen"
+        );
+        match template {
             // Its gamepad follows once its own nodes exist, so that a game
             // settling on the first controller it finds finds the device.
-            Some(model) => match self.rebuild(key, model, &pad.identity) {
+            Template::Replica { model, product } => match self.rebuild(key, model, product) {
                 Ok(replica) => pad.replica = Some(replica),
                 Err(e) => {
                     warn!(
@@ -228,19 +238,19 @@ impl Pads {
                         "could not rebuild \"{}\" as itself, so it goes as a gamepad alone: {e}",
                         pad.identity.name
                     );
-                    pad.gamepad = self.plug(key, layout::for_identity(&pad.identity));
+                    pad.gamepad = self.plug(key, layout::generic(&pad.identity));
                 }
             },
-            None => pad.gamepad = self.plug(key, layout::for_identity(&pad.identity)),
+            Template::Gamepad(layout) => pad.gamepad = self.plug(key, layout),
         }
         self.pads.insert(key, pad);
     }
 
-    fn rebuild(&self, key: Key, model: Model, identity: &PadIdentity) -> std::io::Result<Replica> {
+    fn rebuild(&self, key: Key, model: Model, product: u16) -> std::io::Result<Replica> {
         let (session, slot) = key;
         let address = replica::address(session, slot);
         let uniq = replica::uniq(address);
-        let spec = model.spec(identity, &uniq);
+        let spec = model.spec(product, &uniq);
         let device = Arc::new(uhid::Device::create(&spec)?);
         info!(
             session,
@@ -256,6 +266,8 @@ impl Pads {
         ];
         Ok(Replica {
             model,
+            vendor: spec.vendor,
+            product: spec.product,
             device,
             address,
             reporter,
@@ -446,24 +458,29 @@ impl Pads {
         let Some(pad) = self.pads.get(&key) else {
             return;
         };
-        let Some(Replica { syspath: None, .. }) = &pad.replica else {
+        let Some(Replica {
+            syspath: None,
+            vendor,
+            product,
+            ..
+        }) = pad.replica
+        else {
             return;
         };
-        let identity = pad.identity.clone();
+        let name = pad.identity.name.clone();
         let claimed: HashSet<PathBuf> = self
             .pads
             .values()
             .filter_map(|p| p.replica.as_ref()?.syspath.clone())
             .collect();
-        match discover(code::BUS_USB, identity.vendor, identity.product, &claimed) {
+        match discover(code::BUS_USB, vendor, product, &claimed) {
             Some((found, nodes)) => self.nodes_found(key, found, nodes),
             None if attempt + 1 < DISCOVER_ATTEMPTS => self.schedule_discovery(key, attempt + 1),
             None => {
                 warn!(
                     session,
                     slot,
-                    "the kernel made no nodes for \"{}\", so only its gamepad can be read",
-                    identity.name
+                    "the kernel made no nodes for \"{name}\", so only its gamepad can be read"
                 );
                 self.plug_copy(key);
             }

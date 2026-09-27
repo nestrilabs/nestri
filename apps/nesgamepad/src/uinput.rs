@@ -31,6 +31,11 @@ pub mod code {
     pub const BTN_EAST: u16 = 0x131;
     pub const BTN_NORTH: u16 = 0x133;
     pub const BTN_WEST: u16 = 0x134;
+    /// Letter names for the same codes as north and west, which some drivers
+    /// use by letter rather than by position (see `crate::layout`).
+    pub const BTN_X: u16 = 0x133;
+    pub const BTN_Y: u16 = 0x134;
+    pub const BTN_Z: u16 = 0x135;
     pub const BTN_TL: u16 = 0x136;
     pub const BTN_TR: u16 = 0x137;
     pub const BTN_TL2: u16 = 0x138;

@@ -12,14 +12,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use nesprotocol::gamepad::{PadIdentity, PadState, button};
+use nesprotocol::gamepad::{PadState, button};
 
 use crate::layout;
 use crate::uinput::code::{self, BUS_USB};
 use crate::uinput::{Device, Request, Spec};
 
-fn build(identity: &PadIdentity) -> (Device, layout::Layout) {
-    let layout = layout::for_identity(identity);
+fn build(layout: layout::Layout) -> (Device, layout::Layout) {
     let keys: Vec<u16> = layout.buttons.iter().map(|&(_, key)| key).collect();
     let device = Device::create(&Spec {
         name: &layout.name,
@@ -32,14 +31,6 @@ fn build(identity: &PadIdentity) -> (Device, layout::Layout) {
     })
     .expect("create a device; is /dev/uinput writable?");
     (device, layout)
-}
-
-fn dualsense() -> PadIdentity {
-    PadIdentity {
-        vendor: 0x054c,
-        product: 0x0ce6,
-        name: "Wireless Controller".into(),
-    }
 }
 
 /// Open a new device's node, waiting out the host's udev granting access to
@@ -73,7 +64,7 @@ fn event_node(device: &Device) -> std::path::PathBuf {
 #[test]
 #[ignore = "creates a real input device through /dev/uinput"]
 fn a_hid_playstation_pad_reads_like_the_real_one() {
-    let (device, _) = build(&dualsense());
+    let (device, _) = build(layout::dualsense());
     let sys = device.syspath();
     // Every capability below was read from a DualShock 4 v2 on USB through
     // hid-playstation, which builds the gamepad node of every controller it
@@ -97,6 +88,24 @@ fn a_hid_playstation_pad_reads_like_the_real_one() {
     assert_eq!(read(sys.join("capabilities/ff")), "10000 0");
 }
 
+#[test]
+#[ignore = "creates a real input device through /dev/uinput"]
+fn every_template_has_its_drivers_capabilities() {
+    // As each driver's tables add up: xpad's with the d-pad as a hat and the
+    // triggers as axes, hid-nintendo's for a Pro Controller.
+    for (layout, key, abs) in [
+        (layout::xbox_360(), "7cdb000000000000 0 0 0 0", "3003f"),
+        (layout::xbox_one(), "7cdb000000000000 0 0 0 0", "3003f"),
+        (layout::switch_pro(), "7ffb000000000000 0 0 0 0", "3001b"),
+    ] {
+        let (device, _) = build(layout.clone());
+        let sys = device.syspath();
+        assert_eq!(read(sys.join("name")), layout.name);
+        assert_eq!(read(sys.join("capabilities/key")), key, "{}", layout.name);
+        assert_eq!(read(sys.join("capabilities/abs")), abs, "{}", layout.name);
+    }
+}
+
 /// `EVIOCGABS(code)`: an axis's current value and range.
 fn abs(fd: i32, code: u16) -> [i32; 6] {
     let mut info = [0i32; 6];
@@ -108,7 +117,7 @@ fn abs(fd: i32, code: u16) -> [i32; 6] {
 #[test]
 #[ignore = "creates a real input device through /dev/uinput"]
 fn state_written_is_state_a_game_reads() {
-    let (device, layout) = build(&dualsense());
+    let (device, layout) = build(layout::dualsense());
     let node = open(&event_node(&device), false);
     let fd = node.as_raw_fd();
 
@@ -148,7 +157,7 @@ const _: () = assert!(std::mem::size_of::<Rumble>() == 48);
 #[test]
 #[ignore = "creates a real input device through /dev/uinput"]
 fn a_game_uploading_rumble_is_answered_and_heard() {
-    let (device, _) = build(&dualsense());
+    let (device, _) = build(layout::dualsense());
     let node = open(&event_node(&device), true);
 
     // The upload blocks in the kernel until the device's owner answers it, so
@@ -330,13 +339,8 @@ fn a_rebuilt_dualshock_4_is_taken_by_the_kernel_and_read_as_sent() {
     use crate::replica::{Model, Reporter};
     use crate::uhid::{Device, Event};
     use std::io::Read;
-    let identity = PadIdentity {
-        vendor: 0x054c,
-        product: 0x09cc,
-        name: String::new(),
-    };
-    let model = Model::for_identity(&identity).unwrap();
-    let device = Device::create(&model.spec(&identity, "02:00:00:00:00:01"))
+    let model = Model::DualShock4;
+    let device = Device::create(&model.spec(0x09cc, "02:00:00:00:00:01"))
         .expect("create a HID device; this needs root for /dev/uhid");
     let deadline = Instant::now() + Duration::from_secs(3);
     while !device.drain().unwrap().contains(&Event::Start) {

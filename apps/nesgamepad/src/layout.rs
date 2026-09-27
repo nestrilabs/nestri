@@ -1,4 +1,5 @@
-//! What a controller looks like to a game: its identity and its evdev layout.
+//! What a controller looks like to a game as an evdev device: its identity and
+//! its layout.
 //!
 //! # Why the layout follows the identity
 //!
@@ -10,10 +11,11 @@
 //! claiming a real controller's identity with any other layout gets its
 //! buttons scrambled, which is worse than being unrecognised.
 //!
-//! So a device is either built the way the driver for its identity builds it,
-//! from the table in [`for_identity`], or it gives up the identity and presents
-//! the kernel's own generic gamepad layout under a neutral one, which every
-//! mapping layer knows how to read without a database entry.
+//! So each template here is built the way the driver for its identity builds
+//! it, read from that driver's source, or it is [`generic`]: the kernel's own
+//! gamepad layout under a neutral identity, which every mapping layer knows how
+//! to read without a database entry. Which template a controller gets is
+//! `crate::template`'s to decide.
 
 use nesprotocol::gamepad::button;
 use nesprotocol::gamepad::{PadIdentity, PadState};
@@ -29,20 +31,22 @@ pub struct Layout {
     pub vendor: u16,
     pub product: u16,
     pub version: u16,
-    /// Wire button bit, and the key code it becomes.
+    /// Wire button bit, and the key code it becomes. A bit of zero is a key
+    /// the real device has and the wire cannot carry: registered, because a
+    /// mapping counts the device's keys to number them, and never pressed.
     pub buttons: &'static [(u32, u16)],
     /// Left x, left y, right x, right y.
     pub sticks: [AbsAxis; 4],
-    /// Left, right.
-    pub triggers: [AbsAxis; 2],
-    /// Which table entry this came from, for the log.
+    /// Left, right. `None` for a controller whose triggers are only buttons.
+    pub triggers: Option<[AbsAxis; 2]>,
+    /// Which driver this imitates, for the log.
     pub driver: &'static str,
 }
 
 /// The kernel's generic gamepad buttons, by position.
 ///
-/// Also exactly what hid-playstation registers, which is why its entry shares
-/// it. The d-pad is not here: every layout below reports it as a hat.
+/// Also exactly what hid-playstation registers, which is why its template
+/// shares it. The d-pad is not here: every layout below reports it as a hat.
 const GAMEPAD_BUTTONS: &[(u32, u16)] = &[
     (button::SOUTH, code::BTN_SOUTH),
     (button::EAST, code::BTN_EAST),
@@ -59,95 +63,145 @@ const GAMEPAD_BUTTONS: &[(u32, u16)] = &[
     (button::RIGHT_STICK, code::BTN_THUMBR),
 ];
 
-/// The version hid-playstation gives a device over USB: its patch bit, which
-/// tells userspace the mapping is the driver's and not hid-generic's, on the
-/// device's own. Read from a DualShock 4 v2, as is every axis range below; the
-/// driver treats its devices alike, and a mismatch would only cost a mapping
-/// layer its exact match, after which each falls back to one that ignores the
-/// version.
-const HID_PLAYSTATION_VERSION: u16 = 0x8111;
+/// What xpad registers for the 360 and One pads it drives with the d-pad as
+/// a hat and the triggers as axes.
+///
+/// xpad names its face buttons by letter, not position: the left one, X, is
+/// reported as `BTN_X`, which is the same code as `BTN_NORTH`, and the top
+/// one, Y, as `BTN_Y`, the code of `BTN_WEST`. Mappings written against xpad
+/// expect exactly that, so it is kept.
+const XPAD_BUTTONS: &[(u32, u16)] = &[
+    (button::SOUTH, code::BTN_SOUTH),
+    (button::EAST, code::BTN_EAST),
+    (button::WEST, code::BTN_X),
+    (button::NORTH, code::BTN_Y),
+    (button::LEFT_SHOULDER, code::BTN_TL),
+    (button::RIGHT_SHOULDER, code::BTN_TR),
+    (button::SELECT, code::BTN_SELECT),
+    (button::START, code::BTN_START),
+    (button::MODE, code::BTN_MODE),
+    (button::LEFT_STICK, code::BTN_THUMBL),
+    (button::RIGHT_STICK, code::BTN_THUMBR),
+];
 
-const SONY: u16 = 0x054c;
+/// What hid-nintendo registers for a Pro Controller: positional, with ZL and
+/// ZR as buttons only, and Capture, which the wire does not carry.
+const PRO_CONTROLLER_BUTTONS: &[(u32, u16)] = &[
+    (button::SOUTH, code::BTN_SOUTH),
+    (button::EAST, code::BTN_EAST),
+    (button::NORTH, code::BTN_NORTH),
+    (button::WEST, code::BTN_WEST),
+    (button::LEFT_SHOULDER, code::BTN_TL),
+    (button::RIGHT_SHOULDER, code::BTN_TR),
+    (button::LEFT_TRIGGER, code::BTN_TL2),
+    (button::RIGHT_TRIGGER, code::BTN_TR2),
+    (button::SELECT, code::BTN_SELECT),
+    (button::START, code::BTN_START),
+    (button::MODE, code::BTN_MODE),
+    (button::LEFT_STICK, code::BTN_THUMBL),
+    (button::RIGHT_STICK, code::BTN_THUMBR),
+    (0, code::BTN_Z),
+];
 
-/// Sony controllers driven by hid-playstation and not rebuilt as themselves
-/// (see `crate::replica`): product, and the name the device gives itself over
-/// USB.
-const HID_PLAYSTATION: &[(u16, &str)] = &[(
-    0x0ce6,
-    "Sony Interactive Entertainment DualSense Wireless Controller",
-)];
+pub const SONY: u16 = 0x054c;
+pub const MICROSOFT: u16 = 0x045e;
+pub const NINTENDO: u16 = 0x057e;
 
-/// Sticks and triggers the way hid-playstation registers them: one byte each,
-/// no fuzz, no flat, as the driver's `ps_gamepad_create` does.
-fn byte_axes() -> ([AbsAxis; 4], [AbsAxis; 2]) {
-    let axis = |code| AbsAxis {
+fn axis(code: u16, min: i32, max: i32, fuzz: i32, flat: i32) -> AbsAxis {
+    AbsAxis {
         code,
-        min: 0,
-        max: 255,
-        fuzz: 0,
-        flat: 0,
-    };
-    (
-        [
-            axis(code::ABS_X),
-            axis(code::ABS_Y),
-            axis(code::ABS_RX),
-            axis(code::ABS_RY),
-        ],
-        [axis(code::ABS_Z), axis(code::ABS_RZ)],
-    )
-}
-
-/// How the box presents a controller the client described.
-pub fn for_identity(identity: &PadIdentity) -> Layout {
-    if identity.vendor == SONY
-        && let Some(&(product, name)) = HID_PLAYSTATION
-            .iter()
-            .find(|(product, _)| *product == identity.product)
-    {
-        return hid_playstation(product, name);
+        min,
+        max,
+        fuzz,
+        flat,
     }
-    generic(identity)
 }
 
-/// Always as on a cable: the client cannot say how the controller is
-/// attached, and a cable is what these most often arrive on.
-fn hid_playstation(product: u16, name: &str) -> Layout {
-    let (sticks, triggers) = byte_axes();
+fn sticks(min: i32, max: i32, fuzz: i32, flat: i32) -> [AbsAxis; 4] {
+    [code::ABS_X, code::ABS_Y, code::ABS_RX, code::ABS_RY].map(|c| axis(c, min, max, fuzz, flat))
+}
+
+fn triggers(max: i32) -> Option<[AbsAxis; 2]> {
+    Some([code::ABS_Z, code::ABS_RZ].map(|c| axis(c, 0, max, 0, 0)))
+}
+
+/// A DualSense on a cable, as hid-playstation makes it.
+///
+/// One byte per stick and trigger, no fuzz, no flat, as the driver's
+/// `ps_gamepad_create` sets them for every controller it drives. The version
+/// is the driver's patch bit, which tells userspace the mapping is the
+/// driver's and not hid-generic's, on the HID version; read from a
+/// DualShock 4 v2 under the driver, as is the rest.
+pub fn dualsense() -> Layout {
     Layout {
-        name: name.to_owned(),
+        name: "Sony Interactive Entertainment DualSense Wireless Controller".into(),
         bus: BUS_USB,
         vendor: SONY,
-        product,
-        version: HID_PLAYSTATION_VERSION,
+        product: 0x0ce6,
+        version: 0x8111,
         buttons: GAMEPAD_BUTTONS,
-        sticks,
-        triggers,
+        sticks: sticks(0, 255, 0, 0),
+        triggers: triggers(255),
         driver: "hid-playstation",
     }
 }
 
-/// A controller the box knows no driver for.
+/// A wired Xbox 360 pad, as xpad makes it. The version is the device's own
+/// release number, which xpad passes on.
+pub fn xbox_360() -> Layout {
+    Layout {
+        name: "Microsoft X-Box 360 pad".into(),
+        bus: BUS_USB,
+        vendor: MICROSOFT,
+        product: 0x028e,
+        version: 0x0114,
+        buttons: XPAD_BUTTONS,
+        sticks: sticks(-32768, 32767, 16, 128),
+        triggers: triggers(255),
+        driver: "xpad",
+    }
+}
+
+/// An Xbox One S pad on a cable, as xpad makes it: the 360's layout, with ten
+/// bits of trigger.
+pub fn xbox_one() -> Layout {
+    Layout {
+        name: "Microsoft X-Box One S pad".into(),
+        bus: BUS_USB,
+        vendor: MICROSOFT,
+        product: 0x02ea,
+        version: 0x0408,
+        buttons: XPAD_BUTTONS,
+        sticks: sticks(-32768, 32767, 16, 128),
+        triggers: triggers(1023),
+        driver: "xpad",
+    }
+}
+
+/// A Pro Controller on a cable, as hid-nintendo makes it. The name is what
+/// the device calls itself over USB, manufacturer first, which the driver
+/// passes on; the version is the HID version, which it passes on too.
+pub fn switch_pro() -> Layout {
+    Layout {
+        name: "Nintendo Co., Ltd. Pro Controller".into(),
+        bus: BUS_USB,
+        vendor: NINTENDO,
+        product: 0x2009,
+        version: 0x0111,
+        buttons: PRO_CONTROLLER_BUTTONS,
+        sticks: sticks(-32767, 32767, 250, 500),
+        triggers: None,
+        driver: "hid-nintendo",
+    }
+}
+
+/// A controller the box cannot tell.
 ///
 /// The identity is dropped on purpose (see the module docs): vendor and
 /// product zero on the virtual bus, so no mapping database can match it to a
 /// real device with a different layout. The name stays, because that is what a
 /// person sees in a game's settings.
 pub fn generic(identity: &PadIdentity) -> Layout {
-    let stick = |code| AbsAxis {
-        code,
-        min: -32768,
-        max: 32767,
-        fuzz: 16,
-        flat: 128,
-    };
-    let trigger = |code| AbsAxis {
-        code,
-        min: 0,
-        max: 1023,
-        fuzz: 0,
-        flat: 0,
-    };
     let name = if identity.name.trim().is_empty() {
         "Gamepad".to_owned()
     } else {
@@ -160,13 +214,8 @@ pub fn generic(identity: &PadIdentity) -> Layout {
         product: 0,
         version: 0,
         buttons: GAMEPAD_BUTTONS,
-        sticks: [
-            stick(code::ABS_X),
-            stick(code::ABS_Y),
-            stick(code::ABS_RX),
-            stick(code::ABS_RY),
-        ],
-        triggers: [trigger(code::ABS_Z), trigger(code::ABS_RZ)],
+        sticks: sticks(-32768, 32767, 16, 128),
+        triggers: triggers(1023),
         driver: "generic",
     }
 }
@@ -197,6 +246,7 @@ impl Layout {
         for (axis, value) in self
             .triggers
             .iter()
+            .flatten()
             .zip([state.left_trigger, state.right_trigger])
         {
             let value = scale(axis, 0, u16::MAX.into(), value.into());
@@ -224,7 +274,12 @@ impl Layout {
             fuzz: 0,
             flat: 0,
         };
-        let mut axes: Vec<AbsAxis> = self.sticks.iter().chain(&self.triggers).copied().collect();
+        let mut axes: Vec<AbsAxis> = self
+            .sticks
+            .iter()
+            .chain(self.triggers.iter().flatten())
+            .copied()
+            .collect();
         axes.push(hat(code::ABS_HAT0X));
         axes.push(hat(code::ABS_HAT0Y));
         axes
@@ -242,15 +297,6 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const DUALSENSE: u16 = 0x0ce6;
-
-    fn identity(vendor: u16, product: u16, name: &str) -> PadIdentity {
-        PadIdentity {
-            vendor,
-            product,
-            name: name.into(),
-        }
-    }
 
     fn value(events: &[InputEvent], code: u16) -> i32 {
         events
@@ -260,34 +306,69 @@ mod tests {
             .unwrap()
     }
 
-    #[test]
-    fn a_dualsense_is_built_as_linux_would_whatever_the_client_calls_it() {
-        let layout = for_identity(&identity(SONY, DUALSENSE, "Wireless Gamepad"));
-        assert_eq!(layout.driver, "hid-playstation");
-        assert_eq!(
-            layout.name,
-            "Sony Interactive Entertainment DualSense Wireless Controller"
-        );
-        assert_eq!((layout.bus, layout.version), (BUS_USB, 0x8111));
+    fn all() -> Vec<Layout> {
+        vec![
+            dualsense(),
+            xbox_360(),
+            xbox_one(),
+            switch_pro(),
+            generic(&PadIdentity {
+                vendor: 1,
+                product: 2,
+                name: String::new(),
+            }),
+        ]
+    }
+
+    /// The key capability as sysfs prints its first word: bit n is key
+    /// `0x130 + n`.
+    fn key_bits(layout: &Layout) -> u64 {
+        layout
+            .buttons
+            .iter()
+            .fold(0, |bits, &(_, key)| bits | 1 << (key - 0x130))
     }
 
     #[test]
-    fn an_unknown_controller_keeps_its_name_and_gives_up_its_identity() {
-        let layout = for_identity(&identity(0x045e, 0x028e, "Some Pad"));
-        assert_eq!(layout.driver, "generic");
-        assert_eq!(
-            (layout.vendor, layout.product, layout.bus),
-            (0, 0, BUS_VIRTUAL)
-        );
-        assert_eq!(layout.name, "Some Pad");
+    fn each_template_has_the_keys_its_driver_registers() {
+        // hid-playstation's read from a DualShock 4 under the driver, which
+        // registers the same for every controller it drives; the others as
+        // their drivers' tables add up.
+        assert_eq!(key_bits(&dualsense()), 0x7fdb);
+        assert_eq!(key_bits(&xbox_360()), 0x7cdb);
+        assert_eq!(key_bits(&xbox_one()), 0x7cdb);
+        assert_eq!(key_bits(&switch_pro()), 0x7ffb);
+    }
+
+    #[test]
+    fn xpad_puts_the_left_face_button_on_btn_x() {
+        let events = xbox_360().events(&PadState {
+            buttons: button::WEST,
+            ..PadState::default()
+        });
+        assert_eq!(value(&events, code::BTN_X), 1);
+        assert_eq!(value(&events, code::BTN_Y), 0);
+    }
+
+    #[test]
+    fn a_key_the_wire_cannot_carry_is_never_pressed() {
+        let events = switch_pro().events(&PadState {
+            buttons: u32::MAX,
+            ..PadState::default()
+        });
+        assert_eq!(value(&events, code::BTN_Z), 0);
+        assert_eq!(value(&events, code::BTN_TL2), 1);
+    }
+
+    #[test]
+    fn a_controller_without_analog_triggers_has_no_trigger_axes() {
+        let codes: Vec<u16> = switch_pro().axes().iter().map(|a| a.code).collect();
+        assert!(!codes.contains(&code::ABS_Z) && !codes.contains(&code::ABS_RZ));
     }
 
     #[test]
     fn a_resting_controller_rests_on_every_layout() {
-        for layout in [
-            for_identity(&identity(SONY, DUALSENSE, "")),
-            for_identity(&identity(1, 2, "")),
-        ] {
+        for layout in all() {
             let events = layout.events(&PadState::default());
             for axis in &layout.sticks {
                 let v = value(&events, axis.code);
@@ -299,7 +380,7 @@ mod tests {
                     axis.code
                 );
             }
-            for axis in &layout.triggers {
+            for axis in layout.triggers.iter().flatten() {
                 assert_eq!(value(&events, axis.code), axis.min);
             }
             assert_eq!(value(&events, code::ABS_HAT0X), 0);
@@ -309,33 +390,29 @@ mod tests {
 
     #[test]
     fn full_deflection_reaches_both_ends_of_every_range() {
-        let layout = for_identity(&identity(SONY, DUALSENSE, ""));
-        let pushed = PadState {
-            left_x: i16::MIN,
-            left_y: i16::MAX,
-            right_trigger: u16::MAX,
-            buttons: button::DPAD_UP | button::DPAD_LEFT | button::EAST,
-            ..PadState::default()
-        };
-        let events = layout.events(&pushed);
-        assert_eq!(value(&events, code::ABS_X), 0);
-        assert_eq!(value(&events, code::ABS_Y), 255);
-        assert_eq!(value(&events, code::ABS_RZ), 255);
-        assert_eq!(value(&events, code::ABS_HAT0X), -1);
-        assert_eq!(value(&events, code::ABS_HAT0Y), -1);
-        assert_eq!(value(&events, code::BTN_EAST), 1);
-        assert_eq!(value(&events, code::BTN_SOUTH), 0);
-    }
-
-    #[test]
-    fn a_hid_playstation_device_has_the_buttons_its_driver_registers() {
-        // KEY capability read from a DualShock 4 under the driver, which
-        // registers the same for every controller it drives: 0x7fdb << 304.
-        let layout = for_identity(&identity(SONY, DUALSENSE, ""));
-        let mut bits = 0u64;
-        for &(_, key) in layout.buttons {
-            bits |= 1 << (key - 304);
+        for layout in all() {
+            let pushed = PadState {
+                left_x: i16::MIN,
+                left_y: i16::MAX,
+                right_trigger: u16::MAX,
+                buttons: button::DPAD_UP | button::DPAD_LEFT | button::EAST,
+                ..PadState::default()
+            };
+            let events = layout.events(&pushed);
+            let [x, y, ..] = layout.sticks;
+            assert!(
+                (value(&events, x.code) - x.min).abs() <= 1,
+                "{}",
+                layout.driver
+            );
+            assert_eq!(value(&events, y.code), y.max, "{}", layout.driver);
+            if let Some([_, rz]) = layout.triggers {
+                assert_eq!(value(&events, rz.code), rz.max);
+            }
+            assert_eq!(value(&events, code::ABS_HAT0X), -1);
+            assert_eq!(value(&events, code::ABS_HAT0Y), -1);
+            assert_eq!(value(&events, code::BTN_EAST), 1);
+            assert_eq!(value(&events, code::BTN_SOUTH), 0);
         }
-        assert_eq!(bits, 0x7fdb);
     }
 }

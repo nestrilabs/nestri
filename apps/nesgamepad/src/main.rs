@@ -20,6 +20,7 @@ mod kernel_tests;
 mod layout;
 mod pads;
 mod replica;
+mod template;
 mod udev;
 mod uhid;
 mod uinput;

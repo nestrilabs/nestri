@@ -17,12 +17,15 @@ mod dualshock4;
 
 use std::time::{Duration, Instant};
 
-use nesprotocol::gamepad::{PadIdentity, PadState};
+use nesprotocol::gamepad::PadState;
 
+use crate::layout::SONY;
 use crate::uhid;
 use crate::uinput::code;
 
-const SONY: u16 = 0x054c;
+/// The DualShock 4 a Sony controller with no template of its own is
+/// presented as.
+pub const DUALSHOCK4_V2: u16 = 0x09cc;
 
 /// A family the box can rebuild.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,38 +33,46 @@ pub enum Model {
     DualShock4,
 }
 
+/// Whether `product` is one of `model`'s.
+pub fn is(model: Model, product: u16) -> bool {
+    model.products().iter().any(|&(p, _)| p == product)
+}
+
 impl Model {
-    pub fn for_identity(identity: &PadIdentity) -> Option<Self> {
-        let is = |products: &[(u16, &str)]| {
-            identity.vendor == SONY && products.iter().any(|&(p, _)| p == identity.product)
-        };
-        is(dualshock4::PRODUCTS).then_some(Self::DualShock4)
+    fn products(self) -> &'static [(u16, &'static str)] {
+        match self {
+            Self::DualShock4 => dualshock4::PRODUCTS,
+        }
+    }
+
+    fn vendor(self) -> u16 {
+        match self {
+            Self::DualShock4 => SONY,
+        }
     }
 
     /// The name the device gives itself, which the client's platform may not
     /// have passed on as it was.
-    pub fn name(self, identity: &PadIdentity) -> &'static str {
-        let products = match self {
-            Self::DualShock4 => dualshock4::PRODUCTS,
-        };
+    pub fn name(self, product: u16) -> &'static str {
+        let products = self.products();
         products
             .iter()
-            .find(|&&(p, _)| p == identity.product)
+            .find(|&&(p, _)| p == product)
             .map_or(products[0].1, |&(_, name)| name)
     }
 
     /// Everything the device is built from. `uniq` is its address as text
     /// (see [`uniq`]).
-    pub fn spec<'a>(self, identity: &PadIdentity, uniq: &'a str) -> uhid::Spec<'a> {
+    pub fn spec(self, product: u16, uniq: &str) -> uhid::Spec<'_> {
         let (version, descriptor) = match self {
             Self::DualShock4 => (dualshock4::VERSION, dualshock4::DESCRIPTOR),
         };
         uhid::Spec {
-            name: self.name(identity),
+            name: self.name(product),
             uniq,
             bus: code::BUS_USB,
-            vendor: identity.vendor,
-            product: identity.product,
+            vendor: self.vendor(),
+            product,
             version,
             country: 0,
             descriptor,
@@ -161,32 +172,16 @@ pub fn uniq(address: [u8; 6]) -> String {
 mod tests {
     use super::*;
 
-    fn identity(vendor: u16, product: u16) -> PadIdentity {
-        PadIdentity {
-            vendor,
-            product,
-            name: "Wireless Controller".into(),
-        }
-    }
-
-    #[test]
-    fn only_the_families_here_are_rebuilt() {
-        assert_eq!(
-            Model::for_identity(&identity(SONY, 0x09cc)),
-            Some(Model::DualShock4)
-        );
-        assert_eq!(Model::for_identity(&identity(SONY, 0x0ce6)), None);
-        assert_eq!(Model::for_identity(&identity(0x045e, 0x09cc)), None);
-    }
-
     #[test]
     fn the_device_names_itself_as_the_real_one_does() {
-        let spec = Model::DualShock4.spec(&identity(SONY, 0x09cc), "");
+        let spec = Model::DualShock4.spec(0x09cc, "");
         assert_eq!(
             spec.name,
             "Sony Interactive Entertainment Wireless Controller"
         );
         assert_eq!((spec.vendor, spec.product), (SONY, 0x09cc));
+        assert!(is(Model::DualShock4, 0x05c4));
+        assert!(!is(Model::DualShock4, 0x0ce6));
     }
 
     #[test]
