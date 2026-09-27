@@ -4,10 +4,11 @@
 //! compile the shaders must not produce a binary that discovers it on a
 //! customer's machine. Nothing compiles at runtime.
 //!
-//! When `spirv-val` is on the path every module is also validated, because
-//! slangc has been seen to emit SPIR-V it does not validate (see
-//! `shuffle_xor` in common.slang). It is not required, since the guest image
-//! builder is not guaranteed to have it; `SPIRV_VAL` can name it explicitly.
+//! Every module is also run through `spirv-val` (or `$SPIRV_VAL`), and that
+//! is required too: slangc has been seen to emit SPIR-V that does not
+//! validate (see `shuffle_xor` in common.slang), and a check that quietly
+//! skips when its tool is missing looks exactly like one that passed. The
+//! guest image builder has it from spirv-tools.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -73,14 +74,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SPIRV_VAL");
 
     let slangc = std::env::var("SLANGC").unwrap_or_else(|_| "slangc".into());
-    let spirv_val = std::env::var("SPIRV_VAL").ok().or_else(|| {
-        Command::new("spirv-val")
-            .arg("--version")
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|_| "spirv-val".into())
-    });
+    let spirv_val = std::env::var("SPIRV_VAL").unwrap_or_else(|_| "spirv-val".into());
 
     let mut table = String::new();
     for (file, entry, defines, name) in MODULES {
@@ -128,17 +122,21 @@ fn main() {
             "slangc warned on {file}:{entry} {defines:?}\n{diagnostics}"
         );
 
-        if let Some(val) = &spirv_val {
-            let status = Command::new(val)
-                .args(["--target-env", "vulkan1.3"])
-                .arg(&out)
-                .status()
-                .unwrap_or_else(|e| panic!("could not run `{val}`: {e}"));
-            assert!(
-                status.success(),
-                "{name}.spv from {file}:{entry} {defines:?} failed spirv-val"
-            );
-        }
+        let status = Command::new(&spirv_val)
+            .args(["--target-env", "vulkan1.3"])
+            .arg(&out)
+            .status()
+            .unwrap_or_else(|e| {
+                panic!(
+                    "could not run `{spirv_val}`: {e}\n\
+                     nespyro validates its shaders at build time. Install \
+                     spirv-tools, or point $SPIRV_VAL at the binary."
+                )
+            });
+        assert!(
+            status.success(),
+            "{name}.spv from {file}:{entry} {defines:?} failed spirv-val"
+        );
 
         table.push_str(&format!(
             "pub(crate) static {}: &[u8] = include_bytes!({:?});\n",

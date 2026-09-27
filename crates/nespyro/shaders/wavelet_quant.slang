@@ -9,6 +9,13 @@
 // Bit planes go to a scratch payload in their final order, but sign bits are
 // kept per 4×2 subblock for now: which coefficients stay significant is not
 // known until rate control has chosen how hard to quantize.
+//
+// One addition: the scratch payload has a capacity. Upstream sizes it by
+// estimate and trusts content never to exceed it. Here it is reached through
+// a raw device address with no bounds checking, so an 8×8 block whose
+// allocation would not fit is recorded as all zero instead of being written;
+// the counter still counts every byte asked for, which is how the host sees
+// it happened.
 
 import glsl;
 #include "common.slang"
@@ -32,6 +39,7 @@ struct Registers
     int block_offset;
     int block_stride;
     float rdo_distortion_scale;
+    uint payload_capacity;
 };
 [[vk::push_constant]] ConstantBuffer<Registers> registers;
 
@@ -188,6 +196,20 @@ void encode_payload(int2 block_index_8x8, float4 texels[2])
     if ((gl_SubgroupInvocationID & 7u) == 7u)
         InterlockedAdd(registers.payload_counter[0], uint(scan), global_offset);
     global_offset = subgroupShuffle(global_offset, gl_SubgroupInvocationID | 7u);
+    uint block_bytes = uint(subgroupShuffle(scan, gl_SubgroupInvocationID | 7u));
+
+    // Past the scratch capacity: the block is dropped whole, as if it had
+    // quantized to zero. All 8 lanes of the block agree.
+    if (global_offset + block_bytes > registers.payload_capacity)
+    {
+        if ((gl_SubgroupInvocationID & 7) == 0)
+        {
+            registers.block_meta[block_index] = block_meta(0, 0);
+            registers.block_stats[block_index].num_planes = 0;
+            registers.block_stats[block_index].errors[0] = quant_stats(0.0, 0);
+        }
+        return;
+    }
 
     scan -= result.encode_cost_early;
 

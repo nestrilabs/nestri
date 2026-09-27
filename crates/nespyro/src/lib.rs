@@ -10,9 +10,22 @@
 //! which makes it the codec for a direct, wired path.
 
 pub mod bitstream;
+mod device;
+mod encoder;
+mod error;
+mod gpu;
+mod pipeline;
+mod rate;
+mod sync;
+mod wavelet;
+
+pub use bitstream::{Chroma, ColourDescription, Matrix, Primaries, Range, Siting, Transfer};
+pub use device::{Context, DeviceFeatures, DeviceQueue, DeviceRequirements, Roles};
+pub use encoder::{Depth, EncodeConfig, EncodeFuture, EncodeStats, EncodedFrame, Encoder, Source};
+pub use error::{Error, Result};
+pub use sync::{QueueLock, TimelinePoint};
 
 /// The SPIR-V `build.rs` compiled, one module per pass and variant.
-#[allow(dead_code)]
 mod shaders {
     include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
 }
