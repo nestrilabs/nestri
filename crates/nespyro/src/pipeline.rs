@@ -14,10 +14,12 @@ use crate::device::Context;
 use crate::error::{Error, Result};
 
 /// How a pipeline's subgroups are sized.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SubgroupSize {
     /// Whatever the driver likes; the shader does not care.
     Any,
+    /// Whatever the driver likes, possibly varying, but every subgroup full.
+    Varying,
     /// Exactly this size, every subgroup full.
     Full(u32),
 }
@@ -110,11 +112,20 @@ impl Pipeline {
             .module(module)
             .name(desc.entry)
             .specialization_info(&specialization);
-        if let SubgroupSize::Full(size) = desc.subgroup {
-            required = required.required_subgroup_size(size);
-            stage = stage
-                .flags(vk::PipelineShaderStageCreateFlags::REQUIRE_FULL_SUBGROUPS)
-                .push(&mut required);
+        match desc.subgroup {
+            SubgroupSize::Any => {}
+            SubgroupSize::Varying => {
+                stage = stage.flags(
+                    vk::PipelineShaderStageCreateFlags::REQUIRE_FULL_SUBGROUPS
+                        | vk::PipelineShaderStageCreateFlags::ALLOW_VARYING_SUBGROUP_SIZE,
+                );
+            }
+            SubgroupSize::Full(size) => {
+                required = required.required_subgroup_size(size);
+                stage = stage
+                    .flags(vk::PipelineShaderStageCreateFlags::REQUIRE_FULL_SUBGROUPS)
+                    .push(&mut required);
+            }
         }
 
         let created = unsafe {
@@ -230,11 +241,15 @@ pub(crate) struct Bind {
 
 impl Bind {
     pub fn sampled(view: vk::ImageView, sampler: vk::Sampler) -> Self {
+        Self::sampled_in(view, sampler, vk::ImageLayout::GENERAL)
+    }
+
+    pub fn sampled_in(view: vk::ImageView, sampler: vk::Sampler, layout: vk::ImageLayout) -> Self {
         Self {
             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
             view,
             sampler: Some(sampler),
-            layout: vk::ImageLayout::GENERAL,
+            layout,
         }
     }
 

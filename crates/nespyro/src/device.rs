@@ -13,6 +13,7 @@ use ash::vk;
 use ash::vk::TaggedStructure as _;
 
 use crate::error::{Error, Result};
+use crate::pipeline::SubgroupSize;
 use crate::sync::QueueLock;
 
 /// Which halves of the codec a device is being set up for.
@@ -221,12 +222,18 @@ impl Subgroups {
         }
     }
 
-    /// The subgroup size a pipeline asking for `lo..=hi` runs at: the largest
-    /// the device offers in that range. Upstream's shaders are written to be
-    /// correct at any size in their range.
-    pub fn pick(&self, lo: u32, hi: u32) -> Option<u32> {
-        let size = hi.min(self.max);
-        (size >= lo.max(self.min)).then_some(size)
+    /// How a pipeline asking for full subgroups of `lo..=hi` lanes is sized,
+    /// by Granite's rule, which upstream's shaders were tuned under: when the
+    /// range covers everything the device offers, the driver picks and may
+    /// vary it; otherwise the smallest size in range the device has.
+    pub fn pick(&self, lo: u32, hi: u32) -> Option<SubgroupSize> {
+        if lo <= self.min && hi >= self.max {
+            return Some(SubgroupSize::Varying);
+        }
+        if lo > self.max || hi < self.min {
+            return None;
+        }
+        Some(SubgroupSize::Full(lo.max(self.min)))
     }
 
     /// The first of `sizes` the device can run at exactly.

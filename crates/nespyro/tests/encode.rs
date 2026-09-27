@@ -44,6 +44,15 @@ fn encoder_output_is_a_valid_stream() {
             assert!(r.is_complete(), "{w}x{h} {chroma:?} {content:?}: {r:?}");
             assert_eq!(frame.stats.dropped_blocks, 0);
             eprintln!(
+                "scratch {} of {}",
+                frame.stats.scratch_bytes, frame.stats.scratch_capacity
+            );
+            assert!(
+                !frame.stats.scratch_overflowed(),
+                "{w}x{h} {chroma:?} {content:?}: {:?}",
+                frame.stats
+            );
+            eprintln!(
                 "{w}x{h} {chroma:?} {content:?}: {} bytes of {} target, {} packets, {:.1} µs GPU",
                 frame.data.len(),
                 frame.stats.target_bytes,

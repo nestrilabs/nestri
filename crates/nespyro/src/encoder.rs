@@ -10,8 +10,8 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 use std::thread::JoinHandle;
 
@@ -195,9 +195,21 @@ pub struct EncodeStats {
     pub target_bytes: u64,
     /// Words of block data the GPU produced, including any it could not keep.
     pub produced_words: u32,
-    /// Blocks dropped because rate control overshot what was read back, or
-    /// the scratch payload overflowed. Zero unless something is wrong.
+    /// Blocks dropped because rate control overshot what was read back.
+    /// Zero unless something is wrong.
     pub dropped_blocks: u32,
+    /// Bytes the quantizer asked of its scratch payload, and what it has.
+    /// Asking for more means 8×8 blocks were dropped as all zero before rate
+    /// control ever saw them.
+    pub scratch_bytes: u32,
+    pub scratch_capacity: u32,
+}
+
+impl EncodeStats {
+    /// Whether the quantizer ran out of scratch payload.
+    pub fn scratch_overflowed(&self) -> bool {
+        self.scratch_bytes > self.scratch_capacity
+    }
 }
 
 impl EncodeStats {
@@ -392,7 +404,7 @@ impl Pipelines {
                     bindings: &[sampled, storage],
                     push_size: size(std::mem::size_of::<DwtPush>()),
                     specialization: &[(0, shift)],
-                    subgroup: SubgroupSize::Full(dwt_size),
+                    subgroup: dwt_size,
                 },
             )
         });
@@ -405,7 +417,7 @@ impl Pipelines {
                 bindings: &[sampled],
                 push_size: size(std::mem::size_of::<QuantPush>()),
                 specialization: &[(1, 0)],
-                subgroup: SubgroupSize::Full(s.pick(8, 128).ok_or_else(no)?),
+                subgroup: s.pick(8, 128).ok_or_else(no)?,
             },
         )?;
         let analyze = Pipeline::new(
@@ -416,7 +428,7 @@ impl Pipelines {
                 bindings: &[],
                 push_size: size(std::mem::size_of::<AnalyzePush>()),
                 specialization: &[],
-                subgroup: SubgroupSize::Full(s.pick(16, 64).ok_or_else(no)?),
+                subgroup: s.pick(16, 64).ok_or_else(no)?,
             },
         )?;
         let finalize = Pipeline::new(
@@ -456,7 +468,7 @@ impl Pipelines {
                 bindings: &[],
                 push_size: size(std::mem::size_of::<PackingPush>()),
                 specialization: &[],
-                subgroup: SubgroupSize::Full(s.pick(16, 64).ok_or_else(no)?),
+                subgroup: s.pick(16, 64).ok_or_else(no)?,
             },
         )?;
         Ok(Self {
@@ -482,20 +494,47 @@ struct ReadbackLayout {
 }
 
 struct Slot {
-    readback: Buffer,
+    /// Sized for the current target plus headroom, and replaced with a
+    /// larger one when the target grows. Only touched by the thread that
+    /// holds the slot.
+    readback: Mutex<Buffer>,
     timestamps: Option<Timestamps>,
+}
+
+fn readback_buffer(ctx: &Context, layout: &ReadbackLayout, bitstream_bytes: u64) -> Result<Buffer> {
+    Buffer::new(
+        ctx,
+        layout.bitstream + bitstream_bytes,
+        vk::BufferUsageFlags::TRANSFER_DST,
+        Location::Readback,
+    )
+}
+
+/// What a frame is encoded from. The views are kept alive until the GPU is
+/// done with the frame.
+enum Input {
+    /// The caller's RGB image, converted by the encoder.
+    Rgb {
+        view: OwnedView,
+        layout: vk::ImageLayout,
+    },
+    /// The caller's own Y, Cb and Cr planes.
+    Planes {
+        views: [OwnedView; 3],
+        layout: vk::ImageLayout,
+    },
 }
 
 /// Handed to the completion thread per frame.
 struct Work {
     slot: usize,
     value: u64,
-    /// The source view, kept alive until the GPU is done with it.
-    _input: OwnedView,
+    _input: Input,
     header: SequenceHeader,
     index: u64,
     copied_words: u32,
     target_bytes: u64,
+    scratch_capacity: u32,
     tx: oneshot::Sender<Result<EncodedFrame>>,
 }
 
@@ -581,15 +620,21 @@ impl Encoder {
         let blocks_8x8 = u64::from(layout.blocks_8x8());
         let blocks_32x32 = u64::from(layout.blocks_32x32());
         let per_sub = u64::from(rate::blocks_per_subdivision(layout.blocks_32x32()));
-        // The worst case upstream allocates for the scratch payload; the
-        // quantizer refuses to write past it.
-        let payload_bytes = u64::from(layout.aligned_width) * u64::from(layout.aligned_height) * 2;
+        // The quantizer's scratch holds, per 8×8 block, eight 4×2 subblocks of
+        // a sign byte and at most 16 bit planes; the block statistics' 15
+        // entries already assume fewer. Upstream sizes this by estimate,
+        // aligned width × height × 2, which high-entropy 4:4:4 content
+        // exceeds: its encoder then packs blocks from bytes it never wrote.
+        // The quantizer still refuses to write past this, as a backstop.
+        let scratch_bytes = blocks_8x8 * 8 * (1 + 16);
+        // No frame's blocks can exceed this, whatever rate control does.
+        let bitstream_bytes = blocks_32x32 * u64::from(crate::bitstream::LARGEST_BLOCK_WORDS) * 4;
 
         let block_meta = Buffer::new(&ctx, blocks_8x8 * 8, storage, Location::Device)?;
         let block_stats = Buffer::new(&ctx, blocks_8x8 * 64, storage, Location::Device)?;
         let payload = Buffer::new(
             &ctx,
-            8 + payload_bytes,
+            8 + scratch_bytes,
             storage | transfer,
             Location::Device,
         )?;
@@ -607,7 +652,7 @@ impl Encoder {
         )?;
         // Block packing may never write past this; the read-back copies only
         // the part rate control aimed at, plus headroom.
-        let bitstream = Buffer::new(&ctx, payload_bytes, storage | transfer, Location::Device)?;
+        let bitstream = Buffer::new(&ctx, bitstream_bytes, storage | transfer, Location::Device)?;
         let table = Buffer::new(&ctx, blocks_32x32 * 8, storage | transfer, Location::Device)?;
 
         let readback_layout = Arc::new(ReadbackLayout {
@@ -617,12 +662,11 @@ impl Encoder {
         });
         let make_slot = || -> Result<Slot> {
             Ok(Slot {
-                readback: Buffer::new(
+                readback: Mutex::new(readback_buffer(
                     &ctx,
-                    readback_layout.bitstream + payload_bytes,
-                    vk::BufferUsageFlags::TRANSFER_DST,
-                    Location::Readback,
-                )?,
+                    &readback_layout,
+                    config.target_bytes() + blocks_32x32 * 8,
+                )?),
                 timestamps: if ctx.inner().timestamps {
                     Some(Timestamps::new(&ctx, TIMESTAMPS)?)
                 } else {
@@ -742,10 +786,44 @@ impl Encoder {
             )));
         }
 
+        let input = Input::Rgb {
+            view: OwnedView::new(&self.ctx, image, format)?,
+            layout,
+        };
+        self.submit(input, wait)
+    }
+
+    /// Encodes the caller's own full-range YCbCr planes once every point in
+    /// `wait` is reached, skipping the encoder's colour conversion.
+    ///
+    /// The planes are sampled in `layout`, and must be single-level images of
+    /// the configured depth's format (`R8_UNORM` or `R16_UNORM`) and sizes:
+    /// the configured width and height for Y, and for Cb and Cr the same, or
+    /// half of each for 4:2:0. The header still carries the configured
+    /// colour description; the planes must be what it says.
+    pub fn encode_planes_after(
+        &mut self,
+        planes: [vk::Image; 3],
+        layout: vk::ImageLayout,
+        wait: &[TimelinePoint],
+    ) -> Result<EncodeFuture> {
+        let format = self.config.depth.format();
+        let [y, cb, cr] = planes;
+        let input = Input::Planes {
+            views: [
+                OwnedView::new(&self.ctx, y, format)?,
+                OwnedView::new(&self.ctx, cb, format)?,
+                OwnedView::new(&self.ctx, cr, format)?,
+            ],
+            layout,
+        };
+        self.submit(input, wait)
+    }
+
+    fn submit(&mut self, input: Input, wait: &[TimelinePoint]) -> Result<EncodeFuture> {
         // A free slot means its previous frame has been read back, so its
         // command buffer and read-back buffer are no longer in use.
         let slot = self.free_slots.recv().map_err(|_| Error::Cancelled)?;
-        let input = OwnedView::new(&self.ctx, image, format)?;
 
         self.sequence = (self.sequence + 1) & SEQUENCE_MASK;
         let target_bytes = self.config.target_bytes();
@@ -755,9 +833,16 @@ impl Encoder {
         let headroom = u64::from(self.layout.blocks_32x32()) * 8;
         let copy_bytes = (target_bytes + headroom).min(self.bitstream.size);
         let copied_words = (copy_bytes / 4) as u32;
+        {
+            // The slot is ours until it is handed to the completion thread.
+            let mut readback = self.slots[slot].readback.lock().unwrap();
+            if readback.size < self.readback_layout.bitstream + copy_bytes {
+                *readback = readback_buffer(&self.ctx, &self.readback_layout, copy_bytes)?;
+            }
+        }
 
         let cmd = self.commands.buffers[slot];
-        self.record(cmd, slot, input.view, layout, target_bytes, copy_bytes)?;
+        self.record(cmd, slot, &input, target_bytes, copy_bytes)?;
 
         let value = self.submitted + 1;
         // The previous frame shares every scratch resource with this one, so
@@ -801,6 +886,7 @@ impl Encoder {
             index: self.frames,
             copied_words,
             target_bytes,
+            scratch_capacity: (self.payload.size - 8) as u32,
             tx,
         };
         self.frames += 1;
@@ -822,8 +908,7 @@ impl Encoder {
         &self,
         cmd: vk::CommandBuffer,
         slot: usize,
-        input: vk::ImageView,
-        input_layout: vk::ImageLayout,
+        input: &Input,
         target_bytes: u64,
         copy_bytes: u64,
     ) -> Result<()> {
@@ -894,42 +979,52 @@ impl Encoder {
 
         stamp(0);
 
-        // RGB to three planes.
-        p.rgb.dispatch(
-            cmd,
-            &[
-                Bind::texture(input, input_layout),
-                Bind::storage(self.plane_views[0]),
-                Bind::storage(self.plane_views[1]),
-                Bind::storage(self.plane_views[2]),
-            ],
-            &RgbPush {
-                width: config.width,
-                height: config.height,
-                source: config.source as u32,
-                hdr: u32::from(config.colour.is_hdr()),
-                reference_white_nits: config.reference_white_nits,
-            },
-            (
-                config.width.div_ceil(2).div_ceil(8),
-                config.height.div_ceil(2).div_ceil(8),
-                1,
-            ),
-        );
-        compute_barrier(ctx, cmd);
+        // RGB to three planes, unless the caller brought its own.
+        let (planes, planes_layout) = match input {
+            Input::Rgb { view, layout } => {
+                p.rgb.dispatch(
+                    cmd,
+                    &[
+                        Bind::texture(view.view, *layout),
+                        Bind::storage(self.plane_views[0]),
+                        Bind::storage(self.plane_views[1]),
+                        Bind::storage(self.plane_views[2]),
+                    ],
+                    &RgbPush {
+                        width: config.width,
+                        height: config.height,
+                        source: config.source as u32,
+                        hdr: u32::from(config.colour.is_hdr()),
+                        reference_white_nits: config.reference_white_nits,
+                    },
+                    (
+                        config.width.div_ceil(2).div_ceil(8),
+                        config.height.div_ceil(2).div_ceil(8),
+                        1,
+                    ),
+                );
+                compute_barrier(ctx, cmd);
+                (self.plane_views, vk::ImageLayout::GENERAL)
+            }
+            Input::Planes { views, layout } => (views.each_ref().map(|v| v.view), *layout),
+        };
         stamp(1);
 
         // Forward transforms, one level at a time.
         let mirror = self.wavelet.mirror.sampler;
         for level in 0..DECOMPOSITION_LEVELS {
+            // A component indexes the planes, their views and the wavelet
+            // bands alike.
+            #[allow(clippy::needless_range_loop)]
             for component in 0..NUM_COMPONENTS {
                 // What this component's transform at this level reads.
-                let (view, resolution, aligned, shift) = if level == 0 {
+                let (view, view_layout, resolution, aligned, shift) = if level == 0 {
                     if !config.chroma.has_level(component, 0) {
                         continue;
                     }
                     (
-                        self.plane_views[component],
+                        planes[component],
+                        planes_layout,
                         [self.planes[component].width, self.planes[component].height],
                         [layout.aligned_width, layout.aligned_height],
                         true,
@@ -937,19 +1032,26 @@ impl Encoder {
                 } else if !config.chroma.has_level(component, 0) && level == 1 {
                     // 4:2:0 chroma enters at level 1, from its half-size plane.
                     (
-                        self.plane_views[component],
+                        planes[component],
+                        planes_layout,
                         [self.planes[component].width, self.planes[component].height],
                         [layout.aligned_width >> 1, layout.aligned_height >> 1],
                         true,
                     )
                 } else {
                     let (w, h) = layout.level_size(level - 1);
-                    (self.wavelet.ll[component][level - 1], [w, h], [w, h], false)
+                    (
+                        self.wavelet.ll[component][level - 1],
+                        vk::ImageLayout::GENERAL,
+                        [w, h],
+                        [w, h],
+                        false,
+                    )
                 };
                 p.dwt[usize::from(shift)].dispatch(
                     cmd,
                     &[
-                        Bind::sampled(view, mirror),
+                        Bind::sampled_in(view, mirror, view_layout),
                         Bind::storage(self.wavelet.bands[component][level]),
                     ],
                     &DwtPush {
@@ -1110,11 +1212,12 @@ impl Encoder {
         // Read back the table, the counters, and the bitstream up to the
         // target plus headroom.
         let rb = &*self.readback_layout;
+        let readback = slot_ref.readback.lock().unwrap().buffer;
         unsafe {
             device.cmd_copy_buffer(
                 cmd,
                 self.table.buffer,
-                slot_ref.readback.buffer,
+                readback,
                 &[vk::BufferCopy {
                     src_offset: 0,
                     dst_offset: rb.table,
@@ -1124,7 +1227,7 @@ impl Encoder {
             device.cmd_copy_buffer(
                 cmd,
                 self.payload.buffer,
-                slot_ref.readback.buffer,
+                readback,
                 &[vk::BufferCopy {
                     src_offset: 0,
                     dst_offset: rb.counters,
@@ -1134,7 +1237,7 @@ impl Encoder {
             device.cmd_copy_buffer(
                 cmd,
                 self.bitstream.buffer,
-                slot_ref.readback.buffer,
+                readback,
                 &[vk::BufferCopy {
                     src_offset: 0,
                     dst_offset: rb.bitstream,
@@ -1166,8 +1269,9 @@ fn complete(
     w: &Work,
 ) -> Result<EncodedFrame> {
     timeline.wait(w.value)?;
-    slot.readback.invalidate()?;
-    let bytes = slot.readback.bytes();
+    let readback = slot.readback.lock().unwrap();
+    readback.invalidate()?;
+    let bytes = readback.bytes();
 
     let blocks = layout.blocks_32x32() as usize;
     let words = |offset: u64, count: usize| -> Vec<u32> {
@@ -1229,7 +1333,17 @@ fn complete(
         target_bytes: w.target_bytes,
         produced_words: counters[1],
         dropped_blocks,
+        scratch_bytes: counters[0],
+        scratch_capacity: w.scratch_capacity,
     };
+    if stats.scratch_overflowed() {
+        tracing::warn!(
+            frame = w.index,
+            scratch_bytes = stats.scratch_bytes,
+            scratch_capacity = stats.scratch_capacity,
+            "the quantizer's scratch payload overflowed; blocks dropped"
+        );
+    }
 
     Ok(EncodedFrame {
         data: frame.data,

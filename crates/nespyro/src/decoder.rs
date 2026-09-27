@@ -20,8 +20,8 @@ use crate::device::Context;
 use crate::encoder::Depth;
 use crate::error::{Error, Result};
 use crate::gpu::{
-    Buffer, Commands, Image, ImageDesc, Location, Timeline, compute_barrier, memory_barrier,
-    to_general,
+    Buffer, Commands, Image, ImageDesc, Location, Timeline, Timestamps, compute_barrier,
+    memory_barrier, to_general,
 };
 use crate::pipeline::{Bind, Pipeline, PipelineDesc, SubgroupSize, entry};
 use crate::shaders;
@@ -131,9 +131,29 @@ struct Output {
     held: Arc<AtomicBool>,
 }
 
+/// GPU time of one decode, in nanoseconds.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct DecodeStats {
+    /// Copying the payload to device-local memory, when it is not there
+    /// already.
+    pub upload_ns: f64,
+    pub dequant_ns: f64,
+    pub idwt_ns: f64,
+}
+
+impl DecodeStats {
+    pub fn gpu_ns(&self) -> f64 {
+        self.upload_ns + self.dequant_ns + self.idwt_ns
+    }
+}
+
+/// Timestamps around the upload, the dequantizer and the inverse transform.
+const TIMESTAMPS: u32 = 4;
+
 /// One frame's upload: the block offset table, then the payload words, then
 /// padding the dequantizer may read one word into.
 struct Upload {
+    timestamps: Option<Timestamps>,
     host: Buffer,
     /// Where the shaders read from: `host` itself when it is device local,
     /// otherwise a device-local copy.
@@ -205,7 +225,7 @@ impl Decoder {
                 bindings: &[vk::DescriptorType::STORAGE_IMAGE],
                 push_size: std::mem::size_of::<DequantPush>() as u32,
                 specialization: &[],
-                subgroup: SubgroupSize::Full(dequant_size),
+                subgroup: dequant_size,
             },
         )?;
         let idwt_spirv = if ctx.inner().enabled.shader_float16 {
@@ -305,6 +325,11 @@ impl Decoder {
             )?)
         };
         Ok(Upload {
+            timestamps: if ctx.inner().timestamps {
+                Some(Timestamps::new(ctx, TIMESTAMPS)?)
+            } else {
+                None
+            },
             host,
             device,
             last_use: 0,
@@ -322,6 +347,32 @@ impl Decoder {
 
     pub fn readiness(&self) -> Readiness {
         self.depacketizer.readiness()
+    }
+
+    /// GPU time of the most recent decode, once it is done; `None` before it
+    /// is, or on a queue without timestamps.
+    pub fn stats(&self) -> Result<Option<DecodeStats>> {
+        if self.submitted == 0 || self.timeline_value()? < self.submitted {
+            return Ok(None);
+        }
+        let last = (self.next_upload + UPLOADS - 1) % UPLOADS;
+        let Some(t) = &self.uploads[last].timestamps else {
+            return Ok(None);
+        };
+        let passes = t.read()?;
+        Ok(Some(DecodeStats {
+            upload_ns: passes[0],
+            dequant_ns: passes[1],
+            idwt_ns: passes[2],
+        }))
+    }
+
+    fn timeline_value(&self) -> Result<u64> {
+        Ok(unsafe {
+            self.ctx
+                .device()
+                .get_semaphore_counter_value(self.timeline.semaphore)?
+        })
     }
 
     /// Forgets the frame being collected.
@@ -457,6 +508,22 @@ impl Decoder {
                     .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
             )?;
         }
+        let stamp = |i: u32| {
+            if let Some(t) = &up.timestamps {
+                unsafe {
+                    device.cmd_write_timestamp2(
+                        cmd,
+                        vk::PipelineStageFlags2::ALL_COMMANDS,
+                        t.pool,
+                        i,
+                    )
+                };
+            }
+        };
+        if let Some(t) = &up.timestamps {
+            unsafe { device.cmd_reset_query_pool(cmd, t.pool, 0, t.count) };
+        }
+        stamp(0);
 
         let source = match &up.device {
             Some(dst) => {
@@ -505,6 +572,8 @@ impl Decoder {
             vk::AccessFlags2::SHADER_READ | vk::AccessFlags2::SHADER_WRITE,
         );
 
+        stamp(1);
+
         // Every band's coefficients.
         for (component, level, band, b) in layout.bands() {
             self.dequant.dispatch(
@@ -525,6 +594,7 @@ impl Decoder {
             );
         }
         compute_barrier(ctx, cmd);
+        stamp(2);
 
         // Inverse transforms, coarsest level first.
         let mirror = self.wavelet.mirror.sampler;
@@ -559,6 +629,7 @@ impl Decoder {
             }
             compute_barrier(ctx, cmd);
         }
+        stamp(3);
 
         unsafe { device.end_command_buffer(cmd)? };
         Ok(())
