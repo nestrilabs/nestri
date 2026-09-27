@@ -12,10 +12,11 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use nesprotocol::gamepad::{BUS_USB, PadIdentity, PadState, button};
+use nesprotocol::gamepad::{PadIdentity, PadState, button};
 
 use crate::layout;
-use crate::uinput::{Device, Request, Spec, code};
+use crate::uinput::code::{self, BUS_USB};
+use crate::uinput::{Device, Request, Spec};
 
 fn build(identity: &PadIdentity) -> (Device, layout::Layout) {
     let layout = layout::for_identity(identity);
@@ -33,12 +34,10 @@ fn build(identity: &PadIdentity) -> (Device, layout::Layout) {
     (device, layout)
 }
 
-fn dualshock_4() -> PadIdentity {
+fn dualsense() -> PadIdentity {
     PadIdentity {
-        bus: BUS_USB,
         vendor: 0x054c,
-        product: 0x09cc,
-        version: 0,
+        product: 0x0ce6,
         name: "Wireless Controller".into(),
     }
 }
@@ -73,19 +72,21 @@ fn event_node(device: &Device) -> std::path::PathBuf {
 
 #[test]
 #[ignore = "creates a real input device through /dev/uinput"]
-fn a_dualshock_4_reads_like_the_real_one() {
-    let (device, _) = build(&dualshock_4());
+fn a_hid_playstation_pad_reads_like_the_real_one() {
+    let (device, _) = build(&dualsense());
     let sys = device.syspath();
-    // Every value below was read from a DualShock 4 v2 on USB through
-    // hid-playstation. FF differs on purpose: the real one also lists the
-    // periodic effects ff-memless emulates, which this does not offer.
+    // Every capability below was read from a DualShock 4 v2 on USB through
+    // hid-playstation, which builds the gamepad node of every controller it
+    // drives with the same function. FF differs on purpose: the real one also
+    // lists the periodic effects ff-memless emulates, which this does not
+    // offer.
     assert_eq!(
         read(sys.join("name")),
-        "Sony Interactive Entertainment Wireless Controller"
+        "Sony Interactive Entertainment DualSense Wireless Controller"
     );
     assert_eq!(read(sys.join("id/bustype")), "0003");
     assert_eq!(read(sys.join("id/vendor")), "054c");
-    assert_eq!(read(sys.join("id/product")), "09cc");
+    assert_eq!(read(sys.join("id/product")), "0ce6");
     assert_eq!(read(sys.join("id/version")), "8111");
     assert_eq!(read(sys.join("capabilities/ev")), "20000b");
     assert_eq!(
@@ -107,7 +108,7 @@ fn abs(fd: i32, code: u16) -> [i32; 6] {
 #[test]
 #[ignore = "creates a real input device through /dev/uinput"]
 fn state_written_is_state_a_game_reads() {
-    let (device, layout) = build(&dualshock_4());
+    let (device, layout) = build(&dualsense());
     let node = open(&event_node(&device), false);
     let fd = node.as_raw_fd();
 
@@ -147,7 +148,7 @@ const _: () = assert!(std::mem::size_of::<Rumble>() == 48);
 #[test]
 #[ignore = "creates a real input device through /dev/uinput"]
 fn a_game_uploading_rumble_is_answered_and_heard() {
-    let (device, _) = build(&dualshock_4());
+    let (device, _) = build(&dualsense());
     let node = open(&event_node(&device), true);
 
     // The upload blocks in the kernel until the device's owner answers it, so
@@ -242,20 +243,10 @@ fn build_hid() -> (Arc<crate::uhid::Device>, std::path::PathBuf) {
         assert!(Instant::now() < deadline, "the kernel never started it");
         std::thread::sleep(Duration::from_millis(5));
     }
-    let announced = nesprotocol::gamepad::HidDevice {
-        identity: PadIdentity {
-            bus: BUS_USB,
-            vendor: 0x1234,
-            product: 0x5678,
-            version: 0x0100,
-            name: String::new(),
-        },
-        uniq: String::new(),
-        country: 0,
-        descriptor: GAMEPAD_DESCRIPTOR.to_vec(),
-    };
     loop {
-        if let Some((_, nodes)) = crate::pads::discover(&announced, &Default::default()) {
+        if let Some((_, nodes)) =
+            crate::pads::discover(BUS_USB, 0x1234, 0x5678, &Default::default())
+        {
             let name = nodes.hidraw[0].file_name().unwrap().to_owned();
             return (device, Path::new("/dev").join(name));
         }
@@ -278,7 +269,7 @@ fn a_report_written_is_the_report_a_game_reads() {
 
 #[test]
 #[ignore = "needs root: creates a device through /dev/uhid"]
-fn a_game_reading_a_feature_report_gets_the_real_devices_answer() {
+fn a_game_reading_a_feature_report_gets_the_answer_given() {
     use crate::uhid::Event;
     let (device, node) = build_hid();
     let hidraw = open(&node, true);
@@ -297,8 +288,7 @@ fn a_game_reading_a_feature_report_gets_the_real_devices_answer() {
             .into_iter()
             .find(|e| matches!(e, Event::GetReport { .. }))
         {
-            assert_eq!((number, kind), (0x02, nesprotocol::gamepad::REPORT_FEATURE));
-            // What the client would answer with, from the real device.
+            assert_eq!((number, kind), (0x02, crate::uhid::REPORT_FEATURE));
             device
                 .get_report_reply(id, 0, &[0x02, 0xde, 0xad, 0xbe, 0xef])
                 .unwrap();
@@ -312,7 +302,7 @@ fn a_game_reading_a_feature_report_gets_the_real_devices_answer() {
 
 #[test]
 #[ignore = "needs root: creates a device through /dev/uhid"]
-fn a_report_a_game_writes_comes_out_for_the_real_device() {
+fn a_report_a_game_writes_comes_out_of_the_device() {
     use crate::uhid::Event;
     use std::io::Write;
     let (device, node) = build_hid();
@@ -325,11 +315,55 @@ fn a_report_a_game_writes_comes_out_for_the_real_device() {
             .into_iter()
             .find(|e| matches!(e, Event::Output { .. }))
         {
-            assert_eq!(kind, nesprotocol::gamepad::REPORT_OUTPUT);
+            assert_eq!(kind, crate::uhid::REPORT_OUTPUT);
             assert_eq!(data, [0x03, 0xaa]);
             return;
         }
         assert!(Instant::now() < deadline, "the output never arrived");
         std::thread::sleep(Duration::from_millis(5));
     }
+}
+
+#[test]
+#[ignore = "needs root: creates a device through /dev/uhid"]
+fn a_rebuilt_dualshock_4_is_taken_by_the_kernel_and_read_as_sent() {
+    use crate::replica::{Model, Reporter};
+    use crate::uhid::{Device, Event};
+    use std::io::Read;
+    let identity = PadIdentity {
+        vendor: 0x054c,
+        product: 0x09cc,
+        name: String::new(),
+    };
+    let model = Model::for_identity(&identity).unwrap();
+    let device = Device::create(&model.spec(&identity, "02:00:00:00:00:01"))
+        .expect("create a HID device; this needs root for /dev/uhid");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !device.drain().unwrap().contains(&Event::Start) {
+        assert!(
+            Instant::now() < deadline,
+            "the kernel refused the descriptor"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let node = loop {
+        if let Some((_, nodes)) =
+            crate::pads::discover(BUS_USB, 0x054c, 0x09cc, &Default::default())
+        {
+            break Path::new("/dev").join(nodes.hidraw[0].file_name().unwrap());
+        }
+        assert!(Instant::now() < deadline, "no hidraw node appeared");
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let mut hidraw = open(&node, false);
+    let mut reporter = Reporter::new(model);
+    reporter.set(PadState {
+        buttons: button::SOUTH,
+        ..PadState::default()
+    });
+    let report = reporter.next();
+    device.input(&report).unwrap();
+    let mut buf = [0u8; 128];
+    let n = hidraw.read(&mut buf).unwrap();
+    assert_eq!(&buf[..n], &report[..]);
 }

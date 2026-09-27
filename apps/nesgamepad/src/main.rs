@@ -1,22 +1,25 @@
 //! nesgamepad: the controllers plugged into a client, as devices in the box.
 //!
 //! The hub forwards what each client says about its controllers, tagged with
-//! which client, and this makes a virtual device for each one a game can find
-//! the way it finds real hardware: an evdev node, announced through libudev.
-//! Rumble a game asks for goes back the same way.
+//! which client, and this makes virtual devices for each one that a game finds
+//! the way it finds real hardware -- the controller itself where it can be
+//! rebuilt, a gamepad otherwise -- announced through libudev. Rumble a game
+//! asks for goes back the same way.
 //!
 //! Idle until the first controller arrives. A box with none connected has no
 //! devices at all, which matters: some games stop listening to the keyboard
 //! and mouse the moment a controller exists.
 //!
 //! Runs as root, for three things nothing else can grant: creating devices
-//! through `/dev/uinput`, opening their nodes to the workload, and sending the
-//! udev broadcast, whose receivers drop anything not sent by uid 0.
+//! through `/dev/uinput` and `/dev/uhid`, opening their nodes to the
+//! workload, and sending the udev broadcast, whose receivers drop anything not
+//! sent by uid 0.
 
 #[cfg(test)]
 mod kernel_tests;
 mod layout;
 mod pads;
+mod replica;
 mod udev;
 mod uhid;
 mod uinput;

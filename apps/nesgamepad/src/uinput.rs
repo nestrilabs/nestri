@@ -24,6 +24,9 @@ pub mod code {
 
     pub const SYN_REPORT: u16 = 0;
 
+    pub const BUS_USB: u16 = 0x03;
+    pub const BUS_VIRTUAL: u16 = 0x06;
+
     pub const BTN_SOUTH: u16 = 0x130;
     pub const BTN_EAST: u16 = 0x131;
     pub const BTN_NORTH: u16 = 0x133;

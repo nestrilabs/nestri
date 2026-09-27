@@ -1,11 +1,10 @@
-//! A HID device made from another one's descriptor, through `/dev/uhid`.
+//! A HID device made in userspace, through `/dev/uhid`.
 //!
 //! The kernel treats it as real hardware: a driver binds to it -- hid-generic,
 //! for anything not claimed more specifically -- and it gets a hidraw node,
 //! which is what Proton reads a controller through when it wants the device
-//! itself rather than a gamepad abstraction of it. Everything the device says
-//! is written here as it arrived from the client; everything asked of it comes
-//! back out of here for the client to put to the real one.
+//! itself rather than a gamepad abstraction of it. Reports written here are
+//! the device's; everything asked of it comes back out of here to be answered.
 //!
 //! The ABI is `linux/uhid.h`: every message in either direction is one packed
 //! `struct uhid_event`, a type and a union. The layouts below are the kernel's,
@@ -40,6 +39,11 @@ const CREATE2_LEN: usize = 128 + 64 + 64 + 2 + 2 + 4 * 4 + DATA_MAX;
 const EVENT_LEN: usize = 4 + CREATE2_LEN;
 
 const _: () = assert!(EVENT_LEN == 4376);
+
+/// Report kinds, as `uhid` numbers them.
+pub const REPORT_FEATURE: u8 = 0;
+pub const REPORT_OUTPUT: u8 = 1;
+pub const REPORT_INPUT: u8 = 2;
 
 /// What a device in the box was built from.
 pub struct Spec<'a> {

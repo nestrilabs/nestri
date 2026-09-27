@@ -16,9 +16,10 @@
 //! mapping layer knows how to read without a database entry.
 
 use nesprotocol::gamepad::button;
-use nesprotocol::gamepad::{BUS_BLUETOOTH, BUS_USB, BUS_VIRTUAL, PadIdentity, PadState};
+use nesprotocol::gamepad::{PadIdentity, PadState};
 
-use crate::uinput::{AbsAxis, InputEvent, code};
+use crate::uinput::code::{self, BUS_USB, BUS_VIRTUAL};
+use crate::uinput::{AbsAxis, InputEvent};
 
 /// A controller as the box will present it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,37 +59,23 @@ const GAMEPAD_BUTTONS: &[(u32, u16)] = &[
     (button::RIGHT_STICK, code::BTN_THUMBR),
 ];
 
-/// The version bit hid-playstation sets on every device it drives, so
-/// userspace can tell its mapping from hid-generic's. A Linux client reading a
-/// controller through that driver reports it; no other client can.
-const HID_PLAYSTATION_VERSION_PATCH: u16 = 0x8000;
+/// The version hid-playstation gives a device over USB: its patch bit, which
+/// tells userspace the mapping is the driver's and not hid-generic's, on the
+/// device's own. Read from a DualShock 4 v2, as is every axis range below; the
+/// driver treats its devices alike, and a mismatch would only cost a mapping
+/// layer its exact match, after which each falls back to one that ignores the
+/// version.
+const HID_PLAYSTATION_VERSION: u16 = 0x8111;
 
 const SONY: u16 = 0x054c;
 
-/// Sony controllers driven by hid-playstation: product, and the name the
-/// device gives itself over USB.
-///
-/// Over Bluetooth the name is the one the controller advertises instead, which
-/// for these is the part after the manufacturer.
-const HID_PLAYSTATION: &[(u16, &str, &str)] = &[
-    (
-        0x05c4,
-        "Sony Computer Entertainment Wireless Controller",
-        "Wireless Controller",
-    ),
-    // Read from a DualShock 4 v2 on USB: name, version 0x8111, and every axis
-    // range below.
-    (
-        0x09cc,
-        "Sony Interactive Entertainment Wireless Controller",
-        "Wireless Controller",
-    ),
-    (
-        0x0ce6,
-        "Sony Interactive Entertainment DualSense Wireless Controller",
-        "DualSense Wireless Controller",
-    ),
-];
+/// Sony controllers driven by hid-playstation and not rebuilt as themselves
+/// (see `crate::replica`): product, and the name the device gives itself over
+/// USB.
+const HID_PLAYSTATION: &[(u16, &str)] = &[(
+    0x0ce6,
+    "Sony Interactive Entertainment DualSense Wireless Controller",
+)];
 
 /// Sticks and triggers the way hid-playstation registers them: one byte each,
 /// no fuzz, no flat, as the driver's `ps_gamepad_create` does.
@@ -114,43 +101,25 @@ fn byte_axes() -> ([AbsAxis; 4], [AbsAxis; 2]) {
 /// How the box presents a controller the client described.
 pub fn for_identity(identity: &PadIdentity) -> Layout {
     if identity.vendor == SONY
-        && let Some(&(product, usb_name, bt_name)) = HID_PLAYSTATION
+        && let Some(&(product, name)) = HID_PLAYSTATION
             .iter()
-            .find(|(product, ..)| *product == identity.product)
+            .find(|(product, _)| *product == identity.product)
     {
-        return hid_playstation(identity, product, usb_name, bt_name);
+        return hid_playstation(product, name);
     }
     generic(identity)
 }
 
-fn hid_playstation(identity: &PadIdentity, product: u16, usb_name: &str, bt_name: &str) -> Layout {
-    // A client that could not tell the bus is almost always one whose platform
-    // does not say, and a cable is what those controllers most often arrive on.
-    let bus = match identity.bus {
-        BUS_BLUETOOTH => BUS_BLUETOOTH,
-        _ => BUS_USB,
-    };
-    // The driver's own report of itself wins when the client has one: only a
-    // Linux client reading through hid-playstation carries the patch bit, and
-    // what it read is the ground truth this table is an approximation of.
-    let (name, version) = if identity.version & HID_PLAYSTATION_VERSION_PATCH != 0 {
-        (identity.name.clone(), identity.version)
-    } else if bus == BUS_BLUETOOTH {
-        // The HID version a controller reports over Bluetooth, with the patch
-        // bit. Not read from hardware; a mismatch costs an exact mapping
-        // match, and every mapping layer then falls back to one that ignores
-        // the version.
-        (bt_name.to_owned(), HID_PLAYSTATION_VERSION_PATCH | 0x0100)
-    } else {
-        (usb_name.to_owned(), HID_PLAYSTATION_VERSION_PATCH | 0x0111)
-    };
+/// Always as on a cable: the client cannot say how the controller is
+/// attached, and a cable is what these most often arrive on.
+fn hid_playstation(product: u16, name: &str) -> Layout {
     let (sticks, triggers) = byte_axes();
     Layout {
-        name,
-        bus,
+        name: name.to_owned(),
+        bus: BUS_USB,
         vendor: SONY,
         product,
-        version,
+        version: HID_PLAYSTATION_VERSION,
         buttons: GAMEPAD_BUTTONS,
         sticks,
         triggers,
@@ -164,7 +133,7 @@ fn hid_playstation(identity: &PadIdentity, product: u16, usb_name: &str, bt_name
 /// product zero on the virtual bus, so no mapping database can match it to a
 /// real device with a different layout. The name stays, because that is what a
 /// person sees in a game's settings.
-fn generic(identity: &PadIdentity) -> Layout {
+pub fn generic(identity: &PadIdentity) -> Layout {
     let stick = |code| AbsAxis {
         code,
         min: -32768,
@@ -265,7 +234,6 @@ impl Layout {
     pub fn udev_bus(&self) -> Option<&'static str> {
         match self.bus {
             BUS_USB => Some("usb"),
-            BUS_BLUETOOTH => Some("bluetooth"),
             _ => None,
         }
     }
@@ -274,14 +242,12 @@ impl Layout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nesprotocol::gamepad::BUS_UNKNOWN;
+    const DUALSENSE: u16 = 0x0ce6;
 
-    fn identity(vendor: u16, product: u16, bus: u16, version: u16, name: &str) -> PadIdentity {
+    fn identity(vendor: u16, product: u16, name: &str) -> PadIdentity {
         PadIdentity {
-            bus,
             vendor,
             product,
-            version,
             name: name.into(),
         }
     }
@@ -295,33 +261,19 @@ mod tests {
     }
 
     #[test]
-    fn a_dualshock_4_from_a_platform_that_says_little_is_built_as_linux_would() {
-        // What a Windows client can report: vendor, product, a name of its own.
-        let layout = for_identity(&identity(SONY, 0x09cc, BUS_UNKNOWN, 0, "Wireless Gamepad"));
+    fn a_dualsense_is_built_as_linux_would_whatever_the_client_calls_it() {
+        let layout = for_identity(&identity(SONY, DUALSENSE, "Wireless Gamepad"));
         assert_eq!(layout.driver, "hid-playstation");
         assert_eq!(
             layout.name,
-            "Sony Interactive Entertainment Wireless Controller"
+            "Sony Interactive Entertainment DualSense Wireless Controller"
         );
         assert_eq!((layout.bus, layout.version), (BUS_USB, 0x8111));
     }
 
     #[test]
-    fn a_linux_client_reading_through_the_driver_is_believed() {
-        let layout = for_identity(&identity(
-            SONY,
-            0x09cc,
-            BUS_BLUETOOTH,
-            0x8123,
-            "Wireless Controller",
-        ));
-        assert_eq!((layout.bus, layout.version), (BUS_BLUETOOTH, 0x8123));
-        assert_eq!(layout.name, "Wireless Controller");
-    }
-
-    #[test]
     fn an_unknown_controller_keeps_its_name_and_gives_up_its_identity() {
-        let layout = for_identity(&identity(0x045e, 0x028e, BUS_USB, 0x0114, "Some Pad"));
+        let layout = for_identity(&identity(0x045e, 0x028e, "Some Pad"));
         assert_eq!(layout.driver, "generic");
         assert_eq!(
             (layout.vendor, layout.product, layout.bus),
@@ -333,8 +285,8 @@ mod tests {
     #[test]
     fn a_resting_controller_rests_on_every_layout() {
         for layout in [
-            for_identity(&identity(SONY, 0x09cc, BUS_USB, 0, "")),
-            for_identity(&identity(1, 2, BUS_USB, 0, "")),
+            for_identity(&identity(SONY, DUALSENSE, "")),
+            for_identity(&identity(1, 2, "")),
         ] {
             let events = layout.events(&PadState::default());
             for axis in &layout.sticks {
@@ -357,7 +309,7 @@ mod tests {
 
     #[test]
     fn full_deflection_reaches_both_ends_of_every_range() {
-        let layout = for_identity(&identity(SONY, 0x09cc, BUS_USB, 0, ""));
+        let layout = for_identity(&identity(SONY, DUALSENSE, ""));
         let pushed = PadState {
             left_x: i16::MIN,
             left_y: i16::MAX,
@@ -376,9 +328,10 @@ mod tests {
     }
 
     #[test]
-    fn the_dualshock_4_has_the_buttons_its_driver_registers() {
-        // KEY capability read from the real device: 0x7fdb << 304.
-        let layout = for_identity(&identity(SONY, 0x09cc, BUS_USB, 0, ""));
+    fn a_hid_playstation_device_has_the_buttons_its_driver_registers() {
+        // KEY capability read from a DualShock 4 under the driver, which
+        // registers the same for every controller it drives: 0x7fdb << 304.
+        let layout = for_identity(&identity(SONY, DUALSENSE, ""));
         let mut bits = 0u64;
         for &(_, key) in layout.buttons {
             bits |= 1 << (key - 304);

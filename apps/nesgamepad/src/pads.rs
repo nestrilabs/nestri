@@ -1,25 +1,36 @@
 //! Every controller plugged into the box, by the client and slot it came from.
 //!
-//! A controller is backed one of two ways, matching the two ways the client
-//! sends one (see `nesprotocol::gamepad`): a uinput device built from a
-//! positional snapshot, or a uhid device recreated from the real one's own
-//! descriptor and reports.
+//! The client only ever describes a controller; what a game finds for it is
+//! decided here, in one of two ways:
+//!
+//! - **A family the box can rebuild** (see `crate::replica`) becomes the device
+//!   itself, through uhid, for games that read the device and parse its
+//!   reports. Beside it goes a gamepad under a neutral identity, for games
+//!   that read only XInput: Proton gives XInput only to controllers it reads
+//!   through SDL, and drops such a controller when a raw device with the same
+//!   vendor and product exists, so the copy survives only without them -- and
+//!   without them, no game that recognises the family by those numbers
+//!   mistakes the copy for the device. Games that offer both ways of reading a
+//!   controller use one at a time, so a press is never answered twice.
+//! - **Anything else** becomes one uinput gamepad, laid out the way the Linux
+//!   driver for its identity would lay it out (see `crate::layout`).
 
 use std::collections::{HashMap, HashSet};
 use std::os::fd::{AsRawFd, RawFd};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use nesprotocol::gamepad::{HidDevice, PadFeedback, PadIdentity, PadMessage};
+use nesprotocol::gamepad::{PadFeedback, PadIdentity, PadMessage, PadState};
 use tokio::io::unix::AsyncFd;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, info, trace, warn};
 
 use crate::layout::{self, Layout};
+use crate::replica::{self, Model, Reporter};
 use crate::udev::{Record, Udev};
 use crate::uhid;
-use crate::uinput::{Device, Request, Spec};
+use crate::uinput::{Device, Request, Spec, code};
 
 /// Controllers across every client at once.
 ///
@@ -48,48 +59,43 @@ pub enum HidNotice {
 const DISCOVER_EVERY: Duration = Duration::from_millis(20);
 const DISCOVER_ATTEMPTS: u32 = 50;
 
-/// Requests the real device has not answered yet are kept to know how to
-/// answer; past this many, the oldest were never going to be.
-const PENDING_MAX: usize = 64;
+/// A uinput device.
+struct Gamepad {
+    device: Arc<Device>,
+    layout: Layout,
+    /// The devices announced for it, parents first.
+    records: Vec<Record>,
+    /// Reads the device for rumble. Stopped before the device goes.
+    task: tokio::task::JoinHandle<()>,
+}
 
-enum Backend {
-    Gamepad {
-        device: Arc<Device>,
-        layout: Layout,
-        identity: PadIdentity,
-    },
-    Hid {
-        device: Arc<uhid::Device>,
-        announced: HidDevice,
-        /// The kernel's directory for it, once found.
-        syspath: Option<PathBuf>,
-        /// Requests passed to the client, by id: `true` for a read.
-        pending: HashMap<u32, bool>,
-    },
+/// A device rebuilt as itself.
+struct Replica {
+    model: Model,
+    device: Arc<uhid::Device>,
+    address: [u8; 6],
+    reporter: Arc<Mutex<Reporter>>,
+    /// The kernel's directory for it, once found.
+    syspath: Option<PathBuf>,
+    records: Vec<Record>,
+    /// Hears the kernel side, and keeps the reports coming. Stopped before
+    /// the device goes.
+    tasks: [tokio::task::JoinHandle<()>; 2],
+    /// The rumble last passed on. Games write the report that carries it for
+    /// the lights as well, often, and only a change is worth sending.
+    rumble: (u16, u16),
 }
 
 struct Pad {
-    backend: Backend,
-    /// The devices announced for it, parents first.
-    records: Vec<Record>,
-    /// Reads the device for what games ask of it. Stopped before the device
-    /// goes.
-    task: tokio::task::JoinHandle<()>,
+    identity: PadIdentity,
+    replica: Option<Replica>,
+    gamepad: Option<Gamepad>,
     /// Whether any input has arrived for it yet.
     ///
     /// Said once, at info: from a log alone, a controller that is plugged in
     /// and never moves is otherwise indistinguishable from one whose input
     /// reaches a device no game is reading.
     moved: bool,
-}
-
-impl Pad {
-    fn name(&self) -> &str {
-        match &self.backend {
-            Backend::Gamepad { layout, .. } => &layout.name,
-            Backend::Hid { announced, .. } => &announced.identity.name,
-        }
-    }
 }
 
 pub struct Pads {
@@ -120,60 +126,34 @@ impl Pads {
     pub fn handle(&mut self, session: u32, message: PadMessage) {
         match message {
             PadMessage::Connect { slot, identity } => self.connect((session, slot), identity),
-            PadMessage::HidConnect { slot, device } => self.connect_hid((session, slot), device),
-            PadMessage::State { slot, state } => {
-                let key = (session, slot);
-                let Some(pad) = self.present(key) else { return };
-                trace!(session, slot, ?state, "state");
-                let Backend::Gamepad { device, layout, .. } = &pad.backend else {
-                    debug!(session, slot, "gamepad state for a forwarded device");
-                    return;
-                };
-                if let Err(e) = device.write(&layout.events(&state)) {
-                    // Per state, so debug: a device that stopped taking writes
-                    // fails every one of them.
-                    debug!(session, slot, "could not write to the device: {e}");
-                }
-            }
-            PadMessage::HidInput { slot, report } => {
-                let key = (session, slot);
-                let Some(pad) = self.present(key) else { return };
-                trace!(session, slot, len = report.len(), "report");
-                let Backend::Hid { device, .. } = &pad.backend else {
-                    debug!(session, slot, "a report for a gamepad");
-                    return;
-                };
-                if let Err(e) = device.input(&report) {
-                    debug!(session, slot, "could not write a report: {e}");
-                }
-            }
-            PadMessage::HidReply {
-                slot,
-                id,
-                err,
-                data,
-            } => {
-                let Some(pad) = self.pads.get_mut(&(session, slot)) else {
-                    return;
-                };
-                let Backend::Hid {
-                    device, pending, ..
-                } = &mut pad.backend
-                else {
-                    return;
-                };
-                let result = match pending.remove(&id) {
-                    Some(true) => device.get_report_reply(id, err, &data),
-                    Some(false) => device.set_report_reply(id, err),
-                    // Answered too late: the kernel gave up on it already.
-                    None => return,
-                };
-                if let Err(e) = result {
-                    debug!(session, slot, id, "could not answer a request: {e}");
-                }
-            }
+            PadMessage::State { slot, state } => self.state((session, slot), state),
             PadMessage::Disconnect { slot } => self.remove((session, slot)),
             PadMessage::SessionEnd => self.end_session(session),
+        }
+    }
+
+    fn state(&mut self, key: Key, state: PadState) {
+        let (session, slot) = key;
+        let Some(pad) = self.present(key) else { return };
+        trace!(session, slot, ?state, "state");
+        if let Some(replica) = &pad.replica {
+            // Now rather than at the next tick of its clock, which would add
+            // up to a tick of latency to every press.
+            let report = {
+                let mut reporter = replica.reporter.lock().unwrap_or_else(|e| e.into_inner());
+                reporter.set(state);
+                reporter.next()
+            };
+            if let Err(e) = replica.device.input(&report) {
+                // Per state, so debug: a device that stopped taking writes
+                // fails every one of them.
+                debug!(session, slot, "could not write a report: {e}");
+            }
+        }
+        if let Some(gamepad) = &pad.gamepad
+            && let Err(e) = gamepad.device.write(&gamepad.layout.events(&state))
+        {
+            debug!(session, slot, "could not write to the device: {e}");
         }
     }
 
@@ -201,48 +181,100 @@ impl Pads {
         Some(pad)
     }
 
-    /// Room for one more in `key`, replacing whatever was there. `false` when
-    /// the box is full.
-    fn make_room(&mut self, key: Key, name: &str) -> bool {
-        self.asked.remove(&key);
-        self.remove(key);
-        if self.pads.len() >= MAX_PADS {
-            warn!(
-                session = key.0,
-                slot = key.1,
-                "{MAX_PADS} controllers are already plugged in; not adding \"{name}\""
-            );
-            return false;
-        }
-        true
-    }
-
     fn connect(&mut self, key: Key, identity: PadIdentity) {
         let (session, slot) = key;
-        if let Some(Pad {
-            backend: Backend::Gamepad { identity: have, .. },
-            ..
-        }) = self.pads.get(&key)
-            && *have == identity
+        if self
+            .pads
+            .get(&key)
+            .is_some_and(|pad| pad.identity == identity)
         {
             // A re-announce of what is already here, which a client does
             // after asking and is harmless.
             return;
         }
-        if !self.make_room(key, &identity.name) {
+        self.asked.remove(&key);
+        self.remove(key);
+        if self.pads.len() >= MAX_PADS {
+            warn!(
+                session,
+                slot,
+                "{MAX_PADS} controllers are already plugged in; not adding \"{}\"",
+                identity.name
+            );
             return;
         }
-        let layout = layout::for_identity(&identity);
-        match self.plug(key, &layout) {
+        info!(
+            session,
+            slot,
+            name = identity.name,
+            id = format!("{:04x}:{:04x}", identity.vendor, identity.product),
+            "controller connected"
+        );
+        let mut pad = Pad {
+            identity,
+            replica: None,
+            gamepad: None,
+            moved: false,
+        };
+        match Model::for_identity(&pad.identity) {
+            // Its gamepad follows once its own nodes exist, so that a game
+            // settling on the first controller it finds finds the device.
+            Some(model) => match self.rebuild(key, model, &pad.identity) {
+                Ok(replica) => pad.replica = Some(replica),
+                Err(e) => {
+                    warn!(
+                        session,
+                        slot,
+                        "could not rebuild \"{}\" as itself, so it goes as a gamepad alone: {e}",
+                        pad.identity.name
+                    );
+                    pad.gamepad = self.plug(key, layout::for_identity(&pad.identity));
+                }
+            },
+            None => pad.gamepad = self.plug(key, layout::for_identity(&pad.identity)),
+        }
+        self.pads.insert(key, pad);
+    }
+
+    fn rebuild(&self, key: Key, model: Model, identity: &PadIdentity) -> std::io::Result<Replica> {
+        let (session, slot) = key;
+        let address = replica::address(session, slot);
+        let uniq = replica::uniq(address);
+        let spec = model.spec(identity, &uniq);
+        let device = Arc::new(uhid::Device::create(&spec)?);
+        info!(
+            session,
+            slot,
+            model = ?model,
+            device = format!("{} {:04x}:{:04x}", spec.name, spec.vendor, spec.product),
+            "controller plugged in as itself"
+        );
+        let reporter = Arc::new(Mutex::new(Reporter::new(model)));
+        let tasks = [
+            spawn_hid(device.clone(), key, self.hid.clone()),
+            spawn_clock(device.clone(), reporter.clone(), model.report_every()),
+        ];
+        Ok(Replica {
+            model,
+            device,
+            address,
+            reporter,
+            syspath: None,
+            records: Vec::new(),
+            tasks,
+            rumble: (0, 0),
+        })
+    }
+
+    /// A uinput device for `key`, or none when it cannot be made -- said, and
+    /// the controller left without it.
+    fn plug(&self, key: Key, layout: Layout) -> Option<Gamepad> {
+        let (session, slot) = key;
+        match self.make_gamepad(key, &layout) {
             Ok((device, records)) => {
                 info!(
                     session,
                     slot,
-                    client_name = identity.name,
-                    client_id = format!(
-                        "{:04x}:{:04x}:{:04x} bus {:#04x}",
-                        identity.vendor, identity.product, identity.version, identity.bus
-                    ),
                     driver = layout.driver,
                     device = format!(
                         "{} {:04x}:{:04x}:{:04x}",
@@ -253,31 +285,31 @@ impl Pads {
                         .and_then(|r| r.properties.get("DEVNAME"))
                         .map(String::as_str)
                         .unwrap_or("none"),
-                    "controller plugged in"
+                    "controller plugged in as a gamepad"
                 );
                 let task = spawn_rumble(device.clone(), session, slot, self.feedback.clone());
-                self.pads.insert(
-                    key,
-                    Pad {
-                        backend: Backend::Gamepad {
-                            device,
-                            layout,
-                            identity,
-                        },
-                        records,
-                        task,
-                        moved: false,
-                    },
-                );
+                Some(Gamepad {
+                    device,
+                    layout,
+                    records,
+                    task,
+                })
             }
-            Err(e) => warn!(
-                session,
-                slot, "could not create a device for \"{}\": {e:#}", identity.name
-            ),
+            Err(e) => {
+                warn!(
+                    session,
+                    slot, "could not create a gamepad for \"{}\": {e:#}", layout.name
+                );
+                None
+            }
         }
     }
 
-    fn plug(&self, key: Key, layout: &Layout) -> anyhow::Result<(Arc<Device>, Vec<Record>)> {
+    fn make_gamepad(
+        &self,
+        key: Key,
+        layout: &Layout,
+    ) -> anyhow::Result<(Arc<Device>, Vec<Record>)> {
         let keys: Vec<u16> = layout.buttons.iter().map(|&(_, key)| key).collect();
         let device = Device::create(&Spec {
             name: &layout.name,
@@ -313,102 +345,59 @@ impl Pads {
         Ok(())
     }
 
-    fn connect_hid(&mut self, key: Key, device: HidDevice) {
-        let (session, slot) = key;
-        if let Some(Pad {
-            backend: Backend::Hid { announced, .. },
-            ..
-        }) = self.pads.get(&key)
-            && *announced == device
-        {
-            return;
-        }
-        if !self.make_room(key, &device.identity.name) {
-            return;
-        }
-        let identity = &device.identity;
-        let created = uhid::Device::create(&uhid::Spec {
-            name: &identity.name,
-            uniq: &device.uniq,
-            bus: identity.bus,
-            vendor: identity.vendor,
-            product: identity.product,
-            version: identity.version,
-            country: device.country,
-            descriptor: &device.descriptor,
-        });
-        let created = match created {
-            Ok(created) => Arc::new(created),
-            Err(e) => {
-                warn!(
-                    session,
-                    slot, "could not create a HID device for \"{}\": {e}", identity.name
-                );
-                return;
-            }
-        };
-        info!(
-            session,
-            slot,
-            name = identity.name,
-            id = format!(
-                "{:04x}:{:04x}:{:04x} bus {:#04x}",
-                identity.vendor, identity.product, identity.version, identity.bus
-            ),
-            descriptor = device.descriptor.len(),
-            "controller plugged in as itself"
-        );
-        let task = spawn_hid(created.clone(), key, self.hid.clone());
-        self.pads.insert(
-            key,
-            Pad {
-                backend: Backend::Hid {
-                    device: created,
-                    announced: device,
-                    syspath: None,
-                    pending: HashMap::new(),
-                },
-                records: Vec::new(),
-                task,
-                moved: false,
-            },
-        );
-    }
-
     /// Something a uhid device's task passed on.
     pub fn hid_notice(&mut self, key: Key, notice: HidNotice) {
         let (session, slot) = key;
-        if !self.pads.contains_key(&key) {
+        let Some(replica) = self.pads.get(&key).and_then(|p| p.replica.as_ref()) else {
             // Unplugged since the task said it; nothing is waiting on it.
             return;
-        }
-        let request = match notice {
+        };
+        let (model, address, device, reporter) = (
+            replica.model,
+            replica.address,
+            replica.device.clone(),
+            replica.reporter.clone(),
+        );
+        match notice {
             HidNotice::Kernel(uhid::Event::Start) => {
                 debug!(session, slot, "a driver took the device");
                 self.schedule_discovery(key, 0);
-                return;
             }
-            HidNotice::Discover { attempt } => {
-                self.discover_nodes(key, attempt);
-                return;
-            }
+            HidNotice::Discover { attempt } => self.discover_nodes(key, attempt),
             HidNotice::Kernel(uhid::Event::Stop) => {
                 debug!(session, slot, "the driver let go of the device");
-                return;
             }
-            HidNotice::Kernel(uhid::Event::Open | uhid::Event::Close) => return,
+            HidNotice::Kernel(uhid::Event::Open | uhid::Event::Close) => {}
             HidNotice::Kernel(uhid::Event::Output { kind, data }) => {
                 trace!(session, slot, kind, len = data.len(), "output report");
-                PadFeedback::HidOutput { slot, kind, data }
+                self.rumble_from(key, &data);
             }
             HidNotice::Kernel(uhid::Event::GetReport { id, number, kind }) => {
-                trace!(session, slot, id, number, kind, "get report");
-                self.remember(key, id, true);
-                PadFeedback::HidGetReport {
+                let answer = match kind {
+                    uhid::REPORT_FEATURE => model.feature(number, address),
+                    uhid::REPORT_INPUT => {
+                        let current = reporter.lock().unwrap_or_else(|e| e.into_inner()).current();
+                        (current.first() == Some(&number)).then_some(current)
+                    }
+                    _ => None,
+                };
+                // Some software asks for every report a descriptor declares,
+                // and the real device answers only some: an unknown one is
+                // expected, not a fault.
+                debug!(
+                    session,
                     slot,
-                    id,
-                    number,
+                    number = format!("{number:#04x}"),
                     kind,
+                    answered = answer.is_some(),
+                    "a report was asked for"
+                );
+                let result = match answer {
+                    Some(data) => device.get_report_reply(id, 0, &data),
+                    None => device.get_report_reply(id, libc::EIO as u16, &[]),
+                };
+                if let Err(e) = result {
+                    debug!(session, slot, id, "could not answer a request: {e}");
                 }
             }
             HidNotice::Kernel(uhid::Event::SetReport {
@@ -418,69 +407,66 @@ impl Pads {
                 data,
             }) => {
                 trace!(session, slot, id, number, kind, "set report");
-                self.remember(key, id, false);
-                PadFeedback::HidSetReport {
-                    slot,
-                    id,
-                    number,
-                    kind,
-                    data,
+                if let Err(e) = device.set_report_reply(id, 0) {
+                    debug!(session, slot, id, "could not answer a request: {e}");
+                }
+                if kind == uhid::REPORT_OUTPUT {
+                    self.rumble_from(key, &data);
                 }
             }
-        };
-        let _ = self.feedback.send((session, request));
+        }
     }
 
-    /// Note a request passed to the client, to know how to answer it.
-    fn remember(&mut self, key: Key, id: u32, read: bool) {
-        let Some(Pad {
-            backend: Backend::Hid { pending, .. },
-            ..
-        }) = self.pads.get_mut(&key)
-        else {
+    /// Pass on the rumble a report written to a replica asks for.
+    fn rumble_from(&mut self, key: Key, report: &[u8]) {
+        let Some(replica) = self.pads.get_mut(&key).and_then(|p| p.replica.as_mut()) else {
             return;
         };
-        if pending.len() >= PENDING_MAX {
-            // Ids count up, so the smallest are the oldest.
-            if let Some(&oldest) = pending.keys().min() {
-                pending.remove(&oldest);
-            }
+        let Some(rumble) = replica.model.rumble(report) else {
+            return;
+        };
+        if rumble == replica.rumble {
+            return;
         }
-        pending.insert(id, read);
+        replica.rumble = rumble;
+        let (strong, weak) = rumble;
+        let _ = self.feedback.send((
+            key.0,
+            PadFeedback::Rumble {
+                slot: key.1,
+                strong,
+                weak,
+                duration_ms: 0,
+            },
+        ));
     }
 
     fn discover_nodes(&mut self, key: Key, attempt: u32) {
         let (session, slot) = key;
-        let Some(Pad {
-            backend:
-                Backend::Hid {
-                    announced,
-                    syspath: None,
-                    ..
-                },
-            ..
-        }) = self.pads.get(&key)
-        else {
+        let Some(pad) = self.pads.get(&key) else {
             return;
         };
-        let announced = announced.clone();
+        let Some(Replica { syspath: None, .. }) = &pad.replica else {
+            return;
+        };
+        let identity = pad.identity.clone();
         let claimed: HashSet<PathBuf> = self
             .pads
             .values()
-            .filter_map(|p| match &p.backend {
-                Backend::Hid { syspath, .. } => syspath.clone(),
-                Backend::Gamepad { .. } => None,
-            })
+            .filter_map(|p| p.replica.as_ref()?.syspath.clone())
             .collect();
-        match discover(&announced, &claimed) {
+        match discover(code::BUS_USB, identity.vendor, identity.product, &claimed) {
             Some((found, nodes)) => self.nodes_found(key, found, nodes),
             None if attempt + 1 < DISCOVER_ATTEMPTS => self.schedule_discovery(key, attempt + 1),
-            None => warn!(
-                session,
-                slot,
-                "the kernel made no nodes for \"{}\", so nothing can read it",
-                announced.identity.name
-            ),
+            None => {
+                warn!(
+                    session,
+                    slot,
+                    "the kernel made no nodes for \"{}\", so only its gamepad can be read",
+                    identity.name
+                );
+                self.plug_copy(key);
+            }
         }
     }
 
@@ -533,11 +519,25 @@ impl Pads {
                 .join(" "),
             "controller nodes ready"
         );
+        if let Some(replica) = self.pads.get_mut(&key).and_then(|p| p.replica.as_mut()) {
+            replica.records = records;
+            replica.syspath = Some(found);
+        }
+        self.plug_copy(key);
+    }
+
+    /// The gamepad beside a replica, under a neutral identity (see the module
+    /// docs).
+    fn plug_copy(&mut self, key: Key) {
+        let Some(pad) = self.pads.get(&key) else {
+            return;
+        };
+        if pad.gamepad.is_some() {
+            return;
+        }
+        let gamepad = self.plug(key, layout::generic(&pad.identity));
         if let Some(pad) = self.pads.get_mut(&key) {
-            pad.records = records;
-            if let Backend::Hid { syspath, .. } = &mut pad.backend {
-                *syspath = Some(found);
-            }
+            pad.gamepad = gamepad;
         }
     }
 
@@ -545,16 +545,24 @@ impl Pads {
         let Some(pad) = self.pads.remove(&key) else {
             return;
         };
-        pad.task.abort();
+        let mut records = Vec::new();
         // Destroyed explicitly, before anyone is told it is gone. Dropping the
-        // handle would not do it: the aborted task holds another, and lets go
+        // handle would not do it: an aborted task holds another, and lets go
         // of it only when the runtime next gets round to dropping the task.
-        match &pad.backend {
-            Backend::Gamepad { device, .. } => device.destroy(),
-            Backend::Hid { device, .. } => device.destroy(),
+        if let Some(gamepad) = pad.gamepad {
+            gamepad.task.abort();
+            gamepad.device.destroy();
+            records.extend(gamepad.records.into_iter().rev());
+        }
+        if let Some(replica) = pad.replica {
+            for task in &replica.tasks {
+                task.abort();
+            }
+            replica.device.destroy();
+            records.extend(replica.records.into_iter().rev());
         }
         if let Some(udev) = &self.udev {
-            for record in pad.records.iter().rev() {
+            for record in &records {
                 if let Err(e) = udev.remove(record) {
                     debug!("could not announce {} gone: {e}", record.devpath);
                 }
@@ -564,7 +572,7 @@ impl Pads {
             session = key.0,
             slot = key.1,
             "controller unplugged: {}",
-            pad.name()
+            pad.identity.name
         );
     }
 
@@ -645,7 +653,7 @@ impl Nodes {
     }
 }
 
-/// Find the kernel's directory for a device made from `announced`, and what
+/// Find the kernel's directory for a uhid device with this identity, and what
 /// was made under it -- `None` until the hidraw node exists, which is the node
 /// that matters.
 ///
@@ -655,13 +663,12 @@ impl Nodes {
 /// moment could be found the other way round, which costs nothing: the same
 /// nodes are opened up and announced either way.
 pub(crate) fn discover(
-    announced: &HidDevice,
+    bus: u16,
+    vendor: u16,
+    product: u16,
     claimed: &HashSet<PathBuf>,
 ) -> Option<(PathBuf, Nodes)> {
-    let prefix = format!(
-        "{:04X}:{:04X}:{:04X}.",
-        announced.identity.bus, announced.identity.vendor, announced.identity.product
-    );
+    let prefix = format!("{bus:04X}:{vendor:04X}:{product:04X}.");
     let mut candidates: Vec<PathBuf> = std::fs::read_dir(UHID_SYSFS)
         .ok()?
         .filter_map(Result::ok)
@@ -778,6 +785,28 @@ fn spawn_hid(
                 if tx.send((key, HidNotice::Kernel(event))).is_err() {
                     return;
                 }
+            }
+        }
+    })
+}
+
+/// Keep a replica's reports coming at the rate the real device sends them,
+/// whether or not anything changed.
+fn spawn_clock(
+    device: Arc<uhid::Device>,
+    reporter: Arc<Mutex<Reporter>>,
+    every: Duration,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(every);
+        // A late tick is a report that never happened, not one owed.
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tick.tick().await;
+            let report = reporter.lock().unwrap_or_else(|e| e.into_inner()).next();
+            if device.input(&report).is_err() {
+                // Only ever a device on its way out; its removal stops this.
+                continue;
             }
         }
     })

@@ -4,9 +4,11 @@ Turns the controllers plugged into a client into devices inside the box, where
 a game finds them the way it finds real hardware.
 
 [`neshub`](../neshub) forwards the client's messages about its controllers
-unread, tagged with which client sent them, and nesgamepad makes one device per
-controller. What a game does to that device -- rumble, lights, reports it asks
-for -- goes back the same way. The wire format is in
+unread, tagged with which client sent them. The client only describes a
+controller -- vendor, product, name, and its whole state as a positional
+snapshot on every change, which is all any platform's gamepad API can say -- and
+nesgamepad decides what a game finds for it. Rumble a game asks for goes back
+the same way. The wire format is in
 [`nesprotocol::gamepad`](../../crates/nesprotocol/src/gamepad.rs).
 
 A box with no controllers connected has no controller devices at all. That
@@ -15,28 +17,35 @@ exists.
 
 ---
 
-## Two ways a controller arrives
+## What a controller becomes
 
-**As itself**, whenever the client can open it as a HID device. The client
-sends the controller's own report descriptor and then its reports byte for
-byte, and nesgamepad recreates it through `/dev/uhid`. The kernel binds
-hid-generic to it and gives it a hidraw node, which is how Proton reads a
-controller when it wants the device rather than a gamepad abstraction of it.
-Nothing here interprets a report: whatever a game expects of the device, down
-to report formats it parses by hand to tell one family from another, arrives
-intact. Requests a game makes of the device are answered by the real one.
+**The device itself**, for a family nesgamepad can rebuild -- today the
+DualShock 4. Some games read a controller as a HID device and parse its reports
+by hand, to tell one family from another and show the right buttons, and
+Proton hands them the raw device only when it has a hidraw node. So
+nesgamepad makes one through `/dev/uhid`, from the real controller's report
+descriptor, and writes the reports the real one would send for the state the
+client reports, at the rate it sends them. What a game asks of the device --
+calibration, firmware, its address -- is answered from values read off real
+hardware, and rumble it writes goes back to the client. What the snapshot
+cannot carry, motion and touch, reads as a controller at rest. See
+[`replica.rs`](src/replica.rs).
 
-**As a gamepad**, for a controller the client can only see through its
-platform's gamepad API. The client sends the controller's identity and then
-its whole state as a positional snapshot, and nesgamepad builds a uinput device
-from it. A game rarely reads a controller by its raw codes -- SDL, Wine and
-Steam look the identity up in a mapping database written against the exact
-layout the Linux driver for that device produces -- so the device is either
-built the way that driver builds it, from the table in
-[`layout.rs`](src/layout.rs), or presented with the kernel's generic gamepad
-layout under a neutral identity. Claiming a real device's identity with a
-different layout scrambles its buttons, which is worse than being
-unrecognised.
+Beside it goes **a gamepad under a neutral identity**, for games that read only
+XInput. Proton gives XInput only to controllers it reads through SDL, and drops
+one when a raw device with the same vendor and product exists, so the copy
+carries neither -- which also keeps a game that recognises the family by those
+numbers from mistaking the copy for the device. A game that can read a
+controller both ways uses one at a time, so no press is answered twice.
+
+**Anything else** becomes one uinput gamepad. A game rarely reads a controller
+by its raw codes -- SDL, Wine and Steam look the identity up in a mapping
+database written against the exact layout the Linux driver for that device
+produces -- so the device is either built the way that driver builds it, from
+the table in [`layout.rs`](src/layout.rs), or presented with the kernel's
+generic gamepad layout under a neutral identity. Claiming a real device's
+identity with a different layout scrambles its buttons, which is worse than
+being unrecognised.
 
 ## Standing in for udev
 
@@ -70,9 +79,9 @@ cargo test -p nesgamepad
 ```
 
 Three more build a real device through `/dev/uinput` and read it back the way
-a game would, including a rumble upload, and three build one through
-`/dev/uhid` and check reports in both directions and a feature report a game
-asks for. They are ignored by default because they create a device on whatever
+a game would, including a rumble upload, and four build one through
+`/dev/uhid` -- one of them a rebuilt DualShock 4 -- and check reports in both
+directions and a feature report a game asks for. They are ignored by default because they create a device on whatever
 machine runs them, and the uhid ones need root:
 
 ```bash

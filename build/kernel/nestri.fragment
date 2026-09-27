@@ -15,9 +15,9 @@
 CONFIG_NTSYNC=y
 
 # ── Controllers ──────────────────────────────────────────
-# A controller the client can open as HID is recreated here as the device
-# itself, from its own descriptor, through uhid; hid-generic binds to it and
-# gives it a hidraw node. That node is what Proton reads a controller through
+# A controller of a family the box can rebuild is made here as the device
+# itself, from the real one's descriptor, through uhid; hid-generic binds to
+# it and gives it a hidraw node. That node is what Proton reads a controller through
 # when it wants the device rather than a gamepad abstraction of it, and it is
 # the only way a game that parses a controller's own reports -- to tell a
 # DualShock from an Xbox pad, say, and show the right buttons -- can work.
