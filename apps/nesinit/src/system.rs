@@ -173,7 +173,12 @@ fn make(directory: &Directory) -> std::io::Result<()> {
 /// A device node the box has to be able to open, and by whom.
 ///
 /// This is the whole of what udev's rules were doing for a box.
-const DEVICES: &[&str] = &["/dev/dri/renderD128", "/dev/dri/card0"];
+///
+/// `/dev/uinput` is here for the Steam client, which runs as the workload's
+/// user and makes its own virtual controller through it: one pad per real one,
+/// the pad every game reads through Steam Input. On a desktop, udev's rules
+/// shipped with Steam grant it the same way.
+const DEVICES: &[&str] = &["/dev/dri/renderD128", "/dev/dri/card0", "/dev/uinput"];
 
 /// `devtmpfs` creates these owned by root with no group access, and both the
 /// box's own services and the workload have to open them.
