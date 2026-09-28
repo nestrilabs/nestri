@@ -190,7 +190,7 @@ export namespace Team {
 			.replace(/^-|-$/g, '')
 			.slice(0, 50);
 
-		const existing = await fromSlug(baseSlug);
+		const existing = RESERVED.has(baseSlug) || (await fromSlug(baseSlug));
 		const slug = existing
 			? `${baseSlug}-${String(Math.floor(Math.random() * 9999)).padStart(4, '0')}`
 			: baseSlug;
@@ -237,10 +237,72 @@ export namespace Team {
 	 * keeping a second copy of the rule that drifts.
 	 */
 	export const Name = z.string().trim().min(1).max(64);
+	/**
+	 * Slugs a team may not have, because the website serves a team at
+	 * `nestri.io/<slug>` and these are its own top-level pages, present or
+	 * planned. A team called `pricing` would either shadow the page or be
+	 * unreachable, and neither is a thing to discover after someone picked it.
+	 */
+	export const RESERVED = new Set([
+		'about',
+		'account',
+		'activity',
+		'admin',
+		'api',
+		'app',
+		'assets',
+		'auth',
+		'billing',
+		'blog',
+		'blogs',
+		'boxes',
+		'careers',
+		'changelog',
+		'collab',
+		'compare',
+		'contact',
+		'dashboard',
+		'docs',
+		'edge',
+		'enterprise',
+		'games',
+		'gaming',
+		'help',
+		'home',
+		'install',
+		'installation',
+		'legal',
+		'login',
+		'logout',
+		'machines',
+		'nesbox',
+		'nesgpu',
+		'nesktop',
+		'neslink',
+		'neslite',
+		'nessh',
+		'nestri',
+		'new',
+		'pricing',
+		'privacy',
+		'products',
+		'security',
+		'settings',
+		'signup',
+		'static',
+		'status',
+		'support',
+		'team',
+		'teams',
+		'terms',
+		'www'
+	]);
+
 	export const Slug = z
 		.string()
 		.max(50)
-		.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'lowercase letters, numbers and single hyphens');
+		.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'lowercase letters, numbers and single hyphens')
+		.refine((s) => !RESERVED.has(s), 'that name is taken by a page on the site');
 
 	/** A slug somebody else's team already has. */
 	export class SlugTaken extends Error {

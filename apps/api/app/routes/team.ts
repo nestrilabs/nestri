@@ -1,6 +1,7 @@
 import { Actor } from '@nestri/core/actor';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
+import { Identifier } from '@nestri/core/id';
 import { Team } from '@nestri/core/team/index';
 import { Member } from '@nestri/core/team/member';
 import { Hono } from 'hono';
@@ -31,6 +32,14 @@ export namespace TeamApi {
 			email: z.string().nullable()
 		})
 		.meta({ ref: 'TeamPerson', description: 'A member of a team, and who they are' });
+
+	const slugTaken = () =>
+		new VisibleError(
+			'already_exists',
+			ErrorCodes.Validation.ALREADY_EXISTS,
+			'That slug is taken',
+			'slug'
+		);
 
 	/** The caller's membership of a team, or the 404 that hides whether it exists. */
 	async function membership(teamId: string) {
@@ -83,6 +92,40 @@ export namespace TeamApi {
 				return c.json({ data: teams.filter((t) => t !== null) });
 			}
 		)
+		.post(
+			'/',
+			describeRoute({
+				tags: ['Team'],
+				summary: 'Create a team',
+				description:
+					'A new team with you as its owner. Everyone already has a personal team from sign-up; this is another one, for people or hardware you want kept apart. A taken slug is a 409.',
+				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Mine) } },
+						description: 'The team, with you as owner'
+					},
+					400: ErrorResponses[400],
+					401: ErrorResponses[401],
+					409: ErrorResponses[409]
+				}
+			}),
+			validator('json', z.object({ name: Team.Name, slug: Team.Slug })),
+			async (c) => {
+				const { name, slug } = c.req.valid('json');
+				if (await Team.fromSlug(slug)) throw slugTaken();
+				const id = Identifier.ascending('team');
+				try {
+					await Team.create({ id, name, slug });
+				} catch (error) {
+					// The unique index, when two people race for the same slug.
+					const code = (error as { code?: string; cause?: { code?: string } }) ?? {};
+					if (code.code === '23505' || code.cause?.code === '23505') throw slugTaken();
+					throw error;
+				}
+				const team = await Team.fromID(id);
+				return c.json({ data: { ...Team.serialize(team!), role: 'owner' as const } });
+			}
+		)
 		.patch(
 			'/:id',
 			describeRoute({
@@ -127,14 +170,7 @@ export namespace TeamApi {
 					const renamed = await Team.rename({ id: team.id, ...body });
 					return c.json({ data: renamed! });
 				} catch (error) {
-					if (error instanceof Team.SlugTaken) {
-						throw new VisibleError(
-							'already_exists',
-							ErrorCodes.Validation.ALREADY_EXISTS,
-							'That slug is taken',
-							'slug'
-						);
-					}
+					if (error instanceof Team.SlugTaken) throw slugTaken();
 					throw error;
 				}
 			}

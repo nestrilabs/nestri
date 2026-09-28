@@ -124,3 +124,34 @@ describe('GET /box', () => {
 		expect(((await res.json()) as any).data).toEqual([]);
 	});
 });
+
+describe('POST /team', () => {
+	test('creates a second team with you as owner, listed after your personal one', async () => {
+		const me = await person('team-create');
+		const s = slug('second');
+		const res = await app.request('/team', {
+			method: 'POST',
+			headers: me.headers,
+			body: JSON.stringify({ name: 'Second', slug: s })
+		});
+		expect(res.status).toBe(200);
+		expect(((await res.json()) as any).data).toMatchObject({
+			name: 'Second',
+			slug: s,
+			role: 'owner'
+		});
+		const list = ((await (await app.request('/team', { headers: me.headers })).json()) as any).data;
+		expect(list.map((t: any) => t.slug)).toEqual([expect.any(String), s]);
+		expect(list[0].id).toBe(me.teamId);
+	});
+
+	test('a taken slug is a 409, and a page of the site is a 400', async () => {
+		const me = await person('team-create-taken');
+		const s = slug('dupe');
+		const post = (body: unknown) =>
+			app.request('/team', { method: 'POST', headers: me.headers, body: JSON.stringify(body) });
+		expect((await post({ name: 'A', slug: s })).status).toBe(200);
+		expect((await post({ name: 'B', slug: s })).status).toBe(409);
+		expect((await post({ name: 'C', slug: 'pricing' })).status).toBe(400);
+	});
+});
