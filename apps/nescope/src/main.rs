@@ -4,7 +4,7 @@
 //!
 //! nescope creates a virtual Wayland output, starts XWayland, and gives games
 //! a complete compositor environment.  Frames are captured externally by a
-//! Vulkan interception library (`hudless`); nescope itself
+//! Vulkan interception library (`nescapture`); nescope itself
 //! never allocates a GBM pool or forwards DMA-BUFs.
 //!
 //! # Usage
@@ -17,7 +17,7 @@
 //!   --height <N>     Output height [default: 1080]
 //!   --fps    <N>     Virtual refresh rate, advertised only [default: 60]
 //!   --frame-callback-hz <N>  wl_surface.frame cadence [default: 1000]
-//!   --hdr            Enable HDR protocols (wp_color_management_v1 + gamescope_swapchain)
+//!   --hdr            Enable HDR colour management (wp_color_manager_v1)
 //!   --socket <NAME>  Wayland socket name [default: nescope-0]
 //! ```
 //!
@@ -67,7 +67,6 @@ mod hdr;
 mod input;
 mod input_ipc;
 mod libinput_backend;
-mod protocols;
 //mod screenshot_ipc;
 //mod screenshot_wire;
 mod state;
@@ -79,6 +78,22 @@ use state::{CalloopData, ClientState, NescopeState};
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
+
+/// A flag that can also arrive as an environment variable.
+///
+/// `--hdr` on its own still means true. The difference is what a value may be:
+/// clap's own bool parser takes `true` and `false` and nothing else, so
+/// `NESCOPE_HDR=1` -- which is how every other environment variable in this
+/// stack is written, and the first thing anyone tries -- was rejected outright.
+fn flag_value(value: &str) -> Result<bool, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Ok(true),
+        "0" | "false" | "no" | "off" | "" => Ok(false),
+        other => Err(std::format!(
+            "expected 1 or 0 (true/false, yes/no and on/off are also taken), got {other:?}"
+        )),
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -125,8 +140,15 @@ struct Args {
     #[arg(long, default_value = "1000", env = "NESCOPE_FRAME_CALLBACK_HZ")]
     frame_callback_hz: u32,
 
-    /// Enable HDR protocols (wp_color_management_v1 + gamescope_swapchain_factory_v2).
-    #[arg(long, env = "NESCOPE_HDR")]
+    /// Enable HDR colour management (`wp_color_manager_v1`).
+    #[arg(
+        long,
+        env = "NESCOPE_HDR",
+        num_args = 0..=1,
+        default_value_t = false,
+        default_missing_value = "true",
+        value_parser = flag_value,
+    )]
     hdr: bool,
 
     /// Run XWayland, for Linux-native software with no Wayland support.
@@ -137,7 +159,14 @@ struct Args {
     /// which is what the launch environment does -- and HDR is only offered on
     /// the Wayland surface, so a game routed through XWayland loses it too.
     /// Turn this on for the shrinking set of X11-only native software.
-    #[arg(long, env = "NESCOPE_XWAYLAND")]
+    #[arg(
+        long,
+        env = "NESCOPE_XWAYLAND",
+        num_args = 0..=1,
+        default_value_t = false,
+        default_missing_value = "true",
+        value_parser = flag_value,
+    )]
     xwayland: bool,
 
     /// Wayland socket name (created in $XDG_RUNTIME_DIR).
@@ -422,8 +451,7 @@ fn main() {
     // wrong way round, and it capped them at 60 while sessions asked for 120.
     // The capture layer holds the game instead, and this runs fast enough to
     // stay out of the way.
-    let frame_interval =
-        Duration::from_micros(1_000_000 / args.frame_callback_hz.max(1) as u64);
+    let frame_interval = Duration::from_micros(1_000_000 / args.frame_callback_hz.max(1) as u64);
     loop_handle
         .insert_source(Timer::from_duration(frame_interval), move |_, _, data| {
             if let Some(ref mut li) = data.libinput {
@@ -437,7 +465,7 @@ fn main() {
     // ── CalloopData ───────────────────────────────────────────────────────
     let socket_name_for_cleanup = args.socket.clone();
     let command = args.command.clone();
-    let gamescope_wayland_socket = args.socket.clone();
+    let wayland_socket = args.socket.clone();
 
     // ── libinput backend ─────────────────────────────────────────────────
     let libinput_ctx =
@@ -491,7 +519,7 @@ fn main() {
                         // Put the game in its own process group so we can
                         // kill the whole tree at once with kill(-pgid, …).
                         .process_group(0)
-                        .env("WAYLAND_DISPLAY", &gamescope_wayland_socket);
+                        .env("WAYLAND_DISPLAY", &wayland_socket);
 
                     // DISPLAY only if XWayland is actually running. Setting it
                     // otherwise points clients at a server that is not there,
@@ -516,24 +544,6 @@ fn main() {
                         // this. Without it neither DX11 nor DX12 (vkd3d-proton
                         // through DXVK's dxgi) sees HDR as available.
                         cmd.env("DXVK_HDR", "1");
-
-                        // Left set, but deliberately without ENABLE_GAMESCOPE_WSI
-                        // alongside it, so it is inert unless somebody opts in.
-                        //
-                        // That pair activates gamescope's WSI layer, which
-                        // predates Wayland colour management and works by
-                        // hiding HDR from the driver and reporting it to the
-                        // compositor out of band. We do not want it: it needs a
-                        // layer this image does not ship, it only helps the
-                        // XWayland path, and capture reads the colour space it
-                        // hides -- measured, a game asking for HDR10 through it
-                        // has its PQ samples encoded and tagged BT.709 SDR.
-                        // Enabling it would trade no HDR for wrong HDR.
-                        tracing::debug!(
-                            gamescope_wayland_socket,
-                            "HDR: Wayland colour management; gamescope WSI not enabled"
-                        );
-                        cmd.env("GAMESCOPE_WAYLAND_DISPLAY", &gamescope_wayland_socket);
                     }
 
                     // Detect GPU vendor from render device and set VK_DRIVER_FILES
@@ -624,6 +634,12 @@ fn main() {
                     data.state.no_clients_since = None;
                 }
             }
+
+            // Answer any colour-management information requests that came in
+            // this iteration. Deferred to here because the event that ends
+            // them destroys the object, and doing that inside the request that
+            // created it panics the backend -- see .
+            data.state.hdr.flush_information();
 
             // ── Flush Wayland clients ─────────────────────────────────
             if let Err(e) = data.display.flush_clients() {

@@ -13,6 +13,7 @@ export namespace Identifier {
 		userFingerprint: 'ufp',
 		pairingCode: 'pai',
 		machine: 'mch',
+		installToken: 'mit',
 		box: 'box',
 		session: 'ses',
 		accessToken: 'pat',

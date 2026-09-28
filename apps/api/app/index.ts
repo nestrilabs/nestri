@@ -14,6 +14,7 @@ import { BillingApi } from './routes/billing.js';
 import { EnrolmentApi } from './routes/enrolment.js';
 import { GameApi } from './routes/game.js';
 import { IndexApi } from './routes/index.js';
+import { InstallApi } from './routes/install.js';
 import { LibraryApi } from './routes/library.js';
 import { MachineApi } from './routes/machine.js';
 import { OrganisationApi } from './routes/organisation.js';
@@ -40,6 +41,7 @@ app
 
 const routes = app
 	.route('/', IndexApi.route)
+	.route('/', InstallApi.route)
 	.route('/user', UserApi.route)
 	.route('/steam', SteamApi.route)
 	.route('/library', LibraryApi.route)

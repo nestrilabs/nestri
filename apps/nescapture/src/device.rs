@@ -14,6 +14,7 @@ use std::os::raw::c_void;
 use std::sync::Arc;
 
 const VK_LAYER_LINK_INFO: u32 = 0;
+const VK_LOADER_DATA_CALLBACK: u32 = 1;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn vkCreateDevice(
@@ -43,6 +44,14 @@ pub unsafe extern "system" fn vkCreateDevice(
     };
     unsafe { (*layer_info).u.pDeviceLayerInfo = (*dev_link).pNext };
 
+    let set_loader_data = unsafe {
+        find_layer_link::<VkLayerDeviceCreateInfo>(
+            (*p_create_info).p_next as *const c_void,
+            VK_LOADER_DATA_CALLBACK,
+        )
+    }
+    .and_then(|info| unsafe { (*info).u.pfnSetDeviceLoaderData });
+
     let inst_key = unsafe { dispatch_key(physical_device.as_raw() as *const c_void) };
     let istate = match INSTANCE_STATE.get(&inst_key) {
         Some(s) => s.clone(),
@@ -54,11 +63,8 @@ pub unsafe extern "system" fn vkCreateDevice(
         }
     };
 
-    // ── Inject DMA-BUF extensions for zero-copy capture ──────────────────
     let ci = unsafe { &*p_create_info };
-
-    // Collect the game's original extensions.
-    let original_extensions: Vec<*const libc::c_char> =
+    let game_extensions: Vec<*const libc::c_char> =
         if ci.enabled_extension_count > 0 && !ci.pp_enabled_extension_names.is_null() {
             unsafe {
                 std::slice::from_raw_parts(
@@ -71,69 +77,34 @@ pub unsafe extern "system" fn vkCreateDevice(
             Vec::new()
         };
 
-    // Extensions we need — static byte strings so pointers stay valid.
-    const EXT_EXTERNAL_MEMORY: &[u8] = b"VK_KHR_external_memory\0";
-    const EXT_EXTERNAL_MEMORY_FD: &[u8] = b"VK_KHR_external_memory_fd\0";
-    const EXT_EXTERNAL_MEMORY_DMABUF: &[u8] = b"VK_EXT_external_memory_dma_buf\0";
-    // Lets the capture ring be allocated tiled. The importer has always created
-    // its side with DRM_FORMAT_MODIFIER_EXT tiling; without this the producer
-    // can only offer it a linear buffer.
-    const EXT_IMAGE_DRM_FORMAT_MODIFIER: &[u8] = b"VK_EXT_image_drm_format_modifier\0";
-
-    let needed: &[&[u8]] = &[
-        EXT_EXTERNAL_MEMORY,
-        EXT_EXTERNAL_MEMORY_FD,
-        EXT_EXTERNAL_MEMORY_DMABUF,
-        EXT_IMAGE_DRM_FORMAT_MODIFIER,
-    ];
-
-    // Build extended list: original + any of ours not already present.
-    let mut extended = original_extensions.clone();
-    for &ext in needed {
-        let name_cstr = unsafe { std::ffi::CStr::from_bytes_with_nul_unchecked(ext) };
-        let already = extended
-            .iter()
-            .any(|&ptr| unsafe { std::ffi::CStr::from_ptr(ptr) == name_cstr });
-        if !already {
-            extended.push(ext.as_ptr() as *const libc::c_char);
+    // Where it can, the encoder runs on this very device, so the device is
+    // first created with what that needs. Anything refused falls back to the
+    // device exactly as the game asked for it, and the encoder to a device of
+    // its own.
+    let mut shared = None;
+    if let Some(prepared) =
+        unsafe { crate::shared::prepare(&istate, next_gdpa, physical_device, ci, &game_extensions) }
+    {
+        let shared_ci = prepared.create_info(ci);
+        let result =
+            unsafe { (istate.create_device)(physical_device, &shared_ci, p_allocator, p_device) };
+        let (additions, entry, instance) = unsafe { prepared.finish() };
+        if result == vk::Result::SUCCESS {
+            shared = Some((additions, entry, instance));
+        } else {
+            log::warn!(
+                "vkCreateDevice with the encoder's additions failed ({result:?}), \
+                 retrying as the game asked"
+            );
         }
     }
-
-    // Try with injected extensions first.
-    //
-    // The device's queue create info is passed through unchanged. An earlier
-    // version bumped the first family's queue count by one to get a dedicated
-    // capture queue, which was then never used — and could not be: the capture
-    // blit has to be submitted to the queue the game presents on, or it gains
-    // no ordering against the present. All the bump did was risk exceeding the
-    // family's available queue count on the way in.
-    let mut modified_ci = *ci;
-    modified_ci.enabled_extension_count = extended.len() as u32;
-    modified_ci.pp_enabled_extension_names = extended.as_ptr();
-
-    let mut dmabuf_available = true;
-    let result =
-        unsafe { (istate.create_device)(physical_device, &modified_ci, p_allocator, p_device) };
-
-    let result = if result != vk::Result::SUCCESS {
-        // Driver rejected our extensions — retry with original create info.
-        log::warn!(
-            "vkCreateDevice with DMA-BUF extensions failed ({:?}), \
-             retrying without — CPU readback fallback will be used",
-            result
-        );
-        dmabuf_available = false;
-        unsafe { (istate.create_device)(physical_device, p_create_info, p_allocator, p_device) }
-    } else {
-        log::info!("DMA-BUF extensions injected successfully");
-        result
-    };
-    if result != vk::Result::SUCCESS {
-        return result;
-    }
-
-    if !dmabuf_available {
-        log::warn!("DMA-BUF extensions missing — will use CPU readback fallback (expensive!)");
+    if shared.is_none() {
+        let result = unsafe {
+            (istate.create_device)(physical_device, p_create_info, p_allocator, p_device)
+        };
+        if result != vk::Result::SUCCESS {
+            return result;
+        }
     }
 
     let device = unsafe { *p_device };
@@ -156,6 +127,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         get_device_proc_addr: next_gdpa,
         destroy_device: load!(b"vkDestroyDevice\0"),
         get_device_queue: load!(b"vkGetDeviceQueue\0"),
+        get_device_queue2: try_load!(b"vkGetDeviceQueue2\0"),
         queue_present_khr: try_load!(b"vkQueuePresentKHR\0"),
 
         // Phase 1
@@ -189,10 +161,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         cmd_pipeline_barrier: load!(b"vkCmdPipelineBarrier\0"),
         cmd_copy_image: load!(b"vkCmdCopyImage\0"),
         get_image_subresource_layout: load!(b"vkGetImageSubresourceLayout\0"),
-        get_memory_fd_khr: try_load!(b"vkGetMemoryFdKHR\0"),
-        get_image_drm_format_modifier_properties_ext: try_load!(
-            b"vkGetImageDrmFormatModifierPropertiesEXT\0"
-        ),
         create_query_pool: try_load!(b"vkCreateQueryPool\0"),
         destroy_query_pool: try_load!(b"vkDestroyQueryPool\0"),
         cmd_reset_query_pool: try_load!(b"vkCmdResetQueryPool\0"),
@@ -232,6 +200,17 @@ pub unsafe extern "system" fn vkCreateDevice(
 
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
 
+    let shared = shared.map(|(additions, entry, instance)| unsafe {
+        crate::shared::SharedDevice::adopt(
+            additions,
+            entry,
+            instance,
+            physical_device,
+            device,
+            next_gdpa,
+        )
+    });
+
     // Phase 3: load shader hash config
     let shader_hashes = config::resolve_config_path()
         .as_ref()
@@ -252,6 +231,9 @@ pub unsafe extern "system" fn vkCreateDevice(
         raw: device,
         physical_device,
         fp,
+        shared,
+        shared_active: std::sync::atomic::AtomicBool::new(false),
+        set_loader_data,
 
         shader_registry: DashMap::new(),
         pipeline_registry: DashMap::new(),
@@ -279,6 +261,7 @@ pub unsafe extern "system" fn vkCreateDevice(
         }),
         swapchain_colorspace: std::sync::atomic::AtomicU32::new(0),
         frame_counter: std::sync::atomic::AtomicU64::new(0),
+        ring_generation: std::sync::atomic::AtomicU64::new(0),
 
         hud_detected_frame: std::sync::atomic::AtomicBool::new(false),
         pending_capture_frame: std::sync::atomic::AtomicBool::new(false),
@@ -286,7 +269,6 @@ pub unsafe extern "system" fn vkCreateDevice(
         skipped_draws_frame: std::sync::atomic::AtomicU32::new(0),
 
         encoder: std::sync::Mutex::new(None),
-
 
         frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
         frame_pacer: std::sync::Mutex::new(crate::pacing::FramePacer::from_env()),
@@ -317,23 +299,20 @@ pub unsafe extern "system" fn vkDestroyDevice(
         ds.pipeline_registry.len(),
     );
 
-    // ── 1. Shut down encoder pipeline (unblocks encoder + RTP threads) ───
-    {
-        let mut enc_guard = ds.encoder.lock().unwrap();
-        if let Some(handle) = enc_guard.take() {
-            handle.shutdown();
-            // `handle` is dropped here → drops `frame_tx` → encoder thread's
-            // recv_timeout returns Disconnected → encoder thread drops
-            // `encoded_tx` → RTP thread exits too.
-            //
-            // Give threads a moment to drain.  In production you'd join the
-            // JoinHandles, but since we don't store them, a short sleep +
-            // the AtomicBool shutdown flag is sufficient.
-            log::info!("encoder pipeline shutdown signaled");
+    // ── 1. Shut down the encode pipeline ──────────────────────────────────
+    //
+    // Waited for, not just signalled. On a shared device the encoder, its
+    // converter and their images are objects on this very device, and
+    // destroying the device under them is a use-after-free. The receive
+    // timeout bounds how long the thread takes to notice.
+    let handle = ds.encoder.lock().ok().and_then(|mut g| g.take());
+    if let Some(handle) = handle {
+        if handle.finish(std::time::Duration::from_secs(2)) {
+            log::info!("encoder pipeline stopped");
+        } else {
+            log::error!("encoder thread did not stop in time; destroying the device anyway");
         }
     }
-    // Brief yield to let threads notice the disconnect.
-    std::thread::sleep(std::time::Duration::from_millis(50));
 
     // ── 2. Tear down the capture ring ─────────────────────────────────────
     //
@@ -392,11 +371,109 @@ pub unsafe extern "system" fn vkGetDeviceQueue(
 ) {
     let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
     if let Some(ds) = DEVICE_STATE.get(&key) {
-        unsafe { (ds.fp.get_device_queue)(device, queue_family_index, queue_index, p_queue) };
+        // A queue created internally synchronized, so the encoder can share
+        // it, is invisible to vkGetDeviceQueue: only vkGetDeviceQueue2 with the
+        // matching flags returns it. The game asked for a plain queue and gets
+        // this one.
+        match (
+            shares_family(&ds, queue_family_index),
+            ds.fp.get_device_queue2,
+        ) {
+            (true, Some(get2)) => {
+                let info = vk::DeviceQueueInfo2::default()
+                    .flags(vk::DeviceQueueCreateFlags::INTERNALLY_SYNCHRONIZED_KHR)
+                    .queue_family_index(queue_family_index)
+                    .queue_index(queue_index);
+                unsafe { get2(device, &info, p_queue) };
+            }
+            _ => unsafe {
+                (ds.fp.get_device_queue)(device, queue_family_index, queue_index, p_queue)
+            },
+        }
         let queue = unsafe { *p_queue };
+        // The encoder's queues reach this hook without the loader in between.
+        // For the game's, the loader stamps them again on the way out.
+        unsafe { stamp(&ds, queue.as_raw() as *mut c_void) };
         QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
         crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), queue_family_index);
     }
+}
+
+/// Give a dispatchable object this layer obtained itself the loader's
+/// dispatch data.
+///
+/// The loader writes its dispatch pointer into every queue and command buffer
+/// that passes through its own entry points. One a layer allocates by calling
+/// the next layer directly never does, and a layer below this one that finds
+/// its per-object state by that pointer then finds nothing: the validation
+/// layer aborts, in the first vkCmd* recorded into such a command buffer. The
+/// loader hands every layer this callback at vkCreateDevice for exactly this.
+///
+/// # Safety
+///
+/// `object` must be a queue or command buffer of `ds`'s device.
+pub unsafe fn stamp(ds: &DeviceState, object: *mut c_void) {
+    if let Some(set) = ds.set_loader_data
+        && unsafe { set(ds.raw, object) } != vk::Result::SUCCESS
+    {
+        log::warn!("vkSetDeviceLoaderData refused an object of the layer's own");
+    }
+}
+
+/// vkAllocateCommandBuffers for the encoder, whose command buffers are the
+/// layer's own: allocated below the loader, so stamped here. See [`stamp`].
+pub unsafe extern "system" fn encoder_allocate_command_buffers(
+    device: vk::Device,
+    p_allocate_info: *const vk::CommandBufferAllocateInfo<'_>,
+    p_command_buffers: *mut vk::CommandBuffer,
+) -> vk::Result {
+    let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
+    let Some(ds) = DEVICE_STATE.get(&key).map(|s| s.clone()) else {
+        return vk::Result::ERROR_INITIALIZATION_FAILED;
+    };
+    let result =
+        unsafe { (ds.fp.allocate_command_buffers)(device, p_allocate_info, p_command_buffers) };
+    if result == vk::Result::SUCCESS {
+        let count = unsafe { (*p_allocate_info).command_buffer_count } as usize;
+        for cb in unsafe { std::slice::from_raw_parts(p_command_buffers, count) } {
+            unsafe { stamp(&ds, cb.as_raw() as *mut c_void) };
+        }
+    }
+    result
+}
+
+/// Whether the game's queues in `family` were created internally synchronized
+/// for the encoder to share.
+fn shares_family(ds: &DeviceState, family: u32) -> bool {
+    ds.shared
+        .as_ref()
+        .is_some_and(|s| s.queues.internally_synchronized.contains(&family))
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn vkGetDeviceQueue2(
+    device: vk::Device,
+    p_queue_info: *const vk::DeviceQueueInfo2,
+    p_queue: *mut vk::Queue,
+) {
+    let key = unsafe { dispatch_key(device.as_raw() as *const c_void) };
+    let Some(ds) = DEVICE_STATE.get(&key) else {
+        return;
+    };
+    let Some(get2) = ds.fp.get_device_queue2 else {
+        return;
+    };
+    // The flags have to match the ones the queue was created with, and for a
+    // shared family the layer added one the game does not know about.
+    let mut info = unsafe { *p_queue_info };
+    if shares_family(&ds, info.queue_family_index) {
+        info.flags |= vk::DeviceQueueCreateFlags::INTERNALLY_SYNCHRONIZED_KHR;
+    }
+    unsafe { get2(device, &info, p_queue) };
+    let queue = unsafe { *p_queue };
+    unsafe { stamp(&ds, queue.as_raw() as *mut c_void) };
+    QUEUE_TO_DEVICE_KEY.insert(queue.as_raw(), key);
+    crate::state::QUEUE_TO_FAMILY.insert(queue.as_raw(), info.queue_family_index);
 }
 
 /// Enumerate device extensions supported by the physical device.

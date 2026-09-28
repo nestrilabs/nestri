@@ -1,0 +1,602 @@
+From 35db2e58006deca5c6383517f9228eb32a608548 Mon Sep 17 00:00:00 2001
+From: DatCaptainHorse <DatCaptainHorse@users.noreply.github.com>
+Date: Wed, 23 Sep 2026 20:13:47 +0300
+Subject: [PATCH] virtio/vdrm, ac: log where threads wait, per wait and per
+ second
+
+A guest thread under a native context can be blocked on the host in more
+places than it looks: a synchronous request, a submission that holds
+eb_lock across an ioctl which itself waits on in-fences, a BO wait, or an
+ordinary syncobj wait. When a frame runs long there is no way to tell from
+the outside which of those it was, or whether it was any of them.
+
+Two knobs, in milliseconds, both off when unset or 0:
+
+- MESA_SLOW_WAIT_MS logs each single wait longer than the value, with its
+  command, ring and how the time split between waiting for eb_lock, the
+  submit or flush ioctl, the fence, and the host catching up.
+- MESA_WAIT_STATS logs, once a second per thread, the time and count spent
+  in each kind of wait, when the total reached the value. Many short waits
+  that add up to a long frame never trip a per-wait threshold; totals show
+  them, and a second with a long frame can be compared with one without.
+
+Syncobj waits are timed by wrapping the device's sync provider, since the
+Vulkan runtime waits through it directly and never through the ac_drm_cs_*
+helpers. The wrapper is installed only when a knob is set, and times only
+waits that could block; a poll is not.
+
+Every line carries a UTC wall-clock stamp and the thread id, so it can be
+lined up with other components' logs. The shared pieces live in a header-only
+util/u_wait_log.h, so no build file changes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/amd/common/ac_linux_drm.c  | 197 +++++++++++++++++++++++++++++++++
+ src/util/u_wait_log.h          | 133 ++++++++++++++++++++++
+ src/virtio/vdrm/vdrm.c         |  80 +++++++++++++
+ src/virtio/vdrm/vdrm.h         |  14 +++
+ src/virtio/vdrm/vdrm_virtgpu.c |  20 +++-
+ 5 files changed, 443 insertions(+), 1 deletion(-)
+ create mode 100644 src/util/u_wait_log.h
+
+diff --git a/src/amd/common/ac_linux_drm.c b/src/amd/common/ac_linux_drm.c
+index 63b27058ec1..d2f16aefc83 100644
+--- a/src/amd/common/ac_linux_drm.c
++++ b/src/amd/common/ac_linux_drm.c
+@@ -14,10 +14,205 @@
+ #include <time.h>
+ #include <unistd.h>
+ 
++#include "util/u_wait_log.h"
++
+ #ifdef HAVE_AMDGPU_VIRTIO
+ #include "virtio/amdgpu_virtio.h"
+ #endif
+ 
++/* Wait logging for blocking syncobj waits -- what vkWaitForFences and timeline
++ * semaphore waits come down to. See util/u_wait_log.h for the knobs; they are
++ * the virtio transport's too, so one setting shows both a thread waiting on
++ * the GPU and a thread waiting on the host. Polls (a zero timeout) are never
++ * timed.
++ *
++ * Done by wrapping the device's sync provider rather than the ac_drm_cs_*
++ * helpers, because the Vulkan runtime waits through the provider directly and
++ * never calls those helpers: timing them saw almost nothing. The wrapper is
++ * installed only when a knob is set, so it costs nothing otherwise.
++ */
++enum { SYNCOBJ_WAIT, TIMELINE_WAIT, WAIT_KINDS };
++static const char *const wait_kinds[WAIT_KINDS] = { "syncobj", "timeline" };
++static __thread struct u_wait_log_window wait_window;
++
++static void
++note_wait(unsigned kind, int64_t t0, unsigned num_handles, int ret)
++{
++   int64_t took = os_time_get_nano() - t0;
++   u_wait_log_account(&wait_window, "sync", wait_kinds, WAIT_KINDS, kind, took);
++
++   int64_t slow = u_wait_log_slow_ns();
++   if (slow && took > slow) {
++      char stamp[16];
++      u_wait_log_stamp(stamp);
++      mesa_logw("%s sync: %s wait on %u syncobj(s) took %.1f ms (ret %d) tid %d", stamp,
++                wait_kinds[kind], num_handles, took / 1e6, ret, gettid());
++   }
++}
++
++struct timed_sync_provider {
++   struct util_sync_provider base;
++   struct util_sync_provider *inner;
++};
++
++static struct util_sync_provider *
++inner_of(struct util_sync_provider *p)
++{
++   return ((struct timed_sync_provider *)p)->inner;
++}
++
++static int
++timed_create(struct util_sync_provider *p, uint32_t flags, uint32_t *handle)
++{
++   return inner_of(p)->create(inner_of(p), flags, handle);
++}
++
++static int
++timed_destroy(struct util_sync_provider *p, uint32_t handle)
++{
++   return inner_of(p)->destroy(inner_of(p), handle);
++}
++
++static int
++timed_handle_to_fd(struct util_sync_provider *p, uint32_t handle, int *out_obj_fd)
++{
++   return inner_of(p)->handle_to_fd(inner_of(p), handle, out_obj_fd);
++}
++
++static int
++timed_fd_to_handle(struct util_sync_provider *p, int obj_fd, uint32_t *handle)
++{
++   return inner_of(p)->fd_to_handle(inner_of(p), obj_fd, handle);
++}
++
++static int
++timed_import_sync_file(struct util_sync_provider *p, uint32_t handle, int sync_file_fd)
++{
++   return inner_of(p)->import_sync_file(inner_of(p), handle, sync_file_fd);
++}
++
++static int
++timed_export_sync_file(struct util_sync_provider *p, uint32_t handle, int *out_sync_file_fd)
++{
++   return inner_of(p)->export_sync_file(inner_of(p), handle, out_sync_file_fd);
++}
++
++static int
++timed_wait(struct util_sync_provider *p, uint32_t *handles, unsigned num_handles,
++           int64_t timeout_nsec, unsigned flags, uint32_t *first_signaled)
++{
++   struct util_sync_provider *in = inner_of(p);
++   if (!timeout_nsec)
++      return in->wait(in, handles, num_handles, timeout_nsec, flags, first_signaled);
++
++   int64_t t0 = os_time_get_nano();
++   int ret = in->wait(in, handles, num_handles, timeout_nsec, flags, first_signaled);
++   note_wait(SYNCOBJ_WAIT, t0, num_handles, ret);
++   return ret;
++}
++
++static int
++timed_reset(struct util_sync_provider *p, const uint32_t *handles, uint32_t handle_count)
++{
++   return inner_of(p)->reset(inner_of(p), handles, handle_count);
++}
++
++static int
++timed_signal(struct util_sync_provider *p, const uint32_t *handles, uint32_t handle_count)
++{
++   return inner_of(p)->signal(inner_of(p), handles, handle_count);
++}
++
++static int
++timed_timeline_signal(struct util_sync_provider *p, const uint32_t *handles, uint64_t *points,
++                      uint32_t handle_count)
++{
++   return inner_of(p)->timeline_signal(inner_of(p), handles, points, handle_count);
++}
++
++static int
++timed_timeline_wait(struct util_sync_provider *p, uint32_t *handles, uint64_t *points,
++                    unsigned num_handles, int64_t timeout_nsec, unsigned flags,
++                    uint32_t *first_signaled)
++{
++   struct util_sync_provider *in = inner_of(p);
++   if (!timeout_nsec)
++      return in->timeline_wait(in, handles, points, num_handles, timeout_nsec, flags,
++                               first_signaled);
++
++   int64_t t0 = os_time_get_nano();
++   int ret = in->timeline_wait(in, handles, points, num_handles, timeout_nsec, flags,
++                               first_signaled);
++   note_wait(TIMELINE_WAIT, t0, num_handles, ret);
++   return ret;
++}
++
++static int
++timed_query(struct util_sync_provider *p, uint32_t *handles, uint64_t *points,
++            uint32_t handle_count, uint32_t flags)
++{
++   return inner_of(p)->query(inner_of(p), handles, points, handle_count, flags);
++}
++
++static int
++timed_transfer(struct util_sync_provider *p, uint32_t dst_handle, uint64_t dst_point,
++               uint32_t src_handle, uint64_t src_point, uint32_t flags)
++{
++   return inner_of(p)->transfer(inner_of(p), dst_handle, dst_point, src_handle, src_point,
++                                flags);
++}
++
++static struct util_sync_provider *wrap_timed(struct util_sync_provider *inner);
++
++static void
++timed_finalize(struct util_sync_provider *p)
++{
++   inner_of(p)->finalize(inner_of(p));
++   free(p);
++}
++
++static struct util_sync_provider *
++timed_clone(struct util_sync_provider *p)
++{
++   struct util_sync_provider *cloned = inner_of(p)->clone(inner_of(p));
++   return cloned ? wrap_timed(cloned) : NULL;
++}
++
++/* Wrap `inner` so its blocking waits are timed. On allocation failure the
++ * inner provider is returned as it is: logging is not worth failing a device.
++ */
++static struct util_sync_provider *
++wrap_timed(struct util_sync_provider *inner)
++{
++   struct timed_sync_provider *t = calloc(1, sizeof(*t));
++   if (!t)
++      return inner;
++   t->inner = inner;
++   /* An operation the inner provider leaves NULL stays NULL here, since
++    * callers test for it rather than call through it.
++    */
++#define FWD(op) .op = inner->op ? timed_##op : NULL
++   t->base = (struct util_sync_provider) {
++      FWD(create),
++      FWD(destroy),
++      FWD(handle_to_fd),
++      FWD(fd_to_handle),
++      FWD(import_sync_file),
++      FWD(export_sync_file),
++      FWD(wait),
++      FWD(reset),
++      FWD(signal),
++      FWD(timeline_signal),
++      FWD(timeline_wait),
++      FWD(query),
++      FWD(transfer),
++      FWD(finalize),
++      FWD(clone),
++   };
++#undef FWD
++   return &t->base;
++}
++
+ struct ac_drm_device {
+    union {
+       amdgpu_device_handle adev;
+@@ -82,6 +277,8 @@ int ac_drm_device_initialize(int fd, bool is_virtio,
+    }
+ 
+    if (r == 0) {
++      if (u_wait_log_enabled() && (*dev)->p)
++         (*dev)->p = wrap_timed((*dev)->p);
+       (*dev)->is_virtio = is_virtio;
+       /* Device-static, so it is asked once here rather than on every heap
+        * query. A failure is not fatal: the caller falls back to querying it.
+diff --git a/src/util/u_wait_log.h b/src/util/u_wait_log.h
+new file mode 100644
+index 00000000000..ce96256f371
+--- /dev/null
++++ b/src/util/u_wait_log.h
+@@ -0,0 +1,133 @@
++/*
++ * SPDX-License-Identifier: MIT
++ */
++
++/* Logging for time a thread spends waiting, for finding what a frame that
++ * runs long was blocked on.
++ *
++ * Two knobs, both in milliseconds and both off when unset or 0:
++ *
++ *  - MESA_SLOW_WAIT_MS: log each single wait longer than this.
++ *  - MESA_WAIT_STATS:   once a second, per thread, log how much time went to
++ *                       each kind of wait, if the total reached this. Many
++ *                       short waits that add up to a long frame never trip a
++ *                       per-wait threshold; totals show them.
++ *
++ * Every line carries a UTC wall-clock stamp, so it can be lined up with other
++ * components' logs. Header-only, so each file that uses it keeps its own
++ * per-thread window and reports under its own name.
++ */
++
++#ifndef U_WAIT_LOG_H
++#define U_WAIT_LOG_H
++
++#include <stdbool.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <time.h>
++#include <unistd.h>
++
++#include "util/log.h"
++#include "util/os_time.h"
++#include "util/u_debug.h"
++
++#define U_WAIT_LOG_MAX_KINDS 8
++
++struct u_wait_log_window {
++   int64_t start;
++   int64_t ns[U_WAIT_LOG_MAX_KINDS];
++   uint32_t n[U_WAIT_LOG_MAX_KINDS];
++};
++
++/* A millisecond option as nanoseconds, read once into *cache. */
++static inline int64_t
++u_wait_log_option_ns(const char *name, int64_t *cache)
++{
++   if (*cache < 0)
++      *cache = debug_get_num_option(name, 0) * 1000000ll;
++   return *cache;
++}
++
++static inline int64_t
++u_wait_log_slow_ns(void)
++{
++   static int64_t cache = -1;
++   return u_wait_log_option_ns("MESA_SLOW_WAIT_MS", &cache);
++}
++
++static inline int64_t
++u_wait_log_stats_ns(void)
++{
++   static int64_t cache = -1;
++   return u_wait_log_option_ns("MESA_WAIT_STATS", &cache);
++}
++
++/* Whether any wait timing is wanted at all. */
++static inline bool
++u_wait_log_enabled(void)
++{
++   return u_wait_log_slow_ns() || u_wait_log_stats_ns();
++}
++
++/* "HH:MM:SS.mmm" in UTC. */
++static inline void
++u_wait_log_stamp(char buf[16])
++{
++   struct timespec ts;
++   struct tm tm;
++   clock_gettime(CLOCK_REALTIME, &ts);
++   gmtime_r(&ts.tv_sec, &tm);
++   snprintf(buf, 16, "%02d:%02d:%02d.%03ld", tm.tm_hour, tm.tm_min, tm.tm_sec,
++            ts.tv_nsec / 1000000);
++}
++
++/* Add one wait of `ns` nanoseconds of kind `kind` to this thread's window,
++ * and report and reset the window once it is a second old.
++ */
++static inline void
++u_wait_log_account(struct u_wait_log_window *w, const char *who,
++                   const char *const *kinds, unsigned num_kinds,
++                   unsigned kind, int64_t ns)
++{
++   int64_t floor = u_wait_log_stats_ns();
++   if (!floor || kind >= num_kinds || num_kinds > U_WAIT_LOG_MAX_KINDS)
++      return;
++
++   int64_t now = os_time_get_nano();
++   if (!w->start)
++      w->start = now;
++   w->ns[kind] += ns;
++   w->n[kind]++;
++
++   if (now - w->start < 1000000000ll)
++      return;
++
++   int64_t total = 0;
++   for (unsigned i = 0; i < num_kinds; i++)
++      total += w->ns[i];
++
++   if (total >= floor) {
++      char line[256];
++      size_t len = 0;
++      line[0] = '\0';
++      for (unsigned i = 0; i < num_kinds && len < sizeof(line); i++) {
++         if (!w->n[i])
++            continue;
++         int wrote = snprintf(line + len, sizeof(line) - len, " %s %.1f/%u",
++                              kinds[i], w->ns[i] / 1e6, w->n[i]);
++         if (wrote < 0)
++            break;
++         len += wrote;
++      }
++      char stamp[16];
++      u_wait_log_stamp(stamp);
++      mesa_logw("%s %s: tid %d waited %.1f ms of %.0f:%s", stamp, who, gettid(),
++                total / 1e6, (now - w->start) / 1e6, line);
++   }
++
++   memset(w, 0, sizeof(*w));
++   w->start = now;
++}
++
++#endif /* U_WAIT_LOG_H */
+diff --git a/src/virtio/vdrm/vdrm.c b/src/virtio/vdrm/vdrm.c
+index d09df9bb99d..4819219cbc5 100644
+--- a/src/virtio/vdrm/vdrm.c
++++ b/src/virtio/vdrm/vdrm.c
+@@ -4,10 +4,40 @@
+  */
+ 
+ #include "util/u_math.h"
++#include "util/u_wait_log.h"
+ #include "util/perf/cpu_trace.h"
+ 
+ #include "vdrm.h"
+ 
++/* Wait logging for the transport: see util/u_wait_log.h for the knobs.
++ *
++ * Every path here can stall the caller on the host, and execbuf holds eb_lock
++ * while it does, which stalls every other thread of this device too. The
++ * split into lock, flush, fence, host and submit time says which.
++ */
++static const char *const wait_kinds[VDRM_WAIT_COUNT] = {
++   [VDRM_WAIT_LOCK] = "lock",
++   [VDRM_WAIT_FLUSH] = "flush",
++   [VDRM_WAIT_FENCE] = "fence",
++   [VDRM_WAIT_HOST] = "host",
++   [VDRM_WAIT_SUBMIT] = "submit",
++   [VDRM_WAIT_BO] = "bo_wait",
++};
++
++static __thread struct u_wait_log_window wait_window;
++
++void
++vdrm_account_wait(enum vdrm_wait kind, int64_t ns)
++{
++   u_wait_log_account(&wait_window, "vdrm", wait_kinds, VDRM_WAIT_COUNT, kind, ns);
++}
++
++static double
++ms(int64_t ns)
++{
++   return ns / 1e6;
++}
++
+ struct vdrm_device * vdrm_virtgpu_connect(int fd, uint32_t context_type);
+ struct vdrm_device * vdrm_vpipe_connect(uint32_t context_type);
+ 
+@@ -114,7 +144,11 @@ vdrm_execbuf(struct vdrm_device *vdev, struct vdrm_execbuf_params *p)
+ 
+    MESA_TRACE_FUNC();
+ 
++   bool timed = u_wait_log_enabled();
++   int64_t t0 = timed ? os_time_get_nano() : 0;
++
+    simple_mtx_lock(&vdev->eb_lock);
++   int64_t t_locked = timed ? os_time_get_nano() : 0;
+ 
+    p->req->seqno = ++vdev->next_seqno;
+ 
+@@ -127,6 +161,23 @@ vdrm_execbuf(struct vdrm_device *vdev, struct vdrm_execbuf_params *p)
+ out_unlock:
+    simple_mtx_unlock(&vdev->eb_lock);
+ 
++   if (timed) {
++      int64_t t_done = os_time_get_nano();
++      vdrm_account_wait(VDRM_WAIT_LOCK, t_locked - t0);
++      vdrm_account_wait(VDRM_WAIT_SUBMIT, t_done - t_locked);
++
++      int64_t slow = u_wait_log_slow_ns();
++      if (slow && t_done - t0 > slow) {
++         char stamp[16];
++         u_wait_log_stamp(stamp);
++         mesa_logw("%s vdrm: execbuf cmd %u ring %d took %.1f ms (lock %.1f, submit %.1f; "
++                   "%u in-syncobjs, in-fence %s) tid %d",
++                   stamp, p->req->cmd, p->ring_idx, ms(t_done - t0), ms(t_locked - t0),
++                   ms(t_done - t_locked), p->num_in_syncobjs,
++                   p->has_in_fence_fd ? "yes" : "no", gettid());
++      }
++   }
++
+    return ret;
+ }
+ 
+@@ -141,7 +192,11 @@ vdrm_send_req(struct vdrm_device *vdev, struct vdrm_ccmd_req *req, bool sync)
+    uintptr_t fence = 0;
+    int ret = 0;
+ 
++   bool timed = u_wait_log_enabled();
++   int64_t t0 = timed ? os_time_get_nano() : 0;
++
+    simple_mtx_lock(&vdev->eb_lock);
++   int64_t t_locked = timed ? os_time_get_nano() : 0;
+    ret = enqueue_req(vdev, req);
+ 
+    if (ret || !sync)
+@@ -151,16 +206,41 @@ vdrm_send_req(struct vdrm_device *vdev, struct vdrm_ccmd_req *req, bool sync)
+ 
+ out_unlock:
+    simple_mtx_unlock(&vdev->eb_lock);
++   int64_t t_flushed = timed ? os_time_get_nano() : 0;
+ 
+    if (ret)
+       return ret;
+ 
++   int64_t t_fenced = t_flushed;
+    if (sync) {
+       MESA_TRACE_SCOPE("vdrm_execbuf sync");
+       vdev->funcs->wait_fence(vdev, fence);
++      if (timed)
++         t_fenced = os_time_get_nano();
+       vdrm_host_sync(vdev, req);
+    }
+ 
++   if (timed) {
++      int64_t t_done = os_time_get_nano();
++      vdrm_account_wait(VDRM_WAIT_LOCK, t_locked - t0);
++      vdrm_account_wait(VDRM_WAIT_FLUSH, t_flushed - t_locked);
++      if (sync) {
++         vdrm_account_wait(VDRM_WAIT_FENCE, t_fenced - t_flushed);
++         vdrm_account_wait(VDRM_WAIT_HOST, t_done - t_fenced);
++      }
++
++      int64_t slow = u_wait_log_slow_ns();
++      if (slow && t_done - t0 > slow) {
++         char stamp[16];
++         u_wait_log_stamp(stamp);
++         mesa_logw("%s vdrm: %s ccmd %u took %.1f ms (lock %.1f, flush %.1f, "
++                   "fence %.1f, host %.1f) tid %d",
++                   stamp, sync ? "sync" : "async", req->cmd, ms(t_done - t0),
++                   ms(t_locked - t0), ms(t_flushed - t_locked),
++                   ms(t_fenced - t_flushed), ms(t_done - t_fenced), gettid());
++      }
++   }
++
+    return 0;
+ }
+ 
+diff --git a/src/virtio/vdrm/vdrm.h b/src/virtio/vdrm/vdrm.h
+index fa676896f23..dbb6bfd2441 100644
+--- a/src/virtio/vdrm/vdrm.h
++++ b/src/virtio/vdrm/vdrm.h
+@@ -114,6 +114,20 @@ int vdrm_execbuf(struct vdrm_device *vdev, struct vdrm_execbuf_params *p);
+ 
+ void vdrm_host_sync(struct vdrm_device *vdev, const struct vdrm_ccmd_req *req);
+ 
++/* Kinds of wait the transport accounts for; see util/u_wait_log.h. */
++enum vdrm_wait {
++   VDRM_WAIT_LOCK,    /* waiting for eb_lock */
++   VDRM_WAIT_FLUSH,   /* the flush ioctl, lock held */
++   VDRM_WAIT_FENCE,   /* a sync request's fence */
++   VDRM_WAIT_HOST,    /* the host catching up after the fence */
++   VDRM_WAIT_SUBMIT,  /* the execbuf ioctl, lock held */
++   VDRM_WAIT_BO,      /* a BO wait */
++   VDRM_WAIT_COUNT,
++};
++
++/* Add one wait to this thread's per-second totals (MESA_WAIT_STATS). */
++void vdrm_account_wait(enum vdrm_wait kind, int64_t ns);
++
+ /**
+  * Import dmabuf fd returning a GEM handle
+  */
+diff --git a/src/virtio/vdrm/vdrm_virtgpu.c b/src/virtio/vdrm/vdrm_virtgpu.c
+index bccd4a5d279..9b9d5dc63c4 100644
+--- a/src/virtio/vdrm/vdrm_virtgpu.c
++++ b/src/virtio/vdrm/vdrm_virtgpu.c
+@@ -13,6 +13,7 @@
+ #include "drm-uapi/virtgpu_drm.h"
+ #include "util/libsync.h"
+ #include "util/log.h"
++#include "util/u_wait_log.h"
+ #include "util/perf/cpu_trace.h"
+ 
+ 
+@@ -213,9 +214,26 @@ virtgpu_bo_wait(struct vdrm_device *vdev, uint32_t handle)
+    };
+    int ret;
+ 
++   bool timed = u_wait_log_enabled();
++   int64_t t0 = timed ? os_time_get_nano() : 0;
++
+    /* Side note, this ioctl is defined as IO_WR but should be IO_W: */
+    ret = virtgpu_ioctl(vgdev->fd, VIRTGPU_WAIT, &args);
+-   if (ret && errno == EBUSY)
++   int err = errno;
++
++   if (timed) {
++      int64_t took = os_time_get_nano() - t0;
++      vdrm_account_wait(VDRM_WAIT_BO, took);
++      int64_t slow = u_wait_log_slow_ns();
++      if (slow && took > slow) {
++         char stamp[16];
++         u_wait_log_stamp(stamp);
++         mesa_logw("%s vdrm: bo_wait handle %u took %.1f ms tid %d", stamp, handle,
++                   took / 1e6, gettid());
++      }
++   }
++
++   if (ret && err == EBUSY)
+       return -EBUSY;
+ 
+    return 0;
+-- 
+2.55.0
+

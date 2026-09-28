@@ -11,6 +11,7 @@ use smithay::desktop::Window;
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::output::Output;
+use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 use smithay::reexports::wayland_server::protocol::wl_buffer;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
@@ -119,7 +120,6 @@ impl CompositorHandler for NescopeState {
 
     fn destroyed(&mut self, surface: &WlSurface) {
         self.hdr.surface_destroyed(surface);
-        self.vulkan_surfaces.remove(surface);
     }
 }
 
@@ -138,7 +138,7 @@ impl DmabufHandler for NescopeState {
         _dmabuf: Dmabuf,
         notifier: ImportNotifier,
     ) {
-        // Accept unconditionally — libhudless reads buffers
+        // Accept unconditionally — the nescapture layer reads buffers
         // directly from the game's Vulkan queue; nescope doesn't need to.
         let _ = notifier.successful::<NescopeState>();
     }
@@ -185,6 +185,29 @@ impl XdgShellHandler for NescopeState {
 
         // Re-focus the next window (if any).
         self.determine_and_apply_focus();
+    }
+
+    // Granted, not merely acknowledged. The default answers with a configure
+    // that lacks the fullscreen state, which a client reads as a refusal: Wine
+    // then asks again on every window update and never treats its window as
+    // fullscreen, so a game switching to exclusive fullscreen -- Control does
+    // this on leaving its title screen -- stalls in the transition and stays
+    // where it was. Wine also scales an emulated display mode up to the output
+    // only for a fullscreen window.
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<WlOutput>) {
+        surface.with_pending_state(|state| {
+            state.states.set(xdg_toplevel::State::Fullscreen);
+            state.size = Some((self.width as i32, self.height as i32).into());
+        });
+        surface.send_configure();
+    }
+
+    // Still the size of the output: there is nowhere else for a window to be.
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        surface.with_pending_state(|state| {
+            state.states.unset(xdg_toplevel::State::Fullscreen);
+        });
+        surface.send_configure();
     }
 
     fn new_popup(&mut self, _: PopupSurface, _: PositionerState) {}

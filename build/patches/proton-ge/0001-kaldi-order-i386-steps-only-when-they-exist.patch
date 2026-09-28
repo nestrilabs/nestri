@@ -1,0 +1,26 @@
+kaldi's i386 and x86_64 builds share one source directory, and its cmake
+writes generated files into it, so proton-ge serializes the two with plain
+ordering rules. Those rules name the i386 steps unconditionally.
+
+A wow64-only build has no i386-unix in ARCHS, so the i386 steps are never
+defined, and make stops with "no rule to make target .kaldi-i386-configure".
+Only order against them when they exist.
+
+diff --git a/Makefile.in b/Makefile.in
+index f8d959c..9b92fec 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -573,9 +573,13 @@ $(eval $(call rules-cmake,kaldi,aarch64,unix))
+ # the same source directory.
+ #
+ # The below assures that only a single configure/build step can run at a time.
++# The i386 steps exist only when i386-unix is in ARCHS; a wow64-only build has
++# none, and ordering against them would ask for a target with no rule.
++ifneq ($(findstring i386-unix,$(ARCHS)),)
+ $(OBJ)/.kaldi-x86_64-configure: $(OBJ)/.kaldi-i386-configure
+ $(OBJ)/.kaldi-i386-build: $(OBJ)/.kaldi-x86_64-configure
+ $(OBJ)/.kaldi-i386-build: $(OBJ)/.kaldi-x86_64-build
++endif
+ 
+ ##
+ ## vosk

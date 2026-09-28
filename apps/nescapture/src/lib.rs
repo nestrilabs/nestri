@@ -27,20 +27,20 @@ mod config;
 mod device;
 mod discovery;
 mod dispatch;
-mod dmabuf_import;
 mod encode;
 mod framebuffer;
 mod instance;
 mod memory;
-mod modifiers;
 mod pacing;
 mod pipeline;
 mod present;
+mod rate_probe;
 mod shader;
+mod shared;
 mod slots;
 mod state;
-mod timing;
 mod swapchain;
+mod timing;
 
 use commands::{
     vkCmdBeginRenderPass, vkCmdBeginRenderingKHR, vkCmdBindPipeline, vkCmdDraw, vkCmdDrawIndexed,
@@ -48,7 +48,7 @@ use commands::{
     vkCmdDrawIndirect, vkCmdDrawIndirectCount, vkCmdDrawIndirectCountKHR, vkCmdEndRenderPass,
     vkCmdEndRenderingKHR,
 };
-use device::{vkCreateDevice, vkDestroyDevice, vkGetDeviceQueue};
+use device::{vkCreateDevice, vkDestroyDevice, vkGetDeviceQueue, vkGetDeviceQueue2};
 use framebuffer::{
     vkAllocateCommandBuffers, vkCreateFramebuffer, vkCreateImageView, vkDestroyFramebuffer,
     vkDestroyImageView, vkFreeCommandBuffers,
@@ -100,10 +100,16 @@ pub(crate) struct VkLayerDeviceLink {
     pfnNextGetDeviceProcAddr: Option<PFN_vkGetDeviceProcAddr>,
 }
 
+/// Stamps the loader's dispatch data into a dispatchable object a layer
+/// created itself. See [`crate::device::stamp`].
+pub(crate) type PFN_vkSetDeviceLoaderData =
+    unsafe extern "system" fn(vk::Device, *mut c_void) -> vk::Result;
+
 #[repr(C)]
 pub(crate) union VkLayerCreateInfoU {
     pub pLayerInfo: *mut VkLayerInstanceLink,
     pub pDeviceLayerInfo: *mut VkLayerDeviceLink,
+    pub pfnSetDeviceLoaderData: Option<PFN_vkSetDeviceLoaderData>,
 }
 
 const VK_STRUCTURE_TYPE_LOADER_INSTANCE_CREATE_INFO: i32 = 47;
@@ -271,6 +277,7 @@ unsafe fn match_device_fn(name: &[u8]) -> Option<RawFn> {
             b"vkCreateDevice" => Some(to_raw(vkCreateDevice as *const () as usize)),
             b"vkDestroyDevice" => Some(to_raw(vkDestroyDevice as *const () as usize)),
             b"vkGetDeviceQueue" => Some(to_raw(vkGetDeviceQueue as *const () as usize)),
+            b"vkGetDeviceQueue2" => Some(to_raw(vkGetDeviceQueue2 as *const () as usize)),
             b"vkQueuePresentKHR" => Some(to_raw(vkQueuePresentKHR as *const () as usize)),
 
             b"vkCreateShaderModule" => Some(to_raw(vkCreateShaderModule as *const () as usize)),

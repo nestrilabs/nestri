@@ -45,6 +45,7 @@ fn main() -> anyhow::Result<()> {
     // nothing else in this guest is an init system, so until this runs there
     // is no `/proc` to score this process in and nowhere to put a socket.
     nesinit::filesystems::establish();
+    nesinit::platform::describe();
 
     // Everything a distribution's init scripts used to do, and nothing else is
     // going to: a hostname, the box's address, the directories a session's
@@ -80,6 +81,7 @@ fn main() -> anyhow::Result<()> {
         Ok(outcome) => tracing::info!(?outcome, "the session ended"),
         Err(error) => tracing::error!(%error, "the session failed"),
     }
+    nesinit::platform::report_steal();
 
     // Before anything below waits on a pid: the reaper runs on this runtime's
     // threads, and two things calling `wait` is what the registry exists to

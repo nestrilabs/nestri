@@ -1,0 +1,43 @@
+The x86_64 wine build gets VKD3D_PE_LIBS with a -L to the x86_64 vkd3d
+DLLs. That is right while a separate i386 wine build exists and gets its
+own value.
+
+A wow64-only build has no i386 wine build: the x86_64 one builds the i386
+PE side as well, and wine takes one VKD3D_PE_LIBS for every PE arch. The
+i386 wined3d.dll then links against the x86_64 libvkd3d-1.dll and fails
+with "file format not recognized". ld does not skip a mismatched DLL
+named with -l:, so listing both directories does not work either.
+
+Under wow64, keep the library names in VKD3D_PE_LIBS and pass each arch
+its own directory through i386_LDFLAGS and x86_64_LDFLAGS, which wine's
+configure already takes per arch. The i386 vkd3d was only ever built
+as a dependency of the i386 wine build, so the x86_64 one now waits for it.
+
+diff --git a/Makefile.in b/Makefile.in
+index f8d959c..2ac0b34 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -635,9 +639,23 @@ WINE_aarch64_AUTOCONF_ARGS = \
+ WINE_i386_AUTOCONF_ARGS += \
+   VKD3D_PE_CFLAGS="-I$(VULKAN_HEADERS_i386_DST)/include -I$(VKD3D_i386_DST)/include/vkd3d" \
+   VKD3D_PE_LIBS="-L$(VKD3D_i386_LIBDIR)/vkd3d/i386-windows -l:libvkd3d-1.dll -l:libvkd3d-shader-1.dll -l:libvkd3d-utils-1.dll"
++ifneq ($(findstring i386-unix,$(ARCHS)),)
+ WINE_x86_64_AUTOCONF_ARGS += \
+   VKD3D_PE_CFLAGS="-I$(VULKAN_HEADERS_x86_64_DST)/include -I$(VKD3D_x86_64_DST)/include/vkd3d" \
+   VKD3D_PE_LIBS="-L$(VKD3D_x86_64_LIBDIR)/vkd3d/x86_64-windows -l:libvkd3d-1.dll -l:libvkd3d-shader-1.dll -l:libvkd3d-utils-1.dll"
++else
++# Without i386-unix there is no i386 wine build, and the x86_64 one builds the
++# i386 PE side too (wow64). It links both, but VKD3D_PE_LIBS is one value for
++# every PE arch, so a -L in it would hand the i386 link the x86_64 DLLs. Name
++# the libraries there and give each arch its own directory through its own
++# LDFLAGS instead.
++WINE_x86_64_AUTOCONF_ARGS += \
++  VKD3D_PE_CFLAGS="-I$(VULKAN_HEADERS_x86_64_DST)/include -I$(VKD3D_x86_64_DST)/include/vkd3d" \
++  VKD3D_PE_LIBS="-l:libvkd3d-1.dll -l:libvkd3d-shader-1.dll -l:libvkd3d-utils-1.dll"
++WINE_i386-windows_LIBFLAGS = -L$(VKD3D_i386_LIBDIR)/vkd3d/i386-windows
++WINE_x86_64-windows_LIBFLAGS = -L$(VKD3D_x86_64_LIBDIR)/vkd3d/x86_64-windows
++$(OBJ)/.wine-x86_64-build: $(OBJ)/.vkd3d-i386-post-build
++endif
+ 
+ WINE_DEPENDS = ffmpeg openfst kaldi vosk libxml2 libxkbcommon libpcap
+ WINE_i386_DEPENDS = vkd3d

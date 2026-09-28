@@ -106,11 +106,6 @@ pub fn process_input(event: InputEvent, state: &mut NescopeState) {
         _ => state.last_pointer_activity = std::time::Instant::now(),
     }
 
-    // One-time X11 focus reset when the gamescope WSI surface is active.
-    if state.override_surface.is_some() && state.x11_focus_needs_reset {
-        state.sync_x11_focus();
-    }
-
     match event {
         InputEvent::KeyDown { keycode } => {
             if let Some(kb) = state.seat.get_keyboard() {
@@ -363,21 +358,6 @@ fn clamp_cursor(state: &mut NescopeState) {
 
 /// Find the focused target under the current cursor position.
 pub fn surface_under(state: &NescopeState) -> Option<(KeyboardFocusTarget, Point<f64, Logical>)> {
-    if state.override_surface.is_some() {
-        if let Some(wid) = state.focused_x11_window {
-            for window in state.space.elements() {
-                if let Some(x11) = window.x11_surface() {
-                    if x11.window_id() == wid {
-                        let loc = state.space.element_geometry(window)?.loc;
-                        return Some((KeyboardFocusTarget::Window(window.clone()), loc.to_f64()));
-                    }
-                }
-            }
-        }
-        let (window, loc) = state.space.element_under(state.cursor_position)?;
-        return Some((KeyboardFocusTarget::Window(window.clone()), loc.to_f64()));
-    }
-
     // Try element_under first
     if let Some((window, loc)) = state.space.element_under(state.cursor_position) {
         return Some((KeyboardFocusTarget::Window(window.clone()), loc.to_f64()));

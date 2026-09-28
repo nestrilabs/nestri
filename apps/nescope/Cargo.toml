@@ -28,8 +28,6 @@ smithay = { version = "0.7", default-features = false, features = [
 # Wayland client – connects to the host compositor to forward buffers.
 wayland-client   = "0.31"
 wayland-protocols = { version = "0.32", features = ["client", "staging", "server"] }
-# Needed to generate the gamescope_swapchain protocol bindings.
-wayland-scanner  = "0.31"
 wayland-backend  = "0.3"
 
 # Event loop

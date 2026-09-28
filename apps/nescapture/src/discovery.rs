@@ -2,7 +2,7 @@
 //  discovery.rs — Phase 6: per-draw logging for shader hash discovery
 //
 //  When HUDLESS_DISCOVER=1 is set, every vkCmdDraw* call is logged to:
-//    /tmp/hudless_discover_$EXE.log
+//    /tmp/nescapture_discover_$EXE.log
 //
 //  Log format:
 //    frame=0001 draw=00042 vert=0x1a2b3c4d5e6f7890 frag=0xaabbccddeeff0011 verts=6   blend=true depth=false
@@ -40,7 +40,7 @@ fn ensure_log_file() -> bool {
             .unwrap_or_else(|| "unknown".to_string())
     });
 
-    let path = format!("/tmp/hudless_discover_{}.log", exe_name);
+    let path = format!("/tmp/nescapture_discover_{}.log", exe_name);
     match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(f) => {
             log::info!("discovery logging to {}", path);

@@ -2,7 +2,7 @@
 //  slots.rs — ownership of the capture ring's destination buffers
 //
 //  A captured frame travels from the present hook, through the capture worker,
-//  into the encoder thread, and its DMA-BUF must not be written again until the
+//  into the encoder thread, and its image must not be written again until the
 //  encoder has finished reading it. Tracking that by hand across three threads
 //  is how the single-buffer version got it wrong. Instead the slot index is
 //  carried by a guard that returns it to the pool when it drops, wherever that
