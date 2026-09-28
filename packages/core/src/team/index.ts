@@ -230,6 +230,65 @@ export namespace Team {
 		}
 	);
 
+	/**
+	 * What a team's name and slug may be. The slug is the team's address, so
+	 * it is what `createPersonal` makes: lowercase letters, digits and single
+	 * hyphens. Exported so a client can check before it asks, rather than
+	 * keeping a second copy of the rule that drifts.
+	 */
+	export const Name = z.string().trim().min(1).max(64);
+	export const Slug = z
+		.string()
+		.max(50)
+		.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'lowercase letters, numbers and single hyphens');
+
+	/** A slug somebody else's team already has. */
+	export class SlugTaken extends Error {
+		constructor(public slug: string) {
+			super(`The slug ${slug} is taken`);
+		}
+	}
+
+	/**
+	 * Change a team's name, its slug, or both.
+	 *
+	 * Who may do this is the caller's business (the route checks the role);
+	 * this only refuses a slug that is taken. The check before the write gives
+	 * the ordinary answer, and the unique index is what actually holds when two
+	 * people race for the same one.
+	 */
+	export const rename = fn(
+		z.object({ id: Info.shape.id, name: Name.optional(), slug: Slug.optional() }),
+		async (input) => {
+			if (input.slug) {
+				const holder = await fromSlug(input.slug);
+				if (holder && holder.id !== input.id) throw new SlugTaken(input.slug);
+			}
+			try {
+				return await Database.use(async (tx) =>
+					tx
+						.update(TeamTable)
+						.set({
+							...(input.name !== undefined && { name: input.name }),
+							...(input.slug !== undefined && { slug: input.slug })
+						})
+						.where(and(eq(TeamTable.id, input.id), isNull(TeamTable.timeDeleted)))
+						.returning()
+						.then((rows) => {
+							const row = rows.at(0);
+							return row ? serialize(row) : null;
+						})
+				);
+			} catch (error) {
+				const code = (error as { code?: string; cause?: { code?: string } }) ?? {};
+				if (input.slug && (code.code === '23505' || code.cause?.code === '23505')) {
+					throw new SlugTaken(input.slug);
+				}
+				throw error;
+			}
+		}
+	);
+
 	export function serialize(input: typeof TeamTable.$inferSelect): z.infer<typeof Info> {
 		return {
 			id: input.id,

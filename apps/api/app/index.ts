@@ -11,6 +11,7 @@ import { type ContentfulStatusCode } from 'hono/utils/http-status';
 import { auth } from './middleware/auth.js';
 import { AccessTokenApi } from './routes/access-token.js';
 import { BillingApi } from './routes/billing.js';
+import { BoxApi } from './routes/box.js';
 import { EnrolmentApi } from './routes/enrolment.js';
 import { GameApi } from './routes/game.js';
 import { IndexApi } from './routes/index.js';
@@ -20,6 +21,7 @@ import { MachineApi } from './routes/machine.js';
 import { OrganisationApi } from './routes/organisation.js';
 import { SessionApi } from './routes/session.js';
 import { SteamApi } from './routes/steam.js';
+import { TeamApi } from './routes/team.js';
 import { UserApi } from './routes/user.js';
 import { WaitlistApi } from './routes/waitlist.js';
 
@@ -51,6 +53,8 @@ const routes = app
 	.route('/machine', MachineApi.route)
 	.route('/machine', SessionApi.machineRoute)
 	.route('/machine', EnrolmentApi.route)
+	.route('/team', TeamApi.route)
+	.route('/box', BoxApi.route)
 	.route('/session', SessionApi.route)
 	.route('/access-token', AccessTokenApi.route)
 	.route('/waitlist', WaitlistApi.route)

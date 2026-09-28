@@ -4,6 +4,7 @@ import z from 'zod';
 import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
+import { UserTable } from '../user/user.sql.js';
 import { TeamMemberRole, TeamMemberTable } from './member.sql.js';
 
 export namespace Member {
@@ -71,6 +72,33 @@ export namespace Member {
 				.select()
 				.from(TeamMemberTable)
 				.where(and(eq(TeamMemberTable.teamId, teamId), isNull(TeamMemberTable.timeDeleted)))
+				.orderBy(TeamMemberTable.timeCreated);
+		});
+	});
+
+	/**
+	 * A team's members with who they are, for a page that lists them. One
+	 * join rather than a lookup per member; a deleted user is not a member.
+	 */
+	export const listPeople = fn(Info.shape.teamId, async (teamId) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select({
+					id: TeamMemberTable.id,
+					userId: TeamMemberTable.userId,
+					role: TeamMemberTable.role,
+					name: UserTable.name,
+					email: UserTable.email
+				})
+				.from(TeamMemberTable)
+				.innerJoin(UserTable, eq(UserTable.id, TeamMemberTable.userId))
+				.where(
+					and(
+						eq(TeamMemberTable.teamId, teamId),
+						isNull(TeamMemberTable.timeDeleted),
+						isNull(UserTable.timeDeleted)
+					)
+				)
 				.orderBy(TeamMemberTable.timeCreated);
 		});
 	});
