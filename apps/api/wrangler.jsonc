@@ -9,6 +9,8 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "nestri-api",
 	"main": "app/index.ts",
+	// The installer is imported as text and served at /install.sh.
+	"rules": [{ "type": "Text", "globs": ["**/*.sh"], "fallthrough": false }],
 	"compatibility_date": "2026-09-05",
 	"compatibility_flags": ["nodejs_compat"],
 	"workers_dev": false,

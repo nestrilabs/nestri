@@ -4,6 +4,7 @@ import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
+import { InstallToken } from '@nestri/core/machine/install-token';
 import { Organisation } from '@nestri/core/organisation/index';
 import { Team } from '@nestri/core/team/index';
 import { Member } from '@nestri/core/team/member';
@@ -165,6 +166,127 @@ export namespace MachineApi {
 						secret: registered.secret
 					}
 				});
+			}
+		)
+		.post(
+			'/install-token',
+			notPublic,
+			describeRoute({
+				tags: ['Machine'],
+				summary: 'Issue an install token',
+				description:
+					'Mint a one-time token that registers one host to a team when the installer presents it. It expires after an hour and is spent by its first use, because it travels in a command a person pastes and so ends up in shell history.',
+				responses: {
+					200: {
+						content: {
+							'application/json': {
+								schema: Result(
+									z.object({
+										token: z
+											.string()
+											.meta({ description: 'Shown once. Pass it to the installer.' }),
+										expiresAt: z.iso.datetime()
+									})
+								)
+							}
+						},
+						description: 'A token for one host'
+					},
+					401: ErrorResponses[401],
+					403: ErrorResponses[403]
+				}
+			}),
+			validator(
+				'json',
+				z.object({
+					teamId: z.string().optional().meta({
+						description: 'Team the host will belong to. Defaults to the caller\u2019s personal team'
+					})
+				})
+			),
+			async (c) => {
+				const { teamId } = c.req.valid('json');
+				const actor = Actor.use();
+				if (actor.type !== 'user' && actor.type !== 'member') {
+					throw new VisibleError(
+						'forbidden',
+						ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
+						'Issuing an install token requires a user session'
+					);
+				}
+
+				// Same resolution and the same membership rule as `/register`: a
+				// token is a deferred registration, so it may not reach a team the
+				// caller could not register into directly.
+				const owningTeam =
+					teamId ??
+					(actor.type === 'member'
+						? actor.properties.teamID
+						: await Team.ensurePersonal({ displayName: Actor.userID }));
+				if (teamId) {
+					const membership = await Member.findByTeamAndUser({ teamId, userId: Actor.userID });
+					if (!membership) {
+						throw new VisibleError(
+							'forbidden',
+							ErrorCodes.Permission.FORBIDDEN,
+							'You are not a member of that team'
+						);
+					}
+				}
+
+				const issued = await InstallToken.create({ teamId: owningTeam, userId: Actor.userID });
+				return c.json({
+					data: { token: issued.token, expiresAt: issued.expiresAt.toISOString() }
+				});
+			}
+		)
+		.post(
+			'/install',
+			describeRoute({
+				tags: ['Machine'],
+				summary: 'Register a host with an install token',
+				description:
+					'Spend an install token and register the calling host to the team it was issued for. Needs no session: the token is the authority. The response is the same as registering directly, and the secret is likewise returned once.',
+				responses: {
+					200: {
+						content: {
+							'application/json': {
+								schema: Result(
+									z.object({
+										machineId: z.string().meta({ example: Examples.Machine.id }),
+										slug: z.string().meta({ example: Examples.Machine.slug }),
+										secret: z.string()
+									})
+								)
+							}
+						},
+						description: 'The host is registered'
+					},
+					401: ErrorResponses[401]
+				}
+			}),
+			validator(
+				'json',
+				z.object({
+					token: z.string().min(1),
+					label: z.string().min(1).max(64).meta({
+						description: 'Human-readable name for the host',
+						example: Examples.Machine.label
+					})
+				})
+			),
+			async (c) => {
+				const { token, label } = c.req.valid('json');
+				const registered = await InstallToken.redeem({ token, label });
+				if (!registered) {
+					// One answer for unknown, expired and already used.
+					throw new VisibleError(
+						'authentication',
+						ErrorCodes.Authentication.INVALID_TOKEN,
+						'This install token is not valid. Copy a fresh command from your dashboard.'
+					);
+				}
+				return c.json({ data: registered });
 			}
 		)
 		.patch(

@@ -51,6 +51,18 @@ export namespace Env {
 		POLAR_FREE_PRODUCT_ID: z.string().optional(),
 		POLAR_SERVER: z.enum(['sandbox', 'production']).optional(),
 
+		/**
+		 * Where installable binaries are kept: an S3-compatible bucket that is
+		 * never public. Downloads are answered with a short-lived signed URL,
+		 * so every one passes through a route that can be logged or turned off.
+		 * Scope the key to this bucket and to reads.
+		 */
+		RELEASES_BUCKET: z.string().optional(),
+		RELEASES_ENDPOINT: z.string().optional(),
+		RELEASES_REGION: z.string().default('us-east-1'),
+		RELEASES_ACCESS_KEY_ID: z.string().optional(),
+		RELEASES_SECRET_ACCESS_KEY: z.string().optional(),
+
 		DATABASE_URL: z.string().optional()
 	});
 
