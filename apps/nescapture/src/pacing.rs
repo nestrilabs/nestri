@@ -259,6 +259,59 @@ impl FramePacer {
     }
 }
 
+/// Sleep until an absolute instant, on the monotonic clock.
+///
+/// `std::thread::sleep` takes a *relative* duration; Linux implements it with
+/// `nanosleep`, which rounds to a scheduler tick and then wakes the thread
+/// whenever the scheduler next runs it. On a box with a game, an encoder, an
+/// IPC thread and a compositor event loop all runnable, that "whenever" can
+/// be 10-20 ms past the deadline — which reads downstream as a frame that
+/// arrived late, once every second or so.
+///
+/// `clock_nanosleep` with `TIMER_ABSTIME` gives the kernel the deadline
+/// itself and lets it place the wake, which is the whole difference between
+/// "sleep for 12 ms" and "wake at this instant."
+///
+/// Returns early if the deadline has already passed. Cannot fail for a valid
+/// monotonic deadline; errors are ignored rather than retried, because a
+/// sleep that woke early once is not a problem the next iteration cannot
+/// handle.
+pub fn sleep_until(deadline: std::time::Instant) {
+    let now = std::time::Instant::now();
+    if deadline <= now {
+        return;
+    }
+    let remaining = deadline - now;
+
+    // Instant is CLOCK_MONOTONIC-based on Linux, so the deadline converts by
+    // adding to the current monotonic time. There is no public Instant →
+    // timespec, hence the round trip.
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) } != 0 {
+        // Should not happen, but if it did, falling back to the relative
+        // sleep is strictly better than not sleeping at all.
+        std::thread::sleep(remaining);
+        return;
+    }
+    ts.tv_sec += remaining.as_secs() as libc::time_t;
+    ts.tv_nsec += remaining.subsec_nanos() as libc::c_long;
+    if ts.tv_nsec >= 1_000_000_000 {
+        ts.tv_sec += 1;
+        ts.tv_nsec -= 1_000_000_000;
+    }
+    unsafe {
+        libc::clock_nanosleep(
+            libc::CLOCK_MONOTONIC,
+            libc::TIMER_ABSTIME,
+            &ts,
+            std::ptr::null_mut(),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

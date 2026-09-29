@@ -136,7 +136,8 @@ fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std
     };
     if !held.is_zero() {
         note_present(ds, PresentStep::Holding);
-        std::thread::sleep(held);
+        // Absolute deadline, not a duration
+        crate::pacing::sleep_until(worked + held);
     }
 
     let now = std::time::Instant::now();
