@@ -416,16 +416,10 @@ fn main() {
     }
 
     // ── Input dispatch timer ────────────────────────────────────────────────
-    // Just input and cursor. High rate so a 1000 Hz mouse isn't coalesced;
+    // Just input and cursor. High rate so a 500 Hz (2 ms) mouse isn't coalesced;
     // cursor piggybacks on the same tick because it is change-gated
     // internally and costs nothing when idle.
-    //
-    // There is deliberately no frame-callback timer. Frame callbacks and
-    // presentation feedback are driven by commits — see
-    // NescopeState::on_surface_committed. A timer at any rate would pace
-    // the client against something other than its own submit loop, which
-    // is what produces the periodic hitches.
-    let tick_interval = Duration::from_millis(1);
+    let tick_interval = Duration::from_millis(2);
     loop_handle
         .insert_source(Timer::from_duration(tick_interval), move |_, _, data| {
             if let Some(ref mut li) = data.libinput {

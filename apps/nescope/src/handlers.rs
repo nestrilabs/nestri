@@ -115,7 +115,7 @@ impl CompositorHandler for NescopeState {
 
         window.on_commit();
         self.game_frame_count += 1;
-        self.on_surface_committed(&root, &window);
+        self.present_now(&root, &window);
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {

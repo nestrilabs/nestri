@@ -45,7 +45,7 @@ RUN pacman -Syu --noconfirm
 
 FROM initial AS builder
 RUN pacman -S --noconfirm --needed \
-        cmake meson ninja git pkgconf \
+        cmake meson ninja git pkgconf mold \
         python python-mako python-yaml python-packaging python-ply \
         bison flex \
         libpciaccess libepoxy libglvnd \
@@ -64,6 +64,7 @@ RUN pacman -S --noconfirm --needed \
     && pacman -Scc --noconfirm
 WORKDIR /build
 ENV ARTIFACTS=/artifacts
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
 
 # ───────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ ENV ARTIFACTS=/artifacts
 FROM builder AS mesa-build
 
 ARG MESA_GIT=https://gitlab.freedesktop.org/nowrep/mesa.git
-ARG MESA_COMMIT=1af89bea491deabc4741700f8df4d41edfd22f7a
+ARG MESA_COMMIT=49162a0ba8f3647917bc4c94d13eea6b51a1e49f
 ARG JOBS=
 
 # Our patches to the amdgpu native-context path, applied on top of the pinned
@@ -101,7 +102,7 @@ RUN test -n "$JOBS" || JOBS=$(nproc) && \
         -Dgbm=disabled \
         -Dgallium-va=disabled \
         -Db_ndebug=true && \
-    ninja -C builddir -j${JOBS:-$(nproc)} && \
+    mold -run ninja -C builddir -j${JOBS:-$(nproc)} && \
     DESTDIR=/artifacts/mesa ninja -C builddir install && \
     rm -rf /build/mesa-src && \
     find /artifacts/mesa -type f -printf '/%P\n' > /artifacts/mesa/.manifest

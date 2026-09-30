@@ -190,6 +190,8 @@ pub struct NescopeState {
     /// Timestamp of the last non-keyboard pointer event (for inactivity hiding).
     pub last_pointer_activity: std::time::Instant,
 
+    pub presentation_seq: u64,
+
     // ── Dimensions + frame rate ───────────────────────────────────────────
     pub width: u32,
     pub height: u32,
@@ -323,6 +325,7 @@ impl NescopeState {
             last_sent_cursor_pos: Point::from((-1.0f64, -1.0f64)),
             last_sent_cursor_status: 0xFF,
             last_pointer_activity: std::time::Instant::now(),
+            presentation_seq: 0,
             width,
             height,
             fps,
@@ -732,55 +735,25 @@ impl NescopeState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Commit-driven frame signals
-    //
-    // Called from CompositorHandler::commit for every non-sync commit that
-    // belongs to a mapped window. Fires the wl_surface.frame callbacks the
-    // client asked for and resolves the wp_presentation_feedback for the
-    // frame that just arrived.
-    //
-    // NOT driven by a timer. A frame callback means "the compositor is ready
-    // for your next frame"; for a headless capture compositor that is true
-    // the moment the commit lands, because there is no renderer and no
-    // scan-out between us and the client. A timer at any rate decouples the
-    // client's submit loop from the signal it is pacing itself with — too
-    // early for a slow client (over-submits), too late for a fast one
-    // (throttles), and when the two rates are close but not equal the phase
-    // slips and produces periodic hitches. The client's own rate is the
-    // correct rate; that is the whole point of the callback.
-    // -----------------------------------------------------------------------
-
-    pub(crate) fn on_surface_committed(&mut self, root: &WlSurface, window: &Window) {
+    pub(crate) fn present_now(&mut self, root: &WlSurface, window: &Window) {
         let output = self.output.clone();
         let now = self.clock.now();
+        self.presentation_seq += 1;
 
-        // Frame callbacks for the whole tree. `None` throttle: no minimum
-        // interval — the client decides its own cadence, we answer every
-        // frame it hands us.
-        send_frames_surface_tree(root, &output, now, None, |_, _| Some(output.clone()));
-
-        // Presentation feedback for the same frame, resolved as `presented`
-        // immediately. `discarded` is the wrong resolution here: it means
-        // "the next frame superseded this one before it reached the
-        // display," which is not what happened — this frame is the one the
-        // capture layer will see, and the client that waits on it (Vulkan
-        // FIFO present, VKD3D-Proton, DXVK) is waiting precisely for this.
-        let mut feedback = OutputPresentationFeedback::new(&output);
+        let mut fb = OutputPresentationFeedback::new(&output);
         window.take_presentation_feedback(
-            &mut feedback,
+            &mut fb,
             |_, _| Some(output.clone()),
             |_, _| wp_presentation_feedback::Kind::Vsync,
         );
-        feedback.presented(
+        fb.presented(
             now,
-            output
-                .current_mode()
-                .map(|m| Refresh::fixed(Duration::from_secs_f64(1_000.0 / m.refresh as f64)))
-                .unwrap_or(Refresh::Unknown),
-            0,
+            Refresh::Unknown,
+            self.presentation_seq,
             wp_presentation_feedback::Kind::Vsync,
         );
+
+        send_frames_surface_tree(root, &output, now, None, |_, _| Some(output.clone()));
     }
 
     pub(crate) fn send_cursor_update(&mut self) {
