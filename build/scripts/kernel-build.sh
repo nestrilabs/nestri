@@ -170,6 +170,19 @@ grep -qx 'obj-$(CONFIG_VIRTIO_GPU_NV) += nvgpu/' drivers/gpu/drm/Makefile \
     || sed -i '/^obj-\$(CONFIG_DRM_VIRTIO_GPU) += virtio\/$/a obj-$(CONFIG_VIRTIO_GPU_NV) += nvgpu/' \
         drivers/gpu/drm/Makefile
 
+# ── Toolchain ───────────────────────────────────────────
+# Thin-LTO is clang's, and whether it is offered at all is decided when Kconfig
+# runs: HAS_LTO_CLANG is false under gcc, and olddefconfig would then drop
+# LTO_CLANG_THIN without a word. So LLVM=1 goes to every make below, config
+# steps included, and the tools are checked before any of it starts.
+for tool in clang ld.lld llvm-ar llvm-nm llvm-objcopy llvm-strip; do
+    command -v "${tool}" >/dev/null || {
+        echo "kernel: ${tool} not found; the kernel is built with clang for thin-LTO" >&2
+        exit 1
+    }
+done
+make_args=(LLVM=1)
+
 # ── Config ──────────────────────────────────────────────
 # A fresh tree has no .config. The seed is a known-good minimal config that
 # olddefconfig migrates to whatever version the tree is at; it only saves a
@@ -184,7 +197,7 @@ echo "kernel: merging kernel/nestri.fragment"
 # -m merges without running a config target, so olddefconfig resolves
 # dependencies once, in one place.
 ./scripts/kconfig/merge_config.sh -m .config "${FRAGMENT}" >/dev/null
-make olddefconfig >/dev/null
+make "${make_args[@]}" olddefconfig >/dev/null
 
 # ── Verify the fragment actually took ───────────────────
 # merge_config.sh warns about overridden symbols but exits 0, and olddefconfig
@@ -217,7 +230,6 @@ echo "kernel: all ${total} fragment entries hold"
 # and gcc applies those as a mask over -march regardless of flag order, so the
 # kernel gets v3's integer ISA (BMI2, LZCNT, MOVBE) and its scheduling model
 # and never touches a vector register.
-make_args=()
 if [[ -n "${KERNEL_MARCH:-}" ]]; then
     make_args+=("KCFLAGS=-march=${KERNEL_MARCH}")
     echo "kernel: building with -march=${KERNEL_MARCH}"

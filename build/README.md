@@ -114,6 +114,11 @@ and this guest has `CONFIG_MODULES` off and no `/lib/modules` at all.
 - **`vmlinux`, not `bzImage`.** The guest is loaded as a raw ELF with no
   bootloader in the path. It is ~16 MB unstripped, which costs nothing at run
   time: only the loadable segments are mapped.
+- **Built with clang, thin-LTO.** `kernel-build.sh` passes `LLVM=1` to every
+  step, config included, because `HAS_LTO_CLANG` is decided when Kconfig runs
+  and gcc would make `olddefconfig` drop `LTO_CLANG_THIN` silently. `clang`,
+  `ld.lld` and the `llvm-*` binutils must be on `PATH`; the build says which is
+  missing before it starts.
 - **`-march=x86-64-v3`** goes in through `KCFLAGS`. It is safe in a kernel:
   the kernel's own `-mno-sse -mno-avx …` masks every vector extension off
   whatever the flag order, leaving v3's integer ISA.
