@@ -105,8 +105,10 @@ is one whole packet, or one piece of a packet too large for a datagram:
 
 - **Packet size.** On forwarding a PyroWave request, the hub fills
   `packet_size` with the smallest `max_datagram_size() - 12` across streaming
-  clients. The command forwarder in `main.rs` does it, since it already
-  serialises every command to nescapture.
+  clients (1100 with none). The command forwarder in `main.rs` does it, since
+  it already serialises every command to nescapture. If the path later shrinks
+  below that, `pack_datagrams` sends the now-oversized packets in pieces like
+  any oversized block; nothing is dropped.
 - **Listener.** The video socket accepts `STREAM_PYROWAVE` beside
   `STREAM_VIDEO`. `FrameAssembler` collects a frame's messages; an incomplete
   frame is abandoned when the next frame starts or after 100 ms, and counted.
@@ -117,7 +119,7 @@ is one whole packet, or one piece of a packet too large for a datagram:
 - **Writer.** PyroWave frames skip `ResyncGate` and `KeyframeSender` and keep a
   `seq` of their own. `pack_datagrams` lays them out (critical, rest, critical
   again) into one `BytesMut`, split without copying.
-- **Skip guard.** Before sending, with `backlog = DGRAM_BUFFER_BYTES -
+- **Skip guard** (`pyrowave::should_skip`, shared with the bench). Before sending, with `backlog = DGRAM_BUFFER_BYTES -
   datagram_send_buffer_space()`: skip the whole frame if the backlog exceeds
   this frame's size, or if backlog plus frame exceeds the buffer. The skipped
   frame's `seq` is reused (the transport doc's rule). A frame larger than the
@@ -132,7 +134,11 @@ A frame is released when:
 
 1. every index has arrived, or
 2. a newer frame has started and `GRACE` (2 ms) has passed since, or
-3. `DEADLINE` (34 ms) has passed since its first datagram.
+3. `IDLE` (20 ms) has passed since its *last* datagram.
+
+Not a deadline from the first datagram: on a saturated path a frame takes a
+frame interval to arrive, so such a deadline tears every frame once the path is
+slower than it assumes. The end-to-end burst test found this.
 
 Released frames carry `seq`, `ts_ms`, packets in index order (piece runs joined,
 broken runs dropped) and received/total. A datagram for a `seq` at or behind

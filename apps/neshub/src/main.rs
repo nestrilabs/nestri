@@ -1,7 +1,10 @@
 mod control;
 mod dgram;
+#[cfg(test)]
+mod e2e_tests;
 mod ipc_listener;
 mod keyframe;
+mod pyro;
 mod screenshot;
 mod session;
 mod ticket;
@@ -84,6 +87,15 @@ struct Args {
     #[arg(long, env = "NESTRI_MAX_BITRATE")]
     max_bitrate_kbps: Option<u32>,
 
+    /// The PyroWave rate, in kbps, for a client that asks for PyroWave without
+    /// naming one.
+    ///
+    /// PyroWave is the LAN codec and runs at a set rate, outside the bitrate
+    /// controller and above the ceiling: it is only ever used because a client
+    /// asked for it.
+    #[arg(long, env = "NESTRI_PYROWAVE_KBPS", default_value_t = 300_000)]
+    pyrowave_kbps: u32,
+
     /// Path for the gamepad IPC socket (neshub ↔ nesgamepad). neshub
     /// listens; the gamepad service dials in.
     #[arg(
@@ -109,6 +121,41 @@ struct Args {
 /// 10 Mbps into a path carrying under three, because no number had ever been
 /// chosen and the encoder's own default stood in for one.
 const DEFAULT_MAX_BITRATE_KBPS: u32 = 4_000;
+
+/// What a PyroWave packet is sized to with no client to measure: a datagram
+/// at QUIC's minimum MTU always carries this much.
+const FALLBACK_PYRO_PACKET_BYTES: usize = 1100;
+
+/// Name the PyroWave packet size in an encode command bound for nescapture.
+///
+/// Filled in here, as the command leaves, because what fits a datagram is a
+/// fact about the path *now*. Any other command passes untouched.
+fn fill_pyrowave_packet_size(cmd: &mut Vec<u8>, limit: Option<usize>) {
+    if cmd.first() != Some(&nesprotocol::MSG_ENCODE_SETTINGS) {
+        return;
+    }
+    let Some(mut settings) = nesprotocol::decode_encode_settings_ext(&cmd[1..]) else {
+        return;
+    };
+    if settings.codec != nesprotocol::CODEC_PYROWAVE {
+        return;
+    }
+    let size = limit
+        .unwrap_or(FALLBACK_PYRO_PACKET_BYTES)
+        .min(usize::from(u16::MAX));
+    settings.packet_size = Some(size as u16);
+    // Every field before it has to be present for it to be read.
+    settings.bit_depth.get_or_insert(nesprotocol::DEPTH_8);
+    settings
+        .chroma
+        .get_or_insert(nesprotocol::pyrowave::CHROMA_420);
+    cmd.truncate(1);
+    nesprotocol::encode_settings(cmd, &settings);
+    tracing::info!(
+        "PyroWave at {} kbps, packets of {size} bytes",
+        settings.value
+    );
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -169,7 +216,7 @@ async fn main() -> Result<()> {
     let (nescope_stats_tx, mut nescope_stats_rx) =
         tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
 
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = Arc::new(SessionManager::new(args.pyrowave_kbps));
 
     // One controller for the box, not one per client: there is one encoder, so
     // there is one bitrate, and the client having the worst time is the one it
@@ -182,9 +229,11 @@ async fn main() -> Result<()> {
     // IDR / encode settings command channel: input reader → nescapture
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
     {
+        let mgr = session_manager.clone();
         tokio::spawn(async move {
             let cmd_path = std::path::PathBuf::from("/tmp/nescapture-cmd.sock");
-            while let Some(bytes) = cmd_rx.recv().await {
+            while let Some(mut bytes) = cmd_rx.recv().await {
+                fill_pyrowave_packet_size(&mut bytes, mgr.pyro_packet_size().await);
                 if let Ok(sock) = std::os::unix::net::UnixDatagram::unbound() {
                     if sock.send_to(&bytes, &cmd_path).is_err() {
                         tracing::warn!("nescapture cmd send failed at {}", cmd_path.display());
@@ -262,6 +311,7 @@ async fn main() -> Result<()> {
             }
 
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            let mut pyro_skipping = false;
             loop {
                 interval.tick().await;
 
@@ -290,6 +340,22 @@ async fn main() -> Result<()> {
                         }
                     }
                 }
+
+                // Said when skipping starts and when it stops, and otherwise
+                // only at debug: a path that cannot carry the rate skips every
+                // second until somebody lowers it.
+                let skipped = mgr.take_pyro_skipped().await;
+                if skipped > 0 && !pyro_skipping {
+                    tracing::warn!(
+                        "skipping PyroWave frames: the path is not carrying the rate \
+                         ({skipped} this second)"
+                    );
+                } else if skipped == 0 && pyro_skipping {
+                    tracing::info!("no longer skipping PyroWave frames");
+                } else if skipped > 0 {
+                    tracing::debug!("{skipped} PyroWave frames skipped this second");
+                }
+                pyro_skipping = skipped > 0;
 
                 let clients = mgr.client_count().await as u8;
                 let (key_bps, delta_bps, keyframes) = mgr.video_breakdown();
@@ -468,4 +534,55 @@ async fn main() -> Result<()> {
     let _ = std::fs::remove_file("/tmp/nescapture-cmd.sock");
     let _ = std::fs::remove_file(&args.ticket_ipc);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FALLBACK_PYRO_PACKET_BYTES, fill_pyrowave_packet_size};
+    use nesprotocol::{
+        CODEC_AV1, CODEC_PYROWAVE, EncodeSettings, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, RC_CBR,
+    };
+
+    fn command(codec: u8) -> Vec<u8> {
+        let mut cmd = vec![MSG_ENCODE_SETTINGS];
+        nesprotocol::encode_settings(
+            &mut cmd,
+            &EncodeSettings {
+                codec,
+                rate_control: RC_CBR,
+                value: 300_000,
+                bit_depth: Some(0),
+                chroma: Some(1),
+                packet_size: None,
+            },
+        );
+        cmd
+    }
+
+    #[test]
+    fn a_pyrowave_command_leaves_with_the_paths_packet_size() {
+        let mut cmd = command(CODEC_PYROWAVE);
+        fill_pyrowave_packet_size(&mut cmd, Some(1440));
+        let s = nesprotocol::decode_encode_settings_ext(&cmd[1..]).unwrap();
+        assert_eq!(s.packet_size, Some(1440));
+        assert_eq!(
+            (s.value, s.chroma),
+            (300_000, Some(1)),
+            "nothing else moved"
+        );
+
+        let mut cmd = command(CODEC_PYROWAVE);
+        fill_pyrowave_packet_size(&mut cmd, None);
+        let s = nesprotocol::decode_encode_settings_ext(&cmd[1..]).unwrap();
+        assert_eq!(s.packet_size, Some(FALLBACK_PYRO_PACKET_BYTES as u16));
+    }
+
+    #[test]
+    fn every_other_command_passes_untouched() {
+        for cmd in [command(CODEC_AV1), vec![MSG_IDR_REQUEST], vec![]] {
+            let mut sent = cmd.clone();
+            fill_pyrowave_packet_size(&mut sent, Some(1440));
+            assert_eq!(sent, cmd);
+        }
+    }
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use iroh::endpoint::Connection;
 use tokio::sync::Mutex;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_BUFFER_BYTES, DGRAM_VIDEO};
 use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
@@ -17,7 +17,9 @@ use nesprotocol::{
 
 use crate::control::{Controller, PathView};
 
-use crate::dgram::run_datagram_writer;
+use crate::dgram::{MediaItem, run_datagram_writer};
+use bytes::Bytes;
+use nesprotocol::pyrowave::PyroFrame;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
@@ -58,6 +60,13 @@ pub struct ClientSession {
     /// Overwritten rather than queued. A report describes the second that just
     /// passed, and an older one is not evidence about now.
     latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
+    /// PyroWave frames this client was not sent because its queue was full.
+    pyro_skipped: Arc<AtomicU64>,
+    /// Whether this client said it decodes the PyroWave format this hub
+    /// carries. Only then is a request for PyroWave passed on.
+    pyrowave_ok: Arc<AtomicBool>,
+    /// The rate a PyroWave request that names none runs at.
+    pyrowave_kbps: u32,
     relay_ms: Arc<AtomicU32>,
     input_broadcast: tokio::sync::broadcast::Sender<Vec<u8>>,
     /// This client's number on the gamepad socket, so the box's side can tell
@@ -70,13 +79,13 @@ pub struct ClientSession {
     pending_gamepad_feedback: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
     idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     controller: Arc<Mutex<Controller>>,
-    send_video: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
-    send_audio: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    send_video: tokio::sync::mpsc::UnboundedSender<MediaItem>,
+    send_audio: tokio::sync::mpsc::UnboundedSender<MediaItem>,
     send_cursor: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     send_stats: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     /// Receiving ends, held until the carrier that drains them connects.
-    pending_video: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
-    pending_audio: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
+    pending_video: Option<tokio::sync::mpsc::UnboundedReceiver<MediaItem>>,
+    pending_audio: Option<tokio::sync::mpsc::UnboundedReceiver<MediaItem>>,
     pending_cursor: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
     pending_stats: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
@@ -105,10 +114,11 @@ impl ClientSession {
         relay_ms: Arc<AtomicU32>,
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         controller: Arc<Mutex<Controller>>,
+        pyrowave_kbps: u32,
     ) -> Self {
         let (gamepad_feedback_tx, gamepad_feedback_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
-        let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<MediaItem>();
+        let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel::<MediaItem>();
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (stats_tx, stats_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         Self {
@@ -117,6 +127,9 @@ impl ClientSession {
             awaiting_keyframe: Arc::new(AtomicBool::new(false)),
             withheld: Arc::new(AtomicU64::new(0)),
             latest_report: Arc::new(std::sync::Mutex::new(None)),
+            pyro_skipped: Arc::new(AtomicU64::new(0)),
+            pyrowave_ok: Arc::new(AtomicBool::new(false)),
+            pyrowave_kbps,
             relay_ms,
             input_broadcast,
             gamepad_session,
@@ -161,6 +174,7 @@ impl ClientSession {
                 let relay_ms = self.relay_ms.clone();
                 let awaiting = self.awaiting_keyframe.clone();
                 let withheld = self.withheld.clone();
+                let pyro_skipped = self.pyro_skipped.clone();
                 // Keyframes go on reliable streams of their own, because a lost
                 // keyframe freezes the picture until the next one instead of
                 // costing a single frame. See `nesprotocol::reliable`.
@@ -174,6 +188,7 @@ impl ClientSession {
                         true,
                         Some(awaiting),
                         Some(withheld),
+                        Some(pyro_skipped),
                     )
                     .await
                 }));
@@ -187,8 +202,18 @@ impl ClientSession {
                 // No reliable path offered: audio has no keyframes to promote,
                 // and on its own connection it is no longer queued behind any.
                 self.tasks.push(tokio::spawn(async move {
-                    run_datagram_writer(conn, DGRAM_AUDIO, "audio", rx, None, false, None, None)
-                        .await
+                    run_datagram_writer(
+                        conn,
+                        DGRAM_AUDIO,
+                        "audio",
+                        rx,
+                        None,
+                        false,
+                        None,
+                        None,
+                        None,
+                    )
+                    .await
                 }));
             }
             Carrier::Input => {
@@ -226,8 +251,12 @@ impl ClientSession {
                 let awaiting = self.awaiting_keyframe.clone();
                 let idr = self.idr_cmd_tx.clone();
                 let controller = self.controller.clone();
+                let pyrowave = PyroWaveGate {
+                    ok: self.pyrowave_ok.clone(),
+                    default_kbps: self.pyrowave_kbps,
+                };
                 self.tasks.push(tokio::spawn(async move {
-                    run_control_reader(conn, idr, reports, controller, awaiting).await
+                    run_control_reader(conn, idr, reports, controller, awaiting, pyrowave).await
                 }));
             }
         }
@@ -245,6 +274,17 @@ impl ClientSession {
 
     pub fn take_report(&self) -> Option<ReceiverReport> {
         self.latest_report.lock().ok()?.take()
+    }
+
+    /// PyroWave frames skipped since the last call, cleared as it is read.
+    pub fn take_pyro_skipped(&self) -> u64 {
+        self.pyro_skipped.swap(0, Ordering::Relaxed)
+    }
+
+    /// The largest PyroWave packet one of this client's datagrams carries now.
+    pub fn pyro_packet_limit(&self) -> Option<usize> {
+        let max = self.video_conn.as_ref()?.max_datagram_size()?;
+        Some(max.saturating_sub(nesprotocol::pyrowave::PYRO_DGRAM_HDR_LEN))
     }
 
     /// What this end can see of the path, from the route actually in use.
@@ -284,14 +324,14 @@ impl ClientSession {
     /// only way it fails is a closed channel, which means the writer is already
     /// gone, and sixty warnings a second on the way down bury whatever actually
     /// ended the session.
-    pub fn send_video_frame(&self, data: Vec<u8>) {
-        if let Err(e) = self.send_video.send(data) {
+    pub fn send_video_frame(&self, item: MediaItem) {
+        if let Err(e) = self.send_video.send(item) {
             debug!("failed to send video data: {e}");
         }
     }
 
-    pub fn send_audio_packet(&self, data: Vec<u8>) {
-        if let Err(e) = self.send_audio.send(data) {
+    pub fn send_audio_packet(&self, data: Bytes) {
+        if let Err(e) = self.send_audio.send(MediaItem::Coded(data)) {
             debug!("failed to send audio data: {e}");
         }
     }
@@ -499,6 +539,44 @@ async fn run_input_reader(
     .await;
 }
 
+/// What the control reader needs to decide about a PyroWave request.
+#[derive(Clone)]
+struct PyroWaveGate {
+    /// Set once the client's capabilities named PyroWave in this hub's format.
+    ok: Arc<AtomicBool>,
+    default_kbps: u32,
+}
+
+/// Turn a client's PyroWave request into the command nescapture gets, or say
+/// why it cannot have one.
+///
+/// A rate of zero means "the hub's default". The packet size is left for the
+/// command forwarder, which fills it in as it sends: only the hub sees the
+/// path, and what fits a datagram is a fact about the moment the encoder is
+/// told, not the moment the client asked.
+fn pyrowave_request(
+    request: nesprotocol::EncodeSettings,
+    gate: &PyroWaveGate,
+) -> Result<nesprotocol::EncodeSettings, &'static str> {
+    if !gate.ok.load(Ordering::Relaxed) {
+        return Err("the client never said it decodes this hub's PyroWave format");
+    }
+    if request.rate_control != nesprotocol::RC_CBR {
+        return Err("PyroWave runs at a set rate, and the request named none");
+    }
+    Ok(nesprotocol::EncodeSettings {
+        value: if request.value == 0 {
+            gate.default_kbps
+        } else {
+            request.value
+        },
+        bit_depth: Some(request.bit_depth.unwrap_or(nesprotocol::DEPTH_8)),
+        chroma: Some(request.chroma.unwrap_or(nesprotocol::pyrowave::CHROMA_420)),
+        packet_size: None,
+        ..request
+    })
+}
+
 /// Everything the client says that is not an input event.
 async fn run_control_reader(
     conn: Connection,
@@ -506,12 +584,14 @@ async fn run_control_reader(
     latest_report: Arc<std::sync::Mutex<Option<ReceiverReport>>>,
     controller: Arc<Mutex<Controller>>,
     awaiting_keyframe: Arc<AtomicBool>,
+    pyrowave: PyroWaveGate,
 ) {
     run_framed_reader(conn, BIDI_CONTROL, "control", None, |msg_type, payload| {
         let idr_cmd_tx = idr_cmd_tx.clone();
         let latest_report = latest_report.clone();
         let controller = controller.clone();
         let awaiting_keyframe = awaiting_keyframe.clone();
+        let pyrowave = pyrowave.clone();
         async move {
             match msg_type {
                 MSG_IDR_REQUEST => {
@@ -535,6 +615,21 @@ async fn run_control_reader(
                     // decode.
                     match nesprotocol::decode_client_caps(&payload) {
                         Some(caps) => {
+                            // Recorded whatever the mode: it is a fact about the
+                            // client, consulted only if it asks for PyroWave.
+                            let format = nesprotocol::decode_pyrowave_format(&payload);
+                            let pyro = caps.supports_codec(nesprotocol::CODEC_PYROWAVE);
+                            pyrowave.ok.store(
+                                pyro && format == Some(nesprotocol::pyrowave::PYROWAVE_FORMAT),
+                                Ordering::Relaxed,
+                            );
+                            if pyro && format != Some(nesprotocol::pyrowave::PYROWAVE_FORMAT) {
+                                info!(
+                                    "client decodes PyroWave format {format:?}, this hub carries \
+                                     {}; it will not be sent PyroWave",
+                                    nesprotocol::pyrowave::PYROWAVE_FORMAT
+                                );
+                            }
                             // Manual means a person is choosing, and the panel
                             // they chose in sets the codec and the depth
                             // together. A client joining afterwards must not
@@ -563,6 +658,22 @@ async fn run_control_reader(
                         "received encode settings from client ({} bytes)",
                         payload.len()
                     );
+                    let mut payload = payload;
+                    if let Some(request) = nesprotocol::decode_encode_settings_ext(&payload)
+                        && request.codec == nesprotocol::CODEC_PYROWAVE
+                    {
+                        match pyrowave_request(request, &pyrowave) {
+                            Ok(settings) => {
+                                info!("client asked for PyroWave at {} kbps", settings.value);
+                                payload.clear();
+                                nesprotocol::encode_settings(&mut payload, &settings);
+                            }
+                            Err(why) => {
+                                warn!("refusing a PyroWave request: {why}");
+                                return;
+                            }
+                        }
+                    }
                     // A person set this by hand, so the controller stops
                     // deciding until it is told otherwise. Overriding a
                     // person's setting a second later would take away the only
@@ -778,10 +889,12 @@ pub struct SessionManager {
     audio_bytes: AtomicU64,
     last_audio_bytes: AtomicU64,
     relay_ms: Arc<AtomicU32>, // latest relay latency (f32 bits)
+    /// The rate a PyroWave request that names none runs at.
+    pyrowave_kbps: u32,
 }
 
 impl SessionManager {
-    pub fn new() -> Self {
+    pub fn new(pyrowave_kbps: u32) -> Self {
         let (gamepad_tx, _) = tokio::sync::broadcast::channel(256);
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -797,6 +910,7 @@ impl SessionManager {
             audio_bytes: AtomicU64::new(0),
             last_audio_bytes: AtomicU64::new(0),
             relay_ms: Arc::new(AtomicU32::new(0)),
+            pyrowave_kbps,
         }
     }
 
@@ -825,6 +939,7 @@ impl SessionManager {
                 self.relay_ms.clone(),
                 idr_cmd_tx,
                 controller,
+                self.pyrowave_kbps,
             )
         });
         session.attach(carrier, conn);
@@ -885,7 +1000,10 @@ impl SessionManager {
         let Some(ts_bytes) = payload.get(2..6) else {
             return;
         };
-        let ts_ms = u32::from_le_bytes(ts_bytes.try_into().unwrap());
+        self.note_pipeline_ts(u32::from_le_bytes(ts_bytes.try_into().unwrap()));
+    }
+
+    fn note_pipeline_ts(&self, ts_ms: u32) {
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -924,13 +1042,47 @@ impl SessionManager {
             self.video_delta_bytes
                 .fetch_add(data.len() as u64, Ordering::Relaxed);
         }
+        let data = MediaItem::Coded(Bytes::from(data));
         let sessions = self.sessions.lock().await;
-        if sessions.is_empty() {
-            return;
-        }
         for session in sessions.values() {
             session.send_video_frame(data.clone());
         }
+    }
+
+    /// Hand a PyroWave frame to every client.
+    ///
+    /// Counted with the delta bytes: every PyroWave frame is intra, and
+    /// counting them as keyframes would report sixty keyframes a second, which
+    /// describes nothing.
+    pub async fn broadcast_pyrowave(&self, frame: PyroFrame) {
+        self.note_pipeline_ts(frame.meta.ts_ms);
+        self.video_delta_bytes
+            .fetch_add(frame.data.len() as u64, Ordering::Relaxed);
+        let item = MediaItem::PyroWave(Arc::new(frame));
+        let sessions = self.sessions.lock().await;
+        for session in sessions.values() {
+            session.send_video_frame(item.clone());
+        }
+    }
+
+    /// PyroWave frames skipped across every client since the last call.
+    pub async fn take_pyro_skipped(&self) -> u64 {
+        let sessions = self.sessions.lock().await;
+        sessions
+            .values()
+            .map(ClientSession::take_pyro_skipped)
+            .sum()
+    }
+
+    /// The PyroWave packet size every streaming client can carry: the smallest
+    /// of theirs, since one encoder serves them all. `None` with no client
+    /// streaming.
+    pub async fn pyro_packet_size(&self) -> Option<usize> {
+        let sessions = self.sessions.lock().await;
+        sessions
+            .values()
+            .filter_map(ClientSession::pyro_packet_limit)
+            .min()
     }
 
     pub async fn broadcast_audio(&self, data: Vec<u8>) {
@@ -939,10 +1091,8 @@ impl SessionManager {
         // with no client still knows whether audio is being produced.
         self.audio_bytes
             .fetch_add(data.len() as u64, Ordering::Relaxed);
+        let data = Bytes::from(data);
         let sessions = self.sessions.lock().await;
-        if sessions.is_empty() {
-            return;
-        }
         for session in sessions.values() {
             session.send_audio_packet(data.clone());
         }
@@ -1098,7 +1248,7 @@ mod pipeline_delay_tests {
 
     #[test]
     fn a_second_with_no_frames_reports_nothing() {
-        let mgr = SessionManager::new();
+        let mgr = SessionManager::new(0);
         assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
     }
 
@@ -1109,7 +1259,7 @@ mod pipeline_delay_tests {
         // same time on every frame must read as zero, not as that constant --
         // which is what a plain subtraction would have reported, pinned at the
         // maximum the wire can carry.
-        let mgr = SessionManager::new();
+        let mgr = SessionManager::new(0);
         for i in 0..60u32 {
             mgr.note_pipeline_delay(&payload(i * 16));
         }
@@ -1123,7 +1273,7 @@ mod pipeline_delay_tests {
 
     #[test]
     fn draining_means_each_answer_describes_one_second() {
-        let mgr = SessionManager::new();
+        let mgr = SessionManager::new(0);
         mgr.note_pipeline_delay(&payload(0));
         assert!(mgr.pipeline_delays().0 == 0);
         assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
@@ -1131,7 +1281,7 @@ mod pipeline_delay_tests {
 
     #[test]
     fn a_truncated_payload_is_ignored_rather_than_misread() {
-        let mgr = SessionManager::new();
+        let mgr = SessionManager::new(0);
         mgr.note_pipeline_delay(&[0u8, 0u8, 1u8]);
         assert_eq!(mgr.pipeline_delays(), (0, 0, 0));
     }
@@ -1211,5 +1361,69 @@ mod input_batch_tests {
     fn an_unknown_event_type_stops_the_batch_rather_than_the_process() {
         let events = split_input_events(&[0xAA, 0xBB, 0xCC]);
         assert!(events.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod pyrowave_request_tests {
+    use super::{PyroWaveGate, pyrowave_request};
+    use nesprotocol::pyrowave::{CHROMA_420, CHROMA_444};
+    use nesprotocol::{CODEC_PYROWAVE, DEPTH_8, DEPTH_10, EncodeSettings, RC_CBR, RC_CQP};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+
+    fn gate(ok: bool) -> PyroWaveGate {
+        PyroWaveGate {
+            ok: Arc::new(AtomicBool::new(ok)),
+            default_kbps: 300_000,
+        }
+    }
+
+    fn request(value: u32) -> EncodeSettings {
+        EncodeSettings {
+            codec: CODEC_PYROWAVE,
+            rate_control: RC_CBR,
+            value,
+            bit_depth: None,
+            chroma: None,
+            packet_size: Some(9999),
+        }
+    }
+
+    /// The opt-in is only as safe as this: a client that never said it
+    /// decodes the format must not get it by asking.
+    #[test]
+    fn a_client_without_the_format_is_refused() {
+        assert!(pyrowave_request(request(100_000), &gate(false)).is_err());
+    }
+
+    #[test]
+    fn no_rate_means_the_hubs_default() {
+        let s = pyrowave_request(request(0), &gate(true)).unwrap();
+        assert_eq!(s.value, 300_000);
+        let s = pyrowave_request(request(150_000), &gate(true)).unwrap();
+        assert_eq!(s.value, 150_000, "a named rate is not overruled");
+    }
+
+    /// The client cannot see the path, so whatever packet size it sent is not
+    /// passed on; the forwarder names one.
+    #[test]
+    fn the_clients_packet_size_is_not_trusted() {
+        let s = pyrowave_request(request(0), &gate(true)).unwrap();
+        assert_eq!(s.packet_size, None);
+        assert_eq!((s.bit_depth, s.chroma), (Some(DEPTH_8), Some(CHROMA_420)));
+
+        let mut r = request(0);
+        r.bit_depth = Some(DEPTH_10);
+        r.chroma = Some(CHROMA_444);
+        let s = pyrowave_request(r, &gate(true)).unwrap();
+        assert_eq!((s.bit_depth, s.chroma), (Some(DEPTH_10), Some(CHROMA_444)));
+    }
+
+    #[test]
+    fn constant_quality_is_not_a_pyrowave_mode() {
+        let mut r = request(0);
+        r.rate_control = RC_CQP;
+        assert!(pyrowave_request(r, &gate(true)).is_err());
     }
 }
