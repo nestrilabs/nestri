@@ -427,6 +427,18 @@ in range. Taking the largest made rate-control analysis 73% slower on Intel.
   8,396,864-byte buffer, and 3 µs for a 16,785,472-byte one. nespyro records
   its fills once, so it no longer matters here, but it is worth a Mesa report.
 
+### Found by part 3
+
+- **`Readiness::critical_complete` cannot be trusted.** A block the encoder
+  quantized to nothing is never sent, and its absence is indistinguishable from
+  a loss. Noise leaves the coarsest high-pass bands empty often enough that a
+  frame with every packet delivered read as critically incomplete, so no
+  partial frame would ever have been decoded. Upstream has the same flaw and
+  answers it with an out-of-band mask of active blocks. Here the transport
+  knows which datagrams carried the critical packets and says so
+  (`CollectedFrame::critical_complete`); `Readiness::is_complete_enough_with`
+  takes that answer. Found by the real-frame transport test.
+
 ### For the parts that follow
 
 - Part 2: a frame at 200 Mbit/s and 60 fps is about 416 KB in 1200-byte

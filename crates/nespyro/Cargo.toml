@@ -18,3 +18,5 @@ tracing.workspace = true
 [dev-dependencies]
 ash = { git = "https://github.com/ash-rs/ash", rev = "f4c2ca3e4f6b998d5254ad101a32f024d87cdec2", features = ["loaded"] }
 pollster = "1.0"
+# The transport test carries real frames through the wire format.
+nesprotocol = { path = "../nesprotocol" }

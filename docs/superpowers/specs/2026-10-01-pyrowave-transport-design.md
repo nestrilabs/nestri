@@ -86,10 +86,14 @@ then per packet: [len u16][bytes]
 ### Datagram kind `DGRAM_PYROWAVE = 2`
 
 ```text
-[1B kind][2B seq][2B index][2B total][4B ts_ms][1B flags][payload]
+[1B kind][2B seq][2B index][2B total][2B critical][4B ts_ms][1B flags][payload]
 ```
 
-12 bytes. `seq` is the frame, `index`/`total` count datagrams in it. A payload
+14 bytes. `seq` is the frame, `index`/`total` count datagrams in it.
+`critical` is how many leading indexes carry the critical packets: a receiver
+cannot work that out from the blocks it got, because an empty block is never
+sent and looks like a lost one (found in part 3; the header was 12 bytes
+before). The collector reports `critical_complete` from it. A payload
 is one whole packet, or one piece of a packet too large for a datagram:
 
 - `FLAG_DUPLICATE` (bit 0): a second copy of a critical datagram. Same index.
@@ -141,7 +145,7 @@ frame interval to arrive, so such a deadline tears every frame once the path is
 slower than it assumes. The end-to-end burst test found this.
 
 Released frames carry `seq`, `ts_ms`, packets in index order (piece runs joined,
-broken runs dropped) and received/total. A datagram for a `seq` at or behind
+broken runs dropped), received/total, and `critical_complete`. A datagram for a `seq` at or behind
 the newest released one is stale and dropped. No reorder window, no IDR: every
 frame stands alone. Whether a frame is decodable is the decoder's call.
 

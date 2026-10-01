@@ -49,7 +49,14 @@ pub struct Readiness {
     /// Non-empty blocks the frame has, from its header, or every possible
     /// block if the header has not arrived.
     pub expected: u32,
-    /// Whether the two coarsest bands arrived whole.
+    /// Whether every block of the two coarsest bands is here.
+    ///
+    /// A guess, and a pessimistic one: a block the encoder quantized to
+    /// nothing is never sent, and this cannot tell it from a lost one. The
+    /// coarse high-pass bands of noisy content are often empty, so this reads
+    /// false on frames that arrived complete. A transport that knows which
+    /// packets were critical should say so instead, through
+    /// [`Readiness::is_complete_enough_with`].
     pub critical_complete: bool,
     /// Whether this frame was already decoded.
     pub decoded: bool,
@@ -65,11 +72,18 @@ impl Readiness {
     /// 90% of it with the two coarsest bands intact. Losing blocks from finer
     /// bands only blurs their region; losing the coarse ones does not mask.
     pub fn is_complete_enough(&self) -> bool {
+        self.is_complete_enough_with(self.critical_complete)
+    }
+
+    /// The same rule, with whether the coarse bands are whole decided by the
+    /// caller: by a transport that knows which packets carried them, which
+    /// this cannot know. See [`Readiness::critical_complete`].
+    pub fn is_complete_enough_with(&self, critical_complete: bool) -> bool {
         if self.decoded || !self.has_header {
             return false;
         }
         self.received >= self.expected
-            || (self.critical_complete && self.received as f32 > self.expected as f32 * 0.9)
+            || (critical_complete && self.received as f32 > self.expected as f32 * 0.9)
     }
 }
 

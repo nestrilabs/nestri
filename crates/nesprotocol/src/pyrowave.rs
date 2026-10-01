@@ -71,8 +71,8 @@ pub const ABANDON_MS: u64 = 100;
 /// Datagram kind, beside `DGRAM_VIDEO` and `DGRAM_AUDIO`.
 pub const DGRAM_PYROWAVE: u8 = 2;
 
-/// `[kind][seq u16][index u16][total u16][ts_ms u32][flags]`.
-pub const PYRO_DGRAM_HDR_LEN: usize = 12;
+/// `[kind][seq u16][index u16][total u16][critical u16][ts_ms u32][flags]`.
+pub const PYRO_DGRAM_HDR_LEN: usize = 14;
 
 /// Bound on datagrams per frame, about 19 MB at a typical MTU. Past it a
 /// frame did not come from a sender of ours, and the bound keeps a corrupt
@@ -420,6 +420,16 @@ pub struct PyroDatagramHeader {
     pub index: u16,
     /// Datagrams in the frame, not counting duplicates.
     pub total: u16,
+    /// How many leading indexes carry the critical packets.
+    ///
+    /// On the wire because nothing else can say it. A receiver cannot tell
+    /// whether the coarse bands arrived whole from the blocks it has: a block
+    /// the encoder quantized to nothing is never sent, and its absence looks
+    /// exactly like a loss. Coarse high-pass bands of noisy content do that
+    /// routinely, so a depacketizer counting blocks declares the coarse bands
+    /// broken on frames that arrived complete. The sender knows which
+    /// datagrams those bands went in.
+    pub critical: u16,
     pub ts_ms: u32,
     pub flags: u8,
 }
@@ -430,8 +440,9 @@ pub fn write_pyro_header(buf: &mut [u8], h: &PyroDatagramHeader) {
     buf[1..3].copy_from_slice(&h.seq.to_le_bytes());
     buf[3..5].copy_from_slice(&h.index.to_le_bytes());
     buf[5..7].copy_from_slice(&h.total.to_le_bytes());
-    buf[7..11].copy_from_slice(&h.ts_ms.to_le_bytes());
-    buf[11] = h.flags;
+    buf[7..9].copy_from_slice(&h.critical.to_le_bytes());
+    buf[9..13].copy_from_slice(&h.ts_ms.to_le_bytes());
+    buf[13] = h.flags;
 }
 
 /// Split a PyroWave datagram into header and payload. `None` for anything that
@@ -445,10 +456,14 @@ pub fn decode_pyro_datagram(buf: &[u8]) -> Option<(PyroDatagramHeader, &[u8])> {
         seq: u16_at(1),
         index: u16_at(3),
         total: u16_at(5),
-        ts_ms: u32::from_le_bytes([buf[7], buf[8], buf[9], buf[10]]),
-        flags: buf[11],
+        critical: u16_at(7),
+        ts_ms: u32::from_le_bytes([buf[9], buf[10], buf[11], buf[12]]),
+        flags: buf[13],
     };
     if h.total == 0 || usize::from(h.total) > PYRO_MAX_DATAGRAMS || h.index >= h.total {
+        return None;
+    }
+    if h.critical > h.total {
         return None;
     }
     if h.flags & !KNOWN_FLAGS != 0 {
@@ -566,6 +581,7 @@ pub fn pack_datagrams(
                 seq,
                 index: index as u16,
                 total,
+                critical: critical_entries as u16,
                 ts_ms: frame.meta.ts_ms,
                 flags: flags | duplicate,
             },
@@ -640,6 +656,12 @@ pub struct CollectedFrame<P> {
     /// Datagrams that arrived, out of `total`.
     pub received: u16,
     pub total: u16,
+    /// Whether every critical datagram arrived, by the sender's own count.
+    ///
+    /// The answer to "are the coarse bands whole" that a depacketizer cannot
+    /// give; see [`PyroDatagramHeader::critical`]. A decoder should use this
+    /// rather than count blocks.
+    pub critical_complete: bool,
     /// What arrived, in frame order. A packet whose pieces did not all arrive
     /// is not here.
     pub packets: Vec<CollectedPacket<P>>,
@@ -678,6 +700,7 @@ struct Flight<P> {
     seq: u16,
     ts_ms: u32,
     total: u16,
+    critical: u16,
     slots: Vec<Option<(u8, P)>>,
     received: u16,
     /// When its most recent datagram arrived.
@@ -759,6 +782,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
                         seq: h.seq,
                         ts_ms: h.ts_ms,
                         total: h.total,
+                        critical: h.critical,
                         slots: (0..h.total).map(|_| None).collect(),
                         received: 0,
                         last_us: now_us,
@@ -776,7 +800,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
 
         let flight = &mut self.flights[pos];
         flight.last_us = now_us;
-        if flight.total != h.total {
+        if flight.total != h.total || flight.critical != h.critical {
             self.stats.inconsistent += 1;
             return out;
         }
@@ -833,6 +857,9 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
             self.stats.lost += u64::from(flight.total - flight.received);
         }
 
+        let critical_complete = flight.slots[..usize::from(flight.critical)]
+            .iter()
+            .all(Option::is_some);
         let mut packets = Vec::new();
         let mut slots = flight.slots.into_iter().peekable();
         while let Some(slot) = slots.next() {
@@ -888,6 +915,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
             ts_ms: flight.ts_ms,
             received: flight.received,
             total: flight.total,
+            critical_complete,
             packets,
         }
     }
@@ -1093,7 +1121,7 @@ mod tests {
 
     #[test]
     fn a_packet_that_fits_takes_one_datagram_whole() {
-        let frame = frame_of(&[8, 500, 1188, 300], 0);
+        let frame = frame_of(&[8, 500, 1200 - PYRO_DGRAM_HDR_LEN, 300], 0);
         let d = pack_datagrams(3, &frame, 1200).unwrap();
         let got = unpack(&d);
         assert_eq!(d.total, 4);
@@ -1168,6 +1196,7 @@ mod tests {
             seq: 1,
             index: 0,
             total: 2,
+            critical: 1,
             ts_ms: 0,
             flags: 0,
         };
@@ -1183,6 +1212,7 @@ mod tests {
                 ..ok
             },
             PyroDatagramHeader { flags: 0x80, ..ok },
+            PyroDatagramHeader { critical: 3, ..ok },
             PyroDatagramHeader {
                 flags: FLAG_FIRST_PART,
                 ..ok
@@ -1361,6 +1391,33 @@ mod tests {
             assert_eq!(packets_of(&out[0]), expect, "missing {missing}");
             assert_eq!(c.take_stats().broken_parts, 1);
         }
+    }
+
+    #[test]
+    fn critical_completeness_is_the_senders_count() {
+        let frame = frame_of(&[8, 2488, 900, 900, 900], 2);
+        let w = wire(0, &frame);
+        assert!(
+            w.iter().all(|(h, _)| h.critical == 4),
+            "header packet and three pieces"
+        );
+
+        // Everything but one non-critical datagram: critical, not whole.
+        let mut c = PyroCollector::new();
+        for (h, p) in w.iter().filter(|(h, _)| h.index != 5).cloned() {
+            c.push(h, p, 0);
+        }
+        let f = c.poll(IDLE_US).pop().unwrap();
+        assert!(!f.is_whole());
+        assert!(f.critical_complete);
+
+        // A critical piece lost along with its copy: not critical.
+        let mut c = PyroCollector::new();
+        for (h, p) in w.iter().filter(|(h, _)| h.index != 2).cloned() {
+            c.push(h, p, 0);
+        }
+        let f = c.poll(IDLE_US).pop().unwrap();
+        assert!(!f.critical_complete, "a lost critical piece went unnoticed");
     }
 
     #[test]
