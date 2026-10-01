@@ -95,10 +95,15 @@ const KNOWN_FLAGS: u8 = FLAG_DUPLICATE | FLAG_PART | FLAG_FIRST_PART | FLAG_LAST
 /// unless they are lost. A little slack covers reordering inside a NIC queue.
 pub const GRACE_US: u64 = 2_000;
 
-/// How long a frame waits at all, from its first datagram: one frame interval
-/// at 30 fps. A frame that has not completed by then is not completing, and
-/// holding it longer only delays the one after.
-pub const DEADLINE_US: u64 = 34_000;
+/// How long a frame waits once its datagrams stop arriving.
+///
+/// Measured from the *last* datagram, not the first. A frame on a saturated
+/// path takes about a frame interval to arrive by definition — the rate is a
+/// frame per interval — so a deadline from its first datagram tears every
+/// frame the moment the path is slower than the deadline assumes. Silence
+/// says a frame is done arriving whatever the rate; on a LAN its datagrams are
+/// microseconds apart while it is still coming.
+pub const IDLE_US: u64 = 20_000;
 
 /// Frames in collection at once. More means the receiver is far behind, and
 /// the oldest is let go to make room.
@@ -572,6 +577,41 @@ pub fn pack_datagrams(
     Ok(Datagrams { buf, lens, total })
 }
 
+// ── Whether to send at all ──────────────────────────────────────────────
+
+/// Why a frame was not sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Skip {
+    /// More than a frame is still queued from before.
+    Behind,
+    /// The frame would not fit beside what is queued.
+    NoRoom,
+    /// The frame would not fit the send buffer even empty.
+    TooLarge,
+}
+
+/// Whether a frame of `frame_bytes` should go out on a queue holding
+/// `backlog` of a `buffer`-byte send buffer.
+///
+/// QUIC makes room in a full datagram buffer by evicting the *oldest* queued
+/// datagrams and reporting success (see `nestri/docs/media-transport.md`). For
+/// PyroWave that is the worst outcome available: the evicted datagrams are the
+/// tail of the frame before, and the head of this one may follow them, so two
+/// frames are damaged where skipping would have cost one. Every PyroWave frame
+/// stands alone, so skipping one is clean, and the queue never holds much more
+/// than a frame waiting behind the one going out.
+pub fn should_skip(backlog: usize, frame_bytes: usize, buffer: usize) -> Option<Skip> {
+    if frame_bytes > buffer {
+        Some(Skip::TooLarge)
+    } else if backlog > frame_bytes {
+        Some(Skip::Behind)
+    } else if backlog + frame_bytes > buffer {
+        Some(Skip::NoRoom)
+    } else {
+        None
+    }
+}
+
 // ── Collection, at the client ───────────────────────────────────────────
 
 /// One packet of a collected frame.
@@ -640,14 +680,15 @@ struct Flight<P> {
     total: u16,
     slots: Vec<Option<(u8, P)>>,
     received: u16,
-    first_us: u64,
+    /// When its most recent datagram arrived.
+    last_us: u64,
     /// When a newer frame began, if one has.
     superseded_us: Option<u64>,
 }
 
 impl<P> Flight<P> {
     fn due_at(&self) -> u64 {
-        let deadline = self.first_us + DEADLINE_US;
+        let deadline = self.last_us + IDLE_US;
         match self.superseded_us {
             Some(t) => deadline.min(t + GRACE_US),
             None => deadline,
@@ -720,7 +761,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
                         total: h.total,
                         slots: (0..h.total).map(|_| None).collect(),
                         received: 0,
-                        first_us: now_us,
+                        last_us: now_us,
                         superseded_us: superseded,
                     },
                 );
@@ -734,6 +775,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
         };
 
         let flight = &mut self.flights[pos];
+        flight.last_us = now_us;
         if flight.total != h.total {
             self.stats.inconsistent += 1;
             return out;
@@ -1256,15 +1298,33 @@ mod tests {
     }
 
     #[test]
-    fn a_frame_nobody_follows_leaves_at_its_deadline() {
+    fn a_frame_nobody_follows_leaves_once_it_goes_quiet() {
         let a = frame_of(&[8, 900, 900], 0);
+        let w = wire(0, &a);
         let mut c = PyroCollector::new();
-        let (h, p) = wire(0, &a)[0].clone();
-        c.push(h, p, 50);
-        assert!(c.poll(50 + DEADLINE_US - 1).is_empty());
-        let out = c.poll(50 + DEADLINE_US);
+        c.push(w[0].0, w[0].1.clone(), 50);
+        c.push(w[1].0, w[1].1.clone(), 900);
+        // Timed from the last datagram, not the first.
+        assert!(c.poll(900 + IDLE_US - 1).is_empty());
+        let out = c.poll(900 + IDLE_US);
         assert_eq!(out.len(), 1);
-        assert_eq!(out[0].received, 1);
+        assert_eq!(out[0].received, 2);
+    }
+
+    /// The failure a deadline from the first datagram had: a frame that takes
+    /// longer than the deadline to arrive, as every frame does on a path
+    /// slower than the deadline assumes, was cut off while still arriving.
+    #[test]
+    fn a_slow_frame_is_not_cut_off_while_it_is_still_arriving() {
+        let frame = frame_of(&vec![900; 400], 0);
+        let mut c = PyroCollector::new();
+        let mut out = Vec::new();
+        let gap = IDLE_US / 2;
+        for (i, (h, p)) in wire(0, &frame).into_iter().enumerate() {
+            out.extend(c.push(h, p, i as u64 * gap));
+        }
+        assert_eq!(out.len(), 1);
+        assert!(out[0].is_whole(), "{}/{}", out[0].received, out[0].total);
     }
 
     #[test]
@@ -1294,7 +1354,7 @@ mod tests {
             for (h, p) in w.iter().filter(|(h, _)| h.index != missing).cloned() {
                 c.push(h, p, 0);
             }
-            let out = c.poll(DEADLINE_US);
+            let out = c.poll(IDLE_US);
             assert_eq!(out.len(), 1);
             let mut expect = all_packets(&frame);
             expect.remove(if missing == 2 { 1 } else { 2 });
@@ -1341,5 +1401,42 @@ mod tests {
         }
         assert_eq!(seqs, [65534, 65535, 0, 1]);
         assert_eq!(c.take_stats().stale, 0);
+    }
+}
+
+#[cfg(test)]
+mod skip_tests {
+    use super::*;
+
+    const BUF: usize = 4 << 20;
+
+    #[test]
+    fn an_empty_queue_sends() {
+        assert_eq!(should_skip(0, 400_000, BUF), None);
+        assert_eq!(should_skip(0, BUF, BUF), None);
+    }
+
+    /// One frame waiting behind the one going out is the steady state at a
+    /// rate the path carries; it must not trip the guard.
+    #[test]
+    fn a_frame_in_flight_is_not_a_backlog() {
+        assert_eq!(should_skip(400_000, 400_000, BUF), None);
+        assert_eq!(should_skip(399_999, 400_000, BUF), None);
+    }
+
+    #[test]
+    fn more_than_a_frame_behind_skips() {
+        assert_eq!(should_skip(400_001, 400_000, BUF), Some(Skip::Behind));
+    }
+
+    #[test]
+    fn a_frame_that_would_evict_skips() {
+        let frame = 3 << 20;
+        assert_eq!(should_skip(2 << 20, frame, BUF), Some(Skip::NoRoom));
+    }
+
+    #[test]
+    fn a_frame_larger_than_the_buffer_never_goes() {
+        assert_eq!(should_skip(0, BUF + 1, BUF), Some(Skip::TooLarge));
     }
 }
