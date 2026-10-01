@@ -76,8 +76,14 @@ Status: approved design, 2026-10-01. Part 3 of 4. Parts 1 and 2:
 - Unit: planning with one or both sets; 1.0 feature bits in `pEnabledFeatures`,
   in `Features2`, in neither, and restoration; the instance raise decision;
   command decode and refusals; the two-slot hold rule.
-- GPU `#[ignore]`: nespyro frames → nescapture's chunking → `FrameAssembler` →
-  `pack_datagrams` → `PyroCollector` → `Depacketizer`; readiness equals the
-  encoder's own packets, clean and with loss. (Moved from part 2.)
+- GPU `#[ignore]`, in `crates/nespyro/tests/transport.rs` beside nespyro's GPU
+  harness: real frames → `chunk_frame` → `FrameAssembler` → `pack_datagrams` →
+  `PyroCollector` → `Depacketizer`; readiness equals the encoder's own packets,
+  clean and with loss. (Moved from part 2.) nescapture's own mapping of an
+  `EncodedFrame` onto `chunk_frame` (`pyro_messages`) is unit-tested on the
+  CPU, since `EncodedFrame` can be built by hand.
+- Found by it: `Readiness::critical_complete` false-rejects frames with empty
+  coarse blocks; the datagram header gained a critical count so the collector
+  can answer exactly (see parts 1 and 2).
 - Guest image: rebuild, run a title, send a PyroWave `MSG_ENCODE_SETTINGS` to
   `/tmp/nescapture-cmd.sock`, and see PyroWave frames leave neshub.

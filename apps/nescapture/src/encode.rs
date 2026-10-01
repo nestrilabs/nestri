@@ -14,6 +14,14 @@
 //  Where the game's device cannot host the encoder, it gets a device of its
 //  own, and the slot is read back on the CPU and uploaded there instead.
 //
+//  PyroWave takes a shorter path, on the game's device only:
+//
+//    nespyro::Encoder::encode_after(slot, ...)  waits on the blit, compute
+//                                               shaders, RGB in, packets out
+//    IPC send to neshub, as a run of messages
+//
+//  It is never chosen by negotiation, only by a client asking for it.
+//
 //  Environment variables
 //  ──────────────────────
 //  NESCAPTURE_CODEC         "h264" | "h265" | "av1"          (default: best available)
@@ -46,9 +54,9 @@ use std::thread;
 use std::time::Instant;
 
 use nesprotocol::{
-    CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, ClientCaps, FLAG_KEYFRAME, FLAG_RECONFIG,
-    MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO, decode_client_caps,
-    decode_encode_settings, encode_ipc_frame,
+    CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, CODEC_PYROWAVE, ClientCaps, FLAG_KEYFRAME,
+    FLAG_RECONFIG, MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO,
+    decode_client_caps, decode_encode_settings_ext, encode_ipc_frame,
 };
 use pixelforge::{
     Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
@@ -397,8 +405,18 @@ fn spawn_stall_watchdog(
 }
 
 struct EncodedFrame {
-    future: EncodeFuture,
+    future: Pending,
     present_time: Instant,
+    /// The frame's own size, for the IPC header. It used to be the size the
+    /// pipeline was created at, which a game changing resolution left stale.
+    width: u32,
+    height: u32,
+}
+
+/// An encode in flight, from whichever encoder took the frame.
+enum Pending {
+    Hw(EncodeFuture),
+    Pyro(nespyro::EncodeFuture),
 }
 
 pub enum FrameSource {
@@ -436,6 +454,80 @@ impl HwCodec {
         }
     }
 }
+
+/// What the stream is being encoded as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamCodec {
+    /// A Vulkan Video codec, through pixelforge.
+    Hw(HwCodec),
+    /// PyroWave, through nespyro: the LAN codec, used only when a client asks.
+    PyroWave,
+}
+
+impl StreamCodec {
+    fn to_protocol_codec(self) -> u8 {
+        match self {
+            Self::Hw(c) => c.to_protocol_codec(),
+            Self::PyroWave => CODEC_PYROWAVE,
+        }
+    }
+}
+
+/// The protocol id of what is being encoded, or `CODEC_KEEP` for nothing.
+fn protocol_codec(codec: Option<StreamCodec>) -> u8 {
+    codec.map_or(CODEC_KEEP, StreamCodec::to_protocol_codec)
+}
+
+/// What a PyroWave request named, kept across rebuilds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PyroSettings {
+    pub kbps: u32,
+    /// One of `nesprotocol::pyrowave::CHROMA_*`.
+    pub chroma: u8,
+    /// Largest packet the hub can carry in one datagram.
+    pub packet_size: u16,
+}
+
+/// A PyroWave request, as the command socket delivered it, checked.
+///
+/// The hub fills in the rate and the packet size before forwarding, so a
+/// request missing either did not come through one; it is refused rather
+/// than encoded at a guess. `pyro_available` is whether this device has a
+/// nespyro context at all.
+fn pyro_request(
+    settings: &nesprotocol::EncodeSettings,
+    pyro_available: bool,
+) -> Result<PyroSettings, String> {
+    if !pyro_available {
+        return Err("PyroWave runs only on the game's own device, and this is not one".into());
+    }
+    if settings.rate_control != nesprotocol::RC_CBR || settings.value == 0 {
+        return Err("a PyroWave request needs a rate".into());
+    }
+    let packet_size = settings
+        .packet_size
+        .ok_or("a PyroWave request needs a packet size")?;
+    if usize::from(packet_size) < MIN_PYRO_PACKET {
+        return Err(format!(
+            "a {packet_size}-byte packet is below the {MIN_PYRO_PACKET} the packetizer takes"
+        ));
+    }
+    let chroma = settings.chroma.unwrap_or(nesprotocol::pyrowave::CHROMA_420);
+    if !matches!(
+        chroma,
+        nesprotocol::pyrowave::CHROMA_420 | nesprotocol::pyrowave::CHROMA_444
+    ) {
+        return Err(format!("unknown chroma format {chroma}"));
+    }
+    Ok(PyroSettings {
+        kbps: settings.value,
+        chroma,
+        packet_size,
+    })
+}
+
+/// nespyro's floor on a packet: a block header and something after it.
+const MIN_PYRO_PACKET: usize = 64;
 
 fn probe_any() -> Option<(HwCodec, pixelforge::VideoContext)> {
     probe_specific(HwCodec::AV1)
@@ -486,8 +578,19 @@ fn resolve_codec(requested: Option<&str>) -> Option<(HwCodec, pixelforge::VideoC
 /// Ten bits is offered for everything but H.264, which matches
 /// [`depth_for_codec`]: the encoder refuses ten-bit H.264, so advertising it
 /// would let a negotiation settle on something that is then quietly downgraded.
-fn host_caps(ctx: &pixelforge::VideoContext) -> ClientCaps {
+///
+/// PyroWave is in it when nespyro is: [`ClientCaps::best`] never picks it, so
+/// it is there to describe the host, not to steer the negotiation.
+fn host_caps(ctx: Option<&pixelforge::VideoContext>, pyro: bool) -> ClientCaps {
     let mut caps = ClientCaps::empty();
+    if pyro {
+        caps = caps
+            .with(CODEC_PYROWAVE, nesprotocol::DEPTH_8)
+            .with(CODEC_PYROWAVE, nesprotocol::DEPTH_10);
+    }
+    let Some(ctx) = ctx else {
+        return caps;
+    };
     for (codec, id) in [
         (HwCodec::AV1, nesprotocol::CODEC_AV1),
         (HwCodec::H265, nesprotocol::CODEC_H265),
@@ -828,7 +931,6 @@ pub struct PipelineHandle {
     progress_epoch: Instant,
     idr_requested: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
-    pub codec: HwCodec,
     pub capture_fps: Arc<AtomicU32>,
     pub encode_avg_ms: Arc<AtomicU32>,
     pub capture_ms: Arc<AtomicU32>,
@@ -839,21 +941,41 @@ pub struct PipelineHandle {
     pub timing: Arc<crate::timing::PresentTiming>,
 }
 
+/// The encoders the game's own device was set up for.
+pub struct SharedEncoders {
+    pub video: Option<pixelforge::VideoContext>,
+    pub pyro: Option<nespyro::Context>,
+}
+
 impl PipelineHandle {
-    /// Build the pipeline, on `shared` when given: a context on the game's own
-    /// device. Without one the encoder gets a device of its own.
-    pub fn new(
-        config: PipelineConfig,
-        shared: Option<pixelforge::VideoContext>,
-    ) -> Result<Self, String> {
-        let (codec, ctx) = match shared {
-            Some(ctx) => {
-                resolve_codec_on(&ctx, config.codec_request.as_deref()).map(|codec| (codec, ctx))
+    /// Build the pipeline, on `shared` when given: contexts on the game's own
+    /// device. Without them the encoder gets a device of its own, which hosts
+    /// Vulkan Video only.
+    pub fn new(config: PipelineConfig, shared: Option<SharedEncoders>) -> Result<Self, String> {
+        let (codec, ctx, pyro_ctx) = match shared {
+            Some(SharedEncoders { video, pyro }) => {
+                let codec = video
+                    .as_ref()
+                    .and_then(|ctx| resolve_codec_on(ctx, config.codec_request.as_deref()));
+                if codec.is_none() && pyro.is_none() {
+                    return Err("no encoder on the game's device".into());
+                }
+                (codec, video, pyro)
             }
-            None => resolve_codec(config.codec_request.as_deref()),
+            None => {
+                let (codec, ctx) = resolve_codec(config.codec_request.as_deref())
+                    .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
+                (Some(codec), Some(ctx), None)
+            }
+        };
+        if codec.is_none() {
+            log::warn!(
+                "no hardware video encoder on this GPU; nothing is encoded until a client asks \
+                 for PyroWave"
+            );
         }
-        .ok_or_else(|| "no hardware video encoder found on this GPU".to_string())?;
-        let device_caps = host_caps(&ctx);
+        let device_caps = host_caps(ctx.as_ref(), pyro_ctx.is_some());
+        let pyro_available = pyro_ctx.is_some();
         // The surface colour as the compositor last stated it, for the clients.
         // They need it for two things the host cannot do for them: picking a
         // swapchain that reads the values the right way, and telling their own
@@ -906,7 +1028,7 @@ impl PipelineHandle {
         let present_attempts = Arc::new(AtomicU32::new(0));
         let capture_attempts = Arc::new(AtomicU32::new(0));
         let timing = Arc::new(crate::timing::PresentTiming::default());
-        let current_codec = Arc::new(AtomicU8::new(codec.to_protocol_codec()));
+        let current_codec = Arc::new(AtomicU8::new(protocol_codec(codec.map(StreamCodec::Hw))));
         let needs_reconfig_flag = Arc::new(AtomicBool::new(false));
 
         let enc_shutdown = shutdown.clone();
@@ -920,8 +1042,10 @@ impl PipelineHandle {
             idr_interval: config.idr_interval,
             encoder_tuning_mode: config.encoder_tuning_mode,
             pixel_format: config.pixel_format,
-            codec,
+            codec: codec.map(StreamCodec::Hw),
             ctx,
+            pyro_ctx,
+            pyro: None,
             idr_requested: idr_requested.clone(),
             reconfig_rx,
             current_codec: current_codec.clone(),
@@ -953,9 +1077,8 @@ impl PipelineHandle {
             ipc_path: config.ipc_path,
             current_codec: current_codec.clone(),
             needs_reconfig_flag: needs_reconfig_flag,
-            width: config.width as u16,
-            height: config.height as u16,
             encode_ms: encode_avg_ms.clone(),
+            dropped: dropped_frames.clone(),
             idr_requested: idr_requested.clone(),
             epoch: Instant::now(),
             reconfig_tx: reconfig_tx.clone(),
@@ -1079,10 +1202,11 @@ impl PipelineHandle {
                                         client.bits()
                                     );
                                     let change = EncodeSettingsChange {
-                                        codec: Some(codec),
+                                        codec: Some(StreamCodec::Hw(codec)),
                                         rate_control_mode: None,
                                         value: 0,
                                         bit_depth: Some(depth),
+                                        pyro: None,
                                     };
                                     if reconfig_tx.send(change).is_err() {
                                         log::warn!(
@@ -1099,14 +1223,32 @@ impl PipelineHandle {
                             }
                         }
                         Ok(n) if n >= 2 && buf[0] == MSG_ENCODE_SETTINGS => {
-                            if let Some((codec_id, rc, value, depth)) =
-                                decode_encode_settings(&buf[1..n])
-                            {
+                            if let Some(settings) = decode_encode_settings_ext(&buf[1..n]) {
+                                let (codec_id, rc, value, depth) = (
+                                    settings.codec,
+                                    settings.rate_control,
+                                    settings.value,
+                                    settings.bit_depth,
+                                );
+                                let mut pyro = None;
                                 let codec = match codec_id {
                                     CODEC_KEEP => None,
-                                    CODEC_H264 => Some(HwCodec::H264),
-                                    CODEC_H265 => Some(HwCodec::H265),
-                                    CODEC_AV1 => Some(HwCodec::AV1),
+                                    CODEC_H264 => Some(StreamCodec::Hw(HwCodec::H264)),
+                                    CODEC_H265 => Some(StreamCodec::Hw(HwCodec::H265)),
+                                    CODEC_AV1 => Some(StreamCodec::Hw(HwCodec::AV1)),
+                                    CODEC_PYROWAVE => match pyro_request(&settings, pyro_available)
+                                    {
+                                        Ok(p) => {
+                                            pyro = Some(p);
+                                            Some(StreamCodec::PyroWave)
+                                        }
+                                        Err(why) => {
+                                            // Once per request, which is rare:
+                                            // a person asked for this.
+                                            log::warn!("refusing PyroWave: {why}");
+                                            continue;
+                                        }
+                                    },
                                     _ => {
                                         log::warn!(
                                             "unknown codec id {codec_id} in encode settings"
@@ -1140,6 +1282,7 @@ impl PipelineHandle {
                                     rate_control_mode: rate_control,
                                     value,
                                     bit_depth,
+                                    pyro,
                                 };
                                 if reconfig_tx.send(change).is_err() {
                                     log::warn!("reconfig channel closed, stopping cmd listener");
@@ -1175,7 +1318,6 @@ impl PipelineHandle {
             progress_epoch,
             idr_requested,
             shutdown,
-            codec,
             capture_fps,
             encode_avg_ms,
             capture_ms,
@@ -1271,8 +1413,13 @@ struct EncoderConfig {
     idr_interval: u32,
     encoder_tuning_mode: EncoderTuningMode,
     pixel_format: PixelFormat,
-    codec: HwCodec,
-    ctx: pixelforge::VideoContext,
+    /// `None` until there is something to encode: a GPU with no hardware
+    /// encoder waits here for a client to ask for PyroWave.
+    codec: Option<StreamCodec>,
+    ctx: Option<pixelforge::VideoContext>,
+    pyro_ctx: Option<nespyro::Context>,
+    /// What the last PyroWave request named.
+    pyro: Option<PyroSettings>,
     idr_requested: Arc<AtomicBool>,
     reconfig_rx: mpsc::Receiver<EncodeSettingsChange>,
     current_codec: Arc<AtomicU8>,
@@ -1288,20 +1435,16 @@ struct EncoderConfig {
     capture_ms: Arc<AtomicU32>,
 }
 
-struct EncodedPacket {
-    data: Vec<u8>,
-    is_key_frame: bool,
-    frame_number: u32,
-}
-
 #[derive(Debug, Clone)]
 pub struct EncodeSettingsChange {
-    pub codec: Option<HwCodec>,
+    pub codec: Option<StreamCodec>,
     /// `None` leaves rate control exactly as it is, which is what a message
     /// that only means to change something else says.
     pub rate_control_mode: Option<RateControlMode>,
     pub value: u32,
     pub bit_depth: Option<EncodeBitDepth>,
+    /// Set exactly when `codec` is PyroWave.
+    pub pyro: Option<PyroSettings>,
 }
 
 fn encoder_thread(
@@ -1312,18 +1455,25 @@ fn encoder_thread(
     epoch: Instant,
     progress: Arc<Progress>,
 ) {
-    let ctx = cfg.ctx;
+    let ctx = cfg.ctx.take();
+    let pyro_ctx = cfg.pyro_ctx.take();
 
+    // At most one of these exists at a time: a codec switch drops whichever
+    // was running before the other is built.
     let mut encoder_state: Option<PerFrameEncoder> = None;
+    let mut pyro_state: Option<PyroEncoder> = None;
     // Last VkFormat we refused, so the error is logged on change rather than
     // once per frame.
     let mut unsupported_format: Option<u32> = None;
+    // So "nothing to encode yet" is said once rather than per frame.
+    let mut said_idle = false;
 
     let mut frame_number = 0u32;
 
-    // The slot of the last frame converted in place, until that conversion
-    // is known to be done. See `HeldSlot`.
-    let mut held: Option<HeldSlot> = None;
+    // Slots whose image an encoder may still be reading, oldest first, until
+    // that is known to be done. See `HeldSlot`. The hardware path holds one
+    // at a time; PyroWave up to its two frames in flight.
+    let mut held: std::collections::VecDeque<HeldSlot> = std::collections::VecDeque::new();
 
     let wanted_depth = std::env::var("NESCAPTURE_DEPTH");
     // So the ten-bit refusal is said once per codec rather than per frame.
@@ -1340,11 +1490,7 @@ fn encoder_thread(
 
         // Also on idle ticks, so the last frame before a pause gives its slot
         // back: a ring rebuild waits for every slot.
-        if held.as_ref().is_some_and(HeldSlot::done)
-            && let Some(done) = held.take()
-        {
-            done.release();
-        }
+        release_done(&mut held);
 
         // Check for dynamic encode settings changes
         if let Ok(change) = cfg.reconfig_rx.try_recv() {
@@ -1360,16 +1506,29 @@ fn encoder_thread(
             // a rebuild and an IDR, and the negotiation sends one every time a
             // client connects -- including the common case where the client
             // wants exactly what this encoder is already producing.
-            if changes_nothing(&change, cfg.codec, cfg.wanted_depth_override) {
+            if changes_nothing(&change, cfg.codec, cfg.wanted_depth_override, cfg.pyro) {
                 log::debug!("reconfig asks for the current settings; nothing to do");
                 continue;
             }
-            if let Some(kbps) = bitrate_only_change(
-                &change,
-                cfg.rate_control,
-                cfg.codec,
-                cfg.wanted_depth_override,
-            ) && let Some(state) = encoder_state.as_mut()
+            if cfg.codec == Some(StreamCodec::PyroWave)
+                && let Some(kbps) = pyro_bitrate_only(&change, cfg.pyro, cfg.wanted_depth_override)
+                && let (Some(state), Some(settings)) = (pyro_state.as_mut(), cfg.pyro.as_mut())
+            {
+                state
+                    .encoder
+                    .set_target_bitrate(u64::from(kbps).saturating_mul(1_000));
+                settings.kbps = kbps;
+                log::trace!("PyroWave rate → {kbps} kbps (no rebuild)");
+                continue;
+            }
+            if matches!(cfg.codec, Some(StreamCodec::Hw(_)))
+                && let Some(kbps) = bitrate_only_change(
+                    &change,
+                    cfg.rate_control,
+                    cfg.codec,
+                    cfg.wanted_depth_override,
+                )
+                && let Some(state) = encoder_state.as_mut()
             {
                 match state.encoder.set_target_bitrate(bps(kbps)) {
                     Ok(()) => {
@@ -1384,48 +1543,72 @@ fn encoder_thread(
                     Err(e) => log::info!("live retune refused ({e}), rebuilding"),
                 }
             }
+            // A codec this device has no encoder for is refused here, before
+            // anything else in the change is applied: half a change would
+            // leave the running encode configured for a codec it is not.
+            let unavailable = match change.codec {
+                Some(StreamCodec::PyroWave) => pyro_ctx.is_none(),
+                Some(StreamCodec::Hw(_)) => ctx.is_none(),
+                None => false,
+            };
+            if unavailable {
+                log::warn!(
+                    "reconfig to {:?} refused: this device has no encoder for it",
+                    change.codec
+                );
+                continue;
+            }
             log::info!(
                 "reconfig: codec={:?}, rc={:?}, value={}",
                 change.codec,
                 change.rate_control_mode,
                 change.value,
             );
-            match change.rate_control_mode {
-                // Said nothing about rate control, so nothing changes. The
-                // rebuild below still happens: a depth change needs one.
-                None => {}
-                // `retargeted` rather than an outright CBR, so a VBR encode
-                // keeps its ceiling across a rebuild it is having for some
-                // other reason -- a codec change, say. The settings message has
-                // no way to name VBR, so every bitrate arrives labelled CBR;
-                // reading that label as a mode would mean a ceiling asked for
-                // at launch survived only until the first codec switch.
-                Some(RateControlMode::Cbr) => {
-                    cfg.rate_control = cfg.rate_control.retargeted(change.value);
-                }
-                Some(RateControlMode::Cqp) => {
-                    cfg.rate_control = RateControl::Cqp { qp: change.value };
-                }
-                _ => {
-                    log::warn!(
-                        "unsupported rate control mode {:?}, keeping current",
-                        change.rate_control_mode
-                    );
+            // A PyroWave request's rate is PyroWave's alone. Folding it into
+            // the hardware rate control would leave the next hardware encode
+            // aiming at hundreds of megabits.
+            if change.codec == Some(StreamCodec::PyroWave) {
+                cfg.pyro = change.pyro;
+            } else {
+                match change.rate_control_mode {
+                    // Said nothing about rate control, so nothing changes. The
+                    // rebuild below still happens: a depth change needs one.
+                    None => {}
+                    // `retargeted` rather than an outright CBR, so a VBR encode
+                    // keeps its ceiling across a rebuild it is having for some
+                    // other reason -- a codec change, say. The settings message
+                    // has no way to name VBR, so every bitrate arrives labelled
+                    // CBR; reading that label as a mode would mean a ceiling
+                    // asked for at launch survived only until the first codec
+                    // switch.
+                    Some(RateControlMode::Cbr) => {
+                        cfg.rate_control = cfg.rate_control.retargeted(change.value);
+                    }
+                    Some(RateControlMode::Cqp) => {
+                        cfg.rate_control = RateControl::Cqp { qp: change.value };
+                    }
+                    _ => {
+                        log::warn!(
+                            "unsupported rate control mode {:?}, keeping current",
+                            change.rate_control_mode
+                        );
+                    }
                 }
             }
             if let Some(codec) = change.codec {
-                cfg.codec = codec;
+                cfg.codec = Some(codec);
             }
             if let Some(depth) = change.bit_depth {
                 cfg.wanted_depth_override = Some(depth);
             }
             // Drop old encoder state to force re-creation with new settings
-            drop_encoder(&mut encoder_state, &mut held);
+            drop_encoder(&mut encoder_state, &mut pyro_state, &mut held);
+            init_failed_at = None;
             // Signal IPC thread to set FLAG_RECONFIG on next frame
             cfg.needs_reconfig_flag.store(true, Ordering::Relaxed);
             // Update IPC thread with new codec
             cfg.current_codec
-                .store(cfg.codec.to_protocol_codec(), Ordering::Relaxed);
+                .store(protocol_codec(cfg.codec), Ordering::Relaxed);
             // Request IDR so first frame after reconfig has new SPS/PPS
             cfg.idr_requested.store(true, Ordering::Relaxed);
         }
@@ -1436,6 +1619,16 @@ fn encoder_thread(
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
+
+        let Some(codec) = cfg.codec else {
+            // Dropping the frame gives its slot straight back.
+            if !said_idle {
+                log::info!("no encoder chosen yet; frames are dropped until a client asks for one");
+                said_idle = true;
+            }
+            continue;
+        };
+        said_idle = false;
 
         // Wait for the blit and export the buffer. This used to be a thread of
         // its own between the present hook and here; it is cheaper on this one,
@@ -1487,14 +1680,7 @@ fn encoder_thread(
                 _ => EncodeBitDepth::Eight,
             }
         };
-        let bit_depth = depth_for_codec(cfg.codec, requested_depth, &mut warned_depth);
-        let out_fmt = output_format(cfg.pixel_format, bit_depth);
 
-        // The geometry joins the guard. It used to be absent, and `cfg.width` /
-        // `cfg.height` were whatever the *first* frame happened to be, so a game
-        // that changed resolution kept being encoded at the old one: shrinking
-        // left a band of the previous picture down the right edge and along the
-        // bottom, and growing had no surface large enough to hold the frame.
         // Resolved per frame, because the compositor can say what a surface
         // is after the swapchain that carries it was created -- and on the
         // path that needs this, it always does.
@@ -1506,98 +1692,265 @@ fn encoder_thread(
         cfg.stream_colorspace
             .store(frame_colorspace, Ordering::Relaxed);
 
-        let state = match encoder_state.as_mut() {
-            Some(s)
-                if encoder_still_serves(
-                    (
-                        s.width,
-                        s.height,
-                        s.bit_depth,
-                        s.pixel_format,
-                        s.colorspace,
-                        s.input_fmt,
-                    ),
-                    (
-                        raw.width,
-                        raw.height,
-                        bit_depth,
-                        cfg.pixel_format,
-                        frame_colorspace,
-                        input_fmt,
-                    ),
-                ) =>
-            {
-                s
-            }
-            _ => {
-                // Building an encoder is expensive and a configuration the
-                // device cannot do will not start working on the next frame.
-                // Without this, a refused profile is retried sixty times a
-                // second forever -- which is how an unsupported ten-bit H.264
-                // request turned into a log with nothing else in it and a
-                // session that never recovered.
-                if let Some(failed_at) = init_failed_at
-                    && failed_at.elapsed() < INIT_RETRY_INTERVAL
-                {
-                    frame_number += 1;
+        // Which ring slot the frame is in, for the slot hold below.
+        let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
+
+        let future = match codec {
+            StreamCodec::PyroWave => {
+                let (Some(pyro_ctx), Some(settings)) = (pyro_ctx.as_ref(), cfg.pyro) else {
+                    // Refused before it got here; unreachable unless that
+                    // check is lost.
+                    log::error!("PyroWave chosen with no nespyro context or no settings");
+                    cfg.codec = None;
                     continue;
-                }
-                if let Some(old) = encoder_state.as_ref() {
-                    if old.width != raw.width || old.height != raw.height {
-                        log::info!(
-                            "resolution changed {}x{} -> {}x{}, rebuilding the encoder",
-                            old.width,
-                            old.height,
-                            raw.width,
-                            raw.height,
-                        );
-                    }
-                    // Said out loud because a game can change this without
-                    // changing anything else about the surface -- Cyberpunk's
-                    // HDR10 and scRGB modes differ in the format and in
-                    // nothing the old check looked at.
-                    if old.input_fmt != input_fmt {
-                        log::info!(
-                            "surface format changed {:?} -> {:?}, rebuilding the encoder",
-                            old.input_fmt,
-                            input_fmt,
-                        );
-                    }
-                }
-                // The old converter may still be reading a held slot, and the
-                // held slot's point is on the old converter's timeline.
-                drop_encoder(&mut encoder_state, &mut held);
-                match PerFrameEncoder::new(
-                    &ctx,
-                    cfg.codec.to_pixelforge(),
-                    raw.width,
-                    raw.height,
-                    cfg.fps,
-                    cfg.rate_control,
-                    cfg.idr_interval,
-                    cfg.encoder_tuning_mode,
-                    cfg.pixel_format,
-                    bit_depth,
+                };
+                let FrameSource::Shared { image, blit } = source else {
+                    log::error!("PyroWave chosen on a device of the encoder's own");
+                    cfg.codec = None;
+                    continue;
+                };
+                let key = PyroKey {
+                    width: raw.width,
+                    height: raw.height,
                     input_fmt,
-                    out_fmt,
-                    frame_colorspace,
-                    matches!(source, FrameSource::Shared { .. }),
+                    colorspace: frame_colorspace,
+                    ten_bit: requested_depth == EncodeBitDepth::Ten,
+                    chroma: settings.chroma,
+                    packet_size: settings.packet_size,
+                };
+                if pyro_state.as_ref().is_none_or(|s| s.key != key) {
+                    if let Some(failed_at) = init_failed_at
+                        && failed_at.elapsed() < INIT_RETRY_INTERVAL
+                    {
+                        frame_number += 1;
+                        continue;
+                    }
+                    drop_encoder(&mut encoder_state, &mut pyro_state, &mut held);
+                    match PyroEncoder::new(pyro_ctx, key, settings.kbps, cfg.fps) {
+                        Ok(s) => {
+                            init_failed_at = None;
+                            last_init_error = None;
+                            pyro_state = Some(s);
+                        }
+                        Err(e) => {
+                            if last_init_error.as_deref() != Some(e.as_str()) {
+                                log::error!("PyroWave encoder (re)init: {e}");
+                                last_init_error = Some(e);
+                            }
+                            init_failed_at = Some(std::time::Instant::now());
+                            frame_number += 1;
+                            continue;
+                        }
+                    }
+                }
+                let state = pyro_state.as_mut().expect("built above");
+                // Every PyroWave frame is a key frame, so a request for one
+                // has already been met.
+                cfg.idr_requested.store(false, Ordering::Relaxed);
+
+                progress.note(epoch, 2);
+                let wait = nespyro::TimelinePoint::new(blit.semaphore, blit.value);
+                match state.encoder.encode_after(
+                    image,
+                    input_fmt.vk_format(),
+                    ash::vk::ImageLayout::GENERAL,
+                    &[wait],
                 ) {
-                    Ok(s) => {
-                        init_failed_at = None;
-                        last_init_error = None;
-                        encoder_state = Some(s);
-                        encoder_state.as_mut().unwrap()
+                    Ok(future) => {
+                        // The slot stays the encoder's until its timeline says
+                        // the frame is done with: nespyro reads the image in
+                        // place, as late as its own queue gets to it.
+                        let done = state.encoder.last_submission();
+                        if let Some(guard) = raw.slot.take() {
+                            held.push_back(HeldSlot {
+                                guard,
+                                slot: buffer_index,
+                                converted: pixelforge::TimelinePoint::new(
+                                    done.semaphore,
+                                    done.value,
+                                ),
+                                ds: ds.clone(),
+                            });
+                        }
+                        Pending::Pyro(future)
                     }
                     Err(e) => {
-                        // Said once per distinct failure. The same refusal every
-                        // second says nothing the first one did not, and buries
-                        // the one that is different.
-                        if last_init_error.as_deref() != Some(e.as_str()) {
-                            log::error!("encoder (re)init: {e}");
-                            last_init_error = Some(e);
+                        log::warn!("PyroWave encode frame {frame_number}: {e}");
+                        frame_number += 1;
+                        continue;
+                    }
+                }
+            }
+            StreamCodec::Hw(hw) => {
+                let Some(ctx) = ctx.as_ref() else {
+                    log::error!("{hw:?} chosen with no Vulkan Video context");
+                    cfg.codec = None;
+                    continue;
+                };
+                let bit_depth = depth_for_codec(hw, requested_depth, &mut warned_depth);
+                let out_fmt = output_format(cfg.pixel_format, bit_depth);
+
+                // The geometry joins the guard. It used to be absent, and
+                // `cfg.width` / `cfg.height` were whatever the *first* frame
+                // happened to be, so a game that changed resolution kept being
+                // encoded at the old one: shrinking left a band of the previous
+                // picture down the right edge and along the bottom, and growing
+                // had no surface large enough to hold the frame.
+                let state = match encoder_state.as_mut() {
+                    Some(s)
+                        if encoder_still_serves(
+                            (
+                                s.width,
+                                s.height,
+                                s.bit_depth,
+                                s.pixel_format,
+                                s.colorspace,
+                                s.input_fmt,
+                            ),
+                            (
+                                raw.width,
+                                raw.height,
+                                bit_depth,
+                                cfg.pixel_format,
+                                frame_colorspace,
+                                input_fmt,
+                            ),
+                        ) =>
+                    {
+                        s
+                    }
+                    _ => {
+                        // Building an encoder is expensive and a configuration
+                        // the device cannot do will not start working on the
+                        // next frame. Without this, a refused profile is
+                        // retried sixty times a second forever -- which is how
+                        // an unsupported ten-bit H.264 request turned into a
+                        // log with nothing else in it and a session that never
+                        // recovered.
+                        if let Some(failed_at) = init_failed_at
+                            && failed_at.elapsed() < INIT_RETRY_INTERVAL
+                        {
+                            frame_number += 1;
+                            continue;
                         }
-                        init_failed_at = Some(std::time::Instant::now());
+                        if let Some(old) = encoder_state.as_ref() {
+                            if old.width != raw.width || old.height != raw.height {
+                                log::info!(
+                                    "resolution changed {}x{} -> {}x{}, rebuilding the encoder",
+                                    old.width,
+                                    old.height,
+                                    raw.width,
+                                    raw.height,
+                                );
+                            }
+                            // Said out loud because a game can change this
+                            // without changing anything else about the surface
+                            // -- Cyberpunk's HDR10 and scRGB modes differ in
+                            // the format and in nothing the old check looked at.
+                            if old.input_fmt != input_fmt {
+                                log::info!(
+                                    "surface format changed {:?} -> {:?}, rebuilding the encoder",
+                                    old.input_fmt,
+                                    input_fmt,
+                                );
+                            }
+                        }
+                        // The old converter may still be reading a held slot,
+                        // and the held slot's point is on the old converter's
+                        // timeline.
+                        drop_encoder(&mut encoder_state, &mut pyro_state, &mut held);
+                        match PerFrameEncoder::new(
+                            ctx,
+                            hw.to_pixelforge(),
+                            raw.width,
+                            raw.height,
+                            cfg.fps,
+                            cfg.rate_control,
+                            cfg.idr_interval,
+                            cfg.encoder_tuning_mode,
+                            cfg.pixel_format,
+                            bit_depth,
+                            input_fmt,
+                            out_fmt,
+                            frame_colorspace,
+                            matches!(source, FrameSource::Shared { .. }),
+                        ) {
+                            Ok(s) => {
+                                init_failed_at = None;
+                                last_init_error = None;
+                                encoder_state = Some(s);
+                                encoder_state.as_mut().unwrap()
+                            }
+                            Err(e) => {
+                                // Said once per distinct failure. The same
+                                // refusal every second says nothing the first
+                                // one did not, and buries the one that is
+                                // different.
+                                if last_init_error.as_deref() != Some(e.as_str()) {
+                                    log::error!("encoder (re)init: {e}");
+                                    last_init_error = Some(e);
+                                }
+                                init_failed_at = Some(std::time::Instant::now());
+                                frame_number += 1;
+                                continue;
+                            }
+                        }
+                    }
+                };
+
+                // Only when something asked. Periodic key frames are the
+                // encoder's own schedule, set by `with_gop_size` -- counting
+                // frames here as well meant two mechanisms driving one thing,
+                // and the encoder's schedule being the one that could be turned
+                // off. Turning it off changed nothing, because this kept asking
+                // every four seconds regardless.
+                if cfg.idr_requested.swap(false, Ordering::Relaxed) {
+                    state.encoder.request_idr();
+                }
+
+                progress.note(epoch, 2);
+                let result = match &mut source {
+                    // The encoder converts RGB itself: it copies the slot and
+                    // waits for the copy before returning, so the slot needs no
+                    // holding.
+                    FrameSource::Shared { image, blit } if state.converter.is_none() => state
+                        .encoder
+                        .encode_after(*image, &[*blit])
+                        .map_err(|e| anyhow::anyhow!("Encoder::encode_after: {e}")),
+                    FrameSource::Shared { image, blit } => {
+                        let converter = state.converter.as_mut().expect("guarded above");
+                        let (result, converted) =
+                            shared_encode_frame(converter, &mut state.encoder, *image, *blit);
+                        // Replacing the held slot is what releases it: a
+                        // successful conversion started only once the previous
+                        // one had finished.
+                        if let (Some(converted), Some(guard)) = (converted, raw.slot.take()) {
+                            while let Some(prev) = held.pop_front() {
+                                prev.release();
+                            }
+                            held.push_back(HeldSlot {
+                                guard,
+                                slot: buffer_index,
+                                converted,
+                                ds: ds.clone(),
+                            });
+                        }
+                        result
+                    }
+                    FrameSource::Pixels(pixels) => cpu_encode_frame(
+                        ctx,
+                        hw.to_pixelforge(),
+                        &mut state.encoder,
+                        pixels.as_slice(),
+                        raw.width,
+                        raw.height,
+                        raw.vk_format,
+                    ),
+                };
+                match result {
+                    Ok(future) => Pending::Hw(future),
+                    Err(e) => {
+                        log::warn!("encode frame {frame_number}: {e}");
                         frame_number += 1;
                         continue;
                     }
@@ -1605,76 +1958,24 @@ fn encoder_thread(
             }
         };
 
-        // Only when something asked. Periodic key frames are the encoder's own
-        // schedule, set by `with_gop_size` -- counting frames here as well
-        // meant two mechanisms driving one thing, and the encoder's schedule
-        // being the one that could be turned off. Turning it off changed
-        // nothing, because this kept asking every four seconds regardless.
-        if cfg.idr_requested.swap(false, Ordering::Relaxed) {
-            state.encoder.request_idr();
-        }
-
-        // Which ring slot the frame is in, for the slot hold below.
-        let buffer_index = raw.slot.as_ref().map(|s| s.index()).unwrap_or(0);
-
-        progress.note(epoch, 2);
-        let result = match &mut source {
-            // The encoder converts RGB itself: it copies the slot and waits for
-            // the copy before returning, so the slot needs no holding.
-            FrameSource::Shared { image, blit } if state.converter.is_none() => state
-                .encoder
-                .encode_after(*image, &[*blit])
-                .map_err(|e| anyhow::anyhow!("Encoder::encode_after: {e}")),
-            FrameSource::Shared { image, blit } => {
-                let converter = state.converter.as_mut().expect("guarded above");
-                let (result, converted) =
-                    shared_encode_frame(converter, &mut state.encoder, *image, *blit);
-                // Replacing the held slot is what releases it: a successful
-                // conversion started only once the previous one had finished.
-                if let (Some(converted), Some(guard)) = (converted, raw.slot.take())
-                    && let Some(prev) = held.replace(HeldSlot {
-                        guard,
-                        slot: buffer_index,
-                        converted,
-                        ds: ds.clone(),
-                    })
-                {
-                    prev.release();
-                }
-                result
-            }
-            FrameSource::Pixels(pixels) => cpu_encode_frame(
-                &ctx,
-                &mut state.encoder,
-                pixels.as_slice(),
-                raw.width,
-                raw.height,
-                raw.vk_format,
-            ),
+        // Blocking, deliberately. Dropping an encoded frame does not just
+        // waste the encode — it breaks the reference chain. The encoder's DPB
+        // believes the frame exists and codes later frames against it, so a
+        // decoder that never receives it shows corruption until the next IDR.
+        // Blocking here pushes back through `frame_rx` to `push_frame`, where a
+        // drop is free: that frame never entered the encoder and no later
+        // frame refers to it.
+        let pending = EncodedFrame {
+            future,
+            present_time: raw.present_time,
+            width: raw.width,
+            height: raw.height,
         };
-
-        match result {
-            Err(e) => log::warn!("encode frame {frame_number}: {e}"),
-            Ok(future) => {
-                // Blocking, deliberately. Dropping an encoded frame does not
-                // just waste the encode — it breaks the reference chain. The
-                // encoder's DPB believes the frame exists and codes later
-                // frames against it, so a decoder that never receives it shows
-                // corruption until the next IDR. Blocking here pushes back
-                // through `frame_rx` to `push_frame`, where a drop is free:
-                // that frame never entered the encoder and no later frame
-                // refers to it.
-                let pending = EncodedFrame {
-                    future,
-                    present_time: raw.present_time,
-                };
-                // The blocking send. If the thread draining this stops, every
-                // frame after the second one waits here forever.
-                progress.note(epoch, 3);
-                if encoded_tx.send(pending).is_err() {
-                    break;
-                }
-            }
+        // The blocking send. If the thread draining this stops, every frame
+        // after the second one waits here forever.
+        progress.note(epoch, 3);
+        if encoded_tx.send(pending).is_err() {
+            break;
         }
 
         frame_number += 1;
@@ -1684,9 +1985,144 @@ fn encoder_thread(
     if let Some(state) = encoder_state.as_mut() {
         let _ = state.encoder.flush();
     }
-    drop_encoder(&mut encoder_state, &mut held);
+    drop_encoder(&mut encoder_state, &mut pyro_state, &mut held);
 
     log::info!("encoder thread exited");
+}
+
+/// The configuration a PyroWave encoder was built for. A frame wanting any
+/// other needs a new encoder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PyroKey {
+    width: u32,
+    height: u32,
+    input_fmt: InputFormat,
+    colorspace: u32,
+    /// Whether ten bits were asked for. An HDR stream gets sixteen-bit planes
+    /// either way.
+    ten_bit: bool,
+    chroma: u8,
+    packet_size: u16,
+}
+
+struct PyroEncoder {
+    encoder: nespyro::Encoder,
+    key: PyroKey,
+}
+
+impl PyroEncoder {
+    fn new(ctx: &nespyro::Context, key: PyroKey, kbps: u32, fps: u32) -> Result<Self, String> {
+        let config = pyro_config(key, kbps, fps)?;
+        log::info!(
+            "(re)init PyroWave encoder: {}x{} {:?} {:?} {:?} → {:?}, {kbps} kbps, packets of {} bytes",
+            key.width,
+            key.height,
+            config.chroma,
+            config.depth,
+            config.source,
+            if config.colour.is_hdr() {
+                "BT.2020 PQ"
+            } else {
+                "BT.709"
+            },
+            key.packet_size,
+        );
+        let encoder = nespyro::Encoder::new(ctx.clone(), config)
+            .map_err(|e| format!("nespyro::Encoder::new: {e}"))?;
+        Ok(Self { encoder, key })
+    }
+}
+
+/// nespyro's configuration for a key, decided by the same `source_spec` and
+/// `stream_spec` the hardware path's converter uses, so the two codecs cannot
+/// disagree about what a surface is.
+fn pyro_config(key: PyroKey, kbps: u32, fps: u32) -> Result<nespyro::EncodeConfig, String> {
+    let source = source_spec(key.colorspace, key.input_fmt);
+    let stream = stream_spec(source);
+    let (colour, depth) = match stream {
+        ColorSpec::Bt2020Pq => (
+            nespyro::ColourDescription::bt2020_pq(),
+            nespyro::Depth::Sixteen,
+        ),
+        ColorSpec::Srgb => (
+            nespyro::ColourDescription::bt709(),
+            if key.ten_bit {
+                nespyro::Depth::Sixteen
+            } else {
+                nespyro::Depth::Eight
+            },
+        ),
+        other => return Err(format!("{other:?} is not a stream PyroWave can carry")),
+    };
+    let source = match source {
+        ColorSpec::Srgb => nespyro::Source::Srgb,
+        ColorSpec::Bt709Linear => nespyro::Source::Bt709Linear,
+        ColorSpec::Bt2020Linear => nespyro::Source::Bt2020Linear,
+        ColorSpec::Bt2020Pq => nespyro::Source::Bt2020Pq,
+    };
+    let chroma = match key.chroma {
+        nesprotocol::pyrowave::CHROMA_444 => nespyro::Chroma::Yuv444,
+        _ => nespyro::Chroma::Yuv420,
+    };
+    Ok(nespyro::EncodeConfig::new(key.width, key.height)
+        .with_chroma(chroma)
+        .with_depth(depth)
+        .with_colour(colour, source)
+        .with_frame_rate(fps.max(1), 1)
+        .with_target_bitrate(u64::from(kbps).saturating_mul(1_000))
+        .with_packet_size(usize::from(key.packet_size)))
+}
+
+/// The new PyroWave rate when a change is nothing but one.
+fn pyro_bitrate_only(
+    change: &EncodeSettingsChange,
+    current: Option<PyroSettings>,
+    current_depth: Option<EncodeBitDepth>,
+) -> Option<u32> {
+    let current = current?;
+    if change.rate_control_mode != Some(RateControlMode::Cbr) || change.value == 0 {
+        return None;
+    }
+    if change.codec.is_some_and(|c| c != StreamCodec::PyroWave) {
+        return None;
+    }
+    if change.bit_depth.is_some_and(|d| Some(d) != current_depth) {
+        return None;
+    }
+    if change
+        .pyro
+        .is_some_and(|p| p.chroma != current.chroma || p.packet_size != current.packet_size)
+    {
+        return None;
+    }
+    Some(change.value)
+}
+
+/// Give back every held slot whose encoder is done with it, oldest first.
+///
+/// In order, and stopping at the first that is not done: points on one
+/// timeline are reached in order, so a later one being reached says nothing
+/// that the earlier one has not.
+fn release_done<H: Hold>(held: &mut std::collections::VecDeque<H>) {
+    while held.front().is_some_and(H::done) {
+        held.pop_front().expect("checked").release();
+    }
+}
+
+/// Something held until a GPU point is reached: a [`HeldSlot`], or a stand-in
+/// in tests, where there is no device to hold a slot of.
+trait Hold {
+    fn done(&self) -> bool;
+    fn release(self);
+}
+
+impl Hold for HeldSlot {
+    fn done(&self) -> bool {
+        HeldSlot::done(self)
+    }
+    fn release(self) {
+        HeldSlot::release(self)
+    }
 }
 
 struct PerFrameEncoder {
@@ -1975,13 +2411,17 @@ fn intra_refresh_enabled() -> bool {
 /// which is never a no-op.
 fn changes_nothing(
     change: &EncodeSettingsChange,
-    current_codec: HwCodec,
+    current_codec: Option<StreamCodec>,
     current_depth: Option<EncodeBitDepth>,
+    current_pyro: Option<PyroSettings>,
 ) -> bool {
     if change.rate_control_mode.is_some() {
         return false;
     }
-    let codec_same = change.codec.is_none_or(|c| c == current_codec);
+    if change.pyro.is_some() && change.pyro != current_pyro {
+        return false;
+    }
+    let codec_same = change.codec.is_none_or(|c| Some(c) == current_codec);
     // `None` for the current depth means nothing has overridden the default,
     // which is eight bits -- so a request for eight bits is a no-op and a
     // request for ten is not.
@@ -1994,7 +2434,7 @@ fn changes_nothing(
 fn bitrate_only_change(
     change: &EncodeSettingsChange,
     current: RateControl,
-    current_codec: HwCodec,
+    current_codec: Option<StreamCodec>,
     current_depth_override: Option<EncodeBitDepth>,
 ) -> Option<u32> {
     if change.rate_control_mode != Some(RateControlMode::Cbr) {
@@ -2010,7 +2450,7 @@ fn bitrate_only_change(
     // ceiling asked for at launch would last exactly until the path moved.
     // What the message carries is a target; the mode is what was asked for.
     current.target_kbps()?;
-    if change.codec.is_some_and(|c| c != current_codec) {
+    if change.codec.is_some_and(|c| Some(c) != current_codec) {
         return None;
     }
     if change
@@ -2109,14 +2549,20 @@ impl HeldSlot {
     }
 }
 
-/// Drop the encoder and its converter, then the held slot.
+/// Drop whichever encoder there is, then the held slots.
 ///
-/// In that order: dropping the converter waits for its last conversion, after
-/// which the held slot is free and its point, on the converter's timeline,
-/// would be a dangling handle anyway.
-fn drop_encoder(state: &mut Option<PerFrameEncoder>, held: &mut Option<HeldSlot>) {
+/// In that order: dropping the converter waits for its last conversion, and
+/// dropping a PyroWave encoder for its last frame, after which the held slots
+/// are free and their points, on the dropped encoder's timeline, would be
+/// dangling handles anyway.
+fn drop_encoder(
+    state: &mut Option<PerFrameEncoder>,
+    pyro: &mut Option<PyroEncoder>,
+    held: &mut std::collections::VecDeque<HeldSlot>,
+) {
     *state = None;
-    if let Some(slot) = held.take() {
+    *pyro = None;
+    while let Some(slot) = held.pop_front() {
         slot.release();
     }
 }
@@ -2157,6 +2603,7 @@ fn map_vk_format_raw(vk_format: u32) -> ash::vk::Format {
 
 fn cpu_encode_frame(
     ctx: &pixelforge::VideoContext,
+    codec: Codec,
     encoder: &mut Encoder,
     pixels: &[u8],
     width: u32,
@@ -2183,9 +2630,11 @@ fn cpu_encode_frame(
 
     let yuv = bgra_to_yuv420(pixels, width, height, vk_format);
 
+    // The encoder's own codec. This was `H264` whatever the encoder was, which
+    // sized and aligned the upload for the wrong codec's blocks.
     let mut input_image = InputImage::new(
         ctx.clone(),
-        Codec::H264,
+        codec,
         width,
         height,
         EncodeBitDepth::Eight,
@@ -2246,13 +2695,42 @@ fn bgra_to_yuv420(pixels: &[u8], width: u32, height: u32, vk_format: u32) -> Vec
 //  IPC send thread
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// A PyroWave frame as the IPC messages that carry it to the hub.
+///
+/// The frame index is the encoder's own count, cut to the 32 bits the header
+/// has: it only has to tell one frame from the next.
+fn pyro_messages(
+    frame: &nespyro::EncodedFrame,
+    ts_ms: u32,
+    width: u16,
+    height: u16,
+) -> Result<Vec<Vec<u8>>, nesprotocol::pyrowave::ChunkError> {
+    nesprotocol::pyrowave::chunk_frame(
+        frame.index as u32,
+        nesprotocol::pyrowave::FrameMeta {
+            ts_ms,
+            width,
+            height,
+        },
+        &frame.data,
+        &frame.packets,
+        frame.critical_packets,
+    )
+}
+
+/// A finished encode, from whichever encoder made it.
+enum Encoded {
+    Hw(pixelforge::EncodedPacket),
+    Pyro(nespyro::EncodedFrame),
+}
+
 struct IpcConfig {
     ipc_path: std::path::PathBuf,
     current_codec: Arc<AtomicU8>,
     needs_reconfig_flag: Arc<AtomicBool>,
-    width: u16,
-    height: u16,
     encode_ms: Arc<AtomicU32>,
+    /// Frames that never reached the hub, for the stats.
+    dropped: Arc<AtomicU32>,
     /// Shared with the encoder thread, which honours it on the next frame.
     idr_requested: Arc<AtomicBool>,
     /// Zero point for wire timestamps.
@@ -2317,6 +2795,8 @@ fn ipc_send_thread(
     // even though frames are stamped from their own present.
     let start_time = cfg.epoch;
     let mut frame_count: u64 = 0;
+    // So a PyroWave encoder short of scratch space is said once per episode.
+    let mut scratch_overflowing = false;
 
     'outer: loop {
         if shutdown.load(Ordering::Relaxed) {
@@ -2410,22 +2890,23 @@ fn ipc_send_thread(
             // thread -- a whole pipeline stalled behind one frame, with
             // nothing said anywhere.
             progress.note(epoch, 4);
-            let result = pollster::block_on(pending.future);
+            let encoded = match pending.future {
+                Pending::Hw(future) => pollster::block_on(future)
+                    .map(Encoded::Hw)
+                    .map_err(|e| e.to_string()),
+                Pending::Pyro(future) => pollster::block_on(future)
+                    .map(Encoded::Pyro)
+                    .map_err(|e| e.to_string()),
+            };
             let awaited = encode_start.elapsed();
             let waited = queued + awaited;
-            let pkt = match result {
-                Ok(p) => p,
+            let encoded = match encoded {
+                Ok(e) => e,
                 Err(e) => {
                     log::warn!("encoder future receive: {e}");
                     continue;
                 }
             };
-
-            if let Some(stats) = &pkt.stats {
-                let enc_ms: f32 = (std::time::Duration::from_nanos(stats.gpu_time_ns).as_secs_f64()
-                    * 1000.0) as f32;
-                cfg.encode_ms.store(enc_ms.to_bits(), Ordering::Relaxed);
-            }
 
             // From the present, not from here. Stamping at send time folded
             // however long the frame spent queued for the encoder into the
@@ -2434,27 +2915,75 @@ fn ipc_send_thread(
             let timestamp_ms = present_time
                 .saturating_duration_since(start_time)
                 .as_millis() as u32;
-            let mut flags = if pkt.is_key_frame { FLAG_KEYFRAME } else { 0 };
             // Set FLAG_RECONFIG on the first frame after an encoder reconfig.
-            // Clear it after setting so only the first frame is marked.
-            if cfg.needs_reconfig_flag.swap(false, Ordering::Relaxed) {
-                flags |= FLAG_RECONFIG;
-            }
+            // Clear it after setting so only the first frame is marked. Taken
+            // for a PyroWave frame too, which carries no flags, so that the
+            // mark cannot outlive the switch and land on a later one.
+            let reconfig = cfg.needs_reconfig_flag.swap(false, Ordering::Relaxed);
             let protocol_codec = cfg.current_codec.load(Ordering::Relaxed);
+            // The frame's own size: the IPC header has sixteen bits for it.
+            let (width, height) = (pending.width as u16, pending.height as u16);
 
-            let ipc_frame = encode_ipc_frame(
-                STREAM_VIDEO,
-                protocol_codec,
-                flags,
-                timestamp_ms,
-                cfg.width,
-                cfg.height,
-                &pkt.data,
-            );
+            let (messages, is_key_frame, bytes) = match &encoded {
+                Encoded::Hw(pkt) => {
+                    if let Some(stats) = &pkt.stats {
+                        let enc_ms: f32 = (std::time::Duration::from_nanos(stats.gpu_time_ns)
+                            .as_secs_f64()
+                            * 1000.0) as f32;
+                        cfg.encode_ms.store(enc_ms.to_bits(), Ordering::Relaxed);
+                    }
+                    let mut flags = if pkt.is_key_frame { FLAG_KEYFRAME } else { 0 };
+                    if reconfig {
+                        flags |= FLAG_RECONFIG;
+                    }
+                    let ipc_frame = encode_ipc_frame(
+                        STREAM_VIDEO,
+                        protocol_codec,
+                        flags,
+                        timestamp_ms,
+                        width,
+                        height,
+                        &pkt.data,
+                    );
+                    (vec![ipc_frame], pkt.is_key_frame, pkt.data.len())
+                }
+                Encoded::Pyro(frame) => {
+                    let enc_ms = (frame.stats.gpu_ns() / 1e6) as f32;
+                    cfg.encode_ms.store(enc_ms.to_bits(), Ordering::Relaxed);
+                    // Said on the edges. It means rate control asked more of
+                    // the quantizer's scratch space than it has, so blocks were
+                    // lost before the frame ever left this box -- and nothing
+                    // downstream can count what was never sent.
+                    let overflowed = frame.stats.scratch_overflowed();
+                    if overflowed && !scratch_overflowing {
+                        log::warn!(
+                            "PyroWave encoder ran out of scratch space ({} of {} bytes); \
+                             frames are losing blocks",
+                            frame.stats.scratch_bytes,
+                            frame.stats.scratch_capacity
+                        );
+                    } else if !overflowed && scratch_overflowing {
+                        log::info!("PyroWave encoder has scratch space again");
+                    }
+                    scratch_overflowing = overflowed;
+                    match pyro_messages(frame, timestamp_ms, width, height) {
+                        // Every PyroWave frame stands alone, so none is a key
+                        // frame in the sense the counters below mean.
+                        Ok(messages) => (messages, false, frame.data.len()),
+                        Err(e) => {
+                            log::warn!("PyroWave frame {} cannot be sent: {e}", frame.index);
+                            cfg.dropped.fetch_add(1, Ordering::Relaxed);
+                            continue;
+                        }
+                    }
+                }
+            };
 
-            if let Some(probe) = rate_probe.as_mut() {
+            if let Some(probe) = rate_probe.as_mut()
+                && matches!(encoded, Encoded::Hw(_))
+            {
                 let now = Instant::now();
-                probe.observe(now, pkt.data.len() as u32, pkt.is_key_frame);
+                probe.observe(now, bytes as u32, is_key_frame);
                 if let Some(kbps) = probe.due_step(now) {
                     log::info!("rate probe: stepping to {kbps} kbps");
                     let change = EncodeSettingsChange {
@@ -2462,6 +2991,7 @@ fn ipc_send_thread(
                         rate_control_mode: Some(RateControlMode::Cbr),
                         value: kbps,
                         bit_depth: None,
+                        pyro: None,
                     };
                     let _ = cfg.reconfig_tx.send(change);
                 }
@@ -2505,7 +3035,7 @@ fn ipc_send_thread(
                 }
             }
 
-            if pkt.is_key_frame {
+            if is_key_frame {
                 keyframes += 1;
                 worst_key_wait = worst_key_wait.max(waited);
             }
@@ -2514,7 +3044,14 @@ fn ipc_send_thread(
 
             let send_start = Instant::now();
             progress.note(epoch, 5);
-            if let Err(e) = socket.send(&ipc_frame) {
+            let mut failure = None;
+            for message in &messages {
+                if let Err(e) = socket.send(message) {
+                    failure = Some(e);
+                    break;
+                }
+            }
+            if let Some(e) = failure {
                 // Said on the edges only. A stalled consumer fails every frame,
                 // and sixty identical lines a second bury whatever else is
                 // being said about why it stalled.
@@ -2525,6 +3062,9 @@ fn ipc_send_thread(
                         log::warn!("IPC consumer is not reading; dropping frames until it does");
                         blocked_consumer = true;
                     }
+                    // The rest of a PyroWave frame goes with it: the hub
+                    // abandons a frame with a message missing anyway.
+                    cfg.dropped.fetch_add(1, Ordering::Relaxed);
                     frame_count += 1;
                     continue;
                 }
@@ -3399,7 +3939,9 @@ mod depth_tests {
 
 #[cfg(test)]
 mod bitrate_only_tests {
-    use super::{HwCodec, RateControl, bitrate_only_change, changes_nothing, negotiated};
+    use super::{
+        HwCodec, RateControl, StreamCodec, bitrate_only_change, changes_nothing, negotiated,
+    };
 
     use crate::encode::EncodeSettingsChange;
     use pixelforge::{EncodeBitDepth, RateControlMode};
@@ -3411,16 +3953,17 @@ mod bitrate_only_tests {
         bit_depth: Option<EncodeBitDepth>,
     ) -> EncodeSettingsChange {
         EncodeSettingsChange {
-            codec,
+            codec: codec.map(StreamCodec::Hw),
             rate_control_mode: Some(mode),
             value,
             bit_depth,
+            pyro: None,
         }
     }
 
     /// The running encode for these: CBR at 8 Mbps, H.264, no depth override.
     fn running(c: &EncodeSettingsChange) -> Option<u32> {
-        bitrate_only_change(c, CBR_8M, HwCodec::H264, None)
+        bitrate_only_change(c, CBR_8M, Some(StreamCodec::Hw(HwCodec::H264)), None)
     }
 
     fn caps(pairs: &[(u8, u8)]) -> nesprotocol::ClientCaps {
@@ -3492,25 +4035,29 @@ mod bitrate_only_tests {
     #[test]
     fn asking_for_the_current_settings_is_a_no_op() {
         let same = EncodeSettingsChange {
-            codec: Some(HwCodec::AV1),
+            codec: Some(StreamCodec::Hw(HwCodec::AV1)),
             rate_control_mode: None,
             value: 0,
             bit_depth: Some(EncodeBitDepth::Ten),
+            pyro: None,
         };
         assert!(changes_nothing(
             &same,
-            HwCodec::AV1,
-            Some(EncodeBitDepth::Ten)
+            Some(StreamCodec::Hw(HwCodec::AV1)),
+            Some(EncodeBitDepth::Ten),
+            None
         ));
         assert!(!changes_nothing(
             &same,
-            HwCodec::H265,
-            Some(EncodeBitDepth::Ten)
+            Some(StreamCodec::Hw(HwCodec::H265)),
+            Some(EncodeBitDepth::Ten),
+            None
         ));
         assert!(!changes_nothing(
             &same,
-            HwCodec::AV1,
-            Some(EncodeBitDepth::Eight)
+            Some(StreamCodec::Hw(HwCodec::AV1)),
+            Some(EncodeBitDepth::Eight),
+            None
         ));
     }
 
@@ -3523,28 +4070,41 @@ mod bitrate_only_tests {
             rate_control_mode: None,
             value: 0,
             bit_depth: Some(EncodeBitDepth::Eight),
+            pyro: None,
         };
-        assert!(changes_nothing(&eight, HwCodec::AV1, None));
+        assert!(changes_nothing(
+            &eight,
+            Some(StreamCodec::Hw(HwCodec::AV1)),
+            None,
+            None
+        ));
         let ten = EncodeSettingsChange {
             bit_depth: Some(EncodeBitDepth::Ten),
             ..eight.clone()
         };
-        assert!(!changes_nothing(&ten, HwCodec::AV1, None));
+        assert!(!changes_nothing(
+            &ten,
+            Some(StreamCodec::Hw(HwCodec::AV1)),
+            None,
+            None
+        ));
     }
 
     /// A rate-control change is never a no-op, whatever else it carries.
     #[test]
     fn a_rate_control_change_always_counts() {
         let rc = EncodeSettingsChange {
-            codec: Some(HwCodec::AV1),
+            codec: Some(StreamCodec::Hw(HwCodec::AV1)),
             rate_control_mode: Some(RateControlMode::Cbr),
             value: 5_000,
             bit_depth: Some(EncodeBitDepth::Ten),
+            pyro: None,
         };
         assert!(!changes_nothing(
             &rc,
-            HwCodec::AV1,
-            Some(EncodeBitDepth::Ten)
+            Some(StreamCodec::Hw(HwCodec::AV1)),
+            Some(EncodeBitDepth::Ten),
+            None
         ));
     }
 
@@ -3558,6 +4118,7 @@ mod bitrate_only_tests {
             rate_control_mode: None,
             value: 0,
             bit_depth: Some(EncodeBitDepth::Ten),
+            pyro: None,
         };
         assert_eq!(
             running(&depth_only),
@@ -3608,7 +4169,12 @@ mod bitrate_only_tests {
             Some(EncodeBitDepth::Eight),
         );
         assert_eq!(
-            bitrate_only_change(&c, CBR_8M, HwCodec::H264, Some(EncodeBitDepth::Eight)),
+            bitrate_only_change(
+                &c,
+                CBR_8M,
+                Some(StreamCodec::Hw(HwCodec::H264)),
+                Some(EncodeBitDepth::Eight)
+            ),
             Some(2_000),
         );
     }
@@ -3627,7 +4193,10 @@ mod bitrate_only_tests {
             None,
             Some(EncodeBitDepth::Eight),
         );
-        assert_eq!(bitrate_only_change(&c, CBR_8M, HwCodec::H264, None), None);
+        assert_eq!(
+            bitrate_only_change(&c, CBR_8M, Some(StreamCodec::Hw(HwCodec::H264)), None),
+            None
+        );
     }
 
     #[test]
@@ -3657,7 +4226,12 @@ mod bitrate_only_tests {
         // retarget -- it has to become an encode that has one.
         let c = change(RateControlMode::Cbr, 2_000, None, None);
         assert_eq!(
-            bitrate_only_change(&c, RateControl::Cqp { qp: 26 }, HwCodec::H264, None),
+            bitrate_only_change(
+                &c,
+                RateControl::Cqp { qp: 26 },
+                Some(StreamCodec::Hw(HwCodec::H264)),
+                None
+            ),
             None,
         );
     }
@@ -3670,7 +4244,7 @@ mod bitrate_only_tests {
     fn a_bitrate_under_vbr_is_a_retune_not_a_mode_change() {
         let c = change(RateControlMode::Cbr, 2_000, None, None);
         assert_eq!(
-            bitrate_only_change(&c, VBR_8M, HwCodec::H264, None),
+            bitrate_only_change(&c, VBR_8M, Some(StreamCodec::Hw(HwCodec::H264)), None),
             Some(2_000),
         );
     }
@@ -3680,10 +4254,16 @@ mod bitrate_only_tests {
     #[test]
     fn a_vbr_encode_rebuilds_for_the_same_reasons_any_other_does() {
         let c = change(RateControlMode::Cbr, 2_000, Some(HwCodec::AV1), None);
-        assert_eq!(bitrate_only_change(&c, VBR_8M, HwCodec::H264, None), None);
+        assert_eq!(
+            bitrate_only_change(&c, VBR_8M, Some(StreamCodec::Hw(HwCodec::H264)), None),
+            None
+        );
 
         let c = change(RateControlMode::Cqp, 28, None, None);
-        assert_eq!(bitrate_only_change(&c, VBR_8M, HwCodec::H264, None), None);
+        assert_eq!(
+            bitrate_only_change(&c, VBR_8M, Some(StreamCodec::Hw(HwCodec::H264)), None),
+            None
+        );
     }
 }
 
@@ -3955,5 +4535,346 @@ mod stream_colour_tests {
         let declared = Mutex::new(None);
         let resolved = AtomicU32::new(u32::MAX);
         assert!(stream_colour(&declared, &resolved).is_none());
+    }
+}
+
+#[cfg(test)]
+mod pyrowave_tests {
+    use super::*;
+    use nesprotocol::pyrowave::{CHROMA_420, CHROMA_444};
+
+    fn request(value: u32, packet_size: Option<u16>) -> nesprotocol::EncodeSettings {
+        nesprotocol::EncodeSettings {
+            codec: CODEC_PYROWAVE,
+            rate_control: nesprotocol::RC_CBR,
+            value,
+            bit_depth: Some(nesprotocol::DEPTH_8),
+            chroma: Some(CHROMA_444),
+            packet_size,
+        }
+    }
+
+    #[test]
+    fn a_request_from_the_hub_is_taken() {
+        assert_eq!(
+            pyro_request(&request(300_000, Some(1440)), true),
+            Ok(PyroSettings {
+                kbps: 300_000,
+                chroma: CHROMA_444,
+                packet_size: 1440,
+            })
+        );
+    }
+
+    /// The hub fills in the rate and the packet size. A request without them
+    /// did not come through one, and encoding it at a guessed size would
+    /// produce packets the path may not carry.
+    #[test]
+    fn a_request_the_hub_did_not_complete_is_refused() {
+        assert!(pyro_request(&request(0, Some(1440)), true).is_err());
+        assert!(pyro_request(&request(300_000, None), true).is_err());
+        assert!(pyro_request(&request(300_000, Some(63)), true).is_err());
+        let mut cqp = request(300_000, Some(1440));
+        cqp.rate_control = nesprotocol::RC_CQP;
+        assert!(pyro_request(&cqp, true).is_err());
+        let mut odd = request(300_000, Some(1440));
+        odd.chroma = Some(7);
+        assert!(pyro_request(&odd, true).is_err());
+    }
+
+    /// The fallback device has no nespyro context: PyroWave runs on the
+    /// game's device or not at all.
+    #[test]
+    fn no_pyrowave_on_a_device_of_its_own() {
+        assert!(pyro_request(&request(300_000, Some(1440)), false).is_err());
+    }
+
+    #[test]
+    fn a_missing_chroma_means_420() {
+        let mut r = request(300_000, Some(1440));
+        r.chroma = None;
+        assert_eq!(pyro_request(&r, true).unwrap().chroma, CHROMA_420);
+    }
+
+    #[test]
+    fn caps_name_pyrowave_only_where_it_runs() {
+        let caps = host_caps(None, true);
+        assert!(caps.supports(CODEC_PYROWAVE, nesprotocol::DEPTH_8));
+        assert!(caps.supports(CODEC_PYROWAVE, nesprotocol::DEPTH_10));
+        assert!(!host_caps(None, false).supports_codec(CODEC_PYROWAVE));
+        // And negotiation still never lands on it.
+        assert_eq!(caps.best(caps), None);
+    }
+
+    fn key(colorspace: u32, input_fmt: InputFormat) -> PyroKey {
+        PyroKey {
+            width: 1920,
+            height: 1080,
+            input_fmt,
+            colorspace,
+            ten_bit: false,
+            chroma: CHROMA_420,
+            packet_size: 1188,
+        }
+    }
+
+    #[test]
+    fn an_sdr_surface_is_bt709_at_eight_bits() {
+        let c = pyro_config(
+            key(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, InputFormat::BGRA),
+            200_000,
+            60,
+        )
+        .unwrap();
+        assert_eq!(c.colour, nespyro::ColourDescription::bt709());
+        assert_eq!(c.source, nespyro::Source::Srgb);
+        assert_eq!(c.depth, nespyro::Depth::Eight);
+        assert_eq!(c.chroma, nespyro::Chroma::Yuv420);
+        assert_eq!(c.target_bitrate, 200_000_000);
+        assert_eq!(c.packet_size, 1188);
+    }
+
+    #[test]
+    fn ten_bits_asked_for_sdr_is_sixteen_bit_planes() {
+        let mut k = key(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, InputFormat::BGRA);
+        k.ten_bit = true;
+        assert_eq!(
+            pyro_config(k, 1, 60).unwrap().depth,
+            nespyro::Depth::Sixteen
+        );
+    }
+
+    #[test]
+    fn hdr10_is_carried_as_it_is() {
+        let c = pyro_config(
+            key(VK_COLOR_SPACE_HDR10_ST2084_EXT, InputFormat::ABGR2101010),
+            1,
+            60,
+        )
+        .unwrap();
+        assert_eq!(c.colour, nespyro::ColourDescription::bt2020_pq());
+        assert_eq!(c.source, nespyro::Source::Bt2020Pq);
+        assert_eq!(c.depth, nespyro::Depth::Sixteen, "HDR at eight bits bands");
+    }
+
+    /// The same rule the hardware path follows, through the same function: a
+    /// float surface declared PQ is scRGB, not PQ.
+    #[test]
+    fn a_float_surface_is_scrgb_whatever_it_declares() {
+        let c = pyro_config(
+            key(VK_COLOR_SPACE_HDR10_ST2084_EXT, InputFormat::RGBA16F),
+            1,
+            60,
+        )
+        .unwrap();
+        assert_eq!(c.source, nespyro::Source::Bt709Linear);
+        assert_eq!(c.colour, nespyro::ColourDescription::bt2020_pq());
+    }
+
+    #[test]
+    fn a_444_request_is_444() {
+        let mut k = key(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR, InputFormat::BGRA);
+        k.chroma = CHROMA_444;
+        assert_eq!(
+            pyro_config(k, 1, 60).unwrap().chroma,
+            nespyro::Chroma::Yuv444
+        );
+    }
+
+    fn settings() -> PyroSettings {
+        PyroSettings {
+            kbps: 300_000,
+            chroma: CHROMA_420,
+            packet_size: 1188,
+        }
+    }
+
+    fn pyro_change(kbps: u32, pyro: Option<PyroSettings>) -> EncodeSettingsChange {
+        EncodeSettingsChange {
+            codec: Some(StreamCodec::PyroWave),
+            rate_control_mode: Some(RateControlMode::Cbr),
+            value: kbps,
+            bit_depth: None,
+            pyro,
+        }
+    }
+
+    #[test]
+    fn a_new_pyrowave_rate_is_not_a_rebuild() {
+        let to = PyroSettings {
+            kbps: 150_000,
+            ..settings()
+        };
+        assert_eq!(
+            pyro_bitrate_only(&pyro_change(150_000, Some(to)), Some(settings()), None),
+            Some(150_000)
+        );
+    }
+
+    /// A packet size or a chroma format is the shape of the stream, and only
+    /// a new encoder makes that.
+    #[test]
+    fn a_new_packet_size_or_chroma_is_a_rebuild() {
+        let bigger = PyroSettings {
+            packet_size: 1400,
+            ..settings()
+        };
+        assert_eq!(
+            pyro_bitrate_only(&pyro_change(300_000, Some(bigger)), Some(settings()), None),
+            None
+        );
+        let full = PyroSettings {
+            chroma: CHROMA_444,
+            ..settings()
+        };
+        assert_eq!(
+            pyro_bitrate_only(&pyro_change(300_000, Some(full)), Some(settings()), None),
+            None
+        );
+    }
+
+    #[test]
+    fn a_switch_away_is_not_a_rate_change() {
+        let mut c = pyro_change(8_000, None);
+        c.codec = Some(StreamCodec::Hw(HwCodec::AV1));
+        assert_eq!(pyro_bitrate_only(&c, Some(settings()), None), None);
+        // And there is nothing to retune before PyroWave has run at all.
+        assert_eq!(pyro_bitrate_only(&pyro_change(1, None), None, None), None);
+    }
+
+    #[test]
+    fn a_different_pyrowave_request_is_never_nothing() {
+        let other = PyroSettings {
+            packet_size: 1400,
+            ..settings()
+        };
+        let mut c = pyro_change(300_000, Some(other));
+        c.rate_control_mode = None;
+        assert!(!changes_nothing(
+            &c,
+            Some(StreamCodec::PyroWave),
+            None,
+            Some(settings())
+        ));
+        c.pyro = Some(settings());
+        assert!(changes_nothing(
+            &c,
+            Some(StreamCodec::PyroWave),
+            None,
+            Some(settings())
+        ));
+    }
+
+    /// What the encoder hands over is what the hub puts back together:
+    /// every packet, in order, the critical count and the frame's own size.
+    #[test]
+    fn a_pyrowave_frame_reaches_the_hub_whole() {
+        let mut data = Vec::new();
+        let mut packets = Vec::new();
+        for i in 0..3000usize {
+            let start = data.len();
+            data.extend((0..1100).map(|k| (i + k) as u8));
+            packets.push(start..data.len());
+        }
+        let frame = nespyro::EncodedFrame {
+            data,
+            packets,
+            critical_packets: 4,
+            index: 41,
+            sequence: 1,
+            stats: Default::default(),
+        };
+        let messages = pyro_messages(&frame, 1234, 2560, 1440).expect("chunks");
+        assert!(messages.len() > 1, "a 3 MB frame in one message");
+
+        let mut asm = nesprotocol::pyrowave::FrameAssembler::new();
+        let mut got = None;
+        for m in &messages {
+            let ipc = nesprotocol::decode_ipc_frame(m).expect("an IPC frame");
+            got = asm.push(&ipc, 0).expect("assembles").or(got);
+        }
+        let got = got.expect("the hub completed the frame");
+        assert_eq!(got.frame, 41);
+        assert_eq!(got.critical, 4);
+        assert_eq!(
+            (got.meta.ts_ms, got.meta.width, got.meta.height),
+            (1234, 2560, 1440)
+        );
+        assert_eq!(got.packets.len(), frame.packets.len());
+        for (i, r) in frame.packets.iter().enumerate() {
+            assert_eq!(got.packet(i), &frame.data[r.clone()], "packet {i}");
+        }
+    }
+
+    /// A slot held by a frame the encoder has not finished with.
+    struct Fake {
+        done: std::rc::Rc<std::cell::Cell<bool>>,
+        released: std::rc::Rc<std::cell::RefCell<Vec<u32>>>,
+        id: u32,
+    }
+
+    impl Hold for Fake {
+        fn done(&self) -> bool {
+            self.done.get()
+        }
+        fn release(self) {
+            self.released.borrow_mut().push(self.id);
+        }
+    }
+
+    /// Two PyroWave frames in flight hold two slots, and each goes back when
+    /// its own frame is done -- never sooner, which is the blit racing a read.
+    #[test]
+    fn held_slots_go_back_in_order_once_done() {
+        let released = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let flags: Vec<_> = (0..2)
+            .map(|_| std::rc::Rc::new(std::cell::Cell::new(false)))
+            .collect();
+        let mut held: std::collections::VecDeque<Fake> = (0..2)
+            .map(|i| Fake {
+                done: flags[i].clone(),
+                released: released.clone(),
+                id: i as u32,
+            })
+            .collect();
+
+        release_done(&mut held);
+        assert!(
+            released.borrow().is_empty(),
+            "a slot went back while in use"
+        );
+
+        flags[0].set(true);
+        release_done(&mut held);
+        assert_eq!(*released.borrow(), [0]);
+        assert_eq!(held.len(), 1);
+
+        flags[1].set(true);
+        release_done(&mut held);
+        assert_eq!(*released.borrow(), [0, 1]);
+        assert!(held.is_empty());
+    }
+
+    /// A later point on one timeline is never reached before an earlier one,
+    /// so a done slot behind one still in use waits with it.
+    #[test]
+    fn a_done_slot_behind_a_busy_one_waits() {
+        let released = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let busy = std::rc::Rc::new(std::cell::Cell::new(false));
+        let done = std::rc::Rc::new(std::cell::Cell::new(true));
+        let mut held = std::collections::VecDeque::from([
+            Fake {
+                done: busy,
+                released: released.clone(),
+                id: 0,
+            },
+            Fake {
+                done,
+                released: released.clone(),
+                id: 1,
+            },
+        ]);
+        release_done(&mut held);
+        assert!(released.borrow().is_empty());
     }
 }

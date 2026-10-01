@@ -2303,6 +2303,7 @@ dependencies = [
  "libc",
  "log",
  "nesprotocol",
+ "nespyro",
  "once_cell",
  "pixelforge",
  "pollster",
@@ -2399,6 +2400,7 @@ version = "0.1.0"
 dependencies = [
  "ash",
  "futures-channel",
+ "nesprotocol",
  "pollster",
  "thiserror 2.0.21",
  "tracing",

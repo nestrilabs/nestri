@@ -326,14 +326,24 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
             // On the game's own device where it was created for that, and
             // on a device of the encoder's own where it was not, or where
             // adopting it fails.
-            let shared = ds.shared.as_ref().and_then(|s| match s.video_context() {
-                Ok(ctx) => Some(ctx),
-                Err(e) => {
-                    log::warn!(
-                        "could not encode on the game's device ({e}); using a device of its own"
-                    );
-                    None
+            // Each encoder the device was set up for is adopted on its own; a
+            // failure in one costs only that one. Only when neither is left
+            // does the encoder move to a device of its own, which can then
+            // host Vulkan Video and nothing else.
+            let shared = ds.shared.as_ref().and_then(|s| {
+                let video = s.video_context().and_then(|r| {
+                    r.map_err(|e| log::warn!("Vulkan Video on the game's device failed ({e})"))
+                        .ok()
+                });
+                let pyro = s.pyro_context().and_then(|r| {
+                    r.map_err(|e| log::warn!("PyroWave on the game's device failed ({e})"))
+                        .ok()
+                });
+                if video.is_none() && pyro.is_none() {
+                    log::warn!("no encoder on the game's device; using a device of its own");
+                    return None;
                 }
+                Some(crate::encode::SharedEncoders { video, pyro })
             });
             let on_shared = shared.is_some();
             match PipelineHandle::new(cfg, shared) {
