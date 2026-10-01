@@ -2400,7 +2400,7 @@ dependencies = [
  "ash",
  "futures-channel",
  "pollster",
- "thiserror 2.0.20",
+ "thiserror 2.0.21",
  "tracing",
 ]
 
