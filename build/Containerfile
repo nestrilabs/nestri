@@ -13,12 +13,15 @@
 #  this image is plain Arch rather than a distribution chosen for its init.
 #  ref(d-0064)
 #
-#  Proton is here, and it is not a closed component: it is proton-ge built
-#  from source wow64-only, which is what removes the need for a whole 32-bit
-#  host stack. Valve's steamclient.so is a different thing and is NOT
-#  here — that one is closed, and nestri/CLAUDE.md is explicit that nothing
-#  closed enters this repo. Whatever layers it on top of runtime_prod is a
-#  closed build outside this repo — see build/README.md.
+#  Proton is NOT in this image any more. It reaches a box as a read-only
+#  image the host attaches, so a different one can be tried without
+#  rebuilding this. What stays here is everything Proton needs *around* it —
+#  its interpreter and its libraries — and the `compat_check` stage below
+#  proves a given Proton still has them. Valve's steamclient.so is a
+#  different thing and is NOT here either — that one is closed, and
+#  nestri/CLAUDE.md is explicit that nothing closed enters this repo.
+#  Whatever layers it on top of runtime_prod is a closed build outside this
+#  repo — see build/README.md.
 #
 #  Build from the repo root, not from build/:
 #    docker build -f build/Containerfile --target runtime_prod -t nestri-guest .
@@ -165,22 +168,27 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 
 
 # ───────────────────────────────────────────────────────────
-#  Proton — pulled, not built here
+#  Proton — pulled to be checked, not shipped
 #
 #  Building it takes hours and it changes only when its own tag moves, so it
 #  has a cadence of its own and an image of its own. The published image is
 #  `FROM scratch` over the tree, so its root *is* the tree and there is nothing
 #  in it to run — only something to copy from.
 #
-#  Built wow64-only, which is the whole reason it is a build of ours rather
-#  than a released one. wow64 runs 32-bit Windows code inside a 64-bit unix
-#  process, so a box needs no lib32 anything: no 32-bit glibc, no second Mesa
-#  for i686, and — the one that matters most here — no
-#  second capture layer, because the game is a 64-bit process and loads the
-#  64-bit Vulkan loader the existing layer already sits in. The released builds
-#  carry a 32-bit unix side, which is exactly why they need lib32-*.
+#  It is copied into the `compat_check` stage and nowhere else. A box gets its
+#  Proton from the host, as an image attached at run time; this is only the
+#  Proton this rootfs is verified against, and any other can be checked the same
+#  way by overriding it.
 #
-#  Override to build it yourself; the tag is a version and moves deliberately.
+#  Built wow64-only, which is the whole reason it is a build of ours rather
+#  than a released one at the time. wow64 runs 32-bit Windows code inside a
+#  64-bit unix process, so a box needs no lib32 anything: no 32-bit glibc, no
+#  second Mesa for i686, and — the one that matters most here — no second
+#  capture layer, because the game is a 64-bit process and loads the 64-bit
+#  Vulkan loader the existing layer already sits in. Upstream Wine defaults to
+#  it from Proton 11, so a released build needs no more than ours does.
+#
+#  Override to check another; the tag is a version and moves deliberately.
 # ───────────────────────────────────────────────────────────
 FROM ${PROTON_IMAGE} AS proton
 
@@ -375,15 +383,9 @@ RUN cat /tmp/mesa.manifest /tmp/nestri.manifest > /tmp/.strip-manifest && \
 COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
 
-# The Proton tree, whose image root is the tree, so this lands it at
-# /usr/share/steam/compatibilitytools.d/proton-ge.
-#
-# Deliberately not in the strip manifest above: that list is our own build
-# output, and the two stripping decisions are not the same one. Proton ships
-# a Windows toolchain's worth of PE binaries that `strip` has no business
-# touching, and its unix side is already built the way its own packaging
-# builds it.
-COPY --from=proton / /
+# **No Proton here.** It is attached to a box at run time, mounted at
+# /nestri/compat, so this image has no Proton path for a launch to fall back to
+# and a box started without one fails saying where it looked.
 
 RUN ldconfig
 
@@ -456,8 +458,9 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # JACK output, libdecor's GTK backend — and every one of those was already
 # unresolved before this stage existed. A check that reports a dozen things
 # nobody intends to load is a check the next person deletes. This list is what
-# the image is *for*: the components, the services init starts, the chain
-# between a workload and the GPU, and Wine's own core.
+# the image is *for*: the components, the services init starts, and the chain
+# between a workload and the GPU. Wine's own core is checked by the
+# `compat_check` stage, against the Proton it is actually going to run.
 #
 # **Wine was added after it was missed**, and then narrowed twice, which is
 # worth recording so nobody widens it again.
@@ -503,9 +506,7 @@ RUN failed=0; \
              /usr/bin/dbus-daemon /usr/bin/pipewire \
              /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
-             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/ntdll.so; do \
+             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so; do \
         [ -e "$f" ] || continue; \
         libs="$(LD_LIBRARY_PATH="${f%/*}" ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
         [ -n "$libs" ] || continue; \
@@ -524,38 +525,98 @@ RUN failed=0; \
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/nesgamepad /usr/lib/libSDL2-2.0.so.0 \
                     /usr/bin/dbus-daemon /usr/bin/pipewire \
-                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 \
-                    /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
 
+# ───────────────────────────────────────────────────────────
+#  compat_check — does this rootfs still carry what a Proton needs?
+#
+#  Proton is not part of the image, so what used to be checked by having it
+#  there is checked here, against the Proton named by PROTON_IMAGE: that every
+#  library its programs and Wine's core link is present, and that its entry
+#  point has an interpreter. A rootfs that loses one of them otherwise finds out
+#  as a game that starts and never draws.
+#
+#  Not a stage anything runs. The leaf stages copy a one-line marker out of it
+#  so that a build cannot skip it as unused, which is also what records which
+#  Proton the image was verified against.
+#
+#  Check any other Proton the same way:
+#    make PROTON_IMAGE=<ref> build
+#  where <ref> is an image whose root is a Proton tree, or a tree under
+#  `usr/share/steam/compatibilitytools.d/<name>/`.
+# ───────────────────────────────────────────────────────────
+FROM runtime AS compat_check
+ARG PROTON_IMAGE
+COPY --from=proton / /opt/compat-check/
+
+# The Proton root is the directory that holds `proton`, wherever the image put
+# it: a tree directly, or under compatibilitytools.d as the published one does.
+# Exactly one is expected, and anything else is refused -- picking the first of
+# several is how the wrong Proton gets verified and the right one never is.
+RUN set -eu; \
+    found="$(find /opt/compat-check -maxdepth 6 -name proton -type f)"; \
+    [ "$(printf '%s\n' "$found" | grep -c .)" = 1 ] \
+        || { echo "expected one Proton in ${PROTON_IMAGE}, found:" >&2; echo "$found" >&2; exit 1; }; \
+    dirname "$found" > /tmp/proton-root; \
+    root="$(cat /tmp/proton-root)"; \
+    test -x "$root/proton" || { echo "$root/proton is not executable" >&2; exit 1; }; \
+    test -d "$root/files" || { echo "$root has no files/ directory" >&2; exit 1; }
+
+# The libraries, by the method the runtime stage documents: the programs in
+# `bin/`, which resolve normally, and `ntdll.so`, which is Wine's first load and
+# the one that linked the library once found missing. Each file is resolved with
+# its own directory on the library path, because Wine's unix objects link each
+# other by soname.
+RUN root="$(cat /tmp/proton-root)"; failed=0; : > /tmp/missing-libs; \
+    for f in "$root"/files/bin/* "$root"/files/lib*/wine/*-unix/ntdll.so; do \
+        [ -e "$f" ] || continue; \
+        libs="$(LD_LIBRARY_PATH="${f%/*}" ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
+        [ -n "$libs" ] || continue; \
+        failed=1; \
+        printf '  %s\n' "$f" >&2; \
+        printf '      %s\n' $libs >&2; \
+        printf '%s\n' $libs >> /tmp/missing-libs; \
+    done; \
+    if [ "$failed" != 0 ]; then \
+        echo "" >&2; \
+        echo "  every library above, once each -- this is the list to install:" >&2; \
+        sort -u /tmp/missing-libs | sed 's/^/      /' >&2; \
+        exit 1; \
+    fi
+
 # An entry point that is executable is not an entry point that runs.
 #
-# The check above passed on an image whose compatibility tool was a Python
-# script with no interpreter behind it: `test -x` says the file may be
-# executed, and the kernel then fails to find what the shebang names. A session
-# got as far as launching a game and ended with
-# `env: 'python3': No such file or directory`.
+# A check that only asked `test -x` passed on an image whose compatibility tool
+# was a Python script with no interpreter behind it: the kernel then fails to
+# find what the shebang names, and a session got as far as launching a game and
+# ended with `env: 'python3': No such file or directory`.
 #
-# So every script this image promises resolves its own interpreter. `env` is
-# unwrapped where it is used, because a shebang of `#!/usr/bin/env python3`
-# names `env` and the thing that is actually missing is the argument.
-RUN for script in /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
-        head -c 2 "$script" | grep -q '#!' || continue; \
-        shebang="$(head -1 "$script" | sed 's/^#!//')"; \
-        interpreter="${shebang%% *}"; \
-        case "$interpreter" in \
-            */env) argument="${shebang#* }"; interpreter="$(command -v "${argument%% *}" || true)";; \
-        esac; \
-        test -n "$interpreter" && test -x "$interpreter" \
-            || { echo "$script needs an interpreter the image does not have: $shebang" >&2; exit 1; }; \
-    done
+# So the entry point resolves its own interpreter. `env` is unwrapped where it
+# is used, because a shebang of `#!/usr/bin/env python3` names `env` and the
+# thing that is actually missing is the argument.
+RUN script="$(cat /tmp/proton-root)/proton"; \
+    head -c 2 "$script" | grep -q '#!' || exit 0; \
+    shebang="$(head -1 "$script" | sed 's/^#!//')"; \
+    interpreter="${shebang%% *}"; \
+    case "$interpreter" in \
+        */env) argument="${shebang#* }"; interpreter="$(command -v "${argument%% *}" || true)";; \
+    esac; \
+    test -n "$interpreter" && test -x "$interpreter" \
+        || { echo "$script needs an interpreter the image does not have: $shebang" >&2; exit 1; }
+
+RUN echo "${PROTON_IMAGE}" > /compat-verified
 
 
 # ───────────────────────────────────────────────────────────
 #  runtime_prod — the default: `make build`
 # ───────────────────────────────────────────────────────────
 FROM runtime AS runtime_prod
+
+# Which Proton this image was verified against, and the reason the check stage
+# is built at all. See `compat_check`.
+COPY --from=compat_check /compat-verified /usr/share/nestri/compat-verified
 
 # No console is offered by either flavour: `nesinit` spawns no getty, because
 # the way into a guest that will not boot is `init=/bin/bash` on the kernel
@@ -580,6 +641,8 @@ RUN echo "NESTRI_STAGE=runtime_prod" >> /etc/os-release
 #  runtime_debug — `make build-debug`
 # ───────────────────────────────────────────────────────────
 FROM runtime AS runtime_debug
+
+COPY --from=compat_check /compat-verified /usr/share/nestri/compat-verified
 
 # `-Sy` and not `-Syu`: a full upgrade here can pull a package back in as
 # somebody's dependency, and the one that matters is systemd. The check below

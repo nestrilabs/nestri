@@ -60,28 +60,31 @@ source, not a dependency, not a directory that 'looked convenient'."* That one
 is closed, so whatever layers it on top is a build outside this repo — not
 something this repo names, links to, or depends on.
 
-**Proton is here, and this paragraph used to say it was not.** The old wording
-put Proton and `steamclient.so` together and called both closed, which is
-wrong about Proton: it is compiled from source, which is not a thing you can
-do with closed software. Keeping it out cost a box the only way it has to run
-a Windows title, for a rule that did not apply to it.
+**Proton is not in the image.** It used to be, at a cost of about 1.4 GB, and
+it is attached to a box at run time now: a read-only EROFS image of a Proton
+tree, mounted at `/nestri/compat`, chosen per session by whatever starts the
+box. That is what makes trying another Proton (GE's releases, a newer build of
+ours) a matter of attaching a different image rather than rebuilding this one.
 
-What it is: **proton-ge built wow64-only**, pulled by tag as a
-published image rather than rebuilt here, because it takes hours and moves
-only when its own tag does. `PROTON_IMAGE` overrides the tag, and it has to be
-declared before the first `FROM`: an `ARG` a `FROM` expands is global or it
-is nothing, and getting that wrong fails with `no FROM statement found`, which
-says nothing about the actual mistake. wow64 is the whole reason it is a build
-of ours and not a released one. It runs 32-bit Windows code inside a 64-bit
-unix process, so a box needs no lib32 glibc, no second Mesa for i686, and no
-second capture layer for 32-bit titles to be captured. The released builds
-carry a 32-bit unix side, which is exactly why they need `lib32-*`.
+What stays here is everything Proton needs around itself: the interpreter for its
+entry point and every library its programs and Wine's core link. The
+`compat_check` stage in the `Containerfile` is what keeps that true. It copies a
+Proton tree in (the published one by default) and fails the build when a library
+is missing or the entry point has no interpreter, then leaves a one-line marker
+in the image naming the Proton it was checked against
+(`/usr/share/nestri/compat-verified`). Check another one with
+`make PROTON_IMAGE=<ref> build`. The check cannot be skipped as an unused
+stage, because the leaf stages copy that marker out of it.
 
-It costs about 1.4 GB of image, and it is the one thing in here that is
-payload-shaped: a compatibility layer for Windows games in an image that is
-otherwise indifferent to what it runs. The guest components stay indifferent
-regardless — none of them branches on it, and the init does not know it
-exists. What names it is the command a caller sends.
+The image holds no Proton path, so a box started without one fails saying where
+it looked instead of quietly using something stale.
+
+What the published Proton is: **proton-ge built wow64-only**, as a published
+image rather than rebuilt here, because it takes hours and moves only when its
+own tag does. wow64 runs 32-bit Windows code inside a 64-bit unix process, so a
+box needs no lib32 glibc, no second Mesa for i686, and no second capture layer
+for 32-bit titles to be captured. Upstream Wine defaults to it from Proton 11,
+so a released build needs no more than ours does.
 
 `runtime_prod` from this Containerfile — tagged
 `ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable guest image,
@@ -191,9 +194,9 @@ a package list says that; the check below is what said it.
 
 ## Proton has its own cadence, and its own Containerfile
 
-`make build` **pulls** Proton by tag; it does not build it. Building it takes
-hours and it changes only when its tag moves, so it is one image published
-once and copied into every guest image after that. `make proton-image` is
+`make build` **pulls** Proton by tag to check it against; it does not build it
+and does not ship it. Building it takes hours and it changes only when its tag
+moves, so it is one image published once. `make proton-image` is
 that build, and it lives here so the published tag stays reproducible from
 this tree rather than from somebody's laptop.
 

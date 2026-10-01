@@ -11,7 +11,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 
-use nesprotocol::lifecycle::{Exec, Exit, Mount, Overlay};
+use nesprotocol::lifecycle::{Exec, Exit, Image, Mount, Overlay};
 
 use std::os::unix::process::CommandExt;
 
@@ -40,6 +40,12 @@ pub type Exited = Pin<Box<dyn Future<Output = io::Result<Exit>> + Send>>;
 pub trait Workload {
     /// Make the shares the descriptor names, where it says to put them.
     fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure>;
+
+    /// Mount each read-only image the descriptor names, where it says.
+    ///
+    /// Before the overlays and the shares: an image is the base other mount
+    /// points may be inside of, and nothing mounted yet can be under it.
+    fn mount_images(&mut self, images: &[Image]) -> Result<(), Failure>;
 
     /// Stack each overlay the descriptor names: its build image, its writable
     /// layer, and the two together where it says.
@@ -129,6 +135,13 @@ impl Workload for Process {
             // workload given some of its shares fails later, somewhere else,
             // for a reason nobody can see from here.
             mount_share(share)?;
+        }
+        Ok(())
+    }
+
+    fn mount_images(&mut self, images: &[Image]) -> Result<(), Failure> {
+        for image in images {
+            mount_image(image)?;
         }
         Ok(())
     }
@@ -390,6 +403,55 @@ fn mount_overlay(overlay: &Overlay) -> Result<(), Failure> {
     )
     .map_err(|error| plan.failed("the overlay", &plan.at, error))?;
     Ok(())
+}
+
+/// What mounting a read-only image is given, worked out before anything is
+/// attempted, for the reason an overlay's plan is: the part worth asserting is
+/// the part that needs no privilege.
+///
+/// `nosuid` and `nodev` like every other layer, and not `noexec`: what is in an
+/// image is run from it.
+#[derive(Debug)]
+struct ImagePlan {
+    device: CString,
+    at: CString,
+    flags: libc::c_ulong,
+}
+
+impl ImagePlan {
+    fn new(image: &Image) -> Result<Self, Failure> {
+        // Nothing at all is mounted over the root, and a relative mount point
+        // would land wherever the init's working directory happens to be.
+        let at = std::path::Path::new(&image.at);
+        if !at.is_absolute() || at.parent().is_none() {
+            return Err(Failure::new(format!(
+                "an image cannot be mounted at {:?}: the mount point has to be an \
+                 absolute path below the root",
+                image.at
+            )));
+        }
+        Ok(Self {
+            device: c_string(&image.device, "the image device")?,
+            at: c_string(&image.at, "the image mount point")?,
+            flags: libc::MS_NOSUID | libc::MS_NODEV | libc::MS_RDONLY,
+        })
+    }
+
+    /// The mount point and the device, in the operating system's words.
+    fn failed(&self, error: io::Error) -> Failure {
+        Failure::new(format!(
+            "{}: the image {}: {error}",
+            self.at.to_string_lossy(),
+            self.device.to_string_lossy()
+        ))
+    }
+}
+
+/// Mount one read-only image where the descriptor says.
+fn mount_image(image: &Image) -> Result<(), Failure> {
+    let plan = ImagePlan::new(image)?;
+    mount_one(&plan.device, &plan.at, c"erofs", plan.flags, None)
+        .map_err(|error| plan.failed(error))
 }
 
 /// Mount one filesystem, creating its mount point first.
@@ -710,6 +772,51 @@ mod tests {
         assert_eq!(flags & libc::MS_RDONLY, 0);
     }
 
+    fn image(at: &str) -> Image {
+        Image {
+            device: "/dev/vdd".into(),
+            at: at.into(),
+        }
+    }
+
+    /// Read-only, guarded like every other layer, and runnable: what is in it
+    /// is a program.
+    #[test]
+    fn an_image_is_mounted_read_only_without_devices_or_setuid_but_can_execute() {
+        let plan = ImagePlan::new(&image("/nestri/compat")).unwrap();
+        assert_eq!(plan.device.to_str().unwrap(), "/dev/vdd");
+        assert_eq!(plan.at.to_str().unwrap(), "/nestri/compat");
+        assert_eq!(plan.flags & libc::MS_RDONLY, libc::MS_RDONLY);
+        assert_eq!(plan.flags & libc::MS_NOSUID, libc::MS_NOSUID);
+        assert_eq!(plan.flags & libc::MS_NODEV, libc::MS_NODEV);
+        assert_eq!(plan.flags & libc::MS_NOEXEC, 0);
+    }
+
+    #[test]
+    fn an_image_that_cannot_be_placed_is_refused_before_anything_mounts() {
+        for at in ["/", "nestri/compat", "", "/nestri/co\0mpat"] {
+            assert!(ImagePlan::new(&image(at)).is_err(), "{at:?} was accepted");
+        }
+        let nul_device = Image {
+            device: "/dev/v\0dd".into(),
+            at: "/nestri/compat".into(),
+        };
+        assert!(ImagePlan::new(&nul_device).is_err());
+    }
+
+    #[test]
+    fn a_failed_image_names_the_mount_point_and_the_device() {
+        let plan = ImagePlan::new(&image("/nestri/compat")).unwrap();
+        let failure = plan.failed(io::Error::from_raw_os_error(libc::EINVAL));
+        assert!(
+            failure
+                .reason
+                .starts_with("/nestri/compat: the image /dev/vdd: "),
+            "{}",
+            failure.reason
+        );
+    }
+
     fn overlay(at: &str) -> Overlay {
         Overlay {
             lower: "/dev/vdb".into(),
@@ -840,9 +947,13 @@ pub mod double {
     pub struct Double {
         pub mounted: Vec<Vec<Mount>>,
         pub overlays: Vec<Vec<Overlay>>,
+        pub images: Vec<Vec<Image>>,
+        /// Which kind of mount was asked for, in the order it was asked.
+        pub order: Vec<&'static str>,
         pub started: Vec<Exec>,
         pub stops: usize,
         pub mount_failure: Option<Failure>,
+        pub image_failure: Option<Failure>,
         pub start_failure: Option<Failure>,
         exit: Exit,
         on_stop: Option<oneshot::Sender<Exit>>,
@@ -864,9 +975,12 @@ pub mod double {
             Self {
                 mounted: Vec::new(),
                 overlays: Vec::new(),
+                images: Vec::new(),
+                order: Vec::new(),
                 started: Vec::new(),
                 stops: 0,
                 mount_failure: None,
+                image_failure: None,
                 start_failure: None,
                 exit,
                 on_stop: None,
@@ -877,6 +991,7 @@ pub mod double {
 
     impl Workload for Double {
         fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure> {
+            self.order.push("shares");
             self.mounted.push(mounts.to_vec());
             match &self.mount_failure {
                 Some(failure) => Err(failure.clone()),
@@ -884,7 +999,17 @@ pub mod double {
             }
         }
 
+        fn mount_images(&mut self, images: &[Image]) -> Result<(), Failure> {
+            self.order.push("images");
+            self.images.push(images.to_vec());
+            match &self.image_failure {
+                Some(failure) => Err(failure.clone()),
+                None => Ok(()),
+            }
+        }
+
         fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure> {
+            self.order.push("overlays");
             self.overlays.push(overlays.to_vec());
             match &self.mount_failure {
                 Some(failure) => Err(failure.clone()),

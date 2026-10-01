@@ -62,7 +62,14 @@ pub const CONTROL_PORT: u32 = 7000;
 ///
 /// Version 4 replaced the descriptor's `drives` with `overlays`: a build is a
 /// read-only image now, and a box writes into a layer of its own over it.
-pub const CONTROL_VERSION: u32 = 4;
+///
+/// Version 5 added `images`: a read-only image mounted on its own, which is how
+/// the compatibility layer reaches a box now that the guest image no longer
+/// carries one. It is a bump although it is only a field, because the
+/// descriptor refuses fields it does not know and a guest image without that
+/// layer is useless to a host that does not send one: the mismatch should be
+/// named at the handshake and not found as a launch that cannot start.
+pub const CONTROL_VERSION: u32 = 5;
 
 /// The command to run, and who runs it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -127,6 +134,24 @@ pub struct Overlay {
     /// The box's writable layer, as the guest names the device.
     pub upper: String,
     /// Where the stacked result lands.
+    pub at: String,
+}
+
+/// A read-only filesystem image, mounted where the descriptor says.
+///
+/// What reaches a box this way is something every box on a host shares and none
+/// of them writes: the compatibility layer a Windows title runs under. Unlike
+/// an [`Overlay`] there is no writable layer over it, so anything that writes
+/// into its own directory fails, and that is the point -- two boxes cannot
+/// disagree about what is in it.
+///
+/// Mounted as EROFS, with the same guards every layer has (`nosuid`, `nodev`)
+/// and without `noexec`, because the programs in it are what gets run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Image {
+    /// The block device, as the guest names it.
+    pub device: String,
+    /// Where it lands inside the guest.
     pub at: String,
 }
 
@@ -196,6 +221,10 @@ pub struct BootDescriptor {
     pub mounts: Vec<Mount>,
     #[serde(default)]
     pub overlays: Vec<Overlay>,
+    /// Read-only images with nothing over them. Left out of the wire form when
+    /// there are none, so a descriptor that needs none reads the same as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
     /// What the box may spend on video.
     ///
     /// Here rather than on a launch because its consumer is `neshub`, which is
@@ -441,6 +470,7 @@ mod tests {
                 ro: true,
             }],
             overlays: Vec::new(),
+            images: Vec::new(),
             video: VideoLimits::default(),
         }
     }
@@ -704,6 +734,7 @@ mod video_limits_tests {
         let d = BootDescriptor {
             mounts: Vec::new(),
             overlays: Vec::new(),
+            images: Vec::new(),
             video: VideoLimits::default(),
         };
         let json = serde_json::to_string(&d).unwrap();
@@ -715,6 +746,7 @@ mod video_limits_tests {
         let d = BootDescriptor {
             mounts: Vec::new(),
             overlays: Vec::new(),
+            images: Vec::new(),
             video: VideoLimits {
                 bitrate_kbps: Some(8_000),
             },
@@ -743,5 +775,35 @@ mod video_limits_tests {
         let r: Result<BootDescriptor, _> =
             serde_json::from_str(r#"{"video":{"bitrate_kbps":8000,"fps_cap":30}}"#);
         assert!(r.is_err(), "an unknown video limit must not be ignored");
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+
+    #[test]
+    fn a_descriptor_with_no_images_reads_and_writes_as_it_always_did() {
+        let d: BootDescriptor = serde_json::from_str(r#"{"mounts":[],"overlays":[]}"#).unwrap();
+        assert!(d.images.is_empty());
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("images"), "{json}");
+    }
+
+    #[test]
+    fn an_image_survives_the_round_trip() {
+        let d = BootDescriptor {
+            mounts: Vec::new(),
+            overlays: Vec::new(),
+            images: vec![Image {
+                device: "/dev/vdd".into(),
+                at: "/nestri/compat".into(),
+            }],
+            video: VideoLimits::default(),
+        };
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains(r#""images":[{"device":"/dev/vdd","at":"/nestri/compat"}]"#));
+        let back: BootDescriptor = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, d);
     }
 }

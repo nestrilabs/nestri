@@ -266,7 +266,12 @@ where
                 }
                 booted = true;
 
-                // The overlays, then the shares, then the services.
+                // The images, then the overlays, then the shares, then the
+                // services.
+                //
+                // **An image is the base the rest may sit on**, so it goes
+                // first, and its failure is reported the way an overlay's is:
+                // it is a filesystem this end mounts itself.
                 //
                 // **Overlays first, and one `Mounted` between them.** An
                 // overlay is a filesystem this end mounts itself, so a share
@@ -275,7 +280,10 @@ where
                 // content where the descriptor said" and there is one answer to
                 // that -- sending it twice made the host read the second as a
                 // reply to something it had not asked.
-                if let Err(failure) = workload.mount_overlays(&descriptor.overlays) {
+                let stacked = workload
+                    .mount_images(&descriptor.images)
+                    .and_then(|()| workload.mount_overlays(&descriptor.overlays));
+                if let Err(failure) = stacked {
                     // Said before it is returned. `Refused` ends the session
                     // either way; without the message the host sees a box that
                     // stopped and has to guess between an overlay, a share and a
@@ -517,6 +525,7 @@ mod tests {
                 ro: false,
             }],
             overlays: Vec::new(),
+            images: Vec::new(),
             video: Default::default(),
         }
     }
@@ -1171,6 +1180,66 @@ mod tests {
             "the services came up in a box whose shares are not there"
         );
         assert!(workload.started.is_empty());
+    }
+
+    /// The compatibility layer is the base the rest of a box is built on, so it
+    /// is mounted before anything that could sit inside it, and a box whose
+    /// image will not mount is refused rather than carried on with.
+    #[tokio::test]
+    async fn images_are_mounted_before_overlays_and_shares() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        let mut given = descriptor();
+        given.images = vec![nesprotocol::lifecycle::Image {
+            device: "/dev/vdd".into(),
+            at: "/nestri/compat".into(),
+        }];
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given.clone()),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.images, vec![given.images]);
+        assert_eq!(workload.order, vec!["images", "overlays", "shares"]);
+    }
+
+    #[tokio::test]
+    async fn an_image_that_will_not_mount_refuses_the_box_before_anything_else_is_mounted() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let mut workload = Double::exits_at_once(Exit::code(0));
+        workload.image_failure = Some(Failure::new("/nestri/compat: the image /dev/vdd: EINVAL"));
+        let session = spawn(guest, Given::new(workload));
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::MountFailed {
+                reason: "/nestri/compat: the image /dev/vdd: EINVAL".into()
+            },
+        );
+        let (outcome, workload, services) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)));
+        assert_eq!(
+            workload.order,
+            vec!["images"],
+            "something was mounted after the failure"
+        );
+        assert_eq!(services.brought_up, 0);
     }
 
     /// A box whose own services will not come up cannot be launched into, so it
