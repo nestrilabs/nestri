@@ -1,6 +1,6 @@
 # PyroWave decode in nesrecon / nesvideo
 
-Status: design, 2026-10-01. Part 4 of 4; parts 1-3 are
+Status: built, 2026-10-01 (nescore `e20a4d2`, `0e729ef`). Part 4 of 4; parts 1-3 are
 `2026-09-27-nespyro-codec-crate-design.md`,
 `2026-10-01-pyrowave-transport-design.md`,
 `2026-10-01-pyrowave-nescapture-design.md`. Code lives in nescore
@@ -92,3 +92,28 @@ lock to share. Unchanged by this part.
 - Existing nesrecon/nesvideo tests stay green.
 - Full stack by eye: PyroWave on screen, switching to and from a hardware
   codec, 4:2:0 and 4:4:4, SDR and HDR.
+
+## Found while building
+
+- **The channel type stayed.** A PyroWave unit is serialised into the existing
+  `Vec<u8>` (`[flags][count]` then length-prefixed packets,
+  `nesrecon::encode_pyro_unit`), so PyroWave is one more `VideoDecoder`
+  variant and nothing else on the channel changed. One copy a frame, about
+  37 MB/s at 300 Mbit/s.
+- **A picture keeps its decoder alive.** Dropping a `nespyro::Decoder`
+  destroys its output images even while a `DecodedFrame` of them is held, and
+  a codec switch or resize drops one while the renderer still shows its last
+  picture. `PyroPicture` holds an `Arc` of the decoder, released after the
+  slot. Worth fixing in nespyro itself when it is next opened: the output
+  images should outlive the decoder or the frame should own them.
+- **Capabilities are sent twice.** The first message goes out at connect,
+  before the renderer has created the device that decides whether PyroWave
+  decodes. A second follows once it has; the host renegotiates to the codec
+  it was already on. A `--codec pyrowave` request waits for the second, or the
+  hub would refuse it.
+- **Deblock is suppressed, not switched off.** `PostProcessChain` gained a
+  per-type suppression, so a person's own pass toggles are untouched and the
+  pass comes back on a switch to a block codec.
+- **A device shared for PyroWave alone** is not offered to the Vulkan Video
+  decoder (`SharedVulkanDevice::video_decode`), which would otherwise fail and
+  log an error on every switch to H.264.
