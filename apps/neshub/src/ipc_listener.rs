@@ -4,9 +4,11 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixDatagram, UnixListener};
 use tokio::sync::broadcast::error::RecvError;
+use tracing::debug;
 
 use crate::session::SessionManager;
-use nesprotocol::{CODEC_OPUS, STREAM_AUDIO, STREAM_VIDEO, decode_ipc_frame};
+use nesprotocol::pyrowave::FrameAssembler;
+use nesprotocol::{CODEC_OPUS, STREAM_AUDIO, STREAM_PYROWAVE, STREAM_VIDEO, decode_ipc_frame};
 
 fn set_recv_buffer(socket: &UnixDatagram, size: libc::c_int) {
     unsafe {
@@ -46,10 +48,28 @@ pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<Sessi
     tracing::info!("Video IPC listening on {}", socket_path.display());
 
     let mut buf = vec![0u8; 2 * 1024 * 1024];
+    // PyroWave frames arrive as runs of messages; see `nesprotocol::pyrowave`.
+    let mut pyrowave = FrameAssembler::new();
+    let started = std::time::Instant::now();
     loop {
         match socket.recv(&mut buf).await {
             Ok(n) => {
                 if let Some(decoded) = decode_ipc_frame(&buf[..n]) {
+                    if decoded.stream_type == STREAM_PYROWAVE {
+                        let now_ms = started.elapsed().as_millis() as u64;
+                        match pyrowave.push(&decoded, now_ms) {
+                            Ok(Some(frame)) => session_manager.broadcast_pyrowave(frame).await,
+                            Ok(None) => {}
+                            Err(e) => debug!("dropping a PyroWave IPC message: {e}"),
+                        }
+                        // Per frame, so debug: an encoder whose writes keep
+                        // timing out would say this sixty times a second.
+                        let abandoned = pyrowave.take_abandoned();
+                        if abandoned > 0 {
+                            debug!("abandoned {abandoned} PyroWave frame(s) missing a message");
+                        }
+                        continue;
+                    }
                     if decoded.stream_type != STREAM_VIDEO {
                         tracing::warn!(
                             "unexpected stream type on video socket: {}",

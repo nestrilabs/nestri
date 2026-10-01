@@ -148,6 +148,7 @@ const READY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 /// them listens on and answer in its place — and the answer that matters is the
 /// address a client is told to connect to. See `ticket::Untrusted`.
 pub const SERVICE_UID: u32 = 1000;
+pub const SERVICE_GID: u32 = 1000;
 
 /// Where audio's socket lives, for both the services and the workload.
 ///
@@ -167,18 +168,6 @@ pub const SERVICE_UID: u32 = 1000;
 /// here: the directory belongs to the service user and is not writable by the
 /// workload, which is the property [`crate::ticket::Untrusted`] depends on.
 pub const AUDIO_DIR: &str = "/run/pipewire";
-
-/// Where the PulseAudio protocol is served, in [`AUDIO_DIR`] for the reason
-/// audio's own socket is.
-///
-/// pipewire-pulse is told this path by its configuration file in the image,
-/// which is not something this program can pass it, so the two are compared by
-/// a test rather than trusted to agree.
-pub const PULSE_SOCKET: &str = "/run/pipewire/pulse-native";
-
-/// [`PULSE_SOCKET`] as a PulseAudio client is told it.
-pub const PULSE_SERVER: &str = "unix:/run/pipewire/pulse-native";
-pub const SERVICE_GID: u32 = 1000;
 
 /// Where a service's runtime sockets live.
 pub const RUNTIME_DIR: &str = "/run/user/1000";
@@ -291,26 +280,6 @@ pub const STACK: &[Service] = &[
         required: false,
         umask: None,
         ready: None,
-    },
-    Service {
-        name: "pipewire-pulse",
-        argv: &["/usr/bin/pipewire-pulse"],
-        env: &[
-            ("XDG_RUNTIME_DIR", RUNTIME_DIR),
-            ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
-            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
-        ],
-        user: Some((SERVICE_UID, SERVICE_GID)),
-        // Optional for the reason the sender is: everything that speaks
-        // PipeWire itself is unaffected, and a session with sound missing is
-        // degraded rather than unusable.
-        cost: "anything that only speaks PulseAudio plays silently, and Wine is one",
-        required: false,
-        // The workload is its client, and is not this user.
-        umask: Some(0),
-        // Nothing in this table connects to it, but the workload does, and the
-        // workload is started after the table.
-        ready: Some(PULSE_SOCKET),
     },
     Service {
         name: "neswire",
@@ -932,7 +901,7 @@ mod tests {
     /// owner -- and the workload is not the owner.
     #[test]
     fn the_audio_socket_is_reachable_by_a_user_who_does_not_own_it() {
-        for name in ["pipewire", "pipewire-pulse"] {
+        for name in ["pipewire"] {
             let service = STACK
                 .iter()
                 .find(|s| s.name == name)
@@ -943,32 +912,6 @@ mod tests {
                 "with any other umask the game finds {name}'s socket and cannot open it"
             );
         }
-    }
-
-    /// The PulseAudio socket's path is written three times: here, in the
-    /// client address the workload is given, and in pipewire-pulse's own
-    /// configuration in the image. If any of them moves on its own, the game
-    /// finds no server and plays silently, and nothing fails.
-    #[test]
-    fn pulse_is_served_where_the_workload_is_told_to_look() {
-        assert!(
-            PULSE_SOCKET.starts_with(AUDIO_DIR),
-            "the workload can only reach sockets in {AUDIO_DIR}"
-        );
-        assert_eq!(PULSE_SERVER, format!("unix:{PULSE_SOCKET}"));
-
-        let pulse = STACK
-            .iter()
-            .find(|s| s.name == "pipewire-pulse")
-            .expect("pulse is in the table");
-        assert_eq!(pulse.ready, Some(PULSE_SOCKET));
-
-        let config =
-            include_str!("../../../build/etc/pipewire/pipewire-pulse.conf.d/50-nestri.conf");
-        assert!(
-            config.contains(&format!("\"{PULSE_SERVER}\"")),
-            "pipewire-pulse is configured to listen somewhere other than {PULSE_SOCKET}"
-        );
     }
 
     /// The two that failed on a real boot, and the reason each matters.

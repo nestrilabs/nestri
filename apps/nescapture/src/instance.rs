@@ -41,10 +41,9 @@ pub unsafe extern "system" fn vkCreateInstance(
     let next_create: PFN_vkCreateInstance =
         unsafe { load_instance_fn(next_gipa, vk::Instance::null(), b"vkCreateInstance\0") };
 
-    // The encoder needs Vulkan 1.1 on the game's instance to run on the game's
-    // device. An application asking for 1.0 is raised to 1.1 where the loader
-    // has it: 1.1 only adds to 1.0, so nothing the application can do behaves
-    // any differently, and without it the encoder needs a device of its own.
+    // The encoders run on the game's device, so the game's instance has to be
+    // new enough for them: 1.1 for pixelforge, 1.3 for nespyro. See
+    // `raised_version`.
     let asked = unsafe {
         let app = (*p_create_info).p_application_info;
         if app.is_null() {
@@ -57,7 +56,7 @@ pub unsafe extern "system" fn vkCreateInstance(
     let mut raised_ci;
     let mut create_info = p_create_info;
     let mut api_version = asked;
-    if asked < vk::API_VERSION_1_1 && unsafe { loader_version(next_gipa) } >= vk::API_VERSION_1_1 {
+    if let Some(raised) = raised_version(asked, unsafe { loader_version(next_gipa) }) {
         raised_app = unsafe {
             let app = (*p_create_info).p_application_info;
             if app.is_null() {
@@ -66,13 +65,17 @@ pub unsafe extern "system" fn vkCreateInstance(
                 *app
             }
         };
-        raised_app.api_version = vk::API_VERSION_1_1;
+        raised_app.api_version = raised;
         raised_ci = unsafe { *p_create_info };
         raised_ci.p_application_info = &raised_app;
         create_info = &raised_ci;
-        api_version = vk::API_VERSION_1_1;
+        api_version = raised;
         log::info!(
-            "instance asked for Vulkan 1.0; created as 1.1 so the encoder can share its devices"
+            "instance asked for Vulkan {}.{}; created as {}.{} so the encoders can share its devices",
+            vk::api_version_major(asked),
+            vk::api_version_minor(asked),
+            vk::api_version_major(raised),
+            vk::api_version_minor(raised),
         );
     }
 
@@ -115,6 +118,27 @@ pub unsafe extern "system" fn vkCreateInstance(
     vk::Result::SUCCESS
 }
 
+/// The version to create the game's instance at instead of the one it asked
+/// for, or `None` to leave it alone.
+///
+/// As high as 1.3, which nespyro needs, and as the loader allows. A newer
+/// version only adds to an older one: a game cannot depend on behaviour it
+/// never asked for, and the only side of a session that has to care about old
+/// Vulkan is the client, which this layer is not. A loader below 1.1 is left
+/// alone, since then neither encoder can share the device anyway. The patch is
+/// dropped, as the version names a major.minor and its patch level is the
+/// loader's business.
+fn raised_version(asked: u32, loader: u32) -> Option<u32> {
+    let target = vk::API_VERSION_1_3.min(loader);
+    let target = vk::make_api_version(
+        0,
+        vk::api_version_major(target),
+        vk::api_version_minor(target),
+        0,
+    );
+    (target >= vk::API_VERSION_1_1 && asked < target).then_some(target)
+}
+
 /// The highest instance version the loader below supports; 1.0 when it cannot
 /// say, since vkEnumerateInstanceVersion is itself a 1.1 addition.
 unsafe fn loader_version(next_gipa: crate::dispatch::PFN_vkGetInstanceProcAddr) -> u32 {
@@ -143,5 +167,46 @@ pub unsafe extern "system" fn vkDestroyInstance(
     let key = unsafe { dispatch_key(instance.as_raw() as *const c_void) };
     if let Some((_, state)) = INSTANCE_STATE.remove(&key) {
         unsafe { (state.destroy_instance)(instance, p_allocator) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::raised_version;
+    use ash::vk;
+
+    const LOADER_1_4: u32 = vk::make_api_version(0, 1, 4, 321);
+
+    #[test]
+    fn an_old_instance_is_raised_to_1_3() {
+        for asked in [
+            0,
+            vk::API_VERSION_1_0,
+            vk::API_VERSION_1_1,
+            vk::API_VERSION_1_2,
+        ] {
+            assert_eq!(raised_version(asked, LOADER_1_4), Some(vk::API_VERSION_1_3));
+        }
+    }
+
+    /// Raising is only ever upward: a game asking for more keeps it.
+    #[test]
+    fn a_new_enough_instance_is_left_alone() {
+        assert_eq!(raised_version(vk::API_VERSION_1_3, LOADER_1_4), None);
+        assert_eq!(raised_version(LOADER_1_4, LOADER_1_4), None);
+    }
+
+    #[test]
+    fn an_older_loader_gets_what_it_has() {
+        let loader = vk::make_api_version(0, 1, 2, 198);
+        assert_eq!(
+            raised_version(vk::API_VERSION_1_0, loader),
+            Some(vk::API_VERSION_1_2)
+        );
+        assert_eq!(raised_version(vk::API_VERSION_1_2, loader), None);
+        assert_eq!(
+            raised_version(vk::API_VERSION_1_0, vk::API_VERSION_1_0),
+            None
+        );
     }
 }

@@ -8,6 +8,7 @@ pub mod gamepad;
 pub mod input;
 #[cfg(feature = "lifecycle")]
 pub mod lifecycle;
+pub mod pyrowave;
 pub mod reliable;
 pub mod stats;
 
@@ -161,6 +162,9 @@ pub const STREAM_STATS: u8 = 4;
 /// One keyframe, on a stream of its own, closed after it. The exception to
 /// "media travels as datagrams" — see the [`reliable`] module for why.
 pub const STREAM_KEYFRAME: u8 = 5;
+/// One message of a PyroWave frame, on the nescapture→hub video socket only.
+/// A frame is several of these: see the [`pyrowave`] module.
+pub const STREAM_PYROWAVE: u8 = 7;
 
 // ── Bidi stream types (desktop ↔ hub over QUIC bidi) ───────────
 
@@ -178,6 +182,9 @@ pub const CODEC_H264: u8 = 0;
 pub const CODEC_H265: u8 = 1;
 pub const CODEC_AV1: u8 = 2;
 pub const CODEC_OPUS: u8 = 3;
+/// The LAN codec. Advertised like the others but never chosen by
+/// negotiation: see [`pyrowave`].
+pub const CODEC_PYROWAVE: u8 = 4;
 pub const CODEC_KEEP: u8 = 0xFF; // "keep current" sentinel for dynamic encoder settings
 
 // Rate control modes (encode settings)
@@ -277,6 +284,7 @@ pub fn codec_name(codec: u8) -> &'static str {
         CODEC_H265 => "h265",
         CODEC_AV1 => "av1",
         CODEC_OPUS => "opus",
+        CODEC_PYROWAVE => "pyrowave",
         _ => "unknown",
     }
 }
@@ -418,7 +426,7 @@ impl ClientCaps {
         // `CODEC_KEEP` and the audio codec have no place in a video capability
         // set, and shifting by them would be nonsense rather than a small
         // error.
-        if !matches!(codec, CODEC_H264 | CODEC_H265 | CODEC_AV1) {
+        if !matches!(codec, CODEC_H264 | CODEC_H265 | CODEC_AV1 | CODEC_PYROWAVE) {
             return None;
         }
         if !matches!(depth, DEPTH_8 | DEPTH_10) {
@@ -456,6 +464,10 @@ impl ClientCaps {
     /// `None` when nothing overlaps, which is a real possibility rather than a
     /// theoretical one: an old client that sends no capabilities at all reads
     /// as empty. The caller keeps whatever it was already doing.
+    ///
+    /// Never PyroWave, whatever both ends support: it is not in
+    /// [`CODEC_PREFERENCE`]. It saturates anything but a LAN, and nothing here
+    /// can tell a LAN apart, so only a client asking for it gets it.
     pub fn best(self, host: Self) -> Option<(u8, u8)> {
         if self.is_empty() || host.is_empty() {
             return None;
@@ -471,9 +483,22 @@ impl ClientCaps {
     }
 }
 
-/// Encode a capability set: `[2B bits LE]`.
+/// Encode a capability set: `[2B bits LE]`, then `[1B PYROWAVE_FORMAT]` when
+/// the set includes PyroWave.
+///
+/// The format byte is appended rather than folded into the bits because an
+/// older hub reads exactly two bytes and ignores the rest, so a newer client
+/// still says what it decodes to it.
 pub fn encode_client_caps(buf: &mut Vec<u8>, caps: ClientCaps) {
     buf.extend_from_slice(&caps.bits().to_le_bytes());
+    if caps.supports_codec(CODEC_PYROWAVE) {
+        buf.push(pyrowave::PYROWAVE_FORMAT);
+    }
+}
+
+/// The PyroWave bitstream format a capability payload declares, if any.
+pub fn decode_pyrowave_format(payload: &[u8]) -> Option<u8> {
+    payload.get(2).copied()
 }
 
 /// Decode a capability set. `None` when the payload is too short to be one.
@@ -496,6 +521,52 @@ pub fn decode_client_caps(payload: &[u8]) -> Option<ClientCaps> {
 /// [`encode_bitrate_only`] for why its absence means something.
 pub fn encode_depth_only(buf: &mut Vec<u8>, bit_depth: u8) {
     encode_encode_settings(buf, CODEC_KEEP, RC_KEEP, 0, bit_depth);
+}
+
+/// An encode-settings payload with every field it can carry.
+///
+/// The fields past `bit_depth` were appended for PyroWave and are `None` when
+/// the payload stops before them, which every payload from before them does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EncodeSettings {
+    pub codec: u8,
+    pub rate_control: u8,
+    pub value: u32,
+    pub bit_depth: Option<u8>,
+    /// One of the `pyrowave::CHROMA_*` constants.
+    pub chroma: Option<u8>,
+    /// The largest PyroWave packet the hub can carry in one datagram. A client
+    /// sends 0; the hub fills it in, because only the hub can see the path.
+    pub packet_size: Option<u16>,
+}
+
+/// `[codec][rc][value u32 LE][depth][chroma][packet_size u16 LE]`.
+pub fn encode_settings(buf: &mut Vec<u8>, s: &EncodeSettings) {
+    buf.push(s.codec);
+    buf.push(s.rate_control);
+    buf.extend_from_slice(&s.value.to_le_bytes());
+    // Each optional field is written only if everything before it is, since a
+    // reader finds a field by its offset.
+    let Some(depth) = s.bit_depth else { return };
+    buf.push(depth);
+    let Some(chroma) = s.chroma else { return };
+    buf.push(chroma);
+    let Some(size) = s.packet_size else { return };
+    buf.extend_from_slice(&size.to_le_bytes());
+}
+
+/// Decode every field of an encode-settings payload. `None` when it is too
+/// short to be one.
+pub fn decode_encode_settings_ext(payload: &[u8]) -> Option<EncodeSettings> {
+    let (codec, rate_control, value, bit_depth) = decode_encode_settings(payload)?;
+    Some(EncodeSettings {
+        codec,
+        rate_control,
+        value,
+        bit_depth,
+        chroma: payload.get(7).copied(),
+        packet_size: payload.get(8..10).map(|b| u16::from_le_bytes([b[0], b[1]])),
+    })
 }
 
 /// Decode an encode-settings payload. Returns `(codec_id, rate_control_mode, value, bit_depth)`.
@@ -948,5 +1019,137 @@ mod media_control_tests {
                 assert_ne!(a, b, "two message types share a value");
             }
         }
+    }
+
+    /// The negative the whole opt-in design rests on: however much both ends
+    /// support it, negotiation never lands a session on PyroWave.
+    #[test]
+    fn negotiation_never_picks_pyrowave() {
+        let both = host_all()
+            .with(CODEC_PYROWAVE, DEPTH_8)
+            .with(CODEC_PYROWAVE, DEPTH_10);
+        assert_eq!(both.best(both), Some((CODEC_AV1, DEPTH_10)));
+
+        let only = ClientCaps::empty()
+            .with(CODEC_PYROWAVE, DEPTH_8)
+            .with(CODEC_PYROWAVE, DEPTH_10);
+        assert_eq!(only.best(only), None, "PyroWave alone is no answer either");
+        assert!(!CODEC_PREFERENCE.contains(&CODEC_PYROWAVE));
+    }
+
+    #[test]
+    fn pyrowave_takes_bits_of_its_own() {
+        let caps = ClientCaps::empty().with(CODEC_PYROWAVE, DEPTH_10);
+        assert!(caps.supports(CODEC_PYROWAVE, DEPTH_10));
+        assert!(!caps.supports(CODEC_PYROWAVE, DEPTH_8));
+        assert_eq!(caps.bits(), 1 << 9);
+        for codec in [CODEC_H264, CODEC_H265, CODEC_AV1] {
+            assert!(!caps.supports_codec(codec));
+        }
+    }
+
+    /// The format byte rides behind the two an older hub reads, so it changes
+    /// nothing for one.
+    #[test]
+    fn caps_carry_the_pyrowave_format_only_when_pyrowave_is_there() {
+        let mut buf = Vec::new();
+        encode_client_caps(&mut buf, host_all());
+        assert_eq!(buf.len(), 2);
+        assert_eq!(decode_pyrowave_format(&buf), None);
+
+        let caps = host_all().with(CODEC_PYROWAVE, DEPTH_8);
+        let mut buf = Vec::new();
+        encode_client_caps(&mut buf, caps);
+        assert_eq!(decode_client_caps(&buf), Some(caps));
+        assert_eq!(
+            decode_pyrowave_format(&buf),
+            Some(pyrowave::PYROWAVE_FORMAT)
+        );
+    }
+
+    #[test]
+    fn extended_settings_survive_the_wire() {
+        let full = EncodeSettings {
+            codec: CODEC_PYROWAVE,
+            rate_control: RC_CBR,
+            value: 300_000,
+            bit_depth: Some(DEPTH_10),
+            chroma: Some(pyrowave::CHROMA_444),
+            packet_size: Some(1440),
+        };
+        let mut buf = Vec::new();
+        encode_settings(&mut buf, &full);
+        assert_eq!(buf.len(), 10);
+        assert_eq!(decode_encode_settings_ext(&buf), Some(full));
+        // And an older reader still sees the first four fields.
+        assert_eq!(
+            decode_encode_settings(&buf),
+            Some((CODEC_PYROWAVE, RC_CBR, 300_000, Some(DEPTH_10)))
+        );
+    }
+
+    /// A field is found by its offset, so one can only be written if all
+    /// those before it are.
+    #[test]
+    fn a_missing_field_ends_the_payload() {
+        let mut s = EncodeSettings {
+            codec: CODEC_PYROWAVE,
+            rate_control: RC_CBR,
+            value: 1,
+            bit_depth: Some(DEPTH_8),
+            chroma: None,
+            packet_size: Some(1200),
+        };
+        let mut buf = Vec::new();
+        encode_settings(&mut buf, &s);
+        assert_eq!(buf.len(), 7, "a packet size with no chroma before it");
+        s.packet_size = None;
+        assert_eq!(decode_encode_settings_ext(&buf), Some(s));
+
+        let mut buf = Vec::new();
+        encode_bitrate_only(&mut buf, 5);
+        let s = decode_encode_settings_ext(&buf).unwrap();
+        assert_eq!((s.bit_depth, s.chroma, s.packet_size), (None, None, None));
+    }
+
+    #[test]
+    fn every_stream_type_is_its_own_number() {
+        // Stream and bidi types share the byte that opens a stream.
+        let types = [
+            ("STREAM_VIDEO", STREAM_VIDEO),
+            ("STREAM_AUDIO", STREAM_AUDIO),
+            ("BIDI_INPUT", BIDI_INPUT),
+            ("STREAM_CURSOR", STREAM_CURSOR),
+            ("STREAM_STATS", STREAM_STATS),
+            ("STREAM_KEYFRAME", STREAM_KEYFRAME),
+            ("BIDI_CONTROL", BIDI_CONTROL),
+            ("STREAM_PYROWAVE", STREAM_PYROWAVE),
+        ];
+        for (i, (name, value)) in types.iter().enumerate() {
+            for (other_name, other_value) in &types[i + 1..] {
+                assert_ne!(
+                    value, other_value,
+                    "{name} and {other_name} are both {value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_codec_is_its_own_number() {
+        let codecs = [
+            CODEC_H264,
+            CODEC_H265,
+            CODEC_AV1,
+            CODEC_OPUS,
+            CODEC_PYROWAVE,
+            CODEC_KEEP,
+        ];
+        for (i, a) in codecs.iter().enumerate() {
+            for b in &codecs[i + 1..] {
+                assert_ne!(a, b);
+            }
+        }
+        assert_eq!(codec_name(CODEC_PYROWAVE), "pyrowave");
     }
 }

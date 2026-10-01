@@ -7,18 +7,34 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use iroh::endpoint::{Connection, QuicTransportConfig, SendDatagramError};
 use tracing::{debug, warn};
 
 use crate::keyframe::KeyframeSender;
+use crate::pyro::PyroSender;
 
 use nesprotocol::MSG_DATA;
 use nesprotocol::datagram::{
     DGRAM_BUFFER_BYTES, DGRAM_HDR_LEN, MAX_FRAGMENTS_PER_FRAME, MIN_DGRAM_PAYLOAD, fragment_count,
     write_datagram_header,
 };
+use nesprotocol::pyrowave::PyroFrame;
 use nesprotocol::reliable::video_wants_reliable;
+
+/// What a session's media writer is handed.
+///
+/// Both are refcounted, so a frame broadcast to several clients is shared
+/// rather than copied per client — which at PyroWave's frame sizes stops being
+/// a rounding error.
+#[derive(Debug, Clone)]
+pub enum MediaItem {
+    /// A hardware-codec frame or an audio packet, laid out as the hub
+    /// broadcasts it.
+    Coded(Bytes),
+    /// A whole PyroWave frame, which travels by rules of its own.
+    PyroWave(Arc<PyroFrame>),
+}
 
 /// Transport settings for an endpoint carrying media datagrams.
 ///
@@ -225,7 +241,7 @@ pub async fn run_datagram_writer(
     conn: Connection,
     kind: u8,
     label: &'static str,
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<MediaItem>,
     relay_ms: Option<Arc<AtomicU32>>,
     keyframes_reliable: bool,
     // Set while this client has asked for a keyframe and not yet been sent
@@ -234,7 +250,10 @@ pub async fn run_datagram_writer(
     // Counts frames withheld during a resynchronisation, so the bitrate
     // controller can tell a second it starved from a second the path did.
     withheld: Option<Arc<std::sync::atomic::AtomicU64>>,
+    // Counts PyroWave frames skipped for want of room. Video only.
+    pyro_skipped: Option<Arc<std::sync::atomic::AtomicU64>>,
 ) {
+    let mut pyro = pyro_skipped.map(|skipped| PyroSender::new(conn.clone(), skipped));
     let sender = DatagramSender::new(conn.clone(), kind);
     let keyframes = keyframes_reliable.then(|| KeyframeSender::new(conn, sender.clone()));
     let mut seq: u16 = 0;
@@ -245,8 +264,25 @@ pub async fn run_datagram_writer(
     let mut warned_unsupported = false;
     let mut resync = ResyncGate::default();
 
-    while let Some(payload) = rx.recv().await {
+    while let Some(item) = rx.recv().await {
         let t0 = std::time::Instant::now();
+        let payload = match item {
+            MediaItem::Coded(payload) => payload,
+            // No keyframe stream and no resync gate: every PyroWave frame
+            // stands alone, so there is nothing to resynchronise and no frame
+            // worth a reliable stream more than another.
+            MediaItem::PyroWave(frame) => {
+                match pyro.as_mut() {
+                    Some(pyro) => pyro.send(&frame, label),
+                    None => debug!("{label}: a PyroWave frame on a carrier that has none"),
+                }
+                if let Some(ref relay) = relay_ms {
+                    let elapsed = t0.elapsed().as_secs_f32() * 1000.0;
+                    relay.store(elapsed.to_bits(), Ordering::Relaxed);
+                }
+                continue;
+            }
+        };
         body.clear();
         nesprotocol::encode_frame_body(&mut body, MSG_DATA, seq, &payload);
 
