@@ -31,7 +31,7 @@
 # scoped to one stage instead, `FROM ${PROTON_IMAGE}` expands to nothing, and
 # the build fails with "no FROM statement found" — which says nothing about
 # the actual mistake. See the Proton stage below for what this is.
-ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-ge:11-7
+ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-cachyos-native-wow64:11.0-20260703
 
 # ───────────────────────────────────────────────────────────
 #  initial / builder
@@ -40,7 +40,7 @@ ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-ge:11-7
 #  guest was Artix, chosen for an init system this image no longer contains.
 #  Only build artifacts leave these stages.
 # ───────────────────────────────────────────────────────────
-FROM docker.io/archlinux:base-devel AS initial
+FROM docker.io/cachyos/cachyos-v3:latest AS initial
 RUN pacman -Syu --noconfirm
 
 FROM initial AS builder
@@ -52,7 +52,7 @@ RUN pacman -S --noconfirm --needed \
         libx11 libxext libxrandr libxshmfence libxfixes libxxf86vm libxcb \
         xcb-util-keysyms xorgproto \
         wayland wayland-protocols \
-        expat zlib zstd libxml2 lm_sensors \
+        expat zlib-ng-compat zstd libxml2 lm_sensors \
         llvm clang libclc spirv-tools spirv-llvm-translator glslang shader-slang \
         elfutils libva libdrm directx-headers \
         rust rust-bindgen cbindgen \
@@ -210,7 +210,7 @@ FROM ${PROTON_IMAGE} AS proton
 #  obscurely, and a previous attempt at this image lost two services to exactly
 #  that.
 # ───────────────────────────────────────────────────────────
-FROM docker.io/archlinux:base AS os-base
+FROM docker.io/cachyos/cachyos-v3:latest AS os-base
 
 # The base image ships an unsigned local keyring, so upgrading
 # `archlinux-keyring` runs a hook that reports `There is no secret key
@@ -265,12 +265,12 @@ RUN pacman -Syu --noconfirm --needed \
         dbus \
         iptables iproute2 \
         libglvnd libdrm libepoxy libxxf86vm libinput wayland \
-        expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
+        expat zlib-ng-compat llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
-        pipewire pipewire-audio pipewire-pulse libpulse wireplumber opus \
+        pipewire pipewire-audio wireplumber opus \
         python libunwind sdl2-compat \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
-    && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
+    && pacman -Rdd --noconfirm systemd systemd-sysvcompat openssh \
     && pacman -Scc --noconfirm
 
 # `libunwind` is Wine's, not ours. `ntdll.so` links it, so without it every
@@ -279,15 +279,6 @@ RUN pacman -Syu --noconfirm --needed \
 # after the prefix had already been created -- so the session got past every
 # check that Proton was present and usable.
 #
-# `pipewire-pulse` and `libpulse` are Wine's audio. Its driver speaks only the
-# PulseAudio protocol, so without the translation layer a game starts, renders
-# and plays silently, with nothing failing to say why. `libpulse` is what that
-# driver, `winepulse.so`, links, and it would arrive as a dependency of
-# pipewire-pulse anyway. It is named because the dependency is Wine's and not
-# pipewire-pulse's, and a library that only arrives as somebody else's
-# dependency goes away when they do. The check below covers `winepulse.so`, so a
-# missing library fails the build rather than the session.
-
 # `python` is not a build dependency here -- the builder stage has its own for
 # Mesa -- it is a *runtime* one. The compatibility tool's entry point is a
 # Python script, so a box without an interpreter starts a game and the launch
@@ -509,7 +500,7 @@ RUN failed=0; \
     : > /tmp/missing-libs; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
              /usr/bin/nesgamepad /usr/lib/libnescapture_layer.so /usr/lib/libSDL2-2.0.so.0 \
-             /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
+             /usr/bin/dbus-daemon /usr/bin/pipewire \
              /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
@@ -532,7 +523,7 @@ RUN failed=0; \
 
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/nesgamepad /usr/lib/libSDL2-2.0.so.0 \
-                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
+                    /usr/bin/dbus-daemon /usr/bin/pipewire \
                     /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 \
                     /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
