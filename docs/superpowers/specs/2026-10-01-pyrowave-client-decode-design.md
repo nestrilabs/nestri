@@ -42,9 +42,12 @@ same rev nesprotocol is pinned to.
 - Queue: nespyro gets the compute-only family's queue 0, which nesrecon
   never submits to; pixelforge may use it too, but only from the same decode
   thread, so the two are serialised by that thread. Without a compute-only
-  family it gets a second queue in the graphics family if there is one; with
-  neither, PyroWave decode is refused and logged rather than racing the
-  render thread on its queue. `QueueLock::none()` in every case that runs.
+  family, a second graphics queue if there is one. Without either -- every
+  Intel GPU under ANV, whose one family has one queue -- the render queue
+  itself, under a `QueueLock` the render thread holds around every submit,
+  present and `vkDeviceWaitIdle` (`VkCtx::queue_lock`, `VkCtx::wait_idle`).
+  The first build refused PyroWave in that case, which on this machine meant
+  the client never advertised it and the hub refused every request.
 - `SharedVulkanDevice` carries `pyro: Option<(family, index)>`.
 - `nesrecon::decodes(PyroWave, _)` answers from a flag set when the device was
   created with nespyro's additions; nesvideo advertises PyroWave only then.
