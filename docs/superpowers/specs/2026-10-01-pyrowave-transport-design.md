@@ -158,9 +158,9 @@ Counts per frame: whole, partial, and datagrams lost, duplicated, stale.
   real listener and writer, over an iroh loopback connection, into a collector.
   Byte-exact, clean and with dropped datagrams; the skip guard engages under a
   blocked receiver.
-- **neshub end to end (GPU, `#[ignore]`):** the same with real nespyro frames,
-  where every released frame must give a `Depacketizer` the same readiness as
-  the encoder's own packets.
+- **End to end with real nespyro frames:** moved to part 3, where nescapture
+  produces them. Every released frame must give a `Depacketizer` the same
+  readiness as the encoder's own packets.
 - **Throughput:** `examples/pyro_bench.rs` sends PyroWave-shaped frames at a
   given rate over iroh. Loopback measures CPU cost; serve/connect across the
   LAN measures the real thing. If iroh cannot carry the rates, that comes back
