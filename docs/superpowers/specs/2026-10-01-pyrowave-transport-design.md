@@ -94,8 +94,10 @@ is one whole packet, or one piece of a packet too large for a datagram:
 
 - `FLAG_DUPLICATE` (bit 0): a second copy of a critical datagram. Same index.
 - `FLAG_PART` (bit 1): a piece of one packet. Pieces occupy consecutive
-  indexes; `FLAG_LAST_PART` (bit 2) ends the run. Only a block larger than the
-  payload limit does this, at most two or three pieces.
+  indexes from one marked `FLAG_FIRST_PART` (bit 2) to one marked
+  `FLAG_LAST_PART` (bit 3). Both ends are marked so a receiver missing a piece
+  can tell an orphaned middle from the start of the next run. Only a block
+  larger than the payload limit does this, at most two or three pieces.
 
 `total` is capped at `PYRO_MAX_DATAGRAMS = 16384`, about 19 MB a frame.
 

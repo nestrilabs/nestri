@@ -40,6 +40,9 @@ pub const DGRAM_HDR_LEN: usize = 7;
 /// so a frame's identity does not change with the transport under it.
 pub const DGRAM_VIDEO: u8 = 0;
 pub const DGRAM_AUDIO: u8 = 1;
+/// PyroWave, whose datagrams have a header of their own: see
+/// [`crate::pyrowave`].
+pub const DGRAM_PYROWAVE: u8 = crate::pyrowave::DGRAM_PYROWAVE;
 
 /// Bounds reassembly work. A 4K keyframe runs to a few hundred fragments at a
 /// typical MTU; anything past this did not come from a sender of ours.
