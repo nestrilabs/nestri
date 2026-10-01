@@ -48,6 +48,25 @@ pub enum Source {
     Bt2020Pq = 3,
 }
 
+impl Source {
+    /// How bright this source's 1.0 is, in nits, unless the caller says
+    /// otherwise. pixelforge's `ColorSpec::reference_white_nits`, so the two
+    /// encoders agree on one surface.
+    ///
+    /// scRGB defines its white as 80 nits; the BT.2100 reference white of 203
+    /// is right for everything else that needs one. Using 203 for scRGB was
+    /// the bug: a Windows title's HDR, which DXVK hands over as scRGB, came out
+    /// two and a half times too bright. `None` for PQ, whose values are
+    /// already absolute.
+    pub fn reference_white_nits(self) -> Option<f32> {
+        match self {
+            Self::Srgb | Self::Bt2020Linear => Some(203.0),
+            Self::Bt709Linear => Some(80.0),
+            Self::Bt2020Pq => None,
+        }
+    }
+}
+
 /// Bits per sample of the YCbCr planes the codec reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Depth {
@@ -85,9 +104,10 @@ pub struct EncodeConfig {
     pub colour: ColourDescription,
     /// What the input is.
     pub source: Source,
-    /// Luminance of a linear source's 1.0, in nits. Unused for PQ sources and
-    /// SDR targets.
-    pub reference_white_nits: f32,
+    /// Luminance of a linear source's 1.0, in nits, overriding the source's
+    /// own ([`Source::reference_white_nits`]). Unused for PQ sources and SDR
+    /// targets.
+    pub reference_white_nits: Option<f32>,
     pub frame_rate: (u32, u32),
     pub target_bitrate: u64,
     /// Largest packet the packetizer cuts, in bytes.
@@ -104,7 +124,7 @@ impl EncodeConfig {
             depth: Depth::Eight,
             colour: ColourDescription::bt709(),
             source: Source::Srgb,
-            reference_white_nits: 203.0,
+            reference_white_nits: None,
             frame_rate: (60, 1),
             target_bitrate: 200_000_000,
             packet_size: 1200,
@@ -128,7 +148,7 @@ impl EncodeConfig {
     }
 
     pub fn with_reference_white(mut self, nits: f32) -> Self {
-        self.reference_white_nits = nits;
+        self.reference_white_nits = Some(nits);
         self
     }
 
@@ -172,6 +192,14 @@ impl EncodeConfig {
             )));
         }
         Ok(())
+    }
+
+    /// The reference white in force: the caller's, else the source's, else a
+    /// value the shader never reads (a PQ source has no use for one).
+    fn effective_reference_white_nits(&self) -> f32 {
+        self.reference_white_nits
+            .or(self.source.reference_white_nits())
+            .unwrap_or(203.0)
     }
 
     /// Bytes rate control aims each frame at, a whole number of words.
@@ -1033,7 +1061,7 @@ impl Encoder {
                         height: config.height,
                         source: config.source as u32,
                         hdr: u32::from(config.colour.is_hdr()),
-                        reference_white_nits: config.reference_white_nits,
+                        reference_white_nits: config.effective_reference_white_nits(),
                     },
                     (
                         config.width.div_ceil(2).div_ceil(8),

@@ -2064,7 +2064,15 @@ fn pyro_config(key: PyroKey, kbps: u32, fps: u32) -> Result<nespyro::EncodeConfi
         nesprotocol::pyrowave::CHROMA_444 => nespyro::Chroma::Yuv444,
         _ => nespyro::Chroma::Yuv420,
     };
-    Ok(nespyro::EncodeConfig::new(key.width, key.height)
+    // pixelforge's own figure for the same source, so a surface is exactly as
+    // bright whichever encoder carries it: 80 nits for scRGB, 203 for the rest.
+    let white = source_spec(key.colorspace, key.input_fmt).reference_white_nits();
+    let config = nespyro::EncodeConfig::new(key.width, key.height);
+    let config = match white {
+        Some(nits) => config.with_reference_white(nits),
+        None => config,
+    };
+    Ok(config
         .with_chroma(chroma)
         .with_depth(depth)
         .with_colour(colour, source)
@@ -4669,6 +4677,9 @@ mod pyrowave_tests {
         .unwrap();
         assert_eq!(c.source, nespyro::Source::Bt709Linear);
         assert_eq!(c.colour, nespyro::ColourDescription::bt2020_pq());
+        // scRGB's white is 80 nits. At the 203 other linear sources use,
+        // Cyberpunk's scRGB mode came out far too bright on PyroWave alone.
+        assert_eq!(c.reference_white_nits, Some(80.0));
     }
 
     #[test]
