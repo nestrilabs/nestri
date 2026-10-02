@@ -86,6 +86,21 @@ box needs no lib32 glibc, no second Mesa for i686, and no second capture layer
 for 32-bit titles to be captured. Upstream Wine defaults to it from Proton 11,
 so a released build needs no more than ours does.
 
+**umu-launcher is in the image, built here.** `umu-run` is how a title that is
+not Steam's is launched, so the game fixes Proton carries apply outside Steam.
+The distribution's package is not used: it declares a long list of `lib32-*`
+libraries and desktop packages for the Steam Linux Runtime container, which this
+image never runs. The `umu-build` stage builds a pinned tag (`UMU_TAG`) instead,
+against the distribution's own `urllib3` and `pyzstd` (the copies it can vendor
+are built from source with pinned build tooling, which a rolling distribution
+outgrows), and the image adds `python-xlib`, `python-urllib3` and `python-pyzstd`.
+
+Two checks keep it honest: `umu-run --help` must actually run, because a missing
+Python module otherwise shows up as a game that never starts, and no `lib32-`
+package may be installed. umu would also like to fetch a runtime container for a
+Proton whose manifest asks for one; the host side shows it the compat layer with
+that request removed, so there is nothing for it to fetch.
+
 `runtime_prod` from this Containerfile — tagged
 `ghcr.io/nestrilabs/nestri/base:latest` — is a complete, bootable guest image,
 and also the shared foundation other builds start from: nesbox's jail image

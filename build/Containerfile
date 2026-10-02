@@ -168,6 +168,41 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 
 
 # ───────────────────────────────────────────────────────────
+#  umu-launcher — built here, not installed from the distribution
+#
+#  `umu-run` launches every title that is not Steam's, applying the game fixes
+#  Proton carries outside Steam the way launchers such as Heroic do.
+#
+#  The distribution's package is not used because of what it declares: it
+#  depends on a long list of `lib32-*` libraries and desktop packages that exist
+#  for the Steam Linux Runtime container, which this image never runs — Proton
+#  runs on the libraries in here (see the compat_check stage). Building from
+#  source costs the package and none of that.
+#
+#  Built against the distribution's own `urllib3` and `pyzstd` rather than the
+#  copies it can vendor: vendoring builds both from source with pinned build
+#  tooling, and a rolling distribution moves past those pins (a
+#  `setuptools-scm` too new for them failed the build). The image installs the
+#  two as ordinary Python packages, with no 32-bit anything.
+#
+#  Pinned by tag; it moves deliberately.
+# ───────────────────────────────────────────────────────────
+FROM builder AS umu-build
+ARG UMU_GIT=https://github.com/Open-Wine-Components/umu-launcher.git
+ARG UMU_TAG=1.4.4
+RUN pacman -S --noconfirm --needed \
+        make scdoc gcc \
+        python-build python-hatchling python-installer python-pip \
+    && pacman -Scc --noconfirm
+RUN git clone --depth 1 --branch "${UMU_TAG}" --recurse-submodules --shallow-submodules \
+        "${UMU_GIT}" /umu && \
+    cd /umu && \
+    ./configure.sh --prefix=/usr --use-system-pyzstd --use-system-urllib && \
+    make && \
+    make DESTDIR=/artifacts/umu install
+
+
+# ───────────────────────────────────────────────────────────
 #  Proton — pulled to be checked, not shipped
 #
 #  Building it takes hours and it changes only when its own tag moves, so it
@@ -277,6 +312,7 @@ RUN pacman -Syu --noconfirm --needed \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
         pipewire pipewire-audio wireplumber opus \
         python libunwind sdl2-compat \
+        python-xlib python-urllib3 python-pyzstd \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat openssh \
     && pacman -Scc --noconfirm
@@ -382,6 +418,7 @@ RUN cat /tmp/mesa.manifest /tmp/nestri.manifest > /tmp/.strip-manifest && \
     rm -f /tmp/mesa.manifest /tmp/nestri.manifest
 COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
+COPY --from=umu-build    /artifacts/umu    /
 
 # **No Proton here.** It is attached to a box at run time, mounted at
 # /nestri/compat, so this image has no Proton path for a launch to fall back to
@@ -525,9 +562,24 @@ RUN failed=0; \
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/nesgamepad /usr/lib/libSDL2-2.0.so.0 \
                     /usr/bin/dbus-daemon /usr/bin/pipewire \
-                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3; do \
+                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 /usr/bin/umu-run; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
+
+# `umu-run` has to start, not only exist. It is a Python program built in another
+# stage: a module it imports that this image lacks, or an interpreter that moved
+# a minor version between that stage and this one, is a game that never starts —
+# and the launch reports a failure to run a script, not a missing module.
+RUN umu-run --help >/dev/null 2>&1 \
+    || { echo "umu-run does not start; run it by hand to see the module or interpreter it lacks" >&2; \
+         umu-run --help >&2 || true; exit 1; }
+
+# No 32-bit libraries came with it. The distribution's umu package would have
+# brought a long list of them for the container runtime this image never runs,
+# which is why it is built instead of installed; this is the check that stays
+# true if somebody swaps it back.
+RUN ! pacman -Qq | grep -q '^lib32-' \
+    || { echo "a lib32 package is installed:" >&2; pacman -Qq | grep '^lib32-' >&2; exit 1; }
 
 # ───────────────────────────────────────────────────────────
 #  compat_check — does this rootfs still carry what a Proton needs?
