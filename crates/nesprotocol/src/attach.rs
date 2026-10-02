@@ -135,6 +135,15 @@ impl FrameReader {
         self.buf.extend_from_slice(bytes);
     }
 
+    /// What has arrived and is not yet a frame, handing the reader up.
+    ///
+    /// For the end that reads the first frame to learn whom a connection is for
+    /// and then forwards the rest untouched: whatever came in behind that frame
+    /// in the same read belongs to the stream, and is not to be lost.
+    pub fn into_remaining(self) -> Vec<u8> {
+        self.buf
+    }
+
     /// The next whole frame, if one has arrived.
     ///
     /// `Ok(None)` is "not yet". After an error the reader is poisoned in the
@@ -254,6 +263,19 @@ mod tests {
             }
             assert_eq!(got, frames, "split into {step}-byte pieces");
         }
+    }
+
+    /// The first frame is read to learn who is calling; whatever came in behind it
+    /// in the same read is the stream's, and is not dropped.
+    #[test]
+    fn what_arrived_behind_a_frame_is_handed_on() {
+        let mut reader = FrameReader::new();
+        let mut wire = Frame::Hello("a".into()).encode().unwrap();
+        wire.extend(Frame::Data(b"prompt$ ".to_vec()).encode().unwrap());
+        reader.push(&wire);
+        assert_eq!(reader.next_frame().unwrap(), Some(Frame::Hello("a".into())));
+        let rest = reader.into_remaining();
+        assert_eq!(rest, Frame::Data(b"prompt$ ".to_vec()).encode().unwrap());
     }
 
     #[test]
