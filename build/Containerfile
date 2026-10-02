@@ -58,13 +58,22 @@ RUN pacman -S --noconfirm --needed \
         expat zlib-ng-compat zstd libxml2 lm_sensors \
         llvm clang libclc spirv-tools spirv-llvm-translator glslang shader-slang \
         elfutils libva libdrm directx-headers \
-        rust rust-bindgen cbindgen \
+        rustup rust-bindgen cbindgen \
         curl openssl \
         pixman libxkbcommon \
         vulkan-headers vulkan-icd-loader \
         pipewire shaderc opus \
         libinput \
     && pacman -Scc --noconfirm
+
+# **Rust comes from rustup, never from the distribution's `rust` package.** That
+# package is built against the distribution's LLVM, and when the two repositories
+# this image draws from disagree about it, `rustc` itself fails to start with a
+# symbol-lookup error — before any of our code is involved, and in every stage
+# that builds Rust. A toolchain of its own cannot be broken by a library it does
+# not link.
+RUN rustup default stable
+
 WORKDIR /build
 ENV ARTIFACTS=/artifacts
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
