@@ -79,20 +79,7 @@ export function Layout(
 										<div data-component="logo">
 											<LogoWord />
 										</div>
-										{props.headline ?? (
-											<h2 data-component="title">
-												One place for all the ways you play.{' '}
-												<strong>
-													Gather Around
-													<a
-														href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-														rel="noopener noreferrer"
-														target="_blank">
-														.
-													</a>
-												</strong>
-											</h2>
-										)}
+										{props.headline}
 										<div data-component="actions">{props.children}</div>
 									</div>
 								</div>

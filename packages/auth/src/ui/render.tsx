@@ -17,6 +17,7 @@
 /** @jsxImportSource hono/jsx */
 
 import { Layout } from './base.js';
+import segments from './segments.js';
 import type {
 	Alert,
 	ChooseScreen,
@@ -52,7 +53,10 @@ export interface HtmlRendererOptions {
 	theme?: Theme;
 }
 
-/** The default renderer: server-rendered HTML, no client-side script. */
+/**
+ * The default renderer: server-rendered HTML that works with script off. The
+ * one script, `segments.ts`, only redraws a code field as boxes.
+ */
 export function HtmlRenderer(options?: HtmlRendererOptions): Renderer {
 	const theme = options?.theme;
 
@@ -107,11 +111,11 @@ function Form(props: { theme?: Theme; screen: FormScreen }) {
 	return (
 		<Layout theme={props.theme}>
 			<form data-component="form" method={screen.method ?? 'post'} action={screen.action}>
-				{screen.alerts?.map((alert) => (
-					<Banner alert={alert} />
-				))}
 				{screen.fields.map((field) => (
 					<Input field={field} />
+				))}
+				{screen.alerts?.map((alert) => (
+					<Note alert={alert} />
 				))}
 				<button data-component="button">{screen.submit}</button>
 			</form>
@@ -179,6 +183,7 @@ function Confirm(props: { theme?: Theme; screen: ConfirmScreen }) {
 					{screen.deny.label}
 				</button>
 			</form>
+			{screen.footer && <Footer copy={screen.footer} />}
 		</Layout>
 	);
 }
@@ -233,24 +238,47 @@ function Input(props: { field: Field }) {
 	}
 
 	if (field.kind === 'segments') {
+		// A grouped code is shown with a separator, `BCDF-3467`, and will be
+		// typed or pasted the way it was read. Room for the separators, and a
+		// pattern that allows them, or the box truncates a correct code to
+		// `BCDF-346` before the server — which ignores them — ever sees it.
+		const char = field.numeric ? '[0-9]' : '[A-Za-z0-9]';
+		const groups = field.group && field.group > 0 ? Math.ceil(field.length / field.group) : 1;
+		const sizes = Array.from({ length: groups }, (_, i) =>
+			Math.min(field.group ?? field.length, field.length - i * (field.group ?? field.length))
+		);
+		// One box per character once `segments.ts` has run; this single field
+		// until then, and for good if it never does.
 		return (
-			<input
-				data-component="input"
-				data-variant="code"
-				type="text"
-				name={field.name}
-				aria-label={field.label}
-				placeholder={field.label}
-				minLength={field.length}
-				maxLength={field.length}
-				size={field.length}
-				required
-				spellcheck={false}
-				autocapitalize="characters"
-				inputmode={field.numeric ? 'numeric' : 'text'}
-				autocomplete={field.autocomplete}
-				autofocus={field.autofocus}
-			/>
+			<>
+				<div
+					data-component="segments"
+					data-length={field.length}
+					data-group={field.group}
+					data-numeric={field.numeric ? 'true' : 'false'}>
+					<input
+						data-component="input"
+						data-variant="code"
+						type="text"
+						name={field.name}
+						aria-label={field.label}
+						placeholder={field.label}
+						minLength={field.length}
+						maxLength={field.length + groups - 1}
+						// Whole and well-formed, or `:invalid` — which is what the stylesheet
+						// dims the button on. `minLength` alone is not checked until edited.
+						pattern={sizes.map((n) => `${char}{${n}}`).join('[\\- ]?')}
+						size={field.length + groups - 1}
+						required
+						spellcheck={false}
+						autocapitalize="characters"
+						inputmode={field.numeric ? 'numeric' : 'text'}
+						autocomplete={field.autocomplete}
+						autofocus={field.autofocus}
+					/>
+				</div>
+				<script dangerouslySetInnerHTML={{ __html: segments }} />
+			</>
 		);
 	}
 
@@ -284,37 +312,19 @@ function Input(props: { field: Field }) {
 	);
 }
 
-function Banner(props: { alert: Alert }) {
+/**
+ * A line of small text under the fields: red when something went wrong, green
+ * when something just happened. No box and no icon, so it reads as part of the
+ * input it is about rather than as a second thing on the page.
+ */
+function Note(props: { alert: Alert }) {
 	return (
-		<div data-component="form-alert" data-color={props.alert.tone}>
-			<svg
-				data-slot="icon-success"
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke-width="1.5"
-				stroke="currentColor">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-				/>
-			</svg>
-			<svg
-				data-slot="icon-danger"
-				xmlns="http://www.w3.org/2000/svg"
-				fill="none"
-				viewBox="0 0 24 24"
-				stroke-width="1.5"
-				stroke="currentColor">
-				<path
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"
-				/>
-			</svg>
-			<span data-slot="message">{props.alert.message}</span>
-		</div>
+		<p
+			data-component="form-alert"
+			data-color={props.alert.tone}
+			role={props.alert.tone === 'danger' ? 'alert' : 'status'}>
+			{props.alert.message}
+		</p>
 	);
 }
 
