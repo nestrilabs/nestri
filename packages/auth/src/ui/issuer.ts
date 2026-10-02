@@ -61,6 +61,7 @@ export const IssuerScreens = {
 					name: 'user_code',
 					label: 'Enter the code shown in the app',
 					length,
+					group: 4,
 					autocomplete: 'off',
 					autofocus: true
 				}

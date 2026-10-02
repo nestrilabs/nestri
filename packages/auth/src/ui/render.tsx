@@ -234,6 +234,15 @@ function Input(props: { field: Field }) {
 	}
 
 	if (field.kind === 'segments') {
+		// A grouped code is shown with a separator, `BCDF-3467`, and will be
+		// typed or pasted the way it was read. Room for the separators, and a
+		// pattern that allows them, or the box truncates a correct code to
+		// `BCDF-346` before the server — which ignores them — ever sees it.
+		const char = field.numeric ? '[0-9]' : '[A-Za-z0-9]';
+		const groups = field.group && field.group > 0 ? Math.ceil(field.length / field.group) : 1;
+		const sizes = Array.from({ length: groups }, (_, i) =>
+			Math.min(field.group ?? field.length, field.length - i * (field.group ?? field.length))
+		);
 		return (
 			<input
 				data-component="input"
@@ -243,11 +252,11 @@ function Input(props: { field: Field }) {
 				aria-label={field.label}
 				placeholder={field.label}
 				minLength={field.length}
-				maxLength={field.length}
+				maxLength={field.length + groups - 1}
 				// Whole and well-formed, or `:invalid` — which is what the stylesheet
 				// dims the button on. `minLength` alone is not checked until edited.
-				pattern={`${field.numeric ? '[0-9]' : '[A-Za-z0-9]'}{${field.length}}`}
-				size={field.length}
+				pattern={sizes.map((n) => `${char}{${n}}`).join('[\\- ]?')}
+				size={field.length + groups - 1}
 				required
 				spellcheck={false}
 				autocapitalize="characters"
