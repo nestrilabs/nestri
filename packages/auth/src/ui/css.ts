@@ -565,9 +565,10 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 }
 
 
-/* A wrong answer shakes the field it came from, once. Every error is a new
-   page, so an animation that runs on load runs exactly when one arrives —
-   no script needed to trigger it. */
+/* A wrong answer shakes the field it came from, once, and rings it red while
+   it does. Every error is a new page, so an animation that runs on load runs
+   exactly when one arrives — no script needed to trigger it. \`segments.ts\`
+   plays the same two when a code field refuses a character. */
 @keyframes shake {
 	0%, 100% { translate: 0; }
 	15%, 55% { translate: -0.5rem; }
@@ -575,8 +576,18 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 	90% { translate: -0.2rem; }
 }
 
+/* No end frame, so it fades back to whatever border the field has now. */
+@keyframes alarm {
+	0%, 60% {
+		border-color: var(--color-red-600);
+		box-shadow: 0 0 0 1px var(--color-red-600);
+	}
+}
+
 form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
-	animation: shake 400ms ease-in-out;
+	animation:
+		shake 400ms ease-in-out,
+		alarm 1s ease-out;
 }
 
 [data-component='input'][data-variant='code']::placeholder {
@@ -615,7 +626,11 @@ form:has([data-component='form-alert'][data-color='danger']) [data-component='in
 		scale: 1;
 	}
 
-	form:has([data-component='form-alert'][data-color='danger']) [data-component='input'],
+	/* The red stays: it is the message. Only the movement goes. */
+	form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
+		animation: alarm 1s ease-out;
+	}
+
 	[data-component='input'][data-variant='box'][data-active]:empty::after {
 		animation: none;
 	}

@@ -64,6 +64,34 @@ export default `(() => {
 		if (real.selectionStart !== end || real.selectionEnd !== end) real.setSelectionRange(end, end);
 	};
 
+	// A refused character gets the same answer as a wrong code: the boxes
+	// shake and ring red. Silently dropping it looked exactly like a field
+	// that does not work. Played through script rather than a class, because
+	// the error page may already be running the stylesheet's own shake on
+	// these boxes, and toggling a class cannot restart an animation that is
+	// still named the same.
+	const refuse = () => {
+		const red = getComputedStyle(root).getPropertyValue('--color-red-600').trim() || 'red';
+		const ring = { borderColor: red, boxShadow: '0 0 0 1px ' + red };
+		const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		boxes.forEach((box) => {
+			box.animate([ring, Object.assign({ offset: 0.6 }, ring)], { duration: 1000, easing: 'ease-out' });
+			if (!still)
+				box.animate(
+					[
+						{ translate: '0' },
+						{ translate: '-0.5rem', offset: 0.15 },
+						{ translate: '0.5rem', offset: 0.35 },
+						{ translate: '-0.5rem', offset: 0.55 },
+						{ translate: '0.5rem', offset: 0.75 },
+						{ translate: '-0.2rem', offset: 0.9 },
+						{ translate: '0' }
+					],
+					{ duration: 400, easing: 'ease-in-out' }
+				);
+		});
+	};
+
 	const render = () => {
 		const value = real.value;
 		const focused = document.activeElement === real;
@@ -75,6 +103,11 @@ export default `(() => {
 	};
 
 	real.addEventListener('input', () => {
+		// Separators and spaces are part of how a code is written, not a
+		// mistake; anything else that \`clean\` drops is.
+		const written = real.value.replace(/[\\s-]/g, '');
+		const allowed = numeric ? /^[0-9]*$/ : /^[0-9a-zA-Z]*$/;
+		if (!allowed.test(written)) refuse();
 		const cleaned = clean(real.value);
 		if (cleaned !== real.value) real.value = cleaned;
 		toEnd();
