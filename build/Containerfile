@@ -322,10 +322,16 @@ RUN pacman -Syu --noconfirm --needed \
         pipewire pipewire-audio wireplumber opus \
         python libunwind sdl2-compat \
         python-xlib python-urllib3 python-pyzstd \
+        strace lsof less \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat openssh \
     && pacman -Scc --noconfirm
 
+# `strace`, `lsof` and `less` are for the operator's shell (`neslet box exec`):
+# a root shell in a box that cannot trace a process, list what it has open or
+# page through a log is the situation that feature exists to get out of. They
+# are a few hundred kilobytes between them.
+#
 # `libunwind` is Wine's, not ours. `ntdll.so` links it, so without it every
 # process Wine starts dies at `could not load ntdll.so`, which is the first
 # thing it loads and reads like Wine itself being broken. Found 2026-09-12,

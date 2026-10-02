@@ -11,7 +11,7 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 
-use nesprotocol::lifecycle::{Exec, Exit, Image, Mount, Overlay};
+use nesprotocol::lifecycle::{AttachId, Exec, Exit, Image, Mount, Overlay, Winsize};
 
 use std::os::unix::process::CommandExt;
 
@@ -50,6 +50,15 @@ pub trait Workload {
     /// Stack each overlay the descriptor names: its build image, its writable
     /// layer, and the two together where it says.
     fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure>;
+
+    /// Start a process on a terminal and connect it to the host on a data port
+    /// of its own.
+    ///
+    /// Returns once the process is started or has failed to be, and no later:
+    /// everything that can fail before there is anything to connect to fails
+    /// here, where it can be sent up the control channel. The connection itself
+    /// is made in the background.
+    fn attach(&mut self, id: AttachId, exec: &Exec, size: Option<Winsize>) -> Result<(), Failure>;
 
     /// Start the command the descriptor names.
     ///
@@ -143,6 +152,32 @@ impl Workload for Process {
         for image in images {
             mount_image(image)?;
         }
+        Ok(())
+    }
+
+    fn attach(&mut self, id: AttachId, exec: &Exec, size: Option<Winsize>) -> Result<(), Failure> {
+        use nesprotocol::lifecycle::ATTACH_PORT;
+        use tokio_vsock::{VMADDR_CID_HOST, VsockAddr, VsockStream};
+
+        let shell = crate::attach::spawn(&self.waiters, exec, size)?;
+        tracing::info!(attach = %id, pid = shell.pid(), uid = exec.uid, "a shell was started");
+        tokio::spawn(async move {
+            // Dialled once. The host is listening before it asks, so a refused
+            // connection means it stopped wanting the shell, and `shell`
+            // dropping at the end of this task is what hangs it up.
+            let address = VsockAddr::new(VMADDR_CID_HOST, ATTACH_PORT);
+            let stream = match VsockStream::connect(address).await {
+                Ok(stream) => stream,
+                Err(error) => {
+                    tracing::warn!(attach = %id, %error, "could not reach the host for a shell");
+                    return;
+                }
+            };
+            match crate::attach::serve(shell, &id, stream).await {
+                Ok(()) => tracing::info!(attach = %id, "a shell ended"),
+                Err(error) => tracing::warn!(attach = %id, %error, "a shell's connection failed"),
+            }
+        });
         Ok(())
     }
 
@@ -263,7 +298,7 @@ impl Workload for Process {
 /// finds the variable unset does not fail loudly -- the compositor here falls
 /// back to `/tmp` -- so the sockets land somewhere world-writable and shared
 /// with every other user, and everything reports success. ref(d-0065)
-fn environment(exec: &Exec, runtime: Option<&str>) -> Vec<(String, String)> {
+pub(crate) fn environment(exec: &Exec, runtime: Option<&str>) -> Vec<(String, String)> {
     GRAPHICS
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -950,6 +985,8 @@ pub mod double {
         pub images: Vec<Vec<Image>>,
         /// Which kind of mount was asked for, in the order it was asked.
         pub order: Vec<&'static str>,
+        pub attached: Vec<(AttachId, Exec, Option<Winsize>)>,
+        pub attach_failure: Option<Failure>,
         pub started: Vec<Exec>,
         pub stops: usize,
         pub mount_failure: Option<Failure>,
@@ -977,6 +1014,8 @@ pub mod double {
                 overlays: Vec::new(),
                 images: Vec::new(),
                 order: Vec::new(),
+                attached: Vec::new(),
+                attach_failure: None,
                 started: Vec::new(),
                 stops: 0,
                 mount_failure: None,
@@ -994,6 +1033,19 @@ pub mod double {
             self.order.push("shares");
             self.mounted.push(mounts.to_vec());
             match &self.mount_failure {
+                Some(failure) => Err(failure.clone()),
+                None => Ok(()),
+            }
+        }
+
+        fn attach(
+            &mut self,
+            id: AttachId,
+            exec: &Exec,
+            size: Option<Winsize>,
+        ) -> Result<(), Failure> {
+            self.attached.push((id, exec.clone(), size));
+            match &self.attach_failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(()),
             }

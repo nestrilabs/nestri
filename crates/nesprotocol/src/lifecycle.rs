@@ -47,6 +47,15 @@ use serde::{Deserialize, Serialize};
 /// slow boot from a dead one.
 pub const CONTROL_PORT: u32 = 7000;
 
+/// The vsock port an attached shell's bytes travel on.
+///
+/// The host sends [`HostToGuest::Attach`] on the control channel and the guest
+/// answers by dialling this, the same direction the control channel itself goes,
+/// so nothing in the box has to listen. The stream is the frames in
+/// [`crate::attach`]. It is a port of its own because a screenful of output on
+/// the control channel would hold every other message in the box behind it.
+pub const ATTACH_PORT: u32 = 7001;
+
 /// Version of this layer. Both ends compare it during the handshake and refuse
 /// on mismatch, so a guest built against one version meeting a caller built
 /// against another fails immediately and legibly, rather than later on a field
@@ -181,6 +190,39 @@ impl std::fmt::Display for LaunchId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+/// Names one attached shell, for as long as the connection that carries it.
+///
+/// Minted by the host and echoed by the guest in the first frame of the stream,
+/// which is how the host knows which waiting command line a connection belongs
+/// to. Not a [`LaunchId`]: a shell is not a launch and has no exit that means
+/// anything to the session.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AttachId(pub String);
+
+impl AttachId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for AttachId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// A terminal's size, in character cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Winsize {
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// What the workload exiting means for the session.
@@ -338,6 +380,11 @@ pub enum GuestToHost {
         #[serde(flatten)]
         exit: Exit,
     },
+    /// The shell with this id could not be started, in the words the operating
+    /// system used. Said on the control channel because nothing has connected to
+    /// the data port yet, and a host that heard nothing would wait out a timeout
+    /// to find out.
+    AttachFailed { id: AttachId, reason: String },
     /// The launch with this id is running.
     Started { id: LaunchId },
     /// The launch with this id could not be run, in the words the operating
@@ -388,6 +435,21 @@ pub enum HostToGuest {
     /// exists as one message only because a caller sending two has the same
     /// effect with a worse race in it. The relaunch keeps the id. ref(d-0064)
     Restart { id: LaunchId },
+    /// Run something on a terminal and connect it to the host on
+    /// [`ATTACH_PORT`].
+    ///
+    /// **Not a launch.** It has no `on_exit`, because nothing it does ends the
+    /// session, and it is not the running launch, so a shell can come and go
+    /// while a game plays. `size` present means a person is at a terminal and the
+    /// PTY is an ordinary one; absent means a command is being run for its
+    /// output, and the PTY is put in raw mode so it is a byte pipe and not a
+    /// terminal that rewrites line endings.
+    Attach {
+        id: AttachId,
+        exec: Exec,
+        #[serde(default)]
+        size: Option<Winsize>,
+    },
     /// Shut the guest down.
     Shutdown,
     /// Bytes for the workload, relayed. See [`Payload`].
@@ -805,5 +867,61 @@ mod image_tests {
         assert!(json.contains(r#""images":[{"device":"/dev/vdd","at":"/nestri/compat"}]"#));
         let back: BootDescriptor = serde_json::from_str(&json).unwrap();
         assert_eq!(back, d);
+    }
+}
+
+#[cfg(test)]
+mod attach_tests {
+    use super::*;
+
+    #[test]
+    fn an_attach_round_trips_with_and_without_a_terminal() {
+        for size in [
+            Some(Winsize {
+                cols: 120,
+                rows: 40,
+            }),
+            None,
+        ] {
+            let attach = HostToGuest::Attach {
+                id: AttachId::new("a-1"),
+                exec: Exec {
+                    argv: vec!["/bin/bash".into()],
+                    env: Default::default(),
+                    cwd: None,
+                    uid: 0,
+                    gid: 0,
+                },
+                size,
+            };
+            let back: HostToGuest = from_line(&to_line(&attach).unwrap()).unwrap();
+            assert_eq!(back, attach);
+        }
+    }
+
+    /// A host that leaves `size` out is asking for a command, not a terminal.
+    #[test]
+    fn an_attach_with_no_size_is_not_a_terminal() {
+        let line = r#"{"type":"attach","id":"a-1","exec":{"argv":["/bin/true"],"uid":0,"gid":0}}"#;
+        let HostToGuest::Attach { size, .. } = from_line(line).unwrap() else {
+            panic!("not an attach")
+        };
+        assert_eq!(size, None);
+    }
+
+    #[test]
+    fn a_failed_attach_says_which() {
+        let failed = GuestToHost::AttachFailed {
+            id: AttachId::new("a-1"),
+            reason: "no such file".into(),
+        };
+        let back: GuestToHost = from_line(&to_line(&failed).unwrap()).unwrap();
+        assert_eq!(back, failed);
+    }
+
+    /// The attach port is not the control port.
+    #[test]
+    fn the_data_port_is_its_own() {
+        assert_ne!(ATTACH_PORT, CONTROL_PORT);
     }
 }

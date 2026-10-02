@@ -353,6 +353,24 @@ where
 
                 running = start(&mut writer, workload, untrusted, id, exec, on_exit).await?;
             }
+            HostToGuest::Attach { id, exec, size } => {
+                // A shell is not a launch: it does not touch `running`, takes no
+                // part in what an exit means, and a failure to start one is said
+                // about the shell and never about the session. The control
+                // channel is where it is said because nothing has connected to
+                // the data port yet.
+                if let Err(failure) = workload.attach(id.clone(), &exec, size) {
+                    tracing::warn!(attach = %id, reason = %failure.reason, "a shell would not start");
+                    send(
+                        &mut writer,
+                        &GuestToHost::AttachFailed {
+                            id,
+                            reason: failure.reason,
+                        },
+                    )
+                    .await?;
+                }
+            }
             HostToGuest::Stop { id } => match &running {
                 // Idempotent, and never ends the session by itself.
                 Some(current) if current.id == id => workload.signal_stop(),
@@ -1180,6 +1198,93 @@ mod tests {
             "the services came up in a box whose shares are not there"
         );
         assert!(workload.started.is_empty());
+    }
+
+    /// A shell is handed to the workload layer with everything it was asked for,
+    /// and it is not a launch: nothing starts, nothing exits, and the session
+    /// carries on exactly as it was.
+    #[tokio::test]
+    async fn an_attach_goes_to_the_workload_layer_and_is_not_a_launch() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+        caller.expect_booted().await;
+
+        let wanted = Exec {
+            argv: vec!["/bin/bash".into()],
+            env: [("TERM".to_string(), "xterm-256color".to_string())].into(),
+            cwd: None,
+            uid: 0,
+            gid: 0,
+        };
+        let size = Some(nesprotocol::lifecycle::Winsize {
+            cols: 132,
+            rows: 43,
+        });
+        caller
+            .say(&HostToGuest::Attach {
+                id: nesprotocol::lifecycle::AttachId::new("a-1"),
+                exec: wanted.clone(),
+                size,
+            })
+            .await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (outcome, workload, _) = session.await.unwrap();
+        assert_eq!(outcome, Outcome::Shutdown);
+        assert_eq!(
+            workload.attached,
+            vec![(nesprotocol::lifecycle::AttachId::new("a-1"), wanted, size)]
+        );
+        assert!(
+            workload.started.is_empty(),
+            "a shell was started as though it were the workload"
+        );
+    }
+
+    /// Said about the shell, by its id, on the channel the host is already
+    /// reading -- nothing has connected to the data port yet, and a host that
+    /// heard nothing would wait out a timeout to find out.
+    #[tokio::test]
+    async fn a_shell_that_will_not_start_is_reported_by_id_and_the_box_carries_on() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let mut workload = Double::exits_when_stopped(Exit::code(0));
+        workload.attach_failure = Some(Failure::new("/bin/nope as 0:0: No such file or directory"));
+        let session = spawn(guest, Given::new(workload));
+
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(descriptor()),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller
+            .say(&HostToGuest::Attach {
+                id: nesprotocol::lifecycle::AttachId::new("a-2"),
+                exec: exec(),
+                size: None,
+            })
+            .await;
+
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::AttachFailed {
+                id: nesprotocol::lifecycle::AttachId::new("a-2"),
+                reason: "/bin/nope as 0:0: No such file or directory".into()
+            }
+        );
+        caller.say(&HostToGuest::Shutdown).await;
+        let (outcome, _, _) = session.await.unwrap();
+        assert_eq!(outcome, Outcome::Shutdown, "a failed shell ended the box");
     }
 
     /// The compatibility layer is the base the rest of a box is built on, so it

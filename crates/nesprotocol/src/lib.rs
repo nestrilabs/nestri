@@ -2,6 +2,7 @@
 // media: frames, audio, cursor, input and stats. One definition, so no two ends
 // can drift from each other silently.
 
+pub mod attach;
 pub mod datagram;
 pub mod delay;
 pub mod gamepad;
