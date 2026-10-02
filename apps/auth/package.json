@@ -4,7 +4,7 @@
 	"scripts": {
 		"dev": "wrangler dev",
 		"serve": "bun run src/server.ts",
-		"preview": "bun --watch script/preview.ts",
+		"preview": "bun script/preview-watch.ts",
 		"deploy": "wrangler deploy"
 	},
 	"dependencies": {

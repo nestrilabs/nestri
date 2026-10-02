@@ -8,9 +8,9 @@
  * screens from `ui/issuer.ts` — drawn by the real renderer with the real
  * theme. What differs from production is only how the page was reached.
  *
- * `bun --watch` restarts this process when anything it imports changes, which
- * includes `css.ts`, `render.tsx` and `base.tsx`. Each page polls for the
- * restart and reloads itself, so saving a file is the whole loop.
+ * `preview-watch.ts` restarts this process when the UI's source changes —
+ * the renderer, the stylesheet, the copy, the issuer's screens. Each page polls
+ * for the restart and reloads itself, so saving a file is the whole loop.
  *
  * A state that is missing here is a state nobody will look at before it
  * ships. Adding a screen to the flow means adding it to `STATES`.
