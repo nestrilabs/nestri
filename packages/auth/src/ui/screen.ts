@@ -167,6 +167,8 @@ export interface ConfirmScreen {
 	fields?: Field[];
 	approve: Action;
 	deny: Action;
+	/** The small print under the two answers. */
+	footer?: Copy;
 	status?: number;
 }
 

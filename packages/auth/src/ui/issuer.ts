@@ -16,7 +16,6 @@ import type { Screen } from './screen.js';
 
 /** The confirmation a device grant asks for, before it is approved. */
 export interface DeviceConfirmCopy {
-	clientID: string;
 	userCode: string;
 	csrf: string;
 }
@@ -95,16 +94,18 @@ export const IssuerScreens = {
 			kind: 'confirm',
 			heading: 'Is this you?',
 			verify: { code: confirmation.userCode, group: 4 },
+			// Not the client id. It is chosen by whoever started the grant, so
+			// naming it would let a stranger's request introduce itself as
+			// anything it likes — and to the person reading, it is a device.
 			body: [
-				`${confirmation.clientID} is asking to sign in to your account. The code above should match the one it is showing you.`,
-				'If it does not, or you did not start this on a device of your own, choose Deny. Nobody can sign in as you unless you approve here.'
+				'A device is asking to sign in to your account. The code above should match the one it is showing you.'
 			],
 			action: '/device/confirm',
-			// The client id is escaped by the renderer like any other text. It
-			// is chosen by whoever started the grant, so it is never markup.
 			fields: [{ kind: 'hidden', name: 'csrf', value: confirmation.csrf }],
 			approve: { label: 'Approve', name: 'action', value: 'approve' },
-			deny: { label: 'Deny', name: 'action', value: 'deny' }
+			deny: { label: 'Deny', name: 'action', value: 'deny' },
+			footer:
+				'If it does not, or you did not start this on a device of your own, choose Deny. Nobody can sign in as you unless you approve here.'
 		};
 	},
 

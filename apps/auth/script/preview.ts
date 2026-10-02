@@ -116,7 +116,6 @@ const STATES: State[] = [
 		label: 'Is this you?',
 		screen: () =>
 			IssuerScreens.deviceConfirm({
-				clientID: 'nestri-cli',
 				userCode: 'BCDF3467',
 				csrf: 'x'
 			})

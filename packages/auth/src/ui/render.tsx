@@ -179,6 +179,7 @@ function Confirm(props: { theme?: Theme; screen: ConfirmScreen }) {
 					{screen.deny.label}
 				</button>
 			</form>
+			{screen.footer && <Footer copy={screen.footer} />}
 		</Layout>
 	);
 }
