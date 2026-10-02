@@ -487,8 +487,8 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 }
 
 /* A code field drawn as one box per character, by \`segments.ts\`. The real
-   field is still the one that submits and the one the button's dimming reads,
-   so it is hidden from sight and not removed. */
+   field is stretched invisibly over the boxes and takes every keystroke,
+   paste and autofill; the boxes only show what it holds. */
 [data-component='segments'] {
 	position: relative;
 	width: 100%;
@@ -497,8 +497,10 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 [data-component='segments'][data-enhanced] > [data-component='input'] {
 	position: absolute;
 	inset: 0;
+	z-index: 1;
+	height: 100%;
 	opacity: 0;
-	pointer-events: none;
+	cursor: text;
 }
 
 [data-component='segments'] [data-slot='boxes'] {
@@ -509,22 +511,48 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 }
 
 [data-component='input'][data-variant='box'] {
+	display: flex;
 	flex: 1 1 0%;
 	min-width: 0;
-	padding: 0.9rem 0;
-	text-align: center;
+	/* The height of a one-line field: line, padding and border. A box is a
+	   div, and an empty div has no line to be the height of. */
+	height: calc(2rem + 1.8rem + 2px);
+	padding: 0;
+	align-items: center;
+	justify-content: center;
 	font-family: var(--font-mona);
 	font-size: 1.5rem;
 	line-height: 2rem;
 	font-weight: 700;
 	font-variant-numeric: tabular-nums;
-	text-transform: uppercase;
 }
 
-/* A box selects its character on focus so typing replaces it; that is
-   behaviour, not something to show. */
-[data-component='input'][data-variant='box']::selection {
-	background: transparent;
+/* The box the next character goes into: the focus ring, grey until the code
+   is whole and white once it is — the same rule as every other field. */
+[data-component='input'][data-variant='box'][data-active] {
+	border-color: var(--color-gray-600);
+	box-shadow: 0 0 0 1px var(--color-gray-600);
+}
+
+[data-component='segments'][data-complete] [data-variant='box'][data-active] {
+	border-color: var(--color-gray-1000);
+	box-shadow: 0 0 0 1px var(--color-gray-1000);
+}
+
+/* The real caret is invisible with its field, so the empty box it is in
+   draws one. */
+[data-component='input'][data-variant='box'][data-active]:empty::after {
+	content: '';
+	width: 2px;
+	height: 1.5rem;
+	background: var(--color-foreground);
+	animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
 }
 
 [data-component='segments'] [data-slot='separator'] {
@@ -535,6 +563,7 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 	font-weight: 700;
 	user-select: none;
 }
+
 
 /* A wrong answer shakes the field it came from, once. Every error is a new
    page, so an animation that runs on load runs exactly when one arrives —
@@ -586,7 +615,8 @@ form:has([data-component='form-alert'][data-color='danger']) [data-component='in
 		scale: 1;
 	}
 
-	form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
+	form:has([data-component='form-alert'][data-color='danger']) [data-component='input'],
+	[data-component='input'][data-variant='box'][data-active]:empty::after {
 		animation: none;
 	}
 }
