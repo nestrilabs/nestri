@@ -41,9 +41,7 @@ export default `
 	--color-muted-foreground2: var(--color-gray-800);
 
 	--color-red-600: hsl(358 75% 59%);
-	--color-red-100: hsl(357 37% 12%);
 	--color-green-600: hsl(151 55% 42%);
-	--color-green-100: hsl(154 49% 9%);
 
 	--font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
 	--font-mona: 'Mona Sans Variable', var(--font-sans);
@@ -359,46 +357,20 @@ body {
 }
 
 [data-component='form-alert'] {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	border-radius: 0.75rem;
-	border: 1px solid var(--color-red-600);
-	background: var(--color-red-100);
-	padding: 0.75rem 1rem;
+	margin: -0.25rem 0 0;
 	font-size: 0.8125rem;
 	line-height: 1.25rem;
-	color: var(--color-foreground);
+	font-weight: 500;
+	color: var(--color-red-600);
 	text-align: left;
 }
 
 [data-component='form-alert'][data-color='success'] {
-	border-color: var(--color-green-600);
-	background: var(--color-green-100);
-}
-
-[data-component='form-alert'] svg {
-	height: 1.25rem;
-	width: 1.25rem;
-	flex-shrink: 0;
-}
-
-[data-component='form-alert'] [data-slot='icon-success'] {
-	display: none;
 	color: var(--color-green-600);
 }
 
-[data-component='form-alert'] [data-slot='icon-danger'] {
-	display: block;
-	color: var(--color-red-600);
-}
-
-[data-component='form-alert'][data-color='success'] [data-slot='icon-success'] {
-	display: block;
-}
-
-[data-component='form-alert'][data-color='success'] [data-slot='icon-danger'] {
-	display: none;
+[data-component='form-alert'] + [data-component='form-alert'] {
+	margin-top: -0.5rem;
 }
 
 /* The secondary action: a way in that is not the one being recommended, and
