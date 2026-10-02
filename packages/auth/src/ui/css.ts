@@ -486,6 +486,20 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 	font-variant-numeric: tabular-nums;
 }
 
+/* A wrong answer shakes the field it came from, once. Every error is a new
+   page, so an animation that runs on load runs exactly when one arrives —
+   no script needed to trigger it. */
+@keyframes shake {
+	0%, 100% { translate: 0; }
+	15%, 55% { translate: -0.5rem; }
+	35%, 75% { translate: 0.5rem; }
+	90% { translate: -0.2rem; }
+}
+
+form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
+	animation: shake 400ms ease-in-out;
+}
+
 [data-component='input'][data-variant='code']::placeholder {
 	letter-spacing: normal;
 	font-size: 1rem;
@@ -520,6 +534,10 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 
 	[data-component='button']:hover {
 		scale: 1;
+	}
+
+	form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
+		animation: none;
 	}
 }
 `;
