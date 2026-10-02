@@ -243,6 +243,9 @@ function Input(props: { field: Field }) {
 				placeholder={field.label}
 				minLength={field.length}
 				maxLength={field.length}
+				// Whole and well-formed, or `:invalid` — which is what the stylesheet
+				// dims the button on. `minLength` alone is not checked until edited.
+				pattern={`${field.numeric ? '[0-9]' : '[A-Za-z0-9]'}{${field.length}}`}
 				size={field.length}
 				required
 				spellcheck={false}

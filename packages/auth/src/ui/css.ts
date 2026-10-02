@@ -250,7 +250,7 @@ body {
 	/* Stated rather than inherited: a form control does not take its parent's
 	   colour, and leaving it to the UA put black glyphs on this field. */
 	color: var(--color-foreground);
-	caret-color: var(--color-brand);
+	caret-color: var(--color-foreground);
 	outline: none;
 	transition:
 		border-color 150ms,
@@ -265,9 +265,18 @@ body {
 	border-color: var(--color-gray-400);
 }
 
+/* Focus is white, never the brand colour: orange around a field reads as an
+   error, and the wordmark above is the only thing that should be orange. Grey
+   while the value cannot be submitted yet, white once it can — so the field
+   says it is done before the button does. */
 [data-component='input']:focus {
-	border-color: var(--color-brand);
-	box-shadow: 0 0 0 1px var(--color-brand);
+	border-color: var(--color-gray-600);
+	box-shadow: 0 0 0 1px var(--color-gray-600);
+}
+
+[data-component='input']:focus:valid {
+	border-color: var(--color-gray-1000);
+	box-shadow: 0 0 0 1px var(--color-gray-1000);
 }
 
 /* Chrome paints its own background over an autofilled field and ignores
@@ -277,7 +286,7 @@ body {
 [data-component='input']:-webkit-autofill:focus {
 	-webkit-text-fill-color: var(--color-foreground);
 	-webkit-box-shadow: 0 0 0 100px var(--color-background-100) inset;
-	caret-color: var(--color-brand);
+	caret-color: var(--color-foreground);
 }
 
 [data-component='button'] {
@@ -310,7 +319,21 @@ body {
 [data-component='button']:focus-visible {
 	box-shadow:
 		0 0 0 2px var(--color-background-200),
-		0 0 0 4px var(--color-brand);
+		0 0 0 4px var(--color-gray-1000);
+}
+
+/* Dimmed until every field in its form would pass, using the browser's own
+   validity — \`type=email\`, \`required\`, the code's \`pattern\` — so there is
+   no script and no second definition of valid. Dimmed, not disabled: pressing
+   it still gets the browser's message saying what is missing. */
+form:has([data-component='input']:invalid) [data-component='button'] {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+form:has([data-component='input']:invalid) [data-component='button']:hover {
+	background: var(--color-gray-1000);
+	scale: 1;
 }
 
 [data-component='button']:disabled {
