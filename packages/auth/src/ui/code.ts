@@ -156,12 +156,14 @@ export function CodeUI(props: CodeUIOptions): CodeProviderOptions {
 
 			if (error?.type === 'invalid_code')
 				alerts.push({ tone: 'danger', message: copy.code_invalid });
-			// Said after any error, so a person who mistyped still sees which
-			// address the code they are looking for actually went to.
-			alerts.push({
-				tone: 'success',
-				message: (state.resend ? copy.code_resent : copy.code_sent) + state.claims[mode]
-			});
+			// One banner, the newest thing that happened. "Code sent" under
+			// "Invalid code" reads as two answers to one question, and the
+			// address is still on the email itself.
+			if (alerts.length === 0)
+				alerts.push({
+					tone: 'success',
+					message: (state.resend ? copy.code_resent : copy.code_sent) + state.claims[mode]
+				});
 
 			return {
 				kind: 'form',
