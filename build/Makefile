@@ -49,7 +49,7 @@ OUTPUT_DIR   := output
 # lives under output/ because that directory is already ignored by git and
 # kept out of the guest build's context.
 PROTON_WORK  := $(OUTPUT_DIR)/proton
-ROOTFS_SIZE  ?= 3G
+ROOTFS_SIZE  ?= 2G
 FORCE_REBUILD ?=
 
 # The guest kernel: CachyOS's fork, for its scheduler patches, with our own
