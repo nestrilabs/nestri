@@ -76,9 +76,11 @@ INFINITY_REV    ?= e6c85d841f25e21393a7ea47fdef286318915d8c
 INFINITY_SERIES := patches/cachyos/tuned-eevdf/$(KERNEL_REF:cachyos-%=%)
 INFINITY_WORK   := $(OUTPUT_DIR)/infinity-sched
 
-# The guest half of NVIDIA forwarding, built into the kernel. A branch, so each
-# kernel build takes the driver as it is now; set NVGPU_REF to a tag or commit
-# to pin it. The commit built is recorded as $(KERNEL_OUTPUT).nvgpu-rev.
+# The guest half of NVIDIA forwarding: the driver, built into the kernel, and
+# its Vulkan layer, built into the rootfs. A branch, so each build takes them
+# as they are now; set NVGPU_REF to a tag or commit to pin it. The commit built
+# is recorded as $(KERNEL_OUTPUT).nvgpu-rev and, in the image, as
+# /usr/share/nestri/virtio-nvgpu.rev. Build both from the same ref.
 NVGPU_GIT  ?= https://github.com/nestrilabs/virtio-nvgpu.git
 NVGPU_REF  ?= dev
 NVGPU_WORK := $(OUTPUT_DIR)/virtio-nvgpu
@@ -94,11 +96,13 @@ endif
 build:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
 		--build-arg PROTON_IMAGE=$(PROTON_REF) \
+		--build-arg NVGPU_GIT=$(NVGPU_GIT) --build-arg NVGPU_REF=$(NVGPU_REF) \
 		-f Containerfile -t $(IMAGE_NAME):latest --target runtime_prod $(CONTEXT)
 
 build-debug:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
 		--build-arg PROTON_IMAGE=$(PROTON_REF) \
+		--build-arg NVGPU_GIT=$(NVGPU_GIT) --build-arg NVGPU_REF=$(NVGPU_REF) \
 		-f Containerfile -t $(IMAGE_NAME):debug --target runtime_debug $(CONTEXT)
 
 # Hours, and only when PROTON_TAG moves. Two steps: the build runs on the host,

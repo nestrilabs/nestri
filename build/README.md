@@ -166,6 +166,12 @@ modules. The driver's parameters therefore go on the command line as
   warns that it is doing so.
 - An AMD or Intel host is unaffected. The driver binds only to the forwarding
   device, and nothing offers that device to those guests.
+- **The rootfs carries virtio-nvgpu's Vulkan layer**, built from the same
+  `NVGPU_REF`. NVIDIA's driver in a guest offers ray tracing and a few other
+  extensions it cannot then create a device with; the layer hides them. It
+  acts only on an NVIDIA device in a guest with the forwarding driver, so AMD
+  and Intel boxes are unaffected. Build the kernel and the image from the same
+  ref, or the layer describes a different driver than the one booted.
 - The NVIDIA libraries are **not** part of the image. They must be the same
   build as the host's kernel module, so the host shares its own copy with the
   guest at run time.
