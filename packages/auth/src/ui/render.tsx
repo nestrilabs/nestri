@@ -17,6 +17,7 @@
 /** @jsxImportSource hono/jsx */
 
 import { Layout } from './base.js';
+import segments from './segments.js';
 import type {
 	Alert,
 	ChooseScreen,
@@ -52,7 +53,10 @@ export interface HtmlRendererOptions {
 	theme?: Theme;
 }
 
-/** The default renderer: server-rendered HTML, no client-side script. */
+/**
+ * The default renderer: server-rendered HTML that works with script off. The
+ * one script, `segments.ts`, only redraws a code field as boxes.
+ */
 export function HtmlRenderer(options?: HtmlRendererOptions): Renderer {
 	const theme = options?.theme;
 
@@ -243,27 +247,38 @@ function Input(props: { field: Field }) {
 		const sizes = Array.from({ length: groups }, (_, i) =>
 			Math.min(field.group ?? field.length, field.length - i * (field.group ?? field.length))
 		);
+		// One box per character once `segments.ts` has run; this single field
+		// until then, and for good if it never does.
 		return (
-			<input
-				data-component="input"
-				data-variant="code"
-				type="text"
-				name={field.name}
-				aria-label={field.label}
-				placeholder={field.label}
-				minLength={field.length}
-				maxLength={field.length + groups - 1}
-				// Whole and well-formed, or `:invalid` — which is what the stylesheet
-				// dims the button on. `minLength` alone is not checked until edited.
-				pattern={sizes.map((n) => `${char}{${n}}`).join('[\\- ]?')}
-				size={field.length + groups - 1}
-				required
-				spellcheck={false}
-				autocapitalize="characters"
-				inputmode={field.numeric ? 'numeric' : 'text'}
-				autocomplete={field.autocomplete}
-				autofocus={field.autofocus}
-			/>
+			<>
+				<div
+					data-component="segments"
+					data-length={field.length}
+					data-group={field.group}
+					data-numeric={field.numeric ? 'true' : 'false'}>
+					<input
+						data-component="input"
+						data-variant="code"
+						type="text"
+						name={field.name}
+						aria-label={field.label}
+						placeholder={field.label}
+						minLength={field.length}
+						maxLength={field.length + groups - 1}
+						// Whole and well-formed, or `:invalid` — which is what the stylesheet
+						// dims the button on. `minLength` alone is not checked until edited.
+						pattern={sizes.map((n) => `${char}{${n}}`).join('[\\- ]?')}
+						size={field.length + groups - 1}
+						required
+						spellcheck={false}
+						autocapitalize="characters"
+						inputmode={field.numeric ? 'numeric' : 'text'}
+						autocomplete={field.autocomplete}
+						autofocus={field.autofocus}
+					/>
+				</div>
+				<script dangerouslySetInnerHTML={{ __html: segments }} />
+			</>
 		);
 	}
 

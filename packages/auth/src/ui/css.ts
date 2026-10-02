@@ -486,6 +486,56 @@ form:has([data-component='input']:invalid) [data-component='button']:hover {
 	font-variant-numeric: tabular-nums;
 }
 
+/* A code field drawn as one box per character, by \`segments.ts\`. The real
+   field is still the one that submits and the one the button's dimming reads,
+   so it is hidden from sight and not removed. */
+[data-component='segments'] {
+	position: relative;
+	width: 100%;
+}
+
+[data-component='segments'][data-enhanced] > [data-component='input'] {
+	position: absolute;
+	inset: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
+[data-component='segments'] [data-slot='boxes'] {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+[data-component='input'][data-variant='box'] {
+	flex: 1 1 0%;
+	min-width: 0;
+	padding: 0.9rem 0;
+	text-align: center;
+	font-family: var(--font-mona);
+	font-size: 1.5rem;
+	line-height: 2rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	text-transform: uppercase;
+}
+
+/* A box selects its character on focus so typing replaces it; that is
+   behaviour, not something to show. */
+[data-component='input'][data-variant='box']::selection {
+	background: transparent;
+}
+
+[data-component='segments'] [data-slot='separator'] {
+	flex: none;
+	color: var(--color-muted-foreground2);
+	font-family: var(--font-mona);
+	font-size: 1.5rem;
+	font-weight: 700;
+	user-select: none;
+}
+
 /* A wrong answer shakes the field it came from, once. Every error is a new
    page, so an animation that runs on load runs exactly when one arrives —
    no script needed to trigger it. */
