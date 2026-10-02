@@ -37,6 +37,8 @@ Hosts the OAuth issuer and the sign-in UI:
 src/index.ts      # The handler: issuer config, stores, success callback
 src/server.ts     # The same handler behind a listening socket
 src/email.ts      # Verification code delivery
+src/theme.ts      # Title, favicon, brand colour and fonts
+script/preview.ts # Every screen state, for styling without a database
 wrangler.jsonc    # Worker configuration, one environment per stage
 Dockerfile        # The container, built from the repository root
 test/
@@ -47,7 +49,13 @@ test/
 ```sh
 bun run dev      # under the Workers runtime, on :1337
 bun run serve    # as a plain process, on $PORT (default 1337)
+bun run preview  # every sign-in screen state on :1338, reloading on save
 ```
+
+The preview needs no database or mail. It renders each screen the flow can show — every
+alert, every device-grant outcome — with the real renderer and theme, so styling
+`packages/auth/src/ui/` is edit, save, look. A screen added to the flow belongs in its `STATES`
+list too, or nobody will see it before it ships.
 
 Its only stateful dependency is Postgres — as a `HYPERDRIVE` binding on Workers, or as
 `DATABASE_URL` anywhere else — alongside the mail settings. Full list and deployment steps:
