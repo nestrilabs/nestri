@@ -130,6 +130,15 @@ pub struct Service {
     /// Existence only. Whether the thing behind the socket answers correctly is
     /// not knowable from here, and a box is not the place to find out.
     pub ready: Option<&'static str>,
+    /// A name on the system bus that exists once this service can be talked to,
+    /// for the ones that are reached by name and bind no socket of their own.
+    ///
+    /// Same reason as `ready` and the same rule: `spawn` returns when the child
+    /// has been forked, which is before it has connected to the bus and asked
+    /// for its name, and whatever starts next would ask a bus that has no one
+    /// by that name. For realtime audio the cost is permanent: PipeWire asks
+    /// once, as it starts, and a refusal is not retried.
+    pub ready_name: Option<&'static str>,
 }
 
 /// How long a service gets to bind its socket before the box gives up on it.
@@ -226,7 +235,46 @@ pub const STACK: &[Service] = &[
         cost: "nothing that speaks on the system bus can find it",
         required: true,
         umask: None,
+        // Now something does connect to it: the two services below, once each
+        // as they start, and neither one retries. A bus that has been forked and
+        // has not bound its socket yet is a connection refused to both.
+        ready: Some("/run/dbus/system_bus_socket"),
+        ready_name: None,
+    },
+    // Realtime priority for audio, which is two daemons because the one that
+    // grants it asks the other whether to.
+    //
+    // PipeWire runs as an ordinary user and a realtime scheduling class is not
+    // something an ordinary user may give itself, so its threads run at normal
+    // priority and miss their deadlines whenever a game keeps every CPU busy:
+    // the symptom is crackling, with a counter of xruns climbing in the audio
+    // graph. The grant comes from rtkit over the system bus, and rtkit will not
+    // grant anything without polkit saying yes, so both are here, polkit first.
+    //
+    // Both start as root and drop their own privileges, so neither is a third
+    // user in this table. Both are optional: without them the box has audio at
+    // normal priority, which is the state it was in before they existed.
+    Service {
+        name: "polkitd",
+        argv: &["/usr/lib/polkit-1/polkitd", "--no-debug"],
+        env: &[],
+        user: None,
+        cost: "rtkit cannot be authorised, so audio runs at normal priority",
+        required: false,
+        umask: None,
         ready: None,
+        ready_name: Some("org.freedesktop.PolicyKit1"),
+    },
+    Service {
+        name: "rtkit",
+        argv: &["/usr/lib/rtkit-daemon"],
+        env: &[],
+        user: None,
+        cost: "audio threads cannot get realtime priority and underrun when the CPUs are busy",
+        required: false,
+        umask: None,
+        ready: None,
+        ready_name: Some("org.freedesktop.RealtimeKit1"),
     },
     Service {
         name: "dbus-session",
@@ -246,6 +294,7 @@ pub const STACK: &[Service] = &[
         // and a bus address that is not bound yet is a service that starts,
         // finds nothing, and carries on without a bus.
         ready: Some("/run/user/1000/bus"),
+        ready_name: None,
     },
     Service {
         name: "pipewire",
@@ -263,6 +312,7 @@ pub const STACK: &[Service] = &[
         // Both the session manager and the sender connect here, and so does
         // the workload once it starts.
         ready: Some("/run/pipewire/pipewire-0"),
+        ready_name: None,
     },
     Service {
         name: "wireplumber",
@@ -280,6 +330,7 @@ pub const STACK: &[Service] = &[
         required: false,
         umask: None,
         ready: None,
+        ready_name: None,
     },
     Service {
         name: "neswire",
@@ -294,6 +345,7 @@ pub const STACK: &[Service] = &[
         required: false,
         umask: None,
         ready: None,
+        ready_name: None,
     },
     Service {
         name: "neshub",
@@ -306,6 +358,7 @@ pub const STACK: &[Service] = &[
         required: true,
         umask: None,
         ready: None,
+        ready_name: None,
     },
     Service {
         name: "nesgamepad",
@@ -323,6 +376,7 @@ pub const STACK: &[Service] = &[
         // It dials the hub rather than the other way round, and redials until
         // the hub is there, so nothing waits on it.
         ready: None,
+        ready_name: None,
     },
 ];
 
@@ -382,19 +436,27 @@ impl Stack {
     /// rule above decides what it costs: a required service that never binds refuses
     /// the box, an optional one is stepped over.
     fn await_ready(&self, service: &Service, before: Option<Identity>) -> Result<(), Failure> {
-        let Some(path) = service.ready else {
-            return Ok(());
-        };
         // The watch for what was just started, so a service that dies during its
         // own bring-up is not waited out for the full timeout.
         let started = self.running.last().map(|(_, watched)| watched.pid);
-        await_path(
-            service.name,
-            path,
-            before,
-            &|| started.is_none_or(is_alive),
-            READY_TIMEOUT,
-        )
+        if let Some(path) = service.ready {
+            await_path(
+                service.name,
+                path,
+                before,
+                &|| started.is_none_or(is_alive),
+                READY_TIMEOUT,
+            )?;
+        }
+        if let Some(name) = service.ready_name {
+            await_bus_name(
+                service.name,
+                name,
+                &|| started.is_none_or(is_alive),
+                READY_TIMEOUT,
+            )?;
+        }
+        Ok(())
     }
 
     fn spawn(&mut self, service: &'static Service) -> Result<(), Failure> {
@@ -489,6 +551,59 @@ impl Stack {
 
         self.running.push((service.name, watched));
         Ok(())
+    }
+}
+
+/// Whether `reply` is the system bus saying a name has an owner.
+///
+/// The answer to `NameHasOwner` as `dbus-send` prints it, a line that reads
+/// `boolean true` or `boolean false`. Anything else, including nothing at all, is
+/// not an owner.
+fn bus_says_owned(reply: &str) -> bool {
+    reply.lines().any(|line| line.trim() == "boolean true")
+}
+
+/// Wait for `name` to have an owner on the system bus.
+///
+/// Asked of the bus itself with `dbus-send`, which the image has because the bus
+/// does: a program that connects, asks and goes is the least that can be done
+/// here without init growing a bus client of its own. Polled for the same reason
+/// [`await_path`] is, and ends early the same way, when what was started has died.
+fn await_bus_name(
+    service: &str,
+    name: &str,
+    alive: &dyn Fn() -> bool,
+    timeout: std::time::Duration,
+) -> Result<(), Failure> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        let reply = std::process::Command::new("/usr/bin/dbus-send")
+            .args([
+                "--system",
+                "--print-reply",
+                "--dest=org.freedesktop.DBus",
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus.NameHasOwner",
+                &format!("string:{name}"),
+            ])
+            .output();
+        if let Ok(out) = reply
+            && bus_says_owned(&String::from_utf8_lossy(&out.stdout))
+        {
+            return Ok(());
+        }
+        if !alive() {
+            return Err(Failure::new(format!(
+                "{service} exited before it took the name {name} on the system bus"
+            )));
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(Failure::new(format!(
+                "{service} did not take the name {name} on the system bus within {}s",
+                timeout.as_secs()
+            )));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
     }
 }
 
@@ -782,6 +897,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn only_an_owned_name_counts_as_ready() {
+        assert!(bus_says_owned(
+            "method return time=1.0 sender=org.freedesktop.DBus -> destination=:1.4\n   boolean true\n"
+        ));
+        assert!(!bus_says_owned("   boolean false\n"));
+        assert!(!bus_says_owned(""), "a failed dbus-send says nothing");
+    }
+
+    /// Both of the realtime-audio daemons talk to the system bus once, as they
+    /// start, and neither retries, so that bus has to have said it is there.
+    #[test]
+    fn the_system_bus_is_waited_for_before_what_connects_to_it() {
+        let bus = STACK.iter().find(|s| s.name == "dbus-system").unwrap();
+        assert!(bus.ready.is_some(), "polkitd and rtkit would find no socket");
+        for name in ["polkitd", "rtkit"] {
+            let svc = STACK.iter().find(|s| s.name == name).unwrap();
+            assert!(svc.ready_name.is_some(), "{name} is reached by name");
+        }
+    }
+
     /// A service that names no socket is ready when it has been started, and
     /// the wait has to be free in that case: most of the table is like this.
     #[test]
@@ -1000,6 +1136,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The grant has to be in place before the audio server asks for it: PipeWire
+    /// asks once, when it starts, and a daemon that comes up after it is a grant
+    /// that was never asked for. And polkit before rtkit, which asks it on every
+    /// request.
+    #[test]
+    fn realtime_audio_is_set_up_before_the_audio_server() {
+        let at = |name: &str| {
+            STACK
+                .iter()
+                .position(|s| s.name == name)
+                .unwrap_or_else(|| panic!("{name} is not in the table"))
+        };
+        assert!(at("dbus-system") < at("polkitd"));
+        assert!(at("polkitd") < at("rtkit"));
+        assert!(at("rtkit") < at("pipewire"));
     }
 
     /// A required service whose absence has a workaround should not be

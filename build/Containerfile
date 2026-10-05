@@ -311,9 +311,17 @@ RUN pacman-key --init
 # The second was found by the check further down rather than by reading the
 # list — dropping a package takes its dependency tree with it, and the part of
 # that tree something else was quietly using is not visible from here.
+# Created before the install, with the numbers the distribution reserves for them,
+# because the packages hand ownership of a few directories to these names and
+# the hook that would have made the users goes with systemd. `polkit` is here
+# for `rtkit`, which will not grant realtime priority to anything without it;
+# see the services table in `nesinit`.
+RUN groupadd -r -g 102 polkitd && useradd -r -u 102 -g polkitd -d / -s /usr/bin/nologin polkitd && \
+    groupadd -r -g 133 rtkit && useradd -r -u 133 -g rtkit -d / -s /usr/bin/nologin rtkit
+
 RUN pacman -Syu --noconfirm --needed \
         --assume-installed mesa --assume-installed opengl-driver \
-        dbus \
+        dbus polkit rtkit \
         iptables iproute2 \
         libglvnd libdrm libepoxy libxxf86vm libinput wayland \
         expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
@@ -558,6 +566,7 @@ RUN failed=0; \
              /usr/bin/nesgamepad /usr/lib/libnescapture_layer.so /usr/lib/libSDL2-2.0.so.0 \
              /usr/lib/libVkLayer_nvgpu.so \
              /usr/bin/dbus-daemon /usr/bin/pipewire \
+             /usr/lib/polkit-1/polkitd /usr/lib/rtkit-daemon \
              /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
              /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so; do \
@@ -579,6 +588,7 @@ RUN failed=0; \
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/nesgamepad /usr/lib/libSDL2-2.0.so.0 \
                     /usr/bin/dbus-daemon /usr/bin/pipewire \
+                    /usr/lib/polkit-1/polkitd /usr/lib/rtkit-daemon \
                     /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 /usr/bin/umu-run; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
