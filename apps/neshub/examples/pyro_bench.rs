@@ -31,6 +31,9 @@ use nesprotocol::pyrowave::{
     should_skip,
 };
 
+/// Datagrams taken per receive, as the client takes them.
+const RECV_BATCH: usize = 64;
+
 struct Opts {
     mbps: u64,
     fps: u64,
@@ -110,10 +113,16 @@ async fn send(conn: Connection, o: &Opts) -> Result<()> {
         } else {
             let buf = Bytes::from(d.buf);
             let mut at = 0;
-            for len in d.lens {
-                conn.send_datagram(buf.slice(at..at + len))?;
-                at += len;
-            }
+            let batch: Vec<Bytes> = d
+                .lens
+                .iter()
+                .map(|&len| {
+                    let datagram = buf.slice(at..at + len);
+                    at += len;
+                    datagram
+                })
+                .collect();
+            conn.send_many_datagrams(&batch)?;
             seq = seq.wrapping_add(1);
             sent += 1;
         }
@@ -147,17 +156,21 @@ async fn receive(conn: Connection) -> Result<()> {
     let (mut all_bytes, mut whole, mut partial, mut lost) = (0u64, 0u64, 0u64, 0u64);
     let mut second = Instant::now();
     let mut busy = Duration::ZERO;
+    let mut batch = vec![Bytes::new(); RECV_BATCH];
     loop {
-        let d = match conn.read_datagram().await {
-            Ok(d) => d,
+        let n = match conn.read_many_datagrams(&mut batch).await {
+            Ok(n) => n,
             Err(_) => break,
         };
         let t0 = Instant::now();
-        datagrams += 1;
-        bytes += d.len() as u64;
-        if let Some((h, p)) = decode_pyro_datagram(&d) {
-            let at = d.len() - p.len();
-            c.push(h, d.slice(at..), start.elapsed().as_micros() as u64);
+        for d in &mut batch[..n] {
+            let d = std::mem::take(d);
+            datagrams += 1;
+            bytes += d.len() as u64;
+            if let Some((h, p)) = decode_pyro_datagram(&d) {
+                let at = d.len() - p.len();
+                c.push(h, d.slice(at..), start.elapsed().as_micros() as u64);
+            }
         }
         busy += t0.elapsed();
         if second.elapsed() >= Duration::from_secs(1) {

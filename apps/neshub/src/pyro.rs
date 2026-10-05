@@ -71,16 +71,23 @@ impl PyroSender {
         // Taking the `Vec` is free, and each datagram is a slice of it.
         let buf = Bytes::from(datagrams.buf);
         let mut at = 0;
-        for len in datagrams.lens {
-            debug_assert!(len >= PYRO_DGRAM_HDR_LEN);
-            let datagram = buf.slice(at..at + len);
-            at += len;
-            // Not `send_datagram_wait`, for the reason `dgram::send_frame`
-            // gives; the guard above is what keeps this from evicting.
-            if let Err(e) = self.conn.send_datagram(datagram) {
-                debug!("{label}: PyroWave frame {} cut short: {e}", frame.frame);
-                break;
-            }
+        let batch: Vec<Bytes> = datagrams
+            .lens
+            .iter()
+            .map(|&len| {
+                debug_assert!(len >= PYRO_DGRAM_HDR_LEN);
+                let datagram = buf.slice(at..at + len);
+                at += len;
+                datagram
+            })
+            .collect();
+        // Evicting, for the reason `dgram::send_frame` gives; the guard above is
+        // what keeps it from evicting anything. The batch is queued whole or
+        // not at all, so a refused frame put nothing on the wire and its
+        // sequence number goes to the next frame.
+        if let Err(e) = self.conn.send_many_datagrams(&batch) {
+            debug!("{label}: PyroWave frame {} not sent: {e}", frame.frame);
+            return;
         }
         self.seq = self.seq.wrapping_add(1);
     }

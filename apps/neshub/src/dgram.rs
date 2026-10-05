@@ -102,9 +102,11 @@ impl DatagramSender {
     /// used, minus the length prefix a datagram does not need.
     ///
     /// A failure is reported but never retried. Retrying a real-time frame means
-    /// delivering it late, which is the behaviour this whole change removes. A
-    /// half-sent frame is abandoned where it stands; the receiver times its
-    /// fragments out and asks for a keyframe.
+    /// delivering it late, which is the behaviour this whole change removes. The
+    /// frame goes out whole or not at all: every fragment is queued under one
+    /// hold of the connection lock, so a path that shrinks mid-frame rejects the
+    /// frame rather than leaving half of it on the wire for the receiver to time
+    /// out.
     pub fn send_frame(&self, seq: u16, body: &[u8]) -> Result<(), SendFrameError> {
         // Ask QUIC what fits right now rather than assuming. The estimate moves
         // over a connection's life as path MTU discovery runs, and it can shrink
@@ -142,18 +144,24 @@ impl DatagramSender {
             buf.extend_from_slice(&body[start..end]);
         }
 
-        for index in 0..total {
-            let start = index * payload_size;
-            let end = (start + payload_size).min(body.len());
-            let datagram = buf.split_to(DGRAM_HDR_LEN + (end - start)).freeze();
-            // Deliberately not `send_datagram_wait`: that waits for buffer space
-            // under congestion, which prioritises old datagrams over new ones.
-            // For live media the opposite is right — drop the backlog, send the
-            // frame that is actually current.
-            self.conn
-                .send_datagram(datagram)
-                .map_err(SendFrameError::Quic)?;
-        }
+        let datagrams: Vec<Bytes> = (0..total)
+            .map(|index| {
+                let start = index * payload_size;
+                let end = (start + payload_size).min(body.len());
+                buf.split_to(DGRAM_HDR_LEN + (end - start)).freeze()
+            })
+            .collect();
+
+        // One call for the whole frame: one lock hold and one driver wake rather
+        // than one per fragment, and a `TooLarge` rejects every fragment instead
+        // of the ones after the path shrank. Like `send_datagram`, it evicts the
+        // oldest queued datagrams to make room -- deliberately not the waiting
+        // kind, which prioritises old datagrams over new ones. For live media
+        // the opposite is right: drop the backlog, send the frame that is
+        // actually current.
+        self.conn
+            .send_many_datagrams(&datagrams)
+            .map_err(SendFrameError::Quic)?;
 
         Ok(())
     }
