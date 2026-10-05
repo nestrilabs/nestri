@@ -63,8 +63,8 @@ something this repo names, links to, or depends on.
 **Proton is not in the image.** It used to be, at a cost of about 1.4 GB, and
 it is attached to a box at run time now: a read-only EROFS image of a Proton
 tree, mounted at `/nestri/compat`, chosen per session by whatever starts the
-box. That is what makes trying another Proton (GE's releases, a newer build of
-ours) a matter of attaching a different image rather than rebuilding this one.
+box. That is what makes trying another Proton (a newer build of ours, or someone
+else's) a matter of attaching a different image rather than rebuilding this one.
 
 What stays here is everything Proton needs around itself: the interpreter for its
 entry point and every library its programs and Wine's core link. The
@@ -79,8 +79,8 @@ stage, because the leaf stages copy that marker out of it.
 The image holds no Proton path, so a box started without one fails saying where
 it looked instead of quietly using something stale.
 
-What the published Proton is: **proton-ge built wow64-only**, as a published
-image rather than rebuilt here, because it takes hours and moves only when its
+What the published Proton is: **proton-cachyos built with `--enable-wow64`**, as
+a published image rather than rebuilt here, because it takes hours and moves only when its
 own tag does. wow64 runs 32-bit Windows code inside a 64-bit unix process, so a
 box needs no lib32 glibc, no second Mesa for i686, and no second capture layer
 for 32-bit titles to be captured. Upstream Wine defaults to it from Proton 11,
@@ -215,57 +215,48 @@ a package list says that; the check below is what said it.
 
 ## Proton has its own cadence, and its own Containerfile
 
-`make build` **pulls** Proton by tag to check it against; it does not build it
-and does not ship it. Building it takes hours and it changes only when its tag
-moves, so it is one image published once. `make proton-image` is
-that build, and it lives here so the published tag stays reproducible from
-this tree rather than from somebody's laptop.
+`make build` neither builds Proton nor ships it. Building it takes hours and it
+changes only when its tag moves, so it is one image published once and attached
+to boxes at run time. `Containerfile.proton` is that build, and it lives here so
+the published tag stays reproducible from this tree rather than from somebody's
+laptop.
 
 ```sh
-make proton-image                    # the current tag
-make PROTON_TAG=GE-Proton11-8 proton-image
-make proton-clean                    # drop the source, build tree and ccache
+make proton-image                              # the current tag
+make PROTON_TAG=cachyos-11.1-20261115-native proton-image
+make proton-push                               # build it and publish it
 ```
 
 **`PROTON_TAG` is the only thing to change.** The published version is derived
 from it in the `Makefile` rather than written a second time, because the two
 are the same number in two spellings — and an image whose name does not say
-which Proton is inside it is worse than no image. The `Containerfile`'s own
-`PROTON_IMAGE` default is a fallback for a bare container build; going through
-`make` is what keeps them in step.
+which Proton is inside it is worse than no image.
 
-**The build runs on the host, not in a `podman build`.** proton-ge's build is
-container-driven itself: `make` runs outside, and every step runs in the Steam
-Runtime SDK image through the container engine, so the host needs only git,
-make and podman. Wrapping that in a container build would mean nested
-containers. So there are two steps:
+A tag bump also means checking `GECKO_VER`, `MONO_VER` and `XALIA_VER` in
+`Containerfile.proton`: they are the runtimes the tag's own `Makefile.in` names,
+fetched in the slow layer so that a failure later does not repeat the fetch.
 
-1. `scripts/proton-build.sh` clones the tag with its submodules, applies
-   proton-ge's patch set, and runs its build with one change: the arch list
-   drops the 32-bit unix side, which is what makes it wow64-only. Everything
-   happens under `output/proton/`, which is tens of gigabytes.
-2. `Containerfile.proton` is `FROM scratch` with the built tree as its whole
-   context, so the image is the tree and nothing else.
+The result is `FROM scratch` over the tree, so the image's root *is* the tree,
+under `usr/share/steam/compatibilitytools.d/proton-cachyos`, and there is
+nothing in it to run.
 
-Things worth knowing before changing it:
+Its **context is `build/`**, not the repository root the guest build uses. All
+it needs is the two scripts beside it, and `Containerfile.proton.containerignore`
+keeps `output/` out of that context — a build context is copied before the
+first instruction runs, so without it every Proton build would begin by moving
+the last rootfs image, or kernel tree, it produced.
 
-- **A rerun of the same tag resumes.** The clone, the patching and the
-  configure step each run once per tag, and proton-ge's own make picks up
-  where it stopped. A new tag or `FORCE_REBUILD=1` starts the tree over;
-  ccache and the cargo downloads survive both. `make clean` leaves all of it
-  alone, and `make proton-clean` removes it.
-- **The patch script does not fail on a patch that does not apply.** It
-  carries on and exits 0, so `proton-build.sh` greps its output
-  (`output/proton/patch.log`) and stops. Otherwise the result is an image
-  that looks fine and is missing a fix.
-- **`patches/proton-ge/` is ours, applied after proton-ge's own set.** It holds
-  what wow64-only needs that proton-ge's makefile does not handle, and fixes
-  for things a tag pinned that have since moved. Each patch says why it exists
-  at its top, and each one fails the build outright once it stops applying,
-  which on a tag bump is usually upstream having fixed it.
-- **The patch script is not idempotent**, so a tree is patched exactly once.
-  An interrupted run resets every submodule to the commits the tag pins before
-  patching again.
+Two things in the recipe are worth knowing before changing it:
+
+- **Fetch and build are separate layers on purpose.** The submodule checkout
+  runs well past ten minutes, and a build that fails on a flag or a missing
+  tool must not pay for that again. Keep anything that can fail *fast* in
+  `proton-build.sh`.
+- **`widl` is built by hand from the mingw-w64 release.** Without it autoconf
+  quietly sets `HAVE_WIDL` to false, vkd3d's public headers are never
+  generated, and the build dies an hour later on a missing header. Arch ships
+  `widl` only inside `wine`, which wants multilib — which is the thing
+  `--enable-wow64` exists to avoid.
 
 ## There is no init system in here, and that is the design
 

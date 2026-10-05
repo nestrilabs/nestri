@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build build-debug image image-debug kernel kernel-clean proton-image proton-push proton-clean clean help
+.PHONY: build build-debug image image-debug kernel kernel-clean kernel-objclean proton-image proton-push clean help
 
 CONTAINER_RT := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 ifeq ($(CONTAINER_RT),)
@@ -29,32 +29,27 @@ CONTEXT      := ..
 IMAGE_NAME   := ghcr.io/nestrilabs/nestri/base
 
 # Proton is the one artifact worth publishing on its own: it takes hours to
-# build and changes only when its tag moves, so the guest build pulls it by
-# name instead of rebuilding it.
+# build and changes only when its tag moves. It is not part of the guest
+# rootfs; it is a separate payload that reaches a box at run time, so this
+# is built and published on its own cadence.
 #
 # `PROTON_TAG` is the single place to change it. The published version is
 # derived from the tag rather than written twice, because the two are the same
 # number in two spellings and an image whose name does not say which Proton is
 # inside it is worse than no image at all. Changing the tag by hand and
 # forgetting the version is exactly the mistake this removes.
-PROTON_GIT     ?= https://github.com/gloriouseggroll/proton-ge-custom.git
-PROTON_TAG     ?= GE-Proton11-7
-PROTON_VERSION := 11.0-20260703
+PROTON_TAG     ?= cachyos-11.0-20261005-native
+PROTON_VERSION := $(PROTON_TAG:cachyos-%-native=%)
 PROTON_IMAGE   ?= ghcr.io/nestrilabs/proton-cachyos-native-wow64
 PROTON_REF     := $(PROTON_IMAGE):$(PROTON_VERSION)
-# The directory name under compatibilitytools.d, and the name Steam shows.
-PROTON_NAME    := proton-ge
 OUTPUT_DIR   := output
-# Source, build tree, ccache and cargo downloads. Tens of gigabytes, and it
-# lives under output/ because that directory is already ignored by git and
-# kept out of the guest build's context.
-PROTON_WORK  := $(OUTPUT_DIR)/proton
 ROOTFS_SIZE  ?= 2G
 FORCE_REBUILD ?=
 
 # The guest kernel: CachyOS's fork, for its scheduler patches, with our own
 # minimal config on top (kernel/nestri.fragment). The tree is a clone rather
-# than vendored, and lives under output/ for the same reason Proton's does.
+# than vendored, and lives under output/, which git ignores and the guest
+# build never sees.
 # KERNEL_SRC may point at an existing tree elsewhere.
 KERNEL_GIT    ?= https://github.com/CachyOS/linux.git
 KERNEL_REF    ?= cachyos-7.2.6-1
@@ -76,6 +71,12 @@ INFINITY_REV    ?= e6c85d841f25e21393a7ea47fdef286318915d8c
 INFINITY_SERIES := patches/cachyos/tuned-eevdf/$(KERNEL_REF:cachyos-%=%)
 INFINITY_WORK   := $(OUTPUT_DIR)/infinity-sched
 
+# Experimental: KERNEL_SCX=1 adds what a sched_ext scheduler needs
+# (kernel/scx.fragment), so a guest can load one. Its own tree and its own
+# name for the same reason as above, and it does not combine with
+# KERNEL_INFINITY: they are two answers to the same question.
+KERNEL_SCX ?=
+
 # The guest half of NVIDIA forwarding: the driver, built into the kernel, and
 # its Vulkan layer, built into the rootfs. A branch, so each build takes them
 # as they are now; set NVGPU_REF to a tag or commit to pin it. The commit built
@@ -85,9 +86,15 @@ NVGPU_GIT  ?= https://github.com/nestrilabs/virtio-nvgpu.git
 NVGPU_REF  ?= dev
 NVGPU_WORK := $(OUTPUT_DIR)/virtio-nvgpu
 
+ifneq ($(and $(KERNEL_INFINITY),$(KERNEL_SCX)),)
+$(error KERNEL_INFINITY and KERNEL_SCX are alternatives; set one)
+endif
 ifneq ($(KERNEL_INFINITY),)
 KERNEL_SRC    ?= $(OUTPUT_DIR)/kernel-infinity
 KERNEL_OUTPUT := $(OUTPUT_DIR)/vmlinux-infinity
+else ifneq ($(KERNEL_SCX),)
+KERNEL_SRC    ?= $(OUTPUT_DIR)/kernel-scx
+KERNEL_OUTPUT := $(OUTPUT_DIR)/vmlinux-scx
 else
 KERNEL_SRC    ?= $(OUTPUT_DIR)/kernel
 KERNEL_OUTPUT := $(OUTPUT_DIR)/vmlinux
@@ -95,34 +102,25 @@ endif
 
 build:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
-		--build-arg PROTON_IMAGE=$(PROTON_REF) \
 		--build-arg NVGPU_GIT=$(NVGPU_GIT) --build-arg NVGPU_REF=$(NVGPU_REF) \
 		-f Containerfile -t $(IMAGE_NAME):latest --target runtime_prod $(CONTEXT)
 
 build-debug:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
-		--build-arg PROTON_IMAGE=$(PROTON_REF) \
 		--build-arg NVGPU_GIT=$(NVGPU_GIT) --build-arg NVGPU_REF=$(NVGPU_REF) \
 		-f Containerfile -t $(IMAGE_NAME):debug --target runtime_debug $(CONTEXT)
 
-# Hours, and only when PROTON_TAG moves. Two steps: the build runs on the host,
-# because proton-ge's build drives the container engine itself, and the
-# finished tree is then the whole context of a FROM scratch image. See the head
-# of Containerfile.proton for why the build cannot run inside it.
-#
-# A second run of the same tag resumes where the last one stopped. A new tag,
-# or FORCE_REBUILD, starts the tree over but keeps ccache.
+# Hours, and only when PROTON_TAG moves. Its context is this directory rather
+# than the repository root: the two scripts beside the Containerfile are the
+# whole input, and the root would hand it everything else for nothing.
 proton-image:
-	PROTON_GIT=$(PROTON_GIT) PROTON_TAG=$(PROTON_TAG) PROTON_WORK=$(PROTON_WORK) \
-		BUILD_NAME=$(PROTON_NAME) CONTAINER_ENGINE=$(notdir $(CONTAINER_RT)) \
-		FORCE_REBUILD=$(FORCE_REBUILD) \
-		bash scripts/proton-build.sh
-	$(CONTAINER_RT) build --build-arg BUILD_NAME=$(PROTON_NAME) \
-		-f Containerfile.proton -t $(PROTON_REF) $(PROTON_WORK)/obj/dist
+	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
+		--build-arg PROTON_TAG=$(PROTON_TAG) \
+		-f Containerfile.proton -t $(PROTON_REF) .
 	@echo "Built $(PROTON_REF)"
 
-# Publishing is what makes `make build` cheap for everyone else, since that
-# build pulls this by name. Push before expecting anyone to use a new tag.
+# Publishing is what lets a box be given this Proton by name. Push before
+# expecting anyone to use a new tag.
 proton-push: proton-image
 	$(CONTAINER_RT) push $(PROTON_REF)
 
@@ -144,25 +142,30 @@ image-debug: build-debug
 kernel:
 	KERNEL_GIT=$(KERNEL_GIT) KERNEL_REF=$(KERNEL_REF) KERNEL_SRC=$(KERNEL_SRC) \
 		KERNEL_MARCH=$(KERNEL_MARCH) KERNEL_OUTPUT=$(KERNEL_OUTPUT) \
-		KERNEL_INFINITY=$(KERNEL_INFINITY) INFINITY_GIT=$(INFINITY_GIT) \
+		KERNEL_INFINITY=$(KERNEL_INFINITY) KERNEL_SCX=$(KERNEL_SCX) INFINITY_GIT=$(INFINITY_GIT) \
 		INFINITY_REV=$(INFINITY_REV) INFINITY_SERIES=$(INFINITY_SERIES) \
 		INFINITY_WORK=$(INFINITY_WORK) \
 		NVGPU_GIT=$(NVGPU_GIT) NVGPU_REF=$(NVGPU_REF) NVGPU_WORK=$(NVGPU_WORK) \
 		bash scripts/kernel-build.sh
 
-# Leaves $(PROTON_WORK) and the kernel alone: one is hours of build and ccache,
-# the other a clone and a warm object tree, and a rootfs is neither.
-# proton-clean and kernel-clean are the ones that drop them.
+# Leaves the kernel alone: it is a clone and a warm object tree, and a rootfs
+# is neither. kernel-clean is the one that drops it.
 clean:
-	find $(OUTPUT_DIR) -mindepth 1 -maxdepth 1 ! -name proton ! -name 'kernel*' \
+	find $(OUTPUT_DIR) -mindepth 1 -maxdepth 1 ! -name 'kernel*' \
 		! -name 'vmlinux*' ! -name infinity-sched ! -name virtio-nvgpu -exec rm -rf {} + 2>/dev/null || true
 
-kernel-clean:
-	rm -rf $(OUTPUT_DIR)/kernel $(OUTPUT_DIR)/kernel-infinity $(INFINITY_WORK) $(NVGPU_WORK) \
-		$(OUTPUT_DIR)/vmlinux $(OUTPUT_DIR)/vmlinux-infinity $(OUTPUT_DIR)/vmlinux*.nvgpu-rev
+# Drops the objects and keeps the clone, the config and the driver checkout.
+# For a tree whose compiler changed underneath it: kbuild's dependency files
+# name the old compiler's headers by path, and once a compiler upgrade removes
+# them make stops on "No rule to make target" for a file it cannot rebuild.
+# Acts on the tree the same flags select for `kernel`, so
+# `make KERNEL_SCX=1 kernel-objclean` cleans that one.
+kernel-objclean:
+	$(MAKE) -C $(KERNEL_SRC) LLVM=1 clean
 
-proton-clean:
-	rm -rf $(PROTON_WORK)
+kernel-clean:
+	rm -rf $(OUTPUT_DIR)/kernel $(OUTPUT_DIR)/kernel-infinity $(OUTPUT_DIR)/kernel-scx $(INFINITY_WORK) $(NVGPU_WORK) \
+		$(OUTPUT_DIR)/vmlinux $(OUTPUT_DIR)/vmlinux-infinity $(OUTPUT_DIR)/vmlinux-scx $(OUTPUT_DIR)/vmlinux*.nvgpu-rev
 
 help:
 	@echo "Usage:"
@@ -172,11 +175,12 @@ help:
 	@echo "  make image-debug        Build + pack runtime_debug into output/rootfs-debug.ext4"
 	@echo "  make kernel              Build the guest kernel into output/vmlinux"
 	@echo "  make KERNEL_INFINITY=1 kernel  Experimental Infinity scheduler build → output/vmlinux-infinity"
-	@echo "  make kernel-clean        Remove both kernel trees and images"
+	@echo "  make KERNEL_SCX=1 kernel       Experimental build that can load a sched_ext scheduler → output/vmlinux-scx"
+	@echo "  make kernel-objclean     Drop a kernel tree's objects, keep the clone and config (after a compiler upgrade)"
+	@echo "  make kernel-clean        Remove every kernel tree and image"
 	@echo "  make clean               Remove the rootfs images from output/"
 	@echo "  make proton-image        Build Proton from source (hours)"
-	@echo "  make proton-clean        Remove the Proton source, build tree and ccache"
 	@echo "  make proton-push         Build it and publish it"
 	@echo "  make FORCE_REBUILD=1 ...  Rebuild from scratch, no layer cache"
-	@echo "  make PROTON_TAG=... ...   Use a different proton-ge tag"
+	@echo "  make PROTON_TAG=... ...   Use a different proton-cachyos tag"
 	@echo "  make ROOTFS_SIZE=8G image  Override the packed image size (default 5G)"

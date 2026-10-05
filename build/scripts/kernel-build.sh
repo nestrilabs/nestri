@@ -134,11 +134,11 @@ nvgpu_src="${NVGPU_WORK}/driver"
 # node fails with "DRM core is not initialized". Loaded as a module, the order
 # never came up.
 nvgpu_dst="drivers/gpu/drm/nvgpu"
-mkdir -p "${nvgpu_dst}/gen"
-for dst in "${nvgpu_dst}"/*.[ch] "${nvgpu_dst}"/gen/*.h; do
+mkdir -p "${nvgpu_dst}/gen" "${nvgpu_dst}/rmctrl"
+for dst in "${nvgpu_dst}"/*.[ch] "${nvgpu_dst}"/gen/*.h "${nvgpu_dst}"/rmctrl/*.h; do
     [[ -e "${dst}" && ! -e "${nvgpu_src}/${dst#"${nvgpu_dst}"/}" ]] && rm -f "${dst}"
 done
-for src in "${nvgpu_src}"/*.[ch] "${nvgpu_src}"/gen/*.h "${nvgpu_src}/Kconfig"; do
+for src in "${nvgpu_src}"/*.[ch] "${nvgpu_src}"/gen/*.h "${nvgpu_src}"/rmctrl/*.h "${nvgpu_src}/Kconfig"; do
     dst="${nvgpu_dst}/${src#"${nvgpu_src}"/}"
     cmp -s "${src}" "${dst}" || cp "${src}" "${dst}"
 done
@@ -193,10 +193,14 @@ if [[ ! -f .config ]]; then
     cp "${SEED}" .config
 fi
 
-echo "kernel: merging kernel/nestri.fragment"
+fragments=("${FRAGMENT}")
+if [[ -n "${KERNEL_SCX:-}" ]]; then
+    fragments+=("${KERNEL_DIR}/scx.fragment")
+fi
+echo "kernel: merging ${fragments[*]/#${KERNEL_DIR}\//kernel/}"
 # -m merges without running a config target, so olddefconfig resolves
 # dependencies once, in one place.
-./scripts/kconfig/merge_config.sh -m .config "${FRAGMENT}" >/dev/null
+./scripts/kconfig/merge_config.sh -m .config "${fragments[@]}" >/dev/null
 make "${make_args[@]}" olddefconfig >/dev/null
 
 # ── Verify the fragment actually took ───────────────────
@@ -205,16 +209,29 @@ make "${make_args[@]}" olddefconfig >/dev/null
 # enough for a setting whose failure mode is silent audio, so check the result
 # rather than the intent. Both halves count: an option that must be on, and one
 # that must be off.
+#
+# One entry per symbol, the last fragment's: a later fragment may turn off what
+# an earlier one turned on, and checking both would fail whichever way the
+# build went.
+declare -A wanted=()
+order=()
+while read -r line; do
+    sym="$(sed -E 's/^(# )?(CONFIG_[A-Z0-9_]+)[ =].*/\2/' <<<"${line}")"
+    [[ -v "wanted[${sym}]" ]] || order+=("${sym}")
+    wanted["${sym}"]="${line}"
+done < <(grep -hE '^(CONFIG_[A-Z0-9_]+=|# CONFIG_[A-Z0-9_]+ is not set)' "${fragments[@]}" \
+         | sed -E 's/^(CONFIG_[A-Z0-9_]+=[^[:space:]#]+)[[:space:]]*#.*/\1/')
+
 missing=()
 total=0
-while read -r want; do
+for sym in "${order[@]}"; do
+    want="${wanted[${sym}]}"
     total=$((total + 1))
     case "${want}" in
         CONFIG_*) grep -qx "${want}" .config || missing+=("${want%%=*}") ;;
         "# "*)    grep -qx "${want}" .config || missing+=("${want:2} (must be off)") ;;
     esac
-done < <(grep -E '^(CONFIG_[A-Z0-9_]+=|# CONFIG_[A-Z0-9_]+ is not set)' "${FRAGMENT}" \
-         | sed -E 's/^(CONFIG_[A-Z0-9_]+=[^[:space:]#]+)[[:space:]]*#.*/\1/')
+done
 
 if (( ${#missing[@]} )); then
     echo "kernel: these fragment entries did not survive olddefconfig:" >&2
