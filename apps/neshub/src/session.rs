@@ -16,6 +16,7 @@ use nesprotocol::{
 };
 
 use crate::control::{Controller, PathView};
+use crate::negotiation::{Negotiator, effective_caps};
 
 use crate::dgram::{MediaItem, run_datagram_writer};
 use bytes::Bytes;
@@ -79,6 +80,11 @@ pub struct ClientSession {
     pending_gamepad_feedback: Option<tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>>,
     idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     controller: Arc<Mutex<Controller>>,
+    /// Who this is, for the codec agreement.
+    client: iroh::EndpointId,
+    /// Where this client's capabilities go, so the codec is one every client
+    /// can decode rather than whatever the newest one asked for.
+    negotiator: Arc<Negotiator>,
     send_video: tokio::sync::mpsc::UnboundedSender<MediaItem>,
     send_audio: tokio::sync::mpsc::UnboundedSender<MediaItem>,
     send_cursor: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
@@ -115,6 +121,8 @@ impl ClientSession {
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         controller: Arc<Mutex<Controller>>,
         pyrowave_kbps: u32,
+        client: iroh::EndpointId,
+        negotiator: Arc<Negotiator>,
     ) -> Self {
         let (gamepad_feedback_tx, gamepad_feedback_rx) = tokio::sync::mpsc::unbounded_channel();
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<MediaItem>();
@@ -138,6 +146,8 @@ impl ClientSession {
             pending_gamepad_feedback: Some(gamepad_feedback_rx),
             idr_cmd_tx,
             controller,
+            client,
+            negotiator,
             send_video: video_tx,
             send_audio: audio_tx,
             send_cursor: cursor_tx,
@@ -255,8 +265,13 @@ impl ClientSession {
                     ok: self.pyrowave_ok.clone(),
                     default_kbps: self.pyrowave_kbps,
                 };
+                let caps = CapsSink {
+                    client: self.client,
+                    negotiator: self.negotiator.clone(),
+                };
                 self.tasks.push(tokio::spawn(async move {
-                    run_control_reader(conn, idr, reports, controller, awaiting, pyrowave).await
+                    run_control_reader(conn, idr, reports, controller, awaiting, pyrowave, caps)
+                        .await
                 }));
             }
         }
@@ -577,6 +592,13 @@ fn pyrowave_request(
     })
 }
 
+/// Where a client's statement of what it decodes is recorded.
+#[derive(Clone)]
+struct CapsSink {
+    client: iroh::EndpointId,
+    negotiator: Arc<Negotiator>,
+}
+
 /// Everything the client says that is not an input event.
 async fn run_control_reader(
     conn: Connection,
@@ -585,6 +607,7 @@ async fn run_control_reader(
     controller: Arc<Mutex<Controller>>,
     awaiting_keyframe: Arc<AtomicBool>,
     pyrowave: PyroWaveGate,
+    caps_sink: CapsSink,
 ) {
     run_framed_reader(conn, BIDI_CONTROL, "control", None, |msg_type, payload| {
         let idr_cmd_tx = idr_cmd_tx.clone();
@@ -592,6 +615,7 @@ async fn run_control_reader(
         let controller = controller.clone();
         let awaiting_keyframe = awaiting_keyframe.clone();
         let pyrowave = pyrowave.clone();
+        let caps_sink = caps_sink.clone();
         async move {
             match msg_type {
                 MSG_IDR_REQUEST => {
@@ -630,25 +654,14 @@ async fn run_control_reader(
                                     nesprotocol::pyrowave::PYROWAVE_FORMAT
                                 );
                             }
-                            // Manual means a person is choosing, and the panel
-                            // they chose in sets the codec and the depth
-                            // together. A client joining afterwards must not
-                            // renegotiate either of them: that is the same
-                            // override the controller itself stops doing in
-                            // this mode, and for the same reason.
-                            if controller.lock().await.mode() == ControlMode::Manual {
-                                info!(
-                                    "client decodes {:#08b}, but the encoder is set by hand; \
-                                     leaving it alone",
-                                    caps.bits()
-                                );
-                            } else {
-                                info!("client decodes {:#08b}", caps.bits());
-                                let mut cmd = Vec::with_capacity(1 + payload.len());
-                                cmd.push(MSG_CLIENT_CAPS);
-                                cmd.extend_from_slice(&payload);
-                                let _ = idr_cmd_tx.send(cmd);
-                            }
+                            // Not forwarded as it stands: the encoder serves
+                            // every client, so it is given what all of them
+                            // decode. See `negotiation`.
+                            info!("client decodes {:#010b}", caps.bits());
+                            caps_sink
+                                .negotiator
+                                .state(caps_sink.client, effective_caps(caps, format));
+                            caps_sink.negotiator.settle(&controller, &idr_cmd_tx).await;
                         }
                         None => debug!("unreadable client capabilities ({} bytes)", payload.len()),
                     }
@@ -701,13 +714,20 @@ async fn run_control_reader(
                 },
                 MSG_CONTROL_MODE => match decode_control_mode(&payload) {
                     Some((mode, ceiling)) => {
-                        let mut controller = controller.lock().await;
-                        controller.set_mode(mode);
-                        controller.set_constant_quality(false);
-                        if let Some(kbps) = ceiling {
-                            controller.set_ceiling(kbps);
+                        {
+                            let mut controller = controller.lock().await;
+                            controller.set_mode(mode);
+                            controller.set_constant_quality(false);
+                            if let Some(kbps) = ceiling {
+                                controller.set_ceiling(kbps);
+                            }
                         }
                         info!("control mode {mode:?}, ceiling {ceiling:?}");
+                        // Whoever joined or left while a person was choosing
+                        // was not acted on then; now it is.
+                        if mode == ControlMode::Auto {
+                            caps_sink.negotiator.settle(&controller, &idr_cmd_tx).await;
+                        }
                     }
                     None => debug!("unreadable control mode ({} bytes)", payload.len()),
                 },
@@ -891,6 +911,8 @@ pub struct SessionManager {
     relay_ms: Arc<AtomicU32>, // latest relay latency (f32 bits)
     /// The rate a PyroWave request that names none runs at.
     pyrowave_kbps: u32,
+    /// What every connected client decodes, and so what the encoder may pick.
+    negotiator: Arc<Negotiator>,
 }
 
 impl SessionManager {
@@ -911,6 +933,7 @@ impl SessionManager {
             last_audio_bytes: AtomicU64::new(0),
             relay_ms: Arc::new(AtomicU32::new(0)),
             pyrowave_kbps,
+            negotiator: Arc::new(Negotiator::new()),
         }
     }
 
@@ -940,6 +963,8 @@ impl SessionManager {
                 idr_cmd_tx,
                 controller,
                 self.pyrowave_kbps,
+                id,
+                self.negotiator.clone(),
             )
         });
         session.attach(carrier, conn);
@@ -950,7 +975,23 @@ impl SessionManager {
         }
     }
 
-    pub async fn remove_session(&self, id: &iroh::EndpointId) {
+    /// Drop a client, and let the encoder move to whatever the clients still
+    /// here can all decode -- a better codec, when the one that left was the
+    /// one holding the rest back.
+    pub async fn remove_session(
+        &self,
+        id: &iroh::EndpointId,
+        controller: &Mutex<Controller>,
+        cmd_tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    ) {
+        if self.drop_session(id).await {
+            self.negotiator.forget(id);
+            self.negotiator.settle(controller, cmd_tx).await;
+        }
+    }
+
+    /// Whether there was a session to drop.
+    async fn drop_session(&self, id: &iroh::EndpointId) -> bool {
         let mut sessions = self.sessions.lock().await;
         // Said only when something was actually removed. Every carrier of a
         // client reports its own close, so a client leaving announced its
@@ -967,7 +1008,9 @@ impl SessionManager {
             let mut frame = Vec::with_capacity(7);
             nesprotocol::gamepad::encode_ipc(&mut frame, session.gamepad_session, &message);
             let _ = self.gamepad_tx.send(frame);
+            return true;
         }
+        false
     }
 
     /// A receiver for every client's gamepad messages, for the gamepad socket.
