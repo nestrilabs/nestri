@@ -32,8 +32,8 @@ CONFIG_HIDRAW=y
 
 # ── Timers ───────────────────────────────────────────────
 # The one that cost a day of silent audio. The guest has no sound hardware, so
-# PipeWire drives its whole graph off a timerfd at a 2.67ms cycle, which a
-# HZ_PERIODIC/250 kernel cannot express. Symptom: everything reports healthy,
+# PipeWire drives its whole graph off a timerfd at a 5 ms cycle (240 frames,
+# see etc/pipewire), which a HZ_PERIODIC/250 kernel cannot express. Symptom: everything reports healthy,
 # neswire sends a steady ~3 kbps of Opus, and every sample is zero.
 CONFIG_HIGH_RES_TIMERS=y
 CONFIG_NO_HZ_IDLE=y

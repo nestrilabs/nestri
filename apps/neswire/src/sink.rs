@@ -3,6 +3,19 @@ use crossbeam_channel::Sender;
 use pipewire::{self as pw, loop_::Signal, spa, stream::*};
 use spa::param::audio::{AudioFormat, AudioInfoRaw};
 
+/// Frames the graph clock moved past without this stream receiving them.
+///
+/// `expected` is where the previous cycle's data ended, `now` where this
+/// cycle's begins. Zero on the first cycle, when either position is unknown,
+/// and when the clock went backwards -- a restart, which is followed rather
+/// than filled.
+fn missed_frames(expected: Option<u64>, now: Option<u64>) -> u64 {
+    match (expected, now) {
+        (Some(expected), Some(now)) => now.saturating_sub(expected),
+        _ => 0,
+    }
+}
+
 pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>>) -> Result<()> {
     pw::init();
     tracing::info!("pipewire init ok");
@@ -44,12 +57,20 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
         tx: Sender<Vec<f32>>,
         accum: Vec<f32>,
         samples_per_frame: usize,
+        channels: usize,
+        sample_rate: u32,
+        /// The graph position the next cycle's data starts at, if the stream
+        /// has run a cycle yet. See `process` for what it is for.
+        next_ticks: Option<u64>,
     }
 
     let state = State {
         tx,
         accum: Vec::with_capacity(samples_per_frame * 2),
         samples_per_frame,
+        channels: channels as usize,
+        sample_rate,
+        next_ticks: None,
     };
 
     let _listener = stream
@@ -65,6 +86,13 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
             }
         })
         .process(move |stream, state| {
+            // Where the graph clock is this cycle, in frames. Read before the
+            // buffer: it is this cycle's position whatever the buffer holds.
+            let ticks = stream
+                .time()
+                .ok()
+                .filter(|t| t.rate().denom == state.sample_rate)
+                .map(|t| t.ticks());
             // Dequeue the buffer from PipeWire
             if let Some(mut buffer) = stream.dequeue_buffer() {
                 let datas = buffer.datas_mut();
@@ -78,6 +106,31 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
 
                         // Reinterpret as f32 samples (we requested F32LE)
                         let samples: &[f32] = bytemuck::cast_slice(audio_bytes);
+
+                        // **A cycle this stream missed is time the stream
+                        // still has to account for.** When the graph runs a
+                        // cycle and neswire does not get to it in time -- an
+                        // xrun -- that cycle's audio never arrives here, but
+                        // the graph clock moves on. Sending only what arrived
+                        // made the stream run short of realtime by exactly the
+                        // missed cycles, about 3.5% measured, and the client,
+                        // which plays at its own sound card's 48 kHz, drained
+                        // its buffer and underran every few seconds.
+                        //
+                        // So the gap is filled with exactly the frames the clock
+                        // says were missed, as silence: an xrun is a hole of the
+                        // size it really was, and the stream stays at 48 kHz.
+                        // A position that went backwards is a clock restart,
+                        // not a gap, and is simply followed.
+                        let frames = (samples.len() / state.channels) as u64;
+                        let missed = missed_frames(state.next_ticks, ticks) as usize;
+                        if missed > 0 {
+                            state
+                                .accum
+                                .resize(state.accum.len() + missed * state.channels, 0.0);
+                            tracing::debug!(missed, "graph cycle missed; filled with silence");
+                        }
+                        state.next_ticks = ticks.map(|t| t + frames);
 
                         state.accum.extend_from_slice(samples);
 
@@ -180,4 +233,23 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
 
     tracing::info!("shutting down");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::missed_frames;
+
+    #[test]
+    fn a_gap_is_exactly_the_frames_the_clock_moved_past() {
+        // One 240-frame cycle delivered, the next started 480 later: one missed.
+        assert_eq!(missed_frames(Some(240), Some(480)), 240);
+        assert_eq!(missed_frames(Some(240), Some(240)), 0);
+    }
+
+    #[test]
+    fn nothing_is_filled_without_two_positions_or_when_the_clock_restarts() {
+        assert_eq!(missed_frames(None, Some(10_000)), 0);
+        assert_eq!(missed_frames(Some(240), None), 0);
+        assert_eq!(missed_frames(Some(10_000), Some(0)), 0);
+    }
 }
