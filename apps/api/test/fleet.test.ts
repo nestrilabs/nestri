@@ -57,6 +57,7 @@ function createBox(headers: Record<string, string>, body: object) {
 }
 
 afterAll(async () => {
+	await sql`delete from burn_segment where session_id in (select s.id from session s join box b on b.id = s.box_id where b.user_id = any(${createdUserIds}))`;
 	await sql`delete from session where box_id in (select id from box where user_id = any(${createdUserIds}))`;
 	await sql`delete from box where user_id = any(${createdUserIds})`;
 	await sql`delete from game where id = any(${createdGameIds})`;
@@ -165,5 +166,43 @@ describe('Entitlement on a fleet machine', () => {
 
 		await sql`update session set state = 'ended', time_stopped = now() where id = ${run.id}`;
 		expect((await may(p.owner.userId)).entitled).toBe(false);
+	});
+});
+
+describe('Billing a run on the fleet', () => {
+	test('a live fleet run accrues against the box owner’s personal team', async () => {
+		const f = await fleet(1);
+		useFleet(f.organisationId);
+		const machineId = f.machines[0]!.id;
+		const p = await person('bill-fleet');
+		const box = ((await (await createBox(p.headers, { on: 'fleet' })).json()) as any).data;
+
+		const [game] = await Game.upsert({
+			id: Identifier.ascending('game'),
+			steamAppId: 990002,
+			slug: 'fleet-bill',
+			name: 'Fleet Bill'
+		});
+		createdGameIds.push(game!.id);
+		const run = await Session.request({
+			id: Identifier.ascending('session'),
+			boxId: box.id,
+			gameId: game!.id,
+			linkedAccountId: p.owner.linkedAccountId
+		});
+		const claimToken = 'fleet-bill-claim-token-0001';
+		for (const state of ['starting', 'live'] as const) {
+			const r = await Session.transition({ id: run.id, machineId, state, claimToken });
+			expect(r.outcome).toBe('moved');
+		}
+
+		const open = await sql`select team_id, ended_at from burn_segment where session_id = ${run.id}`;
+		expect(open.length).toBe(1);
+		expect(open[0]!.team_id).toBe(p.owner.teamId);
+		expect(open[0]!.ended_at).toBeNull();
+
+		await Session.transition({ id: run.id, machineId, state: 'ended', claimToken });
+		const closed = await sql`select ended_at from burn_segment where session_id = ${run.id}`;
+		expect(closed[0]!.ended_at).not.toBeNull();
 	});
 });

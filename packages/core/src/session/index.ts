@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Burn } from '../billing/burn.js';
+import { Billing } from '../billing/index.js';
 import { BoxTable, BoxTier } from '../box/box.sql.js';
 import { Box } from '../box/index.js';
 import { Database } from '../db/index.js';
@@ -9,7 +10,6 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
-import { Machine } from '../machine/index.js';
 import { SessionState, SessionTable } from './session.sql.js';
 
 /**
@@ -661,25 +661,27 @@ export namespace Session {
 				// `live` is where it starts rather than `starting`, because what
 				// is billed is an envelope actually held — a box that never
 				// finished coming up held nothing.
-				const machine = await Machine.fromID(input.machineId);
-				if (machine?.teamId) {
+				// Who pays is `Billing.teamForBox`'s answer and nobody else's: the
+				// host's team on someone's own hardware, the box owner's personal
+				// team on the fleet.
+				const payer = await Billing.teamForBox(moved.boxId);
+				if (payer) {
 					if (current.state !== 'live' && moved.state === 'live') {
 						// The rate is fixed here, from what this run actually is:
 						// the size it holds, and whose card it holds it on. Both
 						// are settled before the run starts, which is what lets a
 						// person be told the cost before committing to it.
-						const box = await Box.fromID(moved.boxId);
 						await Burn.start({
-							teamId: machine.teamId,
+							teamId: payer.teamId,
 							sessionId: moved.id,
-							tier: (box?.tier ?? 'sm') as Burn.Tier,
-							hostClass: machine.organisationId ? 'fleet' : 'byo'
+							tier: payer.tier,
+							hostClass: payer.hostClass
 						});
 					} else if (
 						ACCRUING.includes(current.state as (typeof ACCRUING)[number]) &&
 						!ACCRUING.includes(moved.state as (typeof ACCRUING)[number])
 					) {
-						await Burn.stop({ teamId: machine.teamId, sessionId: moved.id });
+						await Burn.stop({ teamId: payer.teamId, sessionId: moved.id });
 					}
 				}
 

@@ -46,10 +46,11 @@ export namespace Billing {
 	/**
 	 * The team that pays for a box.
 	 *
-	 * A box runs on a host, and the host says who owns it. Fleet hardware
-	 * belongs to an organisation, which is not a billing subject — nothing is
-	 * placed there yet, and when it is, what grants it is a plan rather than
-	 * this lookup.
+	 * On a person's own hardware, the team the host is registered under. On
+	 * the fleet, the hardware belongs to an organisation, which is not a
+	 * billing subject — so the run is the box owner's, and is billed to their
+	 * personal team, the one every account has and the one a plan is bought
+	 * on.
 	 */
 	export const teamForBox = fn(z.string(), async (boxId) => {
 		const box = await Box.fromID(boxId);
@@ -57,11 +58,14 @@ export namespace Billing {
 			return null;
 		}
 		const machine = await Machine.fromID(box.machineId);
-		if (!machine?.teamId) {
+		const teamId =
+			machine?.teamId ??
+			(machine?.organisationId ? ((await Team.personalFor(box.userId))?.id ?? null) : null);
+		if (!machine || !teamId) {
 			return null;
 		}
 		return {
-			teamId: machine.teamId,
+			teamId,
 			tier: box.tier as Burn.Tier,
 			// Whose hardware decides the cost basis, and the machine is the only
 			// thing that knows. A host an organisation owns is ours to pay for;
