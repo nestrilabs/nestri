@@ -4,6 +4,7 @@ mod dgram;
 mod e2e_tests;
 mod ipc_listener;
 mod keyframe;
+mod negotiation;
 mod pyro;
 mod screenshot;
 mod session;
@@ -486,6 +487,8 @@ async fn main() -> Result<()> {
                     )
                     .await;
                     let mgr_clone = mgr.clone();
+                    let controller = controller.clone();
+                    let cmd_tx = cmd_tx.clone();
                     tokio::spawn(async move {
                         conn.closed().await;
                         // Any one of them going means the session goes. A client
@@ -498,7 +501,9 @@ async fn main() -> Result<()> {
                             carrier = carrier.label(),
                             "carrier closed, ending session"
                         );
-                        mgr_clone.remove_session(&remote_id).await;
+                        mgr_clone
+                            .remove_session(&remote_id, &controller, &cmd_tx)
+                            .await;
                     });
                 }
                 Err(e) => {
