@@ -161,6 +161,7 @@ describe('POST /session', () => {
 			ticket: null,
 			timeStarted: null,
 			timeStopped: null,
+			trial: false,
 			errorMessage: null
 		});
 		expect(body.data.id.startsWith('ses_')).toBe(true);
@@ -724,7 +725,8 @@ describe('POST /session/:id/ticket', () => {
 			'state',
 			'ticket',
 			'timeStarted',
-			'timeStopped'
+			'timeStopped',
+			'trial'
 		]);
 	});
 
