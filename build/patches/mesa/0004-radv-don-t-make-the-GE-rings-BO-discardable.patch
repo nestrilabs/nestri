@@ -1,0 +1,49 @@
+From 51bd5adfe92aa3010d0b0ddbc417d2be636a369e Mon Sep 17 00:00:00 2001
+From: DatCaptainHorse <DatCaptainHorse@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 22:00:43 +0300
+Subject: [PATCH] radv: don't make the GE rings BO discardable
+
+amdgpu only adds GTT to a VRAM BO's allowed domains when the BO is not
+discardable. A discardable BO that gets evicted loses its backing and
+can only be placed in VRAM again, so under VRAM pressure it may never
+come back: every submission that references it fails validation with
+-ENOMEM ("Not enough memory for command submission") until enough VRAM
+is freed, which on a full card can be never.
+
+Seen with several processes sharing an RX 9060 XT under dmem cgroup
+protection: a protected allocation in one process evicted another
+process's GE rings, and that process then failed every graphics
+submission (1735 failed validations in 6 seconds, all of this 4 MiB
+BO) while the card stayed full.
+
+Without the flag the BO keeps VRAM as its preferred domain with GTT as
+a fallback: under pressure the ring is moved to GTT and the submission
+goes through, and it is moved back to VRAM once there is room. The
+cost is copying the ring's contents on eviction, which is rare.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/amd/vulkan/radv_queue.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/amd/vulkan/radv_queue.c b/src/amd/vulkan/radv_queue.c
+index e3321ff9b85..ec7a934c78f 100644
+--- a/src/amd/vulkan/radv_queue.c
++++ b/src/amd/vulkan/radv_queue.c
+@@ -947,8 +947,12 @@ radv_update_preamble_cs(struct radv_queue_state *queue, struct radv_device *devi
+ 
+    if (!queue->ring_info.ge_rings && needs->ge_rings) {
+       assert(pdev->info.gfx_level >= GFX11);
++      /* Not discardable: amdgpu gives a discardable BO no GTT fallback, so
++       * once evicted under VRAM pressure it can only come back to VRAM, and
++       * every submission that needs it fails until VRAM frees up.
++       */
+       result = radv_bo_create(device, NULL, pdev->info.total_attribute_pos_prim_ring_size, 2 * 1024 * 1024 /* 2MiB */,
+-                              RADEON_DOMAIN_VRAM, RADEON_FLAG_32BIT | RADEON_FLAG_DISCARDABLE | ring_bo_flags_tmz,
++                              RADEON_DOMAIN_VRAM, RADEON_FLAG_32BIT | ring_bo_flags_tmz,
+                               RADV_BO_PRIORITY_SCRATCH, 0, true, &ge_rings_bo);
+       if (result != VK_SUCCESS)
+          goto fail;
+-- 
+2.56.0
+
