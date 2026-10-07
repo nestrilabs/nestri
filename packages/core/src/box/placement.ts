@@ -1,8 +1,11 @@
+import { and, count, inArray, isNull } from 'drizzle-orm';
 import z from 'zod';
 
+import { Database } from '../db/index.js';
+import { Env } from '../env.js';
 import { ErrorCodes, VisibleError } from '../error.js';
 import { Machine } from '../machine/index.js';
-import { BoxTier } from './box.sql.js';
+import { BoxTable, BoxTier } from './box.sql.js';
 
 /**
  * Deciding which host a box runs on.
@@ -64,6 +67,57 @@ export namespace Placement {
 		}
 
 		return hosts[0]!.id;
+	};
+
+	/**
+	 * Place it on the fleet: a machine the fleet organisation owns.
+	 *
+	 * Only machines that are online — a box placed on one that is not would be a
+	 * session that never starts — and, among those, the one holding the fewest
+	 * boxes. That is a spread, not a scheduler: it knows nothing about how big a
+	 * box is or whether it is running. It is the smallest policy that does not
+	 * pile every customer onto the oldest row, and this file is still the one
+	 * place a real scheduler replaces. todo(d-0014)
+	 */
+	export const fleet: Placer = async () => {
+		const organisationId = Env.get().FLEET_ORGANISATION_ID;
+		if (!organisationId) {
+			throw new VisibleError(
+				'internal',
+				ErrorCodes.Server.SERVICE_UNAVAILABLE,
+				'Nestri GPUs are not available on this deployment'
+			);
+		}
+		const online = (await Machine.listByOrganisation(organisationId)).filter((m) =>
+			Machine.isOnline(m.lastSeen ?? null)
+		);
+		if (online.length === 0) {
+			// Capacity, not a fault: the same request succeeds once a machine is
+			// back, which is what a 429 tells a caller.
+			throw new VisibleError(
+				'rate_limit',
+				ErrorCodes.Server.SERVICE_UNAVAILABLE,
+				'No Nestri GPU is free right now. Try again in a few minutes'
+			);
+		}
+		const held = await Database.use((tx) =>
+			tx
+				.select({ machineId: BoxTable.machineId, boxes: count() })
+				.from(BoxTable)
+				.where(
+					and(
+						inArray(
+							BoxTable.machineId,
+							online.map((m) => m.id)
+						),
+						isNull(BoxTable.timeDeleted)
+					)
+				)
+				.groupBy(BoxTable.machineId)
+		);
+		const boxes = new Map(held.map((h) => [h.machineId, h.boxes]));
+		// Stable: on a tie, the order `listByOrganisation` gives, oldest first.
+		return [...online].sort((a, b) => (boxes.get(a.id) ?? 0) - (boxes.get(b.id) ?? 0))[0]!.id;
 	};
 
 	/** Place a box, using `onlyHost` unless a caller supplies its own placer. */

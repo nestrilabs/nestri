@@ -1,6 +1,7 @@
 import { Actor } from '../actor.js';
 import { Identifier } from '../id.js';
 import { Machine } from '../machine/index.js';
+import { Organisation } from '../organisation/index.js';
 import { Team } from '../team/index.js';
 import { User } from '../user/index.js';
 import { LinkedAccount } from '../user/linked-account.js';
@@ -71,5 +72,35 @@ export namespace Fixtures {
 			label
 		});
 		return registered.id;
+	}
+
+	/**
+	 * A fleet: an organisation and `hosts` machines it owns outright, all online.
+	 *
+	 * A fleet machine still names a person who registered it (`ownerUserId` is
+	 * not nullable), so `operator` is that person — the one who plugged it in,
+	 * not the one who pays for it.
+	 */
+	export async function fleet(operator: Owner, hosts = 1) {
+		const organisationId = Identifier.ascending('organisation');
+		await Organisation.create({
+			id: organisationId,
+			name: 'Fleet',
+			slug: `fleet-${organisationId.slice(-10).toLowerCase()}`,
+			domain: `${organisationId.slice(-10).toLowerCase()}.example.test`
+		});
+		const machines: { id: string; secret: string }[] = [];
+		for (let i = 0; i < hosts; i++) {
+			const registered = await Machine.register({
+				id: Identifier.ascending('machine'),
+				ownerUserId: operator.userId,
+				teamId: null,
+				organisationId,
+				label: `fleet-${i}`
+			});
+			await Machine.touchLastSeen({ id: registered.id });
+			machines.push({ id: registered.id, secret: registered.secret });
+		}
+		return { organisationId, machines };
 	}
 }
