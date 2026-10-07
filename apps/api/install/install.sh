@@ -34,7 +34,7 @@ TOKEN="${1:-${NESTRI_INSTALL_TOKEN:-}}"
 # --- platform ---------------------------------------------------------------
 [ "$(uname -s)" = Linux ] || die "a host has to run Linux (with KVM); this is $(uname -s)."
 case "$(uname -m)" in
-  x86_64|amd64) target=x86_64-unknown-linux-musl ;;
+  x86_64|amd64) target=x86_64-unknown-linux-gnu ;;
   *) die "no host build for $(uname -m) yet." ;;
 esac
 [ "$(id -u)" -ne 0 ] || die "run this as the user that will run boxes, not as root."
