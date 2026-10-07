@@ -203,6 +203,35 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 
 
 # ───────────────────────────────────────────────────────────
+#  virtio-nvgpu's host half — shipped beside the guest's, taken out on the host
+#
+#  `vhost-user-nvgpu` serves a box's forwarded GPU and `nvgpu-userspace`
+#  stages the host's NVIDIA driver for its guests. They run on the host, never
+#  in a guest: the host agent's onboarding moves /boot/host out of this image
+#  the way it moves the kernel, and turns forwarding on when it finds the
+#  NVIDIA driver loaded. In this image so they are always from the same
+#  NVGPU_REF as the guest driver and the layer above.
+#
+#  Static (musl), because they run on whatever distribution the host is, and
+#  this one's glibc is newer than most of them.
+# ───────────────────────────────────────────────────────────
+FROM builder AS nvgpu-host-build
+ARG NVGPU_GIT=https://github.com/nestrilabs/virtio-nvgpu.git
+ARG NVGPU_REF=dev
+RUN pacman -S --noconfirm --needed rust-musl && pacman -Scc --noconfirm
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    git init -q /build/virtio-nvgpu && cd /build/virtio-nvgpu && \
+    git fetch -q --depth=1 "${NVGPU_GIT}" "${NVGPU_REF}" && git checkout -q FETCH_HEAD && \
+    cargo build --release --target x86_64-unknown-linux-musl -p device --features vhost-user \
+        --bin vhost-user-nvgpu --bin nvgpu-userspace && \
+    for b in vhost-user-nvgpu nvgpu-userspace; do \
+        install -Dm755 "target/x86_64-unknown-linux-musl/release/$b" "/artifacts/nvgpu-host/boot/host/$b" && \
+        strip "/artifacts/nvgpu-host/boot/host/$b"; \
+    done && \
+    git rev-parse HEAD > /artifacts/nvgpu-host/boot/host/virtio-nvgpu.rev && \
+    cd / && rm -rf /build/virtio-nvgpu
+
+# ───────────────────────────────────────────────────────────
 #  The guest kernel — shipped inside the image it boots
 #
 #  A host takes it back out as a file beside the root image when it unpacks
@@ -473,9 +502,11 @@ COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
 COPY --from=nvgpu-layer-build /artifacts/nvgpu /
 COPY --from=umu-build    /artifacts/umu    /
-# The kernel this image is booted with, for the host to take out. See the
-# kernel-build stage.
+# The kernel this image is booted with, and the host's half of GPU
+# forwarding, for the host to take out. See the kernel-build and
+# nvgpu-host-build stages.
 COPY --from=kernel-build /artifacts/kernel /
+COPY --from=nvgpu-host-build /artifacts/nvgpu-host /
 
 # **No Proton here.** It is attached to a box at run time, mounted at
 # /nestri/compat, so this image has no Proton path for a launch to fall back to
