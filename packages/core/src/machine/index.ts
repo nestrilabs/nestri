@@ -1,12 +1,14 @@
 import { randomBytes } from 'node:crypto';
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
+import { BoxTable } from '../box/box.sql.js';
 import { Database } from '../db/index.js';
 import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
+import { SessionTable } from '../session/session.sql.js';
 import { Member } from '../team/member.js';
 import { MachineTable } from './machine.sql.js';
 import { Slug } from './slug.js';
@@ -398,12 +400,12 @@ export namespace Machine {
 	 * removing someone from a team takes their box access with it and nobody
 	 * has to remember to revoke anything.
 	 *
-	 * **Fleet hardware refuses everyone for now, and that is deliberate.** What
-	 * grants it is a plan, and nothing here can yet ask whether a user has one
-	 * — so the honest answer is no rather than a yes that would hand out metered
-	 * hardware for free. Failing closed on the expensive case is the cheap
-	 * mistake to make; the branch is written out so there is one obvious place
-	 * for the plan check to land. todo(d-0051)
+	 * **Fleet hardware is open only during a run you asked for.** The plan check
+	 * is made once, when the run is requested, and a run that passed it is what
+	 * grants access — so this asks for one, starting or live, of a box you own
+	 * on this machine. Holding a box is not enough: a box is free to hold, and
+	 * the hardware under it is not. When the run ends, so does the access.
+	 * ref(d-0051)
 	 */
 	export const entitlement = fn(
 		z.object({ machineId: z.string(), userId: z.string() }),
@@ -415,7 +417,23 @@ export namespace Machine {
 			if (machine.organisationId) {
 				// Fleet hardware. Not the owner's and not a team's, so neither
 				// test below means anything here.
-				return { entitled: false, reason: 'fleet' };
+				const run = await Database.use((tx) =>
+					tx
+						.select({ id: SessionTable.id })
+						.from(SessionTable)
+						.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+						.where(
+							and(
+								eq(BoxTable.machineId, machine.id),
+								eq(BoxTable.userId, input.userId),
+								inArray(SessionTable.state, ['starting', 'live']),
+								isNull(SessionTable.timeDeleted),
+								isNull(BoxTable.timeDeleted)
+							)
+						)
+						.limit(1)
+				);
+				return { entitled: run.length > 0, reason: 'fleet' };
 			}
 			if (machine.ownerUserId && machine.ownerUserId === input.userId) {
 				return { entitled: true, reason: 'owner' };

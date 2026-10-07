@@ -5,7 +5,10 @@ import { Box } from '@nestri/core/box/index';
 import { Fixtures } from '@nestri/core/db/fixtures';
 import { testDb } from '@nestri/core/db/test';
 import { Env } from '@nestri/core/env';
+import { Game } from '@nestri/core/game/index';
 import { Identifier } from '@nestri/core/id';
+import { Machine } from '@nestri/core/machine/index';
+import { Session } from '@nestri/core/session/index';
 
 import { app } from '../app/index';
 import { TEST_FRONTEND_URL } from './setup';
@@ -13,6 +16,7 @@ import { TEST_FRONTEND_URL } from './setup';
 const sql = testDb();
 const createdUserIds: string[] = [];
 const createdOrgIds: string[] = [];
+const createdGameIds: string[] = [];
 
 function useFleet(organisationId?: string) {
 	Env.init({
@@ -53,7 +57,9 @@ function createBox(headers: Record<string, string>, body: object) {
 }
 
 afterAll(async () => {
+	await sql`delete from session where box_id in (select id from box where user_id = any(${createdUserIds}))`;
 	await sql`delete from box where user_id = any(${createdUserIds})`;
+	await sql`delete from game where id = any(${createdGameIds})`;
 	await sql`delete from machine where owner_user_id = any(${createdUserIds})`;
 	await sql`delete from organisation where id = any(${createdOrgIds})`;
 	await sql`delete from "user" where id = any(${createdUserIds})`;
@@ -123,5 +129,41 @@ describe('POST /box on the fleet', () => {
 		const res = await createBox(p.headers, { label: 'mine' });
 		expect(res.status).toBe(201);
 		expect(((await res.json()) as any).data.machineId).toBe(machineId);
+	});
+});
+
+describe('Entitlement on a fleet machine', () => {
+	test('open during your own run on it, and closed before and after', async () => {
+		const f = await fleet(1);
+		useFleet(f.organisationId);
+		const machineId = f.machines[0]!.id;
+		const p = await person('entitle-run');
+		const other = await person('entitle-other');
+		const box = ((await (await createBox(p.headers, { on: 'fleet' })).json()) as any).data;
+
+		const may = (userId: string) => Machine.entitlement({ machineId, userId });
+		expect(await may(p.owner.userId)).toEqual({ entitled: false, reason: 'fleet' });
+
+		const [game] = await Game.upsert({
+			id: Identifier.ascending('game'),
+			steamAppId: 990001,
+			slug: 'fleet-entitle',
+			name: 'Fleet Entitle'
+		});
+		createdGameIds.push(game!.id);
+		const run = await Session.request({
+			id: Identifier.ascending('session'),
+			boxId: box.id,
+			gameId: game!.id,
+			linkedAccountId: p.owner.linkedAccountId
+		});
+		await sql`update session set state = 'live' where id = ${run.id}`;
+
+		expect(await may(p.owner.userId)).toEqual({ entitled: true, reason: 'fleet' });
+		// Somebody else's run on the same machine grants you nothing.
+		expect((await may(other.owner.userId)).entitled).toBe(false);
+
+		await sql`update session set state = 'ended', time_stopped = now() where id = ${run.id}`;
+		expect((await may(p.owner.userId)).entitled).toBe(false);
 	});
 });

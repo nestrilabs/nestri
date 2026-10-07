@@ -194,9 +194,9 @@ describe('Fleet hardware', () => {
 });
 
 describe('Entitlement on fleet hardware', () => {
-	test('nobody is entitled yet, and the reason says why', async () => {
-		// What grants a run on metered hardware is a plan, and there is nothing
-		// to ask yet — so this fails closed rather than giving it away.
+	test('nobody without a run on it is entitled, and the reason says why', async () => {
+		// A run that passed the plan check is what grants rented hardware; with
+		// none, this fails closed rather than giving it away.
 		const orgId = await newOrg('org-entitle', 'entitle.example', true);
 		const userId = await newUser('entitle', 'someone@entitle.example', true);
 		const registered = await Machine.register({
