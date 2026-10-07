@@ -45,6 +45,7 @@ const routes = app
 	.route('/', IndexApi.route)
 	.route('/', InstallApi.route)
 	.route('/user', UserApi.route)
+	.route('/steam', SteamApi.publicRoute)
 	.route('/steam', SteamApi.route)
 	.route('/library', LibraryApi.route)
 	.route('/games', GameApi.route)

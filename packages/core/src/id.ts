@@ -15,6 +15,7 @@ export namespace Identifier {
 		machine: 'mch',
 		installToken: 'mit',
 		trialClaim: 'trc',
+		steamLinkRequest: 'slr',
 		box: 'box',
 		session: 'ses',
 		accessToken: 'pat',

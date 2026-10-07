@@ -1,7 +1,9 @@
 import { Actor } from '@nestri/core/actor';
+import { Env } from '@nestri/core/env';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
 import { Steam } from '@nestri/core/steam/index';
+import { SteamLinkRequest } from '@nestri/core/steam/link-request';
 import { LinkedAccount } from '@nestri/core/user/linked-account';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -10,6 +12,54 @@ import { z } from 'zod';
 import { ErrorResponses, notPublic, Result, validator } from '../utils';
 
 export namespace SteamApi {
+	/**
+	 * Where Steam sends the browser back to, for one link request.
+	 *
+	 * This API's own public address: `API_URL` when set, otherwise the host the
+	 * request arrived on — over https, because a proxy in front of the API
+	 * forwards plain http and Steam must be sent somewhere a browser can reach.
+	 */
+	function callbackUrl(requestUrl: string, nonce: string): string {
+		const here = new URL(requestUrl);
+		const local = here.hostname === 'localhost' || here.hostname === '127.0.0.1';
+		const base = Env.get().API_URL ?? `${local ? here.protocol : 'https:'}//${here.host}`;
+		return `${base.replace(/\/$/, '')}/steam/link/callback?state=${encodeURIComponent(nonce)}`;
+	}
+
+	function page(title: string, body: string, status: 200 | 400) {
+		return new Response(
+			`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>${title}</title><body style="font:16px system-ui;background:#111;color:#eee;display:grid;place-items:center;min-height:90vh;margin:0"><p>${body}</p>`,
+			{ status, headers: { 'content-type': 'text/html; charset=utf-8' } }
+		);
+	}
+
+	/**
+	 * Steam's way back. Public, because a browser returning from Steam carries
+	 * no bearer token: the one-time request is what says who this is for.
+	 */
+	export const publicRoute = new Hono().get('/link/callback', async (c) => {
+		const params = Object.fromEntries(new URL(c.req.url).searchParams.entries());
+		const nonce = params.state ?? '';
+		const steamId = await SteamLinkRequest.verify(params, callbackUrl(c.req.url, nonce));
+		if (!steamId) {
+			return page(
+				'Not linked',
+				'Steam did not confirm that sign-in. Start again from Nestri.',
+				400
+			);
+		}
+		const userId = await SteamLinkRequest.consume(nonce);
+		if (!userId) {
+			return page(
+				'Not linked',
+				'That link has expired or was already used. Start again from Nestri.',
+				400
+			);
+		}
+		await Steam.link({ steamId, userId });
+		return page('Steam linked', 'Your Steam account is linked. You can close this tab.', 200);
+	});
+
 	export const route = new Hono()
 		.use(notPublic)
 		.get(
@@ -75,67 +125,31 @@ export namespace SteamApi {
 			}
 		)
 		.post(
-			'/link',
+			'/link/start',
 			describeRoute({
 				tags: ['Steam'],
-				summary: 'Link a Steam account',
-				description: 'Link a Steam account to the calling user.',
+				summary: 'Start linking a Steam account',
+				description:
+					'Returns a Steam sign-in URL. Open it in a browser: signing in to Steam there is what proves the account is yours, and the account is linked when Steam sends the browser back. The URL is good for ten minutes and one sign-in. A Steam id on its own is public, so no route links one on trust.',
 				responses: {
 					200: {
 						content: {
 							'application/json': {
 								schema: Result(
 									z.object({
-										linkedAccountId: z.string().meta({
-											description: 'The ID of the linked account',
-											example: Examples.LinkedAccount.id
-										}),
-										steamId: z.string().meta({
-											description: 'The Steam ID that was linked',
-											example: '76561197960287930'
-										})
+										url: z.string().meta({ description: 'Open this to sign in to Steam' })
 									})
 								)
 							}
 						},
-						description: 'Steam account linked'
+						description: 'Where to sign in'
 					},
-					400: ErrorResponses[400],
-					401: ErrorResponses[401],
-					403: ErrorResponses[403],
-					429: ErrorResponses[429]
+					401: ErrorResponses[401]
 				}
 			}),
-			validator(
-				'json',
-				z.object({
-					steamId: z.string().min(1).meta({
-						description: 'Steam ID to link',
-						example: '76561197960287930'
-					}),
-					profile: z
-						.record(z.string(), z.unknown())
-						.optional()
-						.meta({
-							description: 'Steam profile data',
-							example: { personaname: 'Player', avatarfull: 'https://...' }
-						})
-				})
-			),
 			async (c) => {
-				const body = c.req.valid('json');
-
-				// Linking is always for the caller. It once accepted a `userId`,
-				// which meant one credential could attach a Steam account to any
-				// user \u2014 and a linked account is how a library is reached.
-				const linkedAccountID = await Steam.link({
-					steamId: body.steamId,
-					profile: body.profile,
-					userId: Actor.userID
-				});
-				return c.json({
-					data: { linkedAccountId: linkedAccountID, steamId: body.steamId }
-				});
+				const nonce = await SteamLinkRequest.create(Actor.userID);
+				return c.json({ data: { url: SteamLinkRequest.signInUrl(callbackUrl(c.req.url, nonce)) } });
 			}
 		);
 }
