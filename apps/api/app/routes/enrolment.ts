@@ -1,6 +1,9 @@
 import { Actor } from '@nestri/core/actor';
+import { Env } from '@nestri/core/env';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
+import { Machine } from '@nestri/core/machine/index';
 import { Enrolment } from '@nestri/core/steam/enrolment';
+import { Identity } from '@nestri/core/user/identity';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { z } from 'zod';
@@ -27,6 +30,39 @@ import { ErrorResponses, machineOnly, Result, validator } from '../utils';
  * ask, and none of them re-ask it.
  */
 export namespace EnrolmentApi {
+	/**
+	 * A sign-in on one of Nestri's own machines is also proof of the Steam
+	 * account, so it links it: the person scanned a QR code on hardware we
+	 * run, the Steam id is the subject of the token Valve issued there, and
+	 * who they are came from the edge. Asking them to sign in to Steam a
+	 * second time, in a browser, would prove nothing new.
+	 *
+	 * **Only the fleet.** On a host somebody brought, the report is that
+	 * person's machine vouching for itself, and a machine can say anything.
+	 * Linking from it would let any host operator attach any Steam account to
+	 * any user enrolled on it.
+	 *
+	 * Never a reason to refuse the report. The sign-in happened and the
+	 * enrolment is recorded either way; a Steam account already linked to
+	 * somebody else stays theirs, and is left for the person to sort out on
+	 * the website.
+	 */
+	async function linkIfFleet(machineId: string, userId: string, steamId: string) {
+		const fleet = Env.get().FLEET_ORGANISATION_ID;
+		if (!fleet) return;
+		const machine = await Machine.fromID(machineId);
+		if (machine?.organisationId !== fleet) return;
+		try {
+			await Identity.linkSteam({ userId, steamId });
+		} catch (err) {
+			if (err instanceof VisibleError) {
+				console.warn('a fleet sign-in was not linked', { machineId, userId, reason: err.message });
+				return;
+			}
+			throw err;
+		}
+	}
+
 	// Picked from the domain schema rather than restated, so the shape a host
 	// must send and the shape the record has cannot drift apart — including the
 	// Steam id's format, which is checked here at the boundary and therefore
@@ -61,13 +97,13 @@ export namespace EnrolmentApi {
 			validator('json', Reported),
 			async (c) => {
 				const body = c.req.valid('json');
-				return c.json({
-					data: await Enrolment.record({
-						machineId: Actor.machineID,
-						userId: body.userId,
-						steamId: body.steamId
-					})
+				const enrolment = await Enrolment.record({
+					machineId: Actor.machineID,
+					userId: body.userId,
+					steamId: body.steamId
 				});
+				await linkIfFleet(Actor.machineID, body.userId, body.steamId);
+				return c.json({ data: enrolment });
 			}
 		)
 		.post(

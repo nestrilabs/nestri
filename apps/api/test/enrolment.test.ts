@@ -4,14 +4,16 @@ import { AccessToken } from '@nestri/core/access-token/index';
 import { Fixtures } from '@nestri/core/db/fixtures';
 import { testDb } from '@nestri/core/db/test';
 import { Identifier } from '@nestri/core/id';
+import { Env } from '@nestri/core/env';
 import { Machine } from '@nestri/core/machine/index';
 
 import { app } from '../app/index';
-import './setup';
+import { TEST_FRONTEND_URL } from './setup';
 
 const sql = testDb();
 
 const createdUserIds: string[] = [];
+const createdOrgIds: string[] = [];
 
 /**
  * A signed-in person, as a personal access token.
@@ -78,6 +80,10 @@ function list(host: { headers: Record<string, string> }) {
 }
 
 afterAll(async () => {
+	if (createdOrgIds.length > 0) {
+		await sql`delete from machine where organisation_id = any(${createdOrgIds})`;
+		await sql`delete from organisation where id = any(${createdOrgIds})`;
+	}
 	if (createdUserIds.length > 0) {
 		await sql`delete from "user" where id in ${sql(createdUserIds)}`;
 		createdUserIds.length = 0;
@@ -384,5 +390,68 @@ describe('The enrolment surface refuses a token', () => {
 		// Not "contains no token" — an exact set. Anything new on this surface
 		// has to be argued for here, which is the point.
 		expect([...accepted].sort()).toEqual(['steamId', 'userId']);
+	});
+});
+
+describe('A sign-in on the fleet links the Steam account', () => {
+	/** A fleet host the API knows is the fleet, and a person to enrol on it. */
+	async function fleetHost(label: string) {
+		const operator = await Fixtures.owner(`${label}-operator`);
+		createdUserIds.push(operator.userId);
+		const f = await Fixtures.fleet(operator);
+		createdOrgIds.push(f.organisationId);
+		Env.init({
+			NODE_ENV: 'test',
+			FRONTEND_URL: TEST_FRONTEND_URL,
+			FLEET_ORGANISATION_ID: f.organisationId
+		});
+		const person = await Fixtures.owner(label);
+		createdUserIds.push(person.userId);
+		const [machine] = f.machines;
+		return {
+			person,
+			headers: {
+				'x-nestri-machine-id': machine!.id,
+				'x-nestri-machine-secret': machine!.secret,
+				'content-type': 'application/json'
+			}
+		};
+	}
+
+	const linked = (steam: string) =>
+		sql<{ user_id: string }[]>`
+			select user_id from linked_account
+			where provider = 'steam' and provider_account_id = ${steam} and time_deleted is null`;
+
+	test('a fleet host reporting a sign-in links that account to that person', async () => {
+		const host = await fleetHost('fleet-link');
+		const res = await enrol(host, { userId: host.person.userId, steamId: steamId(9001) });
+		expect(res.status).toBe(200);
+		expect((await linked(steamId(9001))).map((r) => r.user_id)).toEqual([host.person.userId]);
+
+		// Restated, as a host does after a restart: still one link.
+		expect((await enrol(host, { userId: host.person.userId, steamId: steamId(9001) })).status).toBe(
+			200
+		);
+		expect(await linked(steamId(9001))).toHaveLength(1);
+	});
+
+	test('a host somebody brought cannot link anything', async () => {
+		const host = await registeredHost('own-host-link');
+		const res = await enrol(host, { userId: host.userId, steamId: steamId(9002) });
+		expect(res.status).toBe(200);
+		expect(await linked(steamId(9002))).toHaveLength(0);
+	});
+
+	test('an account already linked elsewhere stays there, and the report still lands', async () => {
+		const host = await fleetHost('fleet-link-taken');
+		const first = await Fixtures.owner('first-holder');
+		createdUserIds.push(first.userId);
+		await sql`insert into linked_account (id, user_id, provider, provider_account_id)
+			values (${Identifier.ascending('linkedAccount')}, ${first.userId}, 'steam', ${steamId(9003)})`;
+
+		const res = await enrol(host, { userId: host.person.userId, steamId: steamId(9003) });
+		expect(res.status).toBe(200);
+		expect((await linked(steamId(9003))).map((r) => r.user_id)).toEqual([first.userId]);
 	});
 });
