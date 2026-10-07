@@ -203,6 +203,36 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 
 
 # ───────────────────────────────────────────────────────────
+#  The guest kernel — shipped inside the image it boots
+#
+#  A host takes it back out as a file beside the root image when it unpacks
+#  this one (the host agent's onboarding), because the VMM loads a kernel from the host
+#  and never from the guest's disk. Shipping the two as one image is what
+#  keeps them a pair: the driver built into this kernel and the Vulkan layer
+#  above come from the same NVGPU_REF, and a host can only ever have the
+#  kernel that matches its root.
+#
+#  The same script `make kernel` runs, on a fresh clone every time: an image
+#  build has no warm tree to reuse, and the layer cache already skips this
+#  stage while its pins and its inputs are unchanged.
+# ───────────────────────────────────────────────────────────
+FROM builder AS kernel-build
+ARG KERNEL_GIT=https://github.com/CachyOS/linux.git
+ARG KERNEL_REF=cachyos-7.2.6-1
+ARG KERNEL_MARCH=x86-64-v3
+ARG NVGPU_GIT=https://github.com/nestrilabs/virtio-nvgpu.git
+ARG NVGPU_REF=dev
+RUN pacman -S --noconfirm --needed lld bc cpio perl && pacman -Scc --noconfirm
+COPY build/kernel  /kernel-build/kernel
+COPY build/scripts/kernel-build.sh /kernel-build/scripts/kernel-build.sh
+RUN KERNEL_GIT="${KERNEL_GIT}" KERNEL_REF="${KERNEL_REF}" KERNEL_MARCH="${KERNEL_MARCH}" \
+        KERNEL_SRC=/build/kernel KERNEL_OUTPUT=/artifacts/kernel/boot/vmlinux \
+        NVGPU_GIT="${NVGPU_GIT}" NVGPU_REF="${NVGPU_REF}" NVGPU_WORK=/build/nvgpu \
+        bash /kernel-build/scripts/kernel-build.sh && \
+    rm -rf /build/kernel /build/nvgpu
+
+
+# ───────────────────────────────────────────────────────────
 #  umu-launcher — built here, not installed from the distribution
 #
 #  `umu-run` launches every title that is not Steam's, applying the game fixes
@@ -443,6 +473,9 @@ COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
 COPY --from=nvgpu-layer-build /artifacts/nvgpu /
 COPY --from=umu-build    /artifacts/umu    /
+# The kernel this image is booted with, for the host to take out. See the
+# kernel-build stage.
+COPY --from=kernel-build /artifacts/kernel /
 
 # **No Proton here.** It is attached to a box at run time, mounted at
 # /nestri/compat, so this image has no Proton path for a launch to fall back to
