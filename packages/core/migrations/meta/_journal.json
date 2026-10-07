@@ -141,6 +141,13 @@
       "when": 1791355334692,
       "tag": "0019_install_token_for_a_fleet",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791359465283,
+      "tag": "0020_steam_link_request",
+      "breakpoints": true
     }
   ]
 }

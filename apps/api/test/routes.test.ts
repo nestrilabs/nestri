@@ -212,7 +212,8 @@ describe('OpenAPI doc', () => {
 		expect(paths).toContain('/games/download-state');
 		expect(paths).toContain('/library');
 		expect(paths).toContain('/library/sync');
-		expect(paths).toContain('/steam/link');
+		expect(paths).toContain('/steam/link/start');
+		expect(paths).not.toContain('/steam/link');
 		expect(paths).toContain('/steam/linked');
 		expect(paths).toContain('/steam/unlink');
 		expect(paths).toContain('/user');
@@ -469,21 +470,37 @@ describe('Machine registration', () => {
 });
 
 describe('Steam routes', () => {
-	test('POST /steam/link requires auth', async () => {
-		const res = await app.request('/steam/link', { method: 'POST' });
+	test('POST /steam/link/start requires auth', async () => {
+		const res = await app.request('/steam/link/start', { method: 'POST' });
 		expect(res.status).toBe(401);
 	});
 
-	test('POST /steam/link validates steamId', async () => {
+	test('POST /steam/link/start hands back a Steam sign-in that returns here', async () => {
+		const res = await app.request('http://api.example.test/steam/link/start', {
+			method: 'POST',
+			headers: await userHeaders()
+		});
+		expect(res.status).toBe(200);
+		const url = new URL(((await res.json()) as any).data.url);
+		expect(url.host).toBe('steamcommunity.com');
+		const back = new URL(url.searchParams.get('openid.return_to')!);
+		expect(back.origin + back.pathname).toBe('https://api.example.test/steam/link/callback');
+		expect(back.searchParams.get('state')).toBeTruthy();
+	});
+
+	test('a Steam id can no longer be linked on trust', async () => {
 		const res = await app.request('/steam/link', {
 			method: 'POST',
-			headers: {
-				...(await userHeaders()),
-				'content-type': 'application/json'
-			},
-			body: JSON.stringify({})
+			headers: { ...(await userHeaders()), 'content-type': 'application/json' },
+			body: JSON.stringify({ steamId: '76561197960287930' })
 		});
+		expect(res.status).toBe(404);
+	});
+
+	test('the callback needs no session, and refuses what Steam did not assert', async () => {
+		const res = await app.request('/steam/link/callback?state=nope&openid.mode=cancel');
 		expect(res.status).toBe(400);
+		expect(await res.text()).toContain('Steam did not confirm');
 	});
 });
 

@@ -69,7 +69,12 @@ export namespace Env {
 		 * Unset, nothing is placed on rented hardware. Configured per deploy,
 		 * never written into the repository.
 		 */
-		FLEET_ORGANISATION_ID: z.string().optional()
+		FLEET_ORGANISATION_ID: z.string().optional(),
+		/**
+		 * This API's public address, for URLs handed to a browser that must come
+		 * back here (Steam's sign-in). Unset, the request's own host over https.
+		 */
+		API_URL: z.string().optional()
 	});
 
 	export type Info = z.infer<typeof Info>;
