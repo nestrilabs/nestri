@@ -100,6 +100,17 @@ mv "$TMP/$ASSET" "$BIN_DIR/nestri-host"
 say "Installed $BIN_DIR/nestri-host"
 say ""
 
+# --- upgrade ----------------------------------------------------------------
+# On a host that already runs the agent, this is an upgrade: the agent holds
+# the host lock, and onboarding refuses to race it. Stopped here, and started
+# again by onboarding on the new binary. A host with nothing running is
+# unaffected.
+if command -v systemctl >/dev/null 2>&1 &&
+  systemctl --user is-active --quiet nestri-host.service 2>/dev/null; then
+  say "Stopping the running host agent to upgrade it…"
+  systemctl --user stop nestri-host.service
+fi
+
 # --- onboard ----------------------------------------------------------------
 # The token goes through the environment rather than argv, so it is not in
 # `ps` for the length of the run.
