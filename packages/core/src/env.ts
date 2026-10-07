@@ -63,7 +63,13 @@ export namespace Env {
 		RELEASES_ACCESS_KEY_ID: z.string().optional(),
 		RELEASES_SECRET_ACCESS_KEY: z.string().optional(),
 
-		DATABASE_URL: z.string().optional()
+		DATABASE_URL: z.string().optional(),
+		/**
+		 * The organisation whose machines are rented to customers: the fleet.
+		 * Unset, nothing is placed on rented hardware. Configured per deploy,
+		 * never written into the repository.
+		 */
+		FLEET_ORGANISATION_ID: z.string().optional()
 	});
 
 	export type Info = z.infer<typeof Info>;

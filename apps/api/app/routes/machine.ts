@@ -175,7 +175,7 @@ export namespace MachineApi {
 				tags: ['Machine'],
 				summary: 'Issue an install token',
 				description:
-					'Mint a one-time token that registers one host to a team when the installer presents it. It expires after an hour and is spent by its first use, because it travels in a command a person pastes and so ends up in shell history.',
+					'Mint a one-time token that registers one host to a team — or, with `organisationId`, to your organisation’s fleet — when the installer presents it. It expires after an hour and is spent by its first use, because it travels in a command a person pastes and so ends up in shell history.',
 				responses: {
 					200: {
 						content: {
@@ -201,11 +201,15 @@ export namespace MachineApi {
 				z.object({
 					teamId: z.string().optional().meta({
 						description: 'Team the host will belong to. Defaults to the caller\u2019s personal team'
+					}),
+					organisationId: z.string().optional().meta({
+						description:
+							'Register the host to this organisation’s fleet instead of to a team. You must belong to the organisation'
 					})
 				})
 			),
 			async (c) => {
-				const { teamId } = c.req.valid('json');
+				const { teamId, organisationId } = c.req.valid('json');
 				const actor = Actor.use();
 				if (actor.type !== 'user' && actor.type !== 'member') {
 					throw new VisibleError(
@@ -213,6 +217,30 @@ export namespace MachineApi {
 						ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
 						'Issuing an install token requires a user session'
 					);
+				}
+
+				if (organisationId) {
+					if (teamId) {
+						throw new VisibleError(
+							'validation',
+							ErrorCodes.Validation.INVALID_PARAMETER,
+							'A host belongs to a team or to an organisation, not both',
+							'organisationId'
+						);
+					}
+					// Fleet hardware is rented to strangers, so only the
+					// organisation's own people may add to it.
+					if (!(await Organisation.isMember(Actor.userID, organisationId))) {
+						throw new VisibleError(
+							'forbidden',
+							ErrorCodes.Permission.FORBIDDEN,
+							'You do not belong to that organisation'
+						);
+					}
+					const issued = await InstallToken.create({ organisationId, userId: Actor.userID });
+					return c.json({
+						data: { token: issued.token, expiresAt: issued.expiresAt.toISOString() }
+					});
 				}
 
 				// Same resolution and the same membership rule as `/register`: a

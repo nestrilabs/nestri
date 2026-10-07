@@ -14,6 +14,7 @@ export namespace Identifier {
 		pairingCode: 'pai',
 		machine: 'mch',
 		installToken: 'mit',
+		trialClaim: 'trc',
 		box: 'box',
 		session: 'ses',
 		accessToken: 'pat',

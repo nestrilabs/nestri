@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { boolean, index, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { BoxTable } from '../box/box.sql.js';
 import { id, timestamps, ulid, utc } from '../db/types.js';
@@ -61,6 +61,11 @@ export const SessionTable = pgTable(
 		/** Null until the box actually starts, which is not when the row appears. */
 		timeStarted: utc('time_started'),
 		timeStopped: utc('time_stopped'),
+		// A run on rented GPUs under the free weekend rather than a plan. Its
+		// time is counted against the trial and not the plan's allowance, and
+		// it is the run that is stopped when the trial's hours or its window
+		// run out. Fixed when the run is requested.
+		trial: boolean('trial').notNull().default(false),
 		/** Why it ended badly, when it did. */
 		errorMessage: text('error_message'),
 		/**
