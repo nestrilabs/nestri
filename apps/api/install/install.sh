@@ -4,14 +4,17 @@
 # This file is the source of what that URL serves, kept in the public
 # repository so anyone about to pipe it into a shell can read it first.
 #
-#   curl -fsSL https://api.nestri.io/install.sh | sh -s -- <install-token>
+#   curl -fsSL https://api.nestri.io/install.sh | sudo sh -s -- <install-token>
 #
 # What it does, in order: check this is 64-bit Linux, ask where box images
 # should live, download the host agent for this platform, verify it against the
-# published SHA256SUMS, install it to ~/.local/bin, and hand over to
-# the agent's own onboarding, which checks the machine, registers it with the
-# token and starts the agent as a systemd user service. It never asks for sudo: the agent
-# runs as the user who ran this.
+# published SHA256SUMS, install it to /usr/local/bin, and hand over to the
+# agent's own onboarding, which checks the machine, registers it with the token
+# and starts the agent as a systemd service.
+#
+# It runs as root because the agent does: each box's VMM is jailed under a uid
+# of its own, which only root can give it, and a box's network needs
+# CAP_NET_ADMIN. The agent keeps its state in /var/lib/nestri.
 #
 # The token comes from the dashboard's Installation page. It registers one
 # machine, works once and lapses after an hour.
@@ -21,9 +24,10 @@ set -eu
 API="${NESTRI_API:-https://api.nestri.io}"
 # Pinned, not "latest", so the script and the binary it installs are a pair
 # somebody chose. Bump when cutting a release; NESTRI_HOST_VERSION overrides it.
-DEFAULT_VERSION="0.2.3"
+DEFAULT_VERSION="0.2.4"
 VERSION="${NESTRI_HOST_VERSION:-$DEFAULT_VERSION}"
-BIN_DIR="${NESTRI_BIN_DIR:-$HOME/.local/bin}"
+BIN_DIR="${NESTRI_BIN_DIR:-/usr/local/bin}"
+STATE_DIR=/var/lib/nestri
 
 say() { printf '%s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -37,7 +41,31 @@ case "$(uname -m)" in
   x86_64|amd64) target=x86_64-unknown-linux-gnu ;;
   *) die "no host build for $(uname -m) yet." ;;
 esac
-[ "$(id -u)" -ne 0 ] || die "run this as the user that will run boxes, not as root."
+[ "$(id -u)" -eq 0 ] || die "run this as root: pipe it into \`sudo sh -s -- <token>\`, as the dashboard shows."
+
+# --- an install from before the agent ran as root ---------------------------
+# Hosts used to run the agent as the user who installed it, from a state
+# directory in their home and a user unit. That user is the one sudo was run by. Their state is copied,
+# never moved: the machine keeps its identity and what it already downloaded,
+# and the old directory stays as it was.
+OLD_HOME=""
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
+  OLD_HOME="$(getent passwd "$SUDO_USER" | cut -d: -f6)"
+fi
+OLD_STATE="${OLD_HOME:+$OLD_HOME/.nestri}"
+if [ -n "$OLD_STATE" ] && [ -f "$OLD_STATE"/onboarding.json ] && [ ! -e "$STATE_DIR" ]; then
+  say "Moving this host's agent from $SUDO_USER to a system service…"
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user -M "$SUDO_USER@" disable --now nestri-host.service >/dev/null 2>&1 || true
+  fi
+  mkdir -p "$(dirname "$STATE_DIR")"
+  cp -a "$OLD_STATE" "$STATE_DIR"
+  # The box store that install was given, unless this run names another.
+  if [ -z "${NESTRI_BOX_STORE:-}" ] && [ -f "$OLD_HOME/.config/nestri-host/env" ]; then
+    NESTRI_BOX_STORE="$(sed -n 's/^NESLET_BOX_STORE=//p' "$OLD_HOME/.config/nestri-host/env" | head -n1)"
+  fi
+  say "Copied $OLD_STATE to $STATE_DIR."
+fi
 
 # --- fetch ------------------------------------------------------------------
 if command -v curl >/dev/null 2>&1; then
@@ -106,15 +134,16 @@ say ""
 # again by onboarding on the new binary. A host with nothing running is
 # unaffected.
 if command -v systemctl >/dev/null 2>&1 &&
-  systemctl --user is-active --quiet nestri-host.service 2>/dev/null; then
+  systemctl is-active --quiet nestri-host.service 2>/dev/null; then
   say "Stopping the running host agent to upgrade it…"
-  systemctl --user stop nestri-host.service
+  systemctl stop nestri-host.service
 fi
 
 # --- onboard ----------------------------------------------------------------
 # The token goes through the environment rather than argv, so it is not in
 # `ps` for the length of the run.
-export NESTRI_INSTALL_TOKEN="$TOKEN" NESTRI_BOX_STORE="$BOX_STORE" NESTRI_API="$API"
+export NESTRI_INSTALL_TOKEN="$TOKEN" NESTRI_BOX_STORE="$BOX_STORE" NESTRI_API="$API" \
+  NESLET_STATE_DIR="$STATE_DIR"
 if tty_ok; then
   exec "$BIN_DIR/nestri-host" onboard </dev/tty
 else
