@@ -336,6 +336,11 @@ export namespace Session {
 			linkedAccountId: z.string().meta({
 				description: 'Which linked account is playing',
 				example: Examples.Session.linkedAccountId
+			}),
+			userId: z.string().meta({
+				description:
+					'Whose run it is: the box owner, whose Steam sign-in on this host plays it',
+				example: Examples.User.id
 			})
 		})
 		.meta({
@@ -413,7 +418,8 @@ export namespace Session {
 							boxTier: row.box.tier as z.infer<typeof StartJob>['boxTier'],
 							gameId: row.game.id,
 							steamAppId: row.game.steamAppId,
-							linkedAccountId: row.session.linkedAccountId
+							linkedAccountId: row.session.linkedAccountId,
+							userId: row.box.userId
 						})
 					)
 				);
