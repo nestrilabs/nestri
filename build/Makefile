@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: build build-debug image image-debug kernel kernel-clean kernel-objclean proton-image proton-push clean help
+.PHONY: build push build-debug image image-debug kernel kernel-clean kernel-objclean proton-image proton-push clean help
 
 CONTAINER_RT := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 ifeq ($(CONTAINER_RT),)
@@ -103,11 +103,23 @@ endif
 build:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
 		--build-arg NVGPU_GIT=$(NVGPU_GIT) --build-arg NVGPU_REF=$(NVGPU_REF) \
+		--build-arg KERNEL_GIT=$(KERNEL_GIT) --build-arg KERNEL_REF=$(KERNEL_REF) \
+		--build-arg KERNEL_MARCH=$(KERNEL_MARCH) \
 		-f Containerfile -t $(IMAGE_NAME):latest --target runtime_prod $(CONTEXT)
+
+# Publishing the image hosts onboard from. Run on the build box, not in CI: a
+# full build there takes hours. Pushes the moving tag and one named for the
+# commit, so a host can be pinned to exactly what it was tested on.
+push: build
+	$(CONTAINER_RT) tag $(IMAGE_NAME):latest $(IMAGE_NAME):$(shell git rev-parse --short=12 HEAD)
+	$(CONTAINER_RT) push $(IMAGE_NAME):$(shell git rev-parse --short=12 HEAD)
+	$(CONTAINER_RT) push $(IMAGE_NAME):latest
 
 build-debug:
 	DOCKER_BUILDKIT=1 $(CONTAINER_RT) build $(if $(FORCE_REBUILD),--no-cache,) \
 		--build-arg NVGPU_GIT=$(NVGPU_GIT) --build-arg NVGPU_REF=$(NVGPU_REF) \
+		--build-arg KERNEL_GIT=$(KERNEL_GIT) --build-arg KERNEL_REF=$(KERNEL_REF) \
+		--build-arg KERNEL_MARCH=$(KERNEL_MARCH) \
 		-f Containerfile -t $(IMAGE_NAME):debug --target runtime_debug $(CONTEXT)
 
 # Hours, and only when PROTON_TAG moves. Its context is this directory rather
