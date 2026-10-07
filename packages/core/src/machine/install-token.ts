@@ -31,25 +31,40 @@ export namespace InstallToken {
 			.join('');
 	}
 
-	/** Issue a token for `teamId`. The caller has already checked membership. */
-	export const create = fn(z.object({ teamId: z.string(), userId: z.string() }), async (input) => {
-		const token = generate();
-		const tokenHash = await digest(token);
-		const expiresAt = await Database.use(async (tx) =>
-			tx
-				.insert(InstallTokenTable)
-				.values({
-					id: Identifier.ascending('installToken'),
-					teamId: input.teamId,
-					createdByUserId: input.userId,
-					tokenHash,
-					expiresAt: sql`now() + interval '${sql.raw(String(TTL_MINUTES))} minutes'`
-				})
-				.returning({ expiresAt: InstallTokenTable.expiresAt })
-				.then((rows) => rows[0]!.expiresAt)
-		);
-		return { token, expiresAt };
-	});
+	/**
+	 * Issue a token for a team, or for an organisation's fleet. The caller has
+	 * already checked membership of whichever it names.
+	 */
+	export const create = fn(
+		z
+			.object({
+				teamId: z.string().optional(),
+				organisationId: z.string().optional(),
+				userId: z.string()
+			})
+			.refine((v) => !v.teamId !== !v.organisationId, {
+				message: 'A token is for a team or for an organisation, and not both'
+			}),
+		async (input) => {
+			const token = generate();
+			const tokenHash = await digest(token);
+			const expiresAt = await Database.use(async (tx) =>
+				tx
+					.insert(InstallTokenTable)
+					.values({
+						id: Identifier.ascending('installToken'),
+						teamId: input.teamId ?? null,
+						organisationId: input.organisationId ?? null,
+						createdByUserId: input.userId,
+						tokenHash,
+						expiresAt: sql`now() + interval '${sql.raw(String(TTL_MINUTES))} minutes'`
+					})
+					.returning({ expiresAt: InstallTokenTable.expiresAt })
+					.then((rows) => rows[0]!.expiresAt)
+			);
+			return { token, expiresAt };
+		}
+	);
 
 	/**
 	 * Spend a token and register the machine it was issued for.
@@ -81,6 +96,7 @@ export namespace InstallToken {
 						.returning({
 							id: InstallTokenTable.id,
 							teamId: InstallTokenTable.teamId,
+							organisationId: InstallTokenTable.organisationId,
 							userId: InstallTokenTable.createdByUserId
 						})
 						.then((rows) => rows.at(0) ?? null)
@@ -91,6 +107,7 @@ export namespace InstallToken {
 					id: Identifier.ascending('machine'),
 					ownerUserId: spent.userId,
 					teamId: spent.teamId,
+					organisationId: spent.organisationId,
 					label: input.label
 				});
 

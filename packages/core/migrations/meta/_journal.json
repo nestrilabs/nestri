@@ -134,6 +134,13 @@
       "when": 1791354383696,
       "tag": "0018_free_weekend_trial",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791355334692,
+      "tag": "0019_install_token_for_a_fleet",
+      "breakpoints": true
     }
   ]
 }

@@ -61,6 +61,7 @@ afterAll(async () => {
 	await sql`delete from session where box_id in (select id from box where user_id = any(${createdUserIds}))`;
 	await sql`delete from box where user_id = any(${createdUserIds})`;
 	await sql`delete from game where id = any(${createdGameIds})`;
+	await sql`delete from install_token where created_by_user_id = any(${createdUserIds})`;
 	await sql`delete from machine where owner_user_id = any(${createdUserIds})`;
 	await sql`delete from organisation where id = any(${createdOrgIds})`;
 	await sql`delete from "user" where id = any(${createdUserIds})`;
@@ -204,5 +205,78 @@ describe('Billing a run on the fleet', () => {
 		await Session.transition({ id: run.id, machineId, state: 'ended', claimToken });
 		const closed = await sql`select ended_at from burn_segment where session_id = ${run.id}`;
 		expect(closed[0]!.ended_at).not.toBeNull();
+	});
+});
+
+describe('An install token for the fleet', () => {
+	async function member(domain: string, organisationId: string) {
+		const userId = Identifier.ascending('user');
+		await sql`insert into "user" (id, name, email, email_verified) values (${userId}, 'staff', ${'staff@' + domain}, true)`;
+		createdUserIds.push(userId);
+		const pat = await AccessToken.create({
+			id: Identifier.ascending('accessToken'),
+			ownerUserId: userId,
+			teamId: null,
+			name: 'staff'
+		});
+		return {
+			userId,
+			organisationId,
+			headers: { authorization: `Bearer ${pat.token}`, 'content-type': 'application/json' }
+		};
+	}
+
+	async function org() {
+		const id = Identifier.ascending('organisation');
+		const domain = `${id.slice(-10).toLowerCase()}.example.test`;
+		await sql`insert into organisation (id, name, slug, domain, domain_verified)
+			values (${id}, 'Fleet', ${'fleet-' + id.slice(-10).toLowerCase()}, ${domain}, true)`;
+		createdOrgIds.push(id);
+		return { id, domain };
+	}
+
+	test('a member mints one, and the host it registers belongs to the fleet', async () => {
+		const o = await org();
+		const staff = await member(o.domain, o.id);
+		const minted = await app.request('/machine/install-token', {
+			method: 'POST',
+			headers: staff.headers,
+			body: JSON.stringify({ organisationId: o.id })
+		});
+		expect(minted.status).toBe(200);
+		const { token } = ((await minted.json()) as any).data;
+
+		const installed = await app.request('/machine/install', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ token, label: 'fleet-host' })
+		});
+		expect(installed.status).toBe(200);
+		const { machineId } = ((await installed.json()) as any).data;
+		const machine = await Machine.fromID(machineId);
+		expect(machine?.organisationId).toBe(o.id);
+		expect(machine?.teamId).toBeNull();
+	});
+
+	test('somebody outside the organisation is refused', async () => {
+		const o = await org();
+		const outsider = await person('fleet-outsider');
+		const res = await app.request('/machine/install-token', {
+			method: 'POST',
+			headers: outsider.headers,
+			body: JSON.stringify({ organisationId: o.id })
+		});
+		expect(res.status).toBe(403);
+	});
+
+	test('naming a team and an organisation is a 400', async () => {
+		const o = await org();
+		const staff = await member(o.domain, o.id);
+		const res = await app.request('/machine/install-token', {
+			method: 'POST',
+			headers: staff.headers,
+			body: JSON.stringify({ organisationId: o.id, teamId: 'tem_whatever' })
+		});
+		expect(res.status).toBe(400);
 	});
 });
