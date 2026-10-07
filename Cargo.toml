@@ -21,6 +21,7 @@ members = [
   "apps/nesinit",
   "apps/neswire",
   "crates/nesprotocol",
+  "crates/nespyro",
 ]
 
 # One pin per dependency, here. A member never writes a version — that is what

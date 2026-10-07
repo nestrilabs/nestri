@@ -313,7 +313,14 @@ describe('a code somebody else started', () => {
 
 		expect(reached.html).toContain(grant.user_code.slice(0, 4));
 		expect(reached.html).toContain(grant.user_code.slice(4));
-		expect(reached.html).toContain('desktop');
+	});
+
+	test('the page does not name the client, which named itself', async () => {
+		const grant = await started('Your bank');
+		const reached = await signInAndReachConfirmation(grant.user_code);
+
+		expect(reached.html).not.toContain('Your bank');
+		expect(reached.html).toContain('A device is asking');
 	});
 
 	test('a confirmation posted without the value from the cookie is refused', async () => {

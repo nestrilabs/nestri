@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Burn } from '../billing/burn.js';
+import { Billing } from '../billing/index.js';
 import { BoxTable, BoxTier } from '../box/box.sql.js';
 import { Box } from '../box/index.js';
 import { Database } from '../db/index.js';
@@ -9,7 +10,7 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
-import { Machine } from '../machine/index.js';
+import { Trial } from '../trial/index.js';
 import { SessionState, SessionTable } from './session.sql.js';
 
 /**
@@ -66,6 +67,11 @@ export namespace Session {
 				description: 'When this run ended',
 				example: Examples.Session.timeStopped
 			}),
+			trial: z.boolean().optional().meta({
+				description:
+					'Whether this run is on Nestri GPUs under the free weekend rather than a plan. A trial run is stopped when its hours or its window run out',
+				example: false
+			}),
 			errorMessage: z.string().nullable().optional().meta({
 				description: 'Why it failed, when it did',
 				example: Examples.Session.errorMessage
@@ -80,7 +86,9 @@ export namespace Session {
 	export type Info = z.infer<typeof Info>;
 
 	export const create = fn(
-		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }),
+		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }).extend({
+			trial: z.boolean().optional()
+		}),
 		async (input) => {
 			return Database.use(async (tx) => {
 				return tx
@@ -89,7 +97,8 @@ export namespace Session {
 						id: input.id,
 						boxId: input.boxId,
 						gameId: input.gameId,
-						linkedAccountId: input.linkedAccountId
+						linkedAccountId: input.linkedAccountId,
+						trial: input.trial ?? false
 					})
 					.returning()
 					.then((rows) => serialize(rows[0]!));
@@ -119,7 +128,9 @@ export namespace Session {
 	 * answered is a timing detail.
 	 */
 	export const request = fn(
-		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }),
+		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }).extend({
+			trial: z.boolean().optional()
+		}),
 		async (input) => {
 			try {
 				return await create(input);
@@ -296,7 +307,7 @@ export namespace Session {
 	 * `kind` is on the wire while there is only one value, so that a second
 	 * kind is an addition rather than a redesign of the poll.
 	 */
-	export const Job = z
+	export const StartJob = z
 		.object({
 			kind: z.literal('session.start').meta({
 				description: 'What the agent is being asked to do',
@@ -332,6 +343,38 @@ export namespace Session {
 			description: 'One run waiting to be started, as handed to the agent that will start it'
 		});
 
+	/**
+	 * A run the agent must end now, because the terms it started under have
+	 * run out. The agent ends it as it would end any run and reports `ended`;
+	 * the job repeats on every poll until it does.
+	 */
+	export const StopJob = z
+		.object({
+			kind: z.literal('session.stop').meta({
+				description: 'What the agent is being asked to do',
+				example: 'session.stop'
+			}),
+			sessionId: z.string().meta({
+				description: 'The run to end',
+				example: Examples.Session.id
+			}),
+			boxId: z.string().meta({
+				description: 'The box it runs in',
+				example: Examples.Session.boxId
+			}),
+			reason: z.enum(['window', 'hours']).meta({
+				description:
+					'`window`: the free weekend closed. `hours`: this weekend’s free hours are used',
+				example: 'hours'
+			})
+		})
+		.meta({
+			ref: 'SessionStopJob',
+			description: 'One run to end now, as handed to the agent running it'
+		});
+
+	export const Job = z.discriminatedUnion('kind', [StartJob, StopJob]);
+
 	export type Job = z.infer<typeof Job>;
 
 	/**
@@ -342,8 +385,11 @@ export namespace Session {
 	 * and so what one set of long-lived credentials can see is decided by this
 	 * `where` clause rather than by whoever is holding them.
 	 */
-	export const listJobsForMachine = fn(z.string(), async (machineId) => {
-		return Database.use(async (tx) => {
+	export const listJobsForMachine = fn(z.string(), async (machineId): Promise<Job[]> => {
+		const stops = (await Trial.overdue(machineId)).map(
+			(run): Job => ({ kind: 'session.stop', ...run })
+		);
+		const starts = await Database.use(async (tx) => {
 			return tx
 				.select({ session: SessionTable, box: BoxTable, game: GameTable })
 				.from(SessionTable)
@@ -364,7 +410,7 @@ export namespace Session {
 							kind: 'session.start',
 							sessionId: row.session.id,
 							boxId: row.box.id,
-							boxTier: row.box.tier as Job['boxTier'],
+							boxTier: row.box.tier as z.infer<typeof StartJob>['boxTier'],
 							gameId: row.game.id,
 							steamAppId: row.game.steamAppId,
 							linkedAccountId: row.session.linkedAccountId
@@ -372,6 +418,7 @@ export namespace Session {
 					)
 				);
 		});
+		return [...stops, ...starts];
 	});
 
 	/**
@@ -661,25 +708,29 @@ export namespace Session {
 				// `live` is where it starts rather than `starting`, because what
 				// is billed is an envelope actually held — a box that never
 				// finished coming up held nothing.
-				const machine = await Machine.fromID(input.machineId);
-				if (machine?.teamId) {
+				// Who pays is `Billing.teamForBox`'s answer and nobody else's: the
+				// host's team on someone's own hardware, the box owner's personal
+				// team on the fleet.
+				// A trial run is counted by the trial, from the run's own times,
+				// and not against the plan's allowance it is not drawing on.
+				const payer = moved.trial ? null : await Billing.teamForBox(moved.boxId);
+				if (payer) {
 					if (current.state !== 'live' && moved.state === 'live') {
 						// The rate is fixed here, from what this run actually is:
 						// the size it holds, and whose card it holds it on. Both
 						// are settled before the run starts, which is what lets a
 						// person be told the cost before committing to it.
-						const box = await Box.fromID(moved.boxId);
 						await Burn.start({
-							teamId: machine.teamId,
+							teamId: payer.teamId,
 							sessionId: moved.id,
-							tier: (box?.tier ?? 'sm') as Burn.Tier,
-							hostClass: machine.organisationId ? 'fleet' : 'byo'
+							tier: payer.tier,
+							hostClass: payer.hostClass
 						});
 					} else if (
 						ACCRUING.includes(current.state as (typeof ACCRUING)[number]) &&
 						!ACCRUING.includes(moved.state as (typeof ACCRUING)[number])
 					) {
-						await Burn.stop({ teamId: machine.teamId, sessionId: moved.id });
+						await Burn.stop({ teamId: payer.teamId, sessionId: moved.id });
 					}
 				}
 
@@ -787,6 +838,7 @@ export namespace Session {
 			ticket: input.ticket,
 			timeStarted: input.timeStarted?.toISOString() ?? null,
 			timeStopped: input.timeStopped?.toISOString() ?? null,
+			trial: input.trial,
 			errorMessage: input.errorMessage
 		};
 	}

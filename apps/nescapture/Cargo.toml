@@ -39,3 +39,6 @@ libc = "0.2"
 
 # Shared IPC protocol
 nesprotocol = { path = "../../crates/nesprotocol" }
+
+# PyroWave, the LAN codec, on the same device as pixelforge.
+nespyro = { path = "../../crates/nespyro" }

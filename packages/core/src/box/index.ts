@@ -4,6 +4,7 @@ import z from 'zod';
 import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { BoxState, BoxTable, BoxTier } from './box.sql.js';
 import { Placement } from './placement.js';
 
@@ -124,6 +125,33 @@ export namespace Box {
 				.then((rows) => rows.map(serialize));
 		});
 	});
+
+	/**
+	 * The box a person already holds on the fleet's hardware, if any.
+	 *
+	 * One each: a rented GPU is the scarce thing, and a second box would be a
+	 * second claim on it that nothing yet prices.
+	 */
+	export const onFleet = fn(
+		z.object({ userId: Info.shape.userId, organisationId: z.string() }),
+		async (input) => {
+			return Database.use(async (tx) => {
+				return tx
+					.select({ box: BoxTable })
+					.from(BoxTable)
+					.innerJoin(MachineTable, eq(BoxTable.machineId, MachineTable.id))
+					.where(
+						and(
+							eq(BoxTable.userId, input.userId),
+							eq(MachineTable.organisationId, input.organisationId),
+							isNull(BoxTable.timeDeleted),
+							isNull(MachineTable.timeDeleted)
+						)
+					)
+					.then((rows) => (rows[0] ? serialize(rows[0].box) : null));
+			});
+		}
+	);
 
 	export const listByMachine = fn(Info.shape.machineId, async (machineId) => {
 		return Database.use(async (tx) => {

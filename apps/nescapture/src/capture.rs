@@ -821,17 +821,30 @@ pub unsafe fn blit_gpu_time_ns(
     slot: usize,
     wait: bool,
 ) -> Option<u64> {
-    let ring_guard = ds.capture_ring.lock().ok()?;
-    let ring = ring_guard.as_ref()?;
-    if ring.timestamp_pool.is_null() {
+    // `vkGetQueryPoolResults` can synchronize with the GPU on some drivers.
+    // Copy what is needed out and release the lock before calling it: holding
+    // `capture_ring` across the driver call stalls the game's present thread
+    // on the mutex, which is where a regular per-frame hitch would come from.
+    //
+    // Also gated on trace: the value feeds only the trace line in
+    // `stats_sender_thread`, so with trace off this whole call is dead work.
+    if !log::log_enabled!(log::Level::Trace) {
         return None;
     }
+    let (pool, period) = {
+        let ring_guard = ds.capture_ring.lock().ok()?;
+        let ring = ring_guard.as_ref()?;
+        if ring.timestamp_pool.is_null() {
+            return None;
+        }
+        (ring.timestamp_pool, ring.timestamp_period)
+    };
     let get = ds.fp.get_query_pool_results?;
     let mut ticks = [0u64; 2];
     let result = unsafe {
         get(
             ds.raw,
-            ring.timestamp_pool,
+            pool,
             (slot * 2) as u32,
             2,
             std::mem::size_of_val(&ticks),
@@ -848,7 +861,7 @@ pub unsafe fn blit_gpu_time_ns(
         return None;
     }
     let elapsed = ticks[1].checked_sub(ticks[0])?;
-    Some((elapsed as f64 * f64::from(ring.timestamp_period)) as u64)
+    Some((elapsed as f64 * f64::from(period)) as u64)
 }
 
 /// Record the blit from one swapchain image into one ring slot.
@@ -1057,37 +1070,84 @@ pub unsafe fn capture_present_frame(
     // vkGetDeviceQueue, so there is nothing safe to assume about it.
     let queue_family = *crate::state::QUEUE_TO_FAMILY.get(&queue.as_raw())?;
 
-    let mut ring_guard = ds.capture_ring.lock().ok()?;
-    if !unsafe {
-        ensure_capture_ring(
-            ds,
-            &mut ring_guard,
-            ext.width,
-            ext.height,
-            fmt,
-            queue_family,
-            image_count,
+    // ── Everything that touches the ring, then the lock is dropped. ───────
+    //
+    // `vkQueueSubmit` below is deliberately outside this scope. On a queue
+    // the encoder's conversion also submits to, submission serialization is
+    // a driver-internal lock and it can block for a frame's worth of time.
+    // Holding `capture_ring` across it stalls the encoder thread, and worse,
+    // any driver call the encoder makes under that same lock stalls the
+    // game's present thread on the mutex. Keep the critical section to
+    // plain memory.
+    //
+    // The slot guard lives past the block. A ring rebuild needs
+    // `capture_slots.all_free()`, so holding it keeps the ring stable for
+    // as long as the handles copied out are in use.
+    let (guard, fence, fi, slot_memory, pool, cb, present_wait, blit_timeline, blit_point) = {
+        let mut ring_guard = ds.capture_ring.lock().ok()?;
+        if !unsafe {
+            ensure_capture_ring(
+                ds,
+                &mut ring_guard,
+                ext.width,
+                ext.height,
+                fmt,
+                queue_family,
+                image_count,
+            )
+        } {
+            return None;
+        }
+        let ring = ring_guard.as_mut()?;
+
+        let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
+        let guard = ds.capture_slots.try_acquire()?;
+        let slot_index = guard.index();
+        let slot = ring.slots.get(slot_index)?;
+        let fence = slot.fence;
+        let fi = slot.image;
+        let slot_memory = slot.memory;
+        let pool = ring.command_pool;
+
+        // The recording depends on the source image, the destination image
+        // and the extent. A swapchain recreated at the same extent keeps the
+        // ring but replaces the source images, so invalidate here rather than
+        // trusting every caller to have noticed.
+        if ring.blit_extent != ext {
+            ring.blits_recorded.iter_mut().for_each(|r| *r = false);
+            ring.blit_extent = ext;
+        }
+        let blit = crate::state::blit_index(image_index, slot_index, ring.image_count)?;
+        let cb = *ring.blits.get(blit)?;
+        if !ring.blits_recorded[blit] {
+            let ts_pool = ring.timestamp_pool;
+            if !unsafe { record_blit(ds, cb, si, fi, ext, ts_pool, slot_index) } {
+                return None;
+            }
+            ring.blits_recorded[blit] = true;
+        }
+
+        let blit_timeline = ring.blit_timeline;
+        let blit_point = (!blit_timeline.is_null())
+            .then(|| pixelforge::TimelinePoint::new(blit_timeline, ring.blit_value + 1));
+
+        (
+            guard,
+            fence,
+            fi,
+            slot_memory,
+            pool,
+            cb,
+            present_wait,
+            blit_timeline,
+            blit_point,
         )
-    } {
-        return None;
-    }
-    let ring = ring_guard.as_mut()?;
+    };
+    // ── capture_ring lock released ────────────────────────────────────────
 
-    let present_wait = unsafe { ensure_present_semaphore(ds, ring, image_index) }?;
-
-    // Never blocks: a frame with no free slot is one the encoder has not caught
-    // up with, and stalling the game's present to wait for it would be worse
-    // than skipping it.
-    let guard = ds.capture_slots.try_acquire()?;
-    let slot_index = guard.index();
-    let slot = ring.slots.get(slot_index)?;
-    let fence = slot.fence;
-    let fi = slot.image;
-    let slot_memory = slot.memory;
-
-    // A free slot's fence is already signalled — the encoder side waits on it
-    // before it ever reads the slot. This covers the paths that abandon a frame
-    // and return the slot without that wait.
+    // A free slot's fence is already signalled -- the encoder side waits on
+    // it before it ever reads the slot. Bounded at 2 ms; the timeout guards
+    // the abandoned-frame paths, not steady state.
     unsafe {
         if (ds.fp.wait_for_fences)(ds.raw, 1, &fence, vk::TRUE, 2_000_000) != vk::Result::SUCCESS {
             return None;
@@ -1095,32 +1155,9 @@ pub unsafe fn capture_present_frame(
         let _ = (ds.fp.reset_fences)(ds.raw, 1, &fence);
     }
 
-    // The recording depends on the source image, the destination image and the
-    // extent. A swapchain recreated at the same extent keeps the ring but
-    // replaces the source images, so invalidate here rather than trusting every
-    // caller to have noticed.
-    if ring.blit_extent != ext {
-        ring.blits_recorded.iter_mut().for_each(|r| *r = false);
-        ring.blit_extent = ext;
-    }
-    let blit = crate::state::blit_index(image_index, slot_index, ring.image_count)?;
-    let cb = *ring.blits.get(blit)?;
-    if !ring.blits_recorded[blit] {
-        let pool = ring.timestamp_pool;
-        if !unsafe { record_blit(ds, cb, si, fi, ext, pool, slot_index) } {
-            return None;
-        }
-        ring.blits_recorded[blit] = true;
-    }
-
     let wait_stages = vec![vk::PipelineStageFlags::TRANSFER; app_waits.len()];
 
-    // On a shared device the blit also advances the ring's timeline. A
-    // timeline signal needs its value given alongside, and the binary
-    // semaphore next to it a placeholder the driver ignores.
-    let blit_point = (!ring.blit_timeline.is_null())
-        .then(|| pixelforge::TimelinePoint::new(ring.blit_timeline, ring.blit_value + 1));
-    let signals = [present_wait, ring.blit_timeline];
+    let signals = [present_wait, blit_timeline];
     let signal_values = [0, blit_point.map_or(0, |p| p.value)];
     let timeline_info = vk::TimelineSemaphoreSubmitInfo {
         signal_semaphore_value_count: 2,
@@ -1152,25 +1189,29 @@ pub unsafe fn capture_present_frame(
         _marker: std::marker::PhantomData,
     };
 
+    // No ring lock. `cb` and `fi` are protected by the slot guard, which is
+    // held. The encoder thread may hold the lock for its own driver calls;
+    // this call does not touch it.
     unsafe {
         if (ds.fp.queue_submit)(queue, 1, &subi, fence) != vk::Result::SUCCESS {
             log::warn!("capture queue_submit failed — frame skipped");
-            // The submit never happened, so nothing waited on the application's
-            // semaphores and nothing will signal ours. Re-signal the fence by
-            // hand so the slot is reusable, and let the caller present as the
-            // application intended.
+            // The submit never happened, so nothing waited on the
+            // application's semaphores and nothing will signal ours.
             let _ = (ds.fp.reset_fences)(ds.raw, 1, &fence);
             return None;
         }
     }
 
-    if let Some(p) = blit_point {
+    // Re-acquire briefly to publish the new timeline value. A store and
+    // nothing else.
+    if let Some(p) = blit_point
+        && let Ok(mut ring_guard) = ds.capture_ring.lock()
+        && let Some(ring) = ring_guard.as_mut()
+    {
         ring.blit_value = p.value;
     }
 
-    // Once per process, and only when asked for: reads this frame back and
-    // says what range its values are in. See `probe_float_range`.
-    let pool = ring.command_pool;
+    // Once per process, and only when asked for. See `probe_float_range`.
     unsafe { probe_float_range(ds, pool, queue, fi, slot_memory, fence, fmt, ext) };
 
     Some(CaptureSubmission {

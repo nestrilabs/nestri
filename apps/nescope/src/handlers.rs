@@ -7,6 +7,7 @@
 //! - All delegate macros
 
 use smithay::backend::allocator::dmabuf::Dmabuf;
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::desktop::Window;
 use smithay::input::pointer::{CursorImageStatus, PointerHandle};
 use smithay::input::{Seat, SeatHandler, SeatState};
@@ -78,44 +79,43 @@ impl CompositorHandler for NescopeState {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        on_commit_buffer_handler::<Self>(surface);
+
         self.hdr.commit(surface);
 
         if is_sync_subsurface(surface) {
             return;
         }
 
-        // Hold a reference to the committed buffer — delays wl_buffer.release
-        // until the next frame tick, starving the swapchain of images in FIFO mode.
-        smithay::wayland::compositor::with_states(surface, |states| {
-            let mut cached = states
-                .cached_state
-                .get::<smithay::wayland::compositor::SurfaceAttributes>();
-            let attrs = cached.current();
-            if let Some(smithay::wayland::compositor::BufferAssignment::NewBuffer(ref wl_buf)) =
-                attrs.buffer
-            {
-                self.held_buffer = Some(wl_buf.clone());
+        // A commit can land on a subsurface; walk up to the root of the
+        // surface tree to find the window it belongs to. Pacing the whole
+        // tree from the root keeps a client's sub-surfaces on the same
+        // frame as its main surface, which is what the client is asking
+        // for when it calls wl_surface.frame on any of them.
+        let root = {
+            let mut s = surface.clone();
+            while let Some(parent) = smithay::wayland::compositor::get_parent(&s) {
+                s = parent;
             }
-        });
+            s
+        };
 
-        // Notify the window of the commit so it can refresh its cached state.
-        if let Some(window) = self
+        let Some(window) = self
             .space
             .elements()
             .find(|w| {
                 w.toplevel()
-                    .map(|t| t.wl_surface() == surface)
+                    .map(|t| t.wl_surface() == &root)
                     .unwrap_or(false)
             })
             .cloned()
-        {
-            window.on_commit();
-            // A game frame, which is what the stats claim to report. Counted
-            // here rather than on the frame-callback tick: that tick fires
-            // whether anything was drawn or not, so counting it reported the
-            // compositor's own cadence back as the game's rate.
-            self.game_frame_count += 1;
-        }
+        else {
+            return;
+        };
+
+        window.on_commit();
+        self.game_frame_count += 1;
+        self.present_now(&root, &window);
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {

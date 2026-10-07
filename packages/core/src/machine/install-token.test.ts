@@ -30,12 +30,14 @@ describe('Install tokens', () => {
 		const registered = await InstallToken.redeem({ token, label: 'host' });
 		expect(registered?.secret.startsWith('msk_')).toBe(true);
 
-		const rows = await sql`select team_id, owner_user_id from machine where id = ${registered!.machineId}`;
+		const rows =
+			await sql`select team_id, owner_user_id from machine where id = ${registered!.machineId}`;
 		expect(rows[0]!.team_id).toBe(owner.teamId);
 		expect(rows[0]!.owner_user_id).toBe(owner.userId);
 
 		// Only the digest is kept, and the row records what it produced.
-		const tok = await sql`select token_hash, machine_id from install_token where team_id = ${owner.teamId}`;
+		const tok =
+			await sql`select token_hash, machine_id from install_token where team_id = ${owner.teamId}`;
 		expect(tok[0]!.token_hash).not.toBe(token);
 		expect(tok[0]!.machine_id).toBe(registered!.machineId);
 	});

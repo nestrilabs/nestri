@@ -21,6 +21,7 @@ static SLEEPERS: &[Service] = &[
         required: true,
         umask: None,
         ready: None,
+        ready_name: None,
     },
     Service {
         name: "second-sleeper",
@@ -31,6 +32,7 @@ static SLEEPERS: &[Service] = &[
         required: true,
         umask: None,
         ready: None,
+        ready_name: None,
     },
 ];
 

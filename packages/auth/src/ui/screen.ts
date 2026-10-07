@@ -52,7 +52,7 @@ export interface Link {
 	external?: boolean;
 }
 
-/** The banner above a form saying what went wrong, or what just happened. */
+/** The small line under a form's fields saying what went wrong, or what just happened. */
 export interface Alert {
 	tone: 'danger' | 'success';
 	message: string;
@@ -167,6 +167,8 @@ export interface ConfirmScreen {
 	fields?: Field[];
 	approve: Action;
 	deny: Action;
+	/** The small print under the two answers. */
+	footer?: Copy;
 	status?: number;
 }
 

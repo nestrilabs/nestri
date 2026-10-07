@@ -134,6 +134,32 @@ assembles a box is not open yet.
 cargo run --release -p nesdoctor
 ```
 
+## Hosting a box: what the machine needs
+
+Run `nesdoctor` on the machine first; it checks the disk, network and display
+this list cannot.
+
+- **Linux on the host itself.** Nestri spawns micro-VMs, so it needs `/dev/kvm`.
+  It does not run in Docker: a container cannot give it that.
+- **Distro:** Arch is what we recommend. Ubuntu works.
+- **Filesystem:** ext4 is fine.
+- **GPU:** NVIDIA is supported.
+
+### Unraid (experimental, untested)
+
+Unraid is a poor host directly (its root filesystem lives in RAM and is rebuilt
+every boot), but it is a good hypervisor. A route nobody has run yet:
+
+1. Create an Arch or Ubuntu VM in Unraid's VM manager.
+2. Pass the GPU through to that VM.
+3. Enable nested virtualisation on the Unraid host (`kvm_intel nested=1` or
+   `kvm_amd nested=1`) and set the VM's CPU mode to host-passthrough, so the VM
+   has its own `/dev/kvm`.
+4. Run `nesdoctor` inside the VM, then install as usual.
+
+Performance and driver behaviour under nested KVM are unmeasured. If you try it,
+tell us where it works or breaks.
+
 ## Status
 
 Working: `nesdoctor` — released, and the only part a stranger can operate

@@ -13,25 +13,20 @@
 #  this image is plain Arch rather than a distribution chosen for its init.
 #  ref(d-0064)
 #
-#  Proton is here, and it is not a closed component: it is proton-ge built
-#  from source wow64-only, which is what removes the need for a whole 32-bit
-#  host stack. Valve's steamclient.so is a different thing and is NOT
-#  here — that one is closed, and nestri/CLAUDE.md is explicit that nothing
-#  closed enters this repo. Whatever layers it on top of runtime_prod is a
-#  closed build outside this repo — see build/README.md.
+#  Proton is NOT in this image any more. It reaches a box as a read-only
+#  image the host attaches, so a different one can be tried without
+#  rebuilding this. What stays here is everything Proton needs *around* it —
+#  its interpreter and its libraries — and the `compat_check` stage below
+#  proves a given Proton still has them. Valve's steamclient.so is a
+#  different thing and is NOT here either — that one is closed, and
+#  nestri/CLAUDE.md is explicit that nothing closed enters this repo.
+#  Whatever layers it on top of runtime_prod is a closed build outside this
+#  repo — see build/README.md.
 #
 #  Build from the repo root, not from build/:
 #    docker build -f build/Containerfile --target runtime_prod -t nestri-guest .
 #  (`make build` in this directory does exactly that.)
 # ═══════════════════════════════════════════════════════════
-
-
-# Declared here and not beside the stage that uses it, because an ARG a FROM
-# expands has to precede the *first* FROM in the file. Anywhere else it is
-# scoped to one stage instead, `FROM ${PROTON_IMAGE}` expands to nothing, and
-# the build fails with "no FROM statement found" — which says nothing about
-# the actual mistake. See the Proton stage below for what this is.
-ARG PROTON_IMAGE=ghcr.io/nestrilabs/proton-ge:11-7
 
 # ───────────────────────────────────────────────────────────
 #  initial / builder
@@ -44,8 +39,8 @@ FROM docker.io/archlinux:base-devel AS initial
 RUN pacman -Syu --noconfirm
 
 FROM initial AS builder
-RUN pacman -S --noconfirm --needed \
-        cmake meson ninja git pkgconf \
+RUN pacman -Syu --noconfirm --needed \
+        cmake meson ninja git pkgconf mold \
         python python-mako python-yaml python-packaging python-ply \
         bison flex \
         libpciaccess libepoxy libglvnd \
@@ -53,17 +48,27 @@ RUN pacman -S --noconfirm --needed \
         xcb-util-keysyms xorgproto \
         wayland wayland-protocols \
         expat zlib zstd libxml2 lm_sensors \
-        llvm clang libclc spirv-tools spirv-llvm-translator glslang \
+        llvm clang libclc spirv-tools spirv-llvm-translator glslang shader-slang \
         elfutils libva libdrm directx-headers \
-        rust rust-bindgen cbindgen \
+        rustup rust-bindgen cbindgen \
         curl openssl \
         pixman libxkbcommon \
         vulkan-headers vulkan-icd-loader \
         pipewire shaderc opus \
         libinput \
     && pacman -Scc --noconfirm
+
+# **Rust comes from rustup, never from the distribution's `rust` package.** That
+# package is built against the distribution's LLVM, and when the two repositories
+# this image draws from disagree about it, `rustc` itself fails to start with a
+# symbol-lookup error — before any of our code is involved, and in every stage
+# that builds Rust. A toolchain of its own cannot be broken by a library it does
+# not link.
+RUN rustup default stable
+
 WORKDIR /build
 ENV ARTIFACTS=/artifacts
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 
 
 # ───────────────────────────────────────────────────────────
@@ -71,8 +76,8 @@ ENV ARTIFACTS=/artifacts
 # ───────────────────────────────────────────────────────────
 FROM builder AS mesa-build
 
-ARG MESA_GIT=https://gitlab.freedesktop.org/nowrep/mesa.git
-ARG MESA_COMMIT=1af89bea491deabc4741700f8df4d41edfd22f7a
+ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
+ARG MESA_COMMIT=a4a47003a194effad8cabe727f74985e9417476f
 ARG JOBS=
 
 # Our patches to the amdgpu native-context path, applied on top of the pinned
@@ -101,7 +106,7 @@ RUN test -n "$JOBS" || JOBS=$(nproc) && \
         -Dgbm=disabled \
         -Dgallium-va=disabled \
         -Db_ndebug=true && \
-    ninja -C builddir -j${JOBS:-$(nproc)} && \
+    mold -run ninja -C builddir -j${JOBS:-$(nproc)} && \
     DESTDIR=/artifacts/mesa ninja -C builddir install && \
     rm -rf /build/mesa-src && \
     find /artifacts/mesa -type f -printf '/%P\n' > /artifacts/mesa/.manifest
@@ -130,6 +135,7 @@ FROM builder AS nestri-src
 WORKDIR /build/nestri
 COPY Cargo.toml Cargo.lock ./
 COPY crates/nesprotocol crates/nesprotocol
+COPY crates/nespyro crates/nespyro
 # Not a guest component and not installed below — it runs on a stranger's own
 # machine. It is here because `cargo` loads every workspace member's manifest
 # before it builds anything, so a member missing from the context fails the
@@ -163,25 +169,72 @@ RUN --mount=type=cache,target=/root/.cargo/registry \
 
 
 # ───────────────────────────────────────────────────────────
-#  Proton — pulled, not built here
+#  virtio-nvgpu's Vulkan layer — for guests on an NVIDIA host
 #
-#  Building it takes hours and it changes only when its own tag moves, so it
-#  has a cadence of its own and an image of its own. The published image is
-#  `FROM scratch` over the tree, so its root *is* the tree and there is nothing
-#  in it to run — only something to copy from.
+#  On an NVIDIA host the guest runs NVIDIA's own Vulkan driver over a
+#  forwarded device, and that driver offers ray tracing, optical flow and a
+#  few others it then cannot create a device with: vkCreateDevice fails, and
+#  an engine that enables what it is offered does not start. The layer hides
+#  them. It acts only on an NVIDIA device in a guest with the virtio-nvgpu
+#  driver, so on an AMD or Intel box it is loaded and does nothing.
 #
-#  Built wow64-only, which is the whole reason it is a build of ours rather
-#  than a released one. wow64 runs 32-bit Windows code inside a 64-bit unix
-#  process, so a box needs no lib32 anything: no 32-bit glibc, no second Mesa
-#  for i686, and — the one that matters most here — no
-#  second capture layer, because the game is a 64-bit process and loads the
-#  64-bit Vulkan loader the existing layer already sits in. The released builds
-#  carry a 32-bit unix side, which is exactly why they need lib32-*.
-#
-#  Override to build it yourself; the tag is a version and moves deliberately.
+#  Built from virtio-nvgpu's own tree at NVGPU_REF, the same ref the kernel
+#  build takes the guest driver from (build/Makefile), because the layer's job
+#  is to say what that driver and its backend can do. The commit is recorded
+#  in /usr/share/nestri/virtio-nvgpu.rev.
 # ───────────────────────────────────────────────────────────
-FROM ${PROTON_IMAGE} AS proton
+FROM builder AS nvgpu-layer-build
+ARG NVGPU_GIT=https://github.com/nestrilabs/virtio-nvgpu.git
+ARG NVGPU_REF=dev
+RUN --mount=type=cache,target=/root/.cargo/registry \
+    git init -q /build/virtio-nvgpu && cd /build/virtio-nvgpu && \
+    git fetch -q --depth=1 "${NVGPU_GIT}" "${NVGPU_REF}" && git checkout -q FETCH_HEAD && \
+    cargo build --release -p nvgpu-vklayer && \
+    install -Dm755 target/release/libVkLayer_nvgpu.so \
+        /artifacts/nvgpu/usr/lib/libVkLayer_nvgpu.so && \
+    mkdir -p /artifacts/nvgpu/usr/share/vulkan/implicit_layer.d /artifacts/nvgpu/usr/share/nestri && \
+    sed 's|"./libVkLayer_nvgpu.so"|"libVkLayer_nvgpu.so"|' vklayer/VkLayer_nvgpu.json \
+        > /artifacts/nvgpu/usr/share/vulkan/implicit_layer.d/VkLayer_nvgpu.json && \
+    grep -q '"library_path": "libVkLayer_nvgpu.so"' \
+        /artifacts/nvgpu/usr/share/vulkan/implicit_layer.d/VkLayer_nvgpu.json && \
+    git rev-parse HEAD > /artifacts/nvgpu/usr/share/nestri/virtio-nvgpu.rev && \
+    cd / && rm -rf /build/virtio-nvgpu && \
+    find /artifacts/nvgpu -type f -printf '/%P\n' > /artifacts/nvgpu/.manifest
 
+
+# ───────────────────────────────────────────────────────────
+#  umu-launcher — built here, not installed from the distribution
+#
+#  `umu-run` launches every title that is not Steam's, applying the game fixes
+#  Proton carries outside Steam the way launchers such as Heroic do.
+#
+#  The distribution's package is not used because of what it declares: it
+#  depends on a long list of `lib32-*` libraries and desktop packages that exist
+#  for the Steam Linux Runtime container, which this image never runs — Proton
+#  runs on the libraries in here (see the compat_check stage). Building from
+#  source costs the package and none of that.
+#
+#  Built against the distribution's own `urllib3` and `pyzstd` rather than the
+#  copies it can vendor: vendoring builds both from source with pinned build
+#  tooling, and a rolling distribution moves past those pins (a
+#  `setuptools-scm` too new for them failed the build). The image installs the
+#  two as ordinary Python packages, with no 32-bit anything.
+#
+#  Pinned by tag; it moves deliberately.
+# ───────────────────────────────────────────────────────────
+FROM builder AS umu-build
+ARG UMU_GIT=https://github.com/Open-Wine-Components/umu-launcher.git
+ARG UMU_TAG=1.4.4
+RUN pacman -Syu --noconfirm --needed \
+        make scdoc gcc \
+        python-build python-hatchling python-installer python-pip \
+    && pacman -Scc --noconfirm
+RUN git clone --depth 1 --branch "${UMU_TAG}" --recurse-submodules --shallow-submodules \
+        "${UMU_GIT}" /umu && \
+    cd /umu && \
+    ./configure.sh --prefix=/usr --use-system-pyzstd --use-system-urllib && \
+    make && \
+    make DESTDIR=/artifacts/umu install
 
 # ───────────────────────────────────────────────────────────
 #  os-base — the Arch rootfs itself
@@ -258,34 +311,40 @@ RUN pacman-key --init
 # The second was found by the check further down rather than by reading the
 # list — dropping a package takes its dependency tree with it, and the part of
 # that tree something else was quietly using is not visible from here.
+# Created before the install, with the numbers the distribution reserves for them,
+# because the packages hand ownership of a few directories to these names and
+# the hook that would have made the users goes with systemd. `polkit` is here
+# for `rtkit`, which will not grant realtime priority to anything without it;
+# see the services table in `nesinit`.
+RUN groupadd -r -g 102 polkitd && useradd -r -u 102 -g polkitd -d / -s /usr/bin/nologin polkitd && \
+    groupadd -r -g 133 rtkit && useradd -r -u 133 -g rtkit -d / -s /usr/bin/nologin rtkit
+
 RUN pacman -Syu --noconfirm --needed \
         --assume-installed mesa --assume-installed opengl-driver \
-        dbus \
+        dbus polkit rtkit \
         iptables iproute2 \
         libglvnd libdrm libepoxy libxxf86vm libinput wayland \
         expat zlib llvm-libs lm_sensors elfutils libva shaderc vulkan-icd-loader \
         pixman libxkbcommon xcb-util-keysyms xorg-xwayland \
-        pipewire pipewire-audio pipewire-pulse libpulse wireplumber opus \
+        pipewire pipewire-audio wireplumber opus \
         python libunwind sdl2-compat \
+        python-xlib python-urllib3 python-pyzstd \
+        strace lsof less \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
     && pacman -Scc --noconfirm
 
+# `strace`, `lsof` and `less` are for the operator's shell (`neslet box exec`):
+# a root shell in a box that cannot trace a process, list what it has open or
+# page through a log is the situation that feature exists to get out of. They
+# are a few hundred kilobytes between them.
+#
 # `libunwind` is Wine's, not ours. `ntdll.so` links it, so without it every
 # process Wine starts dies at `could not load ntdll.so`, which is the first
 # thing it loads and reads like Wine itself being broken. Found 2026-09-12,
 # after the prefix had already been created -- so the session got past every
 # check that Proton was present and usable.
 #
-# `pipewire-pulse` and `libpulse` are Wine's audio. Its driver speaks only the
-# PulseAudio protocol, so without the translation layer a game starts, renders
-# and plays silently, with nothing failing to say why. `libpulse` is what that
-# driver, `winepulse.so`, links, and it would arrive as a dependency of
-# pipewire-pulse anyway. It is named because the dependency is Wine's and not
-# pipewire-pulse's, and a library that only arrives as somebody else's
-# dependency goes away when they do. The check below covers `winepulse.so`, so a
-# missing library fails the build rather than the session.
-
 # `python` is not a build dependency here -- the builder stage has its own for
 # Mesa -- it is a *runtime* one. The compatibility tool's entry point is a
 # Python script, so a box without an interpreter starts a game and the launch
@@ -377,20 +436,17 @@ LABEL org.opencontainers.image.source="https://github.com/nestrilabs/nestri"
 # purpose, not an oversight.
 COPY --from=mesa-build   /artifacts/mesa/.manifest   /tmp/mesa.manifest
 COPY --from=nestri-build /artifacts/nestri/.manifest /tmp/nestri.manifest
-RUN cat /tmp/mesa.manifest /tmp/nestri.manifest > /tmp/.strip-manifest && \
-    rm -f /tmp/mesa.manifest /tmp/nestri.manifest
+COPY --from=nvgpu-layer-build /artifacts/nvgpu/.manifest /tmp/nvgpu.manifest
+RUN cat /tmp/mesa.manifest /tmp/nestri.manifest /tmp/nvgpu.manifest > /tmp/.strip-manifest && \
+    rm -f /tmp/mesa.manifest /tmp/nestri.manifest /tmp/nvgpu.manifest
 COPY --from=mesa-build   /artifacts/mesa   /
 COPY --from=nestri-build /artifacts/nestri /
+COPY --from=nvgpu-layer-build /artifacts/nvgpu /
+COPY --from=umu-build    /artifacts/umu    /
 
-# The Proton tree, whose image root is the tree, so this lands it at
-# /usr/share/steam/compatibilitytools.d/proton-ge.
-#
-# Deliberately not in the strip manifest above: that list is our own build
-# output, and the two stripping decisions are not the same one. Proton ships
-# a Windows toolchain's worth of PE binaries that `strip` has no business
-# touching, and its unix side is already built the way its own packaging
-# builds it.
-COPY --from=proton / /
+# **No Proton here.** It is attached to a box at run time, mounted at
+# /nestri/compat, so this image has no Proton path for a launch to fall back to
+# and a box started without one fails saying where it looked.
 
 RUN ldconfig
 
@@ -463,8 +519,9 @@ RUN for intruder in /usr/lib/systemd/systemd /sbin/openrc-init /usr/bin/openrc-i
 # JACK output, libdecor's GTK backend — and every one of those was already
 # unresolved before this stage existed. A check that reports a dozen things
 # nobody intends to load is a check the next person deletes. This list is what
-# the image is *for*: the components, the services init starts, the chain
-# between a workload and the GPU, and Wine's own core.
+# the image is *for*: the components, the services init starts, and the chain
+# between a workload and the GPU. Wine's own core is checked by the
+# `compat_check` stage, against the Proton it is actually going to run.
 #
 # **Wine was added after it was missed**, and then narrowed twice, which is
 # worth recording so nobody widens it again.
@@ -507,12 +564,12 @@ RUN failed=0; \
     : > /tmp/missing-libs; \
     for f in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
              /usr/bin/nesgamepad /usr/lib/libnescapture_layer.so /usr/lib/libSDL2-2.0.so.0 \
-             /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
+             /usr/lib/libVkLayer_nvgpu.so \
+             /usr/bin/dbus-daemon /usr/bin/pipewire \
+             /usr/lib/polkit-1/polkitd /usr/lib/rtkit-daemon \
              /usr/bin/wireplumber /usr/bin/ip \
              /usr/lib/libgallium-*.so /usr/lib/libEGL_mesa.so.0 \
-             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/bin/* \
-             /usr/share/steam/compatibilitytools.d/proton-cachyos/files/lib*/wine/*-unix/ntdll.so; do \
+             /usr/lib/libvulkan_*.so /usr/lib/dri/*.so /usr/lib/gbm/*.so; do \
         [ -e "$f" ] || continue; \
         libs="$(LD_LIBRARY_PATH="${f%/*}" ldd "$f" 2>/dev/null | awk '/not found/ { print $1 }')"; \
         [ -n "$libs" ] || continue; \
@@ -530,34 +587,26 @@ RUN failed=0; \
 
 RUN for required in /usr/bin/nesinit /usr/bin/nescope /usr/bin/neshub /usr/bin/neswire \
                     /usr/bin/nesgamepad /usr/lib/libSDL2-2.0.so.0 \
-                    /usr/bin/dbus-daemon /usr/bin/pipewire /usr/bin/pipewire-pulse \
-                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 \
-                    /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
+                    /usr/bin/dbus-daemon /usr/bin/pipewire \
+                    /usr/lib/polkit-1/polkitd /usr/lib/rtkit-daemon \
+                    /usr/bin/wireplumber /usr/bin/ip /usr/bin/python3 /usr/bin/umu-run; do \
         test -x "$required" || { echo "the image is missing $required" >&2; exit 1; }; \
     done
 
-# An entry point that is executable is not an entry point that runs.
-#
-# The check above passed on an image whose compatibility tool was a Python
-# script with no interpreter behind it: `test -x` says the file may be
-# executed, and the kernel then fails to find what the shebang names. A session
-# got as far as launching a game and ended with
-# `env: 'python3': No such file or directory`.
-#
-# So every script this image promises resolves its own interpreter. `env` is
-# unwrapped where it is used, because a shebang of `#!/usr/bin/env python3`
-# names `env` and the thing that is actually missing is the argument.
-RUN for script in /usr/share/steam/compatibilitytools.d/proton-cachyos/proton; do \
-        head -c 2 "$script" | grep -q '#!' || continue; \
-        shebang="$(head -1 "$script" | sed 's/^#!//')"; \
-        interpreter="${shebang%% *}"; \
-        case "$interpreter" in \
-            */env) argument="${shebang#* }"; interpreter="$(command -v "${argument%% *}" || true)";; \
-        esac; \
-        test -n "$interpreter" && test -x "$interpreter" \
-            || { echo "$script needs an interpreter the image does not have: $shebang" >&2; exit 1; }; \
-    done
+# `umu-run` has to start, not only exist. It is a Python program built in another
+# stage: a module it imports that this image lacks, or an interpreter that moved
+# a minor version between that stage and this one, is a game that never starts —
+# and the launch reports a failure to run a script, not a missing module.
+RUN umu-run --help >/dev/null 2>&1 \
+    || { echo "umu-run does not start; run it by hand to see the module or interpreter it lacks" >&2; \
+         umu-run --help >&2 || true; exit 1; }
 
+# No 32-bit libraries came with it. The distribution's umu package would have
+# brought a long list of them for the container runtime this image never runs,
+# which is why it is built instead of installed; this is the check that stays
+# true if somebody swaps it back.
+RUN ! pacman -Qq | grep -q '^lib32-' \
+    || { echo "a lib32 package is installed:" >&2; pacman -Qq | grep '^lib32-' >&2; exit 1; }
 
 # ───────────────────────────────────────────────────────────
 #  runtime_prod — the default: `make build`

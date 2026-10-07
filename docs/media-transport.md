@@ -90,6 +90,14 @@ or a connection that is already gone, never for one the path could not carry.
 prioritising old frames over current ones, which for live media is the wrong
 trade.)
 
+The hub sends each frame with `send_many_datagrams` (iroh 1.3), which is the
+same call over a batch: `send_many(datagrams, true)`, evicting exactly as
+above and returning the full count. What it adds is that the batch is queued
+under one lock hold, and a `TooLarge` on any fragment rejects the whole batch,
+so a frame goes out whole or not at all. noq-proto's `send_many` with
+`drop: false` would queue until full and return a partial count — a real
+backpressure signal — but iroh does not expose that mode.
+
 A sender overrunning the path is therefore told nothing at all. Any counter
 fed by that return value cannot be non-zero however badly things are going,
 which is exactly how a field report came to contain "encoder perfectly healthy,

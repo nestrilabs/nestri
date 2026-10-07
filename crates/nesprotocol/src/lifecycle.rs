@@ -47,6 +47,15 @@ use serde::{Deserialize, Serialize};
 /// slow boot from a dead one.
 pub const CONTROL_PORT: u32 = 7000;
 
+/// The vsock port an attached shell's bytes travel on.
+///
+/// The host sends [`HostToGuest::Attach`] on the control channel and the guest
+/// answers by dialling this, the same direction the control channel itself goes,
+/// so nothing in the box has to listen. The stream is the frames in
+/// [`crate::attach`]. It is a port of its own because a screenful of output on
+/// the control channel would hold every other message in the box behind it.
+pub const ATTACH_PORT: u32 = 7001;
+
 /// Version of this layer. Both ends compare it during the handshake and refuse
 /// on mismatch, so a guest built against one version meeting a caller built
 /// against another fails immediately and legibly, rather than later on a field
@@ -62,7 +71,14 @@ pub const CONTROL_PORT: u32 = 7000;
 ///
 /// Version 4 replaced the descriptor's `drives` with `overlays`: a build is a
 /// read-only image now, and a box writes into a layer of its own over it.
-pub const CONTROL_VERSION: u32 = 4;
+///
+/// Version 5 added `images`: a read-only image mounted on its own, which is how
+/// the compatibility layer reaches a box now that the guest image no longer
+/// carries one. It is a bump although it is only a field, because the
+/// descriptor refuses fields it does not know and a guest image without that
+/// layer is useless to a host that does not send one: the mismatch should be
+/// named at the handshake and not found as a launch that cannot start.
+pub const CONTROL_VERSION: u32 = 5;
 
 /// The command to run, and who runs it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -130,6 +146,24 @@ pub struct Overlay {
     pub at: String,
 }
 
+/// A read-only filesystem image, mounted where the descriptor says.
+///
+/// What reaches a box this way is something every box on a host shares and none
+/// of them writes: the compatibility layer a Windows title runs under. Unlike
+/// an [`Overlay`] there is no writable layer over it, so anything that writes
+/// into its own directory fails, and that is the point -- two boxes cannot
+/// disagree about what is in it.
+///
+/// Mounted as EROFS, with the same guards every layer has (`nosuid`, `nodev`)
+/// and without `noexec`, because the programs in it are what gets run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Image {
+    /// The block device, as the guest names it.
+    pub device: String,
+    /// Where it lands inside the guest.
+    pub at: String,
+}
+
 /// Names one launch, for as long as anything has something to say about it.
 ///
 /// Minted by the caller and only ever echoed by the guest. A guest that
@@ -156,6 +190,39 @@ impl std::fmt::Display for LaunchId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+/// Names one attached shell, for as long as the connection that carries it.
+///
+/// Minted by the host and echoed by the guest in the first frame of the stream,
+/// which is how the host knows which waiting command line a connection belongs
+/// to. Not a [`LaunchId`]: a shell is not a launch and has no exit that means
+/// anything to the session.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AttachId(pub String);
+
+impl AttachId {
+    pub fn new(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for AttachId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+/// A terminal's size, in character cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Winsize {
+    pub cols: u16,
+    pub rows: u16,
 }
 
 /// What the workload exiting means for the session.
@@ -196,6 +263,10 @@ pub struct BootDescriptor {
     pub mounts: Vec<Mount>,
     #[serde(default)]
     pub overlays: Vec<Overlay>,
+    /// Read-only images with nothing over them. Left out of the wire form when
+    /// there are none, so a descriptor that needs none reads the same as before.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
     /// What the box may spend on video.
     ///
     /// Here rather than on a launch because its consumer is `neshub`, which is
@@ -309,6 +380,11 @@ pub enum GuestToHost {
         #[serde(flatten)]
         exit: Exit,
     },
+    /// The shell with this id could not be started, in the words the operating
+    /// system used. Said on the control channel because nothing has connected to
+    /// the data port yet, and a host that heard nothing would wait out a timeout
+    /// to find out.
+    AttachFailed { id: AttachId, reason: String },
     /// The launch with this id is running.
     Started { id: LaunchId },
     /// The launch with this id could not be run, in the words the operating
@@ -359,6 +435,21 @@ pub enum HostToGuest {
     /// exists as one message only because a caller sending two has the same
     /// effect with a worse race in it. The relaunch keeps the id. ref(d-0064)
     Restart { id: LaunchId },
+    /// Run something on a terminal and connect it to the host on
+    /// [`ATTACH_PORT`].
+    ///
+    /// **Not a launch.** It has no `on_exit`, because nothing it does ends the
+    /// session, and it is not the running launch, so a shell can come and go
+    /// while a game plays. `size` present means a person is at a terminal and the
+    /// PTY is an ordinary one; absent means a command is being run for its
+    /// output, and the PTY is put in raw mode so it is a byte pipe and not a
+    /// terminal that rewrites line endings.
+    Attach {
+        id: AttachId,
+        exec: Exec,
+        #[serde(default)]
+        size: Option<Winsize>,
+    },
     /// Shut the guest down.
     Shutdown,
     /// Bytes for the workload, relayed. See [`Payload`].
@@ -441,6 +532,7 @@ mod tests {
                 ro: true,
             }],
             overlays: Vec::new(),
+            images: Vec::new(),
             video: VideoLimits::default(),
         }
     }
@@ -704,6 +796,7 @@ mod video_limits_tests {
         let d = BootDescriptor {
             mounts: Vec::new(),
             overlays: Vec::new(),
+            images: Vec::new(),
             video: VideoLimits::default(),
         };
         let json = serde_json::to_string(&d).unwrap();
@@ -715,6 +808,7 @@ mod video_limits_tests {
         let d = BootDescriptor {
             mounts: Vec::new(),
             overlays: Vec::new(),
+            images: Vec::new(),
             video: VideoLimits {
                 bitrate_kbps: Some(8_000),
             },
@@ -743,5 +837,91 @@ mod video_limits_tests {
         let r: Result<BootDescriptor, _> =
             serde_json::from_str(r#"{"video":{"bitrate_kbps":8000,"fps_cap":30}}"#);
         assert!(r.is_err(), "an unknown video limit must not be ignored");
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+
+    #[test]
+    fn a_descriptor_with_no_images_reads_and_writes_as_it_always_did() {
+        let d: BootDescriptor = serde_json::from_str(r#"{"mounts":[],"overlays":[]}"#).unwrap();
+        assert!(d.images.is_empty());
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(!json.contains("images"), "{json}");
+    }
+
+    #[test]
+    fn an_image_survives_the_round_trip() {
+        let d = BootDescriptor {
+            mounts: Vec::new(),
+            overlays: Vec::new(),
+            images: vec![Image {
+                device: "/dev/vdd".into(),
+                at: "/nestri/compat".into(),
+            }],
+            video: VideoLimits::default(),
+        };
+        let json = serde_json::to_string(&d).unwrap();
+        assert!(json.contains(r#""images":[{"device":"/dev/vdd","at":"/nestri/compat"}]"#));
+        let back: BootDescriptor = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, d);
+    }
+}
+
+#[cfg(test)]
+mod attach_tests {
+    use super::*;
+
+    #[test]
+    fn an_attach_round_trips_with_and_without_a_terminal() {
+        for size in [
+            Some(Winsize {
+                cols: 120,
+                rows: 40,
+            }),
+            None,
+        ] {
+            let attach = HostToGuest::Attach {
+                id: AttachId::new("a-1"),
+                exec: Exec {
+                    argv: vec!["/bin/bash".into()],
+                    env: Default::default(),
+                    cwd: None,
+                    uid: 0,
+                    gid: 0,
+                },
+                size,
+            };
+            let back: HostToGuest = from_line(&to_line(&attach).unwrap()).unwrap();
+            assert_eq!(back, attach);
+        }
+    }
+
+    /// A host that leaves `size` out is asking for a command, not a terminal.
+    #[test]
+    fn an_attach_with_no_size_is_not_a_terminal() {
+        let line = r#"{"type":"attach","id":"a-1","exec":{"argv":["/bin/true"],"uid":0,"gid":0}}"#;
+        let HostToGuest::Attach { size, .. } = from_line(line).unwrap() else {
+            panic!("not an attach")
+        };
+        assert_eq!(size, None);
+    }
+
+    #[test]
+    fn a_failed_attach_says_which() {
+        let failed = GuestToHost::AttachFailed {
+            id: AttachId::new("a-1"),
+            reason: "no such file".into(),
+        };
+        let back: GuestToHost = from_line(&to_line(&failed).unwrap()).unwrap();
+        assert_eq!(back, failed);
+    }
+
+    /// The attach port is not the control port.
+    #[test]
+    fn the_data_port_is_its_own() {
+        assert_ne!(ATTACH_PORT, CONTROL_PORT);
     }
 }

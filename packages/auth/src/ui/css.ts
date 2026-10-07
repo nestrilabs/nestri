@@ -41,9 +41,7 @@ export default `
 	--color-muted-foreground2: var(--color-gray-800);
 
 	--color-red-600: hsl(358 75% 59%);
-	--color-red-100: hsl(357 37% 12%);
 	--color-green-600: hsl(151 55% 42%);
-	--color-green-100: hsl(154 49% 9%);
 
 	--font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
 	--font-mona: 'Mona Sans Variable', var(--font-sans);
@@ -252,7 +250,7 @@ body {
 	/* Stated rather than inherited: a form control does not take its parent's
 	   colour, and leaving it to the UA put black glyphs on this field. */
 	color: var(--color-foreground);
-	caret-color: var(--color-brand);
+	caret-color: var(--color-foreground);
 	outline: none;
 	transition:
 		border-color 150ms,
@@ -267,9 +265,18 @@ body {
 	border-color: var(--color-gray-400);
 }
 
+/* Focus is white, never the brand colour: orange around a field reads as an
+   error, and the wordmark above is the only thing that should be orange. Grey
+   while the value cannot be submitted yet, white once it can — so the field
+   says it is done before the button does. */
 [data-component='input']:focus {
-	border-color: var(--color-brand);
-	box-shadow: 0 0 0 1px var(--color-brand);
+	border-color: var(--color-gray-600);
+	box-shadow: 0 0 0 1px var(--color-gray-600);
+}
+
+[data-component='input']:focus:valid {
+	border-color: var(--color-gray-1000);
+	box-shadow: 0 0 0 1px var(--color-gray-1000);
 }
 
 /* Chrome paints its own background over an autofilled field and ignores
@@ -279,7 +286,7 @@ body {
 [data-component='input']:-webkit-autofill:focus {
 	-webkit-text-fill-color: var(--color-foreground);
 	-webkit-box-shadow: 0 0 0 100px var(--color-background-100) inset;
-	caret-color: var(--color-brand);
+	caret-color: var(--color-foreground);
 }
 
 [data-component='button'] {
@@ -312,7 +319,21 @@ body {
 [data-component='button']:focus-visible {
 	box-shadow:
 		0 0 0 2px var(--color-background-200),
-		0 0 0 4px var(--color-brand);
+		0 0 0 4px var(--color-gray-1000);
+}
+
+/* Dimmed until every field in its form would pass, using the browser's own
+   validity — \`type=email\`, \`required\`, the code's \`pattern\` — so there is
+   no script and no second definition of valid. Dimmed, not disabled: pressing
+   it still gets the browser's message saying what is missing. */
+form:has([data-component='input']:invalid) [data-component='button'] {
+	opacity: 0.35;
+	cursor: not-allowed;
+}
+
+form:has([data-component='input']:invalid) [data-component='button']:hover {
+	background: var(--color-gray-1000);
+	scale: 1;
 }
 
 [data-component='button']:disabled {
@@ -359,46 +380,20 @@ body {
 }
 
 [data-component='form-alert'] {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	border-radius: 0.75rem;
-	border: 1px solid var(--color-red-600);
-	background: var(--color-red-100);
-	padding: 0.75rem 1rem;
+	margin: -0.25rem 0 0;
 	font-size: 0.8125rem;
 	line-height: 1.25rem;
-	color: var(--color-foreground);
+	font-weight: 500;
+	color: var(--color-red-600);
 	text-align: left;
 }
 
 [data-component='form-alert'][data-color='success'] {
-	border-color: var(--color-green-600);
-	background: var(--color-green-100);
-}
-
-[data-component='form-alert'] svg {
-	height: 1.25rem;
-	width: 1.25rem;
-	flex-shrink: 0;
-}
-
-[data-component='form-alert'] [data-slot='icon-success'] {
-	display: none;
 	color: var(--color-green-600);
 }
 
-[data-component='form-alert'] [data-slot='icon-danger'] {
-	display: block;
-	color: var(--color-red-600);
-}
-
-[data-component='form-alert'][data-color='success'] [data-slot='icon-success'] {
-	display: block;
-}
-
-[data-component='form-alert'][data-color='success'] [data-slot='icon-danger'] {
-	display: none;
+[data-component='form-alert'] + [data-component='form-alert'] {
+	margin-top: -0.5rem;
 }
 
 /* The secondary action: a way in that is not the one being recommended, and
@@ -491,6 +486,110 @@ body {
 	font-variant-numeric: tabular-nums;
 }
 
+/* A code field drawn as one box per character, by \`segments.ts\`. The real
+   field is stretched invisibly over the boxes and takes every keystroke,
+   paste and autofill; the boxes only show what it holds. */
+[data-component='segments'] {
+	position: relative;
+	width: 100%;
+}
+
+[data-component='segments'][data-enhanced] > [data-component='input'] {
+	position: absolute;
+	inset: 0;
+	z-index: 1;
+	height: 100%;
+	opacity: 0;
+	cursor: text;
+}
+
+[data-component='segments'] [data-slot='boxes'] {
+	display: flex;
+	width: 100%;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+[data-component='input'][data-variant='box'] {
+	display: flex;
+	flex: 1 1 0%;
+	min-width: 0;
+	/* The height of a one-line field: line, padding and border. A box is a
+	   div, and an empty div has no line to be the height of. */
+	height: calc(2rem + 1.8rem + 2px);
+	padding: 0;
+	align-items: center;
+	justify-content: center;
+	font-family: var(--font-mona);
+	font-size: 1.5rem;
+	line-height: 2rem;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+/* The box the next character goes into: the focus ring, grey until the code
+   is whole and white once it is — the same rule as every other field. */
+[data-component='input'][data-variant='box'][data-active] {
+	border-color: var(--color-gray-600);
+	box-shadow: 0 0 0 1px var(--color-gray-600);
+}
+
+[data-component='segments'][data-complete] [data-variant='box'][data-active] {
+	border-color: var(--color-gray-1000);
+	box-shadow: 0 0 0 1px var(--color-gray-1000);
+}
+
+/* The real caret is invisible with its field, so the empty box it is in
+   draws one. */
+[data-component='input'][data-variant='box'][data-active]:empty::after {
+	content: '';
+	width: 2px;
+	height: 1.5rem;
+	background: var(--color-foreground);
+	animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+	50% {
+		opacity: 0;
+	}
+}
+
+[data-component='segments'] [data-slot='separator'] {
+	flex: none;
+	color: var(--color-muted-foreground2);
+	font-family: var(--font-mona);
+	font-size: 1.5rem;
+	font-weight: 700;
+	user-select: none;
+}
+
+
+/* A wrong answer shakes the field it came from, once, and rings it red while
+   it does. Every error is a new page, so an animation that runs on load runs
+   exactly when one arrives — no script needed to trigger it. \`segments.ts\`
+   plays the same two when a code field refuses a character. */
+@keyframes shake {
+	0%, 100% { translate: 0; }
+	15%, 55% { translate: -0.5rem; }
+	35%, 75% { translate: 0.5rem; }
+	90% { translate: -0.2rem; }
+}
+
+/* No end frame, so it fades back to whatever border the field has now. */
+@keyframes alarm {
+	0%, 60% {
+		border-color: var(--color-red-600);
+		box-shadow: 0 0 0 1px var(--color-red-600);
+	}
+}
+
+form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
+	animation:
+		shake 400ms ease-in-out,
+		alarm 1s ease-out;
+}
+
 [data-component='input'][data-variant='code']::placeholder {
 	letter-spacing: normal;
 	font-size: 1rem;
@@ -525,6 +624,15 @@ body {
 
 	[data-component='button']:hover {
 		scale: 1;
+	}
+
+	/* The red stays: it is the message. Only the movement goes. */
+	form:has([data-component='form-alert'][data-color='danger']) [data-component='input'] {
+		animation: alarm 1s ease-out;
+	}
+
+	[data-component='input'][data-variant='box'][data-active]:empty::after {
+		animation: none;
 	}
 }
 `;

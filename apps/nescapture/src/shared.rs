@@ -6,6 +6,10 @@
 //  because two devices share no timeline. Here the game's device is created
 //  with what the encoder needs, and the encoder is handed that device instead.
 //
+//  Two encoders can live there: pixelforge's Vulkan Video encoder and
+//  nespyro's PyroWave. Each is checked on its own, and the device gets the
+//  additions of whichever it can host — one, both, or, if neither, none.
+//
 //  Three things are added to the game's vkCreateDevice, and none of them
 //  changes what the game gets:
 //
@@ -33,9 +37,13 @@ use std::collections::BTreeMap;
 /// the device's queue create infos.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueuePlan {
-    pub encode: DeviceQueue,
+    /// Vulkan Video encode, when pixelforge is hosted.
+    pub encode: Option<DeviceQueue>,
+    /// pixelforge's converter and all of nespyro. Both encoders submit from the
+    /// one encoder thread, so they share it freely.
     pub compute: DeviceQueue,
-    pub transfer: DeviceQueue,
+    /// pixelforge's copies, when pixelforge is hosted.
+    pub transfer: Option<DeviceQueue>,
     /// How many queues to create in each family, where that is more than the
     /// game asked for.
     pub counts: BTreeMap<u32, u32>,
@@ -71,7 +79,32 @@ fn rank(flags: vk::QueueFlags) -> u32 {
     r
 }
 
-/// Pick a queue for every role.
+/// Which roles a plan has to fill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Wants {
+    /// An encode queue, and the family the encoder would like it from.
+    pub encode: Option<Option<u32>>,
+    /// A transfer queue.
+    pub transfer: bool,
+}
+
+impl Wants {
+    /// What pixelforge needs: encode, compute and transfer.
+    pub fn video(preferred_encode: Option<u32>) -> Self {
+        Self {
+            encode: Some(preferred_encode),
+            transfer: true,
+        }
+    }
+
+    /// What nespyro alone needs: compute, which every plan has.
+    pub const PYRO_ONLY: Self = Self {
+        encode: None,
+        transfer: false,
+    };
+}
+
+/// Pick a queue for every role `wants` names, and a compute queue always.
 ///
 /// `families` is the device's queue families, `game` how many queues the game
 /// asked for in each (and with which flags). The encoder takes at most one
@@ -83,7 +116,7 @@ fn rank(flags: vk::QueueFlags) -> u32 {
 pub fn plan_queues(
     families: &[vk::QueueFamilyProperties],
     game: &BTreeMap<u32, (u32, vk::DeviceQueueCreateFlags)>,
-    preferred_encode: Option<u32>,
+    wants: Wants,
     internally_synchronized_queues: bool,
 ) -> Option<QueuePlan> {
     let mut counts: BTreeMap<u32, u32> = BTreeMap::new();
@@ -146,13 +179,16 @@ pub fn plan_queues(
         None
     };
 
-    let encode = pick(
-        vk::QueueFlags::VIDEO_ENCODE_KHR,
-        preferred_encode,
-        &mut counts,
-        &mut ours,
-        &mut shared,
-    )?;
+    let encode = match wants.encode {
+        Some(preferred) => Some(pick(
+            vk::QueueFlags::VIDEO_ENCODE_KHR,
+            preferred,
+            &mut counts,
+            &mut ours,
+            &mut shared,
+        )?),
+        None => None,
+    };
     let compute = pick(
         vk::QueueFlags::COMPUTE,
         None,
@@ -160,13 +196,17 @@ pub fn plan_queues(
         &mut ours,
         &mut shared,
     )?;
-    let transfer = pick(
-        vk::QueueFlags::TRANSFER,
-        Some(compute.family),
-        &mut counts,
-        &mut ours,
-        &mut shared,
-    )?;
+    let transfer = if wants.transfer {
+        Some(pick(
+            vk::QueueFlags::TRANSFER,
+            Some(compute.family),
+            &mut counts,
+            &mut ours,
+            &mut shared,
+        )?)
+    } else {
+        None
+    };
 
     Some(QueuePlan {
         encode,
@@ -191,6 +231,52 @@ pub enum Feature {
     VideoEncodeIntraRefresh,
     VideoEncodeQuantizationMap,
     InternallySynchronizedQueues,
+    // nespyro's. The first two are Vulkan 1.0 core features, which live in
+    // `VkPhysicalDeviceFeatures` rather than in a struct of their own.
+    ShaderInt16,
+    ShaderStorageImageWriteWithoutFormat,
+    StorageBuffer16BitAccess,
+    StorageBuffer8BitAccess,
+    ShaderInt8,
+    ShaderFloat16,
+    BufferDeviceAddress,
+    SubgroupSizeControl,
+    ComputeFullSubgroups,
+}
+
+impl Feature {
+    /// Whether this is a Vulkan 1.0 feature, set in `VkPhysicalDeviceFeatures`
+    /// rather than in a pNext struct of its own.
+    fn is_core(self) -> bool {
+        matches!(
+            self,
+            Self::ShaderInt16 | Self::ShaderStorageImageWriteWithoutFormat
+        )
+    }
+}
+
+/// The features nespyro asks for.
+pub fn pyro_features(f: &nespyro::DeviceFeatures) -> Vec<Feature> {
+    use Feature as F;
+    [
+        (f.shader_int16, F::ShaderInt16),
+        (
+            f.shader_storage_image_write_without_format,
+            F::ShaderStorageImageWriteWithoutFormat,
+        ),
+        (f.storage_buffer_16bit_access, F::StorageBuffer16BitAccess),
+        (f.storage_buffer_8bit_access, F::StorageBuffer8BitAccess),
+        (f.shader_int8, F::ShaderInt8),
+        (f.shader_float16, F::ShaderFloat16),
+        (f.timeline_semaphore, F::TimelineSemaphore),
+        (f.buffer_device_address, F::BufferDeviceAddress),
+        (f.synchronization2, F::Synchronization2),
+        (f.subgroup_size_control, F::SubgroupSizeControl),
+        (f.compute_full_subgroups, F::ComputeFullSubgroups),
+    ]
+    .into_iter()
+    .filter_map(|(on, feature)| on.then_some(feature))
+    .collect()
 }
 
 /// The features `f` asks for, plus the one queue sharing needs.
@@ -307,6 +393,79 @@ unsafe fn field(
             vk::PhysicalDeviceInternallySynchronizedQueuesFeaturesKHR,
             internally_synchronized_queues
         ),
+        (S::PHYSICAL_DEVICE_FEATURES_2, F::ShaderInt16) => Some(unsafe {
+            &raw mut (*(p as *mut vk::PhysicalDeviceFeatures2))
+                .features
+                .shader_int16
+        }),
+        (S::PHYSICAL_DEVICE_FEATURES_2, F::ShaderStorageImageWriteWithoutFormat) => Some(unsafe {
+            &raw mut (*(p as *mut vk::PhysicalDeviceFeatures2))
+                .features
+                .shader_storage_image_write_without_format
+        }),
+        (S::PHYSICAL_DEVICE_VULKAN_1_1_FEATURES, F::StorageBuffer16BitAccess) => {
+            at!(
+                vk::PhysicalDeviceVulkan11Features,
+                storage_buffer16_bit_access
+            )
+        }
+        (S::PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES, F::StorageBuffer16BitAccess) => {
+            at!(
+                vk::PhysicalDevice16BitStorageFeatures,
+                storage_buffer16_bit_access
+            )
+        }
+        (S::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, F::StorageBuffer8BitAccess) => {
+            at!(
+                vk::PhysicalDeviceVulkan12Features,
+                storage_buffer8_bit_access
+            )
+        }
+        (S::PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES, F::StorageBuffer8BitAccess) => {
+            at!(
+                vk::PhysicalDevice8BitStorageFeatures,
+                storage_buffer8_bit_access
+            )
+        }
+        (S::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, F::ShaderInt8) => {
+            at!(vk::PhysicalDeviceVulkan12Features, shader_int8)
+        }
+        (S::PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES, F::ShaderInt8) => {
+            at!(vk::PhysicalDeviceShaderFloat16Int8Features, shader_int8)
+        }
+        (S::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, F::ShaderFloat16) => {
+            at!(vk::PhysicalDeviceVulkan12Features, shader_float16)
+        }
+        (S::PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES, F::ShaderFloat16) => {
+            at!(vk::PhysicalDeviceShaderFloat16Int8Features, shader_float16)
+        }
+        (S::PHYSICAL_DEVICE_VULKAN_1_2_FEATURES, F::BufferDeviceAddress) => {
+            at!(vk::PhysicalDeviceVulkan12Features, buffer_device_address)
+        }
+        (S::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES, F::BufferDeviceAddress) => {
+            at!(
+                vk::PhysicalDeviceBufferDeviceAddressFeatures,
+                buffer_device_address
+            )
+        }
+        (S::PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, F::SubgroupSizeControl) => {
+            at!(vk::PhysicalDeviceVulkan13Features, subgroup_size_control)
+        }
+        (S::PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES, F::SubgroupSizeControl) => {
+            at!(
+                vk::PhysicalDeviceSubgroupSizeControlFeatures,
+                subgroup_size_control
+            )
+        }
+        (S::PHYSICAL_DEVICE_VULKAN_1_3_FEATURES, F::ComputeFullSubgroups) => {
+            at!(vk::PhysicalDeviceVulkan13Features, compute_full_subgroups)
+        }
+        (S::PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES, F::ComputeFullSubgroups) => {
+            at!(
+                vk::PhysicalDeviceSubgroupSizeControlFeatures,
+                compute_full_subgroups
+            )
+        }
         _ => None,
     }
 }
@@ -338,6 +497,11 @@ enum OwnedFeature {
     IntraRefresh(vk::PhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR<'static>),
     QpMap(vk::PhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR<'static>),
     SharedQueues(vk::PhysicalDeviceInternallySynchronizedQueuesFeaturesKHR<'static>),
+    Storage16(vk::PhysicalDevice16BitStorageFeatures<'static>),
+    Storage8(vk::PhysicalDevice8BitStorageFeatures<'static>),
+    Float16Int8(vk::PhysicalDeviceShaderFloat16Int8Features<'static>),
+    Bda(vk::PhysicalDeviceBufferDeviceAddressFeatures<'static>),
+    SubgroupSize(vk::PhysicalDeviceSubgroupSizeControlFeatures<'static>),
 }
 
 impl OwnedFeature {
@@ -377,6 +541,33 @@ impl OwnedFeature {
                 vk::PhysicalDeviceInternallySynchronizedQueuesFeaturesKHR::default()
                     .internally_synchronized_queues(true),
             ),
+            F::StorageBuffer16BitAccess => Self::Storage16(
+                vk::PhysicalDevice16BitStorageFeatures::default().storage_buffer16_bit_access(true),
+            ),
+            F::StorageBuffer8BitAccess => Self::Storage8(
+                vk::PhysicalDevice8BitStorageFeatures::default().storage_buffer8_bit_access(true),
+            ),
+            F::ShaderInt8 => Self::Float16Int8(
+                vk::PhysicalDeviceShaderFloat16Int8Features::default().shader_int8(true),
+            ),
+            F::ShaderFloat16 => Self::Float16Int8(
+                vk::PhysicalDeviceShaderFloat16Int8Features::default().shader_float16(true),
+            ),
+            F::BufferDeviceAddress => Self::Bda(
+                vk::PhysicalDeviceBufferDeviceAddressFeatures::default()
+                    .buffer_device_address(true),
+            ),
+            F::SubgroupSizeControl => Self::SubgroupSize(
+                vk::PhysicalDeviceSubgroupSizeControlFeatures::default()
+                    .subgroup_size_control(true),
+            ),
+            F::ComputeFullSubgroups => Self::SubgroupSize(
+                vk::PhysicalDeviceSubgroupSizeControlFeatures::default()
+                    .compute_full_subgroups(true),
+            ),
+            F::ShaderInt16 | F::ShaderStorageImageWriteWithoutFormat => {
+                unreachable!("core features have no struct of their own")
+            }
         }
     }
 
@@ -391,6 +582,11 @@ impl OwnedFeature {
             Self::IntraRefresh(s) => std::ptr::from_mut(s).cast(),
             Self::QpMap(s) => std::ptr::from_mut(s).cast(),
             Self::SharedQueues(s) => std::ptr::from_mut(s).cast(),
+            Self::Storage16(s) => std::ptr::from_mut(s).cast(),
+            Self::Storage8(s) => std::ptr::from_mut(s).cast(),
+            Self::Float16Int8(s) => std::ptr::from_mut(s).cast(),
+            Self::Bda(s) => std::ptr::from_mut(s).cast(),
+            Self::SubgroupSize(s) => std::ptr::from_mut(s).cast(),
         };
         p.cast()
     }
@@ -398,8 +594,13 @@ impl OwnedFeature {
 
 impl FeaturePatch {
     /// Turn on every feature in `wanted` for a device whose create info has
-    /// `chain` as its pNext. Returns the patch and the pNext the create info
-    /// should carry instead.
+    /// `chain` as its pNext. Returns the patch, the pNext the create info
+    /// should carry instead, and the Vulkan 1.0 features the chain had no
+    /// `VkPhysicalDeviceFeatures2` to hold — those belong in
+    /// `pEnabledFeatures`, see [`core_features`].
+    ///
+    /// Structs of ours are searched like the game's, so two features sharing
+    /// one struct type land in one struct: a chain may hold each type once.
     ///
     /// # Safety
     ///
@@ -408,16 +609,18 @@ impl FeaturePatch {
     pub unsafe fn apply(
         chain: *const std::ffi::c_void,
         wanted: &[Feature],
-    ) -> (Self, *const std::ffi::c_void) {
+    ) -> (Self, *const std::ffi::c_void, Vec<Feature>) {
         let mut patch = Self {
             restores: Vec::new(),
             owned: Vec::new(),
         };
-        let mut missing: Vec<Feature> = Vec::new();
+        let mut core_missing: Vec<Feature> = Vec::new();
+        // Ours sit in front of the game's chain, in the order they were added.
+        let mut head = chain;
 
         for &feature in wanted {
             let mut found = false;
-            let mut p = chain as *mut vk::BaseOutStructure<'_>;
+            let mut p = head as *mut vk::BaseOutStructure<'_>;
             while !p.is_null() {
                 let s_type = unsafe { (*p).s_type };
                 if let Some(bit) = unsafe { field(s_type, p, feature) } {
@@ -427,20 +630,23 @@ impl FeaturePatch {
                 }
                 p = unsafe { (*p).p_next };
             }
-            if !found {
-                missing.push(feature);
+            if found {
+                continue;
             }
-        }
-
-        let mut head = chain;
-        for feature in missing.into_iter().rev() {
+            if feature.is_core() {
+                core_missing.push(feature);
+                continue;
+            }
             let mut owned = Box::new(OwnedFeature::new(feature));
             let base = owned.base();
-            unsafe { (*base).p_next = head as *mut _ };
-            head = base as *const _;
+            unsafe { (*base).p_next = chain as *mut _ };
+            match patch.owned.last_mut() {
+                Some(last) => unsafe { (*last.base()).p_next = base },
+                None => head = base as *const _,
+            }
             patch.owned.push(owned);
         }
-        (patch, head)
+        (patch, head, core_missing)
     }
 
     /// Put the application's chain back as it was.
@@ -453,6 +659,28 @@ impl FeaturePatch {
             unsafe { *bit = value };
         }
     }
+}
+
+/// `pEnabledFeatures` with `missing` turned on: the game's own, copied, or a
+/// fresh set when it gave none.
+///
+/// Only used when the chain holds no `VkPhysicalDeviceFeatures2`, since the
+/// two may not be given together, and with one the bits went there instead.
+pub fn core_features(
+    game: Option<&vk::PhysicalDeviceFeatures>,
+    missing: &[Feature],
+) -> vk::PhysicalDeviceFeatures {
+    let mut out = game.copied().unwrap_or_default();
+    for feature in missing {
+        match feature {
+            Feature::ShaderInt16 => out.shader_int16 = vk::TRUE,
+            Feature::ShaderStorageImageWriteWithoutFormat => {
+                out.shader_storage_image_write_without_format = vk::TRUE
+            }
+            other => debug_assert!(!other.is_core(), "{other:?} has no place here"),
+        }
+    }
+    out
 }
 
 // ── Extensions ────────────────────────────────────────────────────────────────
@@ -475,28 +703,51 @@ pub fn merged_extensions(
     out
 }
 
-/// Everything the device needs beyond what the game asked for: the pixelforge
-/// requirements, and the queue plan that satisfies them.
+/// Everything the device needs beyond what the game asked for: each hosted
+/// encoder's requirements, and the queue plan that satisfies them.
 pub struct Additions {
-    pub requirements: DeviceRequirements,
+    /// pixelforge's, when the device can encode Vulkan Video.
+    pub video: Option<DeviceRequirements>,
+    /// nespyro's, when the device can run PyroWave.
+    pub pyro: Option<nespyro::DeviceRequirements>,
     pub queues: QueuePlan,
 }
 
 impl Additions {
-    /// The extensions to add, including the one queue sharing needs.
+    /// The extensions to add, including the one queue sharing needs. Each
+    /// named once, however many encoders want it.
     pub fn extensions(&self) -> Vec<&'static std::ffi::CStr> {
-        let mut names = self.requirements.extensions.clone();
+        let mut names: Vec<&'static std::ffi::CStr> = Vec::new();
+        let mut add = |name: &'static std::ffi::CStr| {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        };
+        for name in self.video.iter().flat_map(|r| r.extensions.iter()) {
+            add(name);
+        }
+        for name in self.pyro.iter().flat_map(|r| r.extensions.iter()) {
+            add(name);
+        }
         if !self.queues.internally_synchronized.is_empty() {
-            names.push(ash::khr::internally_synchronized_queues::NAME);
+            add(ash::khr::internally_synchronized_queues::NAME);
         }
         names
     }
 
+    /// Each named once, however many encoders want it.
     pub fn features(&self) -> Vec<Feature> {
-        wanted_features(
-            &self.requirements.features,
-            !self.queues.internally_synchronized.is_empty(),
-        )
+        let share = !self.queues.internally_synchronized.is_empty();
+        let mut out = match &self.video {
+            Some(r) => wanted_features(&r.features, share),
+            None => wanted_features(&DeviceFeatures::default(), share),
+        };
+        for f in self.pyro.iter().flat_map(|r| pyro_features(&r.features)) {
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+        out
     }
 }
 
@@ -630,6 +881,8 @@ pub struct PreparedDevice {
     extensions: Vec<*const std::ffi::c_char>,
     patch: FeaturePatch,
     p_next: *const std::ffi::c_void,
+    /// The 1.0 features, when they had to go in `pEnabledFeatures`.
+    enabled_features: Option<Box<vk::PhysicalDeviceFeatures>>,
 }
 
 /// Work out what to add to the game's device so the encoder can run on it.
@@ -664,16 +917,43 @@ pub unsafe fn prepare(
         return None;
     }
     let (entry, instance) = instance_view(istate, next_gdpa);
-    let requirements = match pixelforge::VideoContextBuilder::new().encode_device_requirements(
+    let video = match pixelforge::VideoContextBuilder::new().encode_device_requirements(
         &entry,
         &instance,
         physical_device,
     ) {
-        Ok(r) => r,
+        Ok(r) => Some(r),
         Err(e) => {
-            log::info!("the game's device cannot host the encoder ({e})");
-            return None;
+            log::info!("the game's device cannot host Vulkan Video encode ({e})");
+            None
         }
+    };
+    // nespyro uses Vulkan 1.3 commands, which a device only has when its
+    // instance asked for 1.3 as well as the GPU having it.
+    let pyro = if istate.api_version < vk::API_VERSION_1_3 {
+        log::info!("instance is below Vulkan 1.3; no PyroWave on the game's device");
+        None
+    } else {
+        match nespyro::DeviceRequirements::query(&instance, physical_device, nespyro::Roles::ENCODE)
+        {
+            Ok(r) => Some(r),
+            Err(e) => {
+                log::info!("the game's device cannot host PyroWave ({e})");
+                None
+            }
+        }
+    };
+    if video.is_none() && pyro.is_none() {
+        log::info!("neither encoder fits the game's device; encoding on a device of its own");
+        return None;
+    }
+    let internally_synchronized_queues = match &video {
+        Some(r) => r.internally_synchronized_queues,
+        None => supports_internally_synchronized_queues(&instance, physical_device),
+    };
+    let wants = match &video {
+        Some(r) => Wants::video(r.queues.encode),
+        None => Wants::PYRO_ONLY,
     };
 
     let families = unsafe { instance.get_physical_device_queue_family_properties(physical_device) };
@@ -691,12 +971,7 @@ pub unsafe fn prepare(
         .map(|q| (q.queue_family_index, (q.queue_count, q.flags)))
         .collect();
 
-    let Some(queues) = plan_queues(
-        &families,
-        &game,
-        requirements.queues.encode,
-        requirements.internally_synchronized_queues,
-    ) else {
+    let Some(queues) = plan_queues(&families, &game, wants, internally_synchronized_queues) else {
         log::info!(
             "no queue for the encoder that the game does not submit to; \
              encoding on a device of its own"
@@ -704,7 +979,12 @@ pub unsafe fn prepare(
         return None;
     };
     log::info!(
-        "encoder on the game's device: encode queue {:?}, compute queue {:?}, transfer queue {:?}{}",
+        "encoders on the game's device ({}): encode queue {:?}, compute queue {:?}, transfer queue {:?}{}",
+        match (video.is_some(), pyro.is_some()) {
+            (true, true) => "Vulkan Video and PyroWave",
+            (true, false) => "Vulkan Video",
+            _ => "PyroWave",
+        },
         queues.encode,
         queues.compute,
         queues.transfer,
@@ -759,11 +1039,17 @@ pub unsafe fn prepare(
     }
 
     let additions = Additions {
-        requirements,
+        video,
+        pyro,
         queues,
     };
     let extensions = merged_extensions(extensions, &additions.extensions());
-    let (patch, p_next) = unsafe { FeaturePatch::apply(ci.p_next, &additions.features()) };
+    let (patch, p_next, core_missing) =
+        unsafe { FeaturePatch::apply(ci.p_next, &additions.features()) };
+    let enabled_features = (!core_missing.is_empty()).then(|| {
+        let game = unsafe { ci.p_enabled_features.as_ref() };
+        Box::new(core_features(game, &core_missing))
+    });
 
     Some(PreparedDevice {
         additions,
@@ -774,7 +1060,31 @@ pub unsafe fn prepare(
         extensions,
         patch,
         p_next,
+        enabled_features,
     })
+}
+
+/// Whether `physical_device` supports `VK_KHR_internally_synchronized_queues`,
+/// extension and feature both. pixelforge answers this when it is hosted; this
+/// is the same question for a device hosting only nespyro.
+fn supports_internally_synchronized_queues(
+    instance: &ash::Instance,
+    physical_device: vk::PhysicalDevice,
+) -> bool {
+    let Ok(exts) = (unsafe { instance.enumerate_device_extension_properties(physical_device) })
+    else {
+        return false;
+    };
+    if !exts.iter().any(|e| {
+        e.extension_name_as_c_str()
+            .is_ok_and(|n| n == ash::khr::internally_synchronized_queues::NAME)
+    }) {
+        return false;
+    }
+    let mut features = vk::PhysicalDeviceInternallySynchronizedQueuesFeaturesKHR::default();
+    let mut query = vk::PhysicalDeviceFeatures2::default().push(&mut features);
+    unsafe { instance.get_physical_device_features2(physical_device, &mut query) };
+    features.internally_synchronized_queues != 0
 }
 
 impl PreparedDevice {
@@ -786,6 +1096,9 @@ impl PreparedDevice {
         out.p_queue_create_infos = self.queue_infos.as_ptr().cast();
         out.enabled_extension_count = self.extensions.len() as u32;
         out.pp_enabled_extension_names = self.extensions.as_ptr();
+        if let Some(features) = &self.enabled_features {
+            out.p_enabled_features = &raw const **features;
+        }
         out
     }
 
@@ -811,6 +1124,9 @@ pub struct SharedDevice {
     /// created below Vulkan 1.2 still has: the encoder enabled the extension.
     timeline: ash::khr::timeline_semaphore::Device,
     pub queues: QueuePlan,
+    /// Which encoders the device was created for.
+    video: bool,
+    pyro: bool,
 }
 
 impl SharedDevice {
@@ -860,6 +1176,8 @@ impl SharedDevice {
             device,
             timeline,
             queues: additions.queues,
+            video: additions.video.is_some(),
+            pyro: additions.pyro.is_some(),
         }
     }
 
@@ -902,26 +1220,56 @@ impl SharedDevice {
     }
 
     /// A pixelforge context on the game's device, submitting to the queues
-    /// the plan set aside.
-    pub fn video_context(&self) -> Result<pixelforge::VideoContext, pixelforge::PixelForgeError> {
-        pixelforge::VideoContextBuilder::new()
-            .app_name("nescapture")
-            .with_encode_queue(self.queues.encode)
-            .with_compute_queue(self.queues.compute)
-            .with_transfer_queue(self.queues.transfer)
-            .build_from_existing_encode(
-                self.entry.clone(),
+    /// the plan set aside. `None` when the device was not created for it.
+    pub fn video_context(
+        &self,
+    ) -> Option<Result<pixelforge::VideoContext, pixelforge::PixelForgeError>> {
+        if !self.video {
+            return None;
+        }
+        let (Some(encode), Some(transfer)) = (self.queues.encode, self.queues.transfer) else {
+            return None;
+        };
+        Some(
+            pixelforge::VideoContextBuilder::new()
+                .app_name("nescapture")
+                .with_encode_queue(encode)
+                .with_compute_queue(self.queues.compute)
+                .with_transfer_queue(transfer)
+                .build_from_existing_encode(
+                    self.entry.clone(),
+                    self.instance.clone(),
+                    self.physical_device,
+                    self.device.clone(),
+                ),
+        )
+    }
+
+    /// A nespyro context on the game's device, on the plan's compute queue.
+    /// `None` when the device was not created for it.
+    ///
+    /// No queue lock: the encoder thread is the only submitter to that queue
+    /// apart from a game sharing it, and a queue shared with the game was
+    /// created internally synchronized.
+    pub fn pyro_context(&self) -> Option<Result<nespyro::Context, nespyro::Error>> {
+        self.pyro.then(|| {
+            nespyro::Context::from_existing(
                 self.instance.clone(),
                 self.physical_device,
                 self.device.clone(),
+                nespyro::DeviceQueue::new(self.queues.compute.family, self.queues.compute.index),
+                nespyro::QueueLock::none(),
+                nespyro::Roles::ENCODE,
             )
+        })
     }
 
     /// The queue families that touch a capture image: the one the game
     /// presents on, where the blit runs, and the encoder's.
     pub fn image_families(&self, present_family: u32) -> Vec<u32> {
         let mut out = vec![present_family];
-        for f in [self.queues.compute.family, self.queues.transfer.family] {
+        let transfer = self.queues.transfer.map(|q| q.family);
+        for f in std::iter::once(self.queues.compute.family).chain(transfer) {
             if !out.contains(&f) {
                 out.push(f);
             }
@@ -966,19 +1314,25 @@ mod tests {
 
     #[test]
     fn spare_queues_keep_the_encoder_off_the_games_queue() {
-        let plan = plan_queues(&amd(), &game(&[(0, 1)]), Some(2), false).unwrap();
-        assert_eq!(plan.encode, DeviceQueue::new(2, 0));
+        let plan = plan_queues(&amd(), &game(&[(0, 1)]), Wants::video(Some(2)), false).unwrap();
+        assert_eq!(plan.encode, Some(DeviceQueue::new(2, 0)));
         // Compute on the compute family, not on the game's graphics queue.
         assert_eq!(plan.compute, DeviceQueue::new(1, 0));
         // And copies share it: one thread submits both.
-        assert_eq!(plan.transfer, plan.compute);
+        assert_eq!(plan.transfer, Some(plan.compute));
         assert!(plan.internally_synchronized.is_empty());
     }
 
     #[test]
     fn a_family_the_game_already_uses_gets_one_more_queue() {
         // The game took two of the four compute queues for itself.
-        let plan = plan_queues(&amd(), &game(&[(0, 1), (1, 2)]), Some(2), false).unwrap();
+        let plan = plan_queues(
+            &amd(),
+            &game(&[(0, 1), (1, 2)]),
+            Wants::video(Some(2)),
+            false,
+        )
+        .unwrap();
         assert_eq!(plan.compute, DeviceQueue::new(1, 2));
         assert_eq!(plan.counts.get(&1), Some(&3));
     }
@@ -987,11 +1341,14 @@ mod tests {
     fn with_every_capable_family_full_nothing_is_planned_unless_sharing_is_safe() {
         // The game took all four compute queues and its one graphics queue.
         let full = game(&[(0, 1), (1, 4)]);
-        assert_eq!(plan_queues(&amd(), &full, Some(2), false), None);
+        assert_eq!(
+            plan_queues(&amd(), &full, Wants::video(Some(2)), false),
+            None
+        );
 
         // Sharing picks the compute family over the graphics one, since the
         // game renders on the latter.
-        let plan = plan_queues(&amd(), &full, Some(2), true).unwrap();
+        let plan = plan_queues(&amd(), &full, Wants::video(Some(2)), true).unwrap();
         assert_eq!(plan.compute, DeviceQueue::new(1, 0));
         assert_eq!(plan.internally_synchronized, vec![1]);
     }
@@ -1009,17 +1366,17 @@ mod tests {
 
     #[test]
     fn without_a_spare_the_games_queue_is_shared_where_that_is_safe() {
-        let plan = plan_queues(&intel(), &game(&[(0, 1)]), Some(1), true).unwrap();
-        assert_eq!(plan.encode, DeviceQueue::new(1, 0));
+        let plan = plan_queues(&intel(), &game(&[(0, 1)]), Wants::video(Some(1)), true).unwrap();
+        assert_eq!(plan.encode, Some(DeviceQueue::new(1, 0)));
         assert_eq!(plan.compute, DeviceQueue::new(0, 0));
-        assert_eq!(plan.transfer, DeviceQueue::new(0, 0));
+        assert_eq!(plan.transfer, Some(DeviceQueue::new(0, 0)));
         assert_eq!(plan.internally_synchronized, vec![0]);
     }
 
     #[test]
     fn without_a_spare_or_a_safe_share_there_is_no_plan() {
         assert_eq!(
-            plan_queues(&intel(), &game(&[(0, 1)]), Some(1), false),
+            plan_queues(&intel(), &game(&[(0, 1)]), Wants::video(Some(1)), false),
             None
         );
     }
@@ -1028,15 +1385,21 @@ mod tests {
     fn a_protected_queue_is_never_shared() {
         let mut g = game(&[(0, 1)]);
         g.insert(0, (1, vk::DeviceQueueCreateFlags::PROTECTED));
-        assert_eq!(plan_queues(&intel(), &g, Some(1), true), None);
+        assert_eq!(plan_queues(&intel(), &g, Wants::video(Some(1)), true), None);
     }
 
     #[test]
     fn a_game_that_already_encodes_keeps_its_encode_queue() {
         let mut families = amd();
         families[2].queue_count = 2;
-        let plan = plan_queues(&families, &game(&[(0, 1), (2, 1)]), Some(2), false).unwrap();
-        assert_eq!(plan.encode, DeviceQueue::new(2, 1));
+        let plan = plan_queues(
+            &families,
+            &game(&[(0, 1), (2, 1)]),
+            Wants::video(Some(2)),
+            false,
+        )
+        .unwrap();
+        assert_eq!(plan.encode, Some(DeviceQueue::new(2, 1)));
     }
 
     #[test]
@@ -1046,7 +1409,7 @@ mod tests {
         v13.p_next = (&raw mut v12).cast();
         let chain = (&raw const v13).cast();
 
-        let (patch, head) = unsafe {
+        let (patch, head, _) = unsafe {
             FeaturePatch::apply(
                 chain,
                 &[Feature::Synchronization2, Feature::TimelineSemaphore],
@@ -1067,7 +1430,7 @@ mod tests {
     fn a_feature_with_no_home_gets_a_struct_in_front_of_the_chain() {
         let v12 = vk::PhysicalDeviceVulkan12Features::default();
         let chain = (&raw const v12).cast();
-        let (patch, head) = unsafe { FeaturePatch::apply(chain, &[Feature::Synchronization2]) };
+        let (patch, head, _) = unsafe { FeaturePatch::apply(chain, &[Feature::Synchronization2]) };
         assert_ne!(head, chain);
         let first = head as *const vk::BaseInStructure<'_>;
         unsafe {
@@ -1087,7 +1450,7 @@ mod tests {
             Feature::TimelineSemaphore,
             Feature::VideoEncodeAv1,
         ];
-        let (patch, head) = unsafe { FeaturePatch::apply(std::ptr::null(), &wanted) };
+        let (patch, head, _) = unsafe { FeaturePatch::apply(std::ptr::null(), &wanted) };
         let mut seen = Vec::new();
         let mut p = head as *const vk::BaseInStructure<'_>;
         while !p.is_null() {
@@ -1116,6 +1479,183 @@ mod tests {
             ],
         );
         assert_eq!(merged.len(), 2);
+    }
+
+    // ── PyroWave beside, or instead of, Vulkan Video ─────────────────────────
+
+    /// A GPU with no video encode family still gets a compute queue of its
+    /// own for nespyro, and no encode or transfer queue it would not use.
+    #[test]
+    fn pyrowave_alone_plans_only_compute() {
+        let families = vec![family(GFX, 1), family(COMPUTE, 2)];
+        let plan = plan_queues(&families, &game(&[(0, 1)]), Wants::PYRO_ONLY, false).unwrap();
+        assert_eq!(plan.compute, DeviceQueue::new(1, 0));
+        assert_eq!(plan.encode, None);
+        assert_eq!(plan.transfer, None);
+        assert!(plan.internally_synchronized.is_empty());
+    }
+
+    /// Without the video family there is nothing to plan an encode queue on,
+    /// and asking for one must fail rather than quietly skip it.
+    #[test]
+    fn vulkan_video_without_an_encode_family_has_no_plan() {
+        let families = vec![family(GFX, 1), family(COMPUTE, 2)];
+        assert_eq!(
+            plan_queues(&families, &game(&[(0, 1)]), Wants::video(None), true),
+            None
+        );
+    }
+
+    /// Two features of one struct type must land in one struct: a pNext chain
+    /// may hold each type once, and int8 and float16 share
+    /// `VkPhysicalDeviceShaderFloat16Int8Features`.
+    #[test]
+    fn features_sharing_a_struct_share_one_of_ours() {
+        let wanted = [
+            Feature::ShaderInt8,
+            Feature::ShaderFloat16,
+            Feature::SubgroupSizeControl,
+            Feature::ComputeFullSubgroups,
+        ];
+        let (patch, head, core) = unsafe { FeaturePatch::apply(std::ptr::null(), &wanted) };
+        assert!(core.is_empty());
+        let mut seen = Vec::new();
+        let mut p = head as *const vk::BaseInStructure<'_>;
+        while !p.is_null() {
+            seen.push(unsafe { (*p).s_type });
+            p = unsafe { (*p).p_next };
+        }
+        assert_eq!(
+            seen,
+            vec![
+                vk::StructureType::PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES,
+                vk::StructureType::PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES,
+            ]
+        );
+        let f = unsafe { &*(head as *const vk::PhysicalDeviceShaderFloat16Int8Features<'_>) };
+        assert_eq!((f.shader_int8, f.shader_float16), (vk::TRUE, vk::TRUE));
+        unsafe { patch.restore() };
+    }
+
+    /// Ours go in front of the game's chain, which is then still reachable
+    /// from the head and left as it was.
+    #[test]
+    fn our_structs_lead_into_the_games_chain() {
+        let v11 = vk::PhysicalDeviceVulkan11Features::default();
+        let chain = (&raw const v11).cast();
+        let (patch, head, _) = unsafe {
+            FeaturePatch::apply(
+                chain,
+                &[
+                    Feature::BufferDeviceAddress,
+                    Feature::StorageBuffer16BitAccess,
+                ],
+            )
+        };
+        let first = head as *const vk::BaseInStructure<'_>;
+        unsafe {
+            assert_eq!(
+                (*first).s_type,
+                vk::StructureType::PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES
+            );
+            assert_eq!((*first).p_next.cast(), chain, "the game's chain was lost");
+        }
+        // 16-bit storage had a home in the game's Vulkan 1.1 struct.
+        assert_eq!(v11.storage_buffer16_bit_access, vk::TRUE);
+        unsafe { patch.restore() };
+        assert_eq!(v11.storage_buffer16_bit_access, vk::FALSE);
+    }
+
+    /// The 1.0 features live in `VkPhysicalDeviceFeatures`. Inside a chained
+    /// `VkPhysicalDeviceFeatures2` they are set there and put back after.
+    #[test]
+    fn core_features_go_in_a_chained_features2() {
+        let mut f2 = vk::PhysicalDeviceFeatures2::default();
+        f2.features.shader_int16 = vk::FALSE;
+        let chain = (&raw const f2).cast();
+        let (patch, head, core) = unsafe {
+            FeaturePatch::apply(
+                chain,
+                &[
+                    Feature::ShaderInt16,
+                    Feature::ShaderStorageImageWriteWithoutFormat,
+                ],
+            )
+        };
+        assert!(core.is_empty(), "Features2 was there to hold them");
+        assert_eq!(head, chain);
+        assert_eq!(f2.features.shader_int16, vk::TRUE);
+        assert_eq!(
+            f2.features.shader_storage_image_write_without_format,
+            vk::TRUE
+        );
+        unsafe { patch.restore() };
+        assert_eq!(f2.features.shader_int16, vk::FALSE);
+    }
+
+    /// Without one they are reported, never chained as a struct of their own:
+    /// a Features2 of ours beside the game's `pEnabledFeatures` is invalid.
+    #[test]
+    fn core_features_without_features2_are_handed_back() {
+        let (patch, head, core) = unsafe {
+            FeaturePatch::apply(
+                std::ptr::null(),
+                &[Feature::ShaderInt16, Feature::ShaderInt8],
+            )
+        };
+        assert_eq!(core, vec![Feature::ShaderInt16]);
+        let first = head as *const vk::BaseInStructure<'_>;
+        unsafe {
+            assert_eq!(
+                (*first).s_type,
+                vk::StructureType::PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES
+            );
+            assert!((*first).p_next.is_null());
+        }
+        unsafe { patch.restore() };
+    }
+
+    /// The game's own `pEnabledFeatures` is copied, never written: it is the
+    /// game's memory, and the copy keeps every bit it asked for.
+    #[test]
+    fn enabled_features_are_a_copy_with_ours_added() {
+        let game = vk::PhysicalDeviceFeatures {
+            geometry_shader: vk::TRUE,
+            ..Default::default()
+        };
+        let ours = core_features(
+            Some(&game),
+            &[
+                Feature::ShaderInt16,
+                Feature::ShaderStorageImageWriteWithoutFormat,
+            ],
+        );
+        assert_eq!(ours.geometry_shader, vk::TRUE);
+        assert_eq!(ours.shader_int16, vk::TRUE);
+        assert_eq!(ours.shader_storage_image_write_without_format, vk::TRUE);
+        assert_eq!(game.shader_int16, vk::FALSE);
+
+        let fresh = core_features(None, &[Feature::ShaderInt16]);
+        assert_eq!(fresh.shader_int16, vk::TRUE);
+        assert_eq!(fresh.geometry_shader, vk::FALSE);
+    }
+
+    #[test]
+    fn nespyro_features_map_to_ours() {
+        let f = nespyro::DeviceFeatures {
+            shader_int16: true,
+            shader_float16: true,
+            subgroup_size_control: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            pyro_features(&f),
+            vec![
+                Feature::ShaderInt16,
+                Feature::ShaderFloat16,
+                Feature::SubgroupSizeControl
+            ]
+        );
     }
 
     // ── The null instance a layer below need not survive ─────────────────────

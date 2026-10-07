@@ -231,6 +231,7 @@ import { DynamoStorage } from './storage/dynamo.js';
 import { MemoryStorage } from './storage/memory.js';
 import { Storage, StorageAdapter } from './storage/storage.js';
 import { HtmlRenderer, type Renderer } from './ui/render.js';
+import { IssuerScreens } from './ui/issuer.js';
 import type { ChooseOption, Screen } from './ui/screen.js';
 import type { Theme } from './ui/theme.js';
 import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
@@ -578,16 +579,7 @@ export function issuer<
 	const error =
 		input.error ??
 		function (err: UnknownStateError, req: Request) {
-			return renderer.render(
-				{
-					kind: 'message',
-					tone: 'danger',
-					heading: 'That sign-in has expired',
-					body: [err.message, 'Start again from wherever you were signing in.'],
-					status: 400
-				},
-				req
-			);
+			return renderer.render(IssuerScreens.unknownState(err.message), req);
 		};
 	const ttlAccess = input.ttl?.access ?? 60 * 60 * 24 * 30;
 	const ttlRefresh = input.ttl?.refresh ?? 60 * 60 * 24 * 365;
@@ -938,31 +930,11 @@ export function issuer<
 	 * three.
 	 */
 	function expired(): Screen {
-		return {
-			kind: 'message',
-			tone: 'danger',
-			heading: 'That sign-in request has expired',
-			body: ['Start it again from the app.'],
-			status: 400
-		};
+		return IssuerScreens.deviceExpired();
 	}
 
 	function deviceConfirmScreen(confirmation: DeviceConfirmation): Screen {
-		return {
-			kind: 'confirm',
-			heading: 'Is this you?',
-			verify: { code: confirmation.userCode, group: 4 },
-			body: [
-				`${confirmation.clientID} is asking to sign in to your account. The code above should match the one it is showing you.`,
-				'If it does not, or you did not start this on a device of your own, choose Deny. Nobody can sign in as you unless you approve here.'
-			],
-			action: '/device/confirm',
-			// The client id is escaped by the renderer like any other text. It
-			// is chosen by whoever started the grant, so it is never markup.
-			fields: [{ kind: 'hidden', name: 'csrf', value: confirmation.csrf }],
-			approve: { label: 'Approve', name: 'action', value: 'approve' },
-			deny: { label: 'Deny', name: 'action', value: 'deny' }
-		};
+		return IssuerScreens.deviceConfirm(confirmation);
 	}
 
 	async function getAuthorization(ctx: Context) {
@@ -1523,32 +1495,11 @@ export function issuer<
 	app.get('/device', async (c) => {
 		const raw = c.req.query('user_code');
 		if (!raw) {
-			return auth.screen(c, {
-				kind: 'form',
-				method: 'get',
-				action: '/device',
-				fields: [
-					{
-						kind: 'segments',
-						name: 'user_code',
-						label: 'Enter the code shown in the app',
-						length: USER_CODE_LENGTH,
-						autocomplete: 'off',
-						autofocus: true
-					}
-				],
-				submit: 'Continue'
-			});
+			return auth.screen(c, IssuerScreens.deviceEnter(USER_CODE_LENGTH));
 		}
 
 		if (!(await guessesLeft(c.req.raw))) {
-			return auth.screen(c, {
-				kind: 'message',
-				tone: 'danger',
-				heading: 'Too many tries',
-				body: ['Wait a while, then start again from the app.'],
-				status: 429
-			});
+			return auth.screen(c, IssuerScreens.deviceTooManyTries());
 		}
 
 		const found = await deviceStore.byUserCode(canonicalUserCode(raw));
@@ -1557,13 +1508,7 @@ export function issuer<
 			// nothing, so a person mistyping once and then succeeding is not
 			// walking towards a lockout.
 			await chargeGuess(c.req.raw);
-			return auth.screen(c, {
-				kind: 'message',
-				tone: 'danger',
-				heading: 'That code is not valid',
-				body: ['It may have expired, or already been used. Ask the app for a new one.'],
-				status: 400
-			});
+			return auth.screen(c, IssuerScreens.deviceInvalidCode());
 		}
 
 		const authorization: AuthorizationState = {
@@ -1602,43 +1547,21 @@ export function issuer<
 		const form = await c.req.formData().catch(() => null);
 		const csrf = form?.get('csrf')?.toString() ?? '';
 		if (!timingSafeCompare(confirmation.csrf, csrf)) {
-			return auth.screen(c, {
-				kind: 'message',
-				tone: 'danger',
-				heading: 'That form was not the one we sent',
-				body: ['Start again from the app.'],
-				status: 400
-			});
+			return auth.screen(c, IssuerScreens.deviceForgedForm());
 		}
 
 		if (form?.get('action')?.toString() === 'deny') {
 			await deviceStore.deny(confirmation.deviceCode);
-			return auth.screen(c, {
-				kind: 'message',
-				tone: 'notice',
-				heading: 'Refused',
-				body: ['That sign-in request was refused. You can close this page.']
-			});
+			return auth.screen(c, IssuerScreens.deviceDenied());
 		}
 
 		// The store decides, not this code. If a refusal got here first the
 		// answer is already given and an approval must not overwrite it.
 		const approved = await deviceStore.approve(confirmation.deviceCode, confirmation.subject);
 		if (!approved) {
-			return auth.screen(c, {
-				kind: 'message',
-				tone: 'danger',
-				heading: 'Already answered',
-				body: ['That sign-in request has already been answered.'],
-				status: 400
-			});
+			return auth.screen(c, IssuerScreens.deviceAlreadyAnswered());
 		}
-		return auth.screen(c, {
-			kind: 'message',
-			tone: 'notice',
-			heading: 'You are signed in',
-			body: ['You can close this page and go back to the app.']
-		});
+		return auth.screen(c, IssuerScreens.deviceApproved());
 	});
 
 	app.get('/authorize', async (c) => {

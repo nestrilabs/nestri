@@ -13,6 +13,8 @@
 # ── Gaming needs ─────────────────────────────────────────
 # NTSYNC is a great improvement over fsync and esync approaches.
 CONFIG_NTSYNC=y
+# Performance CPU governor
+CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y
 
 # ── Controllers ──────────────────────────────────────────
 # A controller of a family the box can rebuild is made here as the device
@@ -157,9 +159,46 @@ CONFIG_TMPFS_POSIX_ACL=y
 CONFIG_PREEMPT_DYNAMIC=y
 CONFIG_LRU_GEN=y
 CONFIG_LRU_GEN_ENABLED=y
-CONFIG_TRANSPARENT_HUGEPAGE=y
-CONFIG_TRANSPARENT_HUGEPAGE_MADVISE=y
 CONFIG_PSI=y
+
+# Huge pages for every anonymous mapping that can have one, not only those that
+# ask. Games map large, long-lived heaps and never call madvise() for them, so
+# madvise-only would give them none, and a guest's TLB misses are the dearer
+# kind: each one walks two page-table levels.
+CONFIG_TRANSPARENT_HUGEPAGE=y
+CONFIG_TRANSPARENT_HUGEPAGE_ALWAYS=y
+# CONFIG_TRANSPARENT_HUGEPAGE_MADVISE is not set
+
+# The CachyOS scheduler and block-layer additions. The tree defaults these on,
+# but they are tree patches, so a different tree would quietly lose them.
+CONFIG_CACHY=y
+# Wakeup placement: finds an idle CPU from cached bitmasks instead of scanning,
+# which the frame pipeline pays for on every few-millisecond wakeup.
+CONFIG_SCHED_POC_SELECTOR=y
+# Keeps one process's threads inside a single last-level-cache domain.
+CONFIG_SCHED_CACHE=y
+# ADIOS as the multiqueue default: latency-driven, and the root is virtio-blk.
+CONFIG_MQ_IOSCHED_ADIOS=y
+CONFIG_MQ_IOSCHED_DEFAULT_ADIOS=y
+
+# BBR3 as the default congestion control. It paces itself, so it needs no fq
+# qdisc, and it holds a steady rate on lossy links where cubic backs off.
+CONFIG_TCP_CONG_ADVANCED=y
+CONFIG_TCP_CONG_BBR3=y
+CONFIG_DEFAULT_BBR3=y
+CONFIG_DEFAULT_TCP_CONG="bbr3"
+
+# ── CPU count ────────────────────────────────────────────
+# The per-CPU areas and cpumasks are sized for this at build time. No size tier
+# comes near it, and a distro-sized value only costs memory and cache.
+CONFIG_NR_CPUS=32
+
+# ── Thin-LTO ─────────────────────────────────────────────
+# Whole-kernel inlining across translation units, which matters most on the
+# syscall and scheduler paths. Needs clang and ld.lld, so scripts/kernel-build.sh
+# builds with LLVM=1. Thin rather than full: the link is parallel and does not
+# need tens of gigabytes of memory.
+CONFIG_LTO_CLANG_THIN=y
 
 # ── Undoing the minimal seed ─────────────────────────────
 # base.config descends from a size-minimised config with EXPERT on, and EXPERT
@@ -173,9 +212,9 @@ CONFIG_PSI=y
 # guest allocates constantly: network buffers, GPU ioctls, io_uring, futexes.
 # CONFIG_SLUB_TINY is not set
 #
-# Without ADVISE_SYSCALLS, madvise() and fadvise() return ENOSYS. THP above is
-# madvise-only, so no user mapping could ever get a huge page, and allocators
-# could never hand memory back with MADV_DONTNEED or MADV_FREE.
+# Without ADVISE_SYSCALLS, madvise() and fadvise() return ENOSYS, so allocators
+# could never hand memory back with MADV_DONTNEED or MADV_FREE, nor ask for
+# (or refuse) a huge page for one mapping.
 CONFIG_ADVISE_SYSCALLS=y
 #
 # Without MEMBARRIER, Wine and the .NET runtime fall back to an mprotect() trick
@@ -220,3 +259,14 @@ CONFIG_JUMP_LABEL=y
 # What would change this: running two players' sessions on one box at the same
 # time, or anything of value living inside the guest. Neither is true today.
 # CONFIG_CPU_MITIGATIONS is not set
+
+# The rest of what a general-purpose distro config pays for, off for the same
+# reason: one tenant, no untrusted code in the guest that the VM boundary does
+# not already contain. Pinned because a reseed from a distro config turns them
+# on, and each costs on the allocation, syscall or call path.
+# CONFIG_INIT_ON_ALLOC_DEFAULT_ON is not set
+# CONFIG_SLAB_FREELIST_HARDENED is not set
+# CONFIG_SLAB_FREELIST_RANDOM is not set
+# CONFIG_STACKPROTECTOR is not set
+# CONFIG_SCHED_STACK_END_CHECK is not set
+CONFIG_DEBUG_INFO_NONE=y

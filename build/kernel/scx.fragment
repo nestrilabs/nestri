@@ -1,0 +1,46 @@
+# Merged after nestri.fragment when KERNEL_SCX=1: what a sched_ext scheduler
+# needs from the kernel it is loaded into. Off by default, because a guest that
+# does not load one pays for the tracing and debug-info support below and gets
+# nothing back.
+#
+# A scheduler is a BPF program attached through struct_ops, and the loader
+# checks the kernel's own symbols, BTF and config before it will attach.
+# Each group below is one of those checks; the failure when it is missing is
+# the loader's, not the kernel's, and says little.
+
+# The class itself, and the BPF it is loaded through. struct_ops resolves a
+# member's stub function by address, so it needs kallsyms.
+CONFIG_SCHED_CLASS_EXT=y
+CONFIG_BPF_SYSCALL=y
+CONFIG_BPF_JIT=y
+CONFIG_KALLSYMS=y
+
+# Type information for the kernel's own structures. The stock fragment turns
+# debug info off, and BTF is built from it, so that is undone here. A scheduler reads task
+# fields by BTF, and resolves per-CPU variables such as the preempt count by
+# name, which kallsyms only lists with KALLSYMS_ALL.
+# CONFIG_DEBUG_INFO_NONE is not set
+CONFIG_DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT=y
+CONFIG_DEBUG_INFO_BTF=y
+CONFIG_KALLSYMS_ALL=y
+
+# The loader reads the running kernel's config from /proc/config.gz to decide
+# which features to use.
+CONFIG_IKCONFIG=y
+CONFIG_IKCONFIG_PROC=y
+
+# Tracing the loader checks for and attaches to: debugfs to find it, and
+# function and syscall tracepoints for the futex hooks some schedulers use to
+# boost a lock holder.
+CONFIG_DEBUG_FS=y
+CONFIG_FTRACE=y
+CONFIG_FUNCTION_TRACER=y
+CONFIG_DYNAMIC_FTRACE=y
+CONFIG_FPROBE=y
+CONFIG_FTRACE_SYSCALLS=y
+CONFIG_KPROBES=y
+CONFIG_KPROBE_EVENTS=y
+
+# Utilisation hints a scheduler can read from a task.
+CONFIG_UCLAMP_TASK=y
+CONFIG_UCLAMP_TASK_GROUP=y

@@ -51,6 +51,7 @@ pub fn prepare() {
     directories();
     devices();
     machine_id();
+    limits();
     network();
 }
 
@@ -203,6 +204,113 @@ fn devices() {
             );
         }
     }
+}
+
+/// What a Windows game under Proton needs the kernel to allow, and this box's
+/// kernel does not by default.
+///
+/// There is no service manager here, so there is also nothing that reads the
+/// distribution's `sysctl.d` and applies it, and a guest left at the kernel's
+/// own defaults runs as a machine that cannot hold a modern engine.
+///
+/// - `vm.max_map_count`: **the kernel's default is 65530**, and a large Unreal
+///   Engine 5 title maps far more regions than that. It does not fail with a
+///   message about mappings: an allocation returns null deep inside the engine
+///   or Wine, and the process dies — here as a `wineserver crashed` with the game
+///   already gone. SteamOS and every distribution that packages Proton raise it
+///   to this value for that reason.
+const SYSCTLS: &[(&str, &str, &str)] = &[(
+    "vm/max_map_count",
+    "2147483642",
+    "a game that maps more than 65530 regions (Unreal Engine 5 does) dies on a failed allocation",
+)];
+
+/// How many files a process may hold open, which every process in the box
+/// inherits from here.
+///
+/// Raised on this process because a child can lower a limit and cannot raise
+/// its hard one: the workload runs as an unprivileged user and could never get
+/// above what it was started with. 524288 is the figure Proton's own
+/// documentation asks of the hard limit; a game streaming thousands of pak and
+/// shader files gets `EMFILE` at the kernel's default and fails somewhere that
+/// does not name it.
+const OPEN_FILES: libc::rlim_t = 524_288;
+
+/// Apply the above. Best effort, like everything here, and each failure names
+/// what it costs.
+fn limits() {
+    apply_sysctls(Path::new("/proc/sys"));
+    raise_open_files();
+}
+
+/// Write each sysctl under `root`, and read it back.
+///
+/// Read back because a write that is accepted and does not take is the shape of
+/// failure that reports success: nothing here may say the box is configured on
+/// the strength of a `write` returning.
+fn apply_sysctls(root: &Path) {
+    for (name, value, cost) in SYSCTLS {
+        let path = root.join(name);
+        if let Err(error) = std::fs::write(&path, format!("{value}\n")) {
+            tracing::warn!(sysctl = name, "could not set it, so {cost}: {error}");
+            continue;
+        }
+        match std::fs::read_to_string(&path) {
+            Ok(now) if now.trim() == *value => tracing::info!(sysctl = name, value, "set"),
+            Ok(now) => tracing::warn!(
+                sysctl = name,
+                wanted = value,
+                now = now.trim(),
+                "the kernel accepted it and kept something else, so {cost}"
+            ),
+            Err(error) => tracing::warn!(
+                sysctl = name,
+                "set, but could not be read back to check: {error}"
+            ),
+        }
+    }
+}
+
+/// The limit to ask for, given the one in force: never lower than it already is.
+fn wanted_open_files(current: libc::rlimit) -> libc::rlimit {
+    libc::rlimit {
+        rlim_cur: current.rlim_cur.max(OPEN_FILES),
+        rlim_max: current.rlim_max.max(OPEN_FILES),
+    }
+}
+
+fn raise_open_files() {
+    let mut current = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: an out-pointer to a struct that lives for the call.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut current) } != 0 {
+        tracing::warn!(
+            "could not read the open-file limit: {}",
+            std::io::Error::last_os_error()
+        );
+        return;
+    }
+    let wanted = wanted_open_files(current);
+    if wanted.rlim_cur == current.rlim_cur && wanted.rlim_max == current.rlim_max {
+        return;
+    }
+    // SAFETY: a pointer to a fully initialised struct that lives for the call.
+    if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &wanted) } != 0 {
+        tracing::warn!(
+            wanted = wanted.rlim_max,
+            "could not raise the open-file limit, so a game that holds thousands of \
+             files open fails with EMFILE: {}",
+            std::io::Error::last_os_error()
+        );
+        return;
+    }
+    tracing::info!(
+        from = current.rlim_max,
+        to = wanted.rlim_max,
+        "raised the open-file limit"
+    );
 }
 
 /// Give the box an id of its own, per boot.
@@ -539,5 +647,62 @@ mod tests {
             .expect("the session's runtime directory is prepared");
         assert_eq!(runtime.mode, 0o700, "the runtime directory is not private");
         assert_eq!(runtime.owner, Some((SERVICE_UID, SERVICE_GID)));
+    }
+
+    /// A directory of this test's own, standing in for `/proc/sys`.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("nesinit-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_map_count_a_game_needs_is_asked_for_and_read_back() {
+        let root = scratch("sysctl");
+        std::fs::create_dir_all(root.join("vm")).unwrap();
+        std::fs::write(root.join("vm/max_map_count"), "65530\n").unwrap();
+
+        apply_sysctls(&root);
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("vm/max_map_count"))
+                .unwrap()
+                .trim(),
+            "2147483642"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        // The value is one the kernel's int can hold, or the write is refused.
+        assert!("2147483642".parse::<i32>().is_ok());
+        // And it is far past the default that kills an Unreal Engine 5 title.
+        assert!("2147483642".parse::<u64>().unwrap() > 65530 * 1000);
+    }
+
+    /// A box on a kernel without the knob still boots; the cost is said, not
+    /// raised.
+    #[test]
+    fn a_sysctl_that_is_missing_is_skipped_rather_than_fatal() {
+        let root = scratch("sysctl-missing");
+        apply_sysctls(&root);
+        assert!(!root.join("vm").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_open_file_limit_is_only_ever_raised() {
+        let at = |cur, max| libc::rlimit {
+            rlim_cur: cur,
+            rlim_max: max,
+        };
+        let raised = wanted_open_files(at(1024, 4096));
+        assert_eq!((raised.rlim_cur, raised.rlim_max), (OPEN_FILES, OPEN_FILES));
+
+        // Already generous: left exactly as it is.
+        let high = wanted_open_files(at(2_000_000, 4_000_000));
+        assert_eq!((high.rlim_cur, high.rlim_max), (2_000_000, 4_000_000));
+
+        // The soft limit never ends up above the hard one.
+        let mixed = wanted_open_files(at(1_000_000, 1_000_000));
+        assert!(mixed.rlim_cur <= mixed.rlim_max);
     }
 }

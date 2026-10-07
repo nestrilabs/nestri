@@ -111,34 +111,8 @@ struct Args {
     height: u32,
 
     /// Virtual output refresh rate, as advertised to clients.
-    ///
-    /// **Advertised only — this does not pace anything.** It is what a game
-    /// reads as its monitor's refresh rate, so it should be the rate the
-    /// session actually sends at: a game with V-Sync on will lock to it, and
-    /// one that reads the mode to build a settings list will offer it.
-    ///
-    /// Pacing is `--frame-callback-hz`, and the two used to be this one value.
-    /// That made an honest advertisement and a non-binding cadence mutually
-    /// exclusive, which is why the default sat at 60 while sessions asked for
-    /// 120.
     #[arg(long, default_value = "60", env = "NESCOPE_FPS")]
     fps: u32,
-
-    /// How often `wl_surface.frame` callbacks are sent, in hertz.
-    ///
-    /// This is the only rate that can throttle a client, and only a FIFO one:
-    /// `IMMEDIATE` and `MAILBOX` swapchains ignore these callbacks entirely.
-    /// It is therefore not a frame limiter — it cannot hold a game whose
-    /// V-Sync is off, which is every game whose player turned it off. That job
-    /// belongs to the capture layer, which sees every present and can hold the
-    /// application whatever its swapchain does.
-    ///
-    /// So the default is set high enough never to bind, and the compositor
-    /// stops being a second opinion on the frame rate. The cost is the timer
-    /// itself: a wakeup per tick, each sending callbacks to the surfaces in
-    /// the space. Lower it if that shows up on a small box.
-    #[arg(long, default_value = "1000", env = "NESCOPE_FRAME_CALLBACK_HZ")]
-    frame_callback_hz: u32,
 
     /// Enable HDR colour management (`wp_color_manager_v1`).
     #[arg(
@@ -441,26 +415,20 @@ fn main() {
         }
     }
 
-    // ── Frame-callback timer ──────────────────────────────────────────────
-    // Sends wl_surface.frame done events, releases the held buffer and posts
-    // presentation feedback.
-    //
-    // Deliberately *not* `--fps`. This cadence only ever throttles a FIFO
-    // client, so using it as a frame limiter caps the games that opted into
-    // V-Sync and does nothing at all to the ones that did not — which is the
-    // wrong way round, and it capped them at 60 while sessions asked for 120.
-    // The capture layer holds the game instead, and this runs fast enough to
-    // stay out of the way.
-    let frame_interval = Duration::from_micros(1_000_000 / args.frame_callback_hz.max(1) as u64);
+    // ── Input dispatch timer ────────────────────────────────────────────────
+    // Just input and cursor. High rate so a 500 Hz (2 ms) mouse isn't coalesced;
+    // cursor piggybacks on the same tick because it is change-gated
+    // internally and costs nothing when idle.
+    let tick_interval = Duration::from_millis(2);
     loop_handle
-        .insert_source(Timer::from_duration(frame_interval), move |_, _, data| {
+        .insert_source(Timer::from_duration(tick_interval), move |_, _, data| {
             if let Some(ref mut li) = data.libinput {
                 libinput_backend::dispatch_libinput(li, &mut data.state);
             }
-            data.state.on_frame_tick();
-            calloop::timer::TimeoutAction::ToDuration(frame_interval)
+            data.state.send_cursor_update();
+            calloop::timer::TimeoutAction::ToDuration(tick_interval)
         })
-        .expect("Failed to register frame timer");
+        .expect("Failed to register input timer");
 
     // ── CalloopData ───────────────────────────────────────────────────────
     let socket_name_for_cleanup = args.socket.clone();

@@ -190,6 +190,8 @@ pub struct NescopeState {
     /// Timestamp of the last non-keyboard pointer event (for inactivity hiding).
     pub last_pointer_activity: std::time::Instant,
 
+    pub presentation_seq: u64,
+
     // ── Dimensions + frame rate ───────────────────────────────────────────
     pub width: u32,
     pub height: u32,
@@ -323,6 +325,7 @@ impl NescopeState {
             last_sent_cursor_pos: Point::from((-1.0f64, -1.0f64)),
             last_sent_cursor_status: 0xFF,
             last_pointer_activity: std::time::Instant::now(),
+            presentation_seq: 0,
             width,
             height,
             fps,
@@ -732,87 +735,28 @@ impl NescopeState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Frame callbacks — driven by the frame-callback timer in main.rs
-    // -----------------------------------------------------------------------
-
-    /// Called from the calloop timer at `--frame-callback-hz`.
-    ///
-    /// Note what this does *not* count: the game's frames. This runs whether or
-    /// not anything was drawn, so counting ticks here reported the timer's own
-    /// rate as the game's — true only while the two were the same number, which
-    /// they no longer are. `game_frame_count` is incremented on commit.
-    pub fn on_frame_tick(&mut self) {
+    pub(crate) fn present_now(&mut self, root: &WlSurface, window: &Window) {
         let output = self.output.clone();
         let now = self.clock.now();
+        self.presentation_seq += 1;
 
-        // 1. Release the held buffer → frees a swapchain image for the game.
-        self.held_buffer.take();
-
-        // 2. Presentation feedback — every frame committed since the last tick
-        //    is reported presented, on the one output there is.
-        //
-        //    Not filtered by primary scan-out output: that is recorded by a
-        //    renderer, and nothing here renders, so the filter matched no
-        //    surface ever. Feedback then resolved only as `discarded`, when the
-        //    next commit superseded it -- which never happens for a client that
-        //    waits for its last present before drawing the next. A Vulkan
-        //    client with present-wait under FIFO does exactly that: Control on
-        //    VKD3D-Proton froze on leaving its title screen, GPU idle, the game
-        //    still running behind a stream that no longer moved.
-        let mut output_presentation_feedback = OutputPresentationFeedback::new(&output);
-        let on_output =
-            |_: &WlSurface, _: &smithay::wayland::compositor::SurfaceData| Some(output.clone());
-        for window in self.space.elements().cloned().collect::<Vec<_>>() {
-            window.take_presentation_feedback(
-                &mut output_presentation_feedback,
-                on_output,
-                |_, _| wp_presentation_feedback::Kind::Vsync,
-            );
-        }
-        output_presentation_feedback.presented(
+        let mut fb = OutputPresentationFeedback::new(&output);
+        window.take_presentation_feedback(
+            &mut fb,
+            |_, _| Some(output.clone()),
+            |_, _| wp_presentation_feedback::Kind::Vsync,
+        );
+        fb.presented(
             now,
-            output
-                .current_mode()
-                .map(|mode| Refresh::fixed(Duration::from_secs_f64(1_000f64 / mode.refresh as f64)))
-                .unwrap_or(Refresh::Unknown),
-            0,
+            Refresh::Unknown,
+            self.presentation_seq,
             wp_presentation_feedback::Kind::Vsync,
         );
 
-        // 3. Frame callbacks — tell the game it can present the next frame.
-        for window in self.space.elements().cloned().collect::<Vec<_>>() {
-            if let Some(surface) = window.wl_surface() {
-                send_frames_surface_tree(&*surface, &output, now, Some(Duration::ZERO), |_, _| {
-                    Some(output.clone())
-                });
-            }
-        }
-
-        // 4. Send periodic stats over IPC
-        let now = std::time::Instant::now();
-        if now.duration_since(self.last_stats_time) >= std::time::Duration::from_secs(1) {
-            let fps = self.game_frame_count.min(255) as u8;
-            let count = self.game_frame_count as u32;
-            self.game_frame_count = 0;
-            self.last_stats_time = now;
-
-            if let Some(ref mut ipc) = self.ipc_write {
-                use std::io::Write;
-                let mut buf = Vec::with_capacity(6);
-                nesprotocol::stats::encode_nescope_stats(&mut buf, fps, count);
-                let len = buf.len() as u16;
-                let _ = ipc.write_all(&len.to_le_bytes());
-                let _ = ipc.write_all(&buf);
-                let _ = ipc.flush();
-            }
-        }
-
-        // 5. Send cursor position update over IPC (if changed).
-        self.send_cursor_update();
+        send_frames_surface_tree(root, &output, now, None, |_, _| Some(output.clone()));
     }
 
-    fn send_cursor_update(&mut self) {
+    pub(crate) fn send_cursor_update(&mut self) {
         use std::io::Write;
         let ipc = match self.ipc_write.as_mut() {
             Some(s) => s,
@@ -879,11 +823,6 @@ impl NescopeState {
         let _ = ipc.write_all(&buf);
         let _ = ipc.flush();
 
-        tracing::debug!(
-            "cursor: sent update pos=({:.0},{:.0}) status={status}",
-            x,
-            y
-        );
         self.last_sent_cursor_pos = self.cursor_position;
         self.last_sent_cursor_status = status;
     }
