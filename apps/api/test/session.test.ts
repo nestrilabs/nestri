@@ -428,7 +428,8 @@ describe('GET /machine/jobs', () => {
 			boxTier: 'sm',
 			gameId: s.gameId,
 			steamAppId: 5520,
-			linkedAccountId: s.owner.linkedAccountId
+			linkedAccountId: s.owner.linkedAccountId,
+			userId: s.owner.userId
 		});
 	});
 
