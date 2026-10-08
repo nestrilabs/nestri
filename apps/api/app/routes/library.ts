@@ -70,6 +70,7 @@ export namespace LibraryApi {
 									z.object({
 										gamesSynced: z.number(),
 										libraryEntries: z.number(),
+										libraryRemoved: z.number().meta({ description: 'Entries dropped because the account no longer owns them' }),
 										failedEntries: z.array(z.number())
 									})
 								)
@@ -200,10 +201,16 @@ export namespace LibraryApi {
 					}
 				}
 
+				// Only after a sync that fully landed: a game that failed to
+				// write would otherwise be pruned as if the account lost it.
+				const libraryRemoved =
+					failedSteamIDs.size === 0 ? await Library.prune({ userId, keep: gameIds }) : 0;
+
 				return c.json({
 					data: {
 						gamesSynced,
 						libraryEntries,
+						libraryRemoved,
 						failedEntries: Array.from(failedSteamIDs)
 					}
 				});
