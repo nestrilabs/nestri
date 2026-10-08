@@ -235,22 +235,32 @@ export namespace Box {
 	 * kept and already trustworthy. Storing a plausible number instead of a
 	 * measured one is how a scheduler learns to trust a field nobody produced.
 	 */
+	/**
+	 * The host's own name for a box's shape, such as `1080p`.
+	 *
+	 * Free text, and never stored: placement already wrote this box's size on
+	 * its row. Pinning it to our size enum turned every report from a host
+	 * that names shapes by resolution into a 400, and with it every stop
+	 * reason the report carries.
+	 */
+	const ReportedTier = z.string();
+
 	export const Reported = z.discriminatedUnion('state', [
 		z.object({
 			boxId: z.string(),
-			tier: z.enum(BoxTier.enumValues),
+			tier: ReportedTier,
 			state: z.literal('created')
 		}),
 		z.object({
 			boxId: z.string(),
-			tier: z.enum(BoxTier.enumValues),
+			tier: ReportedTier,
 			state: z.literal('running'),
 			pid: z.number().int().optional(),
 			uptimeS: z.number().int()
 		}),
 		z.object({
 			boxId: z.string(),
-			tier: z.enum(BoxTier.enumValues),
+			tier: ReportedTier,
 			state: z.literal('stopped'),
 			reason: z.string(),
 			clean: z.boolean()
