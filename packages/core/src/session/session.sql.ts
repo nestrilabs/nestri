@@ -61,6 +61,12 @@ export const SessionTable = pgTable(
 		/** Null until the box actually starts, which is not when the row appears. */
 		timeStarted: utc('time_started'),
 		timeStopped: utc('time_stopped'),
+		/**
+		 * When the person asked for this run to end, or null if nobody has. The
+		 * host is handed a stop for every running row that has one, until it
+		 * reports the run ended; the request is the record, not a queue entry.
+		 */
+		timeStopRequested: utc('time_stop_requested'),
 		// A run on rented GPUs under the free weekend rather than a plan. Its
 		// time is counted against the trial and not the plan's allowance, and
 		// it is the run that is stopped when the trial's hours or its window

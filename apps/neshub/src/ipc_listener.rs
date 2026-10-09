@@ -417,6 +417,7 @@ pub async fn run_ticket_ipc_listener(
     socket_path: PathBuf,
     endpoint: iroh::Endpoint,
     stream_name: String,
+    sessions: Arc<SessionManager>,
 ) {
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
@@ -447,7 +448,13 @@ pub async fn run_ticket_ipc_listener(
                 // Asked of the endpoint now, so an address it has learned since
                 // the last read is in this answer.
                 let ticket = crate::NestriTicket::new(endpoint.addr(), stream_name.clone());
-                if let Err(e) = stream.write_all(format!("{ticket}\n").as_bytes()).await {
+                // A second line, so a reader that takes only the first still
+                // gets exactly the address it always did.
+                let viewers = sessions.client_count().await;
+                if let Err(e) = stream
+                    .write_all(format!("{ticket}\nviewers {viewers}\n").as_bytes())
+                    .await
+                {
                     tracing::warn!("could not write ticket to IPC: {e}");
                 }
             }

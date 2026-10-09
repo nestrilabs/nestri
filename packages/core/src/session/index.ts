@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Burn } from '../billing/burn.js';
@@ -66,6 +66,11 @@ export namespace Session {
 			timeStopped: z.string().nullable().optional().meta({
 				description: 'When this run ended',
 				example: Examples.Session.timeStopped
+			}),
+			timeStopRequested: z.string().nullable().optional().meta({
+				description:
+					'When the owner asked for this run to end. The run stays `live` until its host has stopped it',
+				example: null
 			}),
 			trial: z.boolean().optional().meta({
 				description:
@@ -349,8 +354,8 @@ export namespace Session {
 		});
 
 	/**
-	 * A run the agent must end now, because the terms it started under have
-	 * run out. The agent ends it as it would end any run and reports `ended`;
+	 * A run the agent must end now, because its owner asked or the terms it
+	 * started under have run out. The agent ends it as it would end any run and reports `ended`;
 	 * the job repeats on every poll until it does.
 	 */
 	export const StopJob = z
@@ -367,9 +372,9 @@ export namespace Session {
 				description: 'The box it runs in',
 				example: Examples.Session.boxId
 			}),
-			reason: z.enum(['window', 'hours']).meta({
+			reason: z.enum(['user', 'window', 'hours']).meta({
 				description:
-					'`window`: the free weekend closed. `hours`: this weekend’s free hours are used',
+					'`user`: its owner asked. `window`: the free weekend closed. `hours`: this weekend’s free hours are used',
 				example: 'hours'
 			})
 		})
@@ -391,9 +396,31 @@ export namespace Session {
 	 * `where` clause rather than by whoever is holding them.
 	 */
 	export const listJobsForMachine = fn(z.string(), async (machineId): Promise<Job[]> => {
-		const stops = (await Trial.overdue(machineId)).map(
-			(run): Job => ({ kind: 'session.stop', ...run })
+		const asked = await Database.use((tx) =>
+			tx
+				.select({ sessionId: SessionTable.id, boxId: BoxTable.id })
+				.from(SessionTable)
+				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+				.where(
+					and(
+						eq(BoxTable.machineId, machineId),
+						inArray(SessionTable.state, ['starting', 'live']),
+						isNotNull(SessionTable.timeStopRequested),
+						isNull(SessionTable.timeDeleted),
+						isNull(BoxTable.timeDeleted)
+					)
+				)
+				.orderBy(SessionTable.timeStopRequested)
 		);
+		// One stop per run: when the owner asked and the trial also ran out,
+		// the owner's reason is the one the run ended for.
+		const seen = new Set(asked.map((r) => r.sessionId));
+		const stops: Job[] = [
+			...asked.map((run): Job => ({ kind: 'session.stop', ...run, reason: 'user' })),
+			...(await Trial.overdue(machineId))
+				.filter((run) => !seen.has(run.sessionId))
+				.map((run): Job => ({ kind: 'session.stop', ...run }))
+		];
 		const starts = await Database.use(async (tx) => {
 			return tx
 				.select({ session: SessionTable, box: BoxTable, game: GameTable })
@@ -483,6 +510,48 @@ export namespace Session {
 					const row = rows.at(0);
 					return row ? serialize(row.session) : null;
 				});
+		});
+	});
+
+	/**
+	 * The owner asks for a run to end.
+	 *
+	 * A run nobody has claimed yet ends here and now: no host holds it, so
+	 * there is nothing to stop and it never cost anything. One a host holds is
+	 * only marked, and the host is handed a stop on its next poll; it stays
+	 * `starting` or `live` until the host reports it ended, because only the
+	 * host knows when the box is gone. Asking twice is the same request, and
+	 * asking of a run already over changes nothing.
+	 *
+	 * Null when the run is not there or not this person's.
+	 */
+	export const requestStop = fn(z.object({ id: Info.shape.id, userId: z.string() }), async (input) => {
+		return Database.transaction(async (tx) => {
+			const mine = tx
+				.select({ id: BoxTable.id })
+				.from(BoxTable)
+				.where(and(eq(BoxTable.userId, input.userId), isNull(BoxTable.timeDeleted)));
+			const scope = and(
+				eq(SessionTable.id, input.id),
+				inArray(SessionTable.boxId, mine),
+				isNull(SessionTable.timeDeleted)
+			);
+			// Unclaimed: the state is in the `where`, so a host claiming it at
+			// the same moment wins or loses cleanly, never both.
+			const [cancelled] = await tx
+				.update(SessionTable)
+				.set({ state: 'ended', timeStopRequested: sql`now()`, timeStopped: sql`now()` })
+				.where(and(scope, eq(SessionTable.state, 'requested')))
+				.returning();
+			if (cancelled) return serialize(cancelled);
+			const [marked] = await tx
+				.update(SessionTable)
+				.set({ timeStopRequested: sql`coalesce(${SessionTable.timeStopRequested}, now())` })
+				.where(and(scope, inArray(SessionTable.state, ['starting', 'live'])))
+				.returning();
+			if (marked) return serialize(marked);
+			const [over] = await tx.select().from(SessionTable).where(scope);
+			return over ? serialize(over) : null;
 		});
 	});
 
@@ -844,6 +913,7 @@ export namespace Session {
 			ticket: input.ticket,
 			timeStarted: input.timeStarted?.toISOString() ?? null,
 			timeStopped: input.timeStopped?.toISOString() ?? null,
+			timeStopRequested: input.timeStopRequested?.toISOString() ?? null,
 			trial: input.trial,
 			errorMessage: input.errorMessage
 		};

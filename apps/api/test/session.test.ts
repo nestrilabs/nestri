@@ -161,6 +161,7 @@ describe('POST /session', () => {
 			ticket: null,
 			timeStarted: null,
 			timeStopped: null,
+			timeStopRequested: null,
 			trial: false,
 			errorMessage: null
 		});
@@ -726,6 +727,7 @@ describe('POST /session/:id/ticket', () => {
 			'state',
 			'ticket',
 			'timeStarted',
+			'timeStopRequested',
 			'timeStopped',
 			'trial'
 		]);
@@ -871,5 +873,115 @@ describe('Session routes in the spec', () => {
 		expect(paths).toContain('/session/{id}/state');
 		expect(paths).toContain('/session/{id}/ticket');
 		expect(paths).toContain('/machine/jobs');
+	});
+});
+
+describe('POST /session/:id/stop', () => {
+	const stop = (s: Awaited<ReturnType<typeof scene>>, id: string) =>
+		app.request(`/session/${id}/stop`, { method: 'POST', headers: s.user });
+	const report = (s: Awaited<ReturnType<typeof scene>>, id: string, state: string) =>
+		app.request(`/session/${id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state, claimToken: HOLDER })
+		});
+	const stops = async (s: Awaited<ReturnType<typeof scene>>) => {
+		const res = await app.request('/machine/jobs', { headers: s.host });
+		return (((await res.json()) as any).data as any[]).filter((j) => j.kind === 'session.stop');
+	};
+
+	test('a run no host has picked up ends at once, and is never handed out', async () => {
+		const s = await scene('stop-unclaimed', 5601);
+		const { body } = await requestSession(s);
+		const res = await stop(s, body.data.id);
+		expect(res.status).toBe(200);
+		const out = (await res.json()) as any;
+		expect(out.data.state).toBe('ended');
+		expect(out.data.timeStopped).not.toBeNull();
+		const res2 = await app.request('/machine/jobs', { headers: s.host });
+		expect(((await res2.json()) as any).data).toEqual([]);
+	});
+
+	test('a live run stays live until its host has stopped it', async () => {
+		const s = await scene('stop-live', 5602);
+		const { body } = await requestSession(s);
+		const id = body.data.id;
+		await report(s, id, 'starting');
+		await report(s, id, 'live');
+
+		const res = await stop(s, id);
+		expect(res.status).toBe(200);
+		const out = (await res.json()) as any;
+		expect(out.data.state).toBe('live');
+		expect(out.data.timeStopRequested).not.toBeNull();
+		expect(await stops(s)).toEqual([
+			{ kind: 'session.stop', sessionId: id, boxId: s.box.id, reason: 'user' }
+		]);
+
+		// Asking twice is the same request: the time asked is the first one.
+		const again = (await (await stop(s, id)).json()) as any;
+		expect(again.data.timeStopRequested).toBe(out.data.timeStopRequested);
+
+		await report(s, id, 'ended');
+		expect(await stops(s)).toEqual([]);
+		const over = (await (await stop(s, id)).json()) as any;
+		expect(over.data.state).toBe('ended');
+	});
+
+	test('somebody else’s run is not there to stop', async () => {
+		const s = await scene('stop-owner', 5603);
+		const other = await scene('stop-other', 5604);
+		const { body } = await requestSession(s);
+		const res = await stop(other, body.data.id);
+		expect(res.status).toBe(404);
+		expect(
+			((await (await app.request(`/session/${body.data.id}`, { headers: s.user })).json()) as any)
+				.data.state
+		).toBe('requested');
+	});
+
+	test('a host cannot stop a run as its owner', async () => {
+		const s = await scene('stop-host', 5605);
+		const { body } = await requestSession(s);
+		const res = await app.request(`/session/${body.data.id}/stop`, {
+			method: 'POST',
+			headers: s.host
+		});
+		expect(res.status).toBe(403);
+	});
+});
+
+describe('GET /machine/:id/downloads', () => {
+	test('what a host says it is downloading is what its owner reads', async () => {
+		const s = await scene('downloads-owner', 5701);
+		const said = await app.request('/games/download-state', {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({
+				steamAppId: 5701,
+				status: 'downloading',
+				progressBytes: 40,
+				totalBytes: 100
+			})
+		});
+		expect(said.status).toBe(200);
+
+		const res = await app.request(`/machine/${s.machineId}/downloads`, { headers: s.user });
+		expect(res.status).toBe(200);
+		const data = ((await res.json()) as any).data;
+		expect(data).toHaveLength(1);
+		expect(data[0]).toMatchObject({
+			status: 'downloading',
+			progressBytes: 40,
+			totalBytes: 100,
+			game: { steamAppId: 5701, name: 'Session Route 5701' }
+		});
+	});
+
+	test('somebody else’s machine is not there to read', async () => {
+		const s = await scene('downloads-mine', 5702);
+		const other = await scene('downloads-theirs', 5703);
+		const res = await app.request(`/machine/${s.machineId}/downloads`, { headers: other.user });
+		expect(res.status).toBe(404);
 	});
 });

@@ -451,7 +451,10 @@ async fn main() -> Result<()> {
         // re-reads it so that a better one can replace the first.
         let endpoint = endpoint.clone();
         let stream_name = stream_name.clone();
-        async move { ipc_listener::run_ticket_ipc_listener(ticket_ipc, endpoint, stream_name).await }
+        let sessions = session_manager.clone();
+        async move {
+            ipc_listener::run_ticket_ipc_listener(ticket_ipc, endpoint, stream_name, sessions).await
+        }
     });
 
     // Accept loop

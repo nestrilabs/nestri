@@ -309,6 +309,48 @@ export namespace SessionApi {
 			}
 		)
 		.post(
+			'/:id/stop',
+			notPublic,
+			describeRoute({
+				tags: ['Session'],
+				summary: 'End a run',
+				description:
+					'Asks for the run to end. A run no host has picked up yet ends at once. One that is starting or live keeps its state, with `timeStopRequested` set, until its host has stopped the box and reported it `ended` — poll the run to see that happen. Asking again, or asking of a run already over, changes nothing and answers with the run as it stands.',
+				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Session.Info) } },
+						description: 'The run, with the stop recorded'
+					},
+					401: ErrorResponses[401],
+					403: ErrorResponses[403],
+					404: ErrorResponses[404]
+				}
+			}),
+			validator(
+				'param',
+				z.object({
+					id: z.string().meta({
+						description: 'The run to end',
+						example: Examples.Session.id
+					})
+				})
+			),
+			async (c) => {
+				const session = await Session.requestStop({
+					id: c.req.valid('param').id,
+					userId: actingPerson()
+				});
+				if (!session) {
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'No such session, or it is not yours'
+					);
+				}
+				return c.json({ data: session });
+			}
+		)
+		.post(
 			'/:id/state',
 			machineOnly,
 			describeRoute({
@@ -423,7 +465,7 @@ export namespace SessionApi {
 			tags: ['Session'],
 			summary: 'Ask for work',
 			description:
-				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now because the terms it started under ran out, repeated on every poll until the host reports it ended. Poll at the cadence the heartbeat hands down. An agent skips a kind it does not know.',
+				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked or the terms it started under ran out, repeated on every poll until the host reports it ended. Poll at the cadence the heartbeat hands down. An agent skips a kind it does not know.',
 			responses: {
 				200: {
 					content: { 'application/json': { schema: Result(z.array(Session.Job)) } },

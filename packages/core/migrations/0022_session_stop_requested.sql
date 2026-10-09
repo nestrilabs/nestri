@@ -1,0 +1,1 @@
+ALTER TABLE "session" ADD COLUMN "time_stop_requested" timestamp with time zone;

@@ -2,6 +2,7 @@ import { Actor } from '@nestri/core/actor';
 import { Box } from '@nestri/core/box/index';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
+import { GameDownload } from '@nestri/core/game/download';
 import { Identifier } from '@nestri/core/id';
 import { Machine } from '@nestri/core/machine/index';
 import { InstallToken } from '@nestri/core/machine/install-token';
@@ -594,6 +595,48 @@ export namespace MachineApi {
 					);
 				}
 				return c.json({ data: machine });
+			}
+		)
+		.get(
+			'/:id/downloads',
+			notPublic,
+			describeRoute({
+				tags: ['Machine'],
+				summary: 'What a machine has downloaded',
+				description:
+					'Every game this machine is downloading, has ready, or failed to download, with how far each has got. Only the machine’s owner can read it.',
+				responses: {
+					200: {
+						content: {
+							'application/json': {
+								schema: Result(
+									z.array(
+										GameDownload.Info.extend({
+											game: z.object({ name: z.string(), steamAppId: z.number() })
+										})
+									)
+								)
+							}
+						},
+						description: 'Downloads on this machine, least recently changed first'
+					},
+					401: ErrorResponses[401],
+					404: ErrorResponses[404]
+				}
+			}),
+			async (c) => {
+				const data = await GameDownload.listForOwnedMachine({
+					machineId: c.req.param('id'),
+					ownerUserId: Actor.userID
+				});
+				if (!data) {
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'No such machine, or it is not yours'
+					);
+				}
+				return c.json({ data });
 			}
 		)
 		.get(
