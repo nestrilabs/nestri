@@ -39,6 +39,26 @@ export namespace Machine {
 		message: 'An endpoint id is 64 lowercase hex characters'
 	});
 
+	/** One card in a host, as the host reports it. */
+	export const Gpu = z
+		.object({
+			model: z.string().min(1).max(128).meta({
+				description: 'What the card is called, as its driver names it',
+				example: 'AMD Radeon RX 9060 XT'
+			}),
+			vramMib: z.number().int().nonnegative().optional().meta({
+				description: 'The card’s own memory in MiB. Absent when the driver does not say',
+				example: 16304
+			}),
+			pciId: z
+				.string()
+				.regex(/^[0-9a-f]{4}:[0-9a-f]{4}$/)
+				.meta({ description: 'vendor:device, the ids the model was looked up by', example: '1002:7590' })
+		})
+		.meta({ ref: 'Gpu' });
+
+	export type Gpu = z.infer<typeof Gpu>;
+
 	export const Info = z
 		.object({
 			id: z.string().meta({
@@ -77,6 +97,10 @@ export namespace Machine {
 				description:
 					'Where this host can be reached, as its own endpoint id. Null until the host has reported one — it holds the secret half of this identity, so it is the only thing that can say what the public half is',
 				example: Examples.Machine.endpointId
+			}),
+			gpus: z.array(Gpu).nullable().optional().meta({
+				description:
+					'The cards in this host, as its last report listed them. Null until a host has reported them'
 			})
 		})
 		.meta({
@@ -450,6 +474,27 @@ export namespace Machine {
 		}
 	);
 
+	/**
+	 * Record the cards a host reported. Written only when they differ, so a report every
+	 * few minutes does not rewrite a row that has not changed.
+	 */
+	export const setGpus = fn(
+		z.object({ id: z.string(), gpus: z.array(Gpu).max(64) }),
+		async (input) => {
+			await Database.use(async (tx) => {
+				await tx
+					.update(MachineTable)
+					.set({ gpus: input.gpus })
+					.where(
+						and(
+							eq(MachineTable.id, input.id),
+							sql`${MachineTable.gpus} is distinct from ${JSON.stringify(input.gpus)}::jsonb`
+						)
+					);
+			});
+		}
+	);
+
 	/** Every host an organisation owns outright — its fleet. */
 	export const listByOrganisation = fn(z.string(), async (organisationId) => {
 		return Database.use(async (tx) => {
@@ -493,7 +538,8 @@ export namespace Machine {
 			label: input.label,
 			slug: input.slug,
 			lastSeen: input.lastSeen?.toISOString() ?? null,
-			endpointId: input.endpointId
+			endpointId: input.endpointId,
+			gpus: input.gpus ?? null
 		};
 	}
 }
