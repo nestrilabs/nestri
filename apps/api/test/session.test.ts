@@ -950,3 +950,38 @@ describe('POST /session/:id/stop', () => {
 		expect(res.status).toBe(403);
 	});
 });
+
+describe('GET /machine/:id/downloads', () => {
+	test('what a host says it is downloading is what its owner reads', async () => {
+		const s = await scene('downloads-owner', 5701);
+		const said = await app.request('/games/download-state', {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({
+				steamAppId: 5701,
+				status: 'downloading',
+				progressBytes: 40,
+				totalBytes: 100
+			})
+		});
+		expect(said.status).toBe(200);
+
+		const res = await app.request(`/machine/${s.machineId}/downloads`, { headers: s.user });
+		expect(res.status).toBe(200);
+		const data = ((await res.json()) as any).data;
+		expect(data).toHaveLength(1);
+		expect(data[0]).toMatchObject({
+			status: 'downloading',
+			progressBytes: 40,
+			totalBytes: 100,
+			game: { steamAppId: 5701, name: 'Session Route 5701' }
+		});
+	});
+
+	test('somebody else’s machine is not there to read', async () => {
+		const s = await scene('downloads-mine', 5702);
+		const other = await scene('downloads-theirs', 5703);
+		const res = await app.request(`/machine/${s.machineId}/downloads`, { headers: other.user });
+		expect(res.status).toBe(404);
+	});
+});

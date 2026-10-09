@@ -5,6 +5,8 @@ import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
+import { MachineTable } from '../machine/machine.sql.js';
+import { GameTable } from './game.sql.js';
 import { GameDownloadStatus, GameDownloadTable } from './download.sql.js';
 
 export namespace GameDownload {
@@ -150,6 +152,44 @@ export namespace GameDownload {
 				.orderBy(GameDownloadTable.timeCreated);
 		});
 	});
+
+	/**
+	 * What one machine has downloaded or is downloading, with each game's name,
+	 * for the person who owns it. Null when the machine is not there or not
+	 * theirs: owner-scoped in the query, so the two cannot be told apart.
+	 */
+	export const listForOwnedMachine = fn(
+		z.object({ machineId: z.string(), ownerUserId: z.string() }),
+		async (input) => {
+			return Database.use(async (tx) => {
+				const [machine] = await tx
+					.select({ id: MachineTable.id })
+					.from(MachineTable)
+					.where(
+						and(
+							eq(MachineTable.id, input.machineId),
+							eq(MachineTable.ownerUserId, input.ownerUserId),
+							isNull(MachineTable.timeDeleted)
+						)
+					);
+				if (!machine) return null;
+				return tx
+					.select({ download: GameDownloadTable, game: GameTable })
+					.from(GameDownloadTable)
+					.innerJoin(GameTable, eq(GameDownloadTable.gameId, GameTable.id))
+					.where(
+						and(eq(GameDownloadTable.hostId, machine.id), isNull(GameDownloadTable.timeDeleted))
+					)
+					.orderBy(GameDownloadTable.timeUpdated)
+					.then((rows) =>
+						rows.map((row) => ({
+							...serialize(row.download),
+							game: { name: row.game.name, steamAppId: row.game.steamAppId }
+						}))
+					);
+			});
+		}
+	);
 
 	export const listByGameIDs = fn(z.array(z.string()), async (gameIds) => {
 		if (gameIds.length === 0) return [];
