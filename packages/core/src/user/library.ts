@@ -1,4 +1,4 @@
-import { eq, and, isNull, sql, inArray } from 'drizzle-orm';
+import { eq, and, isNull, sql, inArray, notInArray } from 'drizzle-orm';
 import z from 'zod';
 
 import { Database } from '../db/index.js';
@@ -86,7 +86,9 @@ export namespace Library {
 						set: {
 							playtime2w: input.playtime2w ?? null,
 							playtimeForever: input.playtimeForever ?? null,
-							lastPlayed: input.lastPlayed ? new Date(input.lastPlayed) : null
+							lastPlayed: input.lastPlayed ? new Date(input.lastPlayed) : null,
+							// Owned again after a prune: the entry comes back.
+							timeDeleted: null
 						}
 					});
 			});
@@ -208,6 +210,36 @@ export namespace Library {
 							isNull(UserLibraryTable.timeDeleted)
 						)
 					);
+			});
+		}
+	);
+
+	/**
+	 * Drop the entries a sync no longer lists.
+	 *
+	 * A sync is the whole of what the account owns, so an entry it leaves out
+	 * is a game the account lost: a licence revoked, or a library from a Steam
+	 * account this user no longer signs in with. An empty `keep` removes
+	 * nothing, because an empty answer from Steam is likelier a blip than an
+	 * account that owns no games.
+	 */
+	export const prune = fn(
+		z.object({ userId: z.string(), keep: z.array(z.string()) }),
+		async (input) => {
+			if (input.keep.length === 0) return 0;
+			return Database.use(async (tx) => {
+				const removed = await tx
+					.update(UserLibraryTable)
+					.set({ timeDeleted: sql`now()` })
+					.where(
+						and(
+							eq(UserLibraryTable.userId, input.userId),
+							isNull(UserLibraryTable.timeDeleted),
+							notInArray(UserLibraryTable.gameId, input.keep)
+						)
+					)
+					.returning({ id: UserLibraryTable.id });
+				return removed.length;
 			});
 		}
 	);

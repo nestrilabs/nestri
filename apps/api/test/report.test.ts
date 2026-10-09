@@ -75,7 +75,7 @@ describe('POST /machine/report', () => {
 			boxesKnown: 2,
 			boxesRunning: 1,
 			boxes: [
-				{ boxId: running.id, tier: 'sm', state: 'running', pid: 1234, uptimeS: 45 },
+				{ boxId: running.id, tier: '1080p', state: 'running', pid: 1234, uptimeS: 45 },
 				{ boxId: idle.id, tier: 'sm', state: 'created' }
 			]
 		});
