@@ -515,12 +515,16 @@ export namespace MachineApi {
 						}),
 						boxes: z.array(Box.Reported).meta({
 							description: 'Every box the host holds. A full snapshot, never a delta'
+						}),
+						gpus: z.array(Machine.Gpu).max(64).optional().meta({
+							description:
+								'The cards in this host. The first measured part of its capacity; left off when none could be read'
 						})
 					})
 					// Strict, so a field this cannot act on is a validation error a
 					// host operator sees rather than one quietly dropped. Capacity
-					// belongs here eventually and it has no honest fields yet;
-					// refusing the ones nobody measures is how it stays that way.
+					// belongs here, one measured field at a time: `gpus` is the
+					// first, and refusing the ones nobody measures keeps it honest.
 					.strict()
 			),
 			async (c) => {
@@ -536,8 +540,11 @@ export namespace MachineApi {
 					);
 				}
 
-				const { boxes } = c.req.valid('json');
+				const { boxes, gpus } = c.req.valid('json');
 				const outcome = await Box.applyHostReport({ machineId: Actor.machineID, boxes });
+				if (gpus && gpus.length > 0) {
+					await Machine.setGpus({ id: Actor.machineID, gpus });
+				}
 
 				// `agentPid`, `boxesKnown` and `boxesRunning` are read and not
 				// stored. They are a summary of the list that follows them, and a

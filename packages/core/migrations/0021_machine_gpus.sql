@@ -1,0 +1,1 @@
+ALTER TABLE "machine" ADD COLUMN "gpus" jsonb;

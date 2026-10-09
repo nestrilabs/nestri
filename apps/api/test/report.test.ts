@@ -87,6 +87,26 @@ describe('POST /machine/report', () => {
 		expect((await Box.fromID(running.id))!.state).toBe('running');
 	});
 
+	test('the cards a host reports are kept on its machine', async () => {
+		const host = await registeredHost('report-gpus');
+		const gpus = [{ model: 'AMD Radeon RX 9060 XT', vramMib: 16304, pciId: '1002:7590' }];
+
+		const res = await report(host, {
+			agentPid: 1,
+			boxesKnown: 0,
+			boxesRunning: 0,
+			boxes: [],
+			gpus
+		});
+
+		expect(res.status).toBe(200);
+		expect((await Machine.fromID(host.id))!.gpus).toEqual(gpus);
+
+		// A report without them leaves what is known alone.
+		await report(host, { agentPid: 1, boxesKnown: 0, boxesRunning: 0, boxes: [] });
+		expect((await Machine.fromID(host.id))!.gpus).toEqual(gpus);
+	});
+
 	test('a request is not wrapped in an envelope, but the response is', async () => {
 		const host = await registeredHost('report-envelope');
 

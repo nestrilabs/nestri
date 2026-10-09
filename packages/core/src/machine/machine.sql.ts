@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { check, index, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { id, timestamps, ulid, utc } from '../db/types.js';
 import { OrganisationTable } from '../organisation/organisation.sql.js';
@@ -95,7 +95,13 @@ export const MachineTable = pgTable(
 		// The secret itself is returned exactly once, at registration, and never
 		// stored: a leaked database must not yield working box credentials.
 		secretHash: text('secret_hash').notNull(),
-		lastSeen: utc('last_seen')
+		lastSeen: utc('last_seen'),
+		// The cards in this host, as its last report listed them: model, VRAM in
+		// MiB when the driver says, and the PCI id it was named by. What a person
+		// calls the machine ("AMD Radeon RX 9060 XT"), and the first measured part
+		// of the capacity a scheduler will place by. Null until a report carries
+		// them; never filled in by guessing.
+		gpus: jsonb('gpus').$type<{ model: string; vramMib?: number; pciId: string }[]>()
 	},
 	(t) => [
 		uniqueIndex('machine_secret_hash_unique').on(t.secretHash),
