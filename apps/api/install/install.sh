@@ -24,7 +24,7 @@ set -eu
 API="${NESTRI_API:-https://api.nestri.io}"
 # Pinned, not "latest", so the script and the binary it installs are a pair
 # somebody chose. Bump when cutting a release; NESTRI_HOST_VERSION overrides it.
-DEFAULT_VERSION="0.2.9"
+DEFAULT_VERSION="0.2.10"
 VERSION="${NESTRI_HOST_VERSION:-$DEFAULT_VERSION}"
 BIN_DIR="${NESTRI_BIN_DIR:-/usr/local/bin}"
 STATE_DIR=/var/lib/nestri
