@@ -399,6 +399,10 @@ pub enum GuestToHost {
     },
     /// How a client reaches this box's media, once it is known.
     Ticket { ticket: String },
+    /// How many clients are watching this box. Sent once when first known and
+    /// again whenever it changes, so a host can tell a run nobody is using
+    /// from one somebody is. A host that does not know it skips it.
+    Viewers { count: u32 },
     /// Bytes from the workload, relayed. See [`Payload`].
     Payload {
         #[serde(flatten)]

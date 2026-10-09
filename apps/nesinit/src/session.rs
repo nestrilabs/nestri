@@ -72,7 +72,7 @@ pub async fn run<C, W, S>(
     workload: &mut W,
     services: &mut S,
     payload: &mut Ports,
-    addresses: &mut Receiver<String>,
+    addresses: &mut Receiver<crate::ticket::Found>,
     untrusted: &crate::ticket::Untrusted,
 ) -> std::io::Result<Outcome>
 where
@@ -107,7 +107,7 @@ async fn converse<C, W, S>(
     workload: &mut W,
     services: &mut S,
     payload: &mut Ports,
-    addresses: &mut Receiver<String>,
+    addresses: &mut Receiver<crate::ticket::Found>,
     untrusted: &crate::ticket::Untrusted,
 ) -> std::io::Result<Outcome>
 where
@@ -217,11 +217,17 @@ where
                 send(&mut writer, &GuestToHost::Payload { payload }).await?;
                 continue;
             }
-            Event::Address(Some(ticket)) => {
+            Event::Address(Some(crate::ticket::Found::Address(ticket))) => {
                 // Sent whenever a better one is found, not only the first time:
                 // a caller that keeps the first address it is given works on a
                 // local network and fails from anywhere else.
                 send(&mut writer, &GuestToHost::Ticket { ticket }).await?;
+                continue;
+            }
+            Event::Address(Some(crate::ticket::Found::Viewers(count))) => {
+                // Only when it changes: the host decides what an empty box
+                // means, and needs to hear when it became empty.
+                send(&mut writer, &GuestToHost::Viewers { count }).await?;
                 continue;
             }
             Event::Address(None) => {
@@ -489,7 +495,7 @@ enum Event {
     Line(Option<String>),
     Ended(Exit),
     FromWorkload(Option<Payload>),
-    Address(Option<String>),
+    Address(Option<crate::ticket::Found>),
     ServiceDied(Option<Died>),
 }
 
@@ -594,7 +600,7 @@ mod tests {
     /// A carrier that never finds an address, for the tests that are not
     /// about one. Held open rather than closed: a closed channel is itself a
     /// case, and it is tested on purpose below.
-    fn nowhere() -> mpsc::Receiver<String> {
+    fn nowhere() -> mpsc::Receiver<crate::ticket::Found> {
         let (tx, rx) = mpsc::channel(1);
         // Kept alive for the process, so `recv` pends rather than resolving
         // `None` and taking a branch these tests are not exercising.
@@ -607,7 +613,7 @@ mod tests {
         workload: Double,
         services: Stack,
         ports: Ports,
-        addresses: mpsc::Receiver<String>,
+        addresses: mpsc::Receiver<crate::ticket::Found>,
     }
 
     impl Given {
@@ -1434,7 +1440,9 @@ mod tests {
         caller.expect_ready().await;
 
         found_tx
-            .send("nestri:local-only".to_string())
+            .send(crate::ticket::Found::Address(
+                "nestri:local-only".to_string(),
+            ))
             .await
             .unwrap();
         assert_eq!(
@@ -1447,7 +1455,9 @@ mod tests {
         // And a better one replaces it rather than being the caller's problem
         // to have missed.
         found_tx
-            .send("nestri:with-relays".to_string())
+            .send(crate::ticket::Found::Address(
+                "nestri:with-relays".to_string(),
+            ))
             .await
             .unwrap();
         assert_eq!(

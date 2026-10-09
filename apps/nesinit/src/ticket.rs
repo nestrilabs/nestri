@@ -47,6 +47,16 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::net::UnixStream;
 use tokio::sync::mpsc::Sender;
 
+/// What one look at the socket found worth forwarding.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Found {
+    /// How a client reaches this session.
+    Address(String),
+    /// How many clients are watching. Read from an optional second line, so a
+    /// server that writes only the address is still a server this reads.
+    Viewers(u32),
+}
+
 /// Where the address is read from.
 pub const SOCKET: &str = "/tmp/nestri-ticket.sock";
 
@@ -65,6 +75,9 @@ const EVERY: Duration = Duration::from_secs(2);
 /// address it already forwarded stays correct; the better one that arrives
 /// later never would.
 const PATIENCE: Duration = Duration::from_secs(5);
+
+/// How long the optional second line is waited for once the address is in.
+const SECOND_LINE: Duration = Duration::from_millis(500);
 
 /// The longest address this will read.
 ///
@@ -129,10 +142,21 @@ impl Untrusted {
 /// is retried at the next interval — there is nothing here worth ending a
 /// running session over, and an address that stops being re-offered does not
 /// stop being correct.
-pub async fn carry(path: PathBuf, out: Sender<String>, untrusted: Untrusted) {
+pub async fn carry(path: PathBuf, out: Sender<Found>, untrusted: Untrusted) {
     let mut sent: Option<String> = None;
+    let mut counted: Option<u32> = None;
     loop {
-        match look(&path, &untrusted).await {
+        let looked = look(&path, &untrusted).await;
+        if let Ok((_, Some(viewers))) = &looked
+            && counted != Some(*viewers)
+        {
+            tracing::info!(viewers, "clients watching this session");
+            if out.send(Found::Viewers(*viewers)).await.is_err() {
+                return;
+            }
+            counted = Some(*viewers);
+        }
+        match looked.map(|(address, _)| address) {
             Ok(current) if Some(&current) != sent.as_ref() => {
                 // The address itself is not logged. It is a capability to reach
                 // this session, and a log inside the guest is the one place it
@@ -141,7 +165,7 @@ pub async fn carry(path: PathBuf, out: Sender<String>, untrusted: Untrusted) {
                     first = sent.is_none(),
                     "forwarding an address for this session"
                 );
-                if out.send(current.clone()).await.is_err() {
+                if out.send(Found::Address(current.clone())).await.is_err() {
                     // The session is over. Nothing else reads this.
                     return;
                 }
@@ -169,7 +193,7 @@ pub async fn carry(path: PathBuf, out: Sender<String>, untrusted: Untrusted) {
 }
 
 /// One look at the socket, abandoned if it takes longer than [`PATIENCE`].
-async fn look(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
+async fn look(path: &Path, untrusted: &Untrusted) -> io::Result<(String, Option<u32>)> {
     match tokio::time::timeout(PATIENCE, read(path, untrusted)).await {
         Ok(result) => result,
         Err(_) => Err(io::Error::new(
@@ -179,8 +203,10 @@ async fn look(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
     }
 }
 
-/// One line from the socket, which is the whole protocol.
-async fn read(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
+/// The address line from the socket, and the viewer count if a second line
+/// says `viewers <n>`. Anything else on that line is ignored, not an error: the
+/// address is what this exists to carry.
+async fn read(path: &Path, untrusted: &Untrusted) -> io::Result<(String, Option<u32>)> {
     let stream = UnixStream::connect(path).await?;
 
     // Before a byte is read. The kernel answers this about the socket's peer
@@ -196,10 +222,9 @@ async fn read(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
         ));
     }
 
+    let mut reader = BufReader::new(stream.take(LONGEST));
     let mut line = String::new();
-    BufReader::new(stream.take(LONGEST))
-        .read_line(&mut line)
-        .await?;
+    reader.read_line(&mut line).await?;
     let line = line.trim().to_string();
     if line.is_empty() {
         return Err(io::Error::new(
@@ -207,7 +232,18 @@ async fn read(path: &Path, untrusted: &Untrusted) -> io::Result<String> {
             "the socket answered with nothing",
         ));
     }
-    Ok(line)
+    let mut second = String::new();
+    // Briefly: a server that writes only the address and holds the connection
+    // open must still be read as it always was.
+    let viewers = match tokio::time::timeout(SECOND_LINE, reader.read_line(&mut second)).await {
+        Ok(Ok(_)) => viewers(&second),
+        _ => None,
+    };
+    Ok((line, viewers))
+}
+
+fn viewers(line: &str) -> Option<u32> {
+    line.trim().strip_prefix("viewers ")?.trim().parse().ok()
 }
 
 /// The uid of the process on the other end of a connected unix socket.
@@ -283,7 +319,7 @@ mod tests {
             .await
             .expect("no address arrived")
             .expect("the channel closed");
-        assert_eq!(first, "nestri:abc");
+        assert_eq!(first, Found::Address("nestri:abc".into()));
 
         // And it is not sent again. An address that has not changed is the same
         // address, and re-sending it is a write per interval for nothing.
@@ -318,7 +354,13 @@ mod tests {
                 .expect("the channel closed");
             seen.push(next);
         }
-        assert_eq!(seen, ["nestri:local-only", "nestri:with-relays"]);
+        assert_eq!(
+            seen,
+            [
+                Found::Address("nestri:local-only".into()),
+                Found::Address("nestri:with-relays".into())
+            ]
+        );
         let _ = std::fs::remove_file(&path);
     }
 
@@ -349,7 +391,7 @@ mod tests {
         // the socket.
         let elsewhere = Untrusted::unknown();
         elsewhere.is(ours + 1);
-        assert_eq!(look(&path, &elsewhere).await.unwrap(), "nestri:attacker");
+        assert_eq!(look(&path, &elsewhere).await.unwrap().0, "nestri:attacker");
 
         let _ = std::fs::remove_file(&path);
     }
@@ -362,7 +404,7 @@ mod tests {
         serve(path.clone(), vec![Some("nestri:real".into())]);
         let untrusted = Untrusted::unknown();
         assert_eq!(untrusted.refuse(), None);
-        assert_eq!(look(&path, &untrusted).await.unwrap(), "nestri:real");
+        assert_eq!(look(&path, &untrusted).await.unwrap().0, "nestri:real");
         let _ = std::fs::remove_file(&path);
     }
 
@@ -392,7 +434,7 @@ mod tests {
             .await
             .expect("an address that arrived late was never picked up")
             .expect("the channel closed");
-        assert_eq!(first, "nestri:late");
+        assert_eq!(first, Found::Address("nestri:late".into()));
         let _ = std::fs::remove_file(&path);
     }
 
@@ -431,7 +473,7 @@ mod tests {
             .await
             .expect("the carrier never got past a server that would not answer")
             .expect("the channel closed");
-        assert_eq!(first, "nestri:eventually");
+        assert_eq!(first, Found::Address("nestri:eventually".into()));
         let _ = std::fs::remove_file(&path);
     }
 
@@ -449,7 +491,52 @@ mod tests {
             .await
             .expect("no address arrived")
             .expect("the channel closed");
-        assert_eq!(first, "nestri:real");
+        assert_eq!(first, Found::Address("nestri:real".into()));
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// The count rides a second line, and is forwarded when it changes and
+    /// not otherwise. The address beside it is unaffected.
+    #[tokio::test]
+    async fn a_viewer_count_is_forwarded_when_it_changes() {
+        let path = scratch("viewers");
+        serve(
+            path.clone(),
+            vec![
+                Some("nestri:abc\nviewers 0".into()),
+                Some("nestri:abc\nviewers 0".into()),
+                Some("nestri:abc\nviewers 1".into()),
+            ],
+        );
+
+        let (tx, mut rx) = mpsc::channel(8);
+        tokio::spawn(carry(path.clone(), tx, Untrusted::unknown()));
+
+        let mut seen = Vec::new();
+        while seen.len() < 3 {
+            seen.push(
+                tokio::time::timeout(Duration::from_secs(15), rx.recv())
+                    .await
+                    .expect("a change was never forwarded")
+                    .expect("the channel closed"),
+            );
+        }
+        assert_eq!(
+            seen,
+            [
+                Found::Viewers(0),
+                Found::Address("nestri:abc".into()),
+                Found::Viewers(1)
+            ]
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn only_a_well_formed_count_is_read() {
+        assert_eq!(viewers("viewers 3\n"), Some(3));
+        assert_eq!(viewers("viewers -1"), None);
+        assert_eq!(viewers("watchers 3"), None);
+        assert_eq!(viewers(""), None);
     }
 }
