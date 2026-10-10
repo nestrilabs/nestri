@@ -94,12 +94,15 @@ pub fn effective_caps(caps: ClientCaps, pyrowave_format: Option<u8>) -> ClientCa
 /// on it.
 pub struct Negotiator {
     agreement: std::sync::Mutex<Agreement<iroh::EndpointId>>,
+    /// When the encoder was last told the set again; see [`Self::reassert`].
+    reasserted: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 impl Negotiator {
     pub fn new() -> Self {
         Self {
             agreement: std::sync::Mutex::new(Agreement::default()),
+            reasserted: std::sync::Mutex::new(None),
         }
     }
 
@@ -158,6 +161,46 @@ impl Negotiator {
             agreement.stated.len(),
             joint.bits()
         );
+        let mut cmd = vec![nesprotocol::MSG_CLIENT_CAPS];
+        nesprotocol::encode_client_caps(&mut cmd, joint);
+        let _ = cmd_tx.send(cmd);
+    }
+
+    /// A frame arrived in `codec`. When the clients agreed on a set that
+    /// cannot decode it, the encoder never got the set: it was not listening
+    /// yet when the set was sent, or it is a new one -- a launcher handing over
+    /// to the game -- that started on its own default. Either way every client
+    /// is dropping every frame, so the encoder is told again, at most once a
+    /// second.
+    pub async fn reassert(
+        &self,
+        codec: u8,
+        controller: &Mutex<Controller>,
+        cmd_tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    ) {
+        let joint = {
+            let agreement = self.agreement.lock().unwrap();
+            match agreement.joint() {
+                Some(joint) if !joint.is_empty() && !joint.supports_codec(codec) => joint,
+                _ => return,
+            }
+        };
+        {
+            let mut last = self.reasserted.lock().unwrap();
+            if last.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1)) {
+                return;
+            }
+            *last = Some(std::time::Instant::now());
+        }
+        if controller.lock().await.mode() == ControlMode::Manual {
+            return;
+        }
+        warn!(
+            codec,
+            joint = format_args!("{:#010b}", joint.bits()),
+            "the encoder sends a codec no client decodes; telling it again what they can"
+        );
+        self.agreement.lock().unwrap().mark_sent(joint);
         let mut cmd = vec![nesprotocol::MSG_CLIENT_CAPS];
         nesprotocol::encode_client_caps(&mut cmd, joint);
         let _ = cmd_tx.send(cmd);
@@ -265,5 +308,31 @@ mod tests {
             effective_caps(caps, Some(nesprotocol::pyrowave::PYROWAVE_FORMAT)),
             caps
         );
+    }
+
+    /// The encoder came up on AV1 after a client that decodes only H.264 had
+    /// already said so: the set is sent again, once, however many frames say
+    /// it.
+    #[tokio::test]
+    async fn an_encoder_on_a_codec_nobody_decodes_is_told_again() {
+        let negotiator = Negotiator::new();
+        let controller = Mutex::new(Controller::new(crate::control::Limits::new(8000)));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let client = iroh::SecretKey::from_bytes(&[7; 32]).public();
+        negotiator.state(client, h264_only());
+        negotiator.settle(&controller, &tx).await;
+        assert!(rx.try_recv().is_ok(), "the first set is sent");
+
+        // Frames in a codec the client decodes say nothing.
+        negotiator.reassert(CODEC_H264, &controller, &tx).await;
+        assert!(rx.try_recv().is_err());
+
+        // AV1 frames: told again, and only once for a burst of them.
+        for _ in 0..60 {
+            negotiator.reassert(CODEC_AV1, &controller, &tx).await;
+        }
+        let cmd = rx.try_recv().expect("the set is sent again");
+        assert_eq!(cmd[0], nesprotocol::MSG_CLIENT_CAPS);
+        assert!(rx.try_recv().is_err(), "once a second, not once a frame");
     }
 }

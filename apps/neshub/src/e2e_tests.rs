@@ -80,7 +80,15 @@ async fn rig_with(client_buffer: Option<usize>) -> Rig {
     tokio::spawn({
         let mgr = mgr.clone();
         let path = socket_path.clone();
-        async move { crate::ipc_listener::run_video_listener(path, mgr).await }
+        let controller = Arc::new(tokio::sync::Mutex::new(crate::control::Controller::new(
+            crate::control::Limits::new(8000),
+        )));
+        // Commands go nowhere here: no client in these tests states codecs.
+        let (cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        async move {
+            let _cmd_rx = _cmd_rx;
+            crate::ipc_listener::run_video_listener(path, mgr, controller, cmd_tx).await
+        }
     });
 
     let hub = iroh::Endpoint::builder(presets::N0)
