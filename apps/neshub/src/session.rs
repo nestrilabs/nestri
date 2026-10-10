@@ -975,6 +975,16 @@ impl SessionManager {
         }
     }
 
+    /// A video frame arrived in `codec`; see [`Negotiator::reassert`].
+    pub async fn reassert_codec(
+        &self,
+        codec: u8,
+        controller: &Mutex<Controller>,
+        cmd_tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    ) {
+        self.negotiator.reassert(codec, controller, cmd_tx).await;
+    }
+
     /// Drop a client, and let the encoder move to whatever the clients still
     /// here can all decode -- a better codec, when the one that left was the
     /// one holding the rest back.

@@ -22,7 +22,12 @@ fn set_recv_buffer(socket: &UnixDatagram, size: libc::c_int) {
     }
 }
 
-pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<SessionManager>) {
+pub async fn run_video_listener(
+    socket_path: PathBuf,
+    session_manager: Arc<SessionManager>,
+    controller: Arc<tokio::sync::Mutex<crate::control::Controller>>,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+) {
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
     }
@@ -77,6 +82,10 @@ pub async fn run_video_listener(socket_path: PathBuf, session_manager: Arc<Sessi
                         );
                         continue;
                     }
+                    // An encoder on a codec nobody here decodes is told again.
+                    session_manager
+                        .reassert_codec(decoded.codec, &controller, &cmd_tx)
+                        .await;
                     let mut frame_data = Vec::with_capacity(1 + decoded.data.len());
                     frame_data.push(decoded.codec);
                     frame_data.push(decoded.flags);

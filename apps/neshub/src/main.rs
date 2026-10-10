@@ -235,10 +235,26 @@ async fn main() -> Result<()> {
             let cmd_path = std::path::PathBuf::from("/tmp/nescapture-cmd.sock");
             while let Some(mut bytes) = cmd_rx.recv().await {
                 fill_pyrowave_packet_size(&mut bytes, mgr.pyro_packet_size().await);
-                if let Ok(sock) = std::os::unix::net::UnixDatagram::unbound() {
-                    if sock.send_to(&bytes, &cmd_path).is_err() {
-                        tracing::warn!("nescapture cmd send failed at {}", cmd_path.display());
+                let Ok(sock) = std::os::unix::net::UnixDatagram::unbound() else {
+                    continue;
+                };
+                // The encoder's socket is not there until the game draws its
+                // first frame, and a client can connect and say what it decodes
+                // before that. A command sent then used to be lost -- the codec
+                // one with it, leaving the encoder on a default the client may
+                // not decode -- so a command waits for the socket, up to a
+                // minute, and the ones behind it wait their turn.
+                let mut waited = 0u32;
+                while sock.send_to(&bytes, &cmd_path).is_err() {
+                    if waited == 0 {
+                        tracing::info!("nescapture is not listening at {} yet; waiting", cmd_path.display());
                     }
+                    waited += 1;
+                    if waited > 600 {
+                        tracing::warn!("nescapture cmd send failed at {} for a minute; dropped", cmd_path.display());
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                 }
             }
         });
@@ -417,8 +433,8 @@ async fn main() -> Result<()> {
     let stats_ipc = args.stats_ipc.clone();
     let stats_tx_clone = nescope_stats_tx.clone();
     tokio::spawn({
-        let mgr = session_manager.clone();
-        async move { ipc_listener::run_video_listener(video_ipc, mgr).await }
+        let (mgr, controller, cmd_tx) = (session_manager.clone(), controller.clone(), cmd_tx.clone());
+        async move { ipc_listener::run_video_listener(video_ipc, mgr, controller, cmd_tx).await }
     });
     tokio::spawn({
         let mgr = session_manager.clone();
