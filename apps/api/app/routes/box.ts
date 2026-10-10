@@ -41,7 +41,7 @@ export namespace BoxApi {
 				'json',
 				z.object({
 					label: z.string().trim().min(1).max(64).default('box'),
-					tier: z.enum(BoxTier.enumValues).default('sm'),
+					tier: z.enum(BoxTier.enumValues).default('md'),
 					on: z.enum(['own', 'fleet']).default('own')
 				})
 			),

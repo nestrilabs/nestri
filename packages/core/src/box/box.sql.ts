@@ -58,7 +58,7 @@ export const BoxTable = pgTable(
 		// it is deliberately not unique: two boxes called "living room" are the
 		// owner's problem, not an error. ref(d-0019)
 		label: text('label').notNull(),
-		tier: BoxTier('tier').notNull().default('sm'),
+		tier: BoxTier('tier').notNull().default('md'),
 		state: BoxState('state').notNull().default('created'),
 		/** Why it stopped, verbatim from the agent. Null while it has never run. */
 		stopReason: text('stop_reason'),

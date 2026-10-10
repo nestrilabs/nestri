@@ -100,12 +100,14 @@ export namespace Limits {
 			sevenDay: 900 * 60 * 60,
 			thirtyDay: 3000 * 60 * 60
 		},
-		// Superlinear, and no more principled than that. `sm` is the reference
-		// and is 1 by definition; the rest roughly double per step so the shape
-		// is visible in tests. Real values come from what a card-hour costs us
-		// divided by the share a tier holds.
+		// Superlinear, and no more principled than that. `md`, a 1080p box, is
+		// the reference and is 1 by definition; the rest roughly double per step
+		// so the shape is visible in tests. Each resolution kept its price when
+		// the sizes moved up one (`xs` became a box with no stream, `sm` 720p).
+		// Real values come from what a card-hour costs us divided by the share
+		// a tier holds.
 		factors: {
-			size: { xs: 500, sm: 1000, md: 2200, lg: 5000, xl: 12000 }
+			size: { xs: 250, sm: 500, md: 1000, lg: 2200, xl: 5000 }
 		}
 	};
 
@@ -159,15 +161,15 @@ export namespace Limits {
 	 * The reference tier costs exactly one unit a second, by definition.
 	 *
 	 * The unit *is* a second of a reference session, so a size factor that made
-	 * `sm` anything other than 1 would silently redefine what every allowance
+	 * `md` anything other than 1 would silently redefine what every allowance
 	 * means — the same stored number would be a different number of hours.
 	 */
 	export function checkFactors(factors: Factors): void {
-		if (factors.size.sm !== 1000) {
+		if (factors.size.md !== 1000) {
 			throw new VisibleError(
 				'internal',
 				ErrorCodes.Server.INTERNAL_ERROR,
-				`the reference tier must cost exactly one unit a second (1000), not ${factors.size.sm} \u2014 it is what every allowance is denominated in`
+				`the reference tier must cost exactly one unit a second (1000), not ${factors.size.md} \u2014 it is what every allowance is denominated in`
 			);
 		}
 	}

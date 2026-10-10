@@ -111,7 +111,7 @@ export namespace Billing {
 			// add, rather than as a multiplier on any of them.
 			const rateMilli = open.reduce((total, segment) => total + segment.rateMilli, 0);
 			const next = Burn.baseRateMilli({
-				tier: input.nextTier ?? 'sm',
+				tier: input.nextTier ?? 'md',
 				hostClass: input.nextHostClass ?? 'byo'
 			});
 

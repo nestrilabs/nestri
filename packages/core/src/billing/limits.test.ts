@@ -68,11 +68,11 @@ describe('The nesting rule: every window has to bind', () => {
 	});
 
 	test('the reference tier has to cost exactly one unit a second', () => {
-		// The unit *is* a second of a reference session, so moving `sm` off 1
+		// The unit *is* a second of a reference session, so moving `md` off 1
 		// would silently redefine every allowance — the same stored number
 		// would be a different number of hours.
 		expect(() =>
-			Limits.checkFactors({ size: { xs: 500, sm: 900, md: 2200, lg: 5000, xl: 12000 } })
+			Limits.checkFactors({ size: { xs: 250, sm: 500, md: 900, lg: 2200, xl: 5000 } })
 		).toThrow(/reference tier/);
 		expect(() => Limits.checkFactors(Limits.PLACEHOLDER.factors)).not.toThrow();
 	});
