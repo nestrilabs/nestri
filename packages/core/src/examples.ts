@@ -161,7 +161,8 @@ export namespace Examples {
 		tier: 'sm' as const,
 		state: 'created' as const,
 		stopReason: null,
-		stopClean: null
+		stopClean: null,
+		gpu: 'NVIDIA GeForce RTX 3060'
 	};
 
 	export const Session = {
@@ -188,7 +189,8 @@ export namespace Examples {
 		totalBytes: 5000000000,
 		timeStarted: '2026-07-28T12:00:00.000Z',
 		timeCompleted: null,
-		errorMessage: null
+		errorMessage: null,
+		gpu: 'NVIDIA GeForce RTX 3060'
 	};
 
 	export const WaitlistEntry = {

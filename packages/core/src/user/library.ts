@@ -8,6 +8,9 @@ import { GameDownload } from '../game/download.js';
 import { GameDownloadTable } from '../game/download.sql.js';
 import { GameTable } from '../game/game.sql.js';
 import { Game } from '../game/index.js';
+import { BoxTable } from '../box/box.sql.js';
+import { Machine } from '../machine/index.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { UserLibraryTable } from './library.sql.js';
 
 export namespace Library {
@@ -147,14 +150,27 @@ export namespace Library {
 			const gameIds = [
 				...new Set(rows.filter((row) => row.game !== null).map((row) => row.library.gameId))
 			];
+			// Only the hosts this person's boxes are on. A download elsewhere is
+			// someone else's machine: its id and its progress are not theirs to
+			// see, and it is not where their game would run ref(d-0081).
+			const hosts = await tx
+				.selectDistinct({ id: MachineTable.id, gpus: MachineTable.gpus })
+				.from(BoxTable)
+				.innerJoin(MachineTable, eq(MachineTable.id, BoxTable.machineId))
+				.where(and(eq(BoxTable.userId, userId), isNull(BoxTable.timeDeleted)));
+			const gpuByHost = new Map(hosts.map((h) => [h.id, Machine.gpuName(h.gpus)]));
 			const downloadRows =
-				gameIds.length > 0
+				gameIds.length > 0 && hosts.length > 0
 					? await tx
 							.select()
 							.from(GameDownloadTable)
 							.where(
 								and(
 									inArray(GameDownloadTable.gameId, gameIds),
+									inArray(
+										GameDownloadTable.hostId,
+										hosts.map((h) => h.id)
+									),
 									isNull(GameDownloadTable.timeDeleted)
 								)
 							)
@@ -180,7 +196,9 @@ export namespace Library {
 						playtime2w: row.library.playtime2w,
 						playtimeForever: row.library.playtimeForever,
 						lastPlayed: row.library.lastPlayed?.toISOString() ?? null,
-						download: download ? GameDownload.serialize(download) : null
+						download: download
+							? { ...GameDownload.serialize(download), gpu: gpuByHost.get(download.hostId) ?? null }
+							: null
 					};
 				});
 		});

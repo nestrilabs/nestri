@@ -3,6 +3,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
 import { Identifier } from '../id.js';
+import { Machine } from '../machine/index.js';
 import { Box } from './index.js';
 
 const sql = testDb();
@@ -27,6 +28,16 @@ afterAll(async () => {
 });
 
 describe('Box', () => {
+	test("a person's boxes say which card they run on, and nothing until the host reports one", async () => {
+		const o = await newOwner('box-gpu');
+		const machineId = await Fixtures.machine(o, 'box-gpu-host');
+		await Box.create({ id: Identifier.ascending('box'), userId: o.userId, machineId, label: 'gpu', tier: 'sm' });
+		expect((await Box.listByUser(o.userId))[0]?.gpu).toBeNull();
+
+		await Machine.setGpus({ id: machineId, gpus: [{ model: 'AMD Radeon RX 9060 XT', pciId: '1002:7590' }] });
+		expect((await Box.listByUser(o.userId))[0]?.gpu).toBe('AMD Radeon RX 9060 XT');
+	});
+
 	test('a new box starts created, sm, and with nothing to explain', async () => {
 		const owner = await newOwner('box-defaults');
 		const machineId = await Fixtures.machine(owner);
