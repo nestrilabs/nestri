@@ -186,6 +186,33 @@ describe('Session', () => {
 		expect((await Session.activeForBox(box.id))?.id).toBe(second.id);
 	});
 
+	test('an owner sees their own runs that have not stopped, and nobody else’s', async () => {
+		const mine = await scene('ses-owner-a', 5406);
+		const theirs = await scene('ses-owner-b', 5407);
+		const ended = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: mine.box.id,
+			gameId: mine.gameId,
+			linkedAccountId: mine.owner.linkedAccountId
+		});
+		await Session.setState({ id: ended.id, state: 'ended', errorMessage: null });
+		const going = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: mine.box.id,
+			gameId: mine.gameId,
+			linkedAccountId: mine.owner.linkedAccountId
+		});
+		await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: theirs.box.id,
+			gameId: theirs.gameId,
+			linkedAccountId: theirs.owner.linkedAccountId
+		});
+
+		const active = await Session.activeForOwner(mine.owner.userId);
+		expect(active.map((s) => s.id)).toEqual([going.id]);
+	});
+
 	test('deleting a box takes its sessions with it', async () => {
 		const { owner, box, gameId } = await scene('ses-cascade', 5405);
 		await Session.create({
