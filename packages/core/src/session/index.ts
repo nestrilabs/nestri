@@ -59,6 +59,10 @@ export namespace Session {
 					'Current connect ticket. Null before one has been minted, and null again once the run has stopped — a run that is not there has no address',
 				example: Examples.Session.ticket
 			}),
+			tier: z.enum(BoxTier.enumValues).nullable().optional().meta({
+				description: 'The size this run was asked for. Null runs at the size of its box',
+				example: 'md'
+			}),
 			timeStarted: z.string().nullable().optional().meta({
 				description: 'When the box actually started, not when the row appeared',
 				example: Examples.Session.timeStarted
@@ -91,7 +95,7 @@ export namespace Session {
 	export type Info = z.infer<typeof Info>;
 
 	export const create = fn(
-		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }).extend({
+		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true, tier: true }).extend({
 			trial: z.boolean().optional()
 		}),
 		async (input) => {
@@ -103,6 +107,7 @@ export namespace Session {
 						boxId: input.boxId,
 						gameId: input.gameId,
 						linkedAccountId: input.linkedAccountId,
+						tier: input.tier ?? null,
 						trial: input.trial ?? false
 					})
 					.returning()
@@ -133,7 +138,7 @@ export namespace Session {
 	 * answered is a timing detail.
 	 */
 	export const request = fn(
-		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true }).extend({
+		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true, tier: true }).extend({
 			trial: z.boolean().optional()
 		}),
 		async (input) => {
@@ -442,7 +447,8 @@ export namespace Session {
 							kind: 'session.start',
 							sessionId: row.session.id,
 							boxId: row.box.id,
-							boxTier: row.box.tier as z.infer<typeof StartJob>['boxTier'],
+							// The run's own size when it was given one.
+							boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
 							gameId: row.game.id,
 							steamAppId: row.game.steamAppId,
 							linkedAccountId: row.session.linkedAccountId,
@@ -825,7 +831,7 @@ export namespace Session {
 						await Burn.start({
 							teamId: payer.teamId,
 							sessionId: moved.id,
-							tier: payer.tier,
+							tier: moved.tier ?? payer.tier,
 							hostClass: payer.hostClass
 						});
 					} else if (
@@ -937,6 +943,7 @@ export namespace Session {
 			gameId: input.gameId,
 			linkedAccountId: input.linkedAccountId,
 			state: input.state as Info['state'],
+			tier: input.tier as Info['tier'],
 			ticket: input.ticket,
 			timeStarted: input.timeStarted?.toISOString() ?? null,
 			timeStopped: input.timeStopped?.toISOString() ?? null,

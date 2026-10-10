@@ -1,5 +1,6 @@
 import { Actor } from '@nestri/core/actor';
 import { Billing } from '@nestri/core/billing/index';
+import { BoxTier } from '@nestri/core/box/box.sql';
 import { Box } from '@nestri/core/box/index';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
@@ -154,6 +155,11 @@ export namespace SessionApi {
 							description:
 								'Which linked account is playing. Defaults to the one the caller signed in with',
 							example: Examples.Session.linkedAccountId
+						}),
+						tier: z.enum(BoxTier.enumValues).optional().meta({
+							description:
+								'The size to run at. Defaults to the size of the box; the allowance is checked against the size asked for',
+							example: 'md'
 						})
 					})
 					// Strict, so that naming hardware is a validation error rather
@@ -273,7 +279,7 @@ export namespace SessionApi {
 					payer && !trial
 						? await Billing.assertMayStart({
 								teamId: payer.teamId,
-								nextTier: payer.tier,
+								nextTier: body.tier ?? payer.tier,
 								nextHostClass: payer.hostClass
 							})
 						: null;
@@ -283,6 +289,7 @@ export namespace SessionApi {
 					boxId: box.id,
 					gameId: game.id,
 					linkedAccountId,
+					tier: body.tier,
 					trial
 				});
 				return c.json({ data: session, billing }, 201);

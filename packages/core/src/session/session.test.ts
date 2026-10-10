@@ -250,6 +250,22 @@ describe('Session jobs', () => {
 		expect(jobs[0]!.linkedAccountId).toBe(owner.linkedAccountId);
 	});
 
+	test('a run asked for at a size starts at that size, not its box’s', async () => {
+		const { owner, machineId, box, gameId } = await scene('ses-job-tier', 5411);
+		const session = await Session.create({
+			id: Identifier.ascending('session'),
+			boxId: box.id,
+			gameId,
+			linkedAccountId: owner.linkedAccountId,
+			tier: 'lg'
+		});
+		expect(session.tier).toBe('lg');
+
+		const jobs = await Session.listJobsForMachine(machineId);
+		expect(jobs[0]!.kind).toBe('session.start');
+		expect(jobs[0]!.boxTier).toBe('lg');
+	});
+
 	test('a job belongs to the machine its box is placed on and to no other', async () => {
 		const mine = await scene('ses-job-mine', 5411);
 		const theirs = await scene('ses-job-theirs', 5412);
