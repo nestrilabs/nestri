@@ -92,6 +92,27 @@ export namespace SessionApi {
 		.strict();
 
 	export const route = new Hono()
+		.get(
+			'/',
+			notPublic,
+			describeRoute({
+				tags: ['Session'],
+				summary: 'Your runs that have not stopped',
+				description:
+					'At most one per box, newest first. Read this when asking for a run is refused because a box is busy: the run holding it may be the same game, which a client can rejoin by polling it, or another one it can offer to stop.',
+				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Session.Info.array()) } },
+						description: 'The runs still going, or still asked for'
+					},
+					401: ErrorResponses[401],
+					403: ErrorResponses[403]
+				}
+			}),
+			async (c) => {
+				return c.json({ data: await Session.activeForOwner(actingPerson()) });
+			}
+		)
 		.post(
 			'/',
 			notPublic,

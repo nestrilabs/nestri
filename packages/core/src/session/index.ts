@@ -514,6 +514,33 @@ export namespace Session {
 	});
 
 	/**
+	 * The runs of someone's boxes that have not stopped, newest first.
+	 *
+	 * At most one per box, by the same index {@link activeForBox} leans on. A
+	 * client reads this to tell "your box is busy" apart from "your box is
+	 * busy with the game you just asked for", which it can rejoin rather than
+	 * stop.
+	 */
+	export const activeForOwner = fn(z.string(), async (userId) => {
+		return Database.use(async (tx) => {
+			return tx
+				.select({ session: SessionTable })
+				.from(SessionTable)
+				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+				.where(
+					and(
+						eq(BoxTable.userId, userId),
+						isNull(SessionTable.timeDeleted),
+						isNull(SessionTable.timeStopped),
+						isNull(BoxTable.timeDeleted)
+					)
+				)
+				.orderBy(desc(SessionTable.timeCreated))
+				.then((rows) => rows.map((row) => serialize(row.session)));
+		});
+	});
+
+	/**
 	 * The owner asks for a run to end.
 	 *
 	 * A run nobody has claimed yet ends here and now: no host holds it, so
