@@ -4,6 +4,7 @@ import z from 'zod';
 import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
+import { Machine } from '../machine/index.js';
 import { MachineTable } from '../machine/machine.sql.js';
 import { BoxState, BoxTable, BoxTier } from './box.sql.js';
 import { Placement } from './placement.js';
@@ -50,6 +51,11 @@ export namespace Box {
 			stopClean: z.boolean().nullable().optional().meta({
 				description: 'Whether that stop was clean. Null if it never ran',
 				example: Examples.Box.stopClean
+			}),
+			gpu: z.string().nullable().optional().meta({
+				description:
+					'The card it runs on, as its host reports it: what a person recognises the box by. Null until the host has reported one',
+				example: Examples.Box.gpu
 			})
 		})
 		.meta({
@@ -118,11 +124,12 @@ export namespace Box {
 	export const listByUser = fn(Info.shape.userId, async (userId) => {
 		return Database.use(async (tx) => {
 			return tx
-				.select()
+				.select({ box: BoxTable, gpus: MachineTable.gpus })
 				.from(BoxTable)
+				.leftJoin(MachineTable, eq(MachineTable.id, BoxTable.machineId))
 				.where(and(eq(BoxTable.userId, userId), isNull(BoxTable.timeDeleted)))
 				.orderBy(BoxTable.timeCreated)
-				.then((rows) => rows.map(serialize));
+				.then((rows) => rows.map((r) => serialize(r.box, Machine.gpuName(r.gpus))));
 		});
 	});
 
@@ -160,7 +167,7 @@ export namespace Box {
 				.from(BoxTable)
 				.where(and(eq(BoxTable.machineId, machineId), isNull(BoxTable.timeDeleted)))
 				.orderBy(BoxTable.timeCreated)
-				.then((rows) => rows.map(serialize));
+				.then((rows) => rows.map((row) => serialize(row)));
 		});
 	});
 
@@ -378,7 +385,7 @@ export namespace Box {
 		}
 	);
 
-	export function serialize(input: typeof BoxTable.$inferSelect): z.infer<typeof Info> {
+	export function serialize(input: typeof BoxTable.$inferSelect, gpu: string | null = null): z.infer<typeof Info> {
 		return {
 			id: input.id,
 			userId: input.userId,
@@ -387,7 +394,8 @@ export namespace Box {
 			tier: input.tier as Info['tier'],
 			state: input.state as Info['state'],
 			stopReason: input.stopReason,
-			stopClean: input.stopClean
+			stopClean: input.stopClean,
+			gpu
 		};
 	}
 }

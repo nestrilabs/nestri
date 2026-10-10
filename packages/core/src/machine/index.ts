@@ -59,6 +59,15 @@ export namespace Machine {
 
 	export type Gpu = z.infer<typeof Gpu>;
 
+	/**
+	 * What a person calls a host: its first card's model, as the host reported
+	 * it. Null until a report names one — never a machine id, which nobody
+	 * recognises ref(d-0081), and never a guess.
+	 */
+	export function gpuName(gpus: readonly { model: string }[] | null | undefined): string | null {
+		return gpus?.[0]?.model ?? null;
+	}
+
 	export const Info = z
 		.object({
 			id: z.string().meta({

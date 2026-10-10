@@ -59,6 +59,11 @@ export namespace GameDownload {
 			errorMessage: z.string().nullable().optional().meta({
 				description: 'Error message if status is failed',
 				example: Examples.GameDownload.errorMessage
+			}),
+			gpu: z.string().nullable().optional().meta({
+				description:
+					'The card on the host doing the download, as the host reports it. Set where the caller is shown a place, null where it is not known',
+				example: Examples.GameDownload.gpu
 			})
 		})
 		.meta({
