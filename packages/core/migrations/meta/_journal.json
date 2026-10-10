@@ -169,6 +169,13 @@
       "when": 1791629955619,
       "tag": "0023_session_tier",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791634593049,
+      "tag": "0024_box_sizes_move_up",
+      "breakpoints": true
     }
   ]
 }

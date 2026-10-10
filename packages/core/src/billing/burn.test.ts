@@ -233,12 +233,12 @@ describe('The counters', () => {
 describe('Rates', () => {
 	test('on our hardware a bigger tier costs more, superlinearly', () => {
 		const rate = (tier: Burn.Tier) => Burn.baseRateMilli({ tier, hostClass: 'fleet' });
-		expect(rate('sm')).toBe(Burn.SCALE);
+		expect(rate('md')).toBe(Burn.SCALE);
 		expect(rate('xl')).toBeGreaterThan(rate('lg'));
 		// A tier buys a share of a card, and the ladder has to pinch harder
 		// than the share grows or running a small title at the top of it is
 		// cheaper than it costs us.
-		expect(rate('xl') / rate('sm')).toBeGreaterThan(4);
+		expect(rate('xl') / rate('md')).toBeGreaterThan(4);
 	});
 
 	test('on the caller\u2019s own hardware the tier changes nothing', () => {
