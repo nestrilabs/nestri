@@ -162,6 +162,13 @@
       "when": 1791537816909,
       "tag": "0022_session_stop_requested",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791629955619,
+      "tag": "0023_session_tier",
+      "breakpoints": true
     }
   ]
 }

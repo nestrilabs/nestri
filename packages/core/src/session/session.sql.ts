@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { boolean, index, pgEnum, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
-import { BoxTable } from '../box/box.sql.js';
+import { BoxTable, BoxTier } from '../box/box.sql.js';
 import { id, timestamps, ulid, utc } from '../db/types.js';
 import { GameTable } from '../game/game.sql.js';
 import { LinkedAccountTable } from '../user/linked-account.sql.js';
@@ -53,6 +53,11 @@ export const SessionTable = pgTable(
 			.notNull()
 			.references(() => LinkedAccountTable.id, { onDelete: 'restrict' }),
 		state: SessionState('state').notNull().default('requested'),
+		// The size of this run, picked when it is asked for. Null for a run
+		// asked for without one, which runs at its box's size. On the run and
+		// not the box, because the box is a game's install on a machine and
+		// a size is chosen each time it is played.
+		tier: BoxTier('tier'),
 		/**
 		 * The current iroh connect ticket, or null before `neshub` has minted
 		 * one. Rewritten as addresses are discovered; never append-only.
