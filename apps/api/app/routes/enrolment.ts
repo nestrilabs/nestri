@@ -1,7 +1,5 @@
 import { Actor } from '@nestri/core/actor';
-import { Env } from '@nestri/core/env';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
-import { Machine } from '@nestri/core/machine/index';
 import { Enrolment } from '@nestri/core/steam/enrolment';
 import { Identity } from '@nestri/core/user/identity';
 import { Hono } from 'hono';
@@ -31,32 +29,23 @@ import { ErrorResponses, machineOnly, Result, validator } from '../utils';
  */
 export namespace EnrolmentApi {
 	/**
-	 * A sign-in on one of Nestri's own machines is also proof of the Steam
-	 * account, so it links it: the person scanned a QR code on hardware we
-	 * run, the Steam id is the subject of the token Valve issued there, and
-	 * who they are came from the edge. Asking them to sign in to Steam a
-	 * second time, in a browser, would prove nothing new.
-	 *
-	 * **Only the fleet.** On a host somebody brought, the report is that
-	 * person's machine vouching for itself, and a machine can say anything.
-	 * Linking from it would let any host operator attach any Steam account to
-	 * any user enrolled on it.
+	 * A Steam sign-in on a host is also proof of the Steam account, so it
+	 * links it: the person scanned a QR code with the Steam app, the Steam id
+	 * is the subject of the token Valve issued there, and who they are came
+	 * from the edge. Asking them to sign in to Steam a second time, in a
+	 * browser, would prove nothing new.
 	 *
 	 * Never a reason to refuse the report. The sign-in happened and the
 	 * enrolment is recorded either way; a Steam account already linked to
 	 * somebody else stays theirs, and is left for the person to sort out on
 	 * the website.
 	 */
-	async function linkIfFleet(machineId: string, userId: string, steamId: string) {
-		const fleet = Env.get().FLEET_ORGANISATION_ID;
-		if (!fleet) return;
-		const machine = await Machine.fromID(machineId);
-		if (machine?.organisationId !== fleet) return;
+	async function link(machineId: string, userId: string, steamId: string) {
 		try {
 			await Identity.linkSteam({ userId, steamId });
 		} catch (err) {
 			if (err instanceof VisibleError) {
-				console.warn('a fleet sign-in was not linked', { machineId, userId, reason: err.message });
+				console.warn('a sign-in was not linked', { machineId, userId, reason: err.message });
 				return;
 			}
 			throw err;
@@ -102,7 +91,7 @@ export namespace EnrolmentApi {
 					userId: body.userId,
 					steamId: body.steamId
 				});
-				await linkIfFleet(Actor.machineID, body.userId, body.steamId);
+				await link(Actor.machineID, body.userId, body.steamId);
 				return c.json({ data: enrolment });
 			}
 		)
