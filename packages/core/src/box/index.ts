@@ -56,6 +56,15 @@ export namespace Box {
 				description:
 					'The card it runs on, as its host reports it: what a person recognises the box by. Null until the host has reported one',
 				example: Examples.Box.gpu
+			}),
+			host: z.string().nullable().optional().meta({
+				description:
+					"The DNS label of the machine it is placed on: that machine's Steam sign-in is at `https://<host>.<edge zone>/_nestri/auth`. Listed boxes only",
+				example: Examples.Box.host
+			}),
+			fleet: z.boolean().optional().meta({
+				description: 'Whether it is on Nestri GPUs rather than your own host. Listed boxes only',
+				example: Examples.Box.fleet
 			})
 		})
 		.meta({
@@ -124,12 +133,21 @@ export namespace Box {
 	export const listByUser = fn(Info.shape.userId, async (userId) => {
 		return Database.use(async (tx) => {
 			return tx
-				.select({ box: BoxTable, gpus: MachineTable.gpus })
+				.select({
+					box: BoxTable,
+					gpus: MachineTable.gpus,
+					host: MachineTable.slug,
+					organisationId: MachineTable.organisationId
+				})
 				.from(BoxTable)
 				.leftJoin(MachineTable, eq(MachineTable.id, BoxTable.machineId))
 				.where(and(eq(BoxTable.userId, userId), isNull(BoxTable.timeDeleted)))
 				.orderBy(BoxTable.timeCreated)
-				.then((rows) => rows.map((r) => serialize(r.box, Machine.gpuName(r.gpus))));
+				.then((rows) =>
+					rows.map((r) =>
+						serialize(r.box, Machine.gpuName(r.gpus), { host: r.host, fleet: r.organisationId !== null })
+					)
+				);
 		});
 	});
 
@@ -385,7 +403,11 @@ export namespace Box {
 		}
 	);
 
-	export function serialize(input: typeof BoxTable.$inferSelect, gpu: string | null = null): z.infer<typeof Info> {
+	export function serialize(
+		input: typeof BoxTable.$inferSelect,
+		gpu: string | null = null,
+		machine?: { host: string | null; fleet: boolean }
+	): z.infer<typeof Info> {
 		return {
 			id: input.id,
 			userId: input.userId,
@@ -395,7 +417,8 @@ export namespace Box {
 			state: input.state as Info['state'],
 			stopReason: input.stopReason,
 			stopClean: input.stopClean,
-			gpu
+			gpu,
+			...machine
 		};
 	}
 }

@@ -162,7 +162,9 @@ export namespace Examples {
 		state: 'created' as const,
 		stopReason: null,
 		stopClean: null,
-		gpu: 'NVIDIA GeForce RTX 3060'
+		gpu: 'NVIDIA GeForce RTX 3060',
+		host: 'm7k2q9',
+		fleet: false
 	};
 
 	export const Session = {
