@@ -126,12 +126,12 @@ async function playedBefore(
 }
 
 describe('The weekend window', () => {
-	test('Friday 00:00 to Monday 00:00 on the trial’s clock', () => {
+	test('Saturday 00:00 to Tuesday 00:00 on the trial’s clock', () => {
 		const closed = Trial.window(WEDNESDAY);
 		expect(closed.open).toBe(false);
 		// Summer time: midnight there is 21:00 UTC the day before.
-		expect(closed.start.toISOString()).toBe('2026-10-08T21:00:00.000Z');
-		expect(closed.end.toISOString()).toBe('2026-10-11T21:00:00.000Z');
+		expect(closed.start.toISOString()).toBe('2026-10-09T21:00:00.000Z');
+		expect(closed.end.toISOString()).toBe('2026-10-12T21:00:00.000Z');
 
 		const open = Trial.window(SATURDAY);
 		expect(open.open).toBe(true);
@@ -141,13 +141,18 @@ describe('The weekend window', () => {
 	test('a weekend with a clock change in it is still three calendar days', () => {
 		// Summer time ends in the early hours of Sunday 25 October 2026.
 		const w = Trial.window(new Date('2026-10-24T12:00:00Z'));
-		expect(w.start.toISOString()).toBe('2026-10-22T21:00:00.000Z');
-		expect(w.end.toISOString()).toBe('2026-10-25T22:00:00.000Z');
+		expect(w.start.toISOString()).toBe('2026-10-23T21:00:00.000Z');
+		expect(w.end.toISOString()).toBe('2026-10-26T22:00:00.000Z');
 	});
 
-	test('the last minute of Sunday is in; Monday 00:00 is out', () => {
-		expect(Trial.window(new Date('2026-10-11T20:59:00Z')).open).toBe(true);
-		expect(Trial.window(new Date('2026-10-11T21:00:00Z')).open).toBe(false);
+	test('Monday is in; Friday is not', () => {
+		expect(Trial.window(new Date('2026-10-12T12:00:00Z')).open).toBe(true);
+		expect(Trial.window(new Date('2026-10-09T12:00:00Z')).open).toBe(false);
+	});
+
+	test('the last minute of Monday is in; Tuesday 00:00 is out', () => {
+		expect(Trial.window(new Date('2026-10-12T20:59:00Z')).open).toBe(true);
+		expect(Trial.window(new Date('2026-10-12T21:00:00Z')).open).toBe(false);
 	});
 });
 
@@ -169,7 +174,7 @@ describe('POST /session on rented GPUs without a plan', () => {
 		const s = await scene('trial-closed');
 		const { res, body } = await play(s);
 		expect(res.status).toBe(429);
-		expect(body.message).toContain('Friday to Sunday');
+		expect(body.message).toContain('Saturday to Monday');
 	});
 
 	test('two hours used this weekend: 429', async () => {
@@ -179,7 +184,7 @@ describe('POST /session on rented GPUs without a plan', () => {
 			s.box.id,
 			s.gameId,
 			s.owner.linkedAccountId,
-			new Date('2026-10-09T10:00:00Z'),
+			new Date('2026-10-10T08:00:00Z'),
 			120
 		);
 		const { res, body } = await play(s);
@@ -286,9 +291,9 @@ describe('Stopping a trial run', () => {
 	});
 
 	test('when the window closes: stopped, for the window', async () => {
-		at(new Date('2026-10-11T21:05:00Z'));
+		at(new Date('2026-10-12T21:05:00Z'));
 		const s = await scene('stop-window');
-		const id = await liveTrialRun(s, new Date('2026-10-11T20:30:00Z'));
+		const id = await liveTrialRun(s, new Date('2026-10-12T20:30:00Z'));
 		const stops = (await jobs(s)).filter((j) => j.kind === 'session.stop');
 		expect(stops).toEqual([
 			{ kind: 'session.stop', sessionId: id, boxId: s.box.id, reason: 'window' }
