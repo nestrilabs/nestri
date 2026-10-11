@@ -338,7 +338,10 @@ export namespace Machine {
 	 * alone and leave the two facts disagreeing.
 	 */
 	export const touchLastSeen = fn(
-		Info.pick({ id: true }).extend({ endpointId: EndpointId.optional() }),
+		Info.pick({ id: true }).extend({
+			endpointId: EndpointId.optional(),
+			slots: z.number().int().min(0).optional()
+		}),
 		async (input) => {
 			try {
 				return await Database.use(async (tx) => {
@@ -350,7 +353,8 @@ export namespace Machine {
 							// that does not mention where it is has not moved, and
 							// clearing the column would deregister a working host
 							// from every route that reads it.
-							...(input.endpointId ? { endpointId: input.endpointId } : {})
+							...(input.endpointId ? { endpointId: input.endpointId } : {}),
+							...(input.slots !== undefined ? { slots: input.slots } : {})
 						})
 						.where(eq(MachineTable.id, input.id))
 						.returning({ lastSeen: MachineTable.lastSeen })

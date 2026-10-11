@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, index, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
+import { check, index, integer, jsonb, pgTable, text, uniqueIndex } from 'drizzle-orm/pg-core';
 
 import { id, timestamps, ulid, utc } from '../db/types.js';
 import { OrganisationTable } from '../organisation/organisation.sql.js';
@@ -101,7 +101,11 @@ export const MachineTable = pgTable(
 		// calls the machine ("AMD Radeon RX 9060 XT"), and the first measured part
 		// of the capacity a scheduler will place by. Null until a report carries
 		// them; never filled in by guessing.
-		gpus: jsonb('gpus').$type<{ model: string; vramMib?: number; pciId: string }[]>()
+		gpus: jsonb('gpus').$type<{ model: string; vramMib?: number; pciId: string }[]>(),
+		// How many runs this host will hold at once, as its last heartbeat said.
+		// Null for an agent that does not say, which is handed every waiting
+		// run as before; a number is what makes the rest wait their turn.
+		slots: integer('slots')
 	},
 	(t) => [
 		uniqueIndex('machine_secret_hash_unique').on(t.secretHash),
