@@ -455,6 +455,11 @@ export namespace MachineApi {
 							description:
 								'Where this host can be reached, as its own endpoint id. Omit it and the stored value is left alone — a host that does not mention where it is has not moved, and an absent field must never read as "nowhere"',
 							example: Examples.Machine.endpointId
+						}),
+						slots: z.number().int().min(0).max(64).optional().meta({
+							description:
+								'How many runs this host will hold at once. Omit it and the stored value is left alone. Runs beyond it wait their turn rather than being handed to a host that would refuse them',
+							example: 2
 						})
 					})
 					// A host that has nothing to add sends no body at all, which
@@ -465,7 +470,8 @@ export namespace MachineApi {
 				const body = c.req.valid('json');
 				const lastSeen = await Machine.touchLastSeen({
 					id: Actor.machineID,
-					endpointId: body?.endpointId
+					endpointId: body?.endpointId,
+					slots: body?.slots
 				});
 				if (!lastSeen) {
 					// The credentials authenticated but the row is gone — a host
