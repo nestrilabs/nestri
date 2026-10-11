@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Burn } from '../billing/burn.js';
@@ -10,6 +10,7 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { Trial } from '../trial/index.js';
 import { SessionState, SessionTable } from './session.sql.js';
 
@@ -31,6 +32,29 @@ export namespace Session {
 	 * because that would only tell it how close the race was.
 	 */
 	export const BOX_BUSY = 'That box already has a run that has not stopped';
+
+	/**
+	 * A run waiting for a slot on its host.
+	 *
+	 * Runs on Nestri GPUs that are paid for go ahead of free-weekend runs, and
+	 * within each, first come first served. That reorders a free player, so it
+	 * is said rather than done quietly: `paidFirst` is true when a paid run that
+	 * asked after this one is ahead of it.
+	 */
+	export const Queue = z.object({
+		position: z.number().int().min(1).meta({ description: 'Place in line, 1 is next', example: 3 }),
+		paidFirst: z.boolean().meta({
+			description: 'Whether a paid run that asked later has gone ahead of this one',
+			example: false
+		})
+	});
+
+	/**
+	 * A waiting run nobody has asked after for this long has been abandoned —
+	 * the app was closed — and leaves the line. A client polls every few
+	 * seconds while it waits, so a minute is many missed polls, not one.
+	 */
+	export const ABANDONED_AFTER_SECONDS = 60;
 
 	export const Info = z
 		.object({
@@ -84,6 +108,10 @@ export namespace Session {
 			errorMessage: z.string().nullable().optional().meta({
 				description: 'Why it failed, when it did',
 				example: Examples.Session.errorMessage
+			}),
+			queue: Queue.nullable().optional().meta({
+				description:
+					'Where this run is in line for its host, while every slot there is taken. Null once it is not waiting'
 			})
 		})
 		.meta({
@@ -426,6 +454,8 @@ export namespace Session {
 				.filter((run) => !seen.has(run.sessionId))
 				.map((run): Job => ({ kind: 'session.stop', ...run }))
 		];
+		await leaveAbandoned(machineId);
+		const free = await freeSlots(machineId);
 		const starts = await Database.use(async (tx) => {
 			return tx
 				.select({ session: SessionTable, box: BoxTable, game: GameTable })
@@ -440,7 +470,9 @@ export namespace Session {
 						isNull(BoxTable.timeDeleted)
 					)
 				)
-				.orderBy(SessionTable.timeCreated)
+				// Paid ahead of free, then first come first served. See {@link Queue}.
+				.orderBy(SessionTable.trial, SessionTable.timeCreated)
+				.limit(free)
 				.then((rows) =>
 					rows.map(
 						(row): Job => ({
@@ -458,6 +490,113 @@ export namespace Session {
 				);
 		});
 		return [...stops, ...starts];
+	});
+
+	/** The runs a host is holding: claimed and not yet over. */
+	const holding = (machineId: string) =>
+		Database.use((tx) =>
+			tx
+				.select({ n: count() })
+				.from(SessionTable)
+				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+				.where(
+					and(
+						eq(BoxTable.machineId, machineId),
+						inArray(SessionTable.state, ['starting', 'live']),
+						isNull(SessionTable.timeStopped),
+						isNull(SessionTable.timeDeleted)
+					)
+				)
+				.then((rows) => rows[0]?.n ?? 0)
+		);
+
+	/**
+	 * How many waiting runs a host may be handed now.
+	 *
+	 * Its own count of slots, less what it already holds. A host that has not
+	 * said how many it holds is handed every waiting run, as before there was a
+	 * line; a run it cannot hold fails there, which is what it did then.
+	 */
+	export const freeSlots = fn(z.string(), async (machineId) => {
+		const slots = await Database.use((tx) =>
+			tx
+				.select({ slots: MachineTable.slots })
+				.from(MachineTable)
+				.where(eq(MachineTable.id, machineId))
+				.then((rows) => rows[0]?.slots ?? null)
+		);
+		if (slots === null) return 1000;
+		return Math.max(0, slots - (await holding(machineId)));
+	});
+
+	/**
+	 * End the waiting runs on a host that nobody has asked after. See
+	 * {@link ABANDONED_AFTER_SECONDS}. Only waiting runs: a run that has a slot
+	 * is ended by its host, never from here.
+	 */
+	export const leaveAbandoned = fn(z.string(), async (machineId) => {
+		await Database.use((tx) =>
+			tx
+				.update(SessionTable)
+				.set({
+					state: 'ended',
+					timeStopped: sql`now()`,
+					errorMessage: 'Left the queue'
+				})
+				.where(
+					and(
+						eq(SessionTable.state, 'requested'),
+						isNull(SessionTable.timeDeleted),
+						inArray(
+							SessionTable.boxId,
+							tx.select({ id: BoxTable.id }).from(BoxTable).where(eq(BoxTable.machineId, machineId))
+						),
+						sql`coalesce(${SessionTable.timeSeen}, ${SessionTable.timeCreated}) < now() - make_interval(secs => ${ABANDONED_AFTER_SECONDS})`
+					)
+				)
+		);
+	});
+
+	/**
+	 * Where a waiting run is in line, or null when it is not waiting.
+	 *
+	 * Ahead of it: every waiting run on the same host that the host would be
+	 * handed first — paid before free, then older first. Reading it also marks
+	 * the run as asked after, which is what keeps it in line.
+	 */
+	export const queueFor = fn(z.string(), async (id): Promise<z.infer<typeof Queue> | null> => {
+		return Database.use(async (tx) => {
+			const mine = await tx
+				.update(SessionTable)
+				.set({ timeSeen: sql`now()` })
+				.where(and(eq(SessionTable.id, id), eq(SessionTable.state, 'requested')))
+				.returning()
+				.then((rows) => rows.at(0));
+			if (!mine) return null;
+			const machine = await tx
+				.select({ machineId: BoxTable.machineId })
+				.from(BoxTable)
+				.where(eq(BoxTable.id, mine.boxId))
+				.then((rows) => rows[0]!.machineId);
+			const waiting = await tx
+				.select({ trial: SessionTable.trial, timeCreated: SessionTable.timeCreated })
+				.from(SessionTable)
+				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+				.where(
+					and(
+						eq(BoxTable.machineId, machine),
+						eq(SessionTable.state, 'requested'),
+						isNull(SessionTable.timeDeleted),
+						isNull(BoxTable.timeDeleted)
+					)
+				);
+			const before = (r: { trial: boolean; timeCreated: Date }) =>
+				r.trial !== mine.trial ? !r.trial : r.timeCreated < mine.timeCreated;
+			return {
+				position: waiting.filter(before).length + 1,
+				paidFirst: mine.trial && waiting.some((r) => !r.trial && r.timeCreated > mine.timeCreated)
+			};
+		});
 	});
 
 	/**

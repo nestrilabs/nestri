@@ -88,7 +88,13 @@ export const SessionTable = pgTable(
 		 * and the database agree; without it the next generated migration adds a
 		 * column that already exists and fails wherever it has run once.
 		 */
-		claimToken: text('claim_token')
+		claimToken: text('claim_token'),
+		/**
+		 * When the person waiting for this run last asked after it. A run that
+		 * is still waiting for a free slot and nobody has asked about in a while
+		 * has been abandoned — the app was closed — and leaves the line.
+		 */
+		timeSeen: utc('time_seen')
 	},
 	(t) => [
 		index('session_box_idx').on(t.boxId),

@@ -333,7 +333,7 @@ export namespace SessionApi {
 						'No such session, or it is not yours'
 					);
 				}
-				return c.json({ data: session });
+				return c.json({ data: { ...session, queue: await Session.queueFor(session.id) } });
 			}
 		)
 		.post(
