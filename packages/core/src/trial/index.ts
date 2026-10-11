@@ -18,8 +18,9 @@ import { TrialClaimTable } from './trial.sql.js';
  *
  * Three rules and nothing else:
  *
- * - **When.** Friday 00:00 to Monday 00:00, on the clock of the place the
- *   hardware is run from. Outside that, a trial run is refused, and one still
+ * - **When.** Saturday 00:00 to Tuesday 00:00 — Saturday, Sunday and
+ *   Monday, Monday in place of Friday since 2026-10-11 — on the clock of the
+ *   place the hardware is run from. Outside that, a trial run is refused, and one still
  *   going when it closes is stopped.
  * - **How much.** {@link HOURS} of live time per window, across every run.
  *   Unlike a plan's allowance, this one stops a run that reaches it: the
@@ -104,14 +105,14 @@ export namespace Trial {
 	/** The weekend window an instant is in, or the next one if it is in none. */
 	export function window(at: Date = now()): Window {
 		const today = localDay(at);
-		const sinceFriday = (today.weekday - 5 + 7) % 7; // Fri 0, Sat 1, Sun 2, Mon 3 …
-		const open = sinceFriday <= 2;
-		const friday = addDays(today, open ? -sinceFriday : 7 - sinceFriday);
-		const monday = addDays(friday, 3);
+		const sinceSaturday = (today.weekday - 6 + 7) % 7; // Sat 0, Sun 1, Mon 2, Tue 3 …
+		const open = sinceSaturday <= 2;
+		const saturday = addDays(today, open ? -sinceSaturday : 7 - sinceSaturday);
+		const tuesday = addDays(saturday, 3);
 		return {
 			open,
-			start: midnight(friday.year, friday.month, friday.day),
-			end: midnight(monday.year, monday.month, monday.day)
+			start: midnight(saturday.year, saturday.month, saturday.day),
+			end: midnight(tuesday.year, tuesday.month, tuesday.day)
 		};
 	}
 
@@ -190,7 +191,7 @@ export namespace Trial {
 				throw new VisibleError(
 					'rate_limit',
 					ErrorCodes.RateLimit.QUOTA_EXCEEDED,
-					`Free play on Nestri GPUs is Friday to Sunday. The next window opens ${when(w.start)}.`
+					`Free play on Nestri GPUs is Saturday to Monday. The next window opens ${when(w.start)}.`
 				);
 			}
 			if ((await usedSeconds(input.userId, w, at)) >= SECONDS) {
