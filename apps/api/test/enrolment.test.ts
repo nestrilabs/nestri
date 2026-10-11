@@ -393,7 +393,7 @@ describe('The enrolment surface refuses a token', () => {
 	});
 });
 
-describe('A sign-in on the fleet links the Steam account', () => {
+describe('A sign-in on a host links the Steam account', () => {
 	/** A fleet host the API knows is the fleet, and a person to enrol on it. */
 	async function fleetHost(label: string) {
 		const operator = await Fixtures.owner(`${label}-operator`);
@@ -436,11 +436,11 @@ describe('A sign-in on the fleet links the Steam account', () => {
 		expect(await linked(steamId(9001))).toHaveLength(1);
 	});
 
-	test('a host somebody brought cannot link anything', async () => {
+	test('a host somebody brought links it too', async () => {
 		const host = await registeredHost('own-host-link');
 		const res = await enrol(host, { userId: host.userId, steamId: steamId(9002) });
 		expect(res.status).toBe(200);
-		expect(await linked(steamId(9002))).toHaveLength(0);
+		expect((await linked(steamId(9002))).map((r) => r.user_id)).toEqual([host.userId]);
 	});
 
 	test('an account already linked elsewhere stays there, and the report still lands', async () => {
