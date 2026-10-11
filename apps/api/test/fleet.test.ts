@@ -123,6 +123,18 @@ describe('POST /box on the fleet', () => {
 		expect((await Box.listByUser(p.owner.userId)).length).toBe(1);
 	});
 
+	test('a listed fleet box names the machine whose Steam sign-in it opens', async () => {
+		const f = await fleet(1);
+		useFleet(f.organisationId);
+		const p = await person('fleet-host');
+		expect((await createBox(p.headers, { on: 'fleet' })).status).toBe(201);
+		const listed = ((await (await app.request('/box', { headers: p.headers })).json()) as any).data;
+		const [slug] = await sql`select slug from machine where id = ${f.machines[0]!.id}`;
+		expect(listed).toHaveLength(1);
+		expect(listed[0].fleet).toBe(true);
+		expect(listed[0].host).toBe(slug!.slug);
+	});
+
 	test('`on` defaults to your own host', async () => {
 		const f = await fleet(1);
 		useFleet(f.organisationId);
