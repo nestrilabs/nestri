@@ -32,7 +32,7 @@ toml  = "0.8"
 serde = { version = "1", features = ["derive"] }
 
 # Vulkan Video hardware encoding.
-pixelforge = { git = "https://github.com/DatCaptainHorse/pixelforge.git", rev = "b4b7b36af6f9cbd0fedae220915edd75de933743" }
+pixelforge = { git = "https://github.com/DatCaptainHorse/pixelforge.git", rev = "21bb5cdb2ae128eb762e4750378916aac8dd3c82" }
 
 # libc for socket options
 libc = "0.2"
