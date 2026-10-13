@@ -84,6 +84,11 @@ export namespace BillingApi {
 				// would have them retry it for days against a thing that will
 				// never become actionable.
 				if (!delivery.teamId || !delivery.standing) {
+					// Said, because a paid subscription that matches no team is
+					// somebody paying for nothing, and a 200 alone hides it.
+					if (delivery.standing?.plan === 'paid') {
+						console.error('a paid subscription matched no team', { type: delivery.type });
+					}
 					return c.json({ data: { applied: false, type: delivery.type } });
 				}
 

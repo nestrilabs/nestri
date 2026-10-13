@@ -202,6 +202,39 @@ describe('Both signing schemes', () => {
 		expect(delivery.standing).toEqual({ plan: 'free', status: 'revoked' });
 	});
 
+	test('a customer who existed before checkout is found by the checkout metadata', async () => {
+		// The provider reuses a customer it already has under the same email and
+		// does not put our id on it, so the subscription arrives with a customer
+		// that has no external id. A paid subscription was dropped this way.
+		const { Webhook } = await import('standardwebhooks');
+		const secret = `whsec_${Buffer.from('c'.repeat(32)).toString('base64')}`;
+		configure({ POLAR_WEBHOOK_SECRET: secret });
+
+		const body = JSON.stringify({
+			type: 'subscription.active',
+			data: {
+				customer: { external_id: null },
+				metadata: { teamId: 'tem_returning' },
+				product_id: PAID
+			}
+		});
+		const id = 'msg_returning';
+		const timestamp = new Date();
+		const signature = new Webhook(secret).sign(id, timestamp, body);
+
+		const delivery = Polar.receive({
+			body,
+			headers: {
+				'webhook-id': id,
+				'webhook-timestamp': Math.floor(timestamp.getTime() / 1000).toString(),
+				'webhook-signature': signature
+			}
+		});
+
+		expect(delivery.teamId).toBe('tem_returning');
+		expect(delivery.standing).toEqual({ plan: 'paid', status: 'active' });
+	});
+
 	test('a tampered body under a valid-looking signature is refused', () => {
 		const secret = `whsec_${Buffer.from('a'.repeat(32)).toString('base64')}`;
 		configure({ POLAR_WEBHOOK_SECRET: secret });
