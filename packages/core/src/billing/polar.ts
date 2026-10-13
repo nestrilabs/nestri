@@ -187,6 +187,11 @@ export namespace Polar {
 			const created = await client().checkouts.create({
 				products: [productId],
 				externalCustomerId: input.teamId,
+				// Also on the checkout itself, which the provider copies onto the
+				// subscription. A customer who already existed under this email
+				// keeps the customer record they had, without our id on it, and
+				// this is then the only place the team survives.
+				metadata: { teamId: input.teamId },
 				customerEmail: input.email,
 				successUrl: input.successUrl
 			});
@@ -350,11 +355,15 @@ export namespace Polar {
 			const customer = data.customer as
 				| { externalId?: string | null; external_id?: string | null }
 				| undefined;
-			// `externalId` is the team id we put on the customer. A delivery
-			// without one is about a customer created some other way — by hand in
-			// their dashboard, most likely — and there is nothing here it can
-			// change.
-			const teamId = customer?.externalId ?? customer?.external_id ?? null;
+			// `externalId` is the team id we put on the customer. A customer who
+			// existed before checkout keeps the record they had, without it, so
+			// the team then comes from the checkout's metadata, which the
+			// subscription carries. A delivery with neither was not started here.
+			const metadata = data.metadata as { teamId?: unknown } | undefined;
+			const teamId =
+				customer?.externalId ??
+				customer?.external_id ??
+				(typeof metadata?.teamId === 'string' ? metadata.teamId : null);
 
 			const product = data.product as { id?: string } | undefined;
 			const productId =
