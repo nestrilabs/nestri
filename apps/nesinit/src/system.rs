@@ -219,11 +219,26 @@ fn devices() {
 ///   or Wine, and the process dies — here as a `wineserver crashed` with the game
 ///   already gone. SteamOS and every distribution that packages Proton raise it
 ///   to this value for that reason.
-const SYSCTLS: &[(&str, &str, &str)] = &[(
-    "vm/max_map_count",
-    "2147483642",
-    "a game that maps more than 65530 regions (Unreal Engine 5 does) dies on a failed allocation",
-)];
+/// - `vm.overcommit_memory`: **the kernel's default refuses any one allocation
+///   larger than RAM plus swap**, and a box has no swap, so the ceiling is the
+///   box's size: 8 GiB at 1080p. Engines and drivers reserve address space far
+///   past what they touch, and a reservation is refused before a byte of it is
+///   used — Dome Keeper asked for 9 GiB on an 8 GiB box and never started
+///   (2026-10-14). `1` grants every request and leaves the OOM killer to act on
+///   what is actually used; in a box that is the game, since this process has
+///   already refused it.
+const SYSCTLS: &[(&str, &str, &str)] = &[
+    (
+        "vm/max_map_count",
+        "2147483642",
+        "a game that maps more than 65530 regions (Unreal Engine 5 does) dies on a failed allocation",
+    ),
+    (
+        "vm/overcommit_memory",
+        "1",
+        "a game that reserves more address space than the box has RAM is refused it and does not start",
+    ),
+];
 
 /// How many files a process may hold open, which every process in the box
 /// inherits from here.
@@ -676,6 +691,23 @@ mod tests {
         assert!("2147483642".parse::<i32>().is_ok());
         // And it is far past the default that kills an Unreal Engine 5 title.
         assert!("2147483642".parse::<u64>().unwrap() > 65530 * 1000);
+    }
+
+    #[test]
+    fn a_reservation_bigger_than_the_box_is_granted() {
+        let root = scratch("overcommit");
+        std::fs::create_dir_all(root.join("vm")).unwrap();
+        std::fs::write(root.join("vm/overcommit_memory"), "0\n").unwrap();
+
+        apply_sysctls(&root);
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("vm/overcommit_memory"))
+                .unwrap()
+                .trim(),
+            "1"
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// A box on a kernel without the knob still boots; the cost is said, not
