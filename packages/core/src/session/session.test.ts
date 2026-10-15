@@ -1200,4 +1200,17 @@ describe('Session end reasons', () => {
 		expect(ended.session?.endReason).toBe('idle');
 		expect((await Session.fromID(run.session.id))?.endReason).toBe('idle');
 	});
+
+	test('a run stopped before it went live ends, with its reason, and was never billed', async () => {
+		const run = await requestedRun('ses-stopped-starting', 5472);
+		await report(run, 'starting');
+
+		// Stopped while its game downloaded: nothing failed, and it never
+		// reached `live`, which is where billing starts.
+		const ended = await report(run, 'ended', 'user');
+		expect(ended.outcome).toBe('moved');
+		expect(ended.session?.state).toBe('ended');
+		expect(ended.session?.endReason).toBe('user');
+		expect(ended.session?.timeStarted).toBeNull();
+	});
 });

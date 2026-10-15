@@ -370,10 +370,14 @@ export namespace Session {
 	 * the only mutual exclusion in this design. `ended` and `failed` are
 	 * terminal, so their entries are empty rather than absent — a state with no
 	 * exits is a fact worth writing down.
+	 *
+	 * `starting → ended` is a run stopped before it went live — the person
+	 * stopping it while its game downloads, say. Nothing failed, so `failed`
+	 * would be a lie, and it never reached `live`, so it was never billed.
 	 */
 	export const NEXT_STATES: Record<Info['state'], readonly Info['state'][]> = {
 		requested: ['starting'],
-		starting: ['live', 'failed'],
+		starting: ['live', 'ended', 'failed'],
 		live: ['ended', 'failed'],
 		ended: [],
 		failed: []
