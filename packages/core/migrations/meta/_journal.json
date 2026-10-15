@@ -183,6 +183,13 @@
       "when": 1791715304549,
       "tag": "0025_run_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792095717042,
+      "tag": "0026_session_end_reason",
+      "breakpoints": true
     }
   ]
 }

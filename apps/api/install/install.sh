@@ -4,7 +4,10 @@
 # This file is the source of what that URL serves, kept in the public
 # repository so anyone about to pipe it into a shell can read it first.
 #
-#   curl -fsSL https://api.nestri.io/install.sh | sudo sh -s -- <install-token>
+#   bash <(curl -fsSL https://api.nestri.io/install.sh) <install-token>
+#   bash <(curl -fsSL https://api.nestri.io/install.sh) -u
+#
+# Piping it works the same way: `curl -fsSL … | sh -s -- -u`.
 #
 # What it does, in order: check this is 64-bit Linux, ask where box images
 # should live, download the host agent for this platform, verify it against the
@@ -14,10 +17,16 @@
 #
 # It runs as root because the agent does: each box's VMM is jailed under a uid
 # of its own, which only root can give it, and a box's network needs
-# CAP_NET_ADMIN. The agent keeps its state in /var/lib/nestri.
+# CAP_NET_ADMIN. The agent keeps its state in /var/lib/nestri. Started as
+# anyone else, it asks sudo for root once, before it changes anything.
 #
 # The token comes from the dashboard's Installation page. It registers one
 # machine, works once and lapses after an hour.
+#
+# `-u` (`--update`) needs no token: on a machine that is already a host, it installs
+# the current agent and restarts it, and the agent picks up whatever a new
+# release changed about its images on its own. It touches nothing else -- the
+# machine keeps its registration, its box store and its Steam sign-ins.
 
 set -eu
 
@@ -32,8 +41,43 @@ STATE_DIR=/var/lib/nestri
 say() { printf '%s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-TOKEN="${1:-${NESTRI_INSTALL_TOKEN:-}}"
-[ -n "$TOKEN" ] || die "no install token. Copy the full command from the dashboard's Installation page."
+usage() {
+  cat >&2 <<USAGE
+Nestri host installer.
+
+  bash <(curl -fsSL $API/install.sh) <install-token>   make this machine a host
+  bash <(curl -fsSL $API/install.sh) -u                update the host agent here
+
+  -u, --update   install the current host agent on a machine that is already a host
+  -h, --help     this
+USAGE
+}
+
+MODE=install
+TOKEN="${NESTRI_INSTALL_TOKEN:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -u|--update) MODE=update ;;
+    -h|--help) usage; exit 0 ;;
+    --) ;;
+    -*) usage; die "unknown option $1" ;;
+    *) TOKEN="$1" ;;
+  esac
+  shift
+done
+if [ "$MODE" = install ] && [ -z "$TOKEN" ]; then
+  usage
+  die "no install token. Copy the full command from the dashboard's Installation page."
+fi
+
+# --- fetch ------------------------------------------------------------------
+if command -v curl >/dev/null 2>&1; then
+  get() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+  get() { wget -qO "$2" "$1"; }
+else
+  die "need curl or wget"
+fi
 
 # --- platform ---------------------------------------------------------------
 [ "$(uname -s)" = Linux ] || die "a host has to run Linux (with KVM); this is $(uname -s)."
@@ -41,7 +85,46 @@ case "$(uname -m)" in
   x86_64|amd64) target=x86_64-unknown-linux-gnu ;;
   *) die "no host build for $(uname -m) yet." ;;
 esac
-[ "$(id -u)" -eq 0 ] || die "run this as root: pipe it into \`sudo sh -s -- <token>\`, as the dashboard shows."
+# --- root ------------------------------------------------------------------
+# Asked for once, here, before anything changes. A script read from a pipe or
+# from `bash <(curl …)` has no file sudo could run again -- the descriptor it
+# came on is this shell's, and sudo starts a fresh one -- so this fetches the
+# same script to a private file and runs that as root, with the same mode and
+# token. Only the settings somebody actually set are carried across.
+if [ "$(id -u)" -ne 0 ]; then
+  command -v sudo >/dev/null 2>&1 || die "this needs root and there is no sudo here. Run it as root."
+  self="$(mktemp)"
+  get "$API/install.sh" "$self" || die "could not fetch $API/install.sh to run it as root"
+  if [ "$MODE" = update ]; then set -- -u; else set -- "$TOKEN"; fi
+  say "The host agent runs as root, so this needs sudo."
+  exec sudo env NESTRI_SELF="$self" NESTRI_API="$API" \
+    ${NESTRI_HOST_VERSION:+NESTRI_HOST_VERSION="$NESTRI_HOST_VERSION"} \
+    ${NESTRI_BIN_DIR:+NESTRI_BIN_DIR="$NESTRI_BIN_DIR"} \
+    ${NESTRI_BOX_STORE:+NESTRI_BOX_STORE="$NESTRI_BOX_STORE"} \
+    sh "$self" "$@"
+fi
+# The copy fetched above, now open as this shell's script: removing the name
+# leaves what is being read intact and leaves nothing behind.
+if [ -n "${NESTRI_SELF:-}" ]; then rm -f "$NESTRI_SELF"; fi
+
+# --- update: only where there is something to update -------------------------
+# Checked before anything is downloaded, so a mistaken run costs nothing.
+if [ "$MODE" = update ]; then
+  # Registered means the agent has a machine identity. Without one there is
+  # nothing to update, and installing would need the token this skips.
+  [ -f "$STATE_DIR/machine.json" ] || die "this machine is not a Nestri host yet, so there is nothing to update. Install it with the command from the dashboard's Installation page."
+  # Updating restarts the agent, and the agent stopping stops every box. A
+  # session somebody is playing would end in the middle, so wait for it.
+  if pgrep -x nesbox >/dev/null 2>&1; then
+    die "a box is running on this machine right now, and updating would stop it. Run this again when nobody is playing."
+  fi
+  current="$("$BIN_DIR/nestri-host" --version 2>/dev/null | awk '{print $NF}')" || current=""
+  if [ "$current" = "$VERSION" ]; then
+    say "The host agent is already $VERSION. Nothing to do."
+    exit 0
+  fi
+  say "Updating the host agent from ${current:-an unknown version} to $VERSION…"
+fi
 
 # --- an install from before the agent ran as root ---------------------------
 # Hosts used to run the agent as the user who installed it, from a state
@@ -67,22 +150,14 @@ if [ -n "$OLD_STATE" ] && [ -f "$OLD_STATE"/onboarding.json ] && [ ! -e "$STATE_
   say "Copied $OLD_STATE to $STATE_DIR."
 fi
 
-# --- fetch ------------------------------------------------------------------
-if command -v curl >/dev/null 2>&1; then
-  get() { curl -fsSL "$1" -o "$2"; }
-elif command -v wget >/dev/null 2>&1; then
-  get() { wget -qO "$2" "$1"; }
-else
-  die "need curl or wget"
-fi
-
 # --- where box images go ----------------------------------------------------
 # Their own device, xfs or ext4, and never `/`: box images are large, and a
 # filled root filesystem takes the whole machine down with it. The agent's
 # preflight checks this again; asking here is so the default is a good guess.
+# An update keeps the store the machine already has, so it is not asked.
 tty_ok() { [ -e /dev/tty ] && (exec 3</dev/tty) 2>/dev/null; }
 BOX_STORE="${NESTRI_BOX_STORE:-}"
-if [ -z "$BOX_STORE" ]; then
+if [ "$MODE" = install ] && [ -z "$BOX_STORE" ]; then
   guess="$(df -P -T -x tmpfs -x devtmpfs -x overlay 2>/dev/null \
     | awk 'NR>1 && ($2=="xfs"||$2=="ext4") && $7!="/" && $7!~/^\/(boot|efi)/ {print $5, $7}' \
     | sort -rn | awk 'NR==1 {print $2}')"
@@ -127,6 +202,18 @@ chmod +x "$TMP/$ASSET"
 mv "$TMP/$ASSET" "$BIN_DIR/nestri-host"
 say "Installed $BIN_DIR/nestri-host"
 say ""
+
+# --- update: restart on the new binary, and stop -----------------------------
+# No onboarding: the machine is registered and configured already. The agent
+# reads what its new release needs when it starts -- a raised image layout
+# makes it pull the guest and its jail again -- so restarting is the whole of
+# it.
+if [ "$MODE" = update ]; then
+  systemctl restart nestri-host.service || die "the new agent is installed, but restarting nestri-host failed. See: journalctl -u nestri-host"
+  say "Updated to $("$BIN_DIR/nestri-host" --version 2>/dev/null | awk '{print $NF}'). If this release changed the box images, the agent is downloading them now:"
+  say "  journalctl -fu nestri-host"
+  exit 0
+fi
 
 # --- upgrade ----------------------------------------------------------------
 # On a host that already runs the agent, this is an upgrade: the agent holds

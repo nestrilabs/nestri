@@ -80,6 +80,18 @@ export const SessionTable = pgTable(
 		/** Why it ended badly, when it did. */
 		errorMessage: text('error_message'),
 		/**
+		 * Why the run is over, in one word from `Session.EndReason`, written by
+		 * whoever ended it. Null while it runs, and null for a run ended by a
+		 * host agent too old to say. Text rather than a database enum, so a
+		 * reason added later is a code change and not a migration.
+		 */
+		endReason: text('end_reason'),
+		/**
+		 * When a host agent claimed this run, or null while it waits. The gap
+		 * between this and `timeStarted` is the time spent bringing it up.
+		 */
+		timeClaimed: utc('time_claimed'),
+		/**
 		 * Which attempt holds this run. Null until an agent claims it, and never
 		 * cleared afterwards — a terminal row still records who ran it, and a
 		 * token that goes back to null lets a dead claim be replayed.
