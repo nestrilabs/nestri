@@ -5,6 +5,7 @@
 # repository so anyone about to pipe it into a shell can read it first.
 #
 #   curl -fsSL https://api.nestri.io/install.sh | sudo sh -s -- <install-token>
+#   curl -fsSL https://api.nestri.io/install.sh | sudo sh -s -- --update
 #
 # What it does, in order: check this is 64-bit Linux, ask where box images
 # should live, download the host agent for this platform, verify it against the
@@ -18,6 +19,11 @@
 #
 # The token comes from the dashboard's Installation page. It registers one
 # machine, works once and lapses after an hour.
+#
+# `--update` needs no token: on a machine that is already a host, it installs
+# the current agent and restarts it, and the agent picks up whatever a new
+# release changed about its images on its own. It touches nothing else -- the
+# machine keeps its registration, its box store and its Steam sign-ins.
 
 set -eu
 
@@ -32,8 +38,15 @@ STATE_DIR=/var/lib/nestri
 say() { printf '%s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-TOKEN="${1:-${NESTRI_INSTALL_TOKEN:-}}"
-[ -n "$TOKEN" ] || die "no install token. Copy the full command from the dashboard's Installation page."
+MODE=install
+case "${1:-}" in
+  --update) MODE=update ;;
+  -*) die "unknown option $1. Run with an install token, or with --update on a machine that is already a host." ;;
+esac
+if [ "$MODE" = install ]; then
+  TOKEN="${1:-${NESTRI_INSTALL_TOKEN:-}}"
+  [ -n "$TOKEN" ] || die "no install token. Copy the full command from the dashboard's Installation page."
+fi
 
 # --- platform ---------------------------------------------------------------
 [ "$(uname -s)" = Linux ] || die "a host has to run Linux (with KVM); this is $(uname -s)."
@@ -42,6 +55,25 @@ case "$(uname -m)" in
   *) die "no host build for $(uname -m) yet." ;;
 esac
 [ "$(id -u)" -eq 0 ] || die "run this as root: pipe it into \`sudo sh -s -- <token>\`, as the dashboard shows."
+
+# --- update: only where there is something to update -------------------------
+# Checked before anything is downloaded, so a mistaken run costs nothing.
+if [ "$MODE" = update ]; then
+  # Registered means the agent has a machine identity. Without one there is
+  # nothing to update, and installing would need the token this skips.
+  [ -f "$STATE_DIR/machine.json" ] || die "this machine is not a Nestri host yet, so there is nothing to update. Install it with the command from the dashboard's Installation page."
+  # Updating restarts the agent, and the agent stopping stops every box. A
+  # session somebody is playing would end in the middle, so wait for it.
+  if pgrep -x nesbox >/dev/null 2>&1; then
+    die "a box is running on this machine right now, and updating would stop it. Run this again when nobody is playing."
+  fi
+  current="$("$BIN_DIR/nestri-host" --version 2>/dev/null | awk '{print $NF}')" || current=""
+  if [ "$current" = "$VERSION" ]; then
+    say "The host agent is already $VERSION. Nothing to do."
+    exit 0
+  fi
+  say "Updating the host agent from ${current:-an unknown version} to $VERSION…"
+fi
 
 # --- an install from before the agent ran as root ---------------------------
 # Hosts used to run the agent as the user who installed it, from a state
@@ -80,9 +112,10 @@ fi
 # Their own device, xfs or ext4, and never `/`: box images are large, and a
 # filled root filesystem takes the whole machine down with it. The agent's
 # preflight checks this again; asking here is so the default is a good guess.
+# An update keeps the store the machine already has, so it is not asked.
 tty_ok() { [ -e /dev/tty ] && (exec 3</dev/tty) 2>/dev/null; }
 BOX_STORE="${NESTRI_BOX_STORE:-}"
-if [ -z "$BOX_STORE" ]; then
+if [ "$MODE" = install ] && [ -z "$BOX_STORE" ]; then
   guess="$(df -P -T -x tmpfs -x devtmpfs -x overlay 2>/dev/null \
     | awk 'NR>1 && ($2=="xfs"||$2=="ext4") && $7!="/" && $7!~/^\/(boot|efi)/ {print $5, $7}' \
     | sort -rn | awk 'NR==1 {print $2}')"
@@ -127,6 +160,18 @@ chmod +x "$TMP/$ASSET"
 mv "$TMP/$ASSET" "$BIN_DIR/nestri-host"
 say "Installed $BIN_DIR/nestri-host"
 say ""
+
+# --- update: restart on the new binary, and stop -----------------------------
+# No onboarding: the machine is registered and configured already. The agent
+# reads what its new release needs when it starts -- a raised image layout
+# makes it pull the guest and its jail again -- so restarting is the whole of
+# it.
+if [ "$MODE" = update ]; then
+  systemctl restart nestri-host.service || die "the new agent is installed, but restarting nestri-host failed. See: journalctl -u nestri-host"
+  say "Updated to $("$BIN_DIR/nestri-host" --version 2>/dev/null | awk '{print $NF}'). If this release changed the box images, the agent is downloading them now:"
+  say "  journalctl -fu nestri-host"
+  exit 0
+fi
 
 # --- upgrade ----------------------------------------------------------------
 # On a host that already runs the agent, this is an upgrade: the agent holds
