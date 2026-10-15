@@ -100,14 +100,14 @@ impl CompositorHandler for NescopeState {
             s
         };
 
+        // Matched on the window's surface, not its xdg toplevel: an Xwayland
+        // window has no toplevel, and matching on one left every Proton game
+        // without frame callbacks. Xwayland then completes a flip only on its
+        // one-second fallback timer, and a game presenting FIFO stalls.
         let Some(window) = self
             .space
             .elements()
-            .find(|w| {
-                w.toplevel()
-                    .map(|t| t.wl_surface() == &root)
-                    .unwrap_or(false)
-            })
+            .find(|w| w.wl_surface().is_some_and(|s| *s == root))
             .cloned()
         else {
             return;
