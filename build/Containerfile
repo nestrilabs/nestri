@@ -80,6 +80,13 @@ ARG MESA_GIT=https://gitlab.freedesktop.org/mesa/mesa.git
 ARG MESA_COMMIT=a4a47003a194effad8cabe727f74985e9417476f
 ARG JOBS=
 
+# OpenGL is zink: GL on top of whichever Vulkan driver the box has, radv over
+# native context or the forwarded NVIDIA one, so one build serves both. Its
+# frontends have to be on for any of it to be reachable. With EGL, GLX, GBM and
+# GLES off, a GL game found no GL at all and ran with sound and a black screen,
+# which is what three alpha testers saw. GLX needs the x11 platform for
+# Xwayland's clients, and Xwayland needs GBM to give them DRI3.
+#
 # Our patches to the amdgpu native-context path, applied on top of the pinned
 # commit. They are not cosmetic: upstream's winsys re-queries device-static
 # facts on a path that costs a synchronous round trip to the host under
@@ -93,17 +100,18 @@ RUN test -n "$JOBS" || JOBS=$(nproc) && \
     meson setup builddir \
         -Dprefix=/usr \
         -Dbuildtype=release \
-        -Dplatforms=wayland \
+        -Dplatforms=wayland,x11 \
         -Dgallium-drivers=zink \
         -Dvulkan-drivers=amd,intel \
         -Damdgpu-virtio=true \
         -Dintel-virtio-experimental=true \
         -Dvideo-codecs=all \
-        -Degl=disabled \
-        -Dglx=disabled \
+        -Degl=enabled \
+        -Dglx=dri \
+        -Dglvnd=enabled \
         -Dgles1=disabled \
-        -Dgles2=disabled \
-        -Dgbm=disabled \
+        -Dgles2=enabled \
+        -Dgbm=enabled \
         -Dgallium-va=disabled \
         -Db_ndebug=true && \
     mold -run ninja -C builddir -j${JOBS:-$(nproc)} && \

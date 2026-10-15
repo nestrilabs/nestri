@@ -735,13 +735,14 @@ impl NescopeState {
         }
     }
 
-    pub(crate) fn present_now(&mut self, root: &WlSurface, window: &Window) {
+    pub(crate) fn present_now(&mut self, root: &WlSurface) {
         let output = self.output.clone();
         let now = self.clock.now();
         self.presentation_seq += 1;
 
         let mut fb = OutputPresentationFeedback::new(&output);
-        window.take_presentation_feedback(
+        take_presentation_feedback_surface_tree(
+            root,
             &mut fb,
             |_, _| Some(output.clone()),
             |_, _| wp_presentation_feedback::Kind::Vsync,
