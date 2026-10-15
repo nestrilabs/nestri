@@ -9,6 +9,7 @@ Branch: feat/installer-sign-in
 - 4. api middleware: aud `installer` only on POST /machine/install-token, else 403 (test: apps/api/test/install-token.test.ts)
 - 5. core InstallToken.create: 5/h + 3 outstanding per user (HOURLY_LIMIT, OUTSTANDING_LIMIT), 429 too_many_requests
 - 6. Machine.TEAM_MACHINE_LIMIT = 10 in Machine.register (team row lock) + InstallToken.create, 429 quota_exceeded
+- 7. install.sh: token optional; NESTRI_INSTALL_TOKEN unset when none
 
 ## Left
 1. issuer: `installer` device client, 15 min access, no refresh token
