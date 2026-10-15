@@ -395,6 +395,19 @@ export interface IssuerInput<
 		deviceInterval?: number;
 	};
 	/**
+	 * Token lifetimes for one client, in place of {@link ttl}.
+	 *
+	 * For a client whose tokens should be narrower than everybody else's — one
+	 * that needs a session for a single step and has no business holding one
+	 * afterwards. A `refresh` of `0` means no refresh token is issued at all,
+	 * so the session ends when the access token does.
+	 *
+	 * What this returns wins over a lifetime `success` asks for: how long a
+	 * client may hold a session is a property of the client, and a flow that
+	 * signs somebody in has no reason to know which client is asking.
+	 */
+	clientTTL?(clientID: string): { access?: number; refresh?: number } | undefined;
+	/**
 	 * Where device authorization grants are kept.
 	 *
 	 * Defaults to one held in this process's memory, which is right for tests
@@ -599,6 +612,15 @@ export function issuer<
 			undefined);
 	const renderer = input.renderer ?? HtmlRenderer({ theme: input.theme });
 
+	/** What a token for `clientID` lives for. See {@link IssuerInput.clientTTL}. */
+	function lifetime(clientID: string, requested?: { access?: number; refresh?: number }) {
+		const rule = input.clientTTL?.(clientID);
+		return {
+			access: rule?.access ?? requested?.access ?? ttlAccess,
+			refresh: rule?.refresh ?? requested?.refresh ?? ttlRefresh
+		};
+	}
+
 	/**
 	 * The screen offering a choice of providers.
 	 *
@@ -716,10 +738,7 @@ export function issuer<
 									subject,
 									type: type as string,
 									properties,
-									ttl: {
-										access: subjectOpts?.ttl?.access ?? ttlAccess,
-										refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-									}
+									ttl: lifetime(grant.clientID, subjectOpts?.ttl)
 								}
 							};
 							await auth.set(ctx, 'device_confirm', ttlDevice, confirmation);
@@ -733,14 +752,11 @@ export function issuer<
 									type: type as string,
 									properties,
 									clientID: authorization.client_id,
-									ttl: {
-										access: subjectOpts?.ttl?.access ?? ttlAccess,
-										refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-									}
+									ttl: lifetime(authorization.client_id, subjectOpts?.ttl)
 								});
 								location.hash = new URLSearchParams({
 									access_token: tokens.access,
-									refresh_token: tokens.refresh,
+									...(tokens.refresh ? { refresh_token: tokens.refresh } : {}),
 									state: authorization.state || ''
 								}).toString();
 								await auth.unset(ctx, 'authorization');
@@ -757,10 +773,7 @@ export function issuer<
 										redirectURI: authorization.redirect_uri,
 										clientID: authorization.client_id,
 										pkce: authorization.pkce,
-										ttl: {
-											access: subjectOpts?.ttl?.access ?? ttlAccess,
-											refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-										}
+										ttl: lifetime(authorization.client_id, subjectOpts?.ttl)
 									},
 									60
 								);
@@ -781,10 +794,7 @@ export function issuer<
 							type: type as string,
 							properties,
 							clientID: 'ssh',
-							ttl: {
-								access: subjectOpts?.ttl?.access ?? ttlAccess,
-								refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-							}
+							ttl: lifetime('ssh', subjectOpts?.ttl)
 						});
 						return ctx.json({
 							accessToken: tokens.access,
@@ -977,8 +987,12 @@ export function issuer<
 			generateRefreshToken?: boolean;
 		}
 	) {
+		// A client allowed no refresh token gets none, rather than one that
+		// expires at once: a credential that is never written down cannot be
+		// replayed, and its absence tells the client what to expect.
+		const refreshable = value.ttl.refresh > 0;
 		const refreshToken = value.nextToken ?? crypto.randomUUID();
-		if (opts?.generateRefreshToken ?? true) {
+		if (refreshable && (opts?.generateRefreshToken ?? true)) {
 			/**
 			 * Generate and store the next refresh token after the one we are currently returning.
 			 * Reserving these in advance avoids concurrency issues with multiple refreshes.
@@ -1017,7 +1031,7 @@ export function issuer<
 				)
 				.sign(await signingKey().then((item) => item.private)),
 			expiresIn: Math.floor(accessTimeUsed + value.ttl.access - Date.now() / 1000),
-			refresh: [value.subject, refreshToken].join(':')
+			refresh: refreshable ? [value.subject, refreshToken].join(':') : undefined
 		};
 	}
 
@@ -1398,10 +1412,7 @@ export function issuer<
 								subject: opts?.subject || (await resolveSubject(type, properties)),
 								properties,
 								clientID: clientID.toString(),
-								ttl: {
-									access: opts?.ttl?.access ?? ttlAccess,
-									refresh: opts?.ttl?.refresh ?? ttlRefresh
-								}
+								ttl: lifetime(clientID.toString(), opts?.ttl)
 							});
 							return c.json({
 								access_token: tokens.access,

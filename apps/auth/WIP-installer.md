@@ -3,7 +3,7 @@
 Branch: feat/installer-sign-in
 
 ## Done
-- nothing yet
+- 1. installer device client, 15 min, no refresh (engine `clientTTL`, apps/auth `clientTTL`)
 
 ## Left
 1. issuer: `installer` device client, 15 min access, no refresh token

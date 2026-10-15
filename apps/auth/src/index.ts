@@ -45,7 +45,23 @@ type Env = {
  * ours: the identifier ends up on the issued token, and without this anything
  * on the internet could mint a grant naming anything at all.
  */
-const DEVICE_CLIENTS = new Set(['desktop']);
+const DEVICE_CLIENTS = new Set(['desktop', 'installer']);
+
+export const allowDeviceClient = async (clientID: string) => DEVICE_CLIENTS.has(clientID);
+
+/**
+ * How long a session for each device client lasts, where it is not the
+ * default.
+ *
+ * The installer signs in for one step — trading the session for a single host
+ * token — and runs as root on a machine that may not be the person's own, so
+ * it gets a quarter of an hour and no refresh token: nothing it could leave
+ * behind outlives the install.
+ *
+ * Exported, like the list above, so both can be tested against a real grant.
+ */
+export const clientTTL = (clientID: string) =>
+	clientID === 'installer' ? { access: 15 * 60, refresh: 0 } : undefined;
 
 /**
  * The zone every user-owned host is reached under, and the one path on it that
@@ -192,7 +208,8 @@ export default {
 			codeStore: PostgresCodeStore(),
 			refreshStore: PostgresRefreshStore(),
 			deviceStore: PostgresDeviceStore(),
-			allowDeviceClient: async (clientID) => DEVICE_CLIENTS.has(clientID),
+			allowDeviceClient,
+			clientTTL,
 			// The default rule allows a redirect back to whatever hostname the
 			// request arrived on, which is right for a site served beside this
 			// one and refuses the proxy in front of user-owned hosts — it

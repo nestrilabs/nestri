@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 
+import { decodeJwt } from 'jose';
 import { object, string } from 'valibot';
 
 import { hashDeviceCode, MemoryDeviceStore } from '../src/device.js';
@@ -21,6 +22,7 @@ const auth = issuer({
 	subjects,
 	allow: async () => true,
 	allowDeviceClient: async (clientID) => clientID !== 'banned',
+	clientTTL: (clientID) => (clientID === 'one-step' ? { access: 15 * 60, refresh: 0 } : undefined),
 	deviceVerification: { guessLimit: 3, guessWindow: 60 },
 	providers: {
 		dummy: {
@@ -282,6 +284,53 @@ describe('approval', () => {
 
 		const response = await poll(grant.device_code);
 		expect(response.body.error).toBe('access_denied');
+	});
+});
+
+/**
+ * A client that is allowed a session for one step, and nothing after it.
+ *
+ * Its lifetime is set per client rather than by the sign-in, so the person
+ * approving it cannot be talked into a longer one and the flow that signs them
+ * in does not need to know who is asking.
+ */
+describe('a client with a lifetime of its own', () => {
+	async function approved(clientID: string) {
+		const grant = await started(clientID);
+		await answer(grant.user_code, 'approve');
+		setSystemTime(new Date(Date.now() + (grant.interval + 1) * 1000));
+		const response = await poll(grant.device_code, clientID);
+		expect(response.status).toBe(200);
+		return response.body;
+	}
+
+	test('gets the access lifetime it was given and no refresh token', async () => {
+		const body = await approved('one-step');
+		expect(body.expires_in).toBe(15 * 60);
+		expect(decodeJwt(body.access_token).exp).toBe(Math.floor(Date.now() / 1000) + 15 * 60);
+		expect(decodeJwt(body.access_token).aud).toBe('one-step');
+		expect(body).not.toHaveProperty('refresh_token');
+	});
+
+	test('cannot refresh what it was never given', async () => {
+		const body = await approved('one-step');
+		const subject = decodeJwt(body.access_token).sub!;
+		const response = await auth.request(`${ORIGIN}/token`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'refresh_token',
+				refresh_token: `${subject}:${crypto.randomUUID()}`
+			})
+		});
+		expect(response.status).toBe(400);
+		expect(((await response.json()) as any).error).toBe('invalid_grant');
+	});
+
+	test('every other client keeps the defaults', async () => {
+		const body = await approved('desktop');
+		expect(body.expires_in).toBe(60 * 60 * 24 * 30);
+		expect(body.refresh_token).toMatch(/.+/);
 	});
 });
 
