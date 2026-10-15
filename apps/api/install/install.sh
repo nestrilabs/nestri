@@ -4,8 +4,10 @@
 # This file is the source of what that URL serves, kept in the public
 # repository so anyone about to pipe it into a shell can read it first.
 #
-#   curl -fsSL https://api.nestri.io/install.sh | sudo sh -s -- <install-token>
-#   curl -fsSL https://api.nestri.io/install.sh | sudo sh -s -- --update
+#   bash <(curl -fsSL https://api.nestri.io/install.sh) <install-token>
+#   bash <(curl -fsSL https://api.nestri.io/install.sh) -u
+#
+# Piping it works the same way: `curl -fsSL … | sh -s -- -u`.
 #
 # What it does, in order: check this is 64-bit Linux, ask where box images
 # should live, download the host agent for this platform, verify it against the
@@ -15,12 +17,13 @@
 #
 # It runs as root because the agent does: each box's VMM is jailed under a uid
 # of its own, which only root can give it, and a box's network needs
-# CAP_NET_ADMIN. The agent keeps its state in /var/lib/nestri.
+# CAP_NET_ADMIN. The agent keeps its state in /var/lib/nestri. Started as
+# anyone else, it asks sudo for root once, before it changes anything.
 #
 # The token comes from the dashboard's Installation page. It registers one
 # machine, works once and lapses after an hour.
 #
-# `--update` needs no token: on a machine that is already a host, it installs
+# `-u` (`--update`) needs no token: on a machine that is already a host, it installs
 # the current agent and restarts it, and the agent picks up whatever a new
 # release changed about its images on its own. It touches nothing else -- the
 # machine keeps its registration, its box store and its Steam sign-ins.
@@ -38,14 +41,42 @@ STATE_DIR=/var/lib/nestri
 say() { printf '%s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+usage() {
+  cat >&2 <<USAGE
+Nestri host installer.
+
+  bash <(curl -fsSL $API/install.sh) <install-token>   make this machine a host
+  bash <(curl -fsSL $API/install.sh) -u                update the host agent here
+
+  -u, --update   install the current host agent on a machine that is already a host
+  -h, --help     this
+USAGE
+}
+
 MODE=install
-case "${1:-}" in
-  --update) MODE=update ;;
-  -*) die "unknown option $1. Run with an install token, or with --update on a machine that is already a host." ;;
-esac
-if [ "$MODE" = install ]; then
-  TOKEN="${1:-${NESTRI_INSTALL_TOKEN:-}}"
-  [ -n "$TOKEN" ] || die "no install token. Copy the full command from the dashboard's Installation page."
+TOKEN="${NESTRI_INSTALL_TOKEN:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -u|--update) MODE=update ;;
+    -h|--help) usage; exit 0 ;;
+    --) ;;
+    -*) usage; die "unknown option $1" ;;
+    *) TOKEN="$1" ;;
+  esac
+  shift
+done
+if [ "$MODE" = install ] && [ -z "$TOKEN" ]; then
+  usage
+  die "no install token. Copy the full command from the dashboard's Installation page."
+fi
+
+# --- fetch ------------------------------------------------------------------
+if command -v curl >/dev/null 2>&1; then
+  get() { curl -fsSL "$1" -o "$2"; }
+elif command -v wget >/dev/null 2>&1; then
+  get() { wget -qO "$2" "$1"; }
+else
+  die "need curl or wget"
 fi
 
 # --- platform ---------------------------------------------------------------
@@ -54,7 +85,27 @@ case "$(uname -m)" in
   x86_64|amd64) target=x86_64-unknown-linux-gnu ;;
   *) die "no host build for $(uname -m) yet." ;;
 esac
-[ "$(id -u)" -eq 0 ] || die "run this as root: pipe it into \`sudo sh -s -- <token>\`, as the dashboard shows."
+# --- root ------------------------------------------------------------------
+# Asked for once, here, before anything changes. A script read from a pipe or
+# from `bash <(curl …)` has no file sudo could run again -- the descriptor it
+# came on is this shell's, and sudo starts a fresh one -- so this fetches the
+# same script to a private file and runs that as root, with the same mode and
+# token. Only the settings somebody actually set are carried across.
+if [ "$(id -u)" -ne 0 ]; then
+  command -v sudo >/dev/null 2>&1 || die "this needs root and there is no sudo here. Run it as root."
+  self="$(mktemp)"
+  get "$API/install.sh" "$self" || die "could not fetch $API/install.sh to run it as root"
+  if [ "$MODE" = update ]; then set -- -u; else set -- "$TOKEN"; fi
+  say "The host agent runs as root, so this needs sudo."
+  exec sudo env NESTRI_SELF="$self" NESTRI_API="$API" \
+    ${NESTRI_HOST_VERSION:+NESTRI_HOST_VERSION="$NESTRI_HOST_VERSION"} \
+    ${NESTRI_BIN_DIR:+NESTRI_BIN_DIR="$NESTRI_BIN_DIR"} \
+    ${NESTRI_BOX_STORE:+NESTRI_BOX_STORE="$NESTRI_BOX_STORE"} \
+    sh "$self" "$@"
+fi
+# The copy fetched above, now open as this shell's script: removing the name
+# leaves what is being read intact and leaves nothing behind.
+if [ -n "${NESTRI_SELF:-}" ]; then rm -f "$NESTRI_SELF"; fi
 
 # --- update: only where there is something to update -------------------------
 # Checked before anything is downloaded, so a mistaken run costs nothing.
@@ -97,15 +148,6 @@ if [ -n "$OLD_STATE" ] && [ -f "$OLD_STATE"/onboarding.json ] && [ ! -e "$STATE_
     NESTRI_BOX_STORE="$(sed -n 's/^NESLET_BOX_STORE=//p' "$OLD_HOME/.config/nestri-host/env" | head -n1)"
   fi
   say "Copied $OLD_STATE to $STATE_DIR."
-fi
-
-# --- fetch ------------------------------------------------------------------
-if command -v curl >/dev/null 2>&1; then
-  get() { curl -fsSL "$1" -o "$2"; }
-elif command -v wget >/dev/null 2>&1; then
-  get() { wget -qO "$2" "$1"; }
-else
-  die "need curl or wget"
 fi
 
 # --- where box images go ----------------------------------------------------
