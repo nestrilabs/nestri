@@ -4,8 +4,10 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { Database } from '../db/index.js';
+import { ErrorCodes, VisibleError } from '../error.js';
 import { fn } from '../fn.js';
 import { Identifier } from '../id.js';
+import { UserTable } from '../user/user.sql.js';
 import { Machine } from './index.js';
 import { InstallTokenTable } from './install-token.sql.js';
 
@@ -19,6 +21,15 @@ export namespace InstallToken {
 	 * tomorrow is worthless.
 	 */
 	export const TTL_MINUTES = 60;
+
+	/**
+	 * How many one person may ask for. A token is minted by a signed-in call
+	 * that a script can repeat, and each one is a host waiting to happen, so
+	 * minting is bounded twice: by rate, and by how many can be lying unspent
+	 * at once. Both are far above what installing by hand ever needs.
+	 */
+	export const HOURLY_LIMIT = 5;
+	export const OUTSTANDING_LIMIT = 3;
 
 	function generate(): string {
 		return `nit_${randomBytes(TOKEN_BYTES).toString('base64url')}`;
@@ -34,6 +45,9 @@ export namespace InstallToken {
 	/**
 	 * Issue a token for a team, or for an organisation's fleet. The caller has
 	 * already checked membership of whichever it names.
+	 *
+	 * Refused once the person has hit {@link HOURLY_LIMIT} or
+	 * {@link OUTSTANDING_LIMIT}, with a message a terminal can print as it is.
 	 */
 	export const create = fn(
 		z
@@ -48,8 +62,38 @@ export namespace InstallToken {
 		async (input) => {
 			const token = generate();
 			const tokenHash = await digest(token);
-			const expiresAt = await Database.use(async (tx) =>
-				tx
+			const expiresAt = await Database.transaction(async (tx) => {
+				// The limits are counts, so they hold only if nothing else can
+				// mint for this person while they are taken. Their own row is
+				// the one thing every such call contends on.
+				await tx
+					.select({ id: UserTable.id })
+					.from(UserTable)
+					.where(eq(UserTable.id, input.userId))
+					.for('update');
+				const [usage] = await tx
+					.select({
+						lastHour: sql<number>`(count(*) filter (where ${InstallTokenTable.timeCreated} > now() - interval '1 hour'))::int`,
+						outstanding: sql<number>`(count(*) filter (where ${InstallTokenTable.redeemedAt} is null and ${InstallTokenTable.timeDeleted} is null and ${InstallTokenTable.expiresAt} > now()))::int`
+					})
+					.from(InstallTokenTable)
+					.where(eq(InstallTokenTable.createdByUserId, input.userId));
+				if ((usage?.lastHour ?? 0) >= HOURLY_LIMIT) {
+					throw new VisibleError(
+						'rate_limit',
+						ErrorCodes.RateLimit.TOO_MANY_REQUESTS,
+						`You have made ${HOURLY_LIMIT} install tokens in the last hour. Try again later.`
+					);
+				}
+				if ((usage?.outstanding ?? 0) >= OUTSTANDING_LIMIT) {
+					throw new VisibleError(
+						'rate_limit',
+						ErrorCodes.RateLimit.TOO_MANY_REQUESTS,
+						`You have ${OUTSTANDING_LIMIT} install tokens that have not been used yet. Use one, or wait for them to expire.`
+					);
+				}
+
+				return tx
 					.insert(InstallTokenTable)
 					.values({
 						id: Identifier.ascending('installToken'),
@@ -60,8 +104,8 @@ export namespace InstallToken {
 						expiresAt: sql`now() + interval '${sql.raw(String(TTL_MINUTES))} minutes'`
 					})
 					.returning({ expiresAt: InstallTokenTable.expiresAt })
-					.then((rows) => rows[0]!.expiresAt)
-			);
+					.then((rows) => rows[0]!.expiresAt);
+			});
 			return { token, expiresAt };
 		}
 	);

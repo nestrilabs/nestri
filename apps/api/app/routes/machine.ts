@@ -176,7 +176,7 @@ export namespace MachineApi {
 				tags: ['Machine'],
 				summary: 'Issue an install token',
 				description:
-					'Mint a one-time token that registers one host to a team — or, with `organisationId`, to your organisation’s fleet — when the installer presents it. It expires after an hour and is spent by its first use, because it travels in a command a person pastes and so ends up in shell history.',
+					'Mint a one-time token that registers one host to a team — or, with `organisationId`, to your organisation’s fleet — when the installer presents it. It expires after an hour and is spent by its first use, because it travels in a command a person pastes and so ends up in shell history. One person may make five an hour and hold three unspent at once.',
 				responses: {
 					200: {
 						content: {
@@ -194,7 +194,8 @@ export namespace MachineApi {
 						description: 'A token for one host'
 					},
 					401: ErrorResponses[401],
-					403: ErrorResponses[403]
+					403: ErrorResponses[403],
+					429: ErrorResponses[429]
 				}
 			}),
 			validator(

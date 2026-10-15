@@ -118,3 +118,44 @@ describe('a sign-in made by the installer', () => {
 		expect((await call('POST', '/machine/install-token', token, {})).status).toBe(200);
 	});
 });
+
+describe('how many install tokens one person may have', () => {
+	test('three unspent at once, then a 429 a terminal can print', async () => {
+		const owner = await person('limit-outstanding');
+		const token = await tokenFor(owner.userId, 'installer');
+		for (let i = 0; i < 3; i++) {
+			expect((await call('POST', '/machine/install-token', token, {})).status).toBe(200);
+		}
+		const refused = await call('POST', '/machine/install-token', token, {});
+		expect(refused.status).toBe(429);
+		expect((await refused.json()) as any).toEqual({
+			type: 'rate_limit',
+			code: 'too_many_requests',
+			message:
+				'You have 3 install tokens that have not been used yet. Use one, or wait for them to expire.'
+		});
+	});
+
+	test('five an hour, even when every one was spent', async () => {
+		const owner = await person('limit-hourly');
+		const token = await tokenFor(owner.userId, 'installer');
+		for (let i = 0; i < 5; i++) {
+			const issued = await call('POST', '/machine/install-token', token, {});
+			expect(issued.status).toBe(200);
+			const { data } = (await issued.json()) as any;
+			const installed = await app.request('/machine/install', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ token: data.token, label: `host-${i}` })
+			});
+			expect(installed.status).toBe(200);
+		}
+		const refused = await call('POST', '/machine/install-token', token, {});
+		expect(refused.status).toBe(429);
+		expect((await refused.json()) as any).toEqual({
+			type: 'rate_limit',
+			code: 'too_many_requests',
+			message: 'You have made 5 install tokens in the last hour. Try again later.'
+		});
+	});
+});
