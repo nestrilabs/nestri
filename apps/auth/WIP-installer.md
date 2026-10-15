@@ -6,6 +6,7 @@ Branch: feat/installer-sign-in
 - 1. installer device client, 15 min, no refresh (engine `clientTTL`, apps/auth `clientTTL`)
 - 2. per-address limit on POST /device/authorize (engine `deviceVerification.requestLimit`), 429 slow_down + Retry-After
 - 3. confirm wording per client (engine `deviceConfirm`, apps/auth `deviceConfirm`), preview entry
+- 4. api middleware: aud `installer` only on POST /machine/install-token, else 403 (test: apps/api/test/install-token.test.ts)
 
 ## Left
 1. issuer: `installer` device client, 15 min access, no refresh token
