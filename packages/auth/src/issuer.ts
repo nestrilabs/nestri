@@ -461,7 +461,17 @@ export interface IssuerInput<
 		/** Length of the window, in seconds. @default 600 */
 		guessWindow?: number;
 		/**
-		 * Which caller a guess is charged to.
+		 * Device codes one caller may ask for per window.
+		 *
+		 * Asking costs nothing and takes no secret, so without a limit one
+		 * caller can fill the store with grants nobody will ever answer, and
+		 * hold the user code space open for guessing. @default 10
+		 */
+		requestLimit?: number;
+		/** Length of that window, in seconds. @default 600 */
+		requestWindow?: number;
+		/**
+		 * Which caller a guess, or a request for a code, is charged to.
 		 *
 		 * Defaults to the usual forwarded-address headers. Returning undefined
 		 * puts the request in one shared bucket, which is the right answer for
@@ -603,6 +613,8 @@ export function issuer<
 	const deviceStore = input.deviceStore ?? MemoryDeviceStore();
 	const deviceGuessLimit = input.deviceVerification?.guessLimit ?? 10;
 	const deviceGuessWindow = input.deviceVerification?.guessWindow ?? 600;
+	const deviceRequestLimit = input.deviceVerification?.requestLimit ?? 10;
+	const deviceRequestWindow = input.deviceVerification?.requestWindow ?? 600;
 	const deviceAddress =
 		input.deviceVerification?.address ??
 		((req: Request) =>
@@ -889,16 +901,25 @@ export function issuer<
 	 * makes the limit worth having rather than a way to lock one person out.
 	 */
 	async function chargeGuess(req: Request): Promise<boolean> {
+		const next = await charge('oauth:device:guess', req, deviceGuessWindow);
+		return next.count <= deviceGuessLimit;
+	}
+
+	/**
+	 * One more event against this caller's counter under `name`, in a window
+	 * of `window` seconds that starts with the first of them.
+	 */
+	async function charge(name: string, req: Request, window: number) {
 		const who = deviceAddress(req) ?? 'unknown';
-		const key = ['oauth:device:guess', who];
+		const key = [name, who];
 		const now = Date.now();
 		const bucket = await Storage.get<{ count: number; resetAt: number }>(storage!, key);
 		const next =
 			bucket && bucket.resetAt > now
 				? { count: bucket.count + 1, resetAt: bucket.resetAt }
-				: { count: 1, resetAt: now + deviceGuessWindow * 1000 };
+				: { count: 1, resetAt: now + window * 1000 };
 		await Storage.set(storage!, key, next, Math.max(1, Math.ceil((next.resetAt - now) / 1000)));
-		return next.count <= deviceGuessLimit;
+		return next;
 	}
 
 	async function guessesLeft(req: Request): Promise<boolean> {
@@ -1450,6 +1471,25 @@ export function issuer<
 				return c.json({ error: 'invalid_request', error_description: 'Missing client_id' }, 400);
 			if (input.allowDeviceClient && !(await input.allowDeviceClient(clientID, c.req.raw)))
 				return c.json({ error: 'invalid_client', error_description: 'Unknown client_id' }, 400);
+
+			// Charged per address, like a wrong user code. The answer is
+			// `slow_down` because it is the one code in this grant's vocabulary
+			// that means "too often, wait", and a device client already knows
+			// what to do with it; 429 and `Retry-After` say the same thing to
+			// anything that only reads HTTP.
+			const requests = await charge('oauth:device:request', c.req.raw, deviceRequestWindow);
+			if (requests.count > deviceRequestLimit) {
+				const wait = Math.max(1, Math.ceil((requests.resetAt - Date.now()) / 1000));
+				const minutes = Math.ceil(wait / 60);
+				c.header('Retry-After', String(wait));
+				return c.json(
+					{
+						error: 'slow_down',
+						error_description: `Too many sign-in requests from this network. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+					},
+					429
+				);
+			}
 
 			// Not `randomUUID`: a device code is the credential the tokens are
 			// handed to, so it gets the same treatment as one — full-width

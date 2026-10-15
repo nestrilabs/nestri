@@ -23,7 +23,10 @@ const auth = issuer({
 	allow: async () => true,
 	allowDeviceClient: async (clientID) => clientID !== 'banned',
 	clientTTL: (clientID) => (clientID === 'one-step' ? { access: 15 * 60, refresh: 0 } : undefined),
-	deviceVerification: { guessLimit: 3, guessWindow: 60 },
+	// Every test here asks for codes from one address at one frozen instant,
+	// so the request limit is widened out of the way; it has its own issuer
+	// below, on the defaults.
+	deviceVerification: { guessLimit: 3, guessWindow: 60, requestLimit: 10_000 },
 	providers: {
 		dummy: {
 			type: 'dummy',
@@ -540,5 +543,58 @@ describe('guessing at user codes', () => {
 			);
 		}
 		expect((await auth.request(`${ORIGIN}/device?user_code=ZZZZZZZD`)).status).toBe(429);
+	});
+});
+
+/**
+ * Asking for a code costs the caller nothing, so it is charged per address
+ * like a wrong guess is. On the defaults, because those are what a deployment
+ * that never thought about it gets.
+ */
+describe('asking for codes', () => {
+	const limited = issuer({
+		storage: MemoryStorage(),
+		subjects,
+		allow: async () => true,
+		providers: {},
+		success: async (ctx) => ctx.subject('user', { userID: '123' })
+	});
+
+	function ask(address?: string) {
+		return limited.request(`${ORIGIN}/device/authorize`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+				...(address ? { 'cf-connecting-ip': address } : {})
+			},
+			body: new URLSearchParams({ client_id: 'desktop' })
+		});
+	}
+
+	test('a caller gets ten in ten minutes, then a 429 that says when to come back', async () => {
+		for (let i = 0; i < 10; i++) expect((await ask('198.51.100.20')).status).toBe(200);
+
+		const refused = await ask('198.51.100.20');
+		expect(refused.status).toBe(429);
+		expect(refused.headers.get('retry-after')).toBe('600');
+		const body = (await refused.json()) as any;
+		expect(body.error).toBe('slow_down');
+		expect(body.error_description).toBe(
+			'Too many sign-in requests from this network. Try again in 10 minutes.'
+		);
+	});
+
+	test('the window ends, and another caller was never affected', async () => {
+		for (let i = 0; i < 11; i++) await ask('198.51.100.21');
+		expect((await ask('198.51.100.21')).status).toBe(429);
+		expect((await ask('198.51.100.22')).status).toBe(200);
+
+		setSystemTime(new Date(Date.now() + 601 * 1000));
+		expect((await ask('198.51.100.21')).status).toBe(200);
+	});
+
+	test('a caller with no address shares one budget', async () => {
+		for (let i = 0; i < 10; i++) expect((await ask()).status).toBe(200);
+		expect((await ask()).status).toBe(429);
 	});
 });
