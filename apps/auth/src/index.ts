@@ -50,6 +50,27 @@ const DEVICE_CLIENTS = new Set(['desktop', 'installer']);
 export const allowDeviceClient = async (clientID: string) => DEVICE_CLIENTS.has(clientID);
 
 /**
+ * What the person approving a device client is asked, where it is not the
+ * generic "is this you?".
+ *
+ * Approving the installer adds a computer to the person's account as a host,
+ * which is a bigger thing to agree to than signing an app in, so the page says
+ * that in as many words. Fixed per client id: nothing the request carries is
+ * shown.
+ */
+export const deviceConfirm = (clientID: string) =>
+	clientID === 'installer'
+		? {
+				heading: 'Add a computer as a Nestri host?',
+				body: [
+					'A computer is asking to become a host on your account. The code above should match the one in its terminal.'
+				],
+				footer:
+					'If it does not, or you did not run the installer yourself, choose Deny. Approving lets that computer add itself as one host and nothing else.'
+			}
+		: undefined;
+
+/**
  * How long a session for each device client lasts, where it is not the
  * default.
  *
@@ -210,6 +231,7 @@ export default {
 			deviceStore: PostgresDeviceStore(),
 			allowDeviceClient,
 			clientTTL,
+			deviceConfirm,
 			// The default rule allows a redirect back to whatever hostname the
 			// request arrived on, which is right for a site served beside this
 			// one and refuses the proxy in front of user-owned hosts — it

@@ -4,7 +4,7 @@ import { issuer } from '@nestri/auth/index';
 import { MemoryStorage } from '@nestri/auth/storage/memory';
 import { subjects } from '@nestri/core/auth/subjects';
 
-import { allowDeviceClient, clientTTL } from '../src/index.js';
+import { allowDeviceClient, clientTTL, deviceConfirm } from '../src/index.js';
 
 /**
  * The issuer the worker builds, with the database taken out and the real rules
@@ -20,6 +20,7 @@ const auth = issuer({
 	allow: async () => true,
 	allowDeviceClient,
 	clientTTL,
+	deviceConfirm,
 	providers: {
 		stub: {
 			type: 'stub',
@@ -120,6 +121,22 @@ describe('device clients', () => {
 		expect(tokens.expires_in).toBe(15 * 60);
 		expect(claims(tokens.access_token).aud).toBe('installer');
 		expect(tokens).not.toHaveProperty('refresh_token');
+	});
+
+	test('approving the installer is asked as adding a host, with the code to compare', async () => {
+		const { started, html } = await reachConfirmation('installer');
+		expect(html).toContain('Add a computer as a Nestri host?');
+		expect(html).toContain('the one in its terminal');
+		expect(html).toContain(started.user_code.slice(0, 4));
+		expect(html).toContain(started.user_code.slice(4));
+		expect(html).toContain('Approve');
+		expect(html).toContain('Deny');
+	});
+
+	test('the desktop app is asked the generic question', async () => {
+		const { html } = await reachConfirmation('desktop');
+		expect(html).toContain('Is this you?');
+		expect(html).not.toContain('Nestri host');
 	});
 
 	test('the desktop app keeps a session it can refresh', async () => {

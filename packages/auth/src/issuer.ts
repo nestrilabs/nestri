@@ -231,7 +231,7 @@ import { DynamoStorage } from './storage/dynamo.js';
 import { MemoryStorage } from './storage/memory.js';
 import { Storage, StorageAdapter } from './storage/storage.js';
 import { HtmlRenderer, type Renderer } from './ui/render.js';
-import { IssuerScreens } from './ui/issuer.js';
+import { type DeviceConfirmWording, IssuerScreens } from './ui/issuer.js';
 import type { ChooseOption, Screen } from './ui/screen.js';
 import type { Theme } from './ui/theme.js';
 import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
@@ -492,6 +492,15 @@ export interface IssuerInput<
 	 * issuer that has not thought about it, and is worth thinking about.
 	 */
 	allowDeviceClient?(clientID: string, req: Request): Promise<boolean>;
+	/**
+	 * What the confirmation page says to a person approving `clientID`, where
+	 * the generic wording would undersell what they are agreeing to.
+	 *
+	 * Looked up by the client id and never built from it, so a request cannot
+	 * put words of its own in front of the person deciding on it. Undefined
+	 * keeps the generic page.
+	 */
+	deviceConfirm?(clientID: string): DeviceConfirmWording | undefined;
 	/**
 	 * Which providers appear on the screen offering a choice of them, and in
 	 * what order.
@@ -965,7 +974,10 @@ export function issuer<
 	}
 
 	function deviceConfirmScreen(confirmation: DeviceConfirmation): Screen {
-		return IssuerScreens.deviceConfirm(confirmation);
+		return IssuerScreens.deviceConfirm({
+			...confirmation,
+			wording: input.deviceConfirm?.(confirmation.clientID)
+		});
 	}
 
 	async function getAuthorization(ctx: Context) {

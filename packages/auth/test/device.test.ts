@@ -23,6 +23,10 @@ const auth = issuer({
 	allow: async () => true,
 	allowDeviceClient: async (clientID) => clientID !== 'banned',
 	clientTTL: (clientID) => (clientID === 'one-step' ? { access: 15 * 60, refresh: 0 } : undefined),
+	deviceConfirm: (clientID) =>
+		clientID === 'one-step'
+			? { heading: 'Let this one step through?', body: ['Words chosen for this client.'] }
+			: undefined,
 	// Every test here asks for codes from one address at one frozen instant,
 	// so the request limit is widened out of the way; it has its own issuer
 	// below, on the defaults.
@@ -373,6 +377,16 @@ describe('a code somebody else started', () => {
 
 		expect(reached.html).not.toContain('Your bank');
 		expect(reached.html).toContain('A device is asking');
+	});
+
+	test('a client the issuer has words for is asked about in those words', async () => {
+		const grant = await started('one-step');
+		const reached = await signInAndReachConfirmation(grant.user_code);
+
+		expect(reached.html).toContain('Let this one step through?');
+		expect(reached.html).toContain('Words chosen for this client.');
+		expect(reached.html).not.toContain('Is this you?');
+		expect(reached.html).toContain(grant.user_code.slice(0, 4));
 	});
 
 	test('a confirmation posted without the value from the cookie is refused', async () => {
