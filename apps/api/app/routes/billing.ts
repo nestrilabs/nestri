@@ -78,6 +78,10 @@ export namespace BillingApi {
 				});
 
 				const delivery = Polar.receive({ body, headers });
+				const ids = {
+					subscription: delivery.subscriptionId,
+					customer: delivery.customerId
+				};
 
 				// Acknowledged rather than refused. A delivery we cannot act on is
 				// still a delivery that arrived intact, and answering an error
@@ -85,10 +89,28 @@ export namespace BillingApi {
 				// never become actionable.
 				if (!delivery.teamId || !delivery.standing) {
 					// Said, because a paid subscription that matches no team is
-					// somebody paying for nothing, and a 200 alone hides it.
+					// somebody paying for nothing, and a 200 alone hides it. With
+					// the provider's ids, so whoever reads it can find the customer
+					// in the provider's dashboard and set the team's plan by hand:
+					// a subscription made before checkouts carried the team id
+					// arrives like this for as long as it lives.
 					if (delivery.standing?.plan === 'paid') {
-						console.error('a paid subscription matched no team', { type: delivery.type });
+						console.error(
+							'a paid subscription matched no team; find the customer in the provider dashboard and set the team plan by hand',
+							{ type: delivery.type, team: delivery.teamId, ...ids }
+						);
 					}
+					// Every delivery is said, applied or not. A webhook that
+					// changes nothing looks exactly like one that worked from the
+					// outside, and a cancellation on 2026-10-15 was only found to
+					// have missed by reading the team's row.
+					console.log('billing webhook', {
+						type: delivery.type,
+						team: delivery.teamId,
+						standing: delivery.standing,
+						applied: false,
+						...ids
+					});
 					return c.json({ data: { applied: false, type: delivery.type } });
 				}
 
@@ -96,6 +118,20 @@ export namespace BillingApi {
 					id: delivery.teamId,
 					plan: delivery.standing.plan,
 					subscriptionStatus: delivery.standing.status
+				});
+				if (!updated) {
+					console.error('a subscription names a team that does not exist', {
+						type: delivery.type,
+						team: delivery.teamId,
+						...ids
+					});
+				}
+				console.log('billing webhook', {
+					type: delivery.type,
+					team: delivery.teamId,
+					standing: delivery.standing,
+					applied: Boolean(updated),
+					...ids
 				});
 
 				return c.json({

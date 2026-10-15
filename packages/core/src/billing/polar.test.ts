@@ -235,6 +235,50 @@ describe('Both signing schemes', () => {
 		expect(delivery.standing).toEqual({ plan: 'paid', status: 'active' });
 	});
 
+	test('the provider\u2019s ids travel with a delivery, in either spelling', async () => {
+		// They are what a person looks the customer up by when a delivery
+		// matched no team, as a subscription made before checkouts carried the
+		// team id does for as long as it lives.
+		const { Webhook } = await import('standardwebhooks');
+		const secret = `whsec_${Buffer.from('d'.repeat(32)).toString('base64')}`;
+		configure({ POLAR_WEBHOOK_SECRET: secret });
+
+		const send = (payload: object, id: string) => {
+			const body = JSON.stringify(payload);
+			const timestamp = new Date();
+			return Polar.receive({
+				body,
+				headers: {
+					'webhook-id': id,
+					'webhook-timestamp': Math.floor(timestamp.getTime() / 1000).toString(),
+					'webhook-signature': new Webhook(secret).sign(id, timestamp, body)
+				}
+			});
+		};
+
+		const unmatched = send(
+			{
+				type: 'subscription.canceled',
+				data: { id: 'sub_1', customer_id: 'cus_1', customer: { external_id: null }, product_id: PAID }
+			},
+			'msg_ids_snake'
+		);
+		expect(unmatched.teamId).toBeNull();
+		expect(unmatched.standing).toEqual({ plan: 'paid', status: 'canceled' });
+		expect(unmatched.subscriptionId).toBe('sub_1');
+		expect(unmatched.customerId).toBe('cus_1');
+
+		// Not a subscription event: its own id is the order's, and the
+		// subscription is a field on it.
+		const order = send(
+			{ type: 'order.refunded', data: { id: 'ord_1', subscriptionId: 'sub_2', customer: { id: 'cus_2' } } },
+			'msg_ids_order'
+		);
+		expect(order.subscriptionId).toBe('sub_2');
+		expect(order.customerId).toBe('cus_2');
+		expect(order.standing).toBeNull();
+	});
+
 	test('a tampered body under a valid-looking signature is refused', () => {
 		const secret = `whsec_${Buffer.from('a'.repeat(32)).toString('base64')}`;
 		configure({ POLAR_WEBHOOK_SECRET: secret });
