@@ -160,11 +160,13 @@ describe('POST /session', () => {
 			state: 'requested',
 			tier: null,
 			ticket: null,
+			timeClaimed: null,
 			timeStarted: null,
 			timeStopped: null,
 			timeStopRequested: null,
 			trial: false,
-			errorMessage: null
+			errorMessage: null,
+			endReason: null
 		});
 		expect(body.data.id.startsWith('ses_')).toBe(true);
 	});
@@ -478,7 +480,11 @@ describe('POST /session/:id/state', () => {
 			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
 		});
 		expect(res.status).toBe(200);
-		expect(((await res.json()) as any).data.state).toBe('starting');
+		const claimed = ((await res.json()) as any).data;
+		expect(claimed.state).toBe('starting');
+		// The time it was taken is what bring-up is measured from.
+		expect(body.data.timeClaimed).toBeNull();
+		expect(claimed.timeClaimed).not.toBeNull();
 
 		const jobs = await app.request('/machine/jobs', { headers: s.host });
 		expect(((await jobs.json()) as any).data).toEqual([]);
@@ -721,6 +727,7 @@ describe('POST /session/:id/ticket', () => {
 		const data = ((await read.json()) as any).data;
 		expect(Object.keys(data).sort()).toEqual([
 			'boxId',
+			'endReason',
 			'errorMessage',
 			'gameId',
 			'id',
@@ -729,6 +736,7 @@ describe('POST /session/:id/ticket', () => {
 			'state',
 			'ticket',
 			'tier',
+			'timeClaimed',
 			'timeStarted',
 			'timeStopRequested',
 			'timeStopped',
@@ -901,6 +909,9 @@ describe('POST /session/:id/stop', () => {
 		const out = (await res.json()) as any;
 		expect(out.data.state).toBe('ended');
 		expect(out.data.timeStopped).not.toBeNull();
+		// Ended here rather than by a host, so the reason is written here too.
+		expect(out.data.endReason).toBe('user');
+		expect(out.data.timeClaimed).toBeNull();
 		const res2 = await app.request('/machine/jobs', { headers: s.host });
 		expect(((await res2.json()) as any).data).toEqual([]);
 	});

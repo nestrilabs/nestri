@@ -1157,3 +1157,47 @@ describe('Session tickets need a claim first', () => {
 		expect(closed.outcome).toBe('closed');
 	});
 });
+
+describe('Session end reasons', () => {
+	const report = (
+		run: { machineId: string; session: { id: string } },
+		state: Session.ReportableState,
+		endReason: Session.EndReason | null = null
+	) =>
+		Session.transition({
+			claimToken: HOLDER,
+			id: run.session.id,
+			machineId: run.machineId,
+			state,
+			errorMessage: null,
+			endReason
+		});
+
+	test('the claim stamps when a host took the run, and nothing before it does', async () => {
+		const run = await requestedRun('ses-claimed-at', 5470);
+		expect(run.session.timeClaimed).toBeNull();
+
+		const claimed = await report(run, 'starting');
+		expect(claimed.session?.timeClaimed).not.toBeNull();
+
+		// Going live is not a second claim, so the time a host took the run
+		// stays the time it took it.
+		const live = await report(run, 'live');
+		expect(live.session?.timeClaimed).toBe(claimed.session!.timeClaimed!);
+	});
+
+	test('a reason is kept only for a run that is over', async () => {
+		const run = await requestedRun('ses-reason-terminal', 5471);
+		await report(run, 'starting');
+
+		// The write itself refuses to give a running run a reason, whoever
+		// calls it, so no row can say it ended while it is still going.
+		const live = await report(run, 'live', 'idle');
+		expect(live.outcome).toBe('moved');
+		expect(live.session?.endReason).toBeNull();
+
+		const ended = await report(run, 'ended', 'idle');
+		expect(ended.session?.endReason).toBe('idle');
+		expect((await Session.fromID(run.session.id))?.endReason).toBe('idle');
+	});
+});
