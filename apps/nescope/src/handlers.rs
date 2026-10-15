@@ -101,21 +101,26 @@ impl CompositorHandler for NescopeState {
         };
 
         // Matched on the window's surface, not its xdg toplevel: an Xwayland
-        // window has no toplevel, and matching on one left every Proton game
-        // without frame callbacks. Xwayland then completes a flip only on its
-        // one-second fallback timer, and a game presenting FIFO stalls.
-        let Some(window) = self
+        // window has no toplevel.
+        let window = self
             .space
             .elements()
             .find(|w| w.wl_surface().is_some_and(|s| *s == root))
-            .cloned()
-        else {
-            return;
-        };
+            .cloned();
+        if let Some(window) = &window {
+            window.on_commit();
+            self.game_frame_count += 1;
+        }
 
-        window.on_commit();
-        self.game_frame_count += 1;
-        self.present_now(&root, &window);
+        // Every commit is answered, mapped window or not. A Vulkan client
+        // presenting FIFO waits in the driver for this frame callback, and
+        // not every surface a game draws to is a window here: Chromium's GPU
+        // process draws for a window another process owns, which Wine's
+        // Wayland driver gives a surface of its own with no role. Unanswered,
+        // that game presents one frame and waits forever. There is no screen
+        // here to pace against -- capture paces itself -- so answering every
+        // commit costs nothing a mapped window does not already get.
+        self.present_now(&root);
     }
 
     fn destroyed(&mut self, surface: &WlSurface) {
