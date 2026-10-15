@@ -38,8 +38,13 @@ IMAGE_NAME   := ghcr.io/nestrilabs/nestri/base
 # number in two spellings and an image whose name does not say which Proton is
 # inside it is worse than no image at all. Changing the tag by hand and
 # forgetting the version is exactly the mistake this removes.
+#
+# `PROTON_PATCHES` counts our own changes on top of that tag (patches/proton/).
+# Bump it whenever they change, so a patched build never takes the name of the
+# one before it; reset it to 0 when the tag moves.
 PROTON_TAG     ?= cachyos-11.0-20261005-native
-PROTON_VERSION := $(PROTON_TAG:cachyos-%-native=%)
+PROTON_PATCHES ?= 1
+PROTON_VERSION := $(PROTON_TAG:cachyos-%-native=%)-n$(PROTON_PATCHES)
 PROTON_IMAGE   ?= ghcr.io/nestrilabs/proton-cachyos-native-wow64
 PROTON_REF     := $(PROTON_IMAGE):$(PROTON_VERSION)
 OUTPUT_DIR   := output
