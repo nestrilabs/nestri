@@ -146,7 +146,11 @@ describe('the line for a full host', () => {
 		await Session.setState({ id: playing.run.id, state: 'ended' });
 		expect((await h.jobs()).map((j) => j.sessionId)).toEqual([here.run.id]);
 		const left = await Session.fromID(gone.run.id);
-		expect(left).toMatchObject({ state: 'ended', errorMessage: 'Left the queue' });
+		expect(left).toMatchObject({
+			state: 'ended',
+			errorMessage: 'Left the queue',
+			endReason: 'left_queue'
+		});
 	});
 
 	test('a run with a slot is not in line', async () => {

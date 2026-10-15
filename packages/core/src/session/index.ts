@@ -56,6 +56,36 @@ export namespace Session {
 	 */
 	export const ABANDONED_AFTER_SECONDS = 60;
 
+	/**
+	 * Why a run is over.
+	 *
+	 * `ended` and `failed` say how a run finished, not why, and a stop its
+	 * owner asked for, a free weekend running out and a game quitting on its
+	 * own all read `ended` without this. Whoever ends the run writes it: the
+	 * control plane for the two endings it decides itself, `user` on a run
+	 * nobody had claimed and `left_queue`, and the host agent for everything
+	 * else, in its terminal report. ref(d-0083)
+	 */
+	export const EndReason = z
+		.enum([
+			'user',
+			'window',
+			'hours',
+			'idle',
+			'left_queue',
+			'game_exited',
+			'launch_failed',
+			'host_stopped',
+			'host_restart'
+		])
+		.meta({
+			description:
+				'Why a run is over. `user`: its owner asked. `window`: the free weekend closed. `hours`: this weekend’s free hours are used. `idle`: nobody was connected to it. `left_queue`: it waited for a slot and nobody asked after it. `game_exited`: the game quit on its own. `launch_failed`: it never got as far as playing. `host_stopped`: its host ended it for a reason of its own. `host_restart`: its host restarted and the run did not survive it',
+			example: 'user'
+		});
+
+	export type EndReason = z.infer<typeof EndReason>;
+
 	export const Info = z
 		.object({
 			id: z.string().meta({
@@ -87,6 +117,11 @@ export namespace Session {
 				description: 'The size this run was asked for. Null runs at the size of its box',
 				example: 'md'
 			}),
+			timeClaimed: z.string().nullable().optional().meta({
+				description:
+					'When its host took the run on. Null while it waits for one, and for a run that never had one',
+				example: Examples.Session.timeClaimed
+			}),
 			timeStarted: z.string().nullable().optional().meta({
 				description: 'When the box actually started, not when the row appeared',
 				example: Examples.Session.timeStarted
@@ -108,6 +143,11 @@ export namespace Session {
 			errorMessage: z.string().nullable().optional().meta({
 				description: 'Why it failed, when it did',
 				example: Examples.Session.errorMessage
+			}),
+			endReason: EndReason.nullable().optional().meta({
+				description:
+					'Why this run is over, once it is. Null while it runs, and for a run whose host did not say',
+				example: Examples.Session.endReason
 			}),
 			queue: Queue.nullable().optional().meta({
 				description:
@@ -261,10 +301,11 @@ export namespace Session {
 	 *
 	 * `live` stamps `timeStarted` and `ended`/`failed` stamp `timeStopped`, both
 	 * only if unset — so a duplicate report does not extend a session someone is
-	 * billed for, and metering can trust the pair.
+	 * billed for, and metering can trust the pair. A reason is kept only for a
+	 * run that is over, as an error message is kept only for one that failed.
 	 */
 	export const setState = fn(
-		Info.pick({ id: true, state: true, errorMessage: true }),
+		Info.pick({ id: true, state: true, errorMessage: true, endReason: true }),
 		async (input) => {
 			const now = sql`now()`;
 			return Database.use(async (tx) => {
@@ -273,6 +314,10 @@ export namespace Session {
 					.set({
 						state: input.state,
 						errorMessage: input.state === 'failed' ? (input.errorMessage ?? null) : null,
+						endReason:
+							input.state === 'ended' || input.state === 'failed'
+								? (input.endReason ?? null)
+								: null,
 						...(input.state === 'live'
 							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
 							: {}),
@@ -325,10 +370,14 @@ export namespace Session {
 	 * the only mutual exclusion in this design. `ended` and `failed` are
 	 * terminal, so their entries are empty rather than absent — a state with no
 	 * exits is a fact worth writing down.
+	 *
+	 * `starting → ended` is a run stopped before it went live — the person
+	 * stopping it while its game downloads, say. Nothing failed, so `failed`
+	 * would be a lie, and it never reached `live`, so it was never billed.
 	 */
 	export const NEXT_STATES: Record<Info['state'], readonly Info['state'][]> = {
 		requested: ['starting'],
-		starting: ['live', 'failed'],
+		starting: ['live', 'ended', 'failed'],
 		live: ['ended', 'failed'],
 		ended: [],
 		failed: []
@@ -541,7 +590,8 @@ export namespace Session {
 				.set({
 					state: 'ended',
 					timeStopped: sql`now()`,
-					errorMessage: 'Left the queue'
+					errorMessage: 'Left the queue',
+					endReason: 'left_queue' satisfies EndReason
 				})
 				.where(
 					and(
@@ -712,7 +762,12 @@ export namespace Session {
 			// the same moment wins or loses cleanly, never both.
 			const [cancelled] = await tx
 				.update(SessionTable)
-				.set({ state: 'ended', timeStopRequested: sql`now()`, timeStopped: sql`now()` })
+				.set({
+					state: 'ended',
+					timeStopRequested: sql`now()`,
+					timeStopped: sql`now()`,
+					endReason: 'user' satisfies EndReason
+				})
 				.where(and(scope, eq(SessionTable.state, 'requested')))
 				.returning();
 			if (cancelled) return serialize(cancelled);
@@ -756,7 +811,8 @@ export namespace Session {
 			from: z.enum(SessionState.enumValues),
 			to: z.enum(SessionState.enumValues),
 			claimToken: ClaimToken,
-			errorMessage: Info.shape.errorMessage
+			errorMessage: Info.shape.errorMessage,
+			endReason: Info.shape.endReason
 		}),
 		async (input) => {
 			const now = sql`now()`;
@@ -772,9 +828,16 @@ export namespace Session {
 						state: input.to,
 						// Taken on the claim and never written again: a terminal row
 						// still records which attempt ran it, and a holder that goes
-						// back to null lets a settled claim be replayed.
-						...(isClaim ? { claimToken: input.claimToken } : {}),
+						// back to null lets a settled claim be replayed. The time is
+						// taken with it, so a run's bring-up can be measured from
+						// the moment a host had it rather than from when it asked.
+						...(isClaim ? { claimToken: input.claimToken, timeClaimed: now } : {}),
 						errorMessage: input.to === 'failed' ? (input.errorMessage ?? null) : null,
+						// Only a run that is over has a reason to be over. Null when
+						// the report carries none, which is every report from a
+						// host agent that predates the field.
+						endReason:
+							input.to === 'ended' || input.to === 'failed' ? (input.endReason ?? null) : null,
 						...(input.to === 'live'
 							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
 							: {}),
@@ -889,7 +952,8 @@ export namespace Session {
 			machineId: z.string(),
 			state: z.enum(SessionState.enumValues),
 			claimToken: ClaimToken,
-			errorMessage: Info.shape.errorMessage
+			errorMessage: Info.shape.errorMessage,
+			endReason: Info.shape.endReason
 		}),
 		async (input): Promise<TransitionResult> => {
 			// One transaction, because "this run is live" and "the box under it
@@ -933,7 +997,8 @@ export namespace Session {
 					from: current.state,
 					to: input.state,
 					claimToken: input.claimToken,
-					errorMessage: input.errorMessage
+					errorMessage: input.errorMessage,
+					endReason: input.endReason
 				});
 				// The state read above is not the state written below, and the
 				// gap is where two agents race. Nothing moved means somebody
@@ -1084,11 +1149,13 @@ export namespace Session {
 			state: input.state as Info['state'],
 			tier: input.tier as Info['tier'],
 			ticket: input.ticket,
+			timeClaimed: input.timeClaimed?.toISOString() ?? null,
 			timeStarted: input.timeStarted?.toISOString() ?? null,
 			timeStopped: input.timeStopped?.toISOString() ?? null,
 			timeStopRequested: input.timeStopRequested?.toISOString() ?? null,
 			trial: input.trial,
-			errorMessage: input.errorMessage
+			errorMessage: input.errorMessage,
+			endReason: input.endReason as Info['endReason']
 		};
 	}
 }
