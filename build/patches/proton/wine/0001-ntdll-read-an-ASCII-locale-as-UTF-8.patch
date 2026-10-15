@@ -1,0 +1,14 @@
+--- a/dlls/ntdll/unix/env.c
++++ b/dlls/ntdll/unix/env.c
+@@ -286,6 +286,11 @@
+ 
+     if (!(ctype = setlocale( LC_CTYPE, "" ))) name = "UTF-8";
+     else if (!(name = nl_langinfo( CODESET ))) return;
++    /* The C and POSIX locales name plain ASCII, in which a non-ASCII file
++     * name cannot be created at all. Steam starts games with LC_ALL=C, so
++     * under it every such name failed; ASCII is a subset of UTF-8, so
++     * reading it as UTF-8 changes nothing that worked before. */
++    if (!strcmp( name, "ANSI_X3.4-1968" )) name = "UTF-8";
+     TRACE_(nls)( "Unix LC_CTYPE %s, using %s codeset\n", debugstr_a(ctype), debugstr_a(name) );
+ 
+     /* remove punctuation characters from charset name */

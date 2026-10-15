@@ -110,6 +110,18 @@ RUN pacman -Syu --noconfirm --needed \
         libsm libtheora xz \
     && pacman -Scc --noconfirm
 
+# Our own patches, one directory per submodule they apply to: patches/proton/
+# wine/ applies in wine/. Its own layer, after the fetch and the dependencies,
+# so a patch change costs the build and nothing before it. A patch that no
+# longer applies to a new tag stops here, before the hours of building.
+COPY patches/proton /build/patches/proton
+RUN set -e; cd /build/patches/proton; \
+    for dir in */; do \
+        for p in "${dir}"*.patch; do \
+            echo "applying ${p}"; \
+            patch -d "/build/proton-cachyos/${dir%/}" -p1 --forward < "${p}"; \
+        done; \
+    done
 COPY scripts/proton-build.sh /build/proton-build.sh
 RUN GECKO_VER="${GECKO_VER}" MONO_VER="${MONO_VER}" JOBS="${JOBS}" \
     bash /build/proton-build.sh
