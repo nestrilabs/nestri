@@ -396,11 +396,22 @@ RUN pacman -Syu --noconfirm --needed \
         pipewire pipewire-audio wireplumber opus \
         python libunwind sdl2-compat \
         python-xlib python-urllib3 python-pyzstd \
+        libvpx speex libtheora libvdpau jsoncpp \
         strace lsof less \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
     && pacman -Scc --noconfirm
 
+# `libvpx`, `speex`, `libtheora`, `libvdpau` and `jsoncpp` are not ours at all:
+# they are what Proton's own GStreamer plugins link against, and Proton does
+# not carry them. Without them `libgstlibav.so` and `libgstspeex.so` fail to
+# load (`libvpx.so.12: cannot open shared object file`), so a game whose videos
+# go through Wine's media stack plays them as nothing. Measured 2026-10-15 by
+# listing every NEEDED library of the published Proton against this image;
+# these five were the whole gap, for the stock build and the patched one
+# alike. They track the sonames Proton was built against, so a Proton built
+# on a newer Arch can need this list rebuilt with it.
+#
 # `strace`, `lsof` and `less` are for the operator's shell (`neslet box exec`):
 # a root shell in a box that cannot trace a process, list what it has open or
 # page through a log is the situation that feature exists to get out of. They

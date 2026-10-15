@@ -286,6 +286,14 @@ export namespace Polar {
 		/** The team this is about, from the customer's external id. */
 		teamId: string | null;
 		standing: Standing | null;
+		/**
+		 * The provider's own ids for the subscription and the customer. Nothing
+		 * here acts on them; they are what a person searches the provider's
+		 * dashboard for when a delivery matched no team and has to be applied by
+		 * hand.
+		 */
+		subscriptionId: string | null;
+		customerId: string | null;
 	}
 
 	/**
@@ -372,7 +380,24 @@ export namespace Polar {
 				product?.id ??
 				null;
 
-			return { type: event.type, teamId, standing: standingFor(event.type, productId) };
+			// A subscription event's own id is the subscription's; anything else
+			// about one carries it as a field.
+			const str = (v: unknown) => (typeof v === 'string' ? v : null);
+			const subscriptionId = event.type.startsWith('subscription.')
+				? str(data.id)
+				: (str(data.subscriptionId) ?? str(data.subscription_id));
+			const customerId =
+				str(data.customerId) ??
+				str(data.customer_id) ??
+				str((data.customer as { id?: unknown } | undefined)?.id);
+
+			return {
+				type: event.type,
+				teamId,
+				standing: standingFor(event.type, productId),
+				subscriptionId,
+				customerId
+			};
 		}
 	);
 }
