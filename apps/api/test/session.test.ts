@@ -644,6 +644,106 @@ describe('POST /session/:id/state', () => {
 		expect(res.status).toBe(400);
 	});
 
+	test('the report that ends a run says why, and the owner reads it', async () => {
+		const s = await scene('route-reason-ended', 5570);
+		const { body } = await requestSession(s);
+		const report = (state: string, endReason?: string) =>
+			app.request(`/session/${body.data.id}/state`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ state, claimToken: HOLDER, endReason })
+			});
+
+		await report('starting');
+		await report('live');
+		const ended = await report('ended', 'game_exited');
+		expect(ended.status).toBe(200);
+		expect(((await ended.json()) as any).data.endReason).toBe('game_exited');
+
+		const read = await app.request(`/session/${body.data.id}`, { headers: s.user });
+		expect(((await read.json()) as any).data.endReason).toBe('game_exited');
+	});
+
+	test('a run that failed says why it is over, beside what went wrong', async () => {
+		const s = await scene('route-reason-failed', 5571);
+		const { body } = await requestSession(s);
+		const report = (payload: Record<string, unknown>) =>
+			app.request(`/session/${body.data.id}/state`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ claimToken: HOLDER, ...payload })
+			});
+
+		await report({ state: 'starting' });
+		const failed = await report({
+			state: 'failed',
+			errorMessage: 'the download could not finish',
+			endReason: 'launch_failed'
+		});
+		expect(failed.status).toBe(200);
+		expect(((await failed.json()) as any).data).toMatchObject({
+			state: 'failed',
+			errorMessage: 'the download could not finish',
+			endReason: 'launch_failed'
+		});
+	});
+
+	test('a reason with a run that is not over is refused, and the run stays put', async () => {
+		const s = await scene('route-reason-early', 5572);
+		const { body } = await requestSession(s);
+		await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
+		});
+
+		const res = await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'live', claimToken: HOLDER, endReason: 'idle' })
+		});
+		expect(res.status).toBe(400);
+		expect(((await res.json()) as any).param).toBe('endReason');
+		const run = await Session.fromID(body.data.id);
+		expect(run?.state).toBe('starting');
+		expect(run?.endReason).toBeNull();
+	});
+
+	test('a reason nobody defined is a validation error', async () => {
+		const s = await scene('route-reason-bogus', 5573);
+		const { body } = await requestSession(s);
+		await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'starting', claimToken: HOLDER })
+		});
+		const res = await app.request(`/session/${body.data.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'failed', claimToken: HOLDER, endReason: 'bored' })
+		});
+		expect(res.status).toBe(400);
+		expect((await Session.fromID(body.data.id))?.state).toBe('starting');
+	});
+
+	test('a host agent that sends no reason still ends the run, with none recorded', async () => {
+		const s = await scene('route-reason-absent', 5574);
+		const { body } = await requestSession(s);
+		const report = (state: string) =>
+			app.request(`/session/${body.data.id}/state`, {
+				method: 'POST',
+				headers: s.host,
+				body: JSON.stringify({ state, claimToken: HOLDER })
+			});
+
+		await report('starting');
+		await report('live');
+		// The report every host agent already in the field sends.
+		const ended = await report('ended');
+		expect(ended.status).toBe(200);
+		expect(((await ended.json()) as any).data).toMatchObject({ state: 'ended', endReason: null });
+	});
+
 	test('a person cannot report a state on their own session', async () => {
 		const s = await scene('route-claim-person', 5538);
 		const { body } = await requestSession(s);

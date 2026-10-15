@@ -88,9 +88,17 @@ export namespace SessionApi {
 			errorMessage: z.string().max(1024).nullable().optional().meta({
 				description: 'Why it failed. Kept only for a run that did',
 				example: Examples.Session.errorMessage
+			}),
+			endReason: Session.EndReason.nullable().optional().meta({
+				description:
+					'Why the run is over. Only with `ended` or `failed`; leave it out and the run records no reason',
+				example: 'game_exited'
 			})
 		})
 		.strict();
+
+	/** The states a run is over in, and so the only ones a reason goes with. */
+	const TERMINAL: readonly Session.ReportableState[] = ['ended', 'failed'];
 
 	export const route = new Hono()
 		.get(
@@ -385,7 +393,7 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'Report where a run has got to',
 				description:
-					'For the host the run’s box is placed on, and no other. Moving a run out of `requested` is the claim, and it is a compare-and-set: exactly one caller can take a given run, and one that loses gets 409. Re-reporting a state already reported is fine and changes nothing, including the timestamps a run is billed on. A transition that does not exist is 409 and the run does not move.',
+					'For the host the run’s box is placed on, and no other. Moving a run out of `requested` is the claim, and it is a compare-and-set: exactly one caller can take a given run, and one that loses gets 409. Re-reporting a state already reported is fine and changes nothing, including the timestamps a run is billed on. A transition that does not exist is 409 and the run does not move. Say why a run ended with `endReason` on the report that ends it; sending one with any other state is 400.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Session.Info) } },
@@ -400,12 +408,24 @@ export namespace SessionApi {
 			validator('json', StateReport),
 			async (c) => {
 				const body = c.req.valid('json');
+				// Refused rather than dropped. A reason on a run that is still
+				// going is a host agent that has its states and its reasons out
+				// of step, and storing nothing would hide that from it.
+				if (body.endReason && !TERMINAL.includes(body.state)) {
+					throw new VisibleError(
+						'validation',
+						ErrorCodes.Validation.INVALID_PARAMETER,
+						`A run that is ${body.state} is not over, so it has no reason to have ended`,
+						'endReason'
+					);
+				}
 				const result = await Session.transition({
 					id: c.req.valid('param').id,
 					machineId: Actor.machineID,
 					state: body.state,
 					claimToken: body.claimToken,
-					errorMessage: body.errorMessage ?? null
+					errorMessage: body.errorMessage ?? null,
+					endReason: body.endReason ?? null
 				});
 
 				switch (result.outcome) {
