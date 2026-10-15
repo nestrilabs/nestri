@@ -159,3 +159,62 @@ describe('how many install tokens one person may have', () => {
 		});
 	});
 });
+
+describe('how many machines a team may own', () => {
+	const full = {
+		type: 'rate_limit',
+		code: 'quota_exceeded',
+		message: 'Your team already has 10 machines. Remove one to add another.'
+	};
+
+	function install(token: string, label: string) {
+		return app.request('/machine/install', {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify({ token, label })
+		});
+	}
+
+	test('a full team is not handed an install token', async () => {
+		const owner = await person('cap-mint');
+		for (let i = 0; i < 10; i++) await Fixtures.machine(owner, `box-${i}`);
+		const refused = await call(
+			'POST',
+			'/machine/install-token',
+			await tokenFor(owner.userId, 'installer'),
+			{}
+		);
+		expect(refused.status).toBe(429);
+		expect((await refused.json()) as any).toEqual(full);
+	});
+
+	test('a token minted with room left cannot add an eleventh', async () => {
+		const owner = await person('cap-redeem');
+		for (let i = 0; i < 9; i++) await Fixtures.machine(owner, `box-${i}`);
+		const issued = await call(
+			'POST',
+			'/machine/install-token',
+			await tokenFor(owner.userId, 'installer'),
+			{}
+		);
+		const { data } = (await issued.json()) as any;
+		await Fixtures.machine(owner, 'the-last-place');
+
+		const refused = await install(data.token, 'eleventh');
+		expect(refused.status).toBe(429);
+		expect((await refused.json()) as any).toEqual(full);
+	});
+
+	test('registering directly is held to the same limit', async () => {
+		const owner = await person('cap-register');
+		for (let i = 0; i < 10; i++) await Fixtures.machine(owner, `box-${i}`);
+		const refused = await call(
+			'POST',
+			'/machine/register',
+			await tokenFor(owner.userId, 'desktop'),
+			{ label: 'eleventh' }
+		);
+		expect(refused.status).toBe(429);
+		expect((await refused.json()) as any).toEqual(full);
+	});
+});

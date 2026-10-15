@@ -47,7 +47,10 @@ export namespace InstallToken {
 	 * already checked membership of whichever it names.
 	 *
 	 * Refused once the person has hit {@link HOURLY_LIMIT} or
-	 * {@link OUTSTANDING_LIMIT}, with a message a terminal can print as it is.
+	 * {@link OUTSTANDING_LIMIT}, or the team already owns as many machines as
+	 * it may, with a message a terminal can print as it is. The team limit is
+	 * held again when the token is spent; checking here as well means nobody
+	 * is handed a command that cannot work.
 	 */
 	export const create = fn(
 		z
@@ -71,6 +74,7 @@ export namespace InstallToken {
 					.from(UserTable)
 					.where(eq(UserTable.id, input.userId))
 					.for('update');
+				if (input.teamId) await Machine.assertTeamHasRoom(input.teamId);
 				const [usage] = await tx
 					.select({
 						lastHour: sql<number>`(count(*) filter (where ${InstallTokenTable.timeCreated} > now() - interval '1 hour'))::int`,

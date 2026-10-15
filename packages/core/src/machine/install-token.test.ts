@@ -3,6 +3,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
 import { VisibleError } from '../error.js';
+import { Machine } from './index.js';
 import { InstallToken } from './install-token.js';
 
 const sql = testDb();
@@ -119,5 +120,33 @@ describe('Install tokens', () => {
 		}
 		const issued = await InstallToken.create({ teamId: quiet.teamId, userId: quiet.userId });
 		expect(issued.token).toStartWith('nit_');
+	});
+
+	test('a team with no room for a host is not handed a token for one', async () => {
+		const owner = await newOwner('nit-cap-mint');
+		for (let i = 0; i < Machine.TEAM_MACHINE_LIMIT; i++) await Fixtures.machine(owner, `box-${i}`);
+		const refused = await InstallToken.create({ teamId: owner.teamId, userId: owner.userId }).catch(
+			(e) => e
+		);
+		expect(refused).toBeInstanceOf(VisibleError);
+		expect(refused.code).toBe('quota_exceeded');
+		expect(refused.message).toBe('Your team already has 10 machines. Remove one to add another.');
+	});
+
+	test('a token minted while there was room is refused once there is none, and stays unspent', async () => {
+		const owner = await newOwner('nit-cap-redeem');
+		for (let i = 0; i < Machine.TEAM_MACHINE_LIMIT - 1; i++) {
+			await Fixtures.machine(owner, `box-${i}`);
+		}
+		const { token } = await InstallToken.create({ teamId: owner.teamId, userId: owner.userId });
+		await Fixtures.machine(owner, 'the-last-place');
+
+		const refused = await InstallToken.redeem({ token, label: 'late' }).catch((e) => e);
+		expect(refused).toBeInstanceOf(VisibleError);
+		expect(refused.code).toBe('quota_exceeded');
+
+		const rows =
+			await sql`select redeemed_at from install_token where created_by_user_id = ${owner.userId}`;
+		expect(rows[0]!.redeemed_at).toBeNull();
 	});
 });
