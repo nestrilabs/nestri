@@ -83,11 +83,47 @@ pub struct PathModel {
     draining: bool,
     /// The share the path last delivered while queueing.
     delivery_kbps: Option<u32>,
-    /// The highest capacity a frame has measured since the last overload.
-    capacity_kbps: Option<u32>,
+    /// What frames have measured of the capacity since the last overload.
+    capacity: Median,
     overloads: Vec<Overload>,
     /// Whether any feedback arrived since the last [`tick`](Self::tick).
     heard: bool,
+}
+
+/// The median of everything pushed, kept as two heaps so each push costs
+/// `log n` however long the session runs.
+///
+/// The median rather than the highest, because the error in a dispersion
+/// sample is one-sided at each end. Fragments the client reads in one batch
+/// share a timestamp, so a train's spread reads short and its rate high -- on a
+/// fast path, measured 2026-10-16, a highest-ever of 9 Gbps through a link
+/// carrying 8 Mbps. A train interleaved with other traffic spreads long and
+/// reads low. Neither is the bottleneck; the middle of the frames is.
+#[derive(Debug, Default)]
+struct Median {
+    /// The lower half, largest on top.
+    low: std::collections::BinaryHeap<u32>,
+    /// The upper half, smallest on top.
+    high: std::collections::BinaryHeap<std::cmp::Reverse<u32>>,
+}
+
+impl Median {
+    fn push(&mut self, v: u32) {
+        if self.low.peek().is_none_or(|&top| v <= top) {
+            self.low.push(v);
+        } else {
+            self.high.push(std::cmp::Reverse(v));
+        }
+        if self.low.len() > self.high.len() + 1 {
+            self.high.push(std::cmp::Reverse(self.low.pop().unwrap()));
+        } else if self.high.len() > self.low.len() {
+            self.low.push(self.high.pop().unwrap().0);
+        }
+    }
+
+    fn get(&self) -> Option<u32> {
+        self.low.peek().copied()
+    }
 }
 
 /// Bits per millisecond, which is kbps, from bytes over microseconds.
@@ -105,7 +141,7 @@ impl PathModel {
             busy: None,
             draining: false,
             delivery_kbps: None,
-            capacity_kbps: None,
+            capacity: Median::default(),
             overloads: Vec::new(),
             heard: false,
         }
@@ -118,7 +154,7 @@ impl PathModel {
         self.reason
     }
     pub fn capacity_kbps(&self) -> Option<u32> {
-        self.capacity_kbps
+        self.capacity.get()
     }
     pub fn delivery_kbps(&self) -> Option<u32> {
         self.delivery_kbps
@@ -132,7 +168,7 @@ impl PathModel {
                 u64::from(frame.bytes.saturating_sub(u32::from(frame.first_bytes))),
                 u64::from(frame.spread_us),
             );
-            self.capacity_kbps = Some(self.capacity_kbps.map_or(measured, |c| c.max(measured)));
+            self.capacity.push(measured);
         }
 
         if let Some(prev) = self.prev.replace(*frame) {
@@ -187,13 +223,14 @@ impl PathModel {
             });
             // What the frames measured above this share was not true of the
             // path as it is now; it is measured again from here.
-            self.capacity_kbps = Some(delivered);
+            self.capacity = Median::default();
+            self.capacity.push(delivered);
         }
     }
 
     /// Raise the rate to the highest the path has proven it carries.
     fn step_up(&mut self, now_us: u64) {
-        let Some(capacity) = self.capacity_kbps else {
+        let Some(capacity) = self.capacity.get() else {
             return;
         };
         if capacity <= self.allowed_kbps {
@@ -438,6 +475,22 @@ mod tests {
             second_minute <= 2,
             "{second_minute} overloads in the second minute"
         );
+    }
+
+    /// What the record caught: most frames measure the path, a few batched
+    /// ones read absurdly fast. The estimate is the path's.
+    #[test]
+    fn a_few_batched_trains_do_not_set_the_capacity() {
+        let mut m = Median::default();
+        for n in 0..100 {
+            m.push(if n % 10 == 0 {
+                9_000_000
+            } else {
+                11_800 + n % 7 * 100
+            });
+        }
+        let c = m.get().unwrap();
+        assert!((11_800..=12_400).contains(&c), "{c} kbps");
     }
 
     #[test]
