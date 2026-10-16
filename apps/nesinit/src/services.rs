@@ -120,10 +120,10 @@ pub struct Service {
     /// re-declares that module loads it twice.
     pub umask: Option<u32>,
     /// Whether this service may give its own threads a realtime class, up to
-    /// [`REALTIME_PRIORITY`].
+    /// [`REALTIME_PRIORITY`], and a nice level down to [`REALTIME_NICE`].
     ///
     /// For the two processes that carry the audio graph's 5 ms cycle. Granted
-    /// as `RLIMIT_RTPRIO` at exec, which PipeWire's `module-rt` checks first
+    /// as `RLIMIT_RTPRIO` and `RLIMIT_NICE` at exec, which PipeWire's `module-rt` checks first
     /// and uses to set `SCHED_FIFO` itself. The grant used to come from rtkit,
     /// asked over the system bus with polkit's approval, and in a box that
     /// chain granted nothing. Measured 2026-10-16: every PipeWire, wireplumber
@@ -203,6 +203,18 @@ pub const RUNTIME_DIR: &str = "/run/user/1000";
 /// what it asks makes it clamp rather than fail, so 95 just means it gets
 /// what it asks for.
 pub const REALTIME_PRIORITY: libc::rlim_t = 95;
+
+/// How far below 0 a [`Service::realtime`] service may lower its nice level,
+/// as `RLIMIT_NICE` counts it: `20 - nice`, so 39 allows nice -19.
+///
+/// **Not optional alongside the priority.** The server's `module-rt` asks for
+/// nice -11 before it asks for a realtime class, and when the nice level is
+/// refused it gives up on doing it itself and asks rtkit, which in a box
+/// grants nothing. Measured 2026-10-16: with only `RLIMIT_RTPRIO`, neswire's
+/// client loop went `SCHED_FIFO` 83 (its config asks for no nice level) and
+/// the server's graph loop stayed `SCHED_OTHER`. -19 is what PipeWire's own
+/// packaging grants beside rtprio 95.
+pub const REALTIME_NICE: libc::rlim_t = 39;
 
 /// Somewhere every service may write.
 ///
@@ -552,12 +564,17 @@ impl Stack {
                     // Before the uid drops: raising a hard limit takes root,
                     // and once dropped the child could never get it back.
                     if realtime {
-                        let limit = libc::rlimit {
-                            rlim_cur: REALTIME_PRIORITY,
-                            rlim_max: REALTIME_PRIORITY,
-                        };
-                        if libc::setrlimit(libc::RLIMIT_RTPRIO, &limit) != 0 {
-                            return Err(std::io::Error::last_os_error());
+                        for (resource, value) in [
+                            (libc::RLIMIT_RTPRIO, REALTIME_PRIORITY),
+                            (libc::RLIMIT_NICE, REALTIME_NICE),
+                        ] {
+                            let limit = libc::rlimit {
+                                rlim_cur: value,
+                                rlim_max: value,
+                            };
+                            if libc::setrlimit(resource, &limit) != 0 {
+                                return Err(std::io::Error::last_os_error());
+                            }
                         }
                     }
                     // gid first: dropping the uid first would lose the
