@@ -494,6 +494,12 @@ impl Stack {
         if let Some(kbps) = self.video.bitrate_kbps {
             command.env("NESTRI_MAX_BITRATE", kbps.to_string());
         }
+        // The port the host forwarded, from the command line, by the same
+        // route: `neshub` binds it so its first packet already leaves through
+        // the host's pinned masquerade. See `system::media_port`.
+        if let Some(port) = crate::system::media_port() {
+            command.env("NESTRI_BIND_PORT", port.to_string());
+        }
         // The service's own entry last, so a service that states one of these
         // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
@@ -911,7 +917,10 @@ mod tests {
     #[test]
     fn the_system_bus_is_waited_for_before_what_connects_to_it() {
         let bus = STACK.iter().find(|s| s.name == "dbus-system").unwrap();
-        assert!(bus.ready.is_some(), "polkitd and rtkit would find no socket");
+        assert!(
+            bus.ready.is_some(),
+            "polkitd and rtkit would find no socket"
+        );
         for name in ["polkitd", "rtkit"] {
             let svc = STACK.iter().find(|s| s.name == name).unwrap();
             assert!(svc.ready_name.is_some(), "{name} is reached by name");

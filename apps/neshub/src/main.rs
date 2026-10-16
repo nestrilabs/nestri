@@ -10,6 +10,7 @@ mod screenshot;
 mod session;
 mod ticket;
 
+use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -27,6 +28,16 @@ struct Args {
     /// Relay mode: default, none, or a custom relay URL
     #[arg(long, env = "NESTRI_RELAY", default_value = "default")]
     relay: String,
+
+    /// The UDP port to bind for IPv4, which the host forwards to this box.
+    ///
+    /// Set by the guest init from `nestri.port=`. The host installs its forward
+    /// and its pinned masquerade for this port before the box boots, so every
+    /// flow, the relay's included, leaves on one public port, and the address
+    /// the relay reports is the one peers can punch through to. Unset means a
+    /// port of the hub's own choosing, which only works where nothing NATs it.
+    #[arg(long, env = "NESTRI_BIND_PORT")]
+    bind_port: Option<u16>,
 
     /// Path for the video IPC socket (nescapture → neshub)
     #[arg(
@@ -172,6 +183,19 @@ async fn main() -> Result<()> {
         .alpns(ALPNS.iter().map(|a| a.to_vec()).collect::<Vec<_>>())
         .transport_config(crate::dgram::media_transport_config());
 
+    // Replaces iroh's own `0.0.0.0:0` default rather than adding a second
+    // IPv4 socket; IPv6 keeps its default.
+    match args.bind_port {
+        Some(port) => {
+            builder = builder.bind_addr(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port))?;
+            tracing::info!(port, "binding the host's forwarded port");
+        }
+        None => tracing::info!(
+            "no NESTRI_BIND_PORT, so this hub picks its own port; behind the host's NAT, \
+             peers behind a NAT of their own will stay on the relay"
+        ),
+    }
+
     match args.relay.as_str() {
         "default" | "" => {
             builder = builder.relay_mode(iroh::endpoint::RelayMode::Default);
@@ -247,11 +271,17 @@ async fn main() -> Result<()> {
                 let mut waited = 0u32;
                 while sock.send_to(&bytes, &cmd_path).is_err() {
                     if waited == 0 {
-                        tracing::info!("nescapture is not listening at {} yet; waiting", cmd_path.display());
+                        tracing::info!(
+                            "nescapture is not listening at {} yet; waiting",
+                            cmd_path.display()
+                        );
                     }
                     waited += 1;
                     if waited > 600 {
-                        tracing::warn!("nescapture cmd send failed at {} for a minute; dropped", cmd_path.display());
+                        tracing::warn!(
+                            "nescapture cmd send failed at {} for a minute; dropped",
+                            cmd_path.display()
+                        );
                         break;
                     }
                     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -433,7 +463,8 @@ async fn main() -> Result<()> {
     let stats_ipc = args.stats_ipc.clone();
     let stats_tx_clone = nescope_stats_tx.clone();
     tokio::spawn({
-        let (mgr, controller, cmd_tx) = (session_manager.clone(), controller.clone(), cmd_tx.clone());
+        let (mgr, controller, cmd_tx) =
+            (session_manager.clone(), controller.clone(), cmd_tx.clone());
         async move { ipc_listener::run_video_listener(video_ipc, mgr, controller, cmd_tx).await }
     });
     tokio::spawn({
