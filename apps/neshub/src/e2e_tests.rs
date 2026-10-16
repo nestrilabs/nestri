@@ -317,3 +317,85 @@ async fn a_burst_is_skipped_whole_not_torn() {
         "frames went missing unaccounted"
     );
 }
+
+/// A client's first media is live media: nothing produced before a carrier's
+/// connection was up reaches it, and a video carrier asks for the keyframe it
+/// cannot start without.
+///
+/// The session exists from the first connection, and the others follow. Before
+/// this, every packet produced in between was queued and delivered at once when
+/// the carrier attached: 160 ms of audio at the start of a session, measured.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_carrier_starts_from_live_media() {
+    use nesprotocol::{ALPN_AUDIO, MSG_IDR_REQUEST, decode_audio_payload, decode_frame};
+
+    let mgr = Arc::new(SessionManager::new(300_000));
+    let hub = iroh::Endpoint::builder(presets::N0)
+        .alpns(vec![ALPN_VIDEO.to_vec(), ALPN_AUDIO.to_vec()])
+        .relay_mode(iroh::endpoint::RelayMode::Disabled)
+        .transport_config(crate::dgram::media_transport_config())
+        .bind()
+        .await
+        .expect("hub endpoint");
+    let client_ep = iroh::Endpoint::builder(presets::N0)
+        .relay_mode(iroh::endpoint::RelayMode::Disabled)
+        .transport_config(crate::dgram::media_transport_config())
+        .bind()
+        .await
+        .expect("client endpoint");
+    let (cmd, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+    let controller = Arc::new(tokio::sync::Mutex::new(Controller::new(Limits::new(4_000))));
+
+    // One connection accepted and attached as the carrier its ALPN names.
+    let accept = |carrier: Carrier| {
+        let hub = hub.clone();
+        let mgr = mgr.clone();
+        let cmd = cmd.clone();
+        let controller = controller.clone();
+        tokio::spawn(async move {
+            let conn = hub.accept().await.expect("incoming").await.expect("conn");
+            let (input, _) = tokio::sync::broadcast::channel(4);
+            mgr.attach(conn.remote_id(), carrier, conn, input, cmd, controller)
+                .await;
+        })
+    };
+
+    // Video first: the session now exists, and audio has no connection yet.
+    let attached = accept(Carrier::Video);
+    let _video = client_ep
+        .connect(hub.addr(), ALPN_VIDEO)
+        .await
+        .expect("dial video");
+    attached.await.expect("attach video");
+    assert_eq!(
+        cmd_rx.try_recv().ok(),
+        Some(vec![MSG_IDR_REQUEST]),
+        "a new video carrier did not ask for a keyframe"
+    );
+
+    let packet = |position: u64| nesprotocol::encode_audio_payload(position, &[0xFC]);
+    for position in 0..32u64 {
+        mgr.broadcast_audio(packet(position * 240)).await;
+    }
+
+    let attached = accept(Carrier::Audio);
+    let audio = client_ep
+        .connect(hub.addr(), ALPN_AUDIO)
+        .await
+        .expect("dial audio");
+    attached.await.expect("attach audio");
+    let live = 1_000_000 * 240;
+    mgr.broadcast_audio(packet(live)).await;
+
+    let datagram = tokio::time::timeout(Duration::from_secs(5), audio.read_datagram())
+        .await
+        .expect("no audio arrived")
+        .expect("audio connection failed");
+    let (_, body) = nesprotocol::datagram::decode_datagram(&datagram).expect("a datagram");
+    let (_, _, payload) = decode_frame(body).expect("a frame");
+    let (position, _) = decode_audio_payload(payload).expect("an audio payload");
+    assert_eq!(
+        position, live,
+        "the first audio a new carrier sent was produced before it attached"
+    );
+}

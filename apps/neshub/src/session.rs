@@ -181,6 +181,13 @@ impl ClientSession {
                     return;
                 };
                 self.video_conn = Some(conn.clone());
+                // A writer that has just started has sent no reference frame,
+                // so nothing but a keyframe can be decoded from it. Asked for
+                // now rather than after the client fails to decode a delta and
+                // says so, a round trip later; and deltas are held back until
+                // it is sent, as for any client waiting on one.
+                self.awaiting_keyframe.store(true, Ordering::Relaxed);
+                let _ = self.idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
                 let relay_ms = self.relay_ms.clone();
                 let awaiting = self.awaiting_keyframe.clone();
                 let withheld = self.withheld.clone();
@@ -339,13 +346,29 @@ impl ClientSession {
     /// only way it fails is a closed channel, which means the writer is already
     /// gone, and sixty warnings a second on the way down bury whatever actually
     /// ended the session.
+    ///
+    /// **Nothing is queued for a carrier that has not attached.** A client's
+    /// connections arrive one after another and its session exists from the
+    /// first, so a channel created with the session would collect every frame
+    /// produced before its own connection is up and deliver the lot the moment
+    /// it is: measured 2026-10-16 as 160 ms of audio landing at once as a
+    /// session began, and over half a second of video. Media is live or it is
+    /// nothing, so until the writer exists there is nobody to give it to.
     pub fn send_video_frame(&self, item: MediaItem) {
+        if self.pending_video.is_some() {
+            return;
+        }
         if let Err(e) = self.send_video.send(item) {
             debug!("failed to send video data: {e}");
         }
     }
 
+    /// Hand one audio packet to this client's writer, once it has one. See
+    /// [`send_video_frame`](Self::send_video_frame).
     pub fn send_audio_packet(&self, data: Bytes) {
+        if self.pending_audio.is_some() {
+            return;
+        }
         if let Err(e) = self.send_audio.send(MediaItem::Coded(data)) {
             debug!("failed to send audio data: {e}");
         }
@@ -1286,14 +1309,18 @@ impl SessionManager {
 mod pipeline_delay_tests {
     use super::SessionManager;
 
-    /// A video payload with `ts_ms` where the wire format puts it.
-    fn payload(ts_ms: u32) -> Vec<u8> {
-        let mut p = vec![0u8, 0u8];
-        p.extend_from_slice(&ts_ms.to_le_bytes());
-        p.extend_from_slice(&1920u16.to_le_bytes());
-        p.extend_from_slice(&1080u16.to_le_bytes());
-        p.extend_from_slice(&[0u8; 32]);
-        p
+    /// A video payload captured `ago_us` before now, on the clock the hub reads.
+    fn payload(ago_us: u64) -> Vec<u8> {
+        nesprotocol::encode_video_payload(
+            &nesprotocol::VideoHead {
+                codec: 0,
+                flags: 0,
+                captured_us: nesprotocol::clock::monotonic_us() - ago_us,
+                width: 1920,
+                height: 1080,
+            },
+            &[0u8; 32],
+        )
     }
 
     #[test]
@@ -1304,14 +1331,11 @@ mod pipeline_delay_tests {
 
     #[test]
     fn a_steady_pipeline_reports_no_variation() {
-        // The encoder's timestamp counts from its own start, so the difference
-        // to wall clock holds a large unknown constant. A pipeline taking the
-        // same time on every frame must read as zero, not as that constant --
-        // which is what a plain subtraction would have reported, pinned at the
-        // maximum the wire can carry.
+        // A pipeline taking the same time on every frame reads as no
+        // variation, however long that time is.
         let mgr = SessionManager::new(0);
-        for i in 0..60u32 {
-            mgr.note_pipeline_delay(&payload(i * 16));
+        for _ in 0..60 {
+            mgr.note_pipeline_delay(&payload(40_000));
         }
         let (p50, _, max) = mgr.pipeline_delays();
         assert_eq!(p50, 0);
