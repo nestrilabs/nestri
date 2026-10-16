@@ -45,7 +45,44 @@ type Env = {
  * ours: the identifier ends up on the issued token, and without this anything
  * on the internet could mint a grant naming anything at all.
  */
-const DEVICE_CLIENTS = new Set(['desktop']);
+const DEVICE_CLIENTS = new Set(['desktop', 'installer']);
+
+export const allowDeviceClient = async (clientID: string) => DEVICE_CLIENTS.has(clientID);
+
+/**
+ * What the person approving a device client is asked, where it is not the
+ * generic "is this you?".
+ *
+ * Approving the installer adds a computer to the person's account as a host,
+ * which is a bigger thing to agree to than signing an app in, so the page says
+ * that in as many words. Fixed per client id: nothing the request carries is
+ * shown.
+ */
+export const deviceConfirm = (clientID: string) =>
+	clientID === 'installer'
+		? {
+				heading: 'Add a computer as a Nestri host?',
+				body: [
+					'A computer is asking to become a host on your account. The code above should match the one in its terminal.'
+				],
+				footer:
+					'If it does not, or you did not run the installer yourself, choose Deny. Approving lets that computer add itself as one host and nothing else.'
+			}
+		: undefined;
+
+/**
+ * How long a session for each device client lasts, where it is not the
+ * default.
+ *
+ * The installer signs in for one step — trading the session for a single host
+ * token — and runs as root on a machine that may not be the person's own, so
+ * it gets a quarter of an hour and no refresh token: nothing it could leave
+ * behind outlives the install.
+ *
+ * Exported, like the list above, so both can be tested against a real grant.
+ */
+export const clientTTL = (clientID: string) =>
+	clientID === 'installer' ? { access: 15 * 60, refresh: 0 } : undefined;
 
 /**
  * The zone every user-owned host is reached under, and the one path on it that
@@ -192,7 +229,9 @@ export default {
 			codeStore: PostgresCodeStore(),
 			refreshStore: PostgresRefreshStore(),
 			deviceStore: PostgresDeviceStore(),
-			allowDeviceClient: async (clientID) => DEVICE_CLIENTS.has(clientID),
+			allowDeviceClient,
+			clientTTL,
+			deviceConfirm,
 			// The default rule allows a redirect back to whatever hostname the
 			// request arrived on, which is right for a site served beside this
 			// one and refuses the proxy in front of user-owned hosts — it

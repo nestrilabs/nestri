@@ -84,6 +84,16 @@ function getClient(env: Record<string, unknown>) {
 	});
 }
 
+/**
+ * A token minted for the host installer is good for one call: trading it for
+ * a single-use install token. The installer signs a person in on a machine
+ * that may not be theirs, so the session it holds must not be able to do
+ * anything else with the account — and checking it here, once, means a route
+ * added later cannot forget to.
+ */
+const INSTALLER_AUDIENCE = 'installer';
+const INSTALLER_ROUTE = { method: 'POST', path: '/machine/install-token' };
+
 export const auth: MiddlewareHandler = async (c, next) => {
 	// A registered nessh host proves it is itself, rather than asserting an id
 	// nobody checks. Wrong credentials fall through to public rather than
@@ -186,6 +196,17 @@ export const auth: MiddlewareHandler = async (c, next) => {
 	}
 	if (verified.err) {
 		return Actor.with({ type: 'public', properties: {} }, next);
+	}
+
+	if (
+		verified.aud === INSTALLER_AUDIENCE &&
+		!(c.req.method === INSTALLER_ROUTE.method && c.req.path === INSTALLER_ROUTE.path)
+	) {
+		throw new VisibleError(
+			'forbidden',
+			ErrorCodes.Permission.INSUFFICIENT_PERMISSIONS,
+			'This sign-in can only add a host'
+		);
 	}
 
 	const { subject } = verified;

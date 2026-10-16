@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 
+import { decodeJwt } from 'jose';
 import { object, string } from 'valibot';
 
 import { hashDeviceCode, MemoryDeviceStore } from '../src/device.js';
@@ -21,7 +22,15 @@ const auth = issuer({
 	subjects,
 	allow: async () => true,
 	allowDeviceClient: async (clientID) => clientID !== 'banned',
-	deviceVerification: { guessLimit: 3, guessWindow: 60 },
+	clientTTL: (clientID) => (clientID === 'one-step' ? { access: 15 * 60, refresh: 0 } : undefined),
+	deviceConfirm: (clientID) =>
+		clientID === 'one-step'
+			? { heading: 'Let this one step through?', body: ['Words chosen for this client.'] }
+			: undefined,
+	// Every test here asks for codes from one address at one frozen instant,
+	// so the request limit is widened out of the way; it has its own issuer
+	// below, on the defaults.
+	deviceVerification: { guessLimit: 3, guessWindow: 60, requestLimit: 10_000 },
 	providers: {
 		dummy: {
 			type: 'dummy',
@@ -286,6 +295,53 @@ describe('approval', () => {
 });
 
 /**
+ * A client that is allowed a session for one step, and nothing after it.
+ *
+ * Its lifetime is set per client rather than by the sign-in, so the person
+ * approving it cannot be talked into a longer one and the flow that signs them
+ * in does not need to know who is asking.
+ */
+describe('a client with a lifetime of its own', () => {
+	async function approved(clientID: string) {
+		const grant = await started(clientID);
+		await answer(grant.user_code, 'approve');
+		setSystemTime(new Date(Date.now() + (grant.interval + 1) * 1000));
+		const response = await poll(grant.device_code, clientID);
+		expect(response.status).toBe(200);
+		return response.body;
+	}
+
+	test('gets the access lifetime it was given and no refresh token', async () => {
+		const body = await approved('one-step');
+		expect(body.expires_in).toBe(15 * 60);
+		expect(decodeJwt(body.access_token).exp).toBe(Math.floor(Date.now() / 1000) + 15 * 60);
+		expect(decodeJwt(body.access_token).aud).toBe('one-step');
+		expect(body).not.toHaveProperty('refresh_token');
+	});
+
+	test('cannot refresh what it was never given', async () => {
+		const body = await approved('one-step');
+		const subject = decodeJwt(body.access_token).sub!;
+		const response = await auth.request(`${ORIGIN}/token`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'refresh_token',
+				refresh_token: `${subject}:${crypto.randomUUID()}`
+			})
+		});
+		expect(response.status).toBe(400);
+		expect(((await response.json()) as any).error).toBe('invalid_grant');
+	});
+
+	test('every other client keeps the defaults', async () => {
+		const body = await approved('desktop');
+		expect(body.expires_in).toBe(60 * 60 * 24 * 30);
+		expect(body.refresh_token).toMatch(/.+/);
+	});
+});
+
+/**
  * The attack this flow exists to stop, and the properties that stop it.
  *
  * Anyone can ask for a device code and be handed a link with the user code
@@ -321,6 +377,16 @@ describe('a code somebody else started', () => {
 
 		expect(reached.html).not.toContain('Your bank');
 		expect(reached.html).toContain('A device is asking');
+	});
+
+	test('a client the issuer has words for is asked about in those words', async () => {
+		const grant = await started('one-step');
+		const reached = await signInAndReachConfirmation(grant.user_code);
+
+		expect(reached.html).toContain('Let this one step through?');
+		expect(reached.html).toContain('Words chosen for this client.');
+		expect(reached.html).not.toContain('Is this you?');
+		expect(reached.html).toContain(grant.user_code.slice(0, 4));
 	});
 
 	test('a confirmation posted without the value from the cookie is refused', async () => {
@@ -491,5 +557,58 @@ describe('guessing at user codes', () => {
 			);
 		}
 		expect((await auth.request(`${ORIGIN}/device?user_code=ZZZZZZZD`)).status).toBe(429);
+	});
+});
+
+/**
+ * Asking for a code costs the caller nothing, so it is charged per address
+ * like a wrong guess is. On the defaults, because those are what a deployment
+ * that never thought about it gets.
+ */
+describe('asking for codes', () => {
+	const limited = issuer({
+		storage: MemoryStorage(),
+		subjects,
+		allow: async () => true,
+		providers: {},
+		success: async (ctx) => ctx.subject('user', { userID: '123' })
+	});
+
+	function ask(address?: string) {
+		return limited.request(`${ORIGIN}/device/authorize`, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/x-www-form-urlencoded',
+				...(address ? { 'cf-connecting-ip': address } : {})
+			},
+			body: new URLSearchParams({ client_id: 'desktop' })
+		});
+	}
+
+	test('a caller gets ten in ten minutes, then a 429 that says when to come back', async () => {
+		for (let i = 0; i < 10; i++) expect((await ask('198.51.100.20')).status).toBe(200);
+
+		const refused = await ask('198.51.100.20');
+		expect(refused.status).toBe(429);
+		expect(refused.headers.get('retry-after')).toBe('600');
+		const body = (await refused.json()) as any;
+		expect(body.error).toBe('slow_down');
+		expect(body.error_description).toBe(
+			'Too many sign-in requests from this network. Try again in 10 minutes.'
+		);
+	});
+
+	test('the window ends, and another caller was never affected', async () => {
+		for (let i = 0; i < 11; i++) await ask('198.51.100.21');
+		expect((await ask('198.51.100.21')).status).toBe(429);
+		expect((await ask('198.51.100.22')).status).toBe(200);
+
+		setSystemTime(new Date(Date.now() + 601 * 1000));
+		expect((await ask('198.51.100.21')).status).toBe(200);
+	});
+
+	test('a caller with no address shares one budget', async () => {
+		for (let i = 0; i < 10; i++) expect((await ask()).status).toBe(200);
+		expect((await ask()).status).toBe(429);
 	});
 });

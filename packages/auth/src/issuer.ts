@@ -231,7 +231,7 @@ import { DynamoStorage } from './storage/dynamo.js';
 import { MemoryStorage } from './storage/memory.js';
 import { Storage, StorageAdapter } from './storage/storage.js';
 import { HtmlRenderer, type Renderer } from './ui/render.js';
-import { IssuerScreens } from './ui/issuer.js';
+import { type DeviceConfirmWording, IssuerScreens } from './ui/issuer.js';
 import type { ChooseOption, Screen } from './ui/screen.js';
 import type { Theme } from './ui/theme.js';
 import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
@@ -395,6 +395,19 @@ export interface IssuerInput<
 		deviceInterval?: number;
 	};
 	/**
+	 * Token lifetimes for one client, in place of {@link ttl}.
+	 *
+	 * For a client whose tokens should be narrower than everybody else's — one
+	 * that needs a session for a single step and has no business holding one
+	 * afterwards. A `refresh` of `0` means no refresh token is issued at all,
+	 * so the session ends when the access token does.
+	 *
+	 * What this returns wins over a lifetime `success` asks for: how long a
+	 * client may hold a session is a property of the client, and a flow that
+	 * signs somebody in has no reason to know which client is asking.
+	 */
+	clientTTL?(clientID: string): { access?: number; refresh?: number } | undefined;
+	/**
 	 * Where device authorization grants are kept.
 	 *
 	 * Defaults to one held in this process's memory, which is right for tests
@@ -448,7 +461,17 @@ export interface IssuerInput<
 		/** Length of the window, in seconds. @default 600 */
 		guessWindow?: number;
 		/**
-		 * Which caller a guess is charged to.
+		 * Device codes one caller may ask for per window.
+		 *
+		 * Asking costs nothing and takes no secret, so without a limit one
+		 * caller can fill the store with grants nobody will ever answer, and
+		 * hold the user code space open for guessing. @default 10
+		 */
+		requestLimit?: number;
+		/** Length of that window, in seconds. @default 600 */
+		requestWindow?: number;
+		/**
+		 * Which caller a guess, or a request for a code, is charged to.
 		 *
 		 * Defaults to the usual forwarded-address headers. Returning undefined
 		 * puts the request in one shared bucket, which is the right answer for
@@ -469,6 +492,15 @@ export interface IssuerInput<
 	 * issuer that has not thought about it, and is worth thinking about.
 	 */
 	allowDeviceClient?(clientID: string, req: Request): Promise<boolean>;
+	/**
+	 * What the confirmation page says to a person approving `clientID`, where
+	 * the generic wording would undersell what they are agreeing to.
+	 *
+	 * Looked up by the client id and never built from it, so a request cannot
+	 * put words of its own in front of the person deciding on it. Undefined
+	 * keeps the generic page.
+	 */
+	deviceConfirm?(clientID: string): DeviceConfirmWording | undefined;
 	/**
 	 * Which providers appear on the screen offering a choice of them, and in
 	 * what order.
@@ -590,6 +622,8 @@ export function issuer<
 	const deviceStore = input.deviceStore ?? MemoryDeviceStore();
 	const deviceGuessLimit = input.deviceVerification?.guessLimit ?? 10;
 	const deviceGuessWindow = input.deviceVerification?.guessWindow ?? 600;
+	const deviceRequestLimit = input.deviceVerification?.requestLimit ?? 10;
+	const deviceRequestWindow = input.deviceVerification?.requestWindow ?? 600;
 	const deviceAddress =
 		input.deviceVerification?.address ??
 		((req: Request) =>
@@ -598,6 +632,15 @@ export function issuer<
 			req.headers.get('x-real-ip') ??
 			undefined);
 	const renderer = input.renderer ?? HtmlRenderer({ theme: input.theme });
+
+	/** What a token for `clientID` lives for. See {@link IssuerInput.clientTTL}. */
+	function lifetime(clientID: string, requested?: { access?: number; refresh?: number }) {
+		const rule = input.clientTTL?.(clientID);
+		return {
+			access: rule?.access ?? requested?.access ?? ttlAccess,
+			refresh: rule?.refresh ?? requested?.refresh ?? ttlRefresh
+		};
+	}
 
 	/**
 	 * The screen offering a choice of providers.
@@ -716,10 +759,7 @@ export function issuer<
 									subject,
 									type: type as string,
 									properties,
-									ttl: {
-										access: subjectOpts?.ttl?.access ?? ttlAccess,
-										refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-									}
+									ttl: lifetime(grant.clientID, subjectOpts?.ttl)
 								}
 							};
 							await auth.set(ctx, 'device_confirm', ttlDevice, confirmation);
@@ -733,14 +773,11 @@ export function issuer<
 									type: type as string,
 									properties,
 									clientID: authorization.client_id,
-									ttl: {
-										access: subjectOpts?.ttl?.access ?? ttlAccess,
-										refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-									}
+									ttl: lifetime(authorization.client_id, subjectOpts?.ttl)
 								});
 								location.hash = new URLSearchParams({
 									access_token: tokens.access,
-									refresh_token: tokens.refresh,
+									...(tokens.refresh ? { refresh_token: tokens.refresh } : {}),
 									state: authorization.state || ''
 								}).toString();
 								await auth.unset(ctx, 'authorization');
@@ -757,10 +794,7 @@ export function issuer<
 										redirectURI: authorization.redirect_uri,
 										clientID: authorization.client_id,
 										pkce: authorization.pkce,
-										ttl: {
-											access: subjectOpts?.ttl?.access ?? ttlAccess,
-											refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-										}
+										ttl: lifetime(authorization.client_id, subjectOpts?.ttl)
 									},
 									60
 								);
@@ -781,10 +815,7 @@ export function issuer<
 							type: type as string,
 							properties,
 							clientID: 'ssh',
-							ttl: {
-								access: subjectOpts?.ttl?.access ?? ttlAccess,
-								refresh: subjectOpts?.ttl?.refresh ?? ttlRefresh
-							}
+							ttl: lifetime('ssh', subjectOpts?.ttl)
 						});
 						return ctx.json({
 							accessToken: tokens.access,
@@ -879,16 +910,25 @@ export function issuer<
 	 * makes the limit worth having rather than a way to lock one person out.
 	 */
 	async function chargeGuess(req: Request): Promise<boolean> {
+		const next = await charge('oauth:device:guess', req, deviceGuessWindow);
+		return next.count <= deviceGuessLimit;
+	}
+
+	/**
+	 * One more event against this caller's counter under `name`, in a window
+	 * of `window` seconds that starts with the first of them.
+	 */
+	async function charge(name: string, req: Request, window: number) {
 		const who = deviceAddress(req) ?? 'unknown';
-		const key = ['oauth:device:guess', who];
+		const key = [name, who];
 		const now = Date.now();
 		const bucket = await Storage.get<{ count: number; resetAt: number }>(storage!, key);
 		const next =
 			bucket && bucket.resetAt > now
 				? { count: bucket.count + 1, resetAt: bucket.resetAt }
-				: { count: 1, resetAt: now + deviceGuessWindow * 1000 };
+				: { count: 1, resetAt: now + window * 1000 };
 		await Storage.set(storage!, key, next, Math.max(1, Math.ceil((next.resetAt - now) / 1000)));
-		return next.count <= deviceGuessLimit;
+		return next;
 	}
 
 	async function guessesLeft(req: Request): Promise<boolean> {
@@ -934,7 +974,10 @@ export function issuer<
 	}
 
 	function deviceConfirmScreen(confirmation: DeviceConfirmation): Screen {
-		return IssuerScreens.deviceConfirm(confirmation);
+		return IssuerScreens.deviceConfirm({
+			...confirmation,
+			wording: input.deviceConfirm?.(confirmation.clientID)
+		});
 	}
 
 	async function getAuthorization(ctx: Context) {
@@ -977,8 +1020,12 @@ export function issuer<
 			generateRefreshToken?: boolean;
 		}
 	) {
+		// A client allowed no refresh token gets none, rather than one that
+		// expires at once: a credential that is never written down cannot be
+		// replayed, and its absence tells the client what to expect.
+		const refreshable = value.ttl.refresh > 0;
 		const refreshToken = value.nextToken ?? crypto.randomUUID();
-		if (opts?.generateRefreshToken ?? true) {
+		if (refreshable && (opts?.generateRefreshToken ?? true)) {
 			/**
 			 * Generate and store the next refresh token after the one we are currently returning.
 			 * Reserving these in advance avoids concurrency issues with multiple refreshes.
@@ -1017,7 +1064,7 @@ export function issuer<
 				)
 				.sign(await signingKey().then((item) => item.private)),
 			expiresIn: Math.floor(accessTimeUsed + value.ttl.access - Date.now() / 1000),
-			refresh: [value.subject, refreshToken].join(':')
+			refresh: refreshable ? [value.subject, refreshToken].join(':') : undefined
 		};
 	}
 
@@ -1398,10 +1445,7 @@ export function issuer<
 								subject: opts?.subject || (await resolveSubject(type, properties)),
 								properties,
 								clientID: clientID.toString(),
-								ttl: {
-									access: opts?.ttl?.access ?? ttlAccess,
-									refresh: opts?.ttl?.refresh ?? ttlRefresh
-								}
+								ttl: lifetime(clientID.toString(), opts?.ttl)
 							});
 							return c.json({
 								access_token: tokens.access,
@@ -1439,6 +1483,25 @@ export function issuer<
 				return c.json({ error: 'invalid_request', error_description: 'Missing client_id' }, 400);
 			if (input.allowDeviceClient && !(await input.allowDeviceClient(clientID, c.req.raw)))
 				return c.json({ error: 'invalid_client', error_description: 'Unknown client_id' }, 400);
+
+			// Charged per address, like a wrong user code. The answer is
+			// `slow_down` because it is the one code in this grant's vocabulary
+			// that means "too often, wait", and a device client already knows
+			// what to do with it; 429 and `Retry-After` say the same thing to
+			// anything that only reads HTTP.
+			const requests = await charge('oauth:device:request', c.req.raw, deviceRequestWindow);
+			if (requests.count > deviceRequestLimit) {
+				const wait = Math.max(1, Math.ceil((requests.resetAt - Date.now()) / 1000));
+				const minutes = Math.ceil(wait / 60);
+				c.header('Retry-After', String(wait));
+				return c.json(
+					{
+						error: 'slow_down',
+						error_description: `Too many sign-in requests from this network. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+					},
+					429
+				);
+			}
 
 			// Not `randomUUID`: a device code is the credential the tokens are
 			// handed to, so it gets the same treatment as one — full-width
