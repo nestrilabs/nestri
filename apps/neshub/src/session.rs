@@ -188,6 +188,14 @@ impl ClientSession {
                 // it is sent, as for any client waiting on one.
                 self.awaiting_keyframe.store(true, Ordering::Relaxed);
                 let _ = self.idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
+                // The client says how each frame arrived, back on this same
+                // connection; the rate is decided on each one as it comes.
+                self.tasks.push(tokio::spawn(run_feedback_reader(
+                    conn.clone(),
+                    self.client,
+                    self.controller.clone(),
+                    self.idr_cmd_tx.clone(),
+                )));
                 let relay_ms = self.relay_ms.clone();
                 let awaiting = self.awaiting_keyframe.clone();
                 let withheld = self.withheld.clone();
@@ -890,6 +898,37 @@ async fn run_stats_sender(conn: Connection, mut rx: tokio::sync::mpsc::Unbounded
     debug!("stats sender exiting");
 }
 
+/// Read a client's per-frame feedback and decide the rate on each frame.
+///
+/// Acted on here, as it arrives, rather than collected for a once-a-second
+/// tick: a queue that starts building is answered a frame interval later, not
+/// up to a second later, which at 60 frames a second is the difference
+/// between one frame's queue and sixty.
+async fn run_feedback_reader(
+    conn: Connection,
+    client: iroh::EndpointId,
+    controller: Arc<Mutex<Controller>>,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+) {
+    loop {
+        let datagram = match conn.read_datagram().await {
+            Ok(d) => d,
+            Err(e) => {
+                debug!("feedback reader ended: {e}");
+                return;
+            }
+        };
+        let Some(frame) = nesprotocol::datagram::decode_feedback(&datagram) else {
+            continue;
+        };
+        let now_us = nesprotocol::clock::monotonic_us();
+        let mut controller = controller.lock().await;
+        if let Some(kbps) = controller.on_feedback(client, &frame, now_us) {
+            crate::control::actuate(&cmd_tx, &controller, kbps);
+        }
+    }
+}
+
 /// Whether a broadcast video payload is a keyframe.
 ///
 /// The payload is `[1B codec][1B flags][4B ts][2B w][2B h][data]`, the same
@@ -1264,6 +1303,18 @@ impl SessionManager {
             .values()
             .filter(|s| s.is_streaming())
             .count()
+    }
+
+    /// Which clients have somewhere to send a picture: the paths the rate
+    /// controller has to answer to.
+    pub async fn streaming_clients(&self) -> Vec<iroh::EndpointId> {
+        self.sessions
+            .lock()
+            .await
+            .iter()
+            .filter(|(_, s)| s.is_streaming())
+            .map(|(id, _)| *id)
+            .collect()
     }
 
     /// Opus actually received from neswire since the last call, in kbps.

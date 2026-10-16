@@ -38,11 +38,13 @@ pub enum MediaItem {
 
 /// Transport settings for an endpoint carrying media datagrams.
 ///
-/// See [`DGRAM_BUFFER_BYTES`] for why the defaults are not enough.
+/// See [`DGRAM_BUFFER_BYTES`] for why the defaults are not enough, and
+/// `congestion.rs` for why the transport does not decide the rate.
 pub fn media_transport_config() -> QuicTransportConfig {
     QuicTransportConfig::builder()
         .datagram_send_buffer_size(DGRAM_BUFFER_BYTES)
         .datagram_receive_buffer_size(Some(DGRAM_BUFFER_BYTES))
+        .congestion_controller_factory(std::sync::Arc::new(crate::congestion::MediaRateFactory))
         .build()
 }
 

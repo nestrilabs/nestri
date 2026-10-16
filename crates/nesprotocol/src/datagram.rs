@@ -49,6 +49,75 @@ pub const DGRAM_AUDIO: u8 = 1;
 /// [`crate::pyrowave`].
 pub const DGRAM_PYROWAVE: u8 = crate::pyrowave::DGRAM_PYROWAVE;
 
+/// One completed video frame as the client saw it arrive, client to hub on the
+/// video connection.
+///
+/// Sent once per frame, so the hub hears about every frame a round trip after
+/// it left rather than once a second. What the hub's rate decision rests on:
+/// whether the bottleneck was still busy with the last frame when this one
+/// reached it, and how fast it delivered this one's fragments. See nescore's
+/// `docs/superpowers/specs/2026-10-16-video-rate-from-the-path-design.md`.
+pub const DGRAM_FEEDBACK: u8 = 3;
+
+/// `[1B kind][2B seq][4B bytes][2B fragments][2B first_bytes][8B sent_us]
+/// [8B first_arrival_us][4B spread_us][4B first_q_us]`, little-endian.
+pub const FEEDBACK_LEN: usize = 35;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameFeedback {
+    /// The frame's sequence number.
+    pub seq: u16,
+    /// Datagram payload bytes that arrived for it, header excluded.
+    pub bytes: u32,
+    /// Fragments that arrived.
+    pub fragments: u16,
+    /// Payload bytes of the first fragment to arrive, which the arrival spread
+    /// does not cover: the spread starts when it has landed.
+    pub first_bytes: u16,
+    /// When the hub sent the frame, from its datagrams' `sent_us`.
+    pub sent_us: u64,
+    /// When the first fragment arrived, on the client's own clock. Only ever
+    /// compared with another frame's, never with the hub's clock.
+    pub first_arrival_us: u64,
+    /// The last fragment's arrival minus the first's.
+    pub spread_us: u32,
+    /// Queueing delay of the first fragment on the path (`delay`).
+    pub first_q_us: u32,
+}
+
+pub fn encode_feedback(f: &FrameFeedback) -> [u8; FEEDBACK_LEN] {
+    let mut b = [0u8; FEEDBACK_LEN];
+    b[0] = DGRAM_FEEDBACK;
+    b[1..3].copy_from_slice(&f.seq.to_le_bytes());
+    b[3..7].copy_from_slice(&f.bytes.to_le_bytes());
+    b[7..9].copy_from_slice(&f.fragments.to_le_bytes());
+    b[9..11].copy_from_slice(&f.first_bytes.to_le_bytes());
+    b[11..19].copy_from_slice(&f.sent_us.to_le_bytes());
+    b[19..27].copy_from_slice(&f.first_arrival_us.to_le_bytes());
+    b[27..31].copy_from_slice(&f.spread_us.to_le_bytes());
+    b[31..35].copy_from_slice(&f.first_q_us.to_le_bytes());
+    b
+}
+
+/// `None` for anything that is not a whole feedback datagram.
+pub fn decode_feedback(b: &[u8]) -> Option<FrameFeedback> {
+    if b.len() < FEEDBACK_LEN || b[0] != DGRAM_FEEDBACK {
+        return None;
+    }
+    let u16_at = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
+    let u32_at = |o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+    let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
+    Some(FrameFeedback {
+        seq: u16_at(1),
+        bytes: u32_at(3),
+        fragments: u16_at(7),
+        first_bytes: u16_at(9),
+        sent_us: u64_at(11),
+        first_arrival_us: u64_at(19),
+        spread_us: u32_at(27),
+        first_q_us: u32_at(31),
+    })
+}
 /// Bounds reassembly work. A 4K keyframe runs to a few hundred fragments at a
 /// typical MTU; anything past this did not come from a sender of ours.
 pub const MAX_FRAGMENTS_PER_FRAME: usize = 4096;
@@ -212,6 +281,30 @@ mod tests {
             },
         );
         assert!(decode_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn feedback_round_trips() {
+        let f = FrameFeedback {
+            seq: 0xABCD,
+            bytes: 17_000,
+            fragments: 15,
+            first_bytes: 1_180,
+            sent_us: 0x0102_0304_0506_0708,
+            first_arrival_us: 0x1112_1314_1516_1718,
+            spread_us: 9_800,
+            first_q_us: 450,
+        };
+        let wire = encode_feedback(&f);
+        assert_eq!(decode_feedback(&wire), Some(f));
+        assert_eq!(decode_feedback(&wire[..FEEDBACK_LEN - 1]), None);
+        let mut other = wire;
+        other[0] = DGRAM_VIDEO;
+        assert_eq!(
+            decode_feedback(&other),
+            None,
+            "a video datagram read as feedback"
+        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
+mod congestion;
 mod control;
 mod dgram;
 #[cfg(test)]
@@ -6,6 +7,7 @@ mod ipc_listener;
 mod keyframe;
 mod negotiation;
 mod pyro;
+mod rate;
 mod screenshot;
 mod session;
 mod ticket;
@@ -362,29 +364,15 @@ async fn main() -> Result<()> {
             loop {
                 interval.tick().await;
 
-                // One decision a second, on the same tick as the stats, because
-                // a report describes the second that just passed and there is
-                // nothing to gain from deciding more often than they arrive.
+                // The rate is decided per frame, as feedback arrives (see
+                // `session.rs`). Once a second is for what feedback cannot say:
+                // a path that went silent, and clients that left.
                 {
-                    let clients = mgr.client_count().await;
-                    let (report, path, self_inflicted) = mgr.worst_report().await;
+                    let streaming = mgr.streaming_clients().await;
+                    let (_, path, _) = mgr.worst_report().await;
                     let mut controller = controller.lock().await;
-                    if let Some(kbps) = controller.tick(clients, report, path, self_inflicted) {
-                        let mut cmd = vec![nesprotocol::MSG_ENCODE_SETTINGS];
-                        nesprotocol::encode_bitrate_only(&mut cmd, kbps);
-                        if cmd_tx.send(cmd).is_err() {
-                            tracing::warn!("encoder command channel closed");
-                        } else {
-                            // Trace, not info: under a path that keeps moving
-                            // this fires every second, and a per-second line at
-                            // info buries everything worth reading.
-                            tracing::trace!(
-                                "video ceiling {}/{} kbps: {:?}",
-                                kbps,
-                                controller.limits().ceiling_kbps,
-                                controller.reason(),
-                            );
-                        }
+                    if let Some(kbps) = controller.tick(&streaming, path) {
+                        crate::control::actuate(&cmd_tx, &controller, kbps);
                     }
                 }
 
@@ -435,6 +423,8 @@ async fn main() -> Result<()> {
                             pipeline_p95_ms,
                             pipeline_max_ms,
                             backlog_ms: controller.backlog_ms().min(u32::from(u16::MAX)) as u16,
+                            capacity_kbps: controller.capacity_kbps(),
+                            delivery_kbps: controller.delivery_kbps(),
                         },
                     );
                 }

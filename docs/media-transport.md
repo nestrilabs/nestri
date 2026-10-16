@@ -124,6 +124,18 @@ rate, while the pacer underneath is using the measured window and RTT. If the
 application is producing faster than the pacer drains, the answer is to produce
 less — which is the bitrate controller's job — not to add a second pacer.
 
+**Since 2026-10-16 the hub turns this pacer off** (`neshub/src/congestion.rs`).
+Its controller reports a window above `u32::MAX`, past which noq does not pace,
+and ignores loss. The video rate is decided per frame from client feedback
+(`neshub/src/rate.rs`), and that needs each frame to leave as a back-to-back
+train, so the bottleneck spaces the fragments by its own rate and the client can
+measure it. The transport pacing by its window estimate would smear exactly that
+spacing. The rate is still produced to fit the path; it is the media's
+controller that decides it, on the path's queueing delay, which leads loss and
+RTT by tens of milliseconds. Transport settings are per endpoint, so the hub's
+audio, input and control connections are unpaced too: they are small flows the
+video rate leaves room for.
+
 ## Loss is a lagging indicator; the queue is the leading one
 
 A path that is overrun does not necessarily drop anything. It can simply be
