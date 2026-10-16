@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 
 import { Fixtures } from '../db/fixtures.js';
 import { testDb } from '../db/test.js';
+import { VisibleError } from '../error.js';
 import { Identifier } from '../id.js';
 import { Machine } from './index.js';
 
@@ -165,5 +166,56 @@ describe('Machine heartbeat', () => {
 			Date.now() - Machine.HEARTBEAT_SECONDS * (Machine.OFFLINE_AFTER_MISSED + 1) * 1000
 		);
 		expect(Machine.isOnline(wellPast)).toBe(false);
+	});
+});
+
+describe('How many machines a team may own', () => {
+	function register(owner: { userId: string; teamId: string }, label: string) {
+		return Machine.register({
+			id: Identifier.ascending('machine'),
+			ownerUserId: owner.userId,
+			teamId: owner.teamId,
+			label
+		});
+	}
+
+	test('ten, and the eleventh is refused with a message to act on', async () => {
+		const owner = await newOwner('mch-cap');
+		for (let i = 0; i < Machine.TEAM_MACHINE_LIMIT; i++) await register(owner, `box-${i}`);
+
+		const refused = await register(owner, 'one-too-many').catch((e) => e);
+		expect(refused).toBeInstanceOf(VisibleError);
+		expect(refused.type).toBe('rate_limit');
+		expect(refused.code).toBe('quota_exceeded');
+		expect(refused.message).toBe('Your team already has 10 machines. Remove one to add another.');
+
+		const rows = await sql`select id from machine where team_id = ${owner.teamId}`;
+		expect(rows).toHaveLength(Machine.TEAM_MACHINE_LIMIT);
+	});
+
+	test('a removed machine frees its place', async () => {
+		const owner = await newOwner('mch-cap-removed');
+		for (let i = 0; i < Machine.TEAM_MACHINE_LIMIT; i++) await register(owner, `box-${i}`);
+		await sql`update machine set time_deleted = now()
+			where id = (select id from machine where team_id = ${owner.teamId} limit 1)`;
+		expect((await register(owner, 'replacement')).secret).toStartWith('msk_');
+	});
+
+	test('registrations racing for the last place do not both get it', async () => {
+		const owner = await newOwner('mch-cap-race');
+		for (let i = 0; i < Machine.TEAM_MACHINE_LIMIT - 1; i++) await register(owner, `box-${i}`);
+		const results = await Promise.allSettled(
+			Array.from({ length: 4 }, (_, i) => register(owner, `racer-${i}`))
+		);
+		expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+		const rows = await sql`select id from machine where team_id = ${owner.teamId}`;
+		expect(rows).toHaveLength(Machine.TEAM_MACHINE_LIMIT);
+	});
+
+	test('hardware an organisation owns is not counted', async () => {
+		const operator = await newOwner('mch-cap-fleet');
+		const fleet = await Fixtures.fleet(operator, Machine.TEAM_MACHINE_LIMIT + 1);
+		expect(fleet.machines).toHaveLength(Machine.TEAM_MACHINE_LIMIT + 1);
+		expect((await register(operator, 'own-box')).secret).toStartWith('msk_');
 	});
 });

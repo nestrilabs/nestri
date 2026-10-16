@@ -4,6 +4,7 @@
 # This file is the source of what that URL serves, kept in the public
 # repository so anyone about to pipe it into a shell can read it first.
 #
+#   bash <(curl -fsSL https://api.nestri.io/install.sh)
 #   bash <(curl -fsSL https://api.nestri.io/install.sh) <install-token>
 #   bash <(curl -fsSL https://api.nestri.io/install.sh) -u
 #
@@ -12,18 +13,21 @@
 # What it does, in order: check this is 64-bit Linux, ask where box images
 # should live, download the host agent for this platform, verify it against the
 # published SHA256SUMS, install it to /usr/local/bin, and hand over to the
-# agent's own onboarding, which checks the machine, registers it with the token
-# and starts the agent as a systemd service.
+# agent's own onboarding, which checks the machine, registers it and starts the
+# agent as a systemd service.
 #
 # It runs as root because the agent does: each box's VMM is jailed under a uid
 # of its own, which only root can give it, and a box's network needs
 # CAP_NET_ADMIN. The agent keeps its state in /var/lib/nestri. Started as
 # anyone else, it asks sudo for root once, before it changes anything.
 #
-# The token comes from the dashboard's Installation page. It registers one
-# machine, works once and lapses after an hour.
+# The token is optional. Without one, the agent signs in instead: it shows a
+# code and a link, and the machine is registered once somebody approves that
+# code in a browser, on any device. A token from the dashboard's Installation
+# page skips the browser; it registers one machine, works once and lapses after
+# an hour.
 #
-# `-u` (`--update`) needs no token: on a machine that is already a host, it installs
+# `-u` (`--update`) registers nothing: on a machine that is already a host, it installs
 # the current agent and restarts it, and the agent picks up whatever a new
 # release changed about its images on its own. It touches nothing else -- the
 # machine keeps its registration, its box store and its Steam sign-ins.
@@ -45,7 +49,8 @@ usage() {
   cat >&2 <<USAGE
 Nestri host installer.
 
-  bash <(curl -fsSL $API/install.sh) <install-token>   make this machine a host
+  bash <(curl -fsSL $API/install.sh)                   make this machine a host, approving it in a browser
+  bash <(curl -fsSL $API/install.sh) <install-token>   make this machine a host with a token from the dashboard
   bash <(curl -fsSL $API/install.sh) -u                update the host agent here
 
   -u, --update   install the current host agent on a machine that is already a host
@@ -65,11 +70,6 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-if [ "$MODE" = install ] && [ -z "$TOKEN" ]; then
-  usage
-  die "no install token. Copy the full command from the dashboard's Installation page."
-fi
-
 # --- fetch ------------------------------------------------------------------
 if command -v curl >/dev/null 2>&1; then
   get() { curl -fsSL "$1" -o "$2"; }
@@ -95,7 +95,9 @@ if [ "$(id -u)" -ne 0 ]; then
   command -v sudo >/dev/null 2>&1 || die "this needs root and there is no sudo here. Run it as root."
   self="$(mktemp)"
   get "$API/install.sh" "$self" || die "could not fetch $API/install.sh to run it as root"
-  if [ "$MODE" = update ]; then set -- -u; else set -- "$TOKEN"; fi
+  if [ "$MODE" = update ]; then set -- -u
+  elif [ -n "$TOKEN" ]; then set -- "$TOKEN"
+  else set --; fi
   say "The host agent runs as root, so this needs sudo."
   exec sudo env NESTRI_SELF="$self" NESTRI_API="$API" \
     ${NESTRI_HOST_VERSION:+NESTRI_HOST_VERSION="$NESTRI_HOST_VERSION"} \
@@ -228,9 +230,14 @@ fi
 
 # --- onboard ----------------------------------------------------------------
 # The token goes through the environment rather than argv, so it is not in
-# `ps` for the length of the run.
-export NESTRI_INSTALL_TOKEN="$TOKEN" NESTRI_BOX_STORE="$BOX_STORE" NESTRI_API="$API" \
-  NESLET_STATE_DIR="$STATE_DIR"
+# `ps` for the length of the run. With none, it is left out altogether, and
+# onboarding signs in through the browser instead.
+if [ -n "$TOKEN" ]; then
+  export NESTRI_INSTALL_TOKEN="$TOKEN"
+else
+  unset NESTRI_INSTALL_TOKEN
+fi
+export NESTRI_BOX_STORE="$BOX_STORE" NESTRI_API="$API" NESLET_STATE_DIR="$STATE_DIR"
 if tty_ok; then
   exec "$BIN_DIR/nestri-host" onboard </dev/tty
 else

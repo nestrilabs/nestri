@@ -23,6 +23,7 @@ import { MARK_CODE, MARK_GITHUB, MARK_GOOGLE } from '@nestri/auth/ui/mark';
 import { HtmlRenderer } from '@nestri/auth/ui/render';
 import type { Screen } from '@nestri/auth/ui/screen';
 
+import { deviceConfirm } from '../src/index.js';
 import { THEME_NESTRI } from '../src/theme.js';
 
 const PORT = Number(process.env.PORT ?? 1338);
@@ -118,6 +119,17 @@ const STATES: State[] = [
 			IssuerScreens.deviceConfirm({
 				userCode: 'BCDF3467',
 				csrf: 'x'
+			})
+	},
+	{
+		id: 'device-confirm-installer',
+		group: 'Device',
+		label: 'Add a host?',
+		screen: () =>
+			IssuerScreens.deviceConfirm({
+				userCode: 'BCDF3467',
+				csrf: 'x',
+				wording: deviceConfirm('installer')
 			})
 	},
 	{

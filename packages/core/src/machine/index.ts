@@ -10,6 +10,7 @@ import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { SessionTable } from '../session/session.sql.js';
 import { Member } from '../team/member.js';
+import { TeamTable } from '../team/team.sql.js';
 import { MachineTable } from './machine.sql.js';
 import { Slug } from './slug.js';
 
@@ -150,9 +151,44 @@ export namespace Machine {
 	}
 
 	/**
+	 * Most machines one team may own.
+	 *
+	 * A host somebody brings is added by a command anyone signed in can run,
+	 * so without a ceiling one account is as many hosts as it can script.
+	 * Hardware an organisation owns outright is not counted: its own people
+	 * add it, deliberately, and it is never reached through a team.
+	 */
+	export const TEAM_MACHINE_LIMIT = 10;
+
+	/**
+	 * Refuses when `teamId` already owns {@link TEAM_MACHINE_LIMIT} machines,
+	 * with a message the person can act on.
+	 */
+	export async function assertTeamHasRoom(teamId: string) {
+		const owned = await Database.use((tx) =>
+			tx
+				.select({ count: sql<number>`count(*)::int` })
+				.from(MachineTable)
+				.where(and(eq(MachineTable.teamId, teamId), isNull(MachineTable.timeDeleted)))
+				.then((rows) => rows[0]?.count ?? 0)
+		);
+		if (owned >= TEAM_MACHINE_LIMIT) {
+			throw new VisibleError(
+				'rate_limit',
+				ErrorCodes.RateLimit.QUOTA_EXCEEDED,
+				`Your team already has ${TEAM_MACHINE_LIMIT} machines. Remove one to add another.`
+			);
+		}
+	}
+
+	/**
 	 * Register a box. The secret is returned here and nowhere else — it is
 	 * stored only as a digest, so a lost secret means re-registering rather
 	 * than looking it up.
+	 *
+	 * A team at {@link TEAM_MACHINE_LIMIT} is refused here, which is what holds
+	 * the limit for every way of registering, an install token minted while
+	 * there was still room included.
 	 */
 	export const register = fn(
 		Info.pick({ id: true, ownerUserId: true, teamId: true, label: true })
@@ -160,50 +196,62 @@ export namespace Machine {
 			.refine((v) => (v.teamId === null) !== ((v.organisationId ?? null) === null), {
 				message: 'A machine belongs to a team or to an organisation, and not to both'
 			}),
-		async (input) => {
-			const secret = generateSecret();
-			const secretHash = await hashSecret(secret);
+		async (input) =>
+			Database.transaction(async (tx) => {
+				if (input.teamId) {
+					// Held until the machine is written, so two registrations
+					// at the same instant cannot both see room for one.
+					await tx
+						.select({ id: TeamTable.id })
+						.from(TeamTable)
+						.where(eq(TeamTable.id, input.teamId))
+						.for('update');
+					await assertTeamHasRoom(input.teamId);
+				}
 
-			// The name space holds tens of millions, so a collision is rare
-			// enough that retrying is cheaper than checking first -- and a
-			// check-then-insert would be wrong as well as slower, because two
-			// registrations in the same instant both read "free" and both write.
-			// The unique index is the thing that actually decides.
-			for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
-				const slug = Slug.generate();
-				try {
-					await Database.use(async (tx) => {
-						await tx.insert(MachineTable).values({
-							id: input.id,
-							ownerUserId: input.ownerUserId,
-							teamId: input.teamId,
-							organisationId: input.organisationId ?? null,
-							label: input.label,
-							slug,
-							secretHash,
-							lastSeen: null
+				const secret = generateSecret();
+				const secretHash = await hashSecret(secret);
+
+				// The name space holds tens of millions, so a collision is rare
+				// enough that retrying is cheaper than checking first -- and a
+				// check-then-insert would be wrong as well as slower, because two
+				// registrations in the same instant both read "free" and both write.
+				// The unique index is the thing that actually decides.
+				for (let attempt = 0; attempt < SLUG_ATTEMPTS; attempt++) {
+					const slug = Slug.generate();
+					try {
+						await Database.use(async (tx) => {
+							await tx.insert(MachineTable).values({
+								id: input.id,
+								ownerUserId: input.ownerUserId,
+								teamId: input.teamId,
+								organisationId: input.organisationId ?? null,
+								label: input.label,
+								slug,
+								secretHash,
+								lastSeen: null
+							});
 						});
-					});
-					return { id: input.id, secret, slug };
-				} catch (err) {
-					if (!isUniqueViolation(err)) {
-						throw err;
-					}
-					// Only a name collision is worth another go. A duplicate id
-					// or secret means something is wrong that a new name cannot
-					// fix, and retrying would bury it.
-					if (!isSlugViolation(err)) {
-						throw err;
+						return { id: input.id, secret, slug };
+					} catch (err) {
+						if (!isUniqueViolation(err)) {
+							throw err;
+						}
+						// Only a name collision is worth another go. A duplicate id
+						// or secret means something is wrong that a new name cannot
+						// fix, and retrying would bury it.
+						if (!isSlugViolation(err)) {
+							throw err;
+						}
 					}
 				}
-			}
 
-			throw new VisibleError(
-				'internal',
-				ErrorCodes.Server.INTERNAL_ERROR,
-				'Could not mint an unused hostname for this machine'
-			);
-		}
+				throw new VisibleError(
+					'internal',
+					ErrorCodes.Server.INTERNAL_ERROR,
+					'Could not mint an unused hostname for this machine'
+				);
+			})
 	);
 
 	/** How many names to try before giving up. See `register`. */

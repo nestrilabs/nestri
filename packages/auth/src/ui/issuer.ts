@@ -14,10 +14,23 @@
 
 import type { Screen } from './screen.js';
 
+/**
+ * What the confirmation says, for a client that warrants its own words.
+ *
+ * Chosen by the issuer from the client id, never taken from the request: the
+ * id is a claim, and the words a person decides on must not be the claimant's.
+ */
+export interface DeviceConfirmWording {
+	heading: string;
+	body: string[];
+	footer?: string;
+}
+
 /** The confirmation a device grant asks for, before it is approved. */
 export interface DeviceConfirmCopy {
 	userCode: string;
 	csrf: string;
+	wording?: DeviceConfirmWording;
 }
 
 export const IssuerScreens = {
@@ -93,12 +106,12 @@ export const IssuerScreens = {
 	deviceConfirm(confirmation: DeviceConfirmCopy): Screen {
 		return {
 			kind: 'confirm',
-			heading: 'Is this you?',
+			heading: confirmation.wording?.heading ?? 'Is this you?',
 			verify: { code: confirmation.userCode, group: 4 },
 			// Not the client id. It is chosen by whoever started the grant, so
 			// naming it would let a stranger's request introduce itself as
 			// anything it likes — and to the person reading, it is a device.
-			body: [
+			body: confirmation.wording?.body ?? [
 				'A device is asking to sign in to your account. The code above should match the one it is showing you.'
 			],
 			action: '/device/confirm',
@@ -106,6 +119,7 @@ export const IssuerScreens = {
 			approve: { label: 'Approve', name: 'action', value: 'approve' },
 			deny: { label: 'Deny', name: 'action', value: 'deny' },
 			footer:
+				confirmation.wording?.footer ??
 				'If it does not, or you did not start this on a device of your own, choose Deny. Nobody can sign in as you unless you approve here.'
 		};
 	},
