@@ -86,13 +86,16 @@ pub async fn run_video_listener(
                     session_manager
                         .reassert_codec(decoded.codec, &controller, &cmd_tx)
                         .await;
-                    let mut frame_data = Vec::with_capacity(1 + decoded.data.len());
-                    frame_data.push(decoded.codec);
-                    frame_data.push(decoded.flags);
-                    frame_data.extend_from_slice(&decoded.timestamp_ms.to_le_bytes());
-                    frame_data.extend_from_slice(&decoded.width.to_le_bytes());
-                    frame_data.extend_from_slice(&decoded.height.to_le_bytes());
-                    frame_data.extend_from_slice(decoded.data);
+                    let frame_data = nesprotocol::encode_video_payload(
+                        &nesprotocol::VideoHead {
+                            codec: decoded.codec,
+                            flags: decoded.flags,
+                            captured_us: decoded.stamp,
+                            width: decoded.width,
+                            height: decoded.height,
+                        },
+                        decoded.data,
+                    );
 
                     session_manager.broadcast_video(frame_data).await;
                 } else {
@@ -150,7 +153,9 @@ pub async fn run_audio_listener(socket_path: PathBuf, session_manager: Arc<Sessi
                         tracing::warn!("unexpected codec on audio socket: {}", decoded.codec);
                         continue;
                     }
-                    let audio_data = decoded.data.to_vec();
+                    // The graph position neswire stamped, carried as it is:
+                    // the client conceals and schedules by it.
+                    let audio_data = nesprotocol::encode_audio_payload(decoded.stamp, decoded.data);
                     session_manager.broadcast_audio(audio_data).await;
                 } else {
                     tracing::warn!("invalid audio IPC frame ({} bytes)", n);

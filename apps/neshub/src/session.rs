@@ -899,12 +899,11 @@ pub struct SessionManager {
     last_keyframes: AtomicU64,
     /// How much this box's own pipeline delay varied, frame to frame.
     ///
-    /// **Variation, not absolute delay**, and it cannot be otherwise: the
-    /// encoder's `timestamp_ms` counts from its own start rather than from any
-    /// epoch, so the difference to wall clock holds an unknown constant even
-    /// though both run on this machine. Variation is also the comparable
-    /// quantity -- the client measures the same thing about the total, using the
-    /// same code, so the difference between the two is what the network added.
+    /// Variation above the pipeline's own best, measured with the same code the
+    /// client measures the whole path with, so the two are comparable and the
+    /// difference between them is what the network added. The encoder stamps
+    /// capture on the clock this hub reads at hand-off, so there is no offset
+    /// to remove here and no skew either.
     pipeline: std::sync::Mutex<nesprotocol::delay::DelayTracker>,
     audio_bytes: AtomicU64,
     last_audio_bytes: AtomicU64,
@@ -1044,25 +1043,19 @@ impl SessionManager {
 
     /// Note how long this box took over a frame, relative to its own best.
     ///
-    /// `ts_ms` is stamped at capture by an encoder on this same machine, so the
-    /// clock is shared even though its origin is arbitrary -- which is exactly
-    /// what [`DelayTracker`] is built for.
+    /// The frame's capture time is stamped by an encoder on this same machine,
+    /// on the clock read here at hand-off (`nesprotocol::clock`).
     ///
     /// [`DelayTracker`]: nesprotocol::delay::DelayTracker
     fn note_pipeline_delay(&self, payload: &[u8]) {
-        let Some(ts_bytes) = payload.get(2..6) else {
-            return;
-        };
-        self.note_pipeline_ts(u32::from_le_bytes(ts_bytes.try_into().unwrap()));
+        if let Some((head, _)) = nesprotocol::decode_video_payload(payload) {
+            self.note_pipeline_ts(head.captured_us);
+        }
     }
 
-    fn note_pipeline_ts(&self, ts_ms: u32) {
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or_default();
+    fn note_pipeline_ts(&self, captured_us: u64) {
         if let Ok(mut pipeline) = self.pipeline.lock() {
-            pipeline.observe(ts_ms, now_ms, std::time::Instant::now());
+            pipeline.observe(captured_us, nesprotocol::clock::monotonic_us());
         }
     }
 
@@ -1073,12 +1066,16 @@ impl SessionManager {
     /// same as a second with no variation, but the wire has no room to say so
     /// and the client can tell from the frame counters beside it.
     pub fn pipeline_delays(&self) -> (u16, u16, u16) {
+        // The stats stream carries whole milliseconds; the measurement is finer.
+        fn ms(us: u32) -> u16 {
+            (us / 1000).min(u32::from(u16::MAX)) as u16
+        }
         let Ok(mut pipeline) = self.pipeline.lock() else {
             return (0, 0, 0);
         };
         pipeline
             .take()
-            .map(|s| (s.p50_ms, s.p95_ms, s.max_ms))
+            .map(|s| (ms(s.p50_us), ms(s.p95_us), ms(s.max_us)))
             .unwrap_or((0, 0, 0))
     }
 
@@ -1108,7 +1105,7 @@ impl SessionManager {
     /// counting them as keyframes would report sixty keyframes a second, which
     /// describes nothing.
     pub async fn broadcast_pyrowave(&self, frame: PyroFrame) {
-        self.note_pipeline_ts(frame.meta.ts_ms);
+        self.note_pipeline_ts(frame.meta.captured_us);
         self.video_delta_bytes
             .fetch_add(frame.data.len() as u64, Ordering::Relaxed);
         let item = MediaItem::PyroWave(Arc::new(frame));

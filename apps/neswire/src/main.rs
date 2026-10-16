@@ -36,7 +36,7 @@ fn main() -> anyhow::Result<()> {
     let sample_rate = 48_000u32;
     let frame_size = (sample_rate * args.packet_duration_ms) / 1000;
 
-    let (tx, rx) = crossbeam_channel::bounded::<Vec<f32>>(256);
+    let (tx, rx) = crossbeam_channel::bounded::<sink::Packet>(256);
 
     let encoder_config = encoder::EncoderConfig {
         channels: args.channels,

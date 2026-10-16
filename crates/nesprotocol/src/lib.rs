@@ -3,6 +3,7 @@
 // can drift from each other silently.
 
 pub mod attach;
+pub mod clock;
 pub mod datagram;
 pub mod delay;
 pub mod gamepad;
@@ -67,7 +68,8 @@ impl Carrier {
 
 pub const IPC_MAGIC: [u8; 4] = [b'N', b'S', b'T', b'R'];
 
-pub const IPC_HEADER_LEN: usize = 20;
+/// `[4B magic][1B type][1B codec][1B flags][1B reserved][8B stamp][2B w][2B h][4B len]`.
+pub const IPC_HEADER_LEN: usize = 24;
 
 // ── QUIC stream protocol ────────────────────────────────────────
 
@@ -83,7 +85,11 @@ pub const IPC_HEADER_LEN: usize = 20;
 /// stream type it does not know, so it would receive no keyframes at all and
 /// never decode anything — the two cannot interoperate either, and the mismatch
 /// is worth reporting rather than presenting as a frozen picture.
-pub const STREAM_VERSION: u8 = 3;
+///
+/// v4 put time on every media unit (see [`clock`]): a send time on every
+/// datagram and keyframe stream, a capture time in microseconds on video where
+/// v3 had milliseconds, and the graph position on audio, which had nothing.
+pub const STREAM_VERSION: u8 = 4;
 
 /// Uniform frame header overhead: [4B u32 LE frame_len] [1B type] [2B u16 LE seq]
 pub const FRAME_HDR_LEN: usize = 7;
@@ -208,25 +214,32 @@ pub const FLAG_KEYFRAME: u8 = 0x01;
 pub const FLAG_RECONFIG: u8 = 0x02; // stream reconfiguration (codec/bit-depth change)
 
 /// Encode an IPC frame into a byte buffer.
-/// Format: [4B magic] [1B type] [1B codec] [1B flags] [1B reserved] [4B ts_ms LE] [4B w_h LE] [4B len LE] [N data]
+///
+/// Format: `[4B magic][1B type][1B codec][1B flags][1B reserved][8B stamp LE]
+/// [2B width LE][2B height LE][4B len LE][N data]`.
+///
+/// `stamp` is the media unit's time, and what it counts depends on the stream:
+/// for video, when the frame was presented, in microseconds on
+/// [`clock::monotonic_us`]; for audio, the packet's first sample on the audio
+/// graph's clock, in 48 kHz frames. Both are the producer's to know and the
+/// hub's to carry; neither is ever converted into the other.
 pub fn encode_ipc_frame(
     stream_type: u8,
     codec: u8,
     flags: u8,
-    timestamp_ms: u32,
+    stamp: u64,
     width: u16,
     height: u16,
     data: &[u8],
 ) -> Vec<u8> {
-    let header_len = IPC_HEADER_LEN;
-    let mut buf = Vec::with_capacity(header_len + data.len());
+    let mut buf = Vec::with_capacity(IPC_HEADER_LEN + data.len());
 
     buf.extend_from_slice(&IPC_MAGIC);
     buf.push(stream_type);
     buf.push(codec);
     buf.push(flags);
     buf.push(0); // reserved
-    buf.extend_from_slice(&timestamp_ms.to_le_bytes());
+    buf.extend_from_slice(&stamp.to_le_bytes());
     buf.extend_from_slice(&width.to_le_bytes());
     buf.extend_from_slice(&height.to_le_bytes());
     buf.extend_from_slice(&(data.len() as u32).to_le_bytes());
@@ -241,7 +254,8 @@ pub struct DecodedIpcFrame<'a> {
     pub stream_type: u8,
     pub codec: u8,
     pub flags: u8,
-    pub timestamp_ms: u32,
+    /// See [`encode_ipc_frame`] for what it counts on each stream.
+    pub stamp: u64,
     pub width: u16,
     pub height: u16,
     pub data: &'a [u8],
@@ -258,10 +272,10 @@ pub fn decode_ipc_frame(buf: &[u8]) -> Option<DecodedIpcFrame<'_>> {
     let stream_type = buf[4];
     let codec = buf[5];
     let flags = buf[6];
-    let timestamp_ms = u32::from_le_bytes([buf[8], buf[9], buf[10], buf[11]]);
-    let width = u16::from_le_bytes([buf[12], buf[13]]);
-    let height = u16::from_le_bytes([buf[14], buf[15]]);
-    let data_len = u32::from_le_bytes([buf[16], buf[17], buf[18], buf[19]]) as usize;
+    let stamp = u64::from_le_bytes(buf[8..16].try_into().unwrap());
+    let width = u16::from_le_bytes([buf[16], buf[17]]);
+    let height = u16::from_le_bytes([buf[18], buf[19]]);
+    let data_len = u32::from_le_bytes(buf[20..24].try_into().unwrap()) as usize;
 
     if buf.len() < IPC_HEADER_LEN + data_len {
         return None;
@@ -271,11 +285,83 @@ pub fn decode_ipc_frame(buf: &[u8]) -> Option<DecodedIpcFrame<'_>> {
         stream_type,
         codec,
         flags,
-        timestamp_ms,
+        stamp,
         width,
         height,
         data: &buf[IPC_HEADER_LEN..IPC_HEADER_LEN + data_len],
     })
+}
+
+// ── Media payloads ──────────────────────────────────────────────
+//
+// What a media frame body carries after its `[type][seq]`, defined once for the
+// hub that builds them and every receiver that reads them.
+
+/// `[1B codec][1B flags][8B captured_us LE][2B width LE][2B height LE]`.
+pub const VIDEO_PAYLOAD_HDR_LEN: usize = 14;
+
+/// The head of a video frame payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VideoHead {
+    pub codec: u8,
+    pub flags: u8,
+    /// When the frame was presented, in microseconds on the sender's
+    /// [`clock::monotonic_us`].
+    pub captured_us: u64,
+    pub width: u16,
+    pub height: u16,
+}
+
+/// Build a video frame payload: the head, then the coded frame.
+pub fn encode_video_payload(head: &VideoHead, data: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(VIDEO_PAYLOAD_HDR_LEN + data.len());
+    buf.push(head.codec);
+    buf.push(head.flags);
+    buf.extend_from_slice(&head.captured_us.to_le_bytes());
+    buf.extend_from_slice(&head.width.to_le_bytes());
+    buf.extend_from_slice(&head.height.to_le_bytes());
+    buf.extend_from_slice(data);
+    buf
+}
+
+/// Split a video frame payload into its head and the coded frame.
+pub fn decode_video_payload(payload: &[u8]) -> Option<(VideoHead, &[u8])> {
+    if payload.len() < VIDEO_PAYLOAD_HDR_LEN {
+        return None;
+    }
+    let head = VideoHead {
+        codec: payload[0],
+        flags: payload[1],
+        captured_us: u64::from_le_bytes(payload[2..10].try_into().unwrap()),
+        width: u16::from_le_bytes([payload[10], payload[11]]),
+        height: u16::from_le_bytes([payload[12], payload[13]]),
+    };
+    Some((head, &payload[VIDEO_PAYLOAD_HDR_LEN..]))
+}
+
+/// `[8B position LE]`, then the Opus packet.
+pub const AUDIO_PAYLOAD_HDR_LEN: usize = 8;
+
+/// Build an audio packet payload.
+///
+/// `position` is the packet's first sample on the sender's audio graph clock,
+/// in 48 kHz frames. It is the audio timeline: two packets whose positions are
+/// further apart than the first one's length have samples missing between
+/// them, by exactly that count, whether those packets were lost or are late.
+pub fn encode_audio_payload(position: u64, opus: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(AUDIO_PAYLOAD_HDR_LEN + opus.len());
+    buf.extend_from_slice(&position.to_le_bytes());
+    buf.extend_from_slice(opus);
+    buf
+}
+
+/// Split an audio packet payload into its position and the Opus packet.
+pub fn decode_audio_payload(payload: &[u8]) -> Option<(u64, &[u8])> {
+    if payload.len() < AUDIO_PAYLOAD_HDR_LEN {
+        return None;
+    }
+    let position = u64::from_le_bytes(payload[..8].try_into().unwrap());
+    Some((position, &payload[AUDIO_PAYLOAD_HDR_LEN..]))
 }
 
 /// Codec ID to human-readable name.
@@ -611,6 +697,15 @@ pub struct ReceiverReport {
     pub never_arrived: u32,
     /// The receiver's own round-trip estimate, in milliseconds.
     pub rtt_ms: u32,
+    /// How long video spent queued on the path this second, from each
+    /// datagram's send time (see [`delay`]).
+    ///
+    /// The leading signal. Loss and RTT say a path was overrun some time ago;
+    /// one-way queueing delay rises the moment a queue starts to build, which
+    /// is tens of milliseconds before either of them moves.
+    pub video_queue: delay::DelaySummary,
+    /// The same for audio, on its own connection.
+    pub audio_queue: delay::DelaySummary,
 }
 
 impl ReceiverReport {
@@ -629,9 +724,9 @@ impl ReceiverReport {
     }
 }
 
-/// `[8B goodput_bps][4B released][4B incomplete][4B never_arrived][4B rtt_ms]`,
-/// all little-endian.
-pub const RECEIVER_REPORT_LEN: usize = 24;
+/// `[8B goodput_bps][4B released][4B incomplete][4B never_arrived][4B rtt_ms]
+/// [16B video_queue][16B audio_queue]`, all little-endian.
+pub const RECEIVER_REPORT_LEN: usize = 24 + 2 * delay::DELAY_SUMMARY_LEN;
 
 pub fn encode_receiver_report(buf: &mut Vec<u8>, report: &ReceiverReport) {
     buf.reserve(RECEIVER_REPORT_LEN);
@@ -640,12 +735,11 @@ pub fn encode_receiver_report(buf: &mut Vec<u8>, report: &ReceiverReport) {
     buf.extend_from_slice(&report.incomplete.to_le_bytes());
     buf.extend_from_slice(&report.never_arrived.to_le_bytes());
     buf.extend_from_slice(&report.rtt_ms.to_le_bytes());
+    report.video_queue.encode(buf);
+    report.audio_queue.encode(buf);
 }
 
 /// Decode a receiver report. `None` when the payload is short.
-///
-/// A payload *longer* than expected is accepted and its tail ignored, so a newer
-/// client that appends a field still reports usefully to an older hub.
 pub fn decode_receiver_report(payload: &[u8]) -> Option<ReceiverReport> {
     if payload.len() < RECEIVER_REPORT_LEN {
         return None;
@@ -657,6 +751,8 @@ pub fn decode_receiver_report(payload: &[u8]) -> Option<ReceiverReport> {
         incomplete: u32_at(12),
         never_arrived: u32_at(16),
         rtt_ms: u32_at(20),
+        video_queue: delay::DelaySummary::decode(&payload[24..])?,
+        audio_queue: delay::DelaySummary::decode(&payload[24 + delay::DELAY_SUMMARY_LEN..])?,
     })
 }
 
@@ -720,6 +816,18 @@ mod media_control_tests {
             incomplete: 12,
             never_arrived: 1,
             rtt_ms: 182,
+            video_queue: delay::DelaySummary {
+                frames: 59,
+                p50_us: 2_100,
+                p95_us: 9_800,
+                max_us: 28_800,
+            },
+            audio_queue: delay::DelaySummary {
+                frames: 200,
+                p50_us: 1_900,
+                p95_us: 15_300,
+                max_us: 41_200,
+            },
         }
     }
 
@@ -738,16 +846,6 @@ mod media_control_tests {
         for n in 0..RECEIVER_REPORT_LEN {
             assert_eq!(decode_receiver_report(&buf[..n]), None, "{n} bytes");
         }
-    }
-
-    #[test]
-    fn a_longer_report_is_read_and_its_tail_ignored() {
-        // So a newer client that appends a field still reports usefully to a
-        // hub that predates it.
-        let mut buf = Vec::new();
-        encode_receiver_report(&mut buf, &report());
-        buf.extend_from_slice(&[0xAA; 8]);
-        assert_eq!(decode_receiver_report(&buf), Some(report()));
     }
 
     #[test]
@@ -1152,5 +1250,64 @@ mod media_control_tests {
             }
         }
         assert_eq!(codec_name(CODEC_PYROWAVE), "pyrowave");
+    }
+}
+
+#[cfg(test)]
+mod media_payload_tests {
+    use super::*;
+
+    #[test]
+    fn an_ipc_frame_carries_its_stamp_whole() {
+        // A u64 of microseconds, so a stamp past 2^32 must come back intact:
+        // the width is the reason it changed.
+        let stamp = 0x0000_0123_4567_89AB;
+        let ipc = encode_ipc_frame(
+            STREAM_VIDEO,
+            CODEC_AV1,
+            FLAG_KEYFRAME,
+            stamp,
+            1920,
+            1080,
+            &[7; 5],
+        );
+        assert_eq!(ipc.len(), IPC_HEADER_LEN + 5);
+        let d = decode_ipc_frame(&ipc).expect("valid");
+        assert_eq!(
+            (d.stamp, d.width, d.height, d.data),
+            (stamp, 1920, 1080, &[7u8; 5][..])
+        );
+        assert!(
+            decode_ipc_frame(&ipc[..IPC_HEADER_LEN + 4]).is_none(),
+            "a short frame was read"
+        );
+    }
+
+    #[test]
+    fn a_video_payload_round_trips_and_keeps_its_flags_where_the_hub_looks() {
+        let head = VideoHead {
+            codec: CODEC_H265,
+            flags: FLAG_KEYFRAME,
+            captured_us: 9_876_543_210,
+            width: 2560,
+            height: 1440,
+        };
+        let payload = encode_video_payload(&head, &[1, 2, 3]);
+        assert_eq!(
+            decode_video_payload(&payload),
+            Some((head, &[1u8, 2, 3][..]))
+        );
+        assert!(reliable::video_is_keyframe(&payload));
+        assert!(decode_video_payload(&payload[..VIDEO_PAYLOAD_HDR_LEN - 1]).is_none());
+    }
+
+    #[test]
+    fn an_audio_payload_carries_its_graph_position() {
+        let payload = encode_audio_payload(48_000 * 3600, &[0xFC, 0xFF]);
+        assert_eq!(
+            decode_audio_payload(&payload),
+            Some((48_000 * 3600, &[0xFCu8, 0xFF][..]))
+        );
+        assert!(decode_audio_payload(&payload[..7]).is_none());
     }
 }

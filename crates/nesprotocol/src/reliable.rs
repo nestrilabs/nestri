@@ -81,10 +81,26 @@ pub const MAX_KEYFRAME_STREAMS_IN_FLIGHT: usize = 2;
 
 /// Offset of the flags byte in a video frame payload.
 ///
-/// The payload the hub broadcasts is `[1B codec] [1B flags] [4B ts_ms LE]
-/// [2B width LE] [2B height LE] [data]` — see `encode_ipc_frame`, whose header
-/// fields these mirror.
+/// The payload the hub broadcasts is [`crate::encode_video_payload`]'s.
 pub const VIDEO_PAYLOAD_FLAGS_OFFSET: usize = 1;
+
+/// `[1B STREAM_KEYFRAME][1B STREAM_VERSION][8B sent_us LE]`, then the frame body.
+///
+/// `sent_us` is when the hub began writing the stream, on its
+/// [`clock`](crate::clock). A keyframe has arrived when its last byte lands,
+/// which on a reliable stream includes any retransmission, so its queueing
+/// delay reads higher than a datagram's on the same path. That is what it
+/// really cost, and why keyframes are measured apart from datagrams.
+pub const KEYFRAME_STREAM_HDR_LEN: usize = 10;
+
+/// The header a keyframe stream opens with.
+pub fn keyframe_stream_header(sent_us: u64) -> [u8; KEYFRAME_STREAM_HDR_LEN] {
+    let mut header = [0u8; KEYFRAME_STREAM_HDR_LEN];
+    header[0] = crate::STREAM_KEYFRAME;
+    header[1] = crate::STREAM_VERSION;
+    header[2..].copy_from_slice(&sent_us.to_le_bytes());
+    header
+}
 
 /// Whether a video frame payload warrants a reliable stream over datagrams.
 ///
@@ -120,7 +136,10 @@ pub fn video_is_keyframe(payload: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CODEC_H264, STREAM_VIDEO, decode_ipc_frame, encode_ipc_frame};
+    use crate::{
+        CODEC_H264, STREAM_VIDEO, VideoHead, decode_ipc_frame, encode_ipc_frame,
+        encode_video_payload,
+    };
 
     /// Build the payload the hub broadcasts out of an IPC frame, the way
     /// `ipc_listener` does, so the offset is checked against its real producer
@@ -136,12 +155,16 @@ mod tests {
             &[9, 9, 9],
         );
         let decoded = decode_ipc_frame(&ipc).expect("valid ipc frame");
-        let mut payload = vec![decoded.codec, decoded.flags];
-        payload.extend_from_slice(&decoded.timestamp_ms.to_le_bytes());
-        payload.extend_from_slice(&decoded.width.to_le_bytes());
-        payload.extend_from_slice(&decoded.height.to_le_bytes());
-        payload.extend_from_slice(decoded.data);
-        payload
+        encode_video_payload(
+            &VideoHead {
+                codec: decoded.codec,
+                flags: decoded.flags,
+                captured_us: decoded.stamp,
+                width: decoded.width,
+                height: decoded.height,
+            },
+            decoded.data,
+        )
     }
 
     #[test]

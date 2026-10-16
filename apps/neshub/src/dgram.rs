@@ -16,8 +16,8 @@ use crate::pyro::PyroSender;
 
 use nesprotocol::MSG_DATA;
 use nesprotocol::datagram::{
-    DGRAM_BUFFER_BYTES, DGRAM_HDR_LEN, MAX_FRAGMENTS_PER_FRAME, MIN_DGRAM_PAYLOAD, fragment_count,
-    write_datagram_header,
+    DGRAM_BUFFER_BYTES, DGRAM_HDR_LEN, DatagramHeader, MAX_FRAGMENTS_PER_FRAME, MIN_DGRAM_PAYLOAD,
+    fragment_count, write_datagram_header,
 };
 use nesprotocol::pyrowave::PyroFrame;
 use nesprotocol::reliable::video_wants_reliable;
@@ -136,10 +136,22 @@ impl DatagramSender {
         // this buffer, so a 300-fragment keyframe costs one allocation, not 300.
         let mut buf = BytesMut::with_capacity(total * DGRAM_HDR_LEN + body.len());
         let mut header = [0u8; DGRAM_HDR_LEN];
+        // One reading for the whole frame: every fragment is handed over in the
+        // single call below, so they all leave this end at the same moment.
+        let sent_us = nesprotocol::clock::monotonic_us();
         for index in 0..total {
             let start = index * payload_size;
             let end = (start + payload_size).min(body.len());
-            write_datagram_header(&mut header, self.kind, seq, index as u16, total as u16);
+            write_datagram_header(
+                &mut header,
+                &DatagramHeader {
+                    kind: self.kind,
+                    seq,
+                    index: index as u16,
+                    total: total as u16,
+                    sent_us,
+                },
+            );
             buf.extend_from_slice(&header);
             buf.extend_from_slice(&body[start..end]);
         }

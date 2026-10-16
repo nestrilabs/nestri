@@ -477,6 +477,7 @@ mod tests {
             incomplete,
             never_arrived: 0,
             rtt_ms: 180,
+            ..Default::default()
         }
     }
 

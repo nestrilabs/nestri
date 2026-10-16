@@ -1080,7 +1080,6 @@ impl PipelineHandle {
             encode_ms: encode_avg_ms.clone(),
             dropped: dropped_frames.clone(),
             idr_requested: idr_requested.clone(),
-            epoch: Instant::now(),
             reconfig_tx: reconfig_tx.clone(),
         };
         let ipc_prog = ipc_progress.clone();
@@ -2709,14 +2708,14 @@ fn bgra_to_yuv420(pixels: &[u8], width: u32, height: u32, vk_format: u32) -> Vec
 /// has: it only has to tell one frame from the next.
 fn pyro_messages(
     frame: &nespyro::EncodedFrame,
-    ts_ms: u32,
+    captured_us: u64,
     width: u16,
     height: u16,
 ) -> Result<Vec<Vec<u8>>, nesprotocol::pyrowave::ChunkError> {
     nesprotocol::pyrowave::chunk_frame(
         frame.index as u32,
         nesprotocol::pyrowave::FrameMeta {
-            ts_ms,
+            captured_us,
             width,
             height,
         },
@@ -2741,8 +2740,6 @@ struct IpcConfig {
     dropped: Arc<AtomicU32>,
     /// Shared with the encoder thread, which honours it on the next frame.
     idr_requested: Arc<AtomicBool>,
-    /// Zero point for wire timestamps.
-    epoch: Instant,
     /// For the rate probe to command its own steps.
     ///
     /// The probe has to live where the encoded sizes are, which is here, and
@@ -2799,9 +2796,6 @@ fn ipc_send_thread(
         }
     };
 
-    // Fixed before the first frame arrives, so every timestamp shares an epoch
-    // even though frames are stamped from their own present.
-    let start_time = cfg.epoch;
     let mut frame_count: u64 = 0;
     // So a PyroWave encoder short of scratch space is said once per episode.
     let mut scratch_overflowing = false;
@@ -2920,9 +2914,11 @@ fn ipc_send_thread(
             // however long the frame spent queued for the encoder into the
             // timestamp, so the receiver could not tell capture time from
             // backlog and had nothing honest to pace on.
-            let timestamp_ms = present_time
-                .saturating_duration_since(start_time)
-                .as_millis() as u32;
+            //
+            // On the clock every media stamp on this machine shares, so the hub
+            // can measure capture-to-send exactly and the client can measure
+            // the path from it.
+            let captured_us = nesprotocol::clock::instant_us(present_time);
             // Set FLAG_RECONFIG on the first frame after an encoder reconfig.
             // Clear it after setting so only the first frame is marked. Taken
             // for a PyroWave frame too, which carries no flags, so that the
@@ -2948,7 +2944,7 @@ fn ipc_send_thread(
                         STREAM_VIDEO,
                         protocol_codec,
                         flags,
-                        timestamp_ms,
+                        captured_us,
                         width,
                         height,
                         &pkt.data,
@@ -2974,7 +2970,7 @@ fn ipc_send_thread(
                         log::info!("PyroWave encoder has scratch space again");
                     }
                     scratch_overflowing = overflowed;
-                    match pyro_messages(frame, timestamp_ms, width, height) {
+                    match pyro_messages(frame, captured_us, width, height) {
                         // Every PyroWave frame stands alone, so none is a key
                         // frame in the sense the counters below mean.
                         Ok(messages) => (messages, false, frame.data.len()),
@@ -4808,7 +4804,7 @@ mod pyrowave_tests {
         assert_eq!(got.frame, 41);
         assert_eq!(got.critical, 4);
         assert_eq!(
-            (got.meta.ts_ms, got.meta.width, got.meta.height),
+            (got.meta.captured_us, got.meta.width, got.meta.height),
             (1234, 2560, 1440)
         );
         assert_eq!(got.packets.len(), frame.packets.len());

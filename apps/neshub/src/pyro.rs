@@ -44,13 +44,14 @@ impl PyroSender {
             debug!("{label}: peer does not support QUIC datagrams");
             return;
         };
-        let datagrams = match pack_datagrams(self.seq, frame, max) {
-            Ok(d) => d,
-            Err(e) => {
-                debug!("{label}: dropping PyroWave frame {}: {e}", frame.frame);
-                return;
-            }
-        };
+        let datagrams =
+            match pack_datagrams(self.seq, frame, max, nesprotocol::clock::monotonic_us()) {
+                Ok(d) => d,
+                Err(e) => {
+                    debug!("{label}: dropping PyroWave frame {}: {e}", frame.frame);
+                    return;
+                }
+            };
 
         let backlog = DGRAM_BUFFER_BYTES.saturating_sub(self.conn.datagram_send_buffer_space());
         if let Some(skip) = should_skip(backlog, datagrams.buf.len(), DGRAM_BUFFER_BYTES) {

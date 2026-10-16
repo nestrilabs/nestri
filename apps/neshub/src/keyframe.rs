@@ -11,7 +11,7 @@ use iroh::endpoint::Connection;
 use tracing::debug;
 
 use nesprotocol::reliable::MAX_KEYFRAME_STREAMS_IN_FLIGHT;
-use nesprotocol::{STREAM_KEYFRAME, STREAM_VERSION};
+use nesprotocol::reliable::keyframe_stream_header;
 
 use crate::dgram::DatagramSender;
 
@@ -111,7 +111,8 @@ async fn write_keyframe_stream(conn: &Connection, body: &[u8]) -> bool {
         }
     };
 
-    if let Err(e) = send.write_all(&[STREAM_KEYFRAME, STREAM_VERSION]).await {
+    let header = keyframe_stream_header(nesprotocol::clock::monotonic_us());
+    if let Err(e) = send.write_all(&header).await {
         debug!("keyframe header write failed: {e}");
         send.reset(0u32.into()).ok();
         return false;

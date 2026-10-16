@@ -42,7 +42,7 @@ pub(crate) fn synthetic_frame(id: u32, bytes: usize, packet: usize) -> PyroFrame
     PyroFrame {
         frame: id,
         meta: FrameMeta {
-            ts_ms: id * 16,
+            captured_us: u64::from(id) * 16_000,
             width: 1920,
             height: 1080,
         },
@@ -236,7 +236,7 @@ async fn frames_cross_the_hub_byte_for_byte() {
     for (i, (g, s)) in got.iter().zip(&sent).enumerate() {
         assert!(g.is_whole(), "frame {i}: {}/{}", g.received, g.total);
         assert_eq!(g.seq, i as u16);
-        assert_eq!(g.ts_ms, s.meta.ts_ms);
+        assert_eq!(g.captured_us, s.meta.captured_us);
         assert_eq!(packets(g), originals(s), "frame {i} changed in transit");
     }
 }

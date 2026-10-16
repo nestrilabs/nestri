@@ -18,8 +18,13 @@
 //! # Wire format
 //!
 //! ```text
-//! [1B kind] [2B frame seq LE] [2B fragment index LE] [2B fragment count LE] [fragment]
+//! [1B kind] [2B frame seq LE] [2B fragment index LE] [2B fragment count LE]
+//! [8B sent_us LE] [fragment]
 //! ```
+//!
+//! `sent_us` is when the hub handed the datagram to QUIC, on the sender's
+//! [`clock`](crate::clock). Every fragment carries it, so the receiver can
+//! measure the path from any one of them (see [`delay`](crate::delay)).
 //!
 //! The fragments carry a frame *body*: exactly the bytes [`encode_frame`] produces
 //! minus its four-byte length prefix, which only a stream needs since a datagram
@@ -33,8 +38,8 @@
 //!
 //! [`encode_frame`]: crate::encode_frame
 
-/// kind(1) + frame seq(2) + fragment index(2) + fragment count(2).
-pub const DGRAM_HDR_LEN: usize = 7;
+/// kind(1) + frame seq(2) + fragment index(2) + fragment count(2) + sent_us(8).
+pub const DGRAM_HDR_LEN: usize = 15;
 
 /// Datagram kinds. These share the numbering of the stream types they replace,
 /// so a frame's identity does not change with the transport under it.
@@ -79,17 +84,21 @@ pub struct DatagramHeader {
     pub index: u16,
     /// How many fragments the whole frame was split into. Always at least 1.
     pub total: u16,
+    /// When the sender handed this datagram to QUIC, in microseconds on its
+    /// [`clock`](crate::clock).
+    pub sent_us: u64,
 }
 
 /// Write a datagram header into the first [`DGRAM_HDR_LEN`] bytes of `buf`.
 ///
 /// # Panics
 /// If `buf` is shorter than [`DGRAM_HDR_LEN`].
-pub fn write_datagram_header(buf: &mut [u8], kind: u8, seq: u16, index: u16, total: u16) {
-    buf[0] = kind;
-    buf[1..3].copy_from_slice(&seq.to_le_bytes());
-    buf[3..5].copy_from_slice(&index.to_le_bytes());
-    buf[5..7].copy_from_slice(&total.to_le_bytes());
+pub fn write_datagram_header(buf: &mut [u8], header: &DatagramHeader) {
+    buf[0] = header.kind;
+    buf[1..3].copy_from_slice(&header.seq.to_le_bytes());
+    buf[3..5].copy_from_slice(&header.index.to_le_bytes());
+    buf[5..7].copy_from_slice(&header.total.to_le_bytes());
+    buf[7..15].copy_from_slice(&header.sent_us.to_le_bytes());
 }
 
 /// Split a received datagram into its header and fragment payload.
@@ -112,6 +121,7 @@ pub fn decode_datagram(buf: &[u8]) -> Option<(DatagramHeader, &[u8])> {
         seq: u16::from_le_bytes([buf[1], buf[2]]),
         index,
         total,
+        sent_us: u64::from_le_bytes(buf[7..15].try_into().unwrap()),
     };
     Some((header, &buf[DGRAM_HDR_LEN..]))
 }
@@ -144,19 +154,18 @@ mod tests {
     #[test]
     fn header_roundtrips() {
         let mut buf = [0u8; DGRAM_HDR_LEN + 3];
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 0xBEEF, 2, 7);
+        let sent = DatagramHeader {
+            kind: DGRAM_VIDEO,
+            seq: 0xBEEF,
+            index: 2,
+            total: 7,
+            sent_us: 0x0123_4567_89AB_CDEF,
+        };
+        write_datagram_header(&mut buf, &sent);
         buf[DGRAM_HDR_LEN..].copy_from_slice(&[1, 2, 3]);
 
         let (header, payload) = decode_datagram(&buf).expect("valid datagram");
-        assert_eq!(
-            header,
-            DatagramHeader {
-                kind: DGRAM_VIDEO,
-                seq: 0xBEEF,
-                index: 2,
-                total: 7
-            }
-        );
+        assert_eq!(header, sent);
         assert_eq!(payload, &[1, 2, 3]);
     }
 
@@ -166,15 +175,42 @@ mod tests {
 
         // total == 0 describes a frame with no fragments.
         let mut buf = [0u8; DGRAM_HDR_LEN];
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 1, 0, 0);
+        write_datagram_header(
+            &mut buf,
+            &DatagramHeader {
+                kind: DGRAM_VIDEO,
+                seq: 1,
+                index: 0,
+                total: 0,
+                sent_us: 0,
+            },
+        );
         assert!(decode_datagram(&buf).is_none());
 
         // index outside the fragment count.
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 1, 4, 4);
+        write_datagram_header(
+            &mut buf,
+            &DatagramHeader {
+                kind: DGRAM_VIDEO,
+                seq: 1,
+                index: 4,
+                total: 4,
+                sent_us: 0,
+            },
+        );
         assert!(decode_datagram(&buf).is_none());
 
         // A count that would size an implausible allocation.
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 1, 0, u16::MAX);
+        write_datagram_header(
+            &mut buf,
+            &DatagramHeader {
+                kind: DGRAM_VIDEO,
+                seq: 1,
+                index: 0,
+                total: u16::MAX,
+                sent_us: 0,
+            },
+        );
         assert!(decode_datagram(&buf).is_none());
     }
 
