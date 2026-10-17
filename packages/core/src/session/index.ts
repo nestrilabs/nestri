@@ -10,8 +10,11 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
+import { Identifier } from '../id.js';
 import { MachineTable } from '../machine/machine.sql.js';
 import { Trial } from '../trial/index.js';
+import { Launch } from './launch.js';
+import { LaunchTable } from './launch.sql.js';
 import { SessionState, SessionTable } from './session.sql.js';
 
 /**
@@ -149,6 +152,10 @@ export namespace Session {
 					'Why this run is over, once it is. Null while it runs, and for a run whose host did not say',
 				example: Examples.Session.endReason
 			}),
+			launches: Launch.Info.array().optional().meta({
+				description:
+					'What runs in the box, oldest first: the first is the launch the run was asked for with. The run is stopped when the last of them is over'
+			}),
 			queue: Queue.nullable().optional().meta({
 				description:
 					'Where this run is in line for its host, while every slot there is taken. Null once it is not waiting'
@@ -167,8 +174,11 @@ export namespace Session {
 			trial: z.boolean().optional()
 		}),
 		async (input) => {
-			return Database.use(async (tx) => {
-				return tx
+			// The run and its first launch are one write: a run with nothing to
+			// launch in it would never be stopped by its last launch ending.
+			// ref(d-0085)
+			return Database.transaction(async (tx) => {
+				const session = await tx
 					.insert(SessionTable)
 					.values({
 						id: input.id,
@@ -180,6 +190,13 @@ export namespace Session {
 					})
 					.returning()
 					.then((rows) => serialize(rows[0]!));
+				const first = await Launch.insert({
+					id: Identifier.ascending('launch'),
+					sessionId: session.id,
+					gameId: session.gameId,
+					first: true
+				});
+				return { ...session, launches: [first] };
 			});
 		}
 	);
@@ -309,7 +326,7 @@ export namespace Session {
 		async (input) => {
 			const now = sql`now()`;
 			return Database.use(async (tx) => {
-				return tx
+				const row = await tx
 					.update(SessionTable)
 					.set({
 						state: input.state,
@@ -336,9 +353,22 @@ export namespace Session {
 						const row = rows.at(0);
 						return row ? serialize(row) : null;
 					});
+				if (row) await launchesFollow(row);
+				return row;
 			});
 		}
 	);
+
+	/**
+	 * What a run's state means for the launches in it: the first is running
+	 * once the box is live, and none outlives the run. ref(d-0085)
+	 */
+	async function launchesFollow(run: Info) {
+		if (run.state === 'live') await Launch.firstStarted(run.id);
+		if (run.state === 'ended' || run.state === 'failed') {
+			await Launch.endAllOf([run.id], run.endReason ?? null);
+		}
+	}
 
 	/**
 	 * The states an agent is allowed to move a run into.
@@ -425,9 +455,13 @@ export namespace Session {
 				example: Examples.Session.linkedAccountId
 			}),
 			userId: z.string().meta({
-				description:
-					'Whose run it is: the box owner, whose Steam sign-in on this host plays it',
+				description: 'Whose run it is: the box owner, whose Steam sign-in on this host plays it',
 				example: Examples.User.id
+			}),
+			launchId: z.string().nullable().meta({
+				description:
+					'The run’s first launch: the game above. Report its exit against it, and give it to the launched process as `NESTRI_LAUNCH_ID`. Null only for a run older than launches',
+				example: Examples.Launch.id
 			})
 		})
 		.meta({
@@ -465,7 +499,12 @@ export namespace Session {
 			description: 'One run to end now, as handed to the agent running it'
 		});
 
-	export const Job = z.discriminatedUnion('kind', [StartJob, StopJob]);
+	export const Job = z.discriminatedUnion('kind', [
+		StartJob,
+		StopJob,
+		Launch.StartJob,
+		Launch.StopJob
+	]);
 
 	export type Job = z.infer<typeof Job>;
 
@@ -506,39 +545,54 @@ export namespace Session {
 		await leaveAbandoned(machineId);
 		const free = await freeSlots(machineId);
 		const starts = await Database.use(async (tx) => {
-			return tx
-				.select({ session: SessionTable, box: BoxTable, game: GameTable })
-				.from(SessionTable)
-				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
-				.innerJoin(GameTable, eq(SessionTable.gameId, GameTable.id))
-				.where(
-					and(
-						eq(BoxTable.machineId, machineId),
-						eq(SessionTable.state, 'requested'),
-						isNull(SessionTable.timeDeleted),
-						isNull(BoxTable.timeDeleted)
+			return (
+				tx
+					.select({
+						session: SessionTable,
+						box: BoxTable,
+						game: GameTable,
+						launchId: LaunchTable.id
+					})
+					.from(SessionTable)
+					.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+					.innerJoin(GameTable, eq(SessionTable.gameId, GameTable.id))
+					.leftJoin(
+						LaunchTable,
+						and(eq(LaunchTable.sessionId, SessionTable.id), eq(LaunchTable.first, true))
 					)
-				)
-				// Paid ahead of free, then first come first served. See {@link Queue}.
-				.orderBy(SessionTable.trial, SessionTable.timeCreated)
-				.limit(free)
-				.then((rows) =>
-					rows.map(
-						(row): Job => ({
-							kind: 'session.start',
-							sessionId: row.session.id,
-							boxId: row.box.id,
-							// The run's own size when it was given one.
-							boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
-							gameId: row.game.id,
-							steamAppId: row.game.steamAppId,
-							linkedAccountId: row.session.linkedAccountId,
-							userId: row.box.userId
-						})
+					.where(
+						and(
+							eq(BoxTable.machineId, machineId),
+							eq(SessionTable.state, 'requested'),
+							isNull(SessionTable.timeDeleted),
+							isNull(BoxTable.timeDeleted)
+						)
 					)
-				);
+					// Paid ahead of free, then first come first served. See {@link Queue}.
+					.orderBy(SessionTable.trial, SessionTable.timeCreated)
+					.limit(free)
+					.then((rows) =>
+						rows.map(
+							(row): Job => ({
+								kind: 'session.start',
+								sessionId: row.session.id,
+								boxId: row.box.id,
+								// The run's own size when it was given one.
+								boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
+								gameId: row.game.id,
+								steamAppId: row.game.steamAppId,
+								linkedAccountId: row.session.linkedAccountId,
+								userId: row.box.userId,
+								launchId: row.launchId
+							})
+						)
+					)
+			);
 		});
-		return [...stops, ...starts];
+		// Launch work after run work: ending a run ends its launches, and a
+		// launch is only added to a box that is already up. ref(d-0085)
+		const launches = await Launch.jobsForMachine(machineId);
+		return [...stops, ...launches.stops, ...starts, ...launches.starts];
 	});
 
 	/** The runs a host is holding: claimed and not yet over. */
@@ -584,7 +638,7 @@ export namespace Session {
 	 * is ended by its host, never from here.
 	 */
 	export const leaveAbandoned = fn(z.string(), async (machineId) => {
-		await Database.use((tx) =>
+		const left = await Database.use((tx) =>
 			tx
 				.update(SessionTable)
 				.set({
@@ -604,6 +658,11 @@ export namespace Session {
 						sql`coalesce(${SessionTable.timeSeen}, ${SessionTable.timeCreated}) < now() - make_interval(secs => ${ABANDONED_AFTER_SECONDS})`
 					)
 				)
+				.returning({ id: SessionTable.id })
+		);
+		await Launch.endAllOf(
+			left.map((r) => r.id),
+			'left_queue'
 		);
 	});
 
@@ -747,14 +806,30 @@ export namespace Session {
 	 *
 	 * Null when the run is not there or not this person's.
 	 */
-	export const requestStop = fn(z.object({ id: Info.shape.id, userId: z.string() }), async (input) => {
+	export const requestStop = fn(
+		z.object({ id: Info.shape.id, userId: z.string() }),
+		async (input) => {
+			return stopRun(input.id, input.userId);
+		}
+	);
+
+	/**
+	 * The one way a run is asked to end, whoever asks: its owner, or the last
+	 * of its launches being over. Scoped to an owner when one is given.
+	 */
+	async function stopRun(id: string, userId: string | null) {
 		return Database.transaction(async (tx) => {
 			const mine = tx
 				.select({ id: BoxTable.id })
 				.from(BoxTable)
-				.where(and(eq(BoxTable.userId, input.userId), isNull(BoxTable.timeDeleted)));
+				.where(
+					and(
+						userId === null ? undefined : eq(BoxTable.userId, userId),
+						isNull(BoxTable.timeDeleted)
+					)
+				);
 			const scope = and(
-				eq(SessionTable.id, input.id),
+				eq(SessionTable.id, id),
 				inArray(SessionTable.boxId, mine),
 				isNull(SessionTable.timeDeleted)
 			);
@@ -770,7 +845,10 @@ export namespace Session {
 				})
 				.where(and(scope, eq(SessionTable.state, 'requested')))
 				.returning();
-			if (cancelled) return serialize(cancelled);
+			if (cancelled) {
+				await Launch.endAllOf([cancelled.id], 'user');
+				return serialize(cancelled);
+			}
 			const [marked] = await tx
 				.update(SessionTable)
 				.set({ timeStopRequested: sql`coalesce(${SessionTable.timeStopRequested}, now())` })
@@ -780,7 +858,7 @@ export namespace Session {
 			const [over] = await tx.select().from(SessionTable).where(scope);
 			return over ? serialize(over) : null;
 		});
-	});
+	}
 
 	/** The boxes one host is responsible for, as a subquery to scope a write. */
 	function boxesOn(tx: Parameters<Parameters<typeof Database.use>[0]>[0], machineId: string) {
@@ -1010,6 +1088,7 @@ export namespace Session {
 				if (box) {
 					await Box.setState({ id: moved.boxId, ...box });
 				}
+				await launchesFollow(moved);
 
 				// Burn follows the run's state, in the same transaction that
 				// moved it. A session that went live without its meter starting
@@ -1137,6 +1216,165 @@ export namespace Session {
 							: { outcome: 'closed', session: current };
 					});
 			});
+		}
+	);
+
+	/**
+	 * The states a run takes another launch in: claimed by its host and not
+	 * being stopped. A run still waiting for a host has its first launch and
+	 * nothing more yet. ref(d-0085)
+	 */
+	const TAKES_LAUNCHES = ['starting', 'live'] as const;
+
+	export type AddLaunchResult =
+		| { outcome: 'notFound' }
+		| { outcome: 'notRunning'; session: Info }
+		| { outcome: 'hostTooOld' }
+		| { outcome: 'created'; launch: Launch.Info };
+
+	/**
+	 * Add a launch to a run that is going. The library and account checks are
+	 * the caller's, as they are for the run itself; billing is not asked again,
+	 * because a launch is not a run and costs nothing of its own.
+	 */
+	export const addLaunch = fn(
+		z.object({ sessionId: z.string(), userId: z.string(), gameId: z.string() }),
+		async (input): Promise<AddLaunchResult> => {
+			return Database.transaction(async (tx) => {
+				// Locked, so a stop or an end racing this either lands first and
+				// the launch is refused, or lands after and ends it with the run.
+				const [row] = await tx
+					.select({ session: SessionTable })
+					.from(SessionTable)
+					.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+					.where(
+						and(
+							eq(SessionTable.id, input.sessionId),
+							eq(BoxTable.userId, input.userId),
+							isNull(SessionTable.timeDeleted),
+							isNull(BoxTable.timeDeleted)
+						)
+					)
+					.for('update', { of: SessionTable });
+				if (!row) return { outcome: 'notFound' };
+				const run = row.session;
+				if (
+					!TAKES_LAUNCHES.includes(run.state as (typeof TAKES_LAUNCHES)[number]) ||
+					run.timeStopped !== null ||
+					run.timeStopRequested !== null
+				) {
+					return { outcome: 'notRunning', session: serialize(run) };
+				}
+				if (!(await Launch.hostTakesLaunches(run.id))) return { outcome: 'hostTooOld' };
+				const launch = await Launch.insert({
+					id: Identifier.ascending('launch'),
+					sessionId: run.id,
+					gameId: input.gameId,
+					first: false
+				});
+				return { outcome: 'created', launch };
+			});
+		}
+	);
+
+	/**
+	 * Stop the run when nothing is left running in it: the last window closed
+	 * is the person saying they are done. The same stop its owner asks for.
+	 * ref(d-0085)
+	 */
+	async function stopIfEmpty(sessionId: string) {
+		// One transaction holding the run's row, the same lock `addLaunch`
+		// takes: a launch added while this decides either lands first and is
+		// seen as open, or waits and finds the run stopping.
+		return Database.transaction(async (tx) => {
+			await tx
+				.select({ id: SessionTable.id })
+				.from(SessionTable)
+				.where(eq(SessionTable.id, sessionId))
+				.for('update');
+			if (await Launch.anyOpen(sessionId)) return false;
+			await stopRun(sessionId, null);
+			return true;
+		});
+	}
+
+	/**
+	 * The owner closes one launch. A launch in a run no host holds yet ends at
+	 * once; otherwise it is marked, and the host is handed `launch.stop` until
+	 * it reports the launch over. Null when the run or launch is not theirs.
+	 */
+	export const stopLaunch = fn(
+		z.object({ sessionId: z.string(), launchId: z.string(), userId: z.string() }),
+		async (input): Promise<Launch.Info | null | 'hostTooOld'> => {
+			const run = await forOwner({ id: input.sessionId, userId: input.userId });
+			if (!run) return null;
+			const row = await Launch.row(run.id, input.launchId);
+			if (!row) return null;
+			if (!Launch.OPEN.includes(row.state as (typeof Launch.OPEN)[number])) {
+				return Launch.serialize(row);
+			}
+			if (run.state === 'requested') {
+				const ended = await Launch.compareAndSet({
+					id: row.id,
+					from: row.state as Launch.Info['state'],
+					to: 'ended',
+					endReason: 'user'
+				});
+				await stopIfEmpty(run.id);
+				return ended ?? Launch.serialize((await Launch.row(run.id, row.id))!);
+			}
+			// A host that does not handle launches would never end this one.
+			if (!(await Launch.hostTakesLaunches(run.id))) return 'hostTooOld';
+			return (
+				(await Launch.markStop(row.id)) ?? Launch.serialize((await Launch.row(run.id, row.id))!)
+			);
+		}
+	);
+
+	export interface LaunchReportResult {
+		outcome: Exclude<TransitionOutcome, never>;
+		launch: Launch.Info | null;
+	}
+
+	/**
+	 * The host reports where one launch has got to. Held to the run's claim, as
+	 * every host report on a run is. When the report ends the last launch, the
+	 * run is stopped. ref(d-0085)
+	 */
+	export const reportLaunch = fn(
+		z.object({
+			sessionId: z.string(),
+			launchId: z.string(),
+			machineId: z.string(),
+			claimToken: ClaimToken,
+			state: Launch.ReportableState,
+			endReason: EndReason.nullable().optional(),
+			errorMessage: z.string().nullable().optional()
+		}),
+		async (input): Promise<LaunchReportResult> => {
+			const run = await rowForMachine(input.sessionId, input.machineId);
+			if (!run) return { outcome: 'forbidden', launch: null };
+			const row = await Launch.row(run.id, input.launchId);
+			if (!row) return { outcome: 'forbidden', launch: null };
+			const current = Launch.serialize(row);
+			const same = current.state === input.state;
+			if (!same && !Launch.NEXT_STATES[current.state].includes(input.state)) {
+				return { outcome: 'illegal', launch: current };
+			}
+			if (run.claimToken === null || run.claimToken !== input.claimToken) {
+				return { outcome: 'notHolder', launch: current };
+			}
+			if (same) return { outcome: 'unchanged', launch: current };
+			const moved = await Launch.compareAndSet({
+				id: row.id,
+				from: current.state,
+				to: input.state,
+				endReason: input.endReason ?? null,
+				errorMessage: input.errorMessage ?? null
+			});
+			if (!moved) return { outcome: 'lost', launch: current };
+			if (moved.state === 'ended' || moved.state === 'failed') await stopIfEmpty(run.id);
+			return { outcome: 'moved', launch: moved };
 		}
 	);
 
