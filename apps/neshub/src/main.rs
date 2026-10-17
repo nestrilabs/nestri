@@ -259,13 +259,17 @@ async fn main() -> Result<()> {
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
     // Encoder processes as the video listener first hears from them.
     let (encoder_tx, mut encoder_rx) = tokio::sync::mpsc::unbounded_channel::<u32>();
+    // Encoders the video listener has reported. One the forwarder finds gone
+    // is taken out, so its next frame reports it again.
+    let known_encoders: ipc_listener::KnownEncoders = Default::default();
     {
+        let known = known_encoders.clone();
         let mgr = session_manager.clone();
         tokio::spawn(async move {
             let cmd_path = std::path::PathBuf::from(nesprotocol::CAPTURE_CMD_SOCKET);
             let mut fanout = capture_cmd::Fanout::default();
             loop {
-                let mut bytes = tokio::select! {
+                let bytes = tokio::select! {
                     Some(pid) = encoder_rx.recv() => {
                         // Every encoder the hub knows hears every command, on
                         // its own socket; a new one first hears what it
@@ -286,20 +290,32 @@ async fn main() -> Result<()> {
                         None => break,
                     },
                 };
+                // A keyframe request for one window goes to that window's
+                // encoder alone; everything else to all of them.
+                let (target, mut bytes) = capture_cmd::target_of(bytes);
                 fill_pyrowave_packet_size(&mut bytes, mgr.pyro_packet_size().await);
                 let Ok(sock) = std::os::unix::net::UnixDatagram::unbound() else {
                     continue;
                 };
-                let destinations = fanout.destinations();
-                fanout.sent(&bytes);
+                let destinations = fanout.destinations_for(target);
+                if target.is_none() {
+                    fanout.sent(&bytes);
+                }
                 if destinations.first() != Some(&cmd_path) {
                     for path in destinations {
-                        if let Err(e) = sock.send_to(&bytes, &path) {
-                            // Its socket refuses: that process has gone.
-                            tracing::info!("encoder at {} is gone: {e}", path.display());
-                            if let Some(pid) = capture_cmd::pid_of(&path) {
-                                fanout.forget(pid);
+                        match sock.send_to(&bytes, &path) {
+                            Ok(_) => {}
+                            // Refused or absent: that process has gone.
+                            Err(e) if capture_cmd::encoder_is_gone(&e) => {
+                                tracing::info!("encoder at {} is gone: {e}", path.display());
+                                if let Some(pid) = capture_cmd::pid_of(&path) {
+                                    fanout.forget(pid);
+                                    if let Ok(mut known) = known.lock() {
+                                        known.remove(&pid);
+                                    }
+                                }
                             }
+                            Err(e) => tracing::debug!("command to {}: {e}", path.display()),
                         }
                     }
                     continue;
@@ -497,7 +513,15 @@ async fn main() -> Result<()> {
         let (mgr, controller, cmd_tx) =
             (session_manager.clone(), controller.clone(), cmd_tx.clone());
         async move {
-            ipc_listener::run_video_listener(video_ipc, mgr, controller, cmd_tx, encoder_tx).await
+            ipc_listener::run_video_listener(
+                video_ipc,
+                mgr,
+                controller,
+                cmd_tx,
+                encoder_tx,
+                known_encoders,
+            )
+            .await
         }
     });
     tokio::spawn({

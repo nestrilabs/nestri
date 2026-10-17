@@ -8,8 +8,9 @@
 //! predates tagging, and for every command sent before the first frame.
 //!
 //! An encoder that turns up later has missed what the others were told (the
-//! codec every client decodes, the bitrate), so it is told again: the commands
-//! so far, in order, then a keyframe request. The first encoder is not: every
+//! codec every client decodes, the bitrate), so it is told again: the latest
+//! command of each type, then a keyframe request. A keyframe request for one
+//! client goes only to the encoder of the window that client is shown. The first encoder is not: every
 //! command before it went to the shared socket, which reached it, and
 //! repeating a codec change to an encoder already on that codec would restart
 //! its stream for nothing. A box with one game therefore gets exactly the
@@ -20,14 +21,47 @@ use std::path::PathBuf;
 
 use nesprotocol::MSG_IDR_REQUEST;
 
-/// Commands kept for an encoder that arrives late. A handful in practice: the
-/// codec, the bitrate, a control mode.
-const HISTORY: usize = 16;
+/// Marks a hub-internal command meant for one encoder: `[TO_ENCODER][4B pid]
+/// [command]`. Stripped before anything is sent; never leaves the hub.
+const TO_ENCODER: u8 = 0xF0;
+
+/// `cmd` for the encoder in `pid` alone, or for every encoder when `None`.
+pub fn to_encoder(pid: Option<u32>, cmd: &[u8]) -> Vec<u8> {
+    match pid {
+        Some(pid) => {
+            let mut out = Vec::with_capacity(5 + cmd.len());
+            out.push(TO_ENCODER);
+            out.extend_from_slice(&pid.to_le_bytes());
+            out.extend_from_slice(cmd);
+            out
+        }
+        None => cmd.to_vec(),
+    }
+}
+
+/// A keyframe request for the encoder in `pid`, or every encoder.
+pub fn keyframe_request(pid: Option<u32>) -> Vec<u8> {
+    to_encoder(pid, &[MSG_IDR_REQUEST])
+}
+
+/// Split a queued command into its target and the command itself.
+pub fn target_of(cmd: Vec<u8>) -> (Option<u32>, Vec<u8>) {
+    if cmd.len() >= 5 && cmd[0] == TO_ENCODER {
+        let pid = u32::from_le_bytes([cmd[1], cmd[2], cmd[3], cmd[4]]);
+        (Some(pid), cmd[5..].to_vec())
+    } else {
+        (None, cmd)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Fanout {
     encoders: BTreeSet<u32>,
+    /// The latest command of each type, in the order they were last sent.
     history: Vec<Vec<u8>>,
+    /// Whether any encoder has been known: only the very first is spared the
+    /// replay, since only it was reached by the shared socket.
+    ever_known: bool,
 }
 
 impl Fanout {
@@ -43,28 +77,37 @@ impl Fanout {
             .collect()
     }
 
-    /// Record a command as sent, so a later encoder can be told it.
+    /// Where a command for `target` goes: that encoder alone when it is
+    /// known, otherwise wherever an untargeted one would.
+    pub fn destinations_for(&self, target: Option<u32>) -> Vec<PathBuf> {
+        match target {
+            Some(pid) if self.encoders.contains(&pid) => {
+                vec![PathBuf::from(nesprotocol::capture_cmd_socket(pid))]
+            }
+            _ => self.destinations(),
+        }
+    }
+
+    /// Record a command as sent to every encoder, so a later one can be told
+    /// it. Only the latest of each type is kept.
     pub fn sent(&mut self, cmd: &[u8]) {
-        if cmd.first() == Some(&MSG_IDR_REQUEST) || cmd.is_empty() {
+        let Some(&kind) = cmd.first() else {
+            return;
+        };
+        if kind == MSG_IDR_REQUEST {
             return;
         }
-        if self.history.last().is_some_and(|last| last == cmd) {
-            return;
-        }
-        if self.history.len() == HISTORY {
-            self.history.remove(0);
-        }
+        self.history.retain(|c| c[0] != kind);
         self.history.push(cmd.to_vec());
     }
 
     /// A frame came from `pid`. Returns what to send it if it is new to the
-    /// hub, `None` if it was known.
+    /// hub (or was forgotten), `None` if it was known.
     pub fn encoder(&mut self, pid: u32) -> Option<Vec<Vec<u8>>> {
-        let first = self.encoders.is_empty();
         if !self.encoders.insert(pid) {
             return None;
         }
-        if first {
+        if !std::mem::replace(&mut self.ever_known, true) {
             return Some(Vec::new());
         }
         let mut replay = self.history.clone();
@@ -76,6 +119,15 @@ impl Fanout {
     pub fn forget(&mut self, pid: u32) {
         self.encoders.remove(&pid);
     }
+}
+
+/// Whether a send error means the encoder's process is gone, rather than a
+/// passing condition (a full buffer) that the next command may not meet.
+pub fn encoder_is_gone(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+    )
 }
 
 /// The process id in an encoder's own socket path.
@@ -121,21 +173,18 @@ mod tests {
     }
 
     #[test]
-    fn a_later_encoder_hears_what_it_missed_then_a_keyframe_request() {
+    fn a_later_encoder_hears_the_latest_of_each_type_then_a_keyframe_request() {
         let mut f = Fanout::default();
         f.sent(SETTINGS);
         f.encoder(10);
         f.sent(&[MSG_IDR_REQUEST]);
+        let caps = [nesprotocol::MSG_CLIENT_CAPS, 1];
         let bitrate = [nesprotocol::MSG_ENCODE_SETTINGS, 9];
-        f.sent(&bitrate);
+        f.sent(&caps);
         f.sent(&bitrate);
         assert_eq!(
             f.encoder(20),
-            Some(vec![
-                SETTINGS.to_vec(),
-                bitrate.to_vec(),
-                vec![MSG_IDR_REQUEST]
-            ])
+            Some(vec![caps.to_vec(), bitrate.to_vec(), vec![MSG_IDR_REQUEST]])
         );
         assert_eq!(f.destinations().len(), 2);
         f.forget(10);
@@ -143,6 +192,26 @@ mod tests {
             f.destinations(),
             vec![PathBuf::from("/tmp/nescapture-cmd-20.sock")]
         );
+        // Forgotten, then heard from again: learnt again, and told again.
+        assert_eq!(f.encoder(10).map(|r| r.len()), Some(3));
+    }
+
+    #[test]
+    fn a_targeted_command_goes_to_its_encoder_alone() {
+        let mut f = Fanout::default();
+        f.encoder(10);
+        f.encoder(20);
+        let (target, cmd) = target_of(keyframe_request(Some(20)));
+        assert_eq!(cmd, vec![MSG_IDR_REQUEST]);
+        assert_eq!(
+            f.destinations_for(target),
+            vec![PathBuf::from("/tmp/nescapture-cmd-20.sock")]
+        );
+        // Unknown target, or none: everyone.
+        assert_eq!(f.destinations_for(Some(30)).len(), 2);
+        assert_eq!(target_of(keyframe_request(None)), (None, vec![MSG_IDR_REQUEST]));
+        assert!(encoder_is_gone(&std::io::Error::from(std::io::ErrorKind::ConnectionRefused)));
+        assert!(!encoder_is_gone(&std::io::Error::from(std::io::ErrorKind::WouldBlock)));
     }
 
     #[test]
@@ -150,16 +219,6 @@ mod tests {
         let mut f = Fanout::default();
         assert_eq!(f.encoder(10), Some(vec![]));
         assert_eq!(f.encoder(11), Some(vec![vec![MSG_IDR_REQUEST]]));
-    }
-
-    #[test]
-    fn history_is_bounded() {
-        let mut f = Fanout::default();
-        for i in 0..100u8 {
-            f.sent(&[nesprotocol::MSG_ENCODE_SETTINGS, i]);
-        }
-        f.encoder(1);
-        assert_eq!(f.encoder(2).unwrap().len(), HISTORY + 1);
     }
 
     #[test]

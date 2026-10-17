@@ -20,6 +20,7 @@ use nesprotocol::{
 use crate::control::{Controller, PathView};
 use crate::negotiation::{Negotiator, effective_caps};
 
+use crate::capture_cmd::keyframe_request;
 use crate::dgram::{MediaItem, run_datagram_writer};
 use crate::windows::{Source, Subscription, WindowTable, route, wants_cursor};
 use nesprotocol::window::{MSG_WINDOW_SUBSCRIBE, STREAM_WINDOWS, WINDOW_DEFAULT, WindowEvent, WindowId};
@@ -28,9 +29,11 @@ use nesprotocol::pyrowave::PyroFrame;
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
-/// Input on its way to the box, with the window it belongs to, ref(d-0085).
-/// An empty event asks only that the window be focused.
-pub type TaggedInput = (WindowId, Vec<u8>);
+/// Input on its way to the box, ref(d-0085): which client sent it (its
+/// gamepad session number), the window it belongs to, and the event. An empty
+/// event asks only that the window be focused, which the box's side grants
+/// only when no other client is typing; see `windows::FocusTagger`.
+pub type TaggedInput = (u32, WindowId, Vec<u8>);
 
 /// What a client's input reader needs to say which window its input is for.
 #[derive(Clone)]
@@ -100,6 +103,9 @@ pub struct ClientSession {
     input_broadcast: tokio::sync::broadcast::Sender<TaggedInput>,
     /// Which window this client is shown, ref(d-0085).
     subscription: Arc<std::sync::Mutex<Subscription>>,
+    /// The encoder whose frames this client was last sent (0: none yet), so
+    /// its keyframe requests go to that encoder alone.
+    encoder_pid: Arc<AtomicU32>,
     primary_window: Arc<AtomicU32>,
     /// Where a subscribe request goes: the manager, which holds the windows.
     subscribe_tx: tokio::sync::mpsc::UnboundedSender<(iroh::EndpointId, WindowId)>,
@@ -153,6 +159,7 @@ impl ClientSession {
     pub fn new(
         input_broadcast: tokio::sync::broadcast::Sender<TaggedInput>,
         primary_window: Arc<AtomicU32>,
+        encoder_pid: u32,
         subscribe_tx: tokio::sync::mpsc::UnboundedSender<(iroh::EndpointId, WindowId)>,
         gamepad_session: u32,
         gamepad_tx: tokio::sync::broadcast::Sender<Vec<u8>>,
@@ -171,6 +178,7 @@ impl ClientSession {
         let (windows_tx, windows_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         Self {
             subscription: Arc::new(std::sync::Mutex::new(Subscription::Legacy)),
+            encoder_pid: Arc::new(AtomicU32::new(encoder_pid)),
             primary_window,
             subscribe_tx,
             send_windows: windows_tx,
@@ -232,7 +240,9 @@ impl ClientSession {
                 // says so, a round trip later; and deltas are held back until
                 // it is sent, as for any client waiting on one.
                 self.awaiting_keyframe.store(true, Ordering::Relaxed);
-                let _ = self.idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
+                let _ = self
+                    .idr_cmd_tx
+                    .send(keyframe_request(pid_or_all(&self.encoder_pid)));
                 // The client says how each frame arrived, back on this same
                 // connection; the rate is decided on each one as it comes.
                 self.tasks.push(tokio::spawn(run_feedback_reader(
@@ -339,7 +349,11 @@ impl ClientSession {
                     client: self.client,
                     negotiator: self.negotiator.clone(),
                 };
-                let subscribe = (self.client, self.subscribe_tx.clone());
+                let subscribe = (
+                    self.client,
+                    self.subscribe_tx.clone(),
+                    self.encoder_pid.clone(),
+                );
                 self.tasks.push(tokio::spawn(async move {
                     run_control_reader(
                         conn, idr, reports, controller, awaiting, pyrowave, caps, subscribe,
@@ -477,6 +491,7 @@ impl ClientSession {
     pub fn subscribe(
         &self,
         to: Subscription,
+        encoder: Option<u32>,
         idr_cmd_tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     ) -> Subscription {
         let before = match self.subscription.lock() {
@@ -486,16 +501,23 @@ impl ClientSession {
         if before == to {
             return before;
         }
+        self.restart_picture();
+        self.encoder_pid.store(encoder.unwrap_or(0), Ordering::Relaxed);
+        if matches!(to, Subscription::Window(_)) {
+            let _ = idr_cmd_tx.send(keyframe_request(encoder));
+        }
+        before
+    }
+
+    /// What this client is shown is now another encoder's picture: number from
+    /// zero, hold deltas until a keyframe, and forget what it reported about
+    /// the old one. The caller asks for the keyframe.
+    pub fn restart_picture(&self) {
         if self.pending_video.is_none() {
             let _ = self.send_video.send(MediaItem::Resubscribe);
         }
-        // What this client said about the old window describes nothing now.
+        self.awaiting_keyframe.store(true, Ordering::Relaxed);
         let _ = self.take_report();
-        if matches!(to, Subscription::Window(_)) {
-            self.awaiting_keyframe.store(true, Ordering::Relaxed);
-            let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
-        }
-        before
     }
 
     /// Queue one lifecycle message, `[type][payload]`, for the windows stream.
@@ -643,9 +665,19 @@ fn split_input_events(payload: &[u8]) -> Vec<Vec<u8>> {
     out
 }
 
-/// How often a client's gamepad asks again for its window's focus while the
-/// window is unchanged. Another client's input may have moved focus since.
-const GAMEPAD_FOCUS_EVERY: std::time::Duration = std::time::Duration::from_millis(250);
+/// How often a client's gamepad may ask for its window's focus. Only a bound
+/// on the asking: a request for the window that already has focus changes
+/// nothing.
+const GAMEPAD_FOCUS_ASK: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// The encoder a client's keyframe requests are for, or every encoder when
+/// it has not been sent anyone's frames yet.
+fn pid_or_all(pid: &AtomicU32) -> Option<u32> {
+    match pid.load(Ordering::Relaxed) {
+        0 => None,
+        pid => Some(pid),
+    }
+}
 
 /// Where one client's gamepad messages go.
 struct Gamepads {
@@ -663,9 +695,9 @@ struct Gamepads {
 ///
 /// Each event goes to the box with the window this client is shown, which is
 /// where the box's focus tags come from, ref(d-0085). A gamepad message also
-/// asks for that window's focus, at most every [`GAMEPAD_FOCUS_EVERY`] while
-/// it stays the same window: the pads reach the game by another route, and a
-/// game reads them only while it has focus.
+/// asks for that window's focus: the pads reach the game by another route,
+/// and a game reads them only while it has focus. Asked at most every
+/// [`GAMEPAD_FOCUS_ASK`]; whether it is granted is the tagger's decision.
 async fn run_input_reader(
     conn: Connection,
     input_broadcast: tokio::sync::broadcast::Sender<TaggedInput>,
@@ -674,7 +706,7 @@ async fn run_input_reader(
     feedback: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
 ) {
     let outbound = Some((MSG_GAMEPAD_FEEDBACK, feedback));
-    let mut focus_asked: Option<(WindowId, std::time::Instant)> = None;
+    let mut focus_asked: Option<std::time::Instant> = None;
     run_framed_reader(conn, BIDI_INPUT, "input", outbound, |msg_type, payload| {
         let input_broadcast = input_broadcast.clone();
         let to_box = gamepads.to_box.clone();
@@ -685,11 +717,8 @@ async fn run_input_reader(
             && let Some(w) = target
         {
             let now = std::time::Instant::now();
-            let due = focus_asked.is_none_or(|(last, at)| {
-                last != w || now.duration_since(at) >= GAMEPAD_FOCUS_EVERY
-            });
-            if due {
-                focus_asked = Some((w, now));
+            if focus_asked.is_none_or(|at| now.duration_since(at) >= GAMEPAD_FOCUS_ASK) {
+                focus_asked = Some(now);
                 ask_focus = Some(w);
             }
         }
@@ -700,12 +729,12 @@ async fn run_input_reader(
                     // went with its compositor.
                     let Some(w) = target else { return };
                     for event in split_input_events(&payload) {
-                        let _ = input_broadcast.send((w, event));
+                        let _ = input_broadcast.send((session, w, event));
                     }
                 }
                 MSG_GAMEPAD => {
                     if let Some(w) = ask_focus {
-                        let _ = input_broadcast.send((w, Vec::new()));
+                        let _ = input_broadcast.send((session, w, Vec::new()));
                     }
                     let mut frame = Vec::with_capacity(6 + payload.len());
                     nesprotocol::gamepad::encode_ipc(&mut frame, session, &payload);
@@ -776,9 +805,12 @@ async fn run_control_reader(
     awaiting_keyframe: Arc<AtomicBool>,
     pyrowave: PyroWaveGate,
     caps_sink: CapsSink,
+    // Who this is, where subscribe requests go, and the encoder this
+    // client's keyframe requests are for.
     subscribe: (
         iroh::EndpointId,
         tokio::sync::mpsc::UnboundedSender<(iroh::EndpointId, WindowId)>,
+        Arc<AtomicU32>,
     ),
 ) {
     run_framed_reader(conn, BIDI_CONTROL, "control", None, |msg_type, payload| {
@@ -807,7 +839,9 @@ async fn run_control_reader(
                     // undecodable and starves the keyframe that would fix it.
                     // See `dgram::ResyncGate`.
                     awaiting_keyframe.store(true, Ordering::Relaxed);
-                    let _ = idr_cmd_tx.send(vec![MSG_IDR_REQUEST]);
+                    // To the encoder of the window this client is shown,
+                    // ref(d-0085): the other windows are fine.
+                    let _ = idr_cmd_tx.send(keyframe_request(pid_or_all(&subscribe.2)));
                 }
                 MSG_CLIENT_CAPS => {
                     // Passed through untouched, and in particular *without*
@@ -1172,8 +1206,10 @@ pub struct SessionManager {
     subscribe_tx: tokio::sync::mpsc::UnboundedSender<(iroh::EndpointId, WindowId)>,
     subscribe_rx:
         std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<(iroh::EndpointId, WindowId)>>>,
-    /// How a process's launch is found; `/proc` outside tests.
-    launch_of: fn(u32) -> Option<String>,
+    /// The encoder of the primary picture (0: untagged or none yet).
+    primary_pid: Arc<AtomicU32>,
+    /// Where commands for the encoders go; set by `serve_subscriptions`.
+    cmd_tx: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
 }
 
 impl SessionManager {
@@ -1186,7 +1222,8 @@ impl SessionManager {
             cursor_window: AtomicU32::new(0),
             subscribe_tx,
             subscribe_rx: std::sync::Mutex::new(Some(subscribe_rx)),
-            launch_of: crate::windows::launch_of_process,
+            primary_pid: Arc::new(AtomicU32::new(0)),
+            cmd_tx: std::sync::OnceLock::new(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             gamepad_tx,
             next_gamepad_session: AtomicU32::new(1),
@@ -1226,6 +1263,7 @@ impl SessionManager {
             ClientSession::new(
                 input_broadcast,
                 self.primary_window.clone(),
+                self.primary_pid.load(Ordering::Relaxed),
                 self.subscribe_tx.clone(),
                 self.next_gamepad_session.fetch_add(1, Ordering::Relaxed),
                 self.gamepad_tx.clone(),
@@ -1364,27 +1402,57 @@ impl SessionManager {
             self.video_delta_bytes
                 .fetch_add(data.len() as u64, Ordering::Relaxed);
         }
-        let (window, primary) = {
+        let (window, note) = {
             let mut windows = self.windows.lock().unwrap_or_else(|e| e.into_inner());
-            let window = windows.resolve(source, &self.launch_of);
-            let primary = windows.note_primary(source, std::time::Instant::now());
-            if primary {
+            let window = windows.resolve(source);
+            if let (Some(w), Some(pid)) = (window, source) {
+                windows.note_drawn(w, pid);
+            }
+            let note = windows.note_primary(source, std::time::Instant::now());
+            if note.primary {
                 self.primary_window.store(
                     u32::from(window.unwrap_or(WINDOW_DEFAULT)),
                     Ordering::Relaxed,
                 );
+                self.primary_pid.store(source.unwrap_or(0), Ordering::Relaxed);
             }
-            (window, primary)
+            (window, note)
         };
         let data = Bytes::from(data);
         let sessions = self.sessions.lock().await;
+        if note.switched {
+            // Clients that never subscribed are now shown another encoder:
+            // nothing they hold predicts it, ref(d-0085).
+            info!("primary picture is now encoder {source:?}");
+            let mut any = false;
+            for session in sessions.values() {
+                if session.subscription() == Subscription::Legacy {
+                    session.restart_picture();
+                    session
+                        .encoder_pid
+                        .store(source.unwrap_or(0), Ordering::Relaxed);
+                    any = true;
+                }
+            }
+            if any && let Some(tx) = self.cmd_tx.get() {
+                let _ = tx.send(keyframe_request(source));
+            }
+        }
         for session in sessions.values() {
-            match route(session.subscription(), window, primary) {
+            match route(session.subscription(), window, note.primary) {
                 Some(WINDOW_DEFAULT) => session.send_video_frame(MediaItem::Coded(data.clone())),
                 Some(w) => session.send_video_frame(MediaItem::Windowed(w, data.clone())),
                 None => {}
             }
         }
+    }
+
+    /// Encoder `pid` said which launch it draws for, ref(d-0085).
+    pub fn note_encoder_launch(&self, pid: u32, launch: String) {
+        self.windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .note_launch(pid, launch);
     }
 
     /// One message from nescope on the input socket that is not stats:
@@ -1498,7 +1566,12 @@ impl SessionManager {
         let Some(session) = sessions.get(&client) else {
             return;
         };
-        let before = session.subscribe(Subscription::Window(window), idr_cmd_tx);
+        let encoder = self
+            .windows
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .encoder_of(window);
+        let before = session.subscribe(Subscription::Window(window), encoder, idr_cmd_tx);
         if before == Subscription::Legacy {
             for event in snapshot {
                 let mut m = Vec::new();
@@ -1514,6 +1587,7 @@ impl SessionManager {
         self: Arc<Self>,
         idr_cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     ) {
+        let _ = self.cmd_tx.set(idr_cmd_tx.clone());
         let rx = self
             .subscribe_rx
             .lock()

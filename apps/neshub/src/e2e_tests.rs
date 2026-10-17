@@ -89,7 +89,7 @@ async fn rig_with(client_buffer: Option<usize>) -> Rig {
         async move {
             let _cmd_rx = _cmd_rx;
             let _encoder_rx = _encoder_rx;
-            crate::ipc_listener::run_video_listener(path, mgr, controller, cmd_tx, encoder_tx)
+            crate::ipc_listener::run_video_listener(path, mgr, controller, cmd_tx, encoder_tx, Default::default())
                 .await
         }
     });

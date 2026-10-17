@@ -22,6 +22,10 @@ fn set_recv_buffer(socket: &UnixDatagram, size: libc::c_int) {
     }
 }
 
+/// Encoder processes the video listener has reported to the command
+/// forwarder, ref(d-0085).
+pub type KnownEncoders = Arc<std::sync::Mutex<std::collections::HashSet<u32>>>;
+
 pub async fn run_video_listener(
     socket_path: PathBuf,
     session_manager: Arc<SessionManager>,
@@ -30,6 +34,7 @@ pub async fn run_video_listener(
     // Each encoder process the first time it tags a frame, so commands can
     // reach it on its own socket, ref(d-0085).
     encoder_tx: tokio::sync::mpsc::UnboundedSender<u32>,
+    known_encoders: KnownEncoders,
 ) {
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
@@ -59,11 +64,17 @@ pub async fn run_video_listener(
     // PyroWave frames arrive as runs of messages; see `nesprotocol::pyrowave`.
     let mut pyrowave = FrameAssembler::new();
     let started = std::time::Instant::now();
-    let mut encoders = std::collections::HashSet::new();
     loop {
         match socket.recv(&mut buf).await {
             Ok(n) => {
                 if let Some(decoded) = decode_ipc_frame(&buf[..n]) {
+                    if decoded.stream_type == nesprotocol::STREAM_ENCODER_HELLO {
+                        if let Some(pid) = decoded.pid {
+                            let launch = String::from_utf8_lossy(decoded.data).into_owned();
+                            session_manager.note_encoder_launch(pid, launch);
+                        }
+                        continue;
+                    }
                     if decoded.stream_type == STREAM_PYROWAVE {
                         let now_ms = started.elapsed().as_millis() as u64;
                         match pyrowave.push(&decoded, now_ms) {
@@ -87,7 +98,7 @@ pub async fn run_video_listener(
                         continue;
                     }
                     if let Some(pid) = decoded.pid
-                        && encoders.insert(pid)
+                        && known_encoders.lock().is_ok_and(|mut k| k.insert(pid))
                     {
                         tracing::info!("encoder in process {pid} is drawing");
                         let _ = encoder_tx.send(pid);
@@ -254,8 +265,9 @@ pub async fn run_input_ipc_listener(
                     let mut tagger = crate::windows::FocusTagger::default();
                     'events: loop {
                         match input_rx.recv().await {
-                            Ok((window, event)) => {
-                                for data in tagger.messages(window, &event) {
+                            Ok((client, window, event)) => {
+                                let now = std::time::Instant::now();
+                                for data in tagger.messages(client, window, &event, now) {
                                     let len = data.len() as u16;
                                     let mut frame = Vec::with_capacity(2 + data.len());
                                     frame.extend_from_slice(&len.to_le_bytes());
