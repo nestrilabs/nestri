@@ -245,6 +245,8 @@ pub struct NescopeState {
     pub loop_handle: LoopHandle<'static, CalloopData>,
     /// True after the game command has been spawned.
     pub game_launched: bool,
+    /// Time since all mapped windows disappeared (for auto-exit).
+    pub no_clients_since: Option<std::time::Instant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +379,7 @@ impl NescopeState {
             fps,
             loop_handle,
             game_launched: false,
+            no_clients_since: None,
         };
 
         (state, input_tx)
