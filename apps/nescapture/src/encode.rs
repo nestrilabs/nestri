@@ -131,24 +131,37 @@ pub fn effective_colorspace(vk_colorspace: u32, declared: Option<u32>) -> u32 {
     vk_colorspace
 }
 
-/// A surface colour from the compositor, as a Vulkan colour space.
+/// Relay commands sent to the shared command socket onto this process's own,
+/// ref(d-0085).
 ///
-/// Mapped into the swapchain's own vocabulary so there is one thing to reason
-/// about downstream rather than two spellings of the same fact.
-/// Relay commands sent to the shared command socket onto this process's own.
-///
-/// The shared path is bound by whichever encoder started last, as it always
-/// was, so whatever still sends there (an older hub, an older compositor)
-/// reaches the newest game and nothing else changes for it. Best effort: a
-/// process that cannot bind it still has its own socket.
+/// Whatever still sends to the shared path (a compositor's colour message, a
+/// hub before it has heard from any encoder) reaches one encoder through it.
+/// Taken only if nobody holds it: a live socket is another game's, and
+/// unlinking it would cut that game off. One relay per process, however many
+/// times the pipeline is rebuilt, so no thread is left behind. Best effort:
+/// a process that cannot have it still has its own socket.
 fn relay_legacy_commands(own: std::path::PathBuf) {
     use std::os::unix::net::UnixDatagram;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static RELAYING: AtomicBool = AtomicBool::new(false);
+    if RELAYING.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let shared = std::path::Path::new(nesprotocol::CAPTURE_CMD_SOCKET);
+    let live = UnixDatagram::unbound()
+        .and_then(|probe| probe.connect(shared))
+        .is_ok();
+    if live {
+        log::info!("{} belongs to another encoder; leaving it", shared.display());
+        RELAYING.store(false, Ordering::Release);
+        return;
+    }
     let _ = std::fs::remove_file(shared);
     let sock = match UnixDatagram::bind(shared) {
         Ok(s) => s,
         Err(e) => {
             log::warn!("shared cmd socket bind failed: {e}");
+            RELAYING.store(false, Ordering::Release);
             return;
         }
     };
@@ -171,6 +184,25 @@ fn relay_legacy_commands(own: std::path::PathBuf) {
     }
 }
 
+/// `STREAM_ENCODER_HELLO` for this process: its pid and `NESTRI_LAUNCH_ID`.
+fn encoder_hello() -> Vec<u8> {
+    let launch = std::env::var("NESTRI_LAUNCH_ID").unwrap_or_default();
+    encode_ipc_frame_from(
+        std::process::id(),
+        nesprotocol::STREAM_ENCODER_HELLO,
+        0,
+        0,
+        0,
+        0,
+        0,
+        launch.as_bytes(),
+    )
+}
+
+/// A surface colour from the compositor, as a Vulkan colour space.
+///
+/// Mapped into the swapchain's own vocabulary so there is one thing to reason
+/// about downstream rather than two spellings of the same fact.
 pub fn surface_color_to_vk(space: u8) -> u32 {
     match space {
         nesprotocol::SURFACE_COLOR_BT2020_PQ => VK_COLOR_SPACE_HDR10_ST2084_EXT,
@@ -2998,7 +3030,16 @@ fn ipc_send_thread(
                         height,
                         &pkt.data,
                     );
-                    (vec![ipc_frame], pkt.is_key_frame, pkt.data.len())
+                    // The launch this encoder draws for goes ahead of every
+                    // keyframe, ref(d-0085): the hub cannot read this
+                    // process's environment, and a keyframe is where a late
+                    // hub starts anyway.
+                    let messages = if pkt.is_key_frame {
+                        vec![encoder_hello(), ipc_frame]
+                    } else {
+                        vec![ipc_frame]
+                    };
+                    (messages, pkt.is_key_frame, pkt.data.len())
                 }
                 Encoded::Pyro(frame) => {
                     let enc_ms = (frame.stats.gpu_ns() / 1e6) as f32;
