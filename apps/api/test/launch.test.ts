@@ -226,6 +226,16 @@ describe('launches', () => {
 		expect(run.launches.map((l: any) => l.state)).toEqual(['running', 'running']);
 	});
 
+	test('the same game added twice is one launch', async () => {
+		const { s, id, second } = await liveRun('launch-dedupe', 7109);
+		const [a, b] = await Promise.all([addLaunch(s, id, second), addLaunch(s, id, second)]);
+		const statuses = [a.status, b.status].sort();
+		expect(statuses).toEqual([200, 201]);
+		const ids = [((await a.json()) as any).data.id, ((await b.json()) as any).data.id];
+		expect(ids[0]).toBe(ids[1]);
+		expect((await read(s, id)).launches.length).toBe(2);
+	});
+
 	test('a run that is not running takes no launch', async () => {
 		const s = await scene('launch-notrunning', 7102);
 		const { body } = await requestSession(s);
