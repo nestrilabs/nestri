@@ -143,8 +143,9 @@ where
     let mut running: BTreeMap<LaunchId, Current> = BTreeMap::new();
     let mut exits: Exits = JoinSet::new();
     // A terminal launch's exit, once it has ended while others were still
-    // running. The box stays up for them, takes no new launches, and ends with
-    // this exit when the last of them has gone.
+    // running. The box stays up for them, still takes new launches (closing
+    // one window is not the person being done, ref(d-0085)), and ends with
+    // this exit when the last launch in it has gone.
     let mut ending: Option<Exit> = None;
     // Each launch's content mounted after boot, by launch, so it can be taken
     // down with the launch. Recorded when asked for, before it has finished.
@@ -433,19 +434,6 @@ where
                     refuse(&mut writer, id, &reason).await?;
                     continue;
                 }
-                if ending.is_some() {
-                    // The box was ended by a terminal launch and is waiting
-                    // only for the launches already in it. A new one would
-                    // keep alive a box its person has finished with.
-                    refuse(
-                        &mut writer,
-                        id,
-                        "the box is ending: a launch that ends it has exited",
-                    )
-                    .await?;
-                    continue;
-                }
-
                 let started = start(
                     &mut writer,
                     workload,
@@ -1168,10 +1156,11 @@ mod tests {
         assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(7)));
     }
 
-    /// Once a terminal launch has ended, the box waits only for what is
-    /// already in it: a new launch is refused.
+    /// A terminal launch ending beside another is one window closed, not the
+    /// person done: the box still takes a new launch, and ends only once the
+    /// last launch in it has gone.
     #[tokio::test]
-    async fn an_ending_box_takes_no_new_launch() {
+    async fn a_box_takes_a_new_launch_after_one_of_its_launches_ended() {
         let (mut caller, session) =
             booted(Given::new(Double::exits_when_stopped(Exit::code(0)))).await;
 
@@ -1183,17 +1172,15 @@ mod tests {
         assert_eq!(caller.expect().await, exited("l-1"));
 
         caller.say(&launch_and_stay("l-3")).await;
-        let GuestToHost::StartFailed { id, reason } = caller.expect().await else {
-            panic!("an ending box took a new launch")
-        };
-        assert_eq!(id, LaunchId::new("l-3"));
-        assert!(reason.contains("ending"), "{reason}");
+        assert_eq!(caller.expect().await, started("l-3"));
 
         caller.say(&HostToGuest::Stop { id: LaunchId::new("l-2") }).await;
         assert_eq!(caller.expect().await, exited("l-2"));
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-3") }).await;
+        assert_eq!(caller.expect().await, exited("l-3"));
         let (outcome, workload, _) = session.await.unwrap();
         assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(0)));
-        assert_eq!(workload.started.len(), 2);
+        assert_eq!(workload.started.len(), 3);
     }
 
     /// The last launch of an ending box failing to restart leaves nothing to
