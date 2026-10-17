@@ -70,6 +70,7 @@ mod libinput_backend;
 //mod screenshot_ipc;
 //mod screenshot_wire;
 mod state;
+mod windows;
 mod xwm;
 
 use crate::input::{decode_wire_event, process_input};
@@ -397,6 +398,7 @@ fn main() {
                 Ok(write_stream) => {
                     state.ipc_write = Some(write_stream);
                     state.cursor_image_sent = false; // re-send on reconnect
+                    state.hub_connected();
                 }
                 Err(e) => {
                     tracing::warn!("Failed to clone IPC write stream: {e}");
@@ -404,12 +406,25 @@ fn main() {
             }
             loop_handle
                 .insert_source(source, move |payload, _, data| {
-                    if let Some(nesprotocol::input::DecodedInput::OutputSize { width, height }) =
-                        nesprotocol::input::decode_input_event(&payload)
-                    {
-                        data.state.request_output_size(width, height);
-                    } else if let Some(event) = decode_wire_event(&payload) {
-                        process_input(event, &mut data.state);
+                    use nesprotocol::input::DecodedInput;
+                    match nesprotocol::input::decode_input_event(&payload) {
+                        // The old form is window 0's, ref(d-0085).
+                        Some(DecodedInput::OutputSize { width, height }) => {
+                            data.state.window_output_size(0, width, height)
+                        }
+                        Some(DecodedInput::WindowOutputSize {
+                            window,
+                            width,
+                            height,
+                        }) => data.state.window_output_size(window, width, height),
+                        Some(DecodedInput::WindowFocus { window }) => {
+                            data.state.focus_window_from_hub(window)
+                        }
+                        _ => {
+                            if let Some(event) = decode_wire_event(&payload) {
+                                process_input(event, &mut data.state);
+                            }
+                        }
                     }
                 })
                 .expect("Failed to register input IPC source");

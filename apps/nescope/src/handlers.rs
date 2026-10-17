@@ -110,6 +110,11 @@ impl CompositorHandler for NescopeState {
         if let Some(window) = &window {
             window.on_commit();
             self.game_frame_count += 1;
+            // An xdg toplevel's title arrives with a commit, often after the
+            // window was given its id. Xwayland titles come by property.
+            if window.x11_surface().is_none() {
+                self.window_retitled(window);
+            }
         }
 
         // Every commit is answered, mapped window or not. A Vulkan client
@@ -167,11 +172,13 @@ impl XdgShellHandler for NescopeState {
 
         let window = Window::new_wayland_window(surface);
         self.space.map_element(window.clone(), (0, 0), false);
+        self.window_opened(&window);
         self.set_keyboard_focus_to_window(&window);
         tracing::debug!("New XDG toplevel");
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        self.window_closed(&crate::state::WinKey::Wayland(surface.wl_surface().clone()));
         // Remove the dead window from the space.
         let elem = self
             .space
@@ -467,7 +474,9 @@ impl XwmHandler for CalloopData {
             return;
         }
         let win = Window::new_x11_window(window);
-        self.state.space.map_element(win, (0, 0), true);
+        self.state.space.map_element(win.clone(), (0, 0), true);
+        // An id on first map; a window unmapped and mapped again keeps it.
+        self.state.window_opened(&win);
         self.state.determine_and_apply_focus();
     }
 
@@ -501,7 +510,10 @@ impl XwmHandler for CalloopData {
         }
     }
 
-    fn destroyed_window(&mut self, _xwm: XwmId, _window: X11Surface) {}
+    fn destroyed_window(&mut self, _xwm: XwmId, window: X11Surface) {
+        self.state
+            .window_closed(&crate::state::WinKey::X11(window.window_id()));
+    }
 
     fn configure_request(
         &mut self,
@@ -543,10 +555,13 @@ impl XwmHandler for CalloopData {
         }
     }
 
-    fn property_notify(&mut self, _xwm: XwmId, _window: X11Surface, property: WmWindowProperty) {
+    fn property_notify(&mut self, _xwm: XwmId, window: X11Surface, property: WmWindowProperty) {
         // Only recalculate focus when the window class changes (steam_app_* detection).
         if matches!(property, WmWindowProperty::Class) {
             self.state.determine_and_apply_focus();
+        }
+        if matches!(property, WmWindowProperty::Title) {
+            self.state.window_retitled(&Window::new_x11_window(window));
         }
     }
 
