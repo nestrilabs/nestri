@@ -476,6 +476,11 @@ export namespace SessionApi {
 				description:
 					'Adds a launch to a run that its host has taken on and that is not being stopped; the host starts it in the box without stopping what already runs there. Answers with the launch: its `id` is what the launched game’s window carries, and what to stop when that window closes. A run that is waiting for a host, stopping or over is 409: ask for a new run instead. So is a run on a host that does not handle launches, with code `host_too_old`: stop the run and ask for a new one, as before launches. The run is still what is billed and what the allowance counts, so adding a launch asks nothing of either.',
 				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Launch.Info) } },
+						description:
+							'That game already has a launch in this run that is not over: it is answered instead of a second one'
+					},
 					201: {
 						content: { 'application/json': { schema: Result(Launch.Info) } },
 						description: 'The launch has been requested'
@@ -537,6 +542,8 @@ export namespace SessionApi {
 						conflict('That run is not running, so it cannot take another launch');
 					case 'hostTooOld':
 						hostTooOld();
+					case 'existing':
+						return c.json({ data: result.launch }, 200);
 					default:
 						return c.json({ data: result.launch }, 201);
 				}

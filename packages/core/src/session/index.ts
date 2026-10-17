@@ -1230,7 +1230,8 @@ export namespace Session {
 		| { outcome: 'notFound' }
 		| { outcome: 'notRunning'; session: Info }
 		| { outcome: 'hostTooOld' }
-		| { outcome: 'created'; launch: Launch.Info };
+		| { outcome: 'created'; launch: Launch.Info }
+		| { outcome: 'existing'; launch: Launch.Info };
 
 	/**
 	 * Add a launch to a run that is going. The library and account checks are
@@ -1266,6 +1267,16 @@ export namespace Session {
 					return { outcome: 'notRunning', session: serialize(run) };
 				}
 				if (!(await Launch.hostTakesLaunches(run.id))) return { outcome: 'hostTooOld' };
+				// The same game asked for twice (two windows, or a retry after a
+				// lost reply) is one launch: under the run's lock the first add
+				// has committed, so the second finds it and gets it back.
+				const open = (await Launch.listForSession(run.id)).find(
+					(l) =>
+						l.gameId === input.gameId &&
+						(Launch.OPEN as readonly string[]).includes(l.state) &&
+						l.timeStopRequested === null
+				);
+				if (open) return { outcome: 'existing', launch: open };
 				const launch = await Launch.insert({
 					id: Identifier.ascending('launch'),
 					sessionId: run.id,
