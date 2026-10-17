@@ -66,13 +66,48 @@
 //! `app_id` (X11 `WM_CLASS` under Xwayland). The icon is straight RGBA, the way
 //! [`CURSOR_IMAGE`](crate::input::CURSOR_IMAGE) carries a cursor.
 //!
+//! # What carries no window id
+//!
+//! - **PyroWave** has a datagram header of its own (see
+//!   [`pyrowave`](crate::pyrowave)) and no windowed form: for now it streams
+//!   window `0` only. A windowed PyroWave format is future work.
+//! - **The keyframe stream** carries the window id only in the body. A client
+//!   drops any body, from a datagram or a keyframe stream, whose window id is
+//!   not its subscription.
+//! - **Feedback, receiver reports and keyframe requests** ([`DGRAM_FEEDBACK`],
+//!   [`MSG_RECEIVER_REPORT`], [`MSG_IDR_REQUEST`]) always mean the
+//!   connection's subscribed window. A resubscribe resets the connection's
+//!   reassembly, loss and rate state: none of it describes the new window.
+//!
+//! [`DGRAM_FEEDBACK`]: crate::datagram::DGRAM_FEEDBACK
+//! [`MSG_RECEIVER_REPORT`]: crate::MSG_RECEIVER_REPORT
+//! [`MSG_IDR_REQUEST`]: crate::MSG_IDR_REQUEST
+//!
+//! # Fragmenting
+//!
+//! A windowed datagram's header is two bytes longer, so a sender sizes
+//! fragments with [`max_fragment_payload`] for the window it is sending, never
+//! from `DGRAM_HDR_LEN` alone, or the datagram outgrows the path.
+//!
+//! # Lifetime of ids and subscriptions
+//!
+//! Ids do not wrap within a run of a box: a box that has minted 65,535 window
+//! ids refuses to open more. When the box restarts its ids mean nothing, and
+//! the hub tears down every subscription.
+//!
+//! # Forward compatibility
+//!
+//! Every decoder here accepts trailing bytes after the fields it knows, so a
+//! later version may append fields to any message.
+//!
 //! # Subscribing (client → hub)
 //!
 //! [`MSG_WINDOW_SUBSCRIBE`] `[2B window]` on the control stream
 //! ([`BIDI_CONTROL`](crate::BIDI_CONTROL)). A connection that never sends it is
-//! subscribed to window `0`. Sending it again moves the subscription; the hub
-//! answers with a keyframe request for the new window, since nothing the client
-//! holds predicts it.
+//! subscribed to window `0`. Sending it again moves the subscription. Order on
+//! a resubscribe: the hub switches the connection to the new window first, then
+//! requests a keyframe for it, since nothing the client holds predicts it; a
+//! keyframe requested before the switch could arrive for the old window.
 //!
 //! # Input
 //!
@@ -82,7 +117,13 @@
 //! [`INPUT_WINDOW_FOCUS`](crate::input::INPUT_WINDOW_FOCUS) `[0x06][2B window]`
 //! in the input stream before any event that comes from a different window than
 //! the last one it forwarded. Every event after it, until the next, belongs to
-//! that window.
+//! that window. Three rules follow:
+//!
+//! - Nothing that merges events (mouse motion coalescing, batching) may merge
+//!   across a focus tag: the events on either side belong to different windows.
+//! - Gamepad messages go to the focused window.
+//! - nescope resets its current window to `0` when its input IPC reconnects,
+//!   so a hub that predates tags is still understood.
 //!
 //! A client's [`INPUT_OUTPUT_SIZE`](crate::input::INPUT_OUTPUT_SIZE) is
 //! rewritten the same way: the hub sends the box
@@ -135,6 +176,13 @@ pub const MSG_WINDOW_CLOSED: u8 = 0x24;
 /// bounds the allocation a corrupt length could ask for.
 pub const MAX_ICON_SIDE: u16 = 512;
 
+/// The most fragment bytes a video datagram of `window` can carry when the
+/// path takes datagrams of at most `max_dgram` bytes. Zero if not even the
+/// header fits.
+pub fn max_fragment_payload(window: WindowId, max_dgram: usize) -> usize {
+    max_dgram.saturating_sub(video_datagram_header_len(window))
+}
+
 /// How long the header of a video datagram of `window` is.
 pub fn video_datagram_header_len(window: WindowId) -> usize {
     if window == WINDOW_DEFAULT {
@@ -149,6 +197,9 @@ pub fn video_datagram_header_len(window: WindowId) -> usize {
 /// Window `0` writes exactly what
 /// [`write_datagram_header`](crate::datagram::write_datagram_header) writes for
 /// [`DGRAM_VIDEO`].
+///
+/// The header is two bytes longer for any other window: size the fragment
+/// after it with [`max_fragment_payload`], not from `DGRAM_HDR_LEN`.
 ///
 /// # Panics
 /// If `buf` is shorter than [`video_datagram_header_len`].
@@ -309,6 +360,8 @@ impl WindowEvent {
                 rgba,
                 ..
             } => {
+                debug_assert!(*width <= MAX_ICON_SIDE && *height <= MAX_ICON_SIDE);
+                debug_assert_eq!(rgba.len(), *width as usize * *height as usize * 4);
                 buf.extend_from_slice(&width.to_le_bytes());
                 buf.extend_from_slice(&height.to_le_bytes());
                 buf.extend_from_slice(&(rgba.len() as u32).to_le_bytes());
@@ -585,14 +638,8 @@ mod tests {
     #[test]
     fn bad_icons_and_strings_are_rejected() {
         // Pixel count disagrees with the size.
-        let mut p = Vec::new();
-        WindowEvent::Icon {
-            window: 1,
-            width: 2,
-            height: 2,
-            rgba: vec![0; 15],
-        }
-        .encode_payload(&mut p);
+        let mut p = vec![1, 0, 2, 0, 2, 0, 15, 0, 0, 0];
+        p.extend_from_slice(&[0; 15]);
         assert_eq!(WindowEvent::decode(MSG_WINDOW_ICON, &p), None);
         // Implausibly large.
         let mut p = Vec::new();
@@ -649,5 +696,39 @@ mod tests {
         let mut b = Vec::new();
         encode_output_size(&mut b, 1280, 720);
         assert_eq!(b, [4, 0x00, 0x05, 0xD0, 0x02]);
+    }
+
+    #[test]
+    fn fragments_leave_room_for_the_window_id() {
+        assert_eq!(max_fragment_payload(0, 1200), 1200 - DGRAM_HDR_LEN);
+        assert_eq!(max_fragment_payload(9, 1200), 1200 - DGRAM_WINDOW_HDR_LEN);
+        assert_eq!(max_fragment_payload(9, 10), 0);
+        // A full fragment plus its header fits exactly.
+        let n = max_fragment_payload(9, 1200);
+        let mut buf = vec![0u8; video_datagram_header_len(9)];
+        write_video_datagram_header(&mut buf, &header(), 9);
+        buf.resize(buf.len() + n, 0);
+        assert_eq!(buf.len(), 1200);
+    }
+
+    #[test]
+    fn decoders_accept_trailing_bytes() {
+        let mut p = Vec::new();
+        WindowEvent::Size { window: 1, width: 2, height: 3 }.encode_payload(&mut p);
+        p.extend_from_slice(&[0xEE, 0xEE]);
+        assert_eq!(
+            WindowEvent::decode(MSG_WINDOW_SIZE, &p),
+            Some(WindowEvent::Size { window: 1, width: 2, height: 3 })
+        );
+        assert_eq!(decode_subscribe(&[4, 0, 0xEE]), Some(4));
+    }
+
+    #[test]
+    #[should_panic]
+    #[cfg(debug_assertions)]
+    fn encoding_a_bad_icon_is_a_bug() {
+        let mut p = Vec::new();
+        WindowEvent::Icon { window: 1, width: 2, height: 2, rgba: vec![0; 15] }
+            .encode_payload(&mut p);
     }
 }
