@@ -47,7 +47,8 @@ export const ErrorCodes = {
 		INVALID_PARAMETER: 'invalid_parameter',
 		INVALID_FORMAT: 'invalid_format',
 		INVALID_STATE: 'invalid_state',
-		IN_USE: 'resource_in_use'
+		IN_USE: 'resource_in_use',
+		HOST_TOO_OLD: 'host_too_old'
 	},
 
 	Authentication: {

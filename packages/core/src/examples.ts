@@ -184,6 +184,12 @@ export namespace Examples {
 		endReason: null
 	};
 
+	export const Launch = {
+		id: Id('launch'),
+		gameId: Id('game'),
+		state: 'running' as const
+	};
+
 	export const GameDownload = {
 		id: Id('gameDownload'),
 		hostId: Id('machine'),

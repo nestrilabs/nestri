@@ -18,6 +18,7 @@ export namespace Identifier {
 		steamLinkRequest: 'slr',
 		box: 'box',
 		session: 'ses',
+		launch: 'lch',
 		accessToken: 'pat',
 		game: 'gam',
 		userLibrary: 'ulb',

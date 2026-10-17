@@ -105,7 +105,11 @@ export const MachineTable = pgTable(
 		// How many runs this host will hold at once, as its last heartbeat said.
 		// Null for an agent that does not say, which is handed every waiting
 		// run as before; a number is what makes the rest wait their turn.
-		slots: integer('slots')
+		slots: integer('slots'),
+		// What this host's agent says it can do, as its last heartbeat said.
+		// Null for an agent that does not say, which is treated as able to do
+		// nothing new. Gated on this rather than on a version. ref(d-0085)
+		capabilities: text('capabilities').array()
 	},
 	(t) => [
 		uniqueIndex('machine_secret_hash_unique').on(t.secretHash),
