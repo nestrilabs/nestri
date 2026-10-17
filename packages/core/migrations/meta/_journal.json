@@ -190,6 +190,13 @@
       "when": 1792095717042,
       "tag": "0026_session_end_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792231242669,
+      "tag": "0027_launch_under_session",
+      "breakpoints": true
     }
   ]
 }
