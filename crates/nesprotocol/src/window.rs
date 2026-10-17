@@ -16,9 +16,14 @@
 //! module existed, which is the whole compatibility story:
 //!
 //! - **Old client, new hub.** An old client never sends [`MSG_WINDOW_SUBSCRIBE`],
-//!   so the hub treats it as subscribed to window `0`, sends it only window
-//!   `0`'s frames, and those are byte-identical to what it always received. It
-//!   is never sent a [`STREAM_WINDOWS`] stream either: the hub opens one only
+//!   so the hub sends it the box's *primary picture* in window `0`'s
+//!   encoding, byte-identical to what it always received. The primary picture
+//!   is one encoder's frames: the first to draw, replaced only after it has
+//!   been silent for a second by one that has drawn for at least 250 ms
+//!   (preferring the newest), with a keyframe and a fresh sequence on every
+//!   switch. It is usually window `0` but need not be: a launcher window that
+//!   never draws can take id `0`. With one game it is that game. Such a
+//!   client is never sent a [`STREAM_WINDOWS`] stream: the hub opens one only
 //!   for a client that has subscribed.
 //! - **New client, old hub.** The old hub logs [`MSG_WINDOW_SUBSCRIBE`] as an
 //!   unknown control message and carries on, sends window `0` in the old
@@ -88,6 +93,16 @@
 //! A windowed datagram's header is two bytes longer, so a sender sizes
 //! fragments with [`max_fragment_payload`] for the window it is sending, never
 //! from `DGRAM_HDR_LEN` alone, or the datagram outgrows the path.
+//!
+//! # Known limits (phase 1)
+//!
+//! - **One bitrate for the box.** Every window's encoder is given the same
+//!   target, decided by the one controller, so one client's congestion sets
+//!   every window's rate. Per-window rate is follow-up work. A keyframe
+//!   request does go only to the encoder of the requesting client's window.
+//! - **nescope and neshub ship together** in the guest image and must not ship
+//!   apart: a nescope that sends window messages to a hub that predates them
+//!   is not a supported pairing, even though both ends tolerate it.
 //!
 //! # Lifetime of ids and subscriptions
 //!
@@ -429,6 +444,46 @@ impl WindowEvent {
     }
 }
 
+// ── Box-internal (nescope → hub) ────────────────────────────────────────────
+//
+// Carried on the input socket beside the cursor messages, each as one
+// length-prefixed message whose first byte is its type, the same way the
+// lifecycle events above travel there. Never sent to a client.
+
+/// Window `[2B]` is owned by process `[4B pid]`: how the hub joins an encoder's
+/// frames, tagged with its process, to the window they draw.
+pub const MSG_WINDOW_PID: u8 = 0x28;
+
+/// The cursor messages after this one describe the pointer as window `[2B]`
+/// sees it, until the next. A compositor that never sends it describes
+/// window `0`.
+pub const MSG_CURSOR_WINDOW: u8 = 0x29;
+
+/// `[MSG_WINDOW_PID][2B window][4B pid]`.
+pub fn encode_window_pid(buf: &mut Vec<u8>, window: WindowId, pid: u32) {
+    buf.push(MSG_WINDOW_PID);
+    buf.extend_from_slice(&window.to_le_bytes());
+    buf.extend_from_slice(&pid.to_le_bytes());
+}
+
+/// The payload after the type byte of [`MSG_WINDOW_PID`].
+pub fn decode_window_pid(payload: &[u8]) -> Option<(WindowId, u32)> {
+    let mut r = Reader(payload);
+    Some((r.u16()?, r.u32()?))
+}
+
+/// `[MSG_CURSOR_WINDOW][2B window]`.
+pub fn encode_cursor_window(buf: &mut Vec<u8>, window: WindowId) {
+    buf.push(MSG_CURSOR_WINDOW);
+    buf.extend_from_slice(&window.to_le_bytes());
+}
+
+/// A lifecycle event as one box-internal message: `[type][payload]`.
+pub fn encode_event_message(buf: &mut Vec<u8>, event: &WindowEvent) {
+    buf.push(event.msg_type());
+    event.encode_payload(buf);
+}
+
 fn put_str(buf: &mut Vec<u8>, s: &str) {
     let mut end = s.len().min(u16::MAX as usize);
     while !s.is_char_boundary(end) {
@@ -721,6 +776,31 @@ mod tests {
             Some(WindowEvent::Size { window: 1, width: 2, height: 3 })
         );
         assert_eq!(decode_subscribe(&[4, 0, 0xEE]), Some(4));
+    }
+
+    #[test]
+    fn box_internal_messages_round_trip() {
+        let mut b = Vec::new();
+        encode_window_pid(&mut b, 3, 0x0102_0304);
+        assert_eq!(b, [MSG_WINDOW_PID, 3, 0, 4, 3, 2, 1]);
+        assert_eq!(decode_window_pid(&b[1..]), Some((3, 0x0102_0304)));
+        assert_eq!(decode_window_pid(&b[1..6]), None);
+
+        let mut b = Vec::new();
+        encode_cursor_window(&mut b, 0x0201);
+        assert_eq!(b, [MSG_CURSOR_WINDOW, 1, 2]);
+        assert_eq!(decode_subscribe(&b[1..]), Some(0x0201));
+
+        let ev = WindowEvent::Closed { window: 9 };
+        let mut b = Vec::new();
+        encode_event_message(&mut b, &ev);
+        assert_eq!(WindowEvent::decode(b[0], &b[1..]), Some(ev));
+
+        // None of them can be mistaken for what already shares the socket.
+        for t in [MSG_WINDOW_PID, MSG_CURSOR_WINDOW, MSG_WINDOW_OPENED, MSG_WINDOW_CLOSED] {
+            assert!(t != crate::input::CURSOR_UPDATE && t != crate::input::CURSOR_IMAGE);
+            assert!(t > crate::stats::STATS_HUB);
+        }
     }
 
     #[test]

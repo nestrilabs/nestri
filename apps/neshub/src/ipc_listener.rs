@@ -22,11 +22,19 @@ fn set_recv_buffer(socket: &UnixDatagram, size: libc::c_int) {
     }
 }
 
+/// Encoder processes the video listener has reported to the command
+/// forwarder, ref(d-0085).
+pub type KnownEncoders = Arc<std::sync::Mutex<std::collections::HashSet<u32>>>;
+
 pub async fn run_video_listener(
     socket_path: PathBuf,
     session_manager: Arc<SessionManager>,
     controller: Arc<tokio::sync::Mutex<crate::control::Controller>>,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    // Each encoder process the first time it tags a frame, so commands can
+    // reach it on its own socket, ref(d-0085).
+    encoder_tx: tokio::sync::mpsc::UnboundedSender<u32>,
+    known_encoders: KnownEncoders,
 ) {
     if socket_path.exists() {
         let _ = std::fs::remove_file(&socket_path);
@@ -60,6 +68,13 @@ pub async fn run_video_listener(
         match socket.recv(&mut buf).await {
             Ok(n) => {
                 if let Some(decoded) = decode_ipc_frame(&buf[..n]) {
+                    if decoded.stream_type == nesprotocol::STREAM_ENCODER_HELLO {
+                        if let Some(pid) = decoded.pid {
+                            let launch = String::from_utf8_lossy(decoded.data).into_owned();
+                            session_manager.note_encoder_launch(pid, launch);
+                        }
+                        continue;
+                    }
                     if decoded.stream_type == STREAM_PYROWAVE {
                         let now_ms = started.elapsed().as_millis() as u64;
                         match pyrowave.push(&decoded, now_ms) {
@@ -82,6 +97,12 @@ pub async fn run_video_listener(
                         );
                         continue;
                     }
+                    if let Some(pid) = decoded.pid
+                        && known_encoders.lock().is_ok_and(|mut k| k.insert(pid))
+                    {
+                        tracing::info!("encoder in process {pid} is drawing");
+                        let _ = encoder_tx.send(pid);
+                    }
                     // An encoder on a codec nobody here decodes is told again.
                     session_manager
                         .reassert_codec(decoded.codec, &controller, &cmd_tx)
@@ -97,7 +118,9 @@ pub async fn run_video_listener(
                         decoded.data,
                     );
 
-                    session_manager.broadcast_video(frame_data).await;
+                    session_manager
+                        .broadcast_video(frame_data, decoded.pid)
+                        .await;
                 } else {
                     tracing::warn!("invalid video IPC frame ({} bytes)", n);
                 }
@@ -171,9 +194,33 @@ pub async fn run_audio_listener(socket_path: PathBuf, session_manager: Arc<Sessi
     tracing::info!("audio IPC listener exited");
 }
 
+/// Whether a message from nescope is about the cursor or the box's windows,
+/// rather than stats. These keep their order relative to each other: a cursor
+/// update belongs to the window named before it.
+fn is_cursor_or_window(kind: u8) -> bool {
+    use nesprotocol::window::*;
+    matches!(
+        kind,
+        nesprotocol::input::CURSOR_UPDATE
+            | nesprotocol::input::CURSOR_IMAGE
+            | MSG_WINDOW_OPENED
+            | MSG_WINDOW_TITLE
+            | MSG_WINDOW_ICON
+            | MSG_WINDOW_SIZE
+            | MSG_WINDOW_CLOSED
+            | MSG_WINDOW_PID
+            | MSG_CURSOR_WINDOW
+    )
+}
+
+/// nescope's socket: input to it, cursor, windows and stats from it.
+///
+/// `cursor_tx` carries everything about the cursor and the windows, in order,
+/// and an empty message each time nescope connects: a new connection is a new
+/// compositor, whose window ids are not the last one's.
 pub async fn run_input_ipc_listener(
     socket_path: PathBuf,
-    input_tx: tokio::sync::broadcast::Sender<Vec<u8>>,
+    input_tx: tokio::sync::broadcast::Sender<crate::session::TaggedInput>,
     cursor_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     nescope_stats_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
 ) {
@@ -210,19 +257,25 @@ pub async fn run_input_ipc_listener(
 
                 let (mut read_half, mut write_half) = stream.into_split();
                 let mut input_rx = input_tx.subscribe();
-                let _c_tx = cursor_tx.clone();
+                let _ = cursor_tx.send(Vec::new());
 
                 let write_handle = tokio::spawn(async move {
-                    loop {
+                    // Fresh per connection: nescope starts every connection
+                    // on window 0.
+                    let mut tagger = crate::windows::FocusTagger::default();
+                    'events: loop {
                         match input_rx.recv().await {
-                            Ok(data) => {
-                                let len = data.len() as u16;
-                                let mut frame = Vec::with_capacity(2 + data.len());
-                                frame.extend_from_slice(&len.to_le_bytes());
-                                frame.extend_from_slice(&data);
-                                if write_half.write_all(&frame).await.is_err() {
-                                    tracing::debug!("input IPC write failed");
-                                    break;
+                            Ok((client, window, event)) => {
+                                let now = std::time::Instant::now();
+                                for data in tagger.messages(client, window, &event, now) {
+                                    let len = data.len() as u16;
+                                    let mut frame = Vec::with_capacity(2 + data.len());
+                                    frame.extend_from_slice(&len.to_le_bytes());
+                                    frame.extend_from_slice(&data);
+                                    if write_half.write_all(&frame).await.is_err() {
+                                        tracing::debug!("input IPC write failed");
+                                        break 'events;
+                                    }
                                 }
                             }
                             Err(RecvError::Lagged(n)) => {
@@ -252,11 +305,9 @@ pub async fn run_input_ipc_listener(
                         if read_half.read_exact(&mut payload).await.is_err() {
                             break;
                         }
-                        // Route: cursor updates start with 0x80, stats start with 0x00-0x02
-                        if !payload.is_empty()
-                            && (payload[0] == nesprotocol::input::CURSOR_UPDATE
-                                || payload[0] == nesprotocol::input::CURSOR_IMAGE)
-                        {
+                        // Route: cursor and window messages in order on one
+                        // channel; stats start with 0x00-0x02.
+                        if payload.first().is_some_and(|k| is_cursor_or_window(*k)) {
                             let _ = c_tx.send(payload);
                         } else {
                             let _ = ns_tx.send(payload);

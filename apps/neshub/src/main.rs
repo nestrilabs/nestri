@@ -11,6 +11,8 @@ mod rate;
 mod screenshot;
 mod session;
 mod ticket;
+mod windows;
+mod capture_cmd;
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
@@ -234,7 +236,7 @@ async fn main() -> Result<()> {
     tracing::info!("endpoint online: {}", ep_id.fmt_short());
 
     // Input broadcast channel: input reader -> input IPC listener -> nescope
-    let (input_broadcast_tx, _) = tokio::sync::broadcast::channel::<Vec<u8>>(256);
+    let (input_broadcast_tx, _) = tokio::sync::broadcast::channel::<session::TaggedInput>(256);
 
     // Cursor channel: IPC listener (read side) -> client sessions -> desktop-app
     let (cursor_tx, mut cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
@@ -255,15 +257,69 @@ async fn main() -> Result<()> {
 
     // IDR / encode settings command channel: input reader → nescapture
     let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+    // Encoder processes as the video listener first hears from them.
+    let (encoder_tx, mut encoder_rx) = tokio::sync::mpsc::unbounded_channel::<u32>();
+    // Encoders the video listener has reported. One the forwarder finds gone
+    // is taken out, so its next frame reports it again.
+    let known_encoders: ipc_listener::KnownEncoders = Default::default();
     {
+        let known = known_encoders.clone();
         let mgr = session_manager.clone();
         tokio::spawn(async move {
-            let cmd_path = std::path::PathBuf::from("/tmp/nescapture-cmd.sock");
-            while let Some(mut bytes) = cmd_rx.recv().await {
+            let cmd_path = std::path::PathBuf::from(nesprotocol::CAPTURE_CMD_SOCKET);
+            let mut fanout = capture_cmd::Fanout::default();
+            loop {
+                let bytes = tokio::select! {
+                    Some(pid) = encoder_rx.recv() => {
+                        // Every encoder the hub knows hears every command, on
+                        // its own socket; a new one first hears what it
+                        // missed, ref(d-0085).
+                        for mut cmd in fanout.encoder(pid).unwrap_or_default() {
+                            fill_pyrowave_packet_size(&mut cmd, mgr.pyro_packet_size().await);
+                            let path = nesprotocol::capture_cmd_socket(pid);
+                            if let Ok(sock) = std::os::unix::net::UnixDatagram::unbound()
+                                && let Err(e) = sock.send_to(&cmd, &path)
+                            {
+                                tracing::debug!("telling encoder {pid} what it missed: {e}");
+                            }
+                        }
+                        continue;
+                    }
+                    cmd = cmd_rx.recv() => match cmd {
+                        Some(cmd) => cmd,
+                        None => break,
+                    },
+                };
+                // A keyframe request for one window goes to that window's
+                // encoder alone; everything else to all of them.
+                let (target, mut bytes) = capture_cmd::target_of(bytes);
                 fill_pyrowave_packet_size(&mut bytes, mgr.pyro_packet_size().await);
                 let Ok(sock) = std::os::unix::net::UnixDatagram::unbound() else {
                     continue;
                 };
+                let destinations = fanout.destinations_for(target);
+                if target.is_none() {
+                    fanout.sent(&bytes);
+                }
+                if destinations.first() != Some(&cmd_path) {
+                    for path in destinations {
+                        match sock.send_to(&bytes, &path) {
+                            Ok(_) => {}
+                            // Refused or absent: that process has gone.
+                            Err(e) if capture_cmd::encoder_is_gone(&e) => {
+                                tracing::info!("encoder at {} is gone: {e}", path.display());
+                                if let Some(pid) = capture_cmd::pid_of(&path) {
+                                    fanout.forget(pid);
+                                    if let Ok(mut known) = known.lock() {
+                                        known.remove(&pid);
+                                    }
+                                }
+                            }
+                            Err(e) => tracing::debug!("command to {}: {e}", path.display()),
+                        }
+                    }
+                    continue;
+                }
                 // The encoder's socket is not there until the game draws its
                 // first frame, and a client can connect and say what it decodes
                 // before that. A command sent then used to be lost -- the codec
@@ -292,15 +348,16 @@ async fn main() -> Result<()> {
         });
     }
 
-    // Spawn cursor relay
+    // Cursor and window relay
     {
         let mgr = session_manager.clone();
         tokio::spawn(async move {
             while let Some(data) = cursor_rx.recv().await {
-                mgr.broadcast_cursor(data).await;
+                mgr.on_nescope(data).await;
             }
         });
     }
+    tokio::spawn(session_manager.clone().serve_subscriptions(cmd_tx.clone()));
 
     // Spawn nescope stats relay
     {
@@ -455,7 +512,17 @@ async fn main() -> Result<()> {
     tokio::spawn({
         let (mgr, controller, cmd_tx) =
             (session_manager.clone(), controller.clone(), cmd_tx.clone());
-        async move { ipc_listener::run_video_listener(video_ipc, mgr, controller, cmd_tx).await }
+        async move {
+            ipc_listener::run_video_listener(
+                video_ipc,
+                mgr,
+                controller,
+                cmd_tx,
+                encoder_tx,
+                known_encoders,
+            )
+            .await
+        }
     });
     tokio::spawn({
         let mgr = session_manager.clone();
