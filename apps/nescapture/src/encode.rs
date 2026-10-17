@@ -56,7 +56,7 @@ use std::time::Instant;
 use nesprotocol::{
     CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, CODEC_PYROWAVE, ClientCaps, FLAG_KEYFRAME,
     FLAG_RECONFIG, MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO,
-    decode_client_caps, decode_encode_settings_ext, encode_ipc_frame,
+    decode_client_caps, decode_encode_settings_ext, encode_ipc_frame_from,
 };
 use pixelforge::{
     Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
@@ -135,6 +135,42 @@ pub fn effective_colorspace(vk_colorspace: u32, declared: Option<u32>) -> u32 {
 ///
 /// Mapped into the swapchain's own vocabulary so there is one thing to reason
 /// about downstream rather than two spellings of the same fact.
+/// Relay commands sent to the shared command socket onto this process's own.
+///
+/// The shared path is bound by whichever encoder started last, as it always
+/// was, so whatever still sends there (an older hub, an older compositor)
+/// reaches the newest game and nothing else changes for it. Best effort: a
+/// process that cannot bind it still has its own socket.
+fn relay_legacy_commands(own: std::path::PathBuf) {
+    use std::os::unix::net::UnixDatagram;
+    let shared = std::path::Path::new(nesprotocol::CAPTURE_CMD_SOCKET);
+    let _ = std::fs::remove_file(shared);
+    let sock = match UnixDatagram::bind(shared) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("shared cmd socket bind failed: {e}");
+            return;
+        }
+    };
+    let _ = std::fs::set_permissions(shared, std::os::unix::fs::PermissionsExt::from_mode(0o666));
+    let spawned = std::thread::Builder::new()
+        .name("nescapture-cmd-relay".into())
+        .spawn(move || {
+            let Ok(out) = UnixDatagram::unbound() else {
+                return;
+            };
+            let mut buf = [0u8; 128];
+            while let Ok(n) = sock.recv(&mut buf) {
+                if let Err(e) = out.send_to(&buf[..n], &own) {
+                    log::debug!("relaying a shared-socket command failed: {e}");
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        log::warn!("spawn cmd relay: {e}");
+    }
+}
+
 pub fn surface_color_to_vk(space: u8) -> u32 {
     match space {
         nesprotocol::SURFACE_COLOR_BT2020_PQ => VK_COLOR_SPACE_HDR10_ST2084_EXT,
@@ -1132,7 +1168,13 @@ impl PipelineHandle {
         thread::Builder::new()
             .name("nescapture-idr".into())
             .spawn(move || {
-                let cmd_path = std::path::PathBuf::from("/tmp/nescapture-cmd.sock");
+                // A socket of this process's own, ref(d-0085): with two games
+                // in one box, one shared path meant the second encoder took it
+                // from the first, and every keyframe request and bitrate change
+                // after that reached only the newer game.
+                let cmd_path = std::path::PathBuf::from(nesprotocol::capture_cmd_socket(
+                    std::process::id(),
+                ));
                 let _ = std::fs::remove_file(&cmd_path);
                 let sock = match std::os::unix::net::UnixDatagram::bind(&cmd_path) {
                     Ok(s) => {
@@ -1148,6 +1190,10 @@ impl PipelineHandle {
                         return;
                     }
                 };
+                // The shared path too, relayed onto this one, so a hub or a
+                // compositor that predates per-process sockets still reaches the
+                // newest encoder exactly as it did.
+                relay_legacy_commands(cmd_path.clone());
                 let mut buf = [0u8; 128];
                 loop {
                     match sock.recv(&mut buf) {
@@ -2940,7 +2986,10 @@ fn ipc_send_thread(
                     if reconfig {
                         flags |= FLAG_RECONFIG;
                     }
-                    let ipc_frame = encode_ipc_frame(
+                    // Tagged with this process, so the hub can tell which
+                    // window the frame is, ref(d-0085).
+                    let ipc_frame = encode_ipc_frame_from(
+                        std::process::id(),
                         STREAM_VIDEO,
                         protocol_codec,
                         flags,
