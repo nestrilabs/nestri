@@ -638,20 +638,61 @@ fn unmount_one(target: &std::ffi::CStr) -> Result<(), Failure> {
 /// The loop device clears itself when the filesystem on it is unmounted, so
 /// nothing here has to remember it.
 ///
-/// A symbolic link is refused rather than followed: a file in a share is the
-/// host's to name, and a link would let whatever wrote it name another.
+/// A symbolic link anywhere in the path is refused rather than followed: a
+/// file in a share is the host's to name, and a link would let whatever wrote
+/// it name another. Anything that is neither a block device nor a regular file
+/// is refused too.
 fn device_for(source: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
-    let meta = std::fs::symlink_metadata(as_path(source))?;
-    if meta.file_type().is_symlink() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "a mount source may not be a symbolic link",
-        ));
-    }
-    if !meta.is_file() {
+    use std::os::unix::fs::FileTypeExt;
+    let probe = open_no_symlinks(source, libc::O_RDONLY)?;
+    let kind = probe.metadata()?.file_type();
+    if kind.is_block_device() {
         return Ok(source.to_owned());
     }
-    loop_attach(as_path(source), read_only)
+    if !kind.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a mount source has to be a block device or a regular file",
+        ));
+    }
+    drop(probe);
+    loop_attach(source, read_only)
+}
+
+/// `struct open_how` from `<linux/openat2.h>`.
+#[repr(C)]
+struct OpenHow {
+    flags: u64,
+    mode: u64,
+    resolve: u64,
+}
+
+const RESOLVE_NO_SYMLINKS: u64 = 0x04;
+
+/// Open a path, refusing a symbolic link at any component (`openat2`), not
+/// only the last one.
+fn open_no_symlinks(path: &std::ffi::CStr, flags: libc::c_int) -> io::Result<std::fs::File> {
+    use std::os::fd::FromRawFd;
+    let how = OpenHow {
+        flags: (flags | libc::O_CLOEXEC | libc::O_NONBLOCK) as u64,
+        mode: 0,
+        resolve: RESOLVE_NO_SYMLINKS,
+    };
+    // SAFETY: a nul-terminated path and an `open_how` that outlive the call.
+    let fd = unsafe {
+        libc::syscall(
+            libc::SYS_openat2,
+            libc::AT_FDCWD,
+            path.as_ptr(),
+            &how as *const OpenHow,
+            std::mem::size_of::<OpenHow>(),
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: a descriptor the kernel just returned, owned by nothing else.
+    Ok(unsafe { std::fs::File::from_raw_fd(fd as i32) })
 }
 
 /// `struct loop_info64` from `<linux/loop.h>`.
@@ -690,16 +731,15 @@ const LO_FLAGS_AUTOCLEAR: u32 = 4;
 ///
 /// Retried a few times on `EBUSY`: a device handed out as free can be taken
 /// by somebody else before it is configured.
-fn loop_attach(file: &std::path::Path, read_only: bool) -> io::Result<CString> {
+fn loop_attach(file: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
     use std::os::fd::AsRawFd;
-    use std::os::unix::fs::OpenOptionsExt;
 
-    // Not followed if it was swapped for a link since it was looked at.
-    let backing = std::fs::OpenOptions::new()
-        .read(true)
-        .write(!read_only)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(file)?;
+    // Opened again, with the same refusal, because the file may have been
+    // swapped since it was looked at.
+    let backing = open_no_symlinks(file, if read_only { libc::O_RDONLY } else { libc::O_RDWR })?;
+    if !backing.metadata()?.is_file() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a regular file"));
+    }
     let control = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -952,23 +992,30 @@ mod loop_tests {
         assert_eq!(std::mem::offset_of!(LoopConfig, info), 8);
     }
 
-    /// A block device, which is every mount made at boot, is used as it is.
+    /// Only a block device (every mount made at boot) or a regular file is a
+    /// source. A character device, a directory and the like are refused.
     #[test]
-    fn a_device_that_is_not_a_file_is_used_as_it_is() {
-        let device = device_for(c"/dev/null", true).unwrap();
-        assert_eq!(device.as_c_str(), c"/dev/null");
+    fn a_source_that_is_neither_a_block_device_nor_a_file_is_refused() {
+        for path in [c"/dev/null", c"/tmp"] {
+            let error = device_for(path, true).unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{path:?}: {error}");
+        }
     }
 
+    /// A link is refused at the last component and at any earlier one.
     #[test]
-    fn a_source_that_is_a_symbolic_link_is_refused() {
+    fn a_source_reached_through_a_symbolic_link_is_refused() {
         let dir = std::env::temp_dir().join(format!("nesinit-link-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let link = dir.join("build.erofs");
-        let _ = std::fs::remove_file(&link);
-        std::os::unix::fs::symlink("/dev/null", &link).unwrap();
-        let source = CString::new(link.to_string_lossy().as_bytes()).unwrap();
-        let error = device_for(&source, true).unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{error}");
+        let real = dir.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::write(real.join("build.erofs"), b"x").unwrap();
+        std::os::unix::fs::symlink(real.join("build.erofs"), dir.join("file-link")).unwrap();
+        std::os::unix::fs::symlink(&real, dir.join("dir-link")).unwrap();
+        for path in [dir.join("file-link"), dir.join("dir-link").join("build.erofs")] {
+            let source = CString::new(path.to_string_lossy().as_bytes()).unwrap();
+            let error = device_for(&source, true).unwrap_err();
+            assert_eq!(error.raw_os_error(), Some(libc::ELOOP), "{path:?}: {error}");
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
