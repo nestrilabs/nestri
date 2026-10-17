@@ -63,6 +63,15 @@ use crate::input::InputEvent;
 /// lay out menus they cannot fit, and nothing is gained.
 const MIN_OUTPUT: u32 = 320;
 
+/// `want` scaled down, keeping its shape, until it fits inside `max`, and
+/// never smaller than [`MIN_OUTPUT`] on a side. Even on both sides.
+fn fit_output(want: (u32, u32), max: (u32, u32)) -> (u32, u32) {
+    let (w, h) = (want.0.max(1) as f64, want.1.max(1) as f64);
+    let scale = (max.0 as f64 / w).min(max.1 as f64 / h).min(1.0);
+    let side = |v: f64, cap: u32| ((v * scale).round() as u32).clamp(MIN_OUTPUT.min(cap), cap) & !1;
+    (side(w, max.0), side(h, max.1))
+}
+
 pub struct CalloopData {
     pub state: NescopeState,
     pub display: Display<NescopeState>,
@@ -474,8 +483,7 @@ impl NescopeState {
     /// The client's window is `width`x`height`: follow it, inside the launch
     /// size and on even numbers, which every encoder needs for 4:2:0.
     pub fn request_output_size(&mut self, width: u16, height: u16) {
-        let fit = |want: u16, max: u32| (u32::from(want).clamp(MIN_OUTPUT, max) & !1).max(2);
-        let (w, h) = (fit(width, self.launch_size.0), fit(height, self.launch_size.1));
+        let (w, h) = fit_output((width.into(), height.into()), self.launch_size);
         if (w, h) != (self.width, self.height) {
             self.apply_resize(w, h);
         }
@@ -978,4 +986,25 @@ where
 
     let global = dmabuf_state.create_global::<D>(display, formats.iter().copied());
     (dmabuf_state, global)
+}
+
+#[cfg(test)]
+mod fit_output_tests {
+    use super::fit_output;
+
+    #[test]
+    fn a_smaller_window_is_followed() {
+        assert_eq!(fit_output((1280, 720), (1920, 1080)), (1280, 720));
+    }
+
+    #[test]
+    fn a_larger_window_keeps_its_shape() {
+        assert_eq!(fit_output((2560, 1600), (1920, 1080)), (1728, 1080));
+    }
+
+    #[test]
+    fn odd_and_tiny_sizes_are_made_usable() {
+        assert_eq!(fit_output((1281, 721), (1920, 1080)), (1280, 720));
+        assert_eq!(fit_output((10, 10), (1920, 1080)), (320, 320));
+    }
 }
