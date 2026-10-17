@@ -16,9 +16,14 @@
 //! module existed, which is the whole compatibility story:
 //!
 //! - **Old client, new hub.** An old client never sends [`MSG_WINDOW_SUBSCRIBE`],
-//!   so the hub treats it as subscribed to window `0`, sends it only window
-//!   `0`'s frames, and those are byte-identical to what it always received. It
-//!   is never sent a [`STREAM_WINDOWS`] stream either: the hub opens one only
+//!   so the hub sends it the box's *primary picture* in window `0`'s
+//!   encoding, byte-identical to what it always received. The primary picture
+//!   is one encoder's frames: the first to draw, replaced only after it has
+//!   been silent for a second by one that has drawn for at least 250 ms
+//!   (preferring the newest), with a keyframe and a fresh sequence on every
+//!   switch. It is usually window `0` but need not be: a launcher window that
+//!   never draws can take id `0`. With one game it is that game. Such a
+//!   client is never sent a [`STREAM_WINDOWS`] stream: the hub opens one only
 //!   for a client that has subscribed.
 //! - **New client, old hub.** The old hub logs [`MSG_WINDOW_SUBSCRIBE`] as an
 //!   unknown control message and carries on, sends window `0` in the old
@@ -88,6 +93,16 @@
 //! A windowed datagram's header is two bytes longer, so a sender sizes
 //! fragments with [`max_fragment_payload`] for the window it is sending, never
 //! from `DGRAM_HDR_LEN` alone, or the datagram outgrows the path.
+//!
+//! # Known limits (phase 1)
+//!
+//! - **One bitrate for the box.** Every window's encoder is given the same
+//!   target, decided by the one controller, so one client's congestion sets
+//!   every window's rate. Per-window rate is follow-up work. A keyframe
+//!   request does go only to the encoder of the requesting client's window.
+//! - **nescope and neshub ship together** in the guest image and must not ship
+//!   apart: a nescope that sends window messages to a hub that predates them
+//!   is not a supported pairing, even though both ends tolerate it.
 //!
 //! # Lifetime of ids and subscriptions
 //!

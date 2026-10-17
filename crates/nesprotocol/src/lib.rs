@@ -173,6 +173,13 @@ pub const STREAM_KEYFRAME: u8 = 5;
 /// One message of a PyroWave frame, on the nescapture→hub video socket only.
 /// A frame is several of these: see the [`pyrowave`] module.
 pub const STREAM_PYROWAVE: u8 = 7;
+/// An encoder introducing itself, on the nescapture→hub video socket only,
+/// ref(d-0085): a pid-tagged IPC frame ([`IPC_FLAG_PID`]) whose data is the
+/// encoder process's `NESTRI_LAUNCH_ID` (UTF-8, possibly empty). Sent before
+/// every keyframe, so a hub that started late or lost one still learns it.
+/// The encoder runs inside the game and can read its own environment; the
+/// hub runs as another user and cannot.
+pub const STREAM_ENCODER_HELLO: u8 = 9;
 
 // ── Bidi stream types (desktop ↔ hub over QUIC bidi) ───────────
 
