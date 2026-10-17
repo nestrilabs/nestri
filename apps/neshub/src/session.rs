@@ -513,10 +513,10 @@ impl ClientSession {
     /// zero, hold deltas until a keyframe, and forget what it reported about
     /// the old one. The caller asks for the keyframe.
     pub fn restart_picture(&self) {
+        self.awaiting_keyframe.store(true, Ordering::Relaxed);
         if self.pending_video.is_none() {
             let _ = self.send_video.send(MediaItem::Resubscribe);
         }
-        self.awaiting_keyframe.store(true, Ordering::Relaxed);
         let _ = self.take_report();
     }
 
