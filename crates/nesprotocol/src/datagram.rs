@@ -41,8 +41,11 @@
 /// kind(1) + frame seq(2) + fragment index(2) + fragment count(2) + sent_us(8).
 pub const DGRAM_HDR_LEN: usize = 15;
 
-/// Datagram kinds. These share the numbering of the stream types they replace,
-/// so a frame's identity does not change with the transport under it.
+/// Datagram kinds, a numbering of their own. Video and audio happen to share
+/// the numbers of the stream types they replace; later kinds
+/// ([`DGRAM_FEEDBACK`], [`crate::window::DGRAM_VIDEO_WINDOW`]) do not follow
+/// the stream numbering, and a kind and a stream type with the same value are
+/// unrelated.
 pub const DGRAM_VIDEO: u8 = 0;
 pub const DGRAM_AUDIO: u8 = 1;
 /// PyroWave, whose datagrams have a header of their own: see

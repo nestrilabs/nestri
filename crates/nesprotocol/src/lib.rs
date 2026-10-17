@@ -13,6 +13,7 @@ pub mod lifecycle;
 pub mod pyrowave;
 pub mod reliable;
 pub mod stats;
+pub mod window;
 
 /// One connection per kind of traffic, not one connection for everything.
 ///
