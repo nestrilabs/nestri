@@ -465,11 +465,13 @@ mod tests {
         assert_eq!(t.note_primary(Some(2), ms(t0, 10)), no);
         assert_eq!(t.note_primary(Some(1), ms(t0, 500)), yes);
         assert_eq!(t.note_primary(Some(2), ms(t0, 1400)), no, "1 is not silent yet");
+        // 1 silent, but 2 only began this run at 1400: not settled.
+        assert_eq!(t.note_primary(Some(2), ms(t0, 1600)), no);
         assert_eq!(
-            t.note_primary(Some(2), ms(t0, 1600)),
+            t.note_primary(Some(2), ms(t0, 1700)),
             PrimaryNote { primary: true, switched: true }
         );
-        assert_eq!(t.note_primary(Some(1), ms(t0, 1610)), no);
+        assert_eq!(t.note_primary(Some(1), ms(t0, 1710)), no);
         assert_eq!(t.primary_pid(), Some(2));
     }
 

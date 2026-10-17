@@ -487,7 +487,11 @@ mod windows {
         let (idr, mut idr_rx) = tokio::sync::mpsc::unbounded_channel();
         let me = rig._client_ep.addr().id;
         rig.mgr.subscribe(me, 1, &idr).await;
-        assert_eq!(idr_rx.try_recv().ok(), Some(vec![nesprotocol::MSG_IDR_REQUEST]));
+        // Only game B, whose window this is, is asked for a keyframe.
+        assert_eq!(
+            idr_rx.try_recv().ok(),
+            Some(crate::capture_cmd::keyframe_request(Some(GAME_B)))
+        );
         draw(&rig, GAME_B, 10, true).await;
         for n in 11..15 {
             draw(&rig, GAME_A, n, false).await;
@@ -524,6 +528,36 @@ mod windows {
         .await
         .expect("a windows stream");
         assert_eq!(events, vec![opened(0, "launch_a"), opened(1, "launch_b")]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_primary_switch_starts_with_a_keyframe_and_a_fresh_sequence() {
+        let rig = rig().await;
+        draw(&rig, GAME_A, 0, true).await;
+        for n in 1..4 {
+            draw(&rig, GAME_A, n, false).await;
+        }
+        let got = received(&rig.client).await;
+        assert!(got.iter().all(|g| g.4 == 1), "{got:?}");
+        // A stops; B draws deltas for long enough to take over.
+        let start = Instant::now();
+        let mut n = 0u8;
+        while start.elapsed() < Duration::from_millis(1400) {
+            draw(&rig, GAME_B, n, false).await;
+            n = n.wrapping_add(1);
+            tokio::time::sleep(Duration::from_millis(15)).await;
+        }
+        // Deltas from the new encoder are held until its keyframe.
+        draw(&rig, GAME_B, 200, true).await;
+        for n in 201..204 {
+            draw(&rig, GAME_B, n, false).await;
+        }
+        let got = received(&rig.client).await;
+        assert_eq!(got.len(), 3, "only the deltas after B's keyframe: {got:?}");
+        for (i, g) in got.iter().enumerate() {
+            assert_eq!((g.0, g.4, g.5), (0, 2, 201 + i as u8));
+            assert_eq!(g.3, i as u16 + 1, "numbered afresh after the keyframe's 0");
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]
