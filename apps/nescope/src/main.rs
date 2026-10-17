@@ -177,8 +177,8 @@ struct Args {
 
     /// Game command — everything after '--'.
     ///
-    /// **Optional.** With one, nescope launches it, and keeps running
-    /// after it exits: the box's power-off is nesinit's, not nescope's. Without one, nescope
+    /// **Optional.** With one, nescope launches it and exits once it has
+    /// exited and no window of any launch is left. Without one, nescope
     /// is a plain compositor: it comes up, publishes its displays and waits,
     /// and whatever wants to draw connects to it.
     ///
@@ -601,9 +601,29 @@ fn main() {
                 }
             }
 
-            // No auto-exit: nescope keeps running while any window or launch
-            // remains, and after the first game exits. nesinit owns powering
-            // the box off, ref(d-0085).
+            // ── Auto-exit after all windows are gone ──────────────────
+            // Only once this nescope's own game has exited AND no window of
+            // any launch is left: later launches draw on this compositor, so
+            // their windows keep it up, ref(d-0085). The 5 s wait gives
+            // lingering save-game / cleanup processes time to finish. A box
+            // with one game ends exactly as before.
+            if data.state.game_launched && data.game_process.is_none() {
+                let has_windows = data.state.space.elements().next().is_some();
+                if !has_windows {
+                    let since = data
+                        .state
+                        .no_clients_since
+                        .get_or_insert_with(std::time::Instant::now);
+                    if since.elapsed() > Duration::from_secs(5) {
+                        tracing::info!("No mapped windows for 5 s — exiting.");
+                        kill_all_children();
+                        data.loop_signal.stop();
+                        return;
+                    }
+                } else {
+                    data.state.no_clients_since = None;
+                }
+            }
 
             // Answer any colour-management information requests that came in
             // this iteration. Deferred to here because the event that ends
