@@ -402,3 +402,145 @@ async fn a_new_carrier_starts_from_live_media() {
         "the first audio a new carrier sent was produced before it attached"
     );
 }
+
+/// Two encoders, two windows, through the hub for real, ref(d-0085).
+mod windows {
+    use super::*;
+    use nesprotocol::window::{
+        DGRAM_VIDEO_WINDOW, STREAM_WINDOWS, WindowEvent, decode_video_datagram,
+        decode_video_frame_body, encode_event_message, encode_window_pid,
+    };
+    use nesprotocol::{CODEC_H264, FLAG_KEYFRAME, MSG_DATA, STREAM_VIDEO, encode_ipc_frame_from};
+
+    const GAME_A: u32 = 100;
+    const GAME_B: u32 = 200;
+
+    async fn draw(rig: &Rig, pid: u32, n: u8, key: bool) {
+        let flags = if key { FLAG_KEYFRAME } else { 0 };
+        let tag = (pid / 100) as u8;
+        let m = encode_ipc_frame_from(pid, STREAM_VIDEO, CODEC_H264, flags, 1, 64, 64, &[tag, n]);
+        rig.sender.send(&m).await.expect("ipc send");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+
+    /// `(raw kind byte, window in the datagram, window in the body, seq,
+    /// which game drew it, frame number)` for every video datagram that
+    /// arrives before the line goes quiet.
+    async fn received(conn: &Connection) -> Vec<(u8, u16, u16, u16, u8, u8)> {
+        let mut out = Vec::new();
+        while let Ok(Ok(d)) =
+            tokio::time::timeout(Duration::from_millis(300), conn.read_datagram()).await
+        {
+            let (h, window, fragment) = decode_video_datagram(&d).expect("video");
+            assert_eq!((h.index, h.total), (0, 1), "small frames are one datagram");
+            let (body_window, seq, payload) = decode_video_frame_body(fragment).expect("body");
+            let (_, data) = nesprotocol::decode_video_payload(payload).expect("payload");
+            if window == 0 {
+                assert_eq!(fragment[0], MSG_DATA, "window 0 keeps the old body");
+            }
+            out.push((d[0], window, body_window, seq, data[0], data[1]));
+        }
+        out
+    }
+
+    async fn tell(rig: &Rig, f: impl Fn(&mut Vec<u8>)) {
+        let mut m = Vec::new();
+        f(&mut m);
+        rig.mgr.on_nescope(m).await;
+    }
+
+    fn opened(window: u16, launch: &str) -> WindowEvent {
+        WindowEvent::Opened {
+            window,
+            width: 64,
+            height: 64,
+            launch_id: launch.into(),
+            title: launch.into(),
+            app_id: String::new(),
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_old_client_sees_the_first_game_and_a_subscriber_its_window() {
+        let rig = rig().await;
+        tell(&rig, |m| encode_event_message(m, &opened(0, "launch_a"))).await;
+        tell(&rig, |m| encode_event_message(m, &opened(1, "launch_b"))).await;
+        tell(&rig, |m| encode_window_pid(m, 0, GAME_A)).await;
+        tell(&rig, |m| encode_window_pid(m, 1, GAME_B)).await;
+
+        // Never subscribed: the first game to draw, in the old encoding.
+        draw(&rig, GAME_A, 0, true).await;
+        draw(&rig, GAME_B, 0, true).await;
+        for n in 1..6 {
+            draw(&rig, GAME_A, n, false).await;
+            draw(&rig, GAME_B, n, false).await;
+        }
+        let got = received(&rig.client).await;
+        assert_eq!(got.len(), 5, "{got:?}");
+        for (i, (kind, window, body_window, seq, game, n)) in got.iter().enumerate() {
+            assert_eq!((*kind, *window, *body_window), (0, 0, 0));
+            assert_eq!((*game, *n), (1, i as u8 + 1), "only game A, in order");
+            assert_eq!(*seq, i as u16 + 1, "seq 0 was the keyframe's");
+        }
+
+        // Subscribed to window 1: game B only, windowed, numbered afresh.
+        let (idr, mut idr_rx) = tokio::sync::mpsc::unbounded_channel();
+        let me = rig._client_ep.addr().id;
+        rig.mgr.subscribe(me, 1, &idr).await;
+        assert_eq!(idr_rx.try_recv().ok(), Some(vec![nesprotocol::MSG_IDR_REQUEST]));
+        draw(&rig, GAME_B, 10, true).await;
+        for n in 11..15 {
+            draw(&rig, GAME_A, n, false).await;
+            draw(&rig, GAME_B, n, false).await;
+        }
+        let got = received(&rig.client).await;
+        assert_eq!(got.len(), 4, "{got:?}");
+        for (i, (kind, window, body_window, seq, game, n)) in got.iter().enumerate() {
+            assert_eq!((*kind, *window, *body_window), (DGRAM_VIDEO_WINDOW, 1, 1));
+            assert_eq!((*game, *n), (2, 11 + i as u8));
+            assert_eq!(*seq, i as u16 + 1);
+        }
+
+        // Its windows stream starts with the box as it stands.
+        let events = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let mut recv = rig.client.accept_uni().await.expect("uni");
+                let mut head = [0u8; 2];
+                recv.read_exact(&mut head).await.expect("head");
+                if head[0] != STREAM_WINDOWS {
+                    continue;
+                }
+                let mut events = Vec::new();
+                for _ in 0..2 {
+                    let mut len = [0u8; 4];
+                    recv.read_exact(&mut len).await.expect("len");
+                    let mut frame = vec![0u8; u32::from_le_bytes(len) as usize];
+                    recv.read_exact(&mut frame).await.expect("frame");
+                    events.push(WindowEvent::decode(frame[0], &frame[3..]).expect("event"));
+                }
+                return events;
+            }
+        })
+        .await
+        .expect("a windows stream");
+        assert_eq!(events, vec![opened(0, "launch_a"), opened(1, "launch_b")]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn one_untagged_game_is_the_old_stream() {
+        // An encoder that predates tagging, a nescope that predates windows.
+        let rig = rig().await;
+        let send = |n: u8, key: bool| {
+            let flags = if key { FLAG_KEYFRAME } else { 0 };
+            nesprotocol::encode_ipc_frame(STREAM_VIDEO, CODEC_H264, flags, 1, 64, 64, &[1, n])
+        };
+        rig.sender.send(&send(0, true)).await.unwrap();
+        for n in 1..4 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            rig.sender.send(&send(n, false)).await.unwrap();
+        }
+        let got = received(&rig.client).await;
+        assert_eq!(got.len(), 3);
+        assert!(got.iter().all(|g| (g.0, g.1) == (0, 0)));
+    }
+}

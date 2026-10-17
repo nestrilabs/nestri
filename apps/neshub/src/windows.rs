@@ -75,6 +75,9 @@ struct OpenWindow {
 pub struct WindowTable {
     open: BTreeMap<WindowId, OpenWindow>,
     pids: HashMap<u32, WindowId>,
+    /// Processes whose window has closed. Their last frames belong to nobody,
+    /// not to whichever window is left.
+    retired: std::collections::HashSet<u32>,
     /// Launch id of a process that drew but owns no window, read once.
     launch_of: HashMap<u32, Option<String>>,
     primary: Option<(Source, Instant)>,
@@ -121,7 +124,14 @@ impl WindowTable {
             }
             WindowEvent::Closed { window } => {
                 self.open.remove(window);
-                self.pids.retain(|_, w| w != window);
+                let retired = &mut self.retired;
+                self.pids.retain(|pid, w| {
+                    let keep = w != window;
+                    if !keep {
+                        retired.insert(*pid);
+                    }
+                    keep
+                });
             }
         }
     }
@@ -129,6 +139,7 @@ impl WindowTable {
     /// Window `window` is owned by process `pid`.
     pub fn bind_pid(&mut self, window: WindowId, pid: u32) {
         self.pids.insert(pid, window);
+        self.retired.remove(&pid);
         self.launch_of.remove(&pid);
     }
 
@@ -171,6 +182,9 @@ impl WindowTable {
         if let Some(window) = self.pids.get(&pid) {
             return Some(*window);
         }
+        if self.retired.contains(&pid) {
+            return None;
+        }
         let launch = self
             .launch_of
             .entry(pid)
@@ -207,15 +221,6 @@ impl WindowTable {
                 self.primary = Some((source, now));
                 true
             }
-        }
-    }
-
-    /// The window the primary picture is, so input from a connection that
-    /// never subscribed goes to it.
-    pub fn primary_window(&mut self, launch_of: &dyn Fn(u32) -> Option<String>) -> WindowId {
-        match self.primary {
-            Some((source, _)) => self.resolve(source, launch_of).unwrap_or(WINDOW_DEFAULT),
-            None => WINDOW_DEFAULT,
         }
     }
 }
@@ -315,7 +320,8 @@ mod tests {
         assert_eq!(t.resolve(Some(100), &no_launch), Some(0));
         assert_eq!(t.resolve(Some(200), &no_launch), Some(1));
         t.apply(&WindowEvent::Closed { window: 1 });
-        // Its window gone, and another still open: nobody can say.
+        // Its window gone: its last frames are nobody's, even with only
+        // window 0 left.
         assert_eq!(t.resolve(Some(200), &no_launch), None);
     }
 
@@ -350,17 +356,6 @@ mod tests {
         // Silent for a second: the other takes over.
         assert!(t.note_primary(Some(2), t0 + Duration::from_millis(1600)));
         assert!(!t.note_primary(Some(1), t0 + Duration::from_millis(1610)));
-    }
-
-    #[test]
-    fn primary_window_follows_the_primary_encoder() {
-        let mut t = WindowTable::default();
-        assert_eq!(t.primary_window(&no_launch), 0);
-        t.apply(&opened(0, "steam"));
-        t.apply(&opened(1, "game"));
-        t.bind_pid(1, 50);
-        t.note_primary(Some(50), Instant::now());
-        assert_eq!(t.primary_window(&no_launch), 1);
     }
 
     #[test]
