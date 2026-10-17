@@ -1281,9 +1281,19 @@ export namespace Session {
 	 * ref(d-0085)
 	 */
 	async function stopIfEmpty(sessionId: string) {
-		if (await Launch.anyOpen(sessionId)) return false;
-		await stopRun(sessionId, null);
-		return true;
+		// One transaction holding the run's row, the same lock `addLaunch`
+		// takes: a launch added while this decides either lands first and is
+		// seen as open, or waits and finds the run stopping.
+		return Database.transaction(async (tx) => {
+			await tx
+				.select({ id: SessionTable.id })
+				.from(SessionTable)
+				.where(eq(SessionTable.id, sessionId))
+				.for('update');
+			if (await Launch.anyOpen(sessionId)) return false;
+			await stopRun(sessionId, null);
+			return true;
+		});
 	}
 
 	/**

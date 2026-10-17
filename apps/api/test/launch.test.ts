@@ -318,3 +318,27 @@ describe('launches', () => {
 		expect((await reportLaunch(s, id, first, 'running')).status).toBe(409);
 	});
 });
+
+describe('launches racing the last one ending', () => {
+	test('a launch added as the last one ends is either kept or refused, never orphaned', async () => {
+		for (let i = 0; i < 5; i++) {
+			const { s, id, first, second } = await liveRun(`launch-race-${i}`, 7200 + i);
+			const [ended, added] = await Promise.all([
+				reportLaunch(s, id, first, 'ended', { endReason: 'game_exited' }),
+				addLaunch(s, id, second)
+			]);
+			expect(ended.status).toBe(200);
+			const run = await read(s, id);
+			if (added.status === 201) {
+				// Added first: the run keeps going with the new launch.
+				expect(run.timeStopRequested).toBeNull();
+				expect(run.launches.map((l: any) => l.state)).toEqual(['ended', 'requested']);
+			} else {
+				// Stopped first: the launch was refused, and none was written.
+				expect(added.status).toBe(409);
+				expect(run.timeStopRequested).not.toBeNull();
+				expect(run.launches).toHaveLength(1);
+			}
+		}
+	});
+});
