@@ -148,11 +148,6 @@ impl<K: PartialEq + Clone> Registry<K> {
     pub fn key_of(&self, id: WindowId) -> Option<&K> {
         self.windows.iter().find(|w| w.id == id).map(|w| &w.key)
     }
-
-    /// The process ids that own a window.
-    pub fn pids(&self) -> impl Iterator<Item = u32> + '_ {
-        self.windows.iter().filter_map(|w| w.pid)
-    }
 }
 
 fn announce<K>(w: &Tracked<K>, size: (u16, u16)) -> Vec<Vec<u8>> {
