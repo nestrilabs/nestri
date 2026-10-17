@@ -598,7 +598,7 @@ mod tests {
             id: LaunchId::new("launch_01"),
             images: Vec::new(),
             overlays: vec![Overlay {
-                lower: "/nestri/launches/launch_01/build.erofs".into(),
+                lower: "/nestri/launch-images/launch_01/build.erofs".into(),
                 upper: "/nestri/launches/launch_01/upper.ext4".into(),
                 at: "/nestri/installs/launch_01".into(),
             }],

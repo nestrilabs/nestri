@@ -1293,7 +1293,7 @@ mod tests {
         assert_eq!(caller.expect().await, started("l-1"));
 
         let overlay = nesprotocol::lifecycle::Overlay {
-            lower: "/nestri/launches/l-2/build.erofs".into(),
+            lower: "/nestri/launch-images/l-2/build.erofs".into(),
             upper: "/nestri/launches/l-2/upper.ext4".into(),
             at: "/nestri/installs/l-2".into(),
         };
@@ -1341,7 +1341,7 @@ mod tests {
             .say(&HostToGuest::Mount {
                 id: LaunchId::new("l-2"),
                 images: vec![nesprotocol::lifecycle::Image {
-                    device: "/nestri/launches/l-2/compat.erofs".into(),
+                    device: "/nestri/launch-images/l-2/compat.erofs".into(),
                     at: "/nestri/compat-2".into(),
                 }],
                 overlays: Vec::new(),
