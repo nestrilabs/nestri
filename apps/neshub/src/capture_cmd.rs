@@ -97,9 +97,15 @@ mod tests {
     #[test]
     fn one_untagged_encoder_is_the_shared_socket_as_before() {
         let mut f = Fanout::default();
-        assert_eq!(f.destinations(), vec![PathBuf::from("/tmp/nescapture-cmd.sock")]);
+        assert_eq!(
+            f.destinations(),
+            vec![PathBuf::from("/tmp/nescapture-cmd.sock")]
+        );
         f.sent(SETTINGS);
-        assert_eq!(f.destinations(), vec![PathBuf::from("/tmp/nescapture-cmd.sock")]);
+        assert_eq!(
+            f.destinations(),
+            vec![PathBuf::from("/tmp/nescapture-cmd.sock")]
+        );
     }
 
     #[test]
@@ -108,7 +114,10 @@ mod tests {
         f.sent(SETTINGS);
         assert_eq!(f.encoder(10), Some(vec![]));
         assert_eq!(f.encoder(10), None);
-        assert_eq!(f.destinations(), vec![PathBuf::from("/tmp/nescapture-cmd-10.sock")]);
+        assert_eq!(
+            f.destinations(),
+            vec![PathBuf::from("/tmp/nescapture-cmd-10.sock")]
+        );
     }
 
     #[test]
@@ -122,11 +131,18 @@ mod tests {
         f.sent(&bitrate);
         assert_eq!(
             f.encoder(20),
-            Some(vec![SETTINGS.to_vec(), bitrate.to_vec(), vec![MSG_IDR_REQUEST]])
+            Some(vec![
+                SETTINGS.to_vec(),
+                bitrate.to_vec(),
+                vec![MSG_IDR_REQUEST]
+            ])
         );
         assert_eq!(f.destinations().len(), 2);
         f.forget(10);
-        assert_eq!(f.destinations(), vec![PathBuf::from("/tmp/nescapture-cmd-20.sock")]);
+        assert_eq!(
+            f.destinations(),
+            vec![PathBuf::from("/tmp/nescapture-cmd-20.sock")]
+        );
     }
 
     #[test]
@@ -148,7 +164,13 @@ mod tests {
 
     #[test]
     fn pid_from_path() {
-        assert_eq!(pid_of(std::path::Path::new("/tmp/nescapture-cmd-42.sock")), Some(42));
-        assert_eq!(pid_of(std::path::Path::new("/tmp/nescapture-cmd.sock")), None);
+        assert_eq!(
+            pid_of(std::path::Path::new("/tmp/nescapture-cmd-42.sock")),
+            Some(42)
+        );
+        assert_eq!(
+            pid_of(std::path::Path::new("/tmp/nescapture-cmd.sock")),
+            None
+        );
     }
 }

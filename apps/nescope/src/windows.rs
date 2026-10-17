@@ -55,7 +55,12 @@ impl<K: PartialEq + Clone> Registry<K> {
     /// Give a newly mapped window an id, and return the messages that tell the
     /// hub. `None` for a window that already has one, or when ids have run
     /// out for this run.
-    pub fn open(&mut self, key: K, new: NewWindow, launch_of: impl Fn(u32) -> Option<String>) -> Option<Vec<Vec<u8>>> {
+    pub fn open(
+        &mut self,
+        key: K,
+        new: NewWindow,
+        launch_of: impl Fn(u32) -> Option<String>,
+    ) -> Option<Vec<Vec<u8>>> {
         if self.id_of(&key).is_some() {
             return None;
         }
@@ -138,7 +143,10 @@ impl<K: PartialEq + Clone> Registry<K> {
     /// Everything the hub needs to know of every window, for a hub that has
     /// just connected.
     pub fn announce_all(&self, size: (u16, u16)) -> Vec<Vec<u8>> {
-        self.windows.iter().flat_map(|w| announce(w, size)).collect()
+        self.windows
+            .iter()
+            .flat_map(|w| announce(w, size))
+            .collect()
     }
 
     pub fn id_of(&self, key: &K) -> Option<WindowId> {
@@ -262,11 +270,17 @@ mod tests {
         );
         assert_eq!(a[1][0], MSG_WINDOW_PID);
         assert_eq!(decode_window_pid(&a[1][1..]), Some((0, 1)));
-        assert!(r.open(10, new(Some(1), "a"), launch).is_none(), "once per window");
+        assert!(
+            r.open(10, new(Some(1), "a"), launch).is_none(),
+            "once per window"
+        );
         let b = r.open(11, new(None, "b"), launch).unwrap();
         assert_eq!(b.len(), 1, "no owner to name");
         assert_eq!(decode(&b[0]).window(), 1);
-        assert_eq!(decode(&r.close(&10).unwrap()), WindowEvent::Closed { window: 0 });
+        assert_eq!(
+            decode(&r.close(&10).unwrap()),
+            WindowEvent::Closed { window: 0 }
+        );
         assert!(r.close(&10).is_none());
         let c = r.open(12, new(None, "c"), launch).unwrap();
         assert_eq!(decode(&c[0]).window(), 2, "0 is not given out again");
@@ -298,7 +312,11 @@ mod tests {
             }
         );
         r.open(2, new(None, "c"), |_| None);
-        let sizes: Vec<_> = r.resize_all((1280, 720)).iter().map(|m| decode(m)).collect();
+        let sizes: Vec<_> = r
+            .resize_all((1280, 720))
+            .iter()
+            .map(|m| decode(m))
+            .collect();
         assert_eq!(sizes.len(), 2);
         assert_eq!(
             sizes[1],

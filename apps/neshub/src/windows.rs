@@ -16,9 +16,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::{Duration, Instant};
 
-use nesprotocol::input::{
-    INPUT_OUTPUT_SIZE, encode_window_focus, encode_window_output_size,
-};
+use nesprotocol::input::{INPUT_OUTPUT_SIZE, encode_window_focus, encode_window_output_size};
 use nesprotocol::window::{WINDOW_DEFAULT, WindowEvent, WindowId};
 
 /// Who drew a frame: an encoder's process id, or `None` for an encoder that
@@ -332,7 +330,11 @@ mod tests {
         t.apply(&opened(1, "launch_b"));
         t.apply(&opened(2, "launch_b"));
         let launch = |pid: u32| (pid == 300).then(|| "launch_b".to_string());
-        assert_eq!(t.resolve(Some(300), &launch), Some(2), "the newest of its launch");
+        assert_eq!(
+            t.resolve(Some(300), &launch),
+            Some(2),
+            "the newest of its launch"
+        );
         assert_eq!(t.resolve(Some(301), &launch), None);
     }
 
@@ -361,7 +363,11 @@ mod tests {
     #[test]
     fn routing() {
         use Subscription::*;
-        assert_eq!(route(Legacy, Some(3), true), Some(0), "old encoding for an old client");
+        assert_eq!(
+            route(Legacy, Some(3), true),
+            Some(0),
+            "old encoding for an old client"
+        );
         assert_eq!(route(Legacy, Some(0), false), None);
         assert_eq!(route(Window(3), Some(3), false), Some(3));
         assert_eq!(route(Window(0), Some(0), true), Some(0));
@@ -437,7 +443,11 @@ mod tests {
             Some(DecodedInput::WindowFocus { window: 2 })
         ));
         assert_eq!(out[1], mv);
-        assert_eq!(tagger.messages(2, &mv), vec![mv.clone()], "no tag while unchanged");
+        assert_eq!(
+            tagger.messages(2, &mv),
+            vec![mv.clone()],
+            "no tag while unchanged"
+        );
         // Back to window 0: tagged, since the box is now on 2.
         assert_eq!(tagger.messages(0, &mv).len(), 2);
         // Focus alone.
@@ -452,7 +462,11 @@ mod tests {
         let mut size = Vec::new();
         encode_output_size(&mut size, 1280, 720);
         let out = tagger.messages(3, &size);
-        assert_eq!(out.len(), 1, "a resize carries its window and moves no focus");
+        assert_eq!(
+            out.len(),
+            1,
+            "a resize carries its window and moves no focus"
+        );
         assert!(matches!(
             decode_input_event(&out[0]),
             Some(DecodedInput::WindowOutputSize {
