@@ -7,6 +7,7 @@ import { Examples } from '@nestri/core/examples';
 import { Game } from '@nestri/core/game/index';
 import { Identifier } from '@nestri/core/id';
 import { Session } from '@nestri/core/session/index';
+import { Launch } from '@nestri/core/session/launch';
 import { Team } from '@nestri/core/team/index';
 import { Trial } from '@nestri/core/trial/index';
 import { Library } from '@nestri/core/user/library';
@@ -310,7 +311,7 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'Read a run you asked for',
 				description:
-					'Poll this while a run starts. The ticket appears part-way through and is republished as addresses are discovered, so re-read it rather than keeping the first one — a client that treats the first ticket as final works on a local network and fails from anywhere else. Once the run reaches a terminal state the ticket is null: stop polling and stop dialling it.',
+					'Poll this while a run starts. `launches` lists what runs in the box. The ticket appears part-way through and is republished as addresses are discovered, so re-read it rather than keeping the first one — a client that treats the first ticket as final works on a local network and fails from anywhere else. Once the run reaches a terminal state the ticket is null: stop polling and stop dialling it.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Session.Info) } },
@@ -341,7 +342,13 @@ export namespace SessionApi {
 						'No such session, or it is not yours'
 					);
 				}
-				return c.json({ data: { ...session, queue: await Session.queueFor(session.id) } });
+				return c.json({
+					data: {
+						...session,
+						launches: await Launch.listForSession(session.id),
+						queue: await Session.queueFor(session.id)
+					}
+				});
 			}
 		)
 		.post(
@@ -449,6 +456,186 @@ export namespace SessionApi {
 			}
 		)
 		.post(
+			'/:id/launch',
+			notPublic,
+			describeRoute({
+				tags: ['Session'],
+				summary: 'Start another game in a running box',
+				description:
+					'Adds a launch to a run that its host has taken on and that is not being stopped; the host starts it in the box without stopping what already runs there. Answers with the launch: its `id` is what the launched game’s window carries, and what to stop when that window closes. A run that is waiting for a host, stopping or over is 409: ask for a new run instead. The run is still what is billed and what the allowance counts, so adding a launch asks nothing of either.',
+				responses: {
+					201: {
+						content: { 'application/json': { schema: Result(Launch.Info) } },
+						description: 'The launch has been requested'
+					},
+					400: ErrorResponses[400],
+					401: ErrorResponses[401],
+					403: ErrorResponses[403],
+					404: ErrorResponses[404],
+					409: ErrorResponses[409]
+				}
+			}),
+			validator(
+				'param',
+				z.object({ id: z.string().meta({ description: 'The run', example: Examples.Session.id }) })
+			),
+			validator(
+				'json',
+				z
+					.object({
+						gameId: z.string().min(1).meta({
+							description: 'The game to launch',
+							example: Examples.Session.gameId
+						})
+					})
+					.strict()
+			),
+			async (c) => {
+				const userId = actingPerson();
+				const game = await Game.fromID(c.req.valid('json').gameId);
+				if (!game) {
+					throw new VisibleError('not_found', ErrorCodes.NotFound.RESOURCE_NOT_FOUND, 'No such game');
+				}
+				// The same check, and the same gaps, as asking for a run.
+				const owned = await Library.findByUserAndGame({ userId, gameId: game.id });
+				if (!owned) {
+					throw new VisibleError(
+						'forbidden',
+						ErrorCodes.Permission.FORBIDDEN,
+						'That game is not in your library'
+					);
+				}
+				const result = await Session.addLaunch({
+					sessionId: c.req.valid('param').id,
+					userId,
+					gameId: game.id
+				});
+				switch (result.outcome) {
+					case 'notFound':
+						throw new VisibleError(
+							'not_found',
+							ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+							'No such session, or it is not yours'
+						);
+					case 'notRunning':
+						conflict('That run is not running, so it cannot take another launch');
+					default:
+						return c.json({ data: result.launch }, 201);
+				}
+			}
+		)
+		.post(
+			'/:id/launch/:launchId/stop',
+			notPublic,
+			describeRoute({
+				tags: ['Session'],
+				summary: 'End one launch in a run',
+				description:
+					'Asks for one game in the box to end, not the box. It stays `running`, with `timeStopRequested` set, until the host reports it over. When the last launch of a run is over, the run is stopped as `POST /session/{id}/stop` would. Asking again, or of a launch already over, changes nothing.',
+				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Launch.Info) } },
+						description: 'The launch, with the stop recorded'
+					},
+					401: ErrorResponses[401],
+					403: ErrorResponses[403],
+					404: ErrorResponses[404]
+				}
+			}),
+			validator(
+				'param',
+				z.object({
+					id: z.string().meta({ description: 'The run', example: Examples.Session.id }),
+					launchId: z.string().meta({ description: 'The launch to end', example: Examples.Launch.id })
+				})
+			),
+			async (c) => {
+				const { id, launchId } = c.req.valid('param');
+				const launch = await Session.stopLaunch({ sessionId: id, launchId, userId: actingPerson() });
+				if (!launch) {
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'No such launch, or it is not yours'
+					);
+				}
+				return c.json({ data: launch });
+			}
+		)
+		.post(
+			'/:id/launch/:launchId/state',
+			machineOnly,
+			describeRoute({
+				tags: ['Session'],
+				summary: 'Report where one launch has got to',
+				description:
+					'For the host the run’s box is placed on, holding the run’s claim. `running` once the game is started in the box, `ended` or `failed` once it is over, with `endReason` as for a run. Re-reporting a state already reported changes nothing. A transition that does not exist is 409. When the report ends the last launch of the run, the run is stopped and the host is handed `session.stop` for it.',
+				responses: {
+					200: {
+						content: { 'application/json': { schema: Result(Launch.Info) } },
+						description: 'The launch as it stands after the report'
+					},
+					400: ErrorResponses[400],
+					403: ErrorResponses[403],
+					409: ErrorResponses[409]
+				}
+			}),
+			validator('param', z.object({ id: z.string(), launchId: z.string() })),
+			validator(
+				'json',
+				z
+					.object({
+						state: Launch.ReportableState.meta({
+							description: 'Where the launch has got to',
+							example: 'ended'
+						}),
+						claimToken: ClaimTokenField,
+						errorMessage: z.string().max(1024).nullable().optional().meta({
+							description: 'Why it failed. Kept only for a launch that did',
+							example: Examples.Session.errorMessage
+						}),
+						endReason: Session.EndReason.nullable().optional().meta({
+							description: 'Why the launch is over. Only with `ended` or `failed`',
+							example: 'game_exited'
+						})
+					})
+					.strict()
+			),
+			async (c) => {
+				const body = c.req.valid('json');
+				if (body.endReason && body.state === 'running') {
+					throw new VisibleError(
+						'validation',
+						ErrorCodes.Validation.INVALID_PARAMETER,
+						'A launch that is running is not over, so it has no reason to have ended',
+						'endReason'
+					);
+				}
+				const { id, launchId } = c.req.valid('param');
+				const result = await Session.reportLaunch({
+					sessionId: id,
+					launchId,
+					machineId: Actor.machineID,
+					claimToken: body.claimToken,
+					state: body.state,
+					endReason: body.endReason ?? null,
+					errorMessage: body.errorMessage ?? null
+				});
+				switch (result.outcome) {
+					case 'forbidden':
+						notYours();
+					case 'illegal':
+						conflict(`A launch in state ${result.launch?.state} cannot become ${body.state}`);
+					case 'notHolder':
+						conflict('Another attempt holds this run');
+					case 'lost':
+						conflict('Another caller moved this launch first');
+					default:
+						return c.json({ data: result.launch });
+				}
+			}
+		)
+		.post(
 			'/:id/ticket',
 			machineOnly,
 			describeRoute({
@@ -513,7 +700,7 @@ export namespace SessionApi {
 			tags: ['Session'],
 			summary: 'Ask for work',
 			description:
-				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked or the terms it started under ran out, repeated on every poll until the host reports it ended. Poll at the cadence the heartbeat hands down. An agent skips a kind it does not know.',
+				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked, its last launch is over, or the terms it started under ran out, repeated on every poll until the host reports it ended. `launch.start` is another game to start in a box that is already live; `launch.stop` is one launch to end, both repeated until the host reports that launch. Poll at the cadence the heartbeat hands down. An agent skips a kind it does not know.',
 			responses: {
 				200: {
 					content: { 'application/json': { schema: Result(z.array(Session.Job)) } },
