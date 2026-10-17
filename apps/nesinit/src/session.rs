@@ -488,6 +488,7 @@ where
 /// A launch that could not be started is reported and is not the end of the
 /// session: a box that dies of a bad `argv` cannot be told a better one. One
 /// that started is added to the running set, and its exit to `exits`.
+#[allow(clippy::too_many_arguments)]
 async fn start<W, Wr>(
     writer: &mut Wr,
     workload: &mut W,
