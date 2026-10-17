@@ -142,9 +142,14 @@ where
 
     let mut running: BTreeMap<LaunchId, Current> = BTreeMap::new();
     let mut exits: Exits = JoinSet::new();
-    // A terminal launch ended while others were still running. The box stays
-    // up for them and ends when the last one has gone.
-    let mut ending = false;
+    // A terminal launch's exit, once it has ended while others were still
+    // running. The box stays up for them, takes no new launches, and ends with
+    // this exit when the last of them has gone.
+    let mut ending: Option<Exit> = None;
+    // Each launch's content mounted after boot, by launch, so it can be taken
+    // down with the launch. Recorded when asked for, before it has finished.
+    let mut mounted: Mounted = BTreeMap::new();
+    let mut mounting: JoinSet<(LaunchId, Result<(), Failure>)> = JoinSet::new();
     let mut booted = false;
     let mut relay_open = true;
     let mut carrier_open = true;
@@ -159,6 +164,11 @@ where
         let event = tokio::select! {
             ended = exits.join_next(), if !exits.is_empty() => match ended {
                 Some(Ok((id, exit))) => Event::Ended(id, exit?),
+                Some(Err(error)) => return Err(std::io::Error::other(error)),
+                None => continue,
+            },
+            done = mounting.join_next(), if !mounting.is_empty() => match done {
+                Some(Ok((id, result))) => Event::MountDone(id, result),
                 Some(Err(error)) => return Err(std::io::Error::other(error)),
                 None => continue,
             },
@@ -190,18 +200,27 @@ where
                     // command, and this is the second half. The id is kept, so
                     // a caller sees the exit and then the same launch running
                     // again rather than having to correlate a new name.
-                    start(
+                    let started = start(
                         &mut writer,
                         workload,
                         untrusted,
                         (&mut running, &mut exits),
-                        id,
+                        id.clone(),
                         ended.exec,
                         ended.on_exit,
                     )
                     .await?;
+                    if !started {
+                        tear_down(workload, &mut mounted, &id);
+                        // The last launch of an ending box would not come
+                        // back, so nothing is left to wait for.
+                        if let (Some(exit), true) = (ending, running.is_empty()) {
+                            return Ok(Outcome::WorkloadExited(exit));
+                        }
+                    }
                     continue;
                 }
+                tear_down(workload, &mut mounted, &id);
 
                 // Terminal is the launch's own answer, not this end's. A
                 // non-terminal exit leaves the box up and waiting to be
@@ -210,11 +229,16 @@ where
                 //
                 // A terminal one ends the box only once nothing else is
                 // running in it. ref(d-0085)
-                ending |= ended.on_exit.terminal;
-                if ending && running.is_empty() {
+                //
+                // The exit the box ends with is the terminal launch's own,
+                // whichever launch happens to be the last to go.
+                if ended.on_exit.terminal && ending.is_none() {
+                    ending = Some(exit);
+                }
+                if let (Some(exit), true) = (ending, running.is_empty()) {
                     return Ok(Outcome::WorkloadExited(exit));
                 }
-                if ending {
+                if ending.is_some() {
                     tracing::info!(
                         launch = %id,
                         still_running = running.len(),
@@ -222,6 +246,29 @@ where
                     );
                 } else {
                     tracing::info!(launch = %id, "a launch ended and the box stays up");
+                }
+                continue;
+            }
+            Event::MountDone(id, result) => {
+                match result {
+                    Ok(()) => {
+                        tracing::info!(launch = %id, "mounted a launch's content");
+                        send(&mut writer, &GuestToHost::LaunchMounted { id }).await?
+                    }
+                    Err(failure) => {
+                        // Nothing of it is recorded as mounted: what did mount
+                        // before the failure is taken down with it.
+                        tear_down(workload, &mut mounted, &id);
+                        tracing::warn!(launch = %id, reason = %failure.reason, "a launch's content would not mount");
+                        send(
+                            &mut writer,
+                            &GuestToHost::LaunchMountFailed {
+                                id,
+                                reason: failure.reason,
+                            },
+                        )
+                        .await?
+                    }
                 }
                 continue;
             }
@@ -386,17 +433,32 @@ where
                     refuse(&mut writer, id, &reason).await?;
                     continue;
                 }
+                if ending.is_some() {
+                    // The box was ended by a terminal launch and is waiting
+                    // only for the launches already in it. A new one would
+                    // keep alive a box its person has finished with.
+                    refuse(
+                        &mut writer,
+                        id,
+                        "the box is ending: a launch that ends it has exited",
+                    )
+                    .await?;
+                    continue;
+                }
 
-                start(
+                let started = start(
                     &mut writer,
                     workload,
                     untrusted,
                     (&mut running, &mut exits),
-                    id,
+                    id.clone(),
                     exec,
                     on_exit,
                 )
                 .await?;
+                if !started {
+                    tear_down(workload, &mut mounted, &id);
+                }
             }
             HostToGuest::Mount {
                 id,
@@ -406,30 +468,25 @@ where
                 // A launch's content, mounted into a box that is already up.
                 // Never ends the session: a game whose image will not mount is
                 // one launch that cannot start. ref(d-0085)
-                let mounted = if booted {
-                    workload
-                        .mount_images(&images)
-                        .and_then(|()| workload.mount_overlays(&overlays))
+                //
+                // Carried out off this loop, which also carries every other
+                // launch's exits and stops: a mount over a share can take a
+                // while, and nothing else should wait on it.
+                let refused = if !booted {
+                    Some("the box has not been told what it is".to_string())
+                } else if mounted.contains_key(&id) {
+                    Some(format!("content is already mounted for this launch: {id}"))
                 } else {
-                    Err(Failure::new("the box has not been told what it is"))
+                    None
                 };
-                match mounted {
-                    Ok(()) => {
-                        tracing::info!(launch = %id, images = images.len(), overlays = overlays.len(), "mounted a launch's content");
-                        send(&mut writer, &GuestToHost::LaunchMounted { id }).await?
-                    }
-                    Err(failure) => {
-                        tracing::warn!(launch = %id, reason = %failure.reason, "a launch's content would not mount");
-                        send(
-                            &mut writer,
-                            &GuestToHost::LaunchMountFailed {
-                                id,
-                                reason: failure.reason,
-                            },
-                        )
-                        .await?
-                    }
+                if let Some(reason) = refused {
+                    tracing::warn!(launch = %id, reason, "refusing a mount");
+                    send(&mut writer, &GuestToHost::LaunchMountFailed { id, reason }).await?;
+                    continue;
                 }
+                mounted.insert(id.clone(), (images.clone(), overlays.clone()));
+                let pending = workload.mount_launch(images, overlays);
+                mounting.spawn(async move { (id, pending.await) });
             }
             HostToGuest::Attach { id, exec, size } => {
                 // A shell is not a launch: it does not touch `running`, takes no
@@ -497,7 +554,7 @@ async fn start<W, Wr>(
     id: LaunchId,
     exec: Exec,
     on_exit: OnExit,
-) -> std::io::Result<()>
+) -> std::io::Result<bool>
 where
     W: Workload,
     Wr: AsyncWrite + Unpin,
@@ -523,7 +580,7 @@ where
             ),
         )
         .await?;
-        return Ok(());
+        return Ok(false);
     }
 
     // Before the workload exists, so there is no window in which it is running
@@ -543,10 +600,35 @@ where
                 },
             );
             exits.spawn(async move { (id, exited.await) });
-            Ok(())
+            Ok(true)
         }
-        Err(failure) => refuse(writer, id, &failure.reason).await,
+        Err(failure) => {
+            refuse(writer, id, &failure.reason).await?;
+            Ok(false)
+        }
     }
+}
+
+/// Each launch's content mounted after boot: its images and its overlays.
+type Mounted = BTreeMap<LaunchId, (Vec<nesprotocol::lifecycle::Image>, Vec<nesprotocol::lifecycle::Overlay>)>;
+
+/// Take down what was mounted for a launch that has gone, so the loop devices
+/// under it clear themselves. Off this loop, like the mount, and logged
+/// rather than reported: the launch it was for has already been reported.
+fn tear_down<W: Workload>(workload: &mut W, mounted: &mut Mounted, id: &LaunchId) {
+    let Some((images, overlays)) = mounted.remove(id) else {
+        return;
+    };
+    let pending = workload.unmount_launch(images, overlays);
+    let id = id.clone();
+    tokio::spawn(async move {
+        match pending.await {
+            Ok(()) => tracing::info!(launch = %id, "unmounted a launch's content"),
+            Err(failure) => {
+                tracing::warn!(launch = %id, reason = %failure.reason, "a launch's content did not unmount")
+            }
+        }
+    });
 }
 
 /// Say that a launch will not happen, in the words of whatever refused it.
@@ -569,6 +651,7 @@ where
 enum Event {
     Line(Option<String>),
     Ended(LaunchId, Exit),
+    MountDone(LaunchId, Result<(), Failure>),
     FromWorkload(Option<Payload>),
     Address(Option<crate::ticket::Found>),
     ServiceDied(Option<Died>),
@@ -1064,6 +1147,142 @@ mod tests {
 
         let (outcome, _, _) = session.await.unwrap();
         assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(0)));
+    }
+
+    /// The box ends with the terminal launch's exit, not with whichever
+    /// launch happened to go last.
+    #[tokio::test]
+    async fn an_ending_box_reports_the_exit_of_the_launch_that_ended_it() {
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.exit_for.insert(LaunchId::new("l-1"), Exit::code(7));
+        let (mut caller, session) = booted(Given::new(double)).await;
+
+        caller.say(&launch("l-1")).await;
+        assert_eq!(caller.expect().await, started("l-1"));
+        caller.say(&launch_and_stay("l-2")).await;
+        assert_eq!(caller.expect().await, started("l-2"));
+
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-1") }).await;
+        assert!(matches!(caller.expect().await, GuestToHost::WorkloadExited { .. }));
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-2") }).await;
+        assert_eq!(caller.expect().await, exited("l-2"));
+
+        let (outcome, _, _) = session.await.unwrap();
+        assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(7)));
+    }
+
+    /// Once a terminal launch has ended, the box waits only for what is
+    /// already in it: a new launch is refused.
+    #[tokio::test]
+    async fn an_ending_box_takes_no_new_launch() {
+        let (mut caller, session) =
+            booted(Given::new(Double::exits_when_stopped(Exit::code(0)))).await;
+
+        caller.say(&launch("l-1")).await;
+        assert_eq!(caller.expect().await, started("l-1"));
+        caller.say(&launch_and_stay("l-2")).await;
+        assert_eq!(caller.expect().await, started("l-2"));
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-1") }).await;
+        assert_eq!(caller.expect().await, exited("l-1"));
+
+        caller.say(&launch_and_stay("l-3")).await;
+        let GuestToHost::StartFailed { id, reason } = caller.expect().await else {
+            panic!("an ending box took a new launch")
+        };
+        assert_eq!(id, LaunchId::new("l-3"));
+        assert!(reason.contains("ending"), "{reason}");
+
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-2") }).await;
+        assert_eq!(caller.expect().await, exited("l-2"));
+        let (outcome, workload, _) = session.await.unwrap();
+        assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(0)));
+        assert_eq!(workload.started.len(), 2);
+    }
+
+    /// The last launch of an ending box failing to restart leaves nothing to
+    /// wait for, and the box ends at once.
+    #[tokio::test]
+    async fn an_ending_box_whose_last_restart_fails_ends() {
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.exit_for.insert(LaunchId::new("l-1"), Exit::code(3));
+        double.fail_restart_of = Some(LaunchId::new("l-2"));
+        let (mut caller, session) = booted(Given::new(double)).await;
+
+        caller.say(&launch("l-1")).await;
+        assert_eq!(caller.expect().await, started("l-1"));
+        caller.say(&launch_and_stay("l-2")).await;
+        assert_eq!(caller.expect().await, started("l-2"));
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-1") }).await;
+        assert!(matches!(caller.expect().await, GuestToHost::WorkloadExited { .. }));
+
+        caller.say(&HostToGuest::Restart { id: LaunchId::new("l-2") }).await;
+        assert_eq!(caller.expect().await, exited("l-2"));
+        assert!(matches!(caller.expect().await, GuestToHost::StartFailed { .. }));
+
+        let (outcome, _, _) = session.await.unwrap();
+        assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(3)));
+    }
+
+    fn overlay_for(id: &str) -> nesprotocol::lifecycle::Overlay {
+        nesprotocol::lifecycle::Overlay {
+            lower: format!("/nestri/launch-images/{id}/build.erofs"),
+            upper: format!("/nestri/launches/{id}/upper.ext4"),
+            at: format!("/nestri/installs/{id}"),
+        }
+    }
+
+    /// A second mount for the same launch is refused, and what a launch
+    /// mounted is taken down when it ends.
+    #[tokio::test]
+    async fn a_launchs_content_is_mounted_once_and_taken_down_with_it() {
+        let (mut caller, session) =
+            booted(Given::new(Double::exits_when_stopped(Exit::code(0)))).await;
+        caller.say(&launch("l-1")).await;
+        assert_eq!(caller.expect().await, started("l-1"));
+
+        let mount = HostToGuest::Mount {
+            id: LaunchId::new("l-2"),
+            images: Vec::new(),
+            overlays: vec![overlay_for("l-2")],
+        };
+        caller.say(&mount).await;
+        assert_eq!(caller.expect().await, GuestToHost::LaunchMounted { id: LaunchId::new("l-2") });
+        caller.say(&mount).await;
+        let GuestToHost::LaunchMountFailed { reason, .. } = caller.expect().await else {
+            panic!("a second mount for one launch was accepted")
+        };
+        assert!(reason.contains("already mounted"), "{reason}");
+
+        caller.say(&launch_and_stay("l-2")).await;
+        assert_eq!(caller.expect().await, started("l-2"));
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-2") }).await;
+        assert_eq!(caller.expect().await, exited("l-2"));
+
+        caller.say(&HostToGuest::Shutdown).await;
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.unmounted, vec![(Vec::new(), vec![overlay_for("l-2")])]);
+    }
+
+    /// Content mounted for a launch that then will not start is taken down
+    /// too, rather than left for the life of the box.
+    #[tokio::test]
+    async fn content_for_a_launch_that_will_not_start_is_taken_down() {
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.start_failure = Some(Failure::new("ENOENT"));
+        let (mut caller, session) = booted(Given::new(double)).await;
+        caller
+            .say(&HostToGuest::Mount {
+                id: LaunchId::new("l-2"),
+                images: Vec::new(),
+                overlays: vec![overlay_for("l-2")],
+            })
+            .await;
+        assert_eq!(caller.expect().await, GuestToHost::LaunchMounted { id: LaunchId::new("l-2") });
+        caller.say(&launch("l-2")).await;
+        assert!(matches!(caller.expect().await, GuestToHost::StartFailed { .. }));
+        caller.say(&HostToGuest::Shutdown).await;
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.unmounted.len(), 1);
     }
 
     /// Content for a launch reaches a box that is already up, and the answer

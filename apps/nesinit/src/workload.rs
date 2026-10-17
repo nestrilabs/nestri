@@ -39,6 +39,9 @@ impl Failure {
 /// Resolves when the workload ends.
 pub type Exited = Pin<Box<dyn Future<Output = io::Result<Exit>> + Send>>;
 
+/// Resolves when a mount or an unmount made off the session's loop is done.
+pub type Pending = Pin<Box<dyn Future<Output = Result<(), Failure>> + Send>>;
+
 pub trait Workload {
     /// Make the shares the descriptor names, where it says to put them.
     fn mount(&mut self, mounts: &[Mount]) -> Result<(), Failure>;
@@ -52,6 +55,15 @@ pub trait Workload {
     /// Stack each overlay the descriptor names: its build image, its writable
     /// layer, and the two together where it says.
     fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure>;
+
+    /// Mount one launch's content into a box that is already up: its images,
+    /// then its overlays. Off the caller's thread, because the caller also
+    /// carries every other launch's exits and stops. ref(d-0085)
+    fn mount_launch(&mut self, images: Vec<Image>, overlays: Vec<Overlay>) -> Pending;
+
+    /// Take down what [`Workload::mount_launch`] mounted, overlays first, so
+    /// the loop devices under it clear themselves. Lazily when busy.
+    fn unmount_launch(&mut self, images: Vec<Image>, overlays: Vec<Overlay>) -> Pending;
 
     /// Start a process on a terminal and connect it to the host on a data port
     /// of its own.
@@ -207,6 +219,47 @@ impl Workload for Process {
             mount_overlay(overlay)?;
         }
         Ok(())
+    }
+
+    fn mount_launch(&mut self, images: Vec<Image>, overlays: Vec<Overlay>) -> Pending {
+        off_loop(move || {
+            for image in &images {
+                mount_image(image)?;
+            }
+            for overlay in &overlays {
+                mount_overlay(overlay)?;
+            }
+            Ok(())
+        })
+    }
+
+    fn unmount_launch(&mut self, images: Vec<Image>, overlays: Vec<Overlay>) -> Pending {
+        off_loop(move || {
+            // Everything is attempted, and the first failure is the one said.
+            let mut first = None;
+            let mut note = |result: Result<(), Failure>| {
+                if let Err(failure) = result {
+                    first.get_or_insert(failure);
+                }
+            };
+            for overlay in overlays.iter().rev() {
+                match OverlayPlan::new(overlay) {
+                    Ok(plan) => {
+                        for at in [&plan.at, &plan.rw_at, &plan.lower_at] {
+                            note(unmount_one(at));
+                        }
+                    }
+                    Err(failure) => note(Err(failure)),
+                }
+            }
+            for image in images.iter().rev() {
+                match ImagePlan::new(image) {
+                    Ok(plan) => note(unmount_one(&plan.at)),
+                    Err(failure) => note(Err(failure)),
+                }
+            }
+            first.map_or(Ok(()), Err)
+        })
     }
 
     fn start(&mut self, id: &LaunchId, exec: &Exec) -> Result<Exited, Failure> {
@@ -538,6 +591,43 @@ fn mount_image(image: &Image) -> Result<(), Failure> {
     mount_one(&device, &plan.at, c"erofs", plan.flags, None).map_err(|error| plan.failed(error))
 }
 
+/// Run blocking filesystem work on the runtime's blocking pool.
+fn off_loop(work: impl FnOnce() -> Result<(), Failure> + Send + 'static) -> Pending {
+    Box::pin(async move {
+        tokio::task::spawn_blocking(work)
+            .await
+            .unwrap_or_else(|error| Err(Failure::new(format!("the mount work did not finish: {error}"))))
+    })
+}
+
+/// Unmount one filesystem, lazily if it is still in use: a launch that has
+/// exited can leave a child holding a file open, and the mount must still go
+/// so the loop device under it is freed when that child does.
+fn unmount_one(target: &std::ffi::CStr) -> Result<(), Failure> {
+    // SAFETY: a nul-terminated path that outlives the call.
+    if unsafe { libc::umount2(target.as_ptr(), 0) } == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    match error.raw_os_error() {
+        // Never mounted, or already gone: what was asked for.
+        Some(libc::EINVAL) | Some(libc::ENOENT) => Ok(()),
+        Some(libc::EBUSY) => {
+            // SAFETY: as above.
+            if unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) } == 0 {
+                Ok(())
+            } else {
+                Err(Failure::new(format!(
+                    "{}: {}",
+                    target.to_string_lossy(),
+                    io::Error::last_os_error()
+                )))
+            }
+        }
+        _ => Err(Failure::new(format!("{}: {error}", target.to_string_lossy()))),
+    }
+}
+
 /// The block device to mount `source` from.
 ///
 /// A block device is used as it is, which is every mount made at boot. A
@@ -547,8 +637,17 @@ fn mount_image(image: &Image) -> Result<(), Failure> {
 ///
 /// The loop device clears itself when the filesystem on it is unmounted, so
 /// nothing here has to remember it.
+///
+/// A symbolic link is refused rather than followed: a file in a share is the
+/// host's to name, and a link would let whatever wrote it name another.
 fn device_for(source: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
-    let meta = std::fs::metadata(as_path(source))?;
+    let meta = std::fs::symlink_metadata(as_path(source))?;
+    if meta.file_type().is_symlink() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "a mount source may not be a symbolic link",
+        ));
+    }
     if !meta.is_file() {
         return Ok(source.to_owned());
     }
@@ -593,10 +692,13 @@ const LO_FLAGS_AUTOCLEAR: u32 = 4;
 /// by somebody else before it is configured.
 fn loop_attach(file: &std::path::Path, read_only: bool) -> io::Result<CString> {
     use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
 
+    // Not followed if it was swapped for a link since it was looked at.
     let backing = std::fs::OpenOptions::new()
         .read(true)
         .write(!read_only)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(file)?;
     let control = std::fs::OpenOptions::new()
         .read(true)
@@ -855,6 +957,24 @@ mod loop_tests {
     fn a_device_that_is_not_a_file_is_used_as_it_is() {
         let device = device_for(c"/dev/null", true).unwrap();
         assert_eq!(device.as_c_str(), c"/dev/null");
+    }
+
+    #[test]
+    fn a_source_that_is_a_symbolic_link_is_refused() {
+        let dir = std::env::temp_dir().join(format!("nesinit-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let link = dir.join("build.erofs");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink("/dev/null", &link).unwrap();
+        let source = CString::new(link.to_string_lossy().as_bytes()).unwrap();
+        let error = device_for(&source, true).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput, "{error}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unmounting_what_is_not_mounted_is_not_a_failure() {
+        assert_eq!(unmount_one(c"/nonexistent/nesinit-test"), Ok(()));
     }
 
     #[test]
@@ -1186,6 +1306,12 @@ pub mod double {
         pub attached: Vec<(AttachId, Exec, Option<Winsize>)>,
         pub attach_failure: Option<Failure>,
         pub started: Vec<Exec>,
+        /// An exit of its own for a launch, over `exit`.
+        pub exit_for: std::collections::BTreeMap<LaunchId, Exit>,
+        /// Launches whose start fails after the first, for a restart test.
+        pub fail_restart_of: Option<LaunchId>,
+        /// What `unmount_launch` was asked to take down, in order.
+        pub unmounted: Vec<(Vec<Image>, Vec<Overlay>)>,
         /// Which launch each start was for, in the same order as `started`.
         pub started_ids: Vec<LaunchId>,
         /// Every stop asked for, one launch or all (`None`).
@@ -1222,6 +1348,9 @@ pub mod double {
                 attached: Vec::new(),
                 attach_failure: None,
                 started: Vec::new(),
+                unmounted: Vec::new(),
+                exit_for: Default::default(),
+                fail_restart_of: None,
                 started_ids: Vec::new(),
                 stopped: Vec::new(),
                 stops: 0,
@@ -1271,6 +1400,18 @@ pub mod double {
             }
         }
 
+        fn mount_launch(&mut self, images: Vec<Image>, overlays: Vec<Overlay>) -> Pending {
+            let result = self
+                .mount_images(&images)
+                .and_then(|()| self.mount_overlays(&overlays));
+            Box::pin(async move { result })
+        }
+
+        fn unmount_launch(&mut self, images: Vec<Image>, overlays: Vec<Overlay>) -> Pending {
+            self.unmounted.push((images, overlays));
+            Box::pin(async { Ok(()) })
+        }
+
         fn mount_overlays(&mut self, overlays: &[Overlay]) -> Result<(), Failure> {
             self.order.push("overlays");
             self.overlays.push(overlays.to_vec());
@@ -1282,11 +1423,15 @@ pub mod double {
 
         fn start(&mut self, id: &LaunchId, exec: &Exec) -> Result<Exited, Failure> {
             self.started.push(exec.clone());
+            let again = self.started_ids.contains(id);
             self.started_ids.push(id.clone());
             if let Some(failure) = &self.start_failure {
                 return Err(failure.clone());
             }
-            let exit = self.exit;
+            if again && self.fail_restart_of.as_ref() == Some(id) {
+                return Err(Failure::new("it would not come back"));
+            }
+            let exit = self.exit_for.get(id).copied().unwrap_or(self.exit);
             if !self.holds_until_stopped {
                 return Ok(Box::pin(async move { Ok(exit) }));
             }
@@ -1302,15 +1447,15 @@ pub mod double {
             self.stops += 1;
             self.stopped.push(Some(id.clone()));
             if let Some(tx) = self.on_stop.remove(id) {
-                let _ = tx.send(self.exit);
+                let _ = tx.send(self.exit_for.get(id).copied().unwrap_or(self.exit));
             }
         }
 
         fn signal_stop(&mut self) {
             self.stops += 1;
             self.stopped.push(None);
-            for (_, tx) in std::mem::take(&mut self.on_stop) {
-                let _ = tx.send(self.exit);
+            for (id, tx) in std::mem::take(&mut self.on_stop) {
+                let _ = tx.send(self.exit_for.get(&id).copied().unwrap_or(self.exit));
             }
         }
     }
