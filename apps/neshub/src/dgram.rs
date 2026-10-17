@@ -14,10 +14,13 @@ use tracing::{debug, warn};
 use crate::keyframe::KeyframeSender;
 use crate::pyro::PyroSender;
 
-use nesprotocol::MSG_DATA;
 use nesprotocol::datagram::{
-    DGRAM_BUFFER_BYTES, DGRAM_HDR_LEN, DatagramHeader, MAX_FRAGMENTS_PER_FRAME, MIN_DGRAM_PAYLOAD,
-    fragment_count, write_datagram_header,
+    DGRAM_BUFFER_BYTES, DGRAM_HDR_LEN, DGRAM_VIDEO, DatagramHeader, MAX_FRAGMENTS_PER_FRAME,
+    MIN_DGRAM_PAYLOAD, fragment_count, write_datagram_header,
+};
+use nesprotocol::window::{
+    DGRAM_WINDOW_HDR_LEN, WINDOW_DEFAULT, WindowId, max_fragment_payload,
+    write_video_datagram_header,
 };
 use nesprotocol::pyrowave::PyroFrame;
 use nesprotocol::reliable::video_wants_reliable;
@@ -30,8 +33,16 @@ use nesprotocol::reliable::video_wants_reliable;
 #[derive(Debug, Clone)]
 pub enum MediaItem {
     /// A hardware-codec frame or an audio packet, laid out as the hub
-    /// broadcasts it.
+    /// broadcasts it. Video sent this way is window `0`, in the encoding every
+    /// client has always read.
     Coded(Bytes),
+    /// A hardware-codec frame of another window, ref(d-0085).
+    Windowed(WindowId, Bytes),
+    /// The connection now shows another window: number from zero again and
+    /// forget any wait for a keyframe, since none of it describes the new
+    /// window. Sent through the same queue as the frames so it lands between
+    /// the last frame of the old window and the first of the new.
+    Resubscribe,
     /// A whole PyroWave frame, which travels by rules of its own.
     PyroWave(Arc<PyroFrame>),
 }
@@ -101,7 +112,12 @@ impl DatagramSender {
     /// Fragment one frame body and send the pieces.
     ///
     /// `body` is `[1B type][2B seq][payload]` — the frame layout the stream path
-    /// used, minus the length prefix a datagram does not need.
+    /// used, minus the length prefix a datagram does not need — or, for a
+    /// window other than `0`, the windowed body.
+    ///
+    /// `window` is the video window the datagrams belong to: its header is two
+    /// bytes longer for any window but `0`, so the fragment size follows it.
+    /// Always `0` for audio.
     ///
     /// A failure is reported but never retried. Retrying a real-time frame means
     /// delivering it late, which is the behaviour this whole change removes. The
@@ -109,7 +125,7 @@ impl DatagramSender {
     /// hold of the connection lock, so a path that shrinks mid-frame rejects the
     /// frame rather than leaving half of it on the wire for the receiver to time
     /// out.
-    pub fn send_frame(&self, seq: u16, body: &[u8]) -> Result<(), SendFrameError> {
+    pub fn send_frame(&self, seq: u16, window: WindowId, body: &[u8]) -> Result<(), SendFrameError> {
         // Ask QUIC what fits right now rather than assuming. The estimate moves
         // over a connection's life as path MTU discovery runs, and it can shrink
         // when a path changes underneath us — which for iroh includes migrating
@@ -121,7 +137,13 @@ impl DatagramSender {
             .max_datagram_size()
             .ok_or(SendFrameError::Unsupported)?;
 
-        let payload_size = max.saturating_sub(DGRAM_HDR_LEN);
+        let windowed = self.kind == DGRAM_VIDEO && window != WINDOW_DEFAULT;
+        let header_len = if windowed { DGRAM_WINDOW_HDR_LEN } else { DGRAM_HDR_LEN };
+        let payload_size = if self.kind == DGRAM_VIDEO {
+            max_fragment_payload(window, max)
+        } else {
+            max.saturating_sub(DGRAM_HDR_LEN)
+        };
         if payload_size < MIN_DGRAM_PAYLOAD {
             return Err(SendFrameError::PathTooSmall {
                 payload: payload_size,
@@ -136,25 +158,27 @@ impl DatagramSender {
         // Lay every fragment down in one allocation, then hand out slices of it.
         // `BytesMut::split_to` gives each datagram an owned `Bytes` that shares
         // this buffer, so a 300-fragment keyframe costs one allocation, not 300.
-        let mut buf = BytesMut::with_capacity(total * DGRAM_HDR_LEN + body.len());
-        let mut header = [0u8; DGRAM_HDR_LEN];
+        let mut buf = BytesMut::with_capacity(total * header_len + body.len());
+        let mut header = [0u8; DGRAM_WINDOW_HDR_LEN];
         // One reading for the whole frame: every fragment is handed over in the
         // single call below, so they all leave this end at the same moment.
         let sent_us = nesprotocol::clock::monotonic_us();
         for index in 0..total {
             let start = index * payload_size;
             let end = (start + payload_size).min(body.len());
-            write_datagram_header(
-                &mut header,
-                &DatagramHeader {
-                    kind: self.kind,
-                    seq,
-                    index: index as u16,
-                    total: total as u16,
-                    sent_us,
-                },
-            );
-            buf.extend_from_slice(&header);
+            let h = DatagramHeader {
+                kind: self.kind,
+                seq,
+                index: index as u16,
+                total: total as u16,
+                sent_us,
+            };
+            if windowed {
+                write_video_datagram_header(&mut header, &h, window);
+            } else {
+                write_datagram_header(&mut header, &h);
+            }
+            buf.extend_from_slice(&header[..header_len]);
             buf.extend_from_slice(&body[start..end]);
         }
 
@@ -162,7 +186,7 @@ impl DatagramSender {
             .map(|index| {
                 let start = index * payload_size;
                 let end = (start + payload_size).min(body.len());
-                buf.split_to(DGRAM_HDR_LEN + (end - start)).freeze()
+                buf.split_to(header_len + (end - start)).freeze()
             })
             .collect();
 
@@ -288,8 +312,14 @@ pub async fn run_datagram_writer(
 
     while let Some(item) = rx.recv().await {
         let t0 = std::time::Instant::now();
-        let payload = match item {
-            MediaItem::Coded(payload) => payload,
+        let (window, payload) = match item {
+            MediaItem::Coded(payload) => (WINDOW_DEFAULT, payload),
+            MediaItem::Windowed(window, payload) => (window, payload),
+            MediaItem::Resubscribe => {
+                seq = 0;
+                resync = ResyncGate::default();
+                continue;
+            }
             // No keyframe stream and no resync gate: every PyroWave frame
             // stands alone, so there is nothing to resynchronise and no frame
             // worth a reliable stream more than another.
@@ -306,7 +336,9 @@ pub async fn run_datagram_writer(
             }
         };
         body.clear();
-        nesprotocol::encode_frame_body(&mut body, MSG_DATA, seq, &payload);
+        // Window 0 is exactly the `MSG_DATA` body every client reads; audio
+        // is always window 0.
+        nesprotocol::window::encode_video_frame_body(&mut body, window, seq, &payload);
 
         // A keyframe goes on a stream of its own when one will take it. The
         // relay timing below is not recorded for it: the write is asynchronous
@@ -352,7 +384,7 @@ pub async fn run_datagram_writer(
         if let Some(ref keyframes) = keyframes
             && video_wants_reliable(&payload)
         {
-            if keyframes.send(seq, &body) {
+            if keyframes.send(seq, window, &body) {
                 seq = seq.wrapping_add(1);
                 continue;
             }
@@ -366,7 +398,7 @@ pub async fn run_datagram_writer(
             );
         }
 
-        match sender.send_frame(seq, &body) {
+        match sender.send_frame(seq, window, &body) {
             Ok(()) => {
                 if let Some(ref relay) = relay_ms {
                     let elapsed = t0.elapsed().as_secs_f32() * 1000.0;

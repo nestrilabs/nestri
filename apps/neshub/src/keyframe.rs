@@ -50,7 +50,7 @@ impl KeyframeSender {
     /// stream writes are flow-controlled, so a receiver with no window left
     /// would otherwise hold up every delta frame queued behind this keyframe —
     /// and the deltas are the frames with an expiry date.
-    pub fn send(&self, seq: u16, body: &[u8]) -> bool {
+    pub fn send(&self, seq: u16, window: nesprotocol::window::WindowId, body: &[u8]) -> bool {
         if self.in_flight.load(Ordering::Relaxed) >= MAX_KEYFRAME_STREAMS_IN_FLIGHT {
             self.fell_back.fetch_add(1, Ordering::Relaxed);
             return false;
@@ -79,7 +79,7 @@ impl KeyframeSender {
             // are a worse path for a keyframe, but they beat dropping the one
             // frame everything after it is predicted from.
             fell_back.fetch_add(1, Ordering::Relaxed);
-            if let Err(e) = fallback.send_frame(seq, &body) {
+            if let Err(e) = fallback.send_frame(seq, window, &body) {
                 debug!("keyframe {seq}: stream failed and datagram fallback failed too: {e}");
             }
         });
