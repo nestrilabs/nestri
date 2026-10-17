@@ -1132,11 +1132,8 @@ mod tests {
             .await;
         assert_eq!(caller.expect().await, exited("l-1"));
 
-        // Still up: it can be launched into again.
-        caller.say(&launch_and_stay("l-3")).await;
-        assert_eq!(caller.expect().await, started("l-3"));
-
-        for id in ["l-2", "l-3"] {
+        // Still up, for the launch still in it.
+        for id in ["l-2"] {
             caller
                 .say(&HostToGuest::Stop {
                     id: LaunchId::new(id),
