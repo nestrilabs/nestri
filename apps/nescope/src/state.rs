@@ -846,7 +846,6 @@ impl NescopeState {
             (x11.pid(), x11.title(), x11.class())
         } else if let Some(toplevel) = window.toplevel() {
             let pid = toplevel
-                .wl_surface()
                 .client()
                 .and_then(|c| c.get_credentials(&self.display_handle).ok())
                 .and_then(|c| u32::try_from(c.pid).ok());
