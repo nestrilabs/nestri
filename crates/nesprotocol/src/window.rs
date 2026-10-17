@@ -429,6 +429,46 @@ impl WindowEvent {
     }
 }
 
+// ── Box-internal (nescope → hub) ────────────────────────────────────────────
+//
+// Carried on the input socket beside the cursor messages, each as one
+// length-prefixed message whose first byte is its type, the same way the
+// lifecycle events above travel there. Never sent to a client.
+
+/// Window `[2B]` is owned by process `[4B pid]`: how the hub joins an encoder's
+/// frames, tagged with its process, to the window they draw.
+pub const MSG_WINDOW_PID: u8 = 0x28;
+
+/// The cursor messages after this one describe the pointer as window `[2B]`
+/// sees it, until the next. A compositor that never sends it describes
+/// window `0`.
+pub const MSG_CURSOR_WINDOW: u8 = 0x29;
+
+/// `[MSG_WINDOW_PID][2B window][4B pid]`.
+pub fn encode_window_pid(buf: &mut Vec<u8>, window: WindowId, pid: u32) {
+    buf.push(MSG_WINDOW_PID);
+    buf.extend_from_slice(&window.to_le_bytes());
+    buf.extend_from_slice(&pid.to_le_bytes());
+}
+
+/// The payload after the type byte of [`MSG_WINDOW_PID`].
+pub fn decode_window_pid(payload: &[u8]) -> Option<(WindowId, u32)> {
+    let mut r = Reader(payload);
+    Some((r.u16()?, r.u32()?))
+}
+
+/// `[MSG_CURSOR_WINDOW][2B window]`.
+pub fn encode_cursor_window(buf: &mut Vec<u8>, window: WindowId) {
+    buf.push(MSG_CURSOR_WINDOW);
+    buf.extend_from_slice(&window.to_le_bytes());
+}
+
+/// A lifecycle event as one box-internal message: `[type][payload]`.
+pub fn encode_event_message(buf: &mut Vec<u8>, event: &WindowEvent) {
+    buf.push(event.msg_type());
+    event.encode_payload(buf);
+}
+
 fn put_str(buf: &mut Vec<u8>, s: &str) {
     let mut end = s.len().min(u16::MAX as usize);
     while !s.is_char_boundary(end) {
@@ -721,6 +761,31 @@ mod tests {
             Some(WindowEvent::Size { window: 1, width: 2, height: 3 })
         );
         assert_eq!(decode_subscribe(&[4, 0, 0xEE]), Some(4));
+    }
+
+    #[test]
+    fn box_internal_messages_round_trip() {
+        let mut b = Vec::new();
+        encode_window_pid(&mut b, 3, 0x0102_0304);
+        assert_eq!(b, [MSG_WINDOW_PID, 3, 0, 4, 3, 2, 1]);
+        assert_eq!(decode_window_pid(&b[1..]), Some((3, 0x0102_0304)));
+        assert_eq!(decode_window_pid(&b[1..6]), None);
+
+        let mut b = Vec::new();
+        encode_cursor_window(&mut b, 0x0201);
+        assert_eq!(b, [MSG_CURSOR_WINDOW, 1, 2]);
+        assert_eq!(decode_subscribe(&b[1..]), Some(0x0201));
+
+        let ev = WindowEvent::Closed { window: 9 };
+        let mut b = Vec::new();
+        encode_event_message(&mut b, &ev);
+        assert_eq!(WindowEvent::decode(b[0], &b[1..]), Some(ev));
+
+        // None of them can be mistaken for what already shares the socket.
+        for t in [MSG_WINDOW_PID, MSG_CURSOR_WINDOW, MSG_WINDOW_OPENED, MSG_WINDOW_CLOSED] {
+            assert!(t != crate::input::CURSOR_UPDATE && t != crate::input::CURSOR_IMAGE);
+            assert!(t > crate::stats::STATS_HUB);
+        }
     }
 
     #[test]

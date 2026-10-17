@@ -224,6 +224,47 @@ pub const FLAG_RECONFIG: u8 = 0x02; // stream reconfiguration (codec/bit-depth c
 /// [`clock::monotonic_us`]; for audio, the packet's first sample on the audio
 /// graph's clock, in 48 kHz frames. Both are the producer's to know and the
 /// hub's to carry; neither is ever converted into the other.
+/// Set in an IPC frame's reserved byte when the producer's process id follows
+/// the data as `[4B pid LE]`, ref(d-0085).
+///
+/// Several games in one box each run their own encoder, and the hub tells their
+/// frames apart by process. A reader that predates this ignores the reserved
+/// byte and reads exactly `len` bytes of data, so the trailer is invisible to
+/// it; a frame without the flag is from a producer that predates it, which the
+/// hub treats as the box's first window.
+pub const IPC_FLAG_PID: u8 = 0x01;
+
+/// Where an encoder listens for commands when one process per box was all
+/// there was. Every encoder still binds it, so a hub that predates per-process
+/// sockets keeps reaching the newest one, as it always did.
+pub const CAPTURE_CMD_SOCKET: &str = "/tmp/nescapture-cmd.sock";
+
+/// Where the encoder in process `pid` listens for commands, ref(d-0085). One
+/// socket per process, so two games in one box are not told each other's
+/// keyframe requests, and neither steals the other's socket.
+pub fn capture_cmd_socket(pid: u32) -> String {
+    format!("/tmp/nescapture-cmd-{pid}.sock")
+}
+
+/// [`encode_ipc_frame`], tagged with the producer's process id. See
+/// [`IPC_FLAG_PID`].
+#[allow(clippy::too_many_arguments)]
+pub fn encode_ipc_frame_from(
+    pid: u32,
+    stream_type: u8,
+    codec: u8,
+    flags: u8,
+    stamp: u64,
+    width: u16,
+    height: u16,
+    data: &[u8],
+) -> Vec<u8> {
+    let mut buf = encode_ipc_frame(stream_type, codec, flags, stamp, width, height, data);
+    buf[7] |= IPC_FLAG_PID;
+    buf.extend_from_slice(&pid.to_le_bytes());
+    buf
+}
+
 pub fn encode_ipc_frame(
     stream_type: u8,
     codec: u8,
@@ -260,6 +301,8 @@ pub struct DecodedIpcFrame<'a> {
     pub width: u16,
     pub height: u16,
     pub data: &'a [u8],
+    /// The producer's process id, when it said ([`IPC_FLAG_PID`]).
+    pub pid: Option<u32>,
 }
 
 /// Parse a raw IPC datagram. Returns None if magic doesn't match or buffer is too short.
@@ -282,7 +325,15 @@ pub fn decode_ipc_frame(buf: &[u8]) -> Option<DecodedIpcFrame<'_>> {
         return None;
     }
 
+    let end = IPC_HEADER_LEN + data_len;
+    let pid = if buf[7] & IPC_FLAG_PID != 0 {
+        Some(u32::from_le_bytes(buf.get(end..end + 4)?.try_into().ok()?))
+    } else {
+        None
+    };
+
     Some(DecodedIpcFrame {
+        pid,
         stream_type,
         codec,
         flags,
@@ -1257,6 +1308,23 @@ mod media_control_tests {
 #[cfg(test)]
 mod media_payload_tests {
     use super::*;
+
+    #[test]
+    fn an_ipc_frame_carries_its_producer_compatibly() {
+        let plain = encode_ipc_frame(STREAM_VIDEO, CODEC_AV1, FLAG_KEYFRAME, 7, 640, 360, &[1, 2, 3]);
+        let tagged =
+            encode_ipc_frame_from(4242, STREAM_VIDEO, CODEC_AV1, FLAG_KEYFRAME, 7, 640, 360, &[1, 2, 3]);
+        assert_eq!(decode_ipc_frame(&plain).unwrap().pid, None);
+        let d = decode_ipc_frame(&tagged).unwrap();
+        assert_eq!((d.pid, d.data, d.flags), (Some(4242), &[1u8, 2, 3][..], FLAG_KEYFRAME));
+        // What an older reader sees: the same header apart from the reserved
+        // byte, the same data, and bytes after it that it never reads.
+        assert_eq!(&tagged[..7], &plain[..7]);
+        assert_eq!(&tagged[8..plain.len()], &plain[8..]);
+        // A flag promising a pid that is not there is not a frame.
+        assert!(decode_ipc_frame(&tagged[..tagged.len() - 1]).is_none());
+        assert_eq!(capture_cmd_socket(12), "/tmp/nescapture-cmd-12.sock");
+    }
 
     #[test]
     fn an_ipc_frame_carries_its_stamp_whole() {
