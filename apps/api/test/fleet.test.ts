@@ -84,6 +84,22 @@ describe('POST /box on the fleet', () => {
 		expect(boxB.machineId).toBe(second!.id);
 	});
 
+	test('places by boxes per slot, so a bigger machine takes more people', async () => {
+		const f = await fleet(2);
+		useFleet(f.organisationId);
+		const [small, big] = f.machines;
+		await sql`update machine set slots = 2 where id = ${small!.id}`;
+		await sql`update machine set slots = 8 where id = ${big!.id}`;
+
+		const placed: string[] = [];
+		for (let i = 0; i < 5; i++) {
+			const p = await person(`fleet-slots-${i}`);
+			placed.push(((await (await createBox(p.headers, { on: 'fleet' })).json()) as any).data.machineId);
+		}
+		// small first on the tie at 0, then big until it is as full per slot.
+		expect(placed).toEqual([small!.id, big!.id, big!.id, big!.id, big!.id]);
+	});
+
 	test('skips a fleet machine that is offline', async () => {
 		const f = await fleet(2);
 		useFleet(f.organisationId);

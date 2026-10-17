@@ -5,6 +5,7 @@ import { Database } from '../db/index.js';
 import { Env } from '../env.js';
 import { ErrorCodes, VisibleError } from '../error.js';
 import { Machine } from '../machine/index.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { BoxTable, BoxTier } from './box.sql.js';
 
 /**
@@ -74,10 +75,17 @@ export namespace Placement {
 	 *
 	 * Only machines that are online — a box placed on one that is not would be a
 	 * session that never starts — and, among those, the one holding the fewest
-	 * boxes. That is a spread, not a scheduler: it knows nothing about how big a
-	 * box is or whether it is running. It is the smallest policy that does not
-	 * pile every customer onto the oldest row, and this file is still the one
-	 * place a real scheduler replaces. todo(d-0014)
+	 * boxes for each run it can hold at once (its `slots`, from its heartbeat).
+	 *
+	 * Per slot because a box stays on its machine for good, and a run waits for
+	 * a slot on that machine even while another sits idle. Counting boxes alone
+	 * put as many people on a two-slot host as on an eight-slot one, so the
+	 * small one queued while the big one idled. A machine that has not said how
+	 * many it holds counts as one slot, which is what it can be relied on for.
+	 *
+	 * Still a spread, not a scheduler: it knows nothing about how big a box is
+	 * or whether it is running, and this file is still the one place a real
+	 * scheduler replaces. todo(d-0014)
 	 */
 	export const fleet: Placer = async () => {
 		const organisationId = Env.get().FLEET_ORGANISATION_ID;
@@ -115,9 +123,22 @@ export namespace Placement {
 				)
 				.groupBy(BoxTable.machineId)
 		);
+		const capacity = await Database.use((tx) =>
+			tx
+				.select({ id: MachineTable.id, slots: MachineTable.slots })
+				.from(MachineTable)
+				.where(
+					inArray(
+						MachineTable.id,
+						online.map((m) => m.id)
+					)
+				)
+		);
 		const boxes = new Map(held.map((h) => [h.machineId, h.boxes]));
+		const slots = new Map(capacity.map((c) => [c.id, Math.max(1, c.slots ?? 1)]));
+		const load = (id: string) => (boxes.get(id) ?? 0) / (slots.get(id) ?? 1);
 		// Stable: on a tie, the order `listByOrganisation` gives, oldest first.
-		return [...online].sort((a, b) => (boxes.get(a.id) ?? 0) - (boxes.get(b.id) ?? 0))[0]!.id;
+		return [...online].sort((a, b) => load(a.id) - load(b.id))[0]!.id;
 	};
 
 	/** Place a box, using `onlyHost` unless a caller supplies its own placer. */
