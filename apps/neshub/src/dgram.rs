@@ -318,6 +318,13 @@ pub async fn run_datagram_writer(
             MediaItem::Resubscribe => {
                 seq = 0;
                 resync = ResyncGate::default();
+                // Set here, in queue order, not only by whoever queued this: a
+                // keyframe from the old picture still queued ahead of it would
+                // otherwise clear the flag, and the new picture's first delta
+                // would go out as the first frame after the switch.
+                if let Some(ref awaiting) = awaiting_keyframe {
+                    awaiting.store(true, Ordering::Relaxed);
+                }
                 continue;
             }
             // No keyframe stream and no resync gate: every PyroWave frame
