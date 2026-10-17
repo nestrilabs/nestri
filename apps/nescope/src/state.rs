@@ -245,8 +245,6 @@ pub struct NescopeState {
     pub loop_handle: LoopHandle<'static, CalloopData>,
     /// True after the game command has been spawned.
     pub game_launched: bool,
-    /// Time since all mapped windows disappeared (for auto-exit).
-    pub no_clients_since: Option<std::time::Instant>,
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +377,6 @@ impl NescopeState {
             fps,
             loop_handle,
             game_launched: false,
-            no_clients_since: None,
         };
 
         (state, input_tx)
@@ -883,6 +880,13 @@ impl NescopeState {
         }
     }
 
+    /// An X11 window was unmapped: closed for the hub, its id kept.
+    pub(crate) fn window_unmapped(&mut self, key: &WinKey) {
+        if let Some(m) = self.windows.unmap(key) {
+            self.send_box_message(&m);
+        }
+    }
+
     /// A window's title may have changed.
     pub(crate) fn window_retitled(&mut self, window: &Window) {
         let Some(key) = WinKey::of(window) else {
@@ -910,13 +914,15 @@ impl NescopeState {
         }
     }
 
-    /// The hub says input from here on is `id`'s: raise it and give it focus,
-    /// and take the size its client asked for, since every window shares the
-    /// one output.
+    /// The hub says input from here on is `id`'s: give it keyboard focus.
+    /// Nothing is raised and the output keeps its size: a fullscreen game
+    /// must not lose focus, or the output change size, because a client
+    /// looked at another window. Size follows only an explicit request,
+    /// ref(d-0085).
     pub(crate) fn focus_window_from_hub(&mut self, id: nesprotocol::window::WindowId) {
-        let Some(size) = self.window_input.focus(id) else {
+        if !self.window_input.focus(id) {
             return;
-        };
+        }
         let key = self.windows.key_of(id).cloned();
         let window = key.and_then(|key| {
             self.space
@@ -925,14 +931,8 @@ impl NescopeState {
                 .cloned()
         });
         match window {
-            Some(window) => {
-                self.space.raise_element(&window, true);
-                self.set_keyboard_focus_to_window(&window);
-            }
+            Some(window) => self.set_keyboard_focus_to_window(&window),
             None => tracing::debug!("focus for window {id}, which is not mapped"),
-        }
-        if let Some((w, h)) = size {
-            self.request_output_size(w, h);
         }
     }
 
@@ -943,7 +943,10 @@ impl NescopeState {
         width: u16,
         height: u16,
     ) {
-        if let Some((w, h)) = self.window_input.size(id, width, height) {
+        if let Some((w, h)) =
+            self.window_input
+                .size(id, width, height, std::time::Instant::now())
+        {
             self.request_output_size(w, h);
         }
     }

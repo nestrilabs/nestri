@@ -110,11 +110,6 @@ impl CompositorHandler for NescopeState {
         if let Some(window) = &window {
             window.on_commit();
             self.game_frame_count += 1;
-            // An xdg toplevel's title arrives with a commit, often after the
-            // window was given its id. Xwayland titles come by property.
-            if window.x11_surface().is_none() {
-                self.window_retitled(window);
-            }
         }
 
         // Every commit is answered, mapped window or not. A Vulkan client
@@ -161,6 +156,20 @@ impl DmabufHandler for NescopeState {
 impl XdgShellHandler for NescopeState {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
+    }
+
+    fn title_changed(&mut self, surface: ToplevelSurface) {
+        // The one place a toplevel's title is read after it was opened, not
+        // every commit.
+        let root = surface.wl_surface().clone();
+        let window = self
+            .space
+            .elements()
+            .find(|w| w.wl_surface().is_some_and(|s| *s == root))
+            .cloned();
+        if let Some(window) = window {
+            self.window_retitled(&window);
+        }
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
@@ -502,6 +511,9 @@ impl XwmHandler for CalloopData {
 
         if !window.is_override_redirect() {
             let _ = window.set_mapped(false);
+            // Closed for the hub; mapped again, it opens under the same id.
+            self.state
+                .window_unmapped(&crate::state::WinKey::X11(window.window_id()));
         }
 
         if was_focused {
