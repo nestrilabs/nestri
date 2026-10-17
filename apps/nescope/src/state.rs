@@ -59,6 +59,10 @@ use crate::input::InputEvent;
 // CalloopData — threaded through the event loop
 // ---------------------------------------------------------------------------
 
+/// The smallest side a client's window can make the output. Below it, games
+/// lay out menus they cannot fit, and nothing is gained.
+const MIN_OUTPUT: u32 = 320;
+
 pub struct CalloopData {
     pub state: NescopeState,
     pub display: Display<NescopeState>,
@@ -195,6 +199,10 @@ pub struct NescopeState {
     // ── Dimensions + frame rate ───────────────────────────────────────────
     pub width: u32,
     pub height: u32,
+    /// The size the box was started at, which is what its encode budget was
+    /// counted for, ref(d-0036): a client's window can shrink the output
+    /// below it, never grow it past.
+    pub launch_size: (u32, u32),
     pub fps: u32,
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -328,6 +336,7 @@ impl NescopeState {
             presentation_seq: 0,
             width,
             height,
+            launch_size: (width, height),
             fps,
             loop_handle,
             game_launched: false,
@@ -462,8 +471,17 @@ impl NescopeState {
     // Resize
     // -----------------------------------------------------------------------
 
+    /// The client's window is `width`x`height`: follow it, inside the launch
+    /// size and on even numbers, which every encoder needs for 4:2:0.
+    pub fn request_output_size(&mut self, width: u16, height: u16) {
+        let fit = |want: u16, max: u32| (u32::from(want).clamp(MIN_OUTPUT, max) & !1).max(2);
+        let (w, h) = (fit(width, self.launch_size.0), fit(height, self.launch_size.1));
+        if (w, h) != (self.width, self.height) {
+            self.apply_resize(w, h);
+        }
+    }
+
     /// Apply a new output resolution (e.g. from a runtime resize request).
-    #[allow(unused)]
     pub fn apply_resize(&mut self, width: u32, height: u32) {
         tracing::info!("Applying resize: {width}x{height}");
         self.width = width;

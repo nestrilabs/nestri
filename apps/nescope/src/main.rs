@@ -404,7 +404,11 @@ fn main() {
             }
             loop_handle
                 .insert_source(source, move |payload, _, data| {
-                    if let Some(event) = decode_wire_event(&payload) {
+                    if let Some(nesprotocol::input::DecodedInput::OutputSize { width, height }) =
+                        nesprotocol::input::decode_input_event(&payload)
+                    {
+                        data.state.request_output_size(width, height);
+                    } else if let Some(event) = decode_wire_event(&payload) {
                         process_input(event, &mut data.state);
                     }
                 })

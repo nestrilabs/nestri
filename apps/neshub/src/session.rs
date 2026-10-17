@@ -6,7 +6,9 @@ use tokio::sync::Mutex;
 use tracing::{debug, info, warn};
 
 use nesprotocol::datagram::{DGRAM_AUDIO, DGRAM_BUFFER_BYTES, DGRAM_VIDEO};
-use nesprotocol::input::{INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL};
+use nesprotocol::input::{
+    INPUT_KEY, INPUT_MOUSE_BUTTON, INPUT_MOUSE_MOVE, INPUT_MOUSE_WHEEL, INPUT_OUTPUT_SIZE,
+};
 use nesprotocol::{BIDI_CONTROL, BIDI_INPUT, Carrier, STREAM_CURSOR, STREAM_STATS};
 use nesprotocol::{ControlMode, ReceiverReport, decode_control_mode, decode_receiver_report};
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
@@ -521,8 +523,8 @@ fn split_input_events(payload: &[u8]) -> Vec<Vec<u8>> {
         let len = match payload[offset] {
             // [type][up/down][keycode u16 LE]
             INPUT_KEY => 4,
-            // [type][dx i16 LE][dy i16 LE]
-            INPUT_MOUSE_MOVE | INPUT_MOUSE_WHEEL => 5,
+            // [type][dx i16 LE][dy i16 LE], and [type][w u16 LE][h u16 LE]
+            INPUT_MOUSE_MOVE | INPUT_MOUSE_WHEEL | INPUT_OUTPUT_SIZE => 5,
             // [type][button][up/down]
             INPUT_MOUSE_BUTTON => 3,
             other => {
