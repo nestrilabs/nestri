@@ -6,6 +6,7 @@ import { Database } from '../db/index.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { LaunchState, LaunchTable } from './launch.sql.js';
 import { SessionTable } from './session.sql.js';
 
@@ -66,6 +67,36 @@ export namespace Launch {
 	};
 
 	export const OPEN = ['requested', 'running'] as const;
+
+	/**
+	 * What a host's heartbeat lists when its agent handles `launch.start` and
+	 * `launch.stop`. A host without it is never handed either, and a launch it
+	 * would have to act on is refused instead. ref(d-0085)
+	 */
+	export const CAPABILITY = 'launches';
+
+	async function machineTakes(where: ReturnType<typeof eq>) {
+		return Database.use((tx) =>
+			tx
+				.select({ capabilities: MachineTable.capabilities })
+				.from(MachineTable)
+				.where(where)
+				.then((rows) => rows.at(0)?.capabilities?.includes(CAPABILITY) ?? false)
+		);
+	}
+
+	/** Whether the host a run's box is placed on handles launches. */
+	export async function hostTakesLaunches(sessionId: string): Promise<boolean> {
+		const machineId = await Database.use((tx) =>
+			tx
+				.select({ machineId: BoxTable.machineId })
+				.from(SessionTable)
+				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+				.where(eq(SessionTable.id, sessionId))
+				.then((rows) => rows.at(0)?.machineId ?? null)
+		);
+		return machineId ? machineTakes(eq(MachineTable.id, machineId)) : false;
+	}
 
 	export function serialize(row: typeof LaunchTable.$inferSelect): Info {
 		return {
@@ -286,6 +317,9 @@ export namespace Launch {
 	export async function jobsForMachine(
 		machineId: string
 	): Promise<{ stops: StopJob[]; starts: StartJob[] }> {
+		// A host that has not said it handles launches would skip these jobs
+		// and leave them repeating forever.
+		if (!(await machineTakes(eq(MachineTable.id, machineId)))) return { stops: [], starts: [] };
 		const onHost = and(
 			eq(BoxTable.machineId, machineId),
 			isNull(LaunchTable.timeDeleted),

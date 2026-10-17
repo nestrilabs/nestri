@@ -463,7 +463,16 @@ export namespace MachineApi {
 							description:
 								'How many runs this host will hold at once. Omit it and the stored value is left alone. Runs beyond it wait their turn rather than being handed to a host that would refuse them',
 							example: 2
-						})
+						}),
+						capabilities: z
+							.array(z.string().min(1).max(64))
+							.max(32)
+							.optional()
+							.meta({
+								description:
+									'What this host can do beyond starting and stopping runs. Replaces the stored list when sent; omit it and the stored list is left alone. `launches`: it adds and ends launches in a running box (`launch.start`, `launch.stop`)',
+								example: ['launches']
+							})
 					})
 					// A host that has nothing to add sends no body at all, which
 					// is what every agent shipped before this field did.
@@ -474,7 +483,8 @@ export namespace MachineApi {
 				const lastSeen = await Machine.touchLastSeen({
 					id: Actor.machineID,
 					endpointId: body?.endpointId,
-					slots: body?.slots
+					slots: body?.slots,
+					capabilities: body?.capabilities
 				});
 				if (!lastSeen) {
 					// The credentials authenticated but the row is gone — a host

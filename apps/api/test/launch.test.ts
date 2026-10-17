@@ -160,11 +160,19 @@ const read = async (s: Scene, id: string) =>
 	((await (await app.request(`/session/${id}`, { headers: s.user })).json()) as any).data;
 
 /** A live run, with a second game stocked in the owner's library. */
-async function liveRun(label: string, appId: number) {
+const says = (s: Scene, capabilities: string[]) =>
+	app.request('/machine/heartbeat', {
+		method: 'POST',
+		headers: s.host,
+		body: JSON.stringify({ capabilities })
+	});
+
+async function liveRun(label: string, appId: number, opts: { capable?: boolean } = {}) {
 	const s = await scene(label, appId);
 	const { body } = await requestSession(s);
 	const id = body.data.id as string;
 	const first = body.data.launches[0].id as string;
+	if (opts.capable !== false) await says(s, ['launches']);
 	expect((await report(s, id, 'starting')).status).toBe(200);
 	expect((await report(s, id, 'live')).status).toBe(200);
 	const second = await newGame(appId + 1000);
@@ -340,5 +348,39 @@ describe('launches racing the last one ending', () => {
 				expect(run.launches).toHaveLength(1);
 			}
 		}
+	});
+});
+
+describe('a host that does not handle launches', () => {
+	test('is handed no launch work, and adding or closing one is refused', async () => {
+		const { s, id, first, second } = await liveRun('launch-old-host', 7300, { capable: false });
+		const added = await addLaunch(s, id, second);
+		expect(added.status).toBe(409);
+		expect(((await added.json()) as any).code).toBe('host_too_old');
+		const closed = await stopLaunch(s, id, first);
+		expect(closed.status).toBe(409);
+		expect(((await closed.json()) as any).code).toBe('host_too_old');
+		// Stopping the run works as it always has.
+		const stopped = await app.request(`/session/${id}/stop`, { method: 'POST', headers: s.user });
+		expect(stopped.status).toBe(200);
+		expect((await jobs(s)).map((j) => j.kind)).toEqual(['session.stop']);
+	});
+
+	test('a heartbeat without capabilities leaves the stored list alone', async () => {
+		const { s, id, second } = await liveRun('launch-cap-keep', 7301);
+		const beat = await app.request('/machine/heartbeat', {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ slots: 4 })
+		});
+		expect(beat.status).toBe(200);
+		expect((await addLaunch(s, id, second)).status).toBe(201);
+	});
+
+	test('a host that stops listing launches is handed none', async () => {
+		const { s, id, second } = await liveRun('launch-cap-drop', 7302);
+		expect((await addLaunch(s, id, second)).status).toBe(201);
+		await says(s, []);
+		expect((await jobs(s)).filter((j) => j.kind.startsWith('launch.'))).toEqual([]);
 	});
 });

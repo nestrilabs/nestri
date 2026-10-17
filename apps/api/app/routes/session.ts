@@ -55,6 +55,18 @@ export namespace SessionApi {
 		throw new VisibleError('already_exists', ErrorCodes.Validation.INVALID_STATE, message);
 	}
 
+	/**
+	 * The run's host does not handle launches. A client falls back to one game
+	 * per run: stop the run, or ask for a new one. ref(d-0085)
+	 */
+	function hostTooOld(): never {
+		throw new VisibleError(
+			'already_exists',
+			ErrorCodes.Validation.HOST_TOO_OLD,
+			'The host this run is on cannot add or end launches; stop the run instead'
+		);
+	}
+
 	/** The person a run belongs to, refusing a host acting as its owner. */
 	function actingPerson(): string {
 		const actor = Actor.use();
@@ -462,7 +474,7 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'Start another game in a running box',
 				description:
-					'Adds a launch to a run that its host has taken on and that is not being stopped; the host starts it in the box without stopping what already runs there. Answers with the launch: its `id` is what the launched game’s window carries, and what to stop when that window closes. A run that is waiting for a host, stopping or over is 409: ask for a new run instead. The run is still what is billed and what the allowance counts, so adding a launch asks nothing of either.',
+					'Adds a launch to a run that its host has taken on and that is not being stopped; the host starts it in the box without stopping what already runs there. Answers with the launch: its `id` is what the launched game’s window carries, and what to stop when that window closes. A run that is waiting for a host, stopping or over is 409: ask for a new run instead. So is a run on a host that does not handle launches, with code `host_too_old`: stop the run and ask for a new one, as before launches. The run is still what is billed and what the allowance counts, so adding a launch asks nothing of either.',
 				responses: {
 					201: {
 						content: { 'application/json': { schema: Result(Launch.Info) } },
@@ -523,6 +535,8 @@ export namespace SessionApi {
 						);
 					case 'notRunning':
 						conflict('That run is not running, so it cannot take another launch');
+					case 'hostTooOld':
+						hostTooOld();
 					default:
 						return c.json({ data: result.launch }, 201);
 				}
@@ -535,7 +549,7 @@ export namespace SessionApi {
 				tags: ['Session'],
 				summary: 'End one launch in a run',
 				description:
-					'Asks for one game in the box to end, not the box. It stays `running`, with `timeStopRequested` set, until the host reports it over. When the last launch of a run is over, the run is stopped as `POST /session/{id}/stop` would. Asking again, or of a launch already over, changes nothing.',
+					'Asks for one game in the box to end, not the box. It stays `running`, with `timeStopRequested` set, until the host reports it over. When the last launch of a run is over, the run is stopped as `POST /session/{id}/stop` would. Asking again, or of a launch already over, changes nothing. A run on a host that does not handle launches answers 409 with code `host_too_old`: stop the run instead.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Launch.Info) } },
@@ -562,6 +576,7 @@ export namespace SessionApi {
 					launchId,
 					userId: actingPerson()
 				});
+				if (launch === 'hostTooOld') hostTooOld();
 				if (!launch) {
 					throw new VisibleError(
 						'not_found',

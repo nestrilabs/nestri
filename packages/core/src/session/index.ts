@@ -1229,6 +1229,7 @@ export namespace Session {
 	export type AddLaunchResult =
 		| { outcome: 'notFound' }
 		| { outcome: 'notRunning'; session: Info }
+		| { outcome: 'hostTooOld' }
 		| { outcome: 'created'; launch: Launch.Info };
 
 	/**
@@ -1264,6 +1265,7 @@ export namespace Session {
 				) {
 					return { outcome: 'notRunning', session: serialize(run) };
 				}
+				if (!(await Launch.hostTakesLaunches(run.id))) return { outcome: 'hostTooOld' };
 				const launch = await Launch.insert({
 					id: Identifier.ascending('launch'),
 					sessionId: run.id,
@@ -1303,7 +1305,7 @@ export namespace Session {
 	 */
 	export const stopLaunch = fn(
 		z.object({ sessionId: z.string(), launchId: z.string(), userId: z.string() }),
-		async (input): Promise<Launch.Info | null> => {
+		async (input): Promise<Launch.Info | null | 'hostTooOld'> => {
 			const run = await forOwner({ id: input.sessionId, userId: input.userId });
 			if (!run) return null;
 			const row = await Launch.row(run.id, input.launchId);
@@ -1321,6 +1323,8 @@ export namespace Session {
 				await stopIfEmpty(run.id);
 				return ended ?? Launch.serialize((await Launch.row(run.id, row.id))!);
 			}
+			// A host that does not handle launches would never end this one.
+			if (!(await Launch.hostTakesLaunches(run.id))) return 'hostTooOld';
 			return (
 				(await Launch.markStop(row.id)) ?? Launch.serialize((await Launch.row(run.id, row.id))!)
 			);
