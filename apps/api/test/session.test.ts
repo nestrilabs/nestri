@@ -166,9 +166,24 @@ describe('POST /session', () => {
 			timeStopRequested: null,
 			trial: false,
 			errorMessage: null,
-			endReason: null
+			endReason: null,
+			// Additive: the run's first launch, which a client needs to find
+			// its window. ref(d-0085)
+			launches: [
+				{
+					id: body.data.launches[0].id,
+					gameId: s.gameId,
+					state: 'requested',
+					timeStarted: null,
+					timeStopped: null,
+					timeStopRequested: null,
+					endReason: null,
+					errorMessage: null
+				}
+			]
 		});
 		expect(body.data.id.startsWith('ses_')).toBe(true);
+		expect(body.data.launches[0].id.startsWith('lch_')).toBe(true);
 	});
 
 	test('creating a session makes no placement decision', async () => {
@@ -433,7 +448,8 @@ describe('GET /machine/jobs', () => {
 			gameId: s.gameId,
 			steamAppId: 5520,
 			linkedAccountId: s.owner.linkedAccountId,
-			userId: s.owner.userId
+			userId: s.owner.userId,
+			launchId: body.data.launches[0].id
 		});
 	});
 
@@ -831,6 +847,7 @@ describe('POST /session/:id/ticket', () => {
 			'errorMessage',
 			'gameId',
 			'id',
+			'launches',
 			'linkedAccountId',
 			'queue',
 			'state',
@@ -984,6 +1001,9 @@ describe('Session routes in the spec', () => {
 		expect(paths).toContain('/session/{id}/state');
 		expect(paths).toContain('/session/{id}/ticket');
 		expect(paths).toContain('/machine/jobs');
+		expect(paths).toContain('/session/{id}/launch');
+		expect(paths).toContain('/session/{id}/launch/{launchId}/stop');
+		expect(paths).toContain('/session/{id}/launch/{launchId}/state');
 	});
 });
 

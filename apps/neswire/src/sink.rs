@@ -16,7 +16,25 @@ fn missed_frames(expected: Option<u64>, now: Option<u64>) -> u64 {
     }
 }
 
-pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>>) -> Result<()> {
+/// One packet's worth of interleaved samples, and where it starts.
+pub struct Packet {
+    /// The packet's first sample on the graph clock, in frames at the graph
+    /// rate. Consecutive packets are exactly a packet apart, missed cycles
+    /// included, because a missed cycle is filled (see `process`).
+    pub position: u64,
+    pub samples: Vec<f32>,
+}
+
+/// Where the first of `held` frames sits, given where the last one ends.
+///
+/// The accumulator is continuous up to `end`: a missed cycle is filled before
+/// the next one is appended. So the frames in it are the `held` frames before
+/// `end`, and the oldest is the next packet's start.
+fn first_position(end: u64, held: u64) -> u64 {
+    end.saturating_sub(held)
+}
+
+pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Packet>) -> Result<()> {
     pw::init();
     tracing::info!("pipewire init ok");
 
@@ -54,7 +72,7 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
     let samples_per_frame = (frame_size * channels) as usize;
 
     struct State {
-        tx: Sender<Vec<f32>>,
+        tx: Sender<Packet>,
         accum: Vec<f32>,
         samples_per_frame: usize,
         channels: usize,
@@ -62,6 +80,9 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
         /// The graph position the next cycle's data starts at, if the stream
         /// has run a cycle yet. See `process` for what it is for.
         next_ticks: Option<u64>,
+        /// Where the accumulator ends when the graph gives no position: a count
+        /// of the frames received, so packets still carry a continuous timeline.
+        counted_end: u64,
     }
 
     let state = State {
@@ -71,6 +92,7 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
         channels: channels as usize,
         sample_rate,
         next_ticks: None,
+        counted_end: 0,
     };
 
     let _listener = stream
@@ -131,8 +153,10 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
                             tracing::debug!(missed, "graph cycle missed; filled with silence");
                         }
                         state.next_ticks = ticks.map(|t| t + frames);
+                        state.counted_end += missed as u64 + frames;
 
                         state.accum.extend_from_slice(samples);
+                        let end = state.next_ticks.unwrap_or(state.counted_end);
 
                         tracing::trace!(
                             "pw delivered {} samples, accum now {}, frame size {}",
@@ -143,10 +167,13 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
 
                         // Drain complete frames
                         while state.accum.len() >= state.samples_per_frame {
-                            let frame: Vec<f32> =
-                                state.accum.drain(..state.samples_per_frame).collect();
+                            let held = (state.accum.len() / state.channels) as u64;
+                            let packet = Packet {
+                                position: first_position(end, held),
+                                samples: state.accum.drain(..state.samples_per_frame).collect(),
+                            };
 
-                            if state.tx.try_send(frame).is_err() {
+                            if state.tx.try_send(packet).is_err() {
                                 tracing::warn!("encoder falling behind, dropping frame");
                             }
                         }
@@ -237,7 +264,17 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Vec<f32>
 
 #[cfg(test)]
 mod tests {
-    use super::missed_frames;
+    use super::{first_position, missed_frames};
+
+    /// Two packets drained from one accumulator are one packet apart, and the
+    /// first starts where the oldest held frame does.
+    #[test]
+    fn packets_are_placed_on_the_graph_clock() {
+        // 600 frames held, ending at graph position 10_600.
+        assert_eq!(first_position(10_600, 600), 10_000);
+        // After one 240-frame packet is drained, 360 remain before the end.
+        assert_eq!(first_position(10_600, 360), 10_240);
+    }
 
     #[test]
     fn a_gap_is_exactly_the_frames_the_clock_moved_past() {

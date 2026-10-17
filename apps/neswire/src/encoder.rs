@@ -2,7 +2,6 @@ use anyhow::{Result, bail};
 use crossbeam_channel::Receiver;
 use opus_head_sys::*;
 use std::os::unix::net::UnixDatagram;
-use std::time::Instant;
 
 use nesprotocol::{CODEC_OPUS, STREAM_AUDIO, encode_ipc_frame};
 
@@ -133,18 +132,19 @@ fn send_frame(
     encoder: &MsEncoder,
     socket: &UnixDatagram,
     config: &EncoderConfig,
-    frame: &[f32],
-    start: &Instant,
+    packet: &crate::sink::Packet,
     opus_buf: &mut Vec<u8>,
 ) -> Result<()> {
-    let encoded_len = encoder.encode_float(frame, config.frame_size, opus_buf)?;
+    let encoded_len = encoder.encode_float(&packet.samples, config.frame_size, opus_buf)?;
     let encoded_data = &opus_buf[..encoded_len];
-    let timestamp_ms = start.elapsed().as_millis() as u32;
+    // The packet's place on the graph clock, not when it was encoded: the
+    // receiver needs the audio timeline, and encode time only says when this
+    // thread got to it.
     let ipc_frame = encode_ipc_frame(
         STREAM_AUDIO,
         CODEC_OPUS,
         0,
-        timestamp_ms,
+        packet.position,
         0,
         0,
         encoded_data,
@@ -153,7 +153,7 @@ fn send_frame(
     Ok(())
 }
 
-pub fn run(config: EncoderConfig, rx: Receiver<Vec<f32>>) -> Result<()> {
+pub fn run(config: EncoderConfig, rx: Receiver<crate::sink::Packet>) -> Result<()> {
     tracing::info!(
         "encoder started — IPC {}, {}ch, {} samples/frame",
         config.ipc_path,
@@ -165,7 +165,6 @@ pub fn run(config: EncoderConfig, rx: Receiver<Vec<f32>>) -> Result<()> {
     let encoder = MsEncoder::create_surround(&config)?;
 
     let mut opus_buf = vec![0u8; 4000];
-    let start = Instant::now();
 
     // Connect to hub with retry
     loop {
@@ -185,8 +184,8 @@ pub fn run(config: EncoderConfig, rx: Receiver<Vec<f32>>) -> Result<()> {
     }
 
     // Send loop
-    while let Ok(frame) = rx.recv() {
-        send_frame(&encoder, &socket, &config, &frame, &start, &mut opus_buf)?;
+    while let Ok(packet) = rx.recv() {
+        send_frame(&encoder, &socket, &config, &packet, &mut opus_buf)?;
     }
 
     tracing::info!("encoder shut down");
@@ -399,10 +398,13 @@ mod tests {
 
         let config = config(path.to_str().expect("utf-8 path"));
         let encoder = MsEncoder::create_surround(&config).expect("encoder");
-        let start = Instant::now();
         let mut opus_buf = vec![0u8; 4000];
+        let packet = crate::sink::Packet {
+            position: 123_456,
+            samples: tone(0),
+        };
 
-        send_frame(&encoder, &sender, &config, &tone(0), &start, &mut opus_buf).expect("send");
+        send_frame(&encoder, &sender, &config, &packet, &mut opus_buf).expect("send");
 
         let mut buf = vec![0u8; 65536];
         let n = listener.recv(&mut buf).expect("recv");
@@ -410,6 +412,10 @@ mod tests {
 
         assert_eq!(frame.stream_type, STREAM_AUDIO);
         assert_eq!(frame.codec, CODEC_OPUS);
+        assert_eq!(
+            frame.stamp, 123_456,
+            "the graph position did not reach the hub"
+        );
         assert!(!frame.data.is_empty(), "frame carried no payload");
 
         // And the payload is Opus the far end can actually decode.

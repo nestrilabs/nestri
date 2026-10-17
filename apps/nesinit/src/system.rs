@@ -463,6 +463,36 @@ fn resolver(cmdline: &str) {
     tracing::info!(%server, "the box resolves through this");
 }
 
+/// The UDP port the host forwarded to this box, which `neshub` binds.
+///
+/// The host has to choose it, not the hub: the host installs its forward and
+/// the masquerade that keeps the box's flows on one public port before the box
+/// boots, and both name this port. A hub on a port of its own choosing sends
+/// its first packets past them, and from then on the relay sees one public port
+/// while peers see another, so hole punching fails against any NAT.
+///
+/// `None` when the command line says nothing, or says something that is not a
+/// port; the hub then picks its own, as it did before the host chose one.
+pub fn media_port() -> Option<u16> {
+    let cmdline = std::fs::read_to_string("/proc/cmdline").unwrap_or_default();
+    port(&cmdline)
+}
+
+fn port(cmdline: &str) -> Option<u16> {
+    let value = parameter(cmdline, "port")?;
+    match value.parse::<u16>() {
+        Ok(port) if port != 0 => Some(port),
+        _ => {
+            tracing::warn!(
+                %value,
+                "nestri.port= is not a port, so the hub picks its own and peers behind a NAT \
+                 stay on the relay"
+            );
+            None
+        }
+    }
+}
+
 /// Read one `nestri.<key>=<value>` from a kernel command line.
 ///
 /// Split out because this is the part worth asserting: the rest of `network`
@@ -636,6 +666,19 @@ mod tests {
     #[test]
     fn a_parameter_is_matched_on_its_whole_name() {
         assert_eq!(parameter("othernestri.ip=1.2.3.4", "ip"), None);
+    }
+
+    /// The host's port is read as a port, and anything else leaves the hub
+    /// to pick its own rather than binding something the host did not forward.
+    #[test]
+    fn the_media_port_is_the_hosts_or_none() {
+        let cmdline = "console=hvc0 nestri.ip=10.213.0.2/24 nestri.gw=10.213.0.1 \
+                       nestri.dns=1.1.1.1 nestri.port=47900";
+        assert_eq!(port(cmdline), Some(47900));
+        assert_eq!(port("console=hvc0 nestri.ip=10.213.0.2/24"), None);
+        assert_eq!(port("nestri.port=0"), None);
+        assert_eq!(port("nestri.port=70000"), None);
+        assert_eq!(port("nestri.port=hub"), None);
     }
 
     /// Each of these is a thing that stops working, said in those terms. The

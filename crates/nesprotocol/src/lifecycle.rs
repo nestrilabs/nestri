@@ -80,6 +80,15 @@ pub const ATTACH_PORT: u32 = 7001;
 /// named at the handshake and not found as a launch that cannot start.
 pub const CONTROL_VERSION: u32 = 5;
 
+/// The variable a launched process finds its launch id in.
+///
+/// Set by the guest on every launch, over anything the caller put in the
+/// launch's own environment, because the id on the message is the one every
+/// report about the launch carries. What reads it: the compositor, to say
+/// which launch a window belongs to (`/proc/<pid>/environ` of the window's
+/// owner), and so a client can find its own window. ref(d-0085)
+pub const LAUNCH_ID_ENV: &str = "NESTRI_LAUNCH_ID";
+
 /// The command to run, and who runs it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Exec {
@@ -397,6 +406,15 @@ pub enum GuestToHost {
         #[serde(flatten)]
         exit: Exit,
     },
+    /// Everything a [`HostToGuest::Mount`] for this launch named is in place.
+    ///
+    /// Answers that command and nothing else: the boot descriptor's own mounts
+    /// are still answered by [`GuestToHost::Mounted`], once.
+    LaunchMounted { id: LaunchId },
+    /// A [`HostToGuest::Mount`] for this launch could not be carried out, in
+    /// the operating system's words. The box stays up: a game whose image will
+    /// not mount is one launch that cannot start, not a box that cannot work.
+    LaunchMountFailed { id: LaunchId, reason: String },
     /// How a client reaches this box's media, once it is known.
     Ticket { ticket: String },
     /// How many clients are watching this box. Sent once when first known and
@@ -429,6 +447,27 @@ pub enum HostToGuest {
         id: LaunchId,
         exec: Exec,
         on_exit: OnExit,
+    },
+    /// Mount content for a launch into a box that is already running.
+    ///
+    /// How a second game reaches a box: the host already holds its build, and
+    /// the box mounts it on request rather than at boot. ref(d-0085) The same
+    /// shapes as the descriptor's, carried out in the same order (images, then
+    /// overlays), and answered with [`GuestToHost::LaunchMounted`] or
+    /// [`GuestToHost::LaunchMountFailed`] for this id.
+    ///
+    /// A device here may also be a regular file inside a share, which the
+    /// guest attaches to a loop device first: a box cannot be given a new
+    /// block device once it has booted.
+    ///
+    /// Added without a version bump, as an addition: a guest that predates it
+    /// skips the line, and the host's wait for the answer is what notices.
+    Mount {
+        id: LaunchId,
+        #[serde(default)]
+        images: Vec<Image>,
+        #[serde(default)]
+        overlays: Vec<Overlay>,
     },
     /// Stop one launch. Idempotent, and does not end the session.
     Stop { id: LaunchId },
@@ -549,6 +588,47 @@ mod tests {
             uid: 1000,
             gid: 1000,
         }
+    }
+
+    /// A mount for a running box is named by its launch on the wire, both ways,
+    /// and an empty list may be left out.
+    #[test]
+    fn a_mount_into_a_running_box_round_trips_by_launch() {
+        let mount = HostToGuest::Mount {
+            id: LaunchId::new("launch_01"),
+            images: Vec::new(),
+            overlays: vec![Overlay {
+                lower: "/nestri/launch-images/launch_01/build.erofs".into(),
+                upper: "/nestri/launches/launch_01/upper.ext4".into(),
+                at: "/nestri/installs/launch_01".into(),
+            }],
+        };
+        let line = to_line(&mount).unwrap();
+        assert!(line.contains(r#""type":"mount""#), "{line}");
+        assert_eq!(from_line::<HostToGuest>(&line).unwrap(), mount);
+
+        let bare: HostToGuest = from_line(r#"{"type":"mount","id":"launch_02"}"#).unwrap();
+        assert_eq!(
+            bare,
+            HostToGuest::Mount {
+                id: LaunchId::new("launch_02"),
+                images: Vec::new(),
+                overlays: Vec::new(),
+            }
+        );
+
+        let failed = GuestToHost::LaunchMountFailed {
+            id: LaunchId::new("launch_01"),
+            reason: "ENOENT".into(),
+        };
+        let line = to_line(&failed).unwrap();
+        assert!(line.contains(r#""type":"launch_mount_failed""#), "{line}");
+        assert_eq!(from_line::<GuestToHost>(&line).unwrap(), failed);
+        let line = to_line(&GuestToHost::LaunchMounted {
+            id: LaunchId::new("launch_01"),
+        })
+        .unwrap();
+        assert!(line.contains(r#""type":"launch_mounted""#), "{line}");
     }
 
     #[test]

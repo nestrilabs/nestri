@@ -338,6 +338,10 @@ pub fn decode_wire_event(data: &[u8]) -> Option<InputEvent> {
         DecodedInput::MouseWheel { dx: _dx, dy } => {
             Some(InputEvent::ScrollVertical { amount: dy as f64 })
         }
+        // Not input: the IPC source hands it to the output before this.
+        DecodedInput::OutputSize { .. } => None,
+        // Box-internal window messages: the IPC source handles them before this.
+        DecodedInput::WindowOutputSize { .. } | DecodedInput::WindowFocus { .. } => None,
     }
 }
 

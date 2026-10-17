@@ -70,6 +70,7 @@ mod libinput_backend;
 //mod screenshot_ipc;
 //mod screenshot_wire;
 mod state;
+mod windows;
 mod xwm;
 
 use crate::input::{decode_wire_event, process_input};
@@ -176,8 +177,8 @@ struct Args {
 
     /// Game command — everything after '--'.
     ///
-    /// **Optional.** With one, nescope launches it and exits when it and its
-    /// windows are gone — a wrapper around a single game. Without one, nescope
+    /// **Optional.** With one, nescope launches it and exits once it has
+    /// exited and no window of any launch is left. Without one, nescope
     /// is a plain compositor: it comes up, publishes its displays and waits,
     /// and whatever wants to draw connects to it.
     ///
@@ -397,6 +398,7 @@ fn main() {
                 Ok(write_stream) => {
                     state.ipc_write = Some(write_stream);
                     state.cursor_image_sent = false; // re-send on reconnect
+                    state.hub_connected();
                 }
                 Err(e) => {
                     tracing::warn!("Failed to clone IPC write stream: {e}");
@@ -404,8 +406,25 @@ fn main() {
             }
             loop_handle
                 .insert_source(source, move |payload, _, data| {
-                    if let Some(event) = decode_wire_event(&payload) {
-                        process_input(event, &mut data.state);
+                    use nesprotocol::input::DecodedInput;
+                    match nesprotocol::input::decode_input_event(&payload) {
+                        // The old form is window 0's, ref(d-0085).
+                        Some(DecodedInput::OutputSize { width, height }) => {
+                            data.state.window_output_size(0, width, height)
+                        }
+                        Some(DecodedInput::WindowOutputSize {
+                            window,
+                            width,
+                            height,
+                        }) => data.state.window_output_size(window, width, height),
+                        Some(DecodedInput::WindowFocus { window }) => {
+                            data.state.focus_window_from_hub(window)
+                        }
+                        _ => {
+                            if let Some(event) = decode_wire_event(&payload) {
+                                process_input(event, &mut data.state);
+                            }
+                        }
                     }
                 })
                 .expect("Failed to register input IPC source");
@@ -583,8 +602,11 @@ fn main() {
             }
 
             // ── Auto-exit after all windows are gone ──────────────────
-            // Wait 5 s after the last mapped window disappears to give
-            // any lingering save-game / cleanup processes time to finish.
+            // Only once this nescope's own game has exited AND no window of
+            // any launch is left: later launches draw on this compositor, so
+            // their windows keep it up, ref(d-0085). The 5 s wait gives
+            // lingering save-game / cleanup processes time to finish. A box
+            // with one game ends exactly as before.
             if data.state.game_launched && data.game_process.is_none() {
                 let has_windows = data.state.space.elements().next().is_some();
                 if !has_windows {

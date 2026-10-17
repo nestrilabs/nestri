@@ -54,7 +54,10 @@ export namespace Machine {
 			pciId: z
 				.string()
 				.regex(/^[0-9a-f]{4}:[0-9a-f]{4}$/)
-				.meta({ description: 'vendor:device, the ids the model was looked up by', example: '1002:7590' })
+				.meta({
+					description: 'vendor:device, the ids the model was looked up by',
+					example: '1002:7590'
+				})
 		})
 		.meta({ ref: 'Gpu' });
 
@@ -388,7 +391,8 @@ export namespace Machine {
 	export const touchLastSeen = fn(
 		Info.pick({ id: true }).extend({
 			endpointId: EndpointId.optional(),
-			slots: z.number().int().min(0).optional()
+			slots: z.number().int().min(0).optional(),
+			capabilities: z.array(z.string()).optional()
 		}),
 		async (input) => {
 			try {
@@ -402,7 +406,8 @@ export namespace Machine {
 							// clearing the column would deregister a working host
 							// from every route that reads it.
 							...(input.endpointId ? { endpointId: input.endpointId } : {}),
-							...(input.slots !== undefined ? { slots: input.slots } : {})
+							...(input.slots !== undefined ? { slots: input.slots } : {}),
+							...(input.capabilities !== undefined ? { capabilities: input.capabilities } : {})
 						})
 						.where(eq(MachineTable.id, input.id))
 						.returning({ lastSeen: MachineTable.lastSeen })

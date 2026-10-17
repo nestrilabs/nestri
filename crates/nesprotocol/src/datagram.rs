@@ -18,8 +18,13 @@
 //! # Wire format
 //!
 //! ```text
-//! [1B kind] [2B frame seq LE] [2B fragment index LE] [2B fragment count LE] [fragment]
+//! [1B kind] [2B frame seq LE] [2B fragment index LE] [2B fragment count LE]
+//! [8B sent_us LE] [fragment]
 //! ```
+//!
+//! `sent_us` is when the hub handed the datagram to QUIC, on the sender's
+//! [`clock`](crate::clock). Every fragment carries it, so the receiver can
+//! measure the path from any one of them (see [`delay`](crate::delay)).
 //!
 //! The fragments carry a frame *body*: exactly the bytes [`encode_frame`] produces
 //! minus its four-byte length prefix, which only a stream needs since a datagram
@@ -33,17 +38,89 @@
 //!
 //! [`encode_frame`]: crate::encode_frame
 
-/// kind(1) + frame seq(2) + fragment index(2) + fragment count(2).
-pub const DGRAM_HDR_LEN: usize = 7;
+/// kind(1) + frame seq(2) + fragment index(2) + fragment count(2) + sent_us(8).
+pub const DGRAM_HDR_LEN: usize = 15;
 
-/// Datagram kinds. These share the numbering of the stream types they replace,
-/// so a frame's identity does not change with the transport under it.
+/// Datagram kinds, a numbering of their own. Video and audio happen to share
+/// the numbers of the stream types they replace; later kinds
+/// ([`DGRAM_FEEDBACK`], [`crate::window::DGRAM_VIDEO_WINDOW`]) do not follow
+/// the stream numbering, and a kind and a stream type with the same value are
+/// unrelated.
 pub const DGRAM_VIDEO: u8 = 0;
 pub const DGRAM_AUDIO: u8 = 1;
 /// PyroWave, whose datagrams have a header of their own: see
 /// [`crate::pyrowave`].
 pub const DGRAM_PYROWAVE: u8 = crate::pyrowave::DGRAM_PYROWAVE;
 
+/// One completed video frame as the client saw it arrive, client to hub on the
+/// video connection.
+///
+/// Sent once per frame, so the hub hears about every frame a round trip after
+/// it left rather than once a second. What the hub's rate decision rests on:
+/// whether the bottleneck was still busy with the last frame when this one
+/// reached it, and how fast it delivered this one's fragments. See nescore's
+/// `docs/superpowers/specs/2026-10-16-video-rate-from-the-path-design.md`.
+pub const DGRAM_FEEDBACK: u8 = 3;
+
+/// `[1B kind][2B seq][4B bytes][2B fragments][2B first_bytes][8B sent_us]
+/// [8B first_arrival_us][4B spread_us][4B first_q_us]`, little-endian.
+pub const FEEDBACK_LEN: usize = 35;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct FrameFeedback {
+    /// The frame's sequence number.
+    pub seq: u16,
+    /// Datagram payload bytes that arrived for it, header excluded.
+    pub bytes: u32,
+    /// Fragments that arrived.
+    pub fragments: u16,
+    /// Payload bytes of the first fragment to arrive, which the arrival spread
+    /// does not cover: the spread starts when it has landed.
+    pub first_bytes: u16,
+    /// When the hub sent the frame, from its datagrams' `sent_us`.
+    pub sent_us: u64,
+    /// When the first fragment arrived, on the client's own clock. Only ever
+    /// compared with another frame's, never with the hub's clock.
+    pub first_arrival_us: u64,
+    /// The last fragment's arrival minus the first's.
+    pub spread_us: u32,
+    /// Queueing delay of the first fragment on the path (`delay`).
+    pub first_q_us: u32,
+}
+
+pub fn encode_feedback(f: &FrameFeedback) -> [u8; FEEDBACK_LEN] {
+    let mut b = [0u8; FEEDBACK_LEN];
+    b[0] = DGRAM_FEEDBACK;
+    b[1..3].copy_from_slice(&f.seq.to_le_bytes());
+    b[3..7].copy_from_slice(&f.bytes.to_le_bytes());
+    b[7..9].copy_from_slice(&f.fragments.to_le_bytes());
+    b[9..11].copy_from_slice(&f.first_bytes.to_le_bytes());
+    b[11..19].copy_from_slice(&f.sent_us.to_le_bytes());
+    b[19..27].copy_from_slice(&f.first_arrival_us.to_le_bytes());
+    b[27..31].copy_from_slice(&f.spread_us.to_le_bytes());
+    b[31..35].copy_from_slice(&f.first_q_us.to_le_bytes());
+    b
+}
+
+/// `None` for anything that is not a whole feedback datagram.
+pub fn decode_feedback(b: &[u8]) -> Option<FrameFeedback> {
+    if b.len() < FEEDBACK_LEN || b[0] != DGRAM_FEEDBACK {
+        return None;
+    }
+    let u16_at = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
+    let u32_at = |o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+    let u64_at = |o: usize| u64::from_le_bytes(b[o..o + 8].try_into().unwrap());
+    Some(FrameFeedback {
+        seq: u16_at(1),
+        bytes: u32_at(3),
+        fragments: u16_at(7),
+        first_bytes: u16_at(9),
+        sent_us: u64_at(11),
+        first_arrival_us: u64_at(19),
+        spread_us: u32_at(27),
+        first_q_us: u32_at(31),
+    })
+}
 /// Bounds reassembly work. A 4K keyframe runs to a few hundred fragments at a
 /// typical MTU; anything past this did not come from a sender of ours.
 pub const MAX_FRAGMENTS_PER_FRAME: usize = 4096;
@@ -79,17 +156,21 @@ pub struct DatagramHeader {
     pub index: u16,
     /// How many fragments the whole frame was split into. Always at least 1.
     pub total: u16,
+    /// When the sender handed this datagram to QUIC, in microseconds on its
+    /// [`clock`](crate::clock).
+    pub sent_us: u64,
 }
 
 /// Write a datagram header into the first [`DGRAM_HDR_LEN`] bytes of `buf`.
 ///
 /// # Panics
 /// If `buf` is shorter than [`DGRAM_HDR_LEN`].
-pub fn write_datagram_header(buf: &mut [u8], kind: u8, seq: u16, index: u16, total: u16) {
-    buf[0] = kind;
-    buf[1..3].copy_from_slice(&seq.to_le_bytes());
-    buf[3..5].copy_from_slice(&index.to_le_bytes());
-    buf[5..7].copy_from_slice(&total.to_le_bytes());
+pub fn write_datagram_header(buf: &mut [u8], header: &DatagramHeader) {
+    buf[0] = header.kind;
+    buf[1..3].copy_from_slice(&header.seq.to_le_bytes());
+    buf[3..5].copy_from_slice(&header.index.to_le_bytes());
+    buf[5..7].copy_from_slice(&header.total.to_le_bytes());
+    buf[7..15].copy_from_slice(&header.sent_us.to_le_bytes());
 }
 
 /// Split a received datagram into its header and fragment payload.
@@ -112,6 +193,7 @@ pub fn decode_datagram(buf: &[u8]) -> Option<(DatagramHeader, &[u8])> {
         seq: u16::from_le_bytes([buf[1], buf[2]]),
         index,
         total,
+        sent_us: u64::from_le_bytes(buf[7..15].try_into().unwrap()),
     };
     Some((header, &buf[DGRAM_HDR_LEN..]))
 }
@@ -144,19 +226,18 @@ mod tests {
     #[test]
     fn header_roundtrips() {
         let mut buf = [0u8; DGRAM_HDR_LEN + 3];
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 0xBEEF, 2, 7);
+        let sent = DatagramHeader {
+            kind: DGRAM_VIDEO,
+            seq: 0xBEEF,
+            index: 2,
+            total: 7,
+            sent_us: 0x0123_4567_89AB_CDEF,
+        };
+        write_datagram_header(&mut buf, &sent);
         buf[DGRAM_HDR_LEN..].copy_from_slice(&[1, 2, 3]);
 
         let (header, payload) = decode_datagram(&buf).expect("valid datagram");
-        assert_eq!(
-            header,
-            DatagramHeader {
-                kind: DGRAM_VIDEO,
-                seq: 0xBEEF,
-                index: 2,
-                total: 7
-            }
-        );
+        assert_eq!(header, sent);
         assert_eq!(payload, &[1, 2, 3]);
     }
 
@@ -166,16 +247,67 @@ mod tests {
 
         // total == 0 describes a frame with no fragments.
         let mut buf = [0u8; DGRAM_HDR_LEN];
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 1, 0, 0);
+        write_datagram_header(
+            &mut buf,
+            &DatagramHeader {
+                kind: DGRAM_VIDEO,
+                seq: 1,
+                index: 0,
+                total: 0,
+                sent_us: 0,
+            },
+        );
         assert!(decode_datagram(&buf).is_none());
 
         // index outside the fragment count.
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 1, 4, 4);
+        write_datagram_header(
+            &mut buf,
+            &DatagramHeader {
+                kind: DGRAM_VIDEO,
+                seq: 1,
+                index: 4,
+                total: 4,
+                sent_us: 0,
+            },
+        );
         assert!(decode_datagram(&buf).is_none());
 
         // A count that would size an implausible allocation.
-        write_datagram_header(&mut buf, DGRAM_VIDEO, 1, 0, u16::MAX);
+        write_datagram_header(
+            &mut buf,
+            &DatagramHeader {
+                kind: DGRAM_VIDEO,
+                seq: 1,
+                index: 0,
+                total: u16::MAX,
+                sent_us: 0,
+            },
+        );
         assert!(decode_datagram(&buf).is_none());
+    }
+
+    #[test]
+    fn feedback_round_trips() {
+        let f = FrameFeedback {
+            seq: 0xABCD,
+            bytes: 17_000,
+            fragments: 15,
+            first_bytes: 1_180,
+            sent_us: 0x0102_0304_0506_0708,
+            first_arrival_us: 0x1112_1314_1516_1718,
+            spread_us: 9_800,
+            first_q_us: 450,
+        };
+        let wire = encode_feedback(&f);
+        assert_eq!(decode_feedback(&wire), Some(f));
+        assert_eq!(decode_feedback(&wire[..FEEDBACK_LEN - 1]), None);
+        let mut other = wire;
+        other[0] = DGRAM_VIDEO;
+        assert_eq!(
+            decode_feedback(&other),
+            None,
+            "a video datagram read as feedback"
+        );
     }
 
     #[test]

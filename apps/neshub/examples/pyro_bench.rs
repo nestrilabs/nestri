@@ -102,11 +102,11 @@ async fn send(conn: Connection, o: &Opts) -> Result<()> {
     while Instant::now() < end {
         tick.tick().await;
         let t0 = Instant::now();
-        f.meta.ts_ms = seq as u32;
+        f.meta.captured_us = u64::from(seq);
         // Read per frame, as the hub does: with several paths up, the limit
         // is the smallest of their MTUs and moves as paths come and go.
         let now_max = conn.max_datagram_size().context("datagrams went away")?;
-        let d = pack_datagrams(seq, &f, now_max)?;
+        let d = pack_datagrams(seq, &f, now_max, nesprotocol::clock::monotonic_us())?;
         let backlog = DGRAM_BUFFER_BYTES.saturating_sub(conn.datagram_send_buffer_space());
         if should_skip(backlog, d.buf.len(), DGRAM_BUFFER_BYTES).is_some() {
             skipped += 1;

@@ -119,6 +119,21 @@ pub struct Service {
     /// socket list lives inside a module's arguments, and a drop-in that
     /// re-declares that module loads it twice.
     pub umask: Option<u32>,
+    /// Whether this service may give its own threads a realtime class, up to
+    /// [`REALTIME_PRIORITY`], and a nice level down to [`REALTIME_NICE`].
+    ///
+    /// For the two processes that carry the audio graph's 5 ms cycle. Granted
+    /// as `RLIMIT_RTPRIO` and `RLIMIT_NICE` at exec, which PipeWire's `module-rt` checks first
+    /// and uses to set `SCHED_FIFO` itself. The grant used to come from rtkit,
+    /// asked over the system bus with polkit's approval, and in a box that
+    /// chain granted nothing. Measured 2026-10-16: every PipeWire, wireplumber
+    /// and neswire thread was `SCHED_OTHER`, and cycles that ran late behind a
+    /// busy game reached the client as 15-25 ms gaps in the stream, which
+    /// emptied its 10 ms cushion.
+    ///
+    /// Not given to the workload: a game that gave itself a realtime class
+    /// could starve the graph that this exists to protect.
+    pub realtime: bool,
     /// A path that exists once this service can be talked to.
     ///
     /// `None` means "started is ready", which is true of anything nothing else
@@ -181,6 +196,26 @@ pub const AUDIO_DIR: &str = "/run/pipewire";
 /// Where a service's runtime sockets live.
 pub const RUNTIME_DIR: &str = "/run/user/1000";
 
+/// The highest realtime priority a [`Service::realtime`] service may take.
+///
+/// PipeWire's own packaging grants its group 95 (`limits.d/25-pw-rlimits.conf`),
+/// and `module-rt` asks for 88 on the graph and 83 on clients. A limit below
+/// what it asks makes it clamp rather than fail, so 95 just means it gets
+/// what it asks for.
+pub const REALTIME_PRIORITY: libc::rlim_t = 95;
+
+/// How far below 0 a [`Service::realtime`] service may lower its nice level,
+/// as `RLIMIT_NICE` counts it: `20 - nice`, so 39 allows nice -19.
+///
+/// **Not optional alongside the priority.** The server's `module-rt` asks for
+/// nice -11 before it asks for a realtime class, and when the nice level is
+/// refused it gives up on doing it itself and asks rtkit, which in a box
+/// grants nothing. Measured 2026-10-16: with only `RLIMIT_RTPRIO`, neswire's
+/// client loop went `SCHED_FIFO` 83 (its config asks for no nice level) and
+/// the server's graph loop stayed `SCHED_OTHER`. -19 is what PipeWire's own
+/// packaging grants beside rtprio 95.
+pub const REALTIME_NICE: libc::rlim_t = 39;
+
 /// Somewhere every service may write.
 ///
 /// # The service user's home is on a read-only root
@@ -235,6 +270,7 @@ pub const STACK: &[Service] = &[
         cost: "nothing that speaks on the system bus can find it",
         required: true,
         umask: None,
+        realtime: false,
         // Now something does connect to it: the two services below, once each
         // as they start, and neither one retries. A bus that has been forked and
         // has not bound its socket yet is a connection refused to both.
@@ -262,6 +298,7 @@ pub const STACK: &[Service] = &[
         cost: "rtkit cannot be authorised, so audio runs at normal priority",
         required: false,
         umask: None,
+        realtime: false,
         ready: None,
         ready_name: Some("org.freedesktop.PolicyKit1"),
     },
@@ -273,6 +310,7 @@ pub const STACK: &[Service] = &[
         cost: "audio threads cannot get realtime priority and underrun when the CPUs are busy",
         required: false,
         umask: None,
+        realtime: false,
         ready: None,
         ready_name: Some("org.freedesktop.RealtimeKit1"),
     },
@@ -290,6 +328,7 @@ pub const STACK: &[Service] = &[
         cost: "audio and anything else expecting a session bus will not start",
         required: true,
         umask: None,
+        realtime: false,
         // Every service after this one is handed this path as its bus address,
         // and a bus address that is not bound yet is a service that starts,
         // finds nothing, and carries on without a bus.
@@ -309,6 +348,7 @@ pub const STACK: &[Service] = &[
         required: true,
         // So the workload, which is not this user, can open the socket.
         umask: Some(0),
+        realtime: true,
         // Both the session manager and the sender connect here, and so does
         // the workload once it starts.
         ready: Some("/run/pipewire/pipewire-0"),
@@ -329,6 +369,7 @@ pub const STACK: &[Service] = &[
         cost: "audio devices exist but nothing routes them",
         required: false,
         umask: None,
+        realtime: false,
         ready: None,
         ready_name: None,
     },
@@ -344,6 +385,7 @@ pub const STACK: &[Service] = &[
         cost: "the client gets pictures and no sound",
         required: false,
         umask: None,
+        realtime: true,
         ready: None,
         ready_name: None,
     },
@@ -357,6 +399,7 @@ pub const STACK: &[Service] = &[
         cost: "the session has no address, so no client can reach it",
         required: true,
         umask: None,
+        realtime: false,
         ready: None,
         ready_name: None,
     },
@@ -373,6 +416,7 @@ pub const STACK: &[Service] = &[
         cost: "controllers plugged into the client do not reach the game",
         required: false,
         umask: None,
+        realtime: false,
         // It dials the hub rather than the other way round, and redials until
         // the hub is there, so nothing waits on it.
         ready: None,
@@ -494,21 +538,44 @@ impl Stack {
         if let Some(kbps) = self.video.bitrate_kbps {
             command.env("NESTRI_MAX_BITRATE", kbps.to_string());
         }
+        // The port the host forwarded, from the command line, by the same
+        // route: `neshub` binds it so its first packet already leaves through
+        // the host's pinned masquerade. See `system::media_port`.
+        if let Some(port) = crate::system::media_port() {
+            command.env("NESTRI_BIND_PORT", port.to_string());
+        }
         // The service's own entry last, so a service that states one of these
         // for itself wins over the defaults above.
         command.envs(service.env.iter().copied());
 
         let mask = service.umask;
+        let realtime = service.realtime;
         if let Some((uid, gid)) = service.user {
             // SAFETY: the closure runs between fork and exec in the child,
-            // where only async-signal-safe calls are allowed. These two are,
-            // and it allocates nothing.
+            // where only async-signal-safe calls are allowed. These are, and it
+            // allocates nothing.
             unsafe {
                 command.pre_exec(move || {
                     if let Some(mask) = mask {
                         // SAFETY: `umask` cannot fail and touches only this
                         // child, between fork and exec.
                         libc::umask(mask as libc::mode_t);
+                    }
+                    // Before the uid drops: raising a hard limit takes root,
+                    // and once dropped the child could never get it back.
+                    if realtime {
+                        for (resource, value) in [
+                            (libc::RLIMIT_RTPRIO, REALTIME_PRIORITY),
+                            (libc::RLIMIT_NICE, REALTIME_NICE),
+                        ] {
+                            let limit = libc::rlimit {
+                                rlim_cur: value,
+                                rlim_max: value,
+                            };
+                            if libc::setrlimit(resource, &limit) != 0 {
+                                return Err(std::io::Error::last_os_error());
+                            }
+                        }
                     }
                     // gid first: dropping the uid first would lose the
                     // privilege needed to set the gid at all.
@@ -911,7 +978,10 @@ mod tests {
     #[test]
     fn the_system_bus_is_waited_for_before_what_connects_to_it() {
         let bus = STACK.iter().find(|s| s.name == "dbus-system").unwrap();
-        assert!(bus.ready.is_some(), "polkitd and rtkit would find no socket");
+        assert!(
+            bus.ready.is_some(),
+            "polkitd and rtkit would find no socket"
+        );
         for name in ["polkitd", "rtkit"] {
             let svc = STACK.iter().find(|s| s.name == name).unwrap();
             assert!(svc.ready_name.is_some(), "{name} is reached by name");
@@ -1153,6 +1223,25 @@ mod tests {
         assert!(at("dbus-system") < at("polkitd"));
         assert!(at("polkitd") < at("rtkit"));
         assert!(at("rtkit") < at("pipewire"));
+    }
+
+    /// The graph and the sender run its 5 ms cycle and may go realtime; nothing
+    /// else in the table may, because a realtime thread that is not the graph
+    /// is one that can take the CPU away from it.
+    #[test]
+    fn only_the_audio_graph_may_go_realtime() {
+        let realtime: Vec<_> = STACK
+            .iter()
+            .filter(|s| s.realtime)
+            .map(|s| s.name)
+            .collect();
+        assert_eq!(realtime, ["pipewire", "neswire"]);
+        assert!(
+            STACK
+                .iter()
+                .filter(|s| s.realtime)
+                .all(|s| s.user.is_some())
+        );
     }
 
     /// A required service whose absence has a workaround should not be

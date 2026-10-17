@@ -11,7 +11,7 @@ use iroh::endpoint::Connection;
 use tracing::debug;
 
 use nesprotocol::reliable::MAX_KEYFRAME_STREAMS_IN_FLIGHT;
-use nesprotocol::{STREAM_KEYFRAME, STREAM_VERSION};
+use nesprotocol::reliable::keyframe_stream_header;
 
 use crate::dgram::DatagramSender;
 
@@ -50,7 +50,7 @@ impl KeyframeSender {
     /// stream writes are flow-controlled, so a receiver with no window left
     /// would otherwise hold up every delta frame queued behind this keyframe —
     /// and the deltas are the frames with an expiry date.
-    pub fn send(&self, seq: u16, body: &[u8]) -> bool {
+    pub fn send(&self, seq: u16, window: nesprotocol::window::WindowId, body: &[u8]) -> bool {
         if self.in_flight.load(Ordering::Relaxed) >= MAX_KEYFRAME_STREAMS_IN_FLIGHT {
             self.fell_back.fetch_add(1, Ordering::Relaxed);
             return false;
@@ -79,7 +79,7 @@ impl KeyframeSender {
             // are a worse path for a keyframe, but they beat dropping the one
             // frame everything after it is predicted from.
             fell_back.fetch_add(1, Ordering::Relaxed);
-            if let Err(e) = fallback.send_frame(seq, &body) {
+            if let Err(e) = fallback.send_frame(seq, window, &body) {
                 debug!("keyframe {seq}: stream failed and datagram fallback failed too: {e}");
             }
         });
@@ -111,7 +111,8 @@ async fn write_keyframe_stream(conn: &Connection, body: &[u8]) -> bool {
         }
     };
 
-    if let Err(e) = send.write_all(&[STREAM_KEYFRAME, STREAM_VERSION]).await {
+    let header = keyframe_stream_header(nesprotocol::clock::monotonic_us());
+    if let Err(e) = send.write_all(&header).await {
         debug!("keyframe header write failed: {e}");
         send.reset(0u32.into()).ok();
         return false;

@@ -59,6 +59,38 @@ use crate::input::InputEvent;
 // CalloopData — threaded through the event loop
 // ---------------------------------------------------------------------------
 
+/// The smallest side a client's window can make the output. Below it, games
+/// lay out menus they cannot fit, and nothing is gained.
+const MIN_OUTPUT: u32 = 320;
+
+/// `want` scaled down, keeping its shape, until it fits inside `max`, and
+/// never smaller than [`MIN_OUTPUT`] on a side. Even on both sides.
+fn fit_output(want: (u32, u32), max: (u32, u32)) -> (u32, u32) {
+    let (w, h) = (want.0.max(1) as f64, want.1.max(1) as f64);
+    let scale = (max.0 as f64 / w).min(max.1 as f64 / h).min(1.0);
+    let side = |v: f64, cap: u32| ((v * scale).round() as u32).clamp(MIN_OUTPUT.min(cap), cap) & !1;
+    (side(w, max.0), side(h, max.1))
+}
+
+/// What a window is known by for its id: its Wayland surface, or for an
+/// Xwayland window its X11 id (the surface comes and goes with mapping).
+#[derive(Debug, Clone, PartialEq)]
+pub enum WinKey {
+    Wayland(WlSurface),
+    X11(u32),
+}
+
+impl WinKey {
+    pub fn of(window: &Window) -> Option<Self> {
+        if let Some(x11) = window.x11_surface() {
+            return Some(WinKey::X11(x11.window_id()));
+        }
+        window
+            .toplevel()
+            .map(|t| WinKey::Wayland(t.wl_surface().clone()))
+    }
+}
+
 pub struct CalloopData {
     pub state: NescopeState,
     pub display: Display<NescopeState>,
@@ -192,9 +224,21 @@ pub struct NescopeState {
 
     pub presentation_seq: u64,
 
+    // ── Windows, ref(d-0085) ──────────────────────────────────────────────
+    /// Every toplevel's id, and what the hub has been told about it.
+    pub windows: crate::windows::Registry<WinKey>,
+    /// Which window input is for, as the hub's focus tags say.
+    pub window_input: crate::windows::WindowInput,
+    /// The window the cursor updates last sent describe.
+    last_cursor_window: nesprotocol::window::WindowId,
+
     // ── Dimensions + frame rate ───────────────────────────────────────────
     pub width: u32,
     pub height: u32,
+    /// The size the box was started at, which is what its encode budget was
+    /// counted for, ref(d-0036): a client's window can shrink the output
+    /// below it, never grow it past.
+    pub launch_size: (u32, u32),
     pub fps: u32,
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -326,8 +370,12 @@ impl NescopeState {
             last_sent_cursor_status: 0xFF,
             last_pointer_activity: std::time::Instant::now(),
             presentation_seq: 0,
+            windows: Default::default(),
+            window_input: Default::default(),
+            last_cursor_window: 0,
             width,
             height,
+            launch_size: (width, height),
             fps,
             loop_handle,
             game_launched: false,
@@ -462,8 +510,16 @@ impl NescopeState {
     // Resize
     // -----------------------------------------------------------------------
 
+    /// The client's window is `width`x`height`: follow it, inside the launch
+    /// size and on even numbers, which every encoder needs for 4:2:0.
+    pub fn request_output_size(&mut self, width: u16, height: u16) {
+        let (w, h) = fit_output((width.into(), height.into()), self.launch_size);
+        if (w, h) != (self.width, self.height) {
+            self.apply_resize(w, h);
+        }
+    }
+
     /// Apply a new output resolution (e.g. from a runtime resize request).
-    #[allow(unused)]
     pub fn apply_resize(&mut self, width: u32, height: u32) {
         tracing::info!("Applying resize: {width}x{height}");
         self.width = width;
@@ -475,6 +531,11 @@ impl NescopeState {
         };
         self.output
             .change_current_state(Some(mode), None, None, None);
+
+        let size = (clamp16(width), clamp16(height));
+        for m in self.windows.resize_all(size) {
+            self.send_box_message(&m);
+        }
 
         for window in self.space.elements().cloned().collect::<Vec<_>>() {
             if let Some(tl) = window.toplevel() {
@@ -757,8 +818,157 @@ impl NescopeState {
         send_frames_surface_tree(root, &output, now, None, |_, _| Some(output.clone()));
     }
 
+    // -----------------------------------------------------------------------
+    // Windows, ref(d-0085)
+    // -----------------------------------------------------------------------
+
+    /// One box-internal message to the hub on the input socket.
+    pub(crate) fn send_box_message(&mut self, message: &[u8]) {
+        use std::io::Write;
+        let Some(ipc) = self.ipc_write.as_mut() else {
+            return;
+        };
+        let mut frame = Vec::with_capacity(2 + message.len());
+        frame.extend_from_slice(&(message.len() as u16).to_le_bytes());
+        frame.extend_from_slice(message);
+        let _ = ipc.write_all(&frame);
+        let _ = ipc.flush();
+    }
+
+    /// A toplevel was mapped: give it an id, once, and tell the hub.
+    pub(crate) fn window_opened(&mut self, window: &Window) {
+        let Some(key) = WinKey::of(window) else {
+            return;
+        };
+        let (pid, title, app_id) = if let Some(x11) = window.x11_surface() {
+            // The Wayland client of an Xwayland window is Xwayland itself;
+            // the game says who it is in _NET_WM_PID.
+            (x11.pid(), x11.title(), x11.class())
+        } else if let Some(toplevel) = window.toplevel() {
+            use smithay::reexports::wayland_server::Resource as _;
+            let pid = toplevel
+                .wl_surface()
+                .client()
+                .and_then(|c| c.get_credentials(&self.display_handle).ok())
+                .and_then(|c| u32::try_from(c.pid).ok());
+            let (title, app_id) = toplevel_title(toplevel.wl_surface());
+            (pid, title, app_id)
+        } else {
+            return;
+        };
+        let new = crate::windows::NewWindow {
+            pid,
+            title,
+            app_id,
+            size: (clamp16(self.width), clamp16(self.height)),
+        };
+        if let Some(messages) =
+            self.windows
+                .open(key, new, crate::windows::launch_of_process)
+        {
+            for m in messages {
+                self.send_box_message(&m);
+            }
+        }
+    }
+
+    /// A toplevel was destroyed.
+    pub(crate) fn window_closed(&mut self, key: &WinKey) {
+        let id = self.windows.id_of(key);
+        if let Some(m) = self.windows.close(key) {
+            self.send_box_message(&m);
+        }
+        if let Some(id) = id {
+            self.window_input.forget(id);
+        }
+    }
+
+    /// An X11 window was unmapped: closed for the hub, its id kept.
+    pub(crate) fn window_unmapped(&mut self, key: &WinKey) {
+        if let Some(m) = self.windows.unmap(key) {
+            self.send_box_message(&m);
+        }
+    }
+
+    /// A window's title may have changed.
+    pub(crate) fn window_retitled(&mut self, window: &Window) {
+        let Some(key) = WinKey::of(window) else {
+            return;
+        };
+        let title = match window.x11_surface() {
+            Some(x11) => x11.title(),
+            None => match window.toplevel() {
+                Some(t) => toplevel_title(t.wl_surface()).0,
+                None => return,
+            },
+        };
+        if let Some(m) = self.windows.retitle(&key, &title) {
+            self.send_box_message(&m);
+        }
+    }
+
+    /// The hub's input connection is new: input is window 0's until it says
+    /// otherwise, and it hears every window there is.
+    pub(crate) fn hub_connected(&mut self) {
+        self.window_input.reset();
+        let size = (clamp16(self.width), clamp16(self.height));
+        for m in self.windows.announce_all(size) {
+            self.send_box_message(&m);
+        }
+    }
+
+    /// The hub says input from here on is `id`'s: give it keyboard focus.
+    /// Nothing is raised and the output keeps its size: a fullscreen game
+    /// must not lose focus, or the output change size, because a client
+    /// looked at another window. Size follows only an explicit request,
+    /// ref(d-0085).
+    pub(crate) fn focus_window_from_hub(&mut self, id: nesprotocol::window::WindowId) {
+        if !self.window_input.focus(id) {
+            return;
+        }
+        let key = self.windows.key_of(id).cloned();
+        let window = key.and_then(|key| {
+            self.space
+                .elements()
+                .find(|w| WinKey::of(w).as_ref() == Some(&key))
+                .cloned()
+        });
+        match window {
+            Some(window) => self.set_keyboard_focus_to_window(&window),
+            None => tracing::debug!("focus for window {id}, which is not mapped"),
+        }
+    }
+
+    /// A client's window is `width`x`height`, for window `id`.
+    pub(crate) fn window_output_size(
+        &mut self,
+        id: nesprotocol::window::WindowId,
+        width: u16,
+        height: u16,
+    ) {
+        if let Some((w, h)) =
+            self.window_input
+                .size(id, width, height, std::time::Instant::now())
+        {
+            self.request_output_size(w, h);
+        }
+    }
+
     pub(crate) fn send_cursor_update(&mut self) {
         use std::io::Write;
+        // Cursor updates describe the window input is going to; the hub sends
+        // them to that window's clients. Said only when it changes, so a box
+        // that only ever has window 0 sends what it always did.
+        let current = self.window_input.current();
+        if current != self.last_cursor_window && self.ipc_write.is_some() {
+            let mut m = Vec::with_capacity(3);
+            nesprotocol::window::encode_cursor_window(&mut m, current);
+            self.send_box_message(&m);
+            self.last_cursor_window = current;
+            // Those clients may never have had the image or the state.
+            self.cursor_image_sent = false;
+            self.last_sent_cursor_status = 0xFF;
+        }
         let ipc = match self.ipc_write.as_mut() {
             Some(s) => s,
             None => return,
@@ -832,6 +1042,27 @@ impl NescopeState {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+fn clamp16(v: u32) -> u16 {
+    v.min(u32::from(u16::MAX)) as u16
+}
+
+/// An xdg toplevel's title and app id, empty where the client set none.
+fn toplevel_title(surface: &WlSurface) -> (String, String) {
+    smithay::wayland::compositor::with_states(surface, |states| {
+        states
+            .data_map
+            .get::<smithay::wayland::shell::xdg::XdgToplevelSurfaceData>()
+            .and_then(|d| d.lock().ok())
+            .map(|d| {
+                (
+                    d.title.clone().unwrap_or_default(),
+                    d.app_id.clone().unwrap_or_default(),
+                )
+            })
+            .unwrap_or_default()
+    })
+}
 
 fn intern_atom(
     conn: &smithay::reexports::x11rb::rust_connection::RustConnection,
@@ -960,4 +1191,25 @@ where
 
     let global = dmabuf_state.create_global::<D>(display, formats.iter().copied());
     (dmabuf_state, global)
+}
+
+#[cfg(test)]
+mod fit_output_tests {
+    use super::fit_output;
+
+    #[test]
+    fn a_smaller_window_is_followed() {
+        assert_eq!(fit_output((1280, 720), (1920, 1080)), (1280, 720));
+    }
+
+    #[test]
+    fn a_larger_window_keeps_its_shape() {
+        assert_eq!(fit_output((2560, 1600), (1920, 1080)), (1728, 1080));
+    }
+
+    #[test]
+    fn odd_and_tiny_sizes_are_made_usable() {
+        assert_eq!(fit_output((1281, 721), (1920, 1080)), (1280, 720));
+        assert_eq!(fit_output((10, 10), (1920, 1080)), (320, 320));
+    }
 }

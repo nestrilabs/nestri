@@ -71,8 +71,9 @@ pub const ABANDON_MS: u64 = 100;
 /// Datagram kind, beside `DGRAM_VIDEO` and `DGRAM_AUDIO`.
 pub const DGRAM_PYROWAVE: u8 = 2;
 
-/// `[kind][seq u16][index u16][total u16][critical u16][ts_ms u32][flags]`.
-pub const PYRO_DGRAM_HDR_LEN: usize = 14;
+/// `[kind][seq u16][index u16][total u16][critical u16][captured_us u64]
+/// [sent_us u64][flags]`.
+pub const PYRO_DGRAM_HDR_LEN: usize = 26;
 
 /// Bound on datagrams per frame, about 19 MB at a typical MTU. Past it a
 /// frame did not come from a sender of ours, and the bound keeps a corrupt
@@ -114,7 +115,8 @@ pub const MAX_IN_FLIGHT: usize = 8;
 /// The per-frame fields of the IPC header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FrameMeta {
-    pub ts_ms: u32,
+    /// When the frame was presented, on the sender's [`clock`](crate::clock).
+    pub captured_us: u64,
     pub width: u16,
     pub height: u16,
 }
@@ -213,7 +215,7 @@ pub fn chunk_frame(
             STREAM_PYROWAVE,
             CODEC_PYROWAVE,
             0,
-            meta.ts_ms,
+            meta.captured_us,
             meta.width,
             meta.height,
             &body,
@@ -337,7 +339,7 @@ impl FrameAssembler {
         }
 
         let meta = FrameMeta {
-            ts_ms: ipc.timestamp_ms,
+            captured_us: ipc.stamp,
             width: ipc.width,
             height: ipc.height,
         };
@@ -430,7 +432,10 @@ pub struct PyroDatagramHeader {
     /// broken on frames that arrived complete. The sender knows which
     /// datagrams those bands went in.
     pub critical: u16,
-    pub ts_ms: u32,
+    /// When the frame was presented, on the sender's [`clock`](crate::clock).
+    pub captured_us: u64,
+    /// When the hub handed this datagram to QUIC, on the same clock.
+    pub sent_us: u64,
     pub flags: u8,
 }
 
@@ -441,8 +446,9 @@ pub fn write_pyro_header(buf: &mut [u8], h: &PyroDatagramHeader) {
     buf[3..5].copy_from_slice(&h.index.to_le_bytes());
     buf[5..7].copy_from_slice(&h.total.to_le_bytes());
     buf[7..9].copy_from_slice(&h.critical.to_le_bytes());
-    buf[9..13].copy_from_slice(&h.ts_ms.to_le_bytes());
-    buf[13] = h.flags;
+    buf[9..17].copy_from_slice(&h.captured_us.to_le_bytes());
+    buf[17..25].copy_from_slice(&h.sent_us.to_le_bytes());
+    buf[25] = h.flags;
 }
 
 /// Split a PyroWave datagram into header and payload. `None` for anything that
@@ -457,8 +463,9 @@ pub fn decode_pyro_datagram(buf: &[u8]) -> Option<(PyroDatagramHeader, &[u8])> {
         index: u16_at(3),
         total: u16_at(5),
         critical: u16_at(7),
-        ts_ms: u32::from_le_bytes([buf[9], buf[10], buf[11], buf[12]]),
-        flags: buf[13],
+        captured_us: u64::from_le_bytes(buf[9..17].try_into().unwrap()),
+        sent_us: u64::from_le_bytes(buf[17..25].try_into().unwrap()),
+        flags: buf[25],
     };
     if h.total == 0 || usize::from(h.total) > PYRO_MAX_DATAGRAMS || h.index >= h.total {
         return None;
@@ -520,6 +527,7 @@ pub fn pack_datagrams(
     seq: u16,
     frame: &PyroFrame,
     max_datagram: usize,
+    sent_us: u64,
 ) -> Result<Datagrams, PackError> {
     let payload = max_datagram.saturating_sub(PYRO_DGRAM_HDR_LEN);
     if payload < MIN_DGRAM_PAYLOAD {
@@ -582,7 +590,8 @@ pub fn pack_datagrams(
                 index: index as u16,
                 total,
                 critical: critical_entries as u16,
-                ts_ms: frame.meta.ts_ms,
+                captured_us: frame.meta.captured_us,
+                sent_us,
                 flags: flags | duplicate,
             },
         );
@@ -652,7 +661,7 @@ impl<P: AsRef<[u8]>> AsRef<[u8]> for CollectedPacket<P> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CollectedFrame<P> {
     pub seq: u16,
-    pub ts_ms: u32,
+    pub captured_us: u64,
     /// Datagrams that arrived, out of `total`.
     pub received: u16,
     pub total: u16,
@@ -698,7 +707,7 @@ pub struct CollectorStats {
 
 struct Flight<P> {
     seq: u16,
-    ts_ms: u32,
+    captured_us: u64,
     total: u16,
     critical: u16,
     slots: Vec<Option<(u8, P)>>,
@@ -780,7 +789,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
                     pos,
                     Flight {
                         seq: h.seq,
-                        ts_ms: h.ts_ms,
+                        captured_us: h.captured_us,
                         total: h.total,
                         critical: h.critical,
                         slots: (0..h.total).map(|_| None).collect(),
@@ -912,7 +921,7 @@ impl<P: AsRef<[u8]>> PyroCollector<P> {
 
         CollectedFrame {
             seq: flight.seq,
-            ts_ms: flight.ts_ms,
+            captured_us: flight.captured_us,
             received: flight.received,
             total: flight.total,
             critical_complete,
@@ -939,7 +948,7 @@ mod tests {
         PyroFrame {
             frame: 7,
             meta: FrameMeta {
-                ts_ms: 1234,
+                captured_us: 1234,
                 width: 1920,
                 height: 1080,
             },
@@ -1122,7 +1131,7 @@ mod tests {
     #[test]
     fn a_packet_that_fits_takes_one_datagram_whole() {
         let frame = frame_of(&[8, 500, 1200 - PYRO_DGRAM_HDR_LEN, 300], 0);
-        let d = pack_datagrams(3, &frame, 1200).unwrap();
+        let d = pack_datagrams(3, &frame, 1200, 77).unwrap();
         let got = unpack(&d);
         assert_eq!(d.total, 4);
         assert_eq!(got.len(), 4);
@@ -1130,7 +1139,8 @@ mod tests {
             assert_eq!(h.index as usize, i);
             assert_eq!(h.flags, 0);
             assert_eq!(h.seq, 3);
-            assert_eq!(h.ts_ms, 1234);
+            assert_eq!(h.captured_us, 1234);
+            assert_eq!(h.sent_us, 77, "the send time did not reach the header");
             assert_eq!(
                 p.as_slice(),
                 frame.packet(i),
@@ -1142,7 +1152,7 @@ mod tests {
     #[test]
     fn critical_datagrams_go_twice_under_the_same_index() {
         let frame = frame_of(&[8, 900, 900, 900, 900], 2);
-        let got = unpack(&pack_datagrams(0, &frame, 1200).unwrap());
+        let got = unpack(&pack_datagrams(0, &frame, 1200, 0).unwrap());
         assert_eq!(got.len(), 5 + 2);
         let tail: Vec<_> = got[5..].iter().map(|(h, _)| (h.index, h.flags)).collect();
         assert_eq!(tail, [(0, FLAG_DUPLICATE), (1, FLAG_DUPLICATE)]);
@@ -1153,7 +1163,7 @@ mod tests {
     #[test]
     fn an_oversized_block_goes_in_marked_pieces() {
         let frame = frame_of(&[8, 2488, 100], 2);
-        let got = unpack(&pack_datagrams(0, &frame, 1200).unwrap());
+        let got = unpack(&pack_datagrams(0, &frame, 1200, 0).unwrap());
         let flags: Vec<u8> = got.iter().map(|(h, _)| h.flags).collect();
         let part = FLAG_PART;
         assert_eq!(
@@ -1179,12 +1189,12 @@ mod tests {
     fn packing_refuses_a_path_too_small_or_a_frame_too_large() {
         let frame = frame_of(&[8], 0);
         assert!(matches!(
-            pack_datagrams(0, &frame, PYRO_DGRAM_HDR_LEN + MIN_DGRAM_PAYLOAD - 1),
+            pack_datagrams(0, &frame, PYRO_DGRAM_HDR_LEN + MIN_DGRAM_PAYLOAD - 1, 0),
             Err(PackError::PathTooSmall { .. })
         ));
         let frame = frame_of(&vec![100; PYRO_MAX_DATAGRAMS + 1], 0);
         assert!(matches!(
-            pack_datagrams(0, &frame, 1200),
+            pack_datagrams(0, &frame, 1200, 0),
             Err(PackError::TooMany { .. })
         ));
     }
@@ -1197,7 +1207,8 @@ mod tests {
             index: 0,
             total: 2,
             critical: 1,
-            ts_ms: 0,
+            captured_us: 0,
+            sent_us: 0,
             flags: 0,
         };
         write_pyro_header(&mut buf, &ok);
@@ -1232,7 +1243,7 @@ mod tests {
     type Wire = Vec<(PyroDatagramHeader, Vec<u8>)>;
 
     fn wire(seq: u16, frame: &PyroFrame) -> Wire {
-        unpack(&pack_datagrams(seq, frame, 1200).unwrap())
+        unpack(&pack_datagrams(seq, frame, 1200, 0).unwrap())
     }
 
     fn packets_of(f: &CollectedFrame<Vec<u8>>) -> Vec<Vec<u8>> {

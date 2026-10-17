@@ -1,144 +1,180 @@
-//! How much a delay varies, measured the same way at both ends.
+//! How late a media unit arrived, measured the same way at both ends.
 //!
 //! # What this measures
 //!
-//! Every frame carries the timestamp the sender stamped on it at capture. The
-//! two clocks are unrelated, so the difference between that and the moment the
-//! frame arrives here is meaningless on its own -- it contains an unknown,
-//! roughly constant offset. Its *variation* is not meaningless, and variation is
-//! the only thing a playout buffer exists to absorb: a path that delivers every
-//! frame exactly 300 ms late needs no buffer at all, while one that alternates
-//! between 10 ms and 60 ms needs 50 ms whatever its average.
+//! Every media unit carries the time the sender stamped on it, on the sender's
+//! [`clock`](crate::clock). The receiver's clock is unrelated, so the one-way
+//! delay `d = observed - stamp` contains an unknown constant -- the two clocks'
+//! offset -- plus propagation, plus queueing. Only the queueing varies, and it
+//! is the only part a playout or a rate decision has any use for: a path that
+//! delivers everything exactly 300 ms late needs no buffer, while one that
+//! alternates between 10 and 60 ms needs 50 whatever its average.
 //!
-//! So this tracks the smallest difference seen recently -- the best the path has
-//! managed, which stands in for the unknown offset -- and reports how far above
-//! it each frame lands.
+//! So the lowest `d` the path has produced stands in for offset plus
+//! propagation, and a unit's queueing delay is how far above that it landed.
 //!
-//! # What it deliberately does not do
+//! # Clock skew, measured instead of expired
 //!
-//! It does not distinguish the sender's contribution from the network's. The
-//! sender reports its own pipeline delay separately, and the two are compared
-//! rather than subtracted: a frame that was late because the encoder stalled
-//! should not raise a buffer, because buffering is latency spent hiding a fault
-//! that should be fixed instead.
+//! Two crystals never run at quite the same rate. At 100 ppm the receiver's
+//! clock gains 0.1 ms a second on the sender's, so `d` drifts linearly, and a
+//! lowest-ever `d` taken an hour ago would be 360 ms off. This used to be
+//! handled by letting the best case expire after 30 s, which was a guess about
+//! how fast paths change, and threw away a good baseline on a timer.
+//!
+//! Instead the drift is measured: the lowest `d` of each second lies on a line
+//! whose slope is the skew, found by least squares over every second the path
+//! has run. The baseline is that line at its lowest, and it never expires --
+//! nothing invalidates it but a change of path, which the caller knows about
+//! and says so with [`DelayTracker::reset_baseline`].
 //!
 //! # Why this is shared
 //!
-//! Both ends measure a delay and the two are compared: the hub reports how much
-//! its own pipeline varied before a frame left, the client reports how much the
-//! total varied by the time it arrived. A comparison between two different
-//! measures would be meaningless, so there is one measure, defined once.
-//!
-//! It also has to be *variation* on both sides rather than absolute delay,
-//! because neither side can know the absolute. The hub's `timestamp_ms` counts
-//! from the encoder's own start, not from any epoch, so even on one machine the
-//! difference to wall clock contains an unknown constant -- and across two
-//! machines there is no shared clock at all.
-//!
-//! Nothing here adapts anything yet. It measures, so that the decision about
-//! what to adapt is made against a distribution rather than an intuition.
+//! The hub measures its own pipeline with it (capture to hand-off, one clock,
+//! no skew) and the client measures the whole path. Two different measures
+//! could not be compared, so there is one, defined once.
 
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
-
-/// How long a best-case observation stays authoritative.
-///
-/// The minimum has to expire. Paths change -- a relay is dropped for a direct
-/// connection, a phone moves between cells -- and a minimum from the old path
-/// makes every frame on the new one look permanently late, which would pin a
-/// buffer at a size nothing needs. Long enough that an ordinary quiet spell does
-/// not reset the baseline, short enough that a genuine change is noticed.
-const BASELINE_WINDOW: Duration = Duration::from_secs(30);
-
-/// Ceiling on retained observations, so a stalled consumer cannot grow this.
-const MAX_SAMPLES: usize = 4096;
-
-/// One second's worth of lateness, summarised.
+/// One second's queueing delay, summarised.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DelaySummary {
-    /// Frames measured.
+    /// Units measured.
     pub frames: u32,
-    /// Median lateness above the best the path has managed, in milliseconds.
-    pub p50_ms: u16,
+    /// Median queueing delay above the path's best, in microseconds.
+    pub p50_us: u32,
     /// The 95th percentile of the same.
-    pub p95_ms: u16,
-    /// The worst single frame.
-    pub max_ms: u16,
+    pub p95_us: u32,
+    /// The worst single unit.
+    pub max_us: u32,
 }
 
-/// Tracks arrival lateness for one media stream.
-#[derive(Debug)]
+/// `[4B frames][4B p50_us][4B p95_us][4B max_us]`, little-endian.
+pub const DELAY_SUMMARY_LEN: usize = 16;
+
+impl DelaySummary {
+    pub fn encode(&self, buf: &mut Vec<u8>) {
+        buf.extend_from_slice(&self.frames.to_le_bytes());
+        buf.extend_from_slice(&self.p50_us.to_le_bytes());
+        buf.extend_from_slice(&self.p95_us.to_le_bytes());
+        buf.extend_from_slice(&self.max_us.to_le_bytes());
+    }
+
+    /// `None` when `buf` is shorter than [`DELAY_SUMMARY_LEN`].
+    pub fn decode(buf: &[u8]) -> Option<Self> {
+        let at = |o: usize| Some(u32::from_le_bytes(buf.get(o..o + 4)?.try_into().ok()?));
+        Some(Self {
+            frames: at(0)?,
+            p50_us: at(4)?,
+            p95_us: at(8)?,
+            max_us: at(12)?,
+        })
+    }
+}
+
+/// Ceiling on units held for one summary, so a consumer that stops taking
+/// cannot grow this without bound. Far past a second of any stream we send.
+const MAX_SAMPLES: usize = 4096;
+
+/// Tracks queueing delay for one media stream on one path.
+#[derive(Debug, Default)]
 pub struct DelayTracker {
-    /// Best-case delay observations, each with when it was taken, oldest first.
-    ///
-    /// A deque rather than a single value because a minimum that can only fall
-    /// never recovers from a path that improved, and one that is simply reset on
-    /// a timer throws away a good baseline for no reason. Holding the recent
-    /// candidates lets the oldest expire while a better one is still standing.
-    baseline: VecDeque<(Instant, i32)>,
-    /// Lateness of each frame this second, in milliseconds.
-    samples: Vec<u16>,
-    /// The first delay seen, as an anchor for every later one.
-    ///
-    /// Delays are compared *relative to this*, in wrapping arithmetic. Both
-    /// clocks are unrelated and the sender's stamp is a `u32` of milliseconds
-    /// that wraps every 49 days, so an absolute subtraction is a number with no
-    /// meaning and a wrap in the middle of a session makes it jump by 2^32 --
-    /// which, taken as lateness, reads as every frame being weeks late until the
-    /// baseline expires. Anchoring and then interpreting the difference as
-    /// signed makes the wrap a non-event, because the quantity that matters is
-    /// only ever a few hundred milliseconds wide.
-    anchor: Option<u32>,
+    /// The first observation, which every later one is measured relative to,
+    /// so the fit works on small numbers: `(observed_us, d_us)`.
+    origin: Option<(u64, i64)>,
+    /// The second being collected, and the lowest `d` seen in it so far.
+    current: Option<(u64, f64)>,
+    /// Every completed second's lowest `d`: `(seconds since origin, d)`.
+    minima: Vec<(f64, f64)>,
+    /// Running sums for the least-squares line through `minima`.
+    fit: Fit,
+    /// The skew, in microseconds of `d` per second of the receiver's clock.
+    slope: f64,
+    /// The lowest `d - slope * x` the path has produced: where the baseline
+    /// line sits.
+    floor: Option<f64>,
+    /// Queueing delay of each unit since the last [`take`](Self::take).
+    samples: Vec<u32>,
 }
 
-impl Default for DelayTracker {
-    fn default() -> Self {
-        Self::new()
+#[derive(Debug, Default, Clone, Copy)]
+struct Fit {
+    n: f64,
+    sx: f64,
+    sy: f64,
+    sxx: f64,
+    sxy: f64,
+}
+
+impl Fit {
+    fn add(&mut self, x: f64, y: f64) {
+        self.n += 1.0;
+        self.sx += x;
+        self.sy += y;
+        self.sxx += x * x;
+        self.sxy += x * y;
+    }
+
+    /// The least-squares slope, once there are two distinct seconds to draw a
+    /// line through.
+    fn slope(&self) -> Option<f64> {
+        let denominator = self.n * self.sxx - self.sx * self.sx;
+        (self.n >= 2.0 && denominator > 0.0)
+            .then(|| (self.n * self.sxy - self.sx * self.sy) / denominator)
     }
 }
 
 impl DelayTracker {
     pub fn new() -> Self {
-        Self {
-            baseline: VecDeque::new(),
-            samples: Vec::new(),
-            anchor: None,
-        }
+        Self::default()
     }
 
-    /// Record one frame's arrival.
+    /// Record one unit, and return its queueing delay in microseconds.
     ///
-    /// `stamp_ms` is the timestamp the frame carries; `observed_ms` is the local
-    /// clock at the point being measured -- arrival, for a receiver; the moment
-    /// the frame is handed to the transport, for a sender. See [`anchor`](Self::anchor) for why the difference is taken
-    /// in wrapping arithmetic rather than widened.
-    pub fn observe(&mut self, stamp_ms: u32, observed_ms: u64, now: Instant) {
-        let raw = (observed_ms as u32).wrapping_sub(stamp_ms);
-        let anchor = *self.anchor.get_or_insert(raw);
-        let delay = raw.wrapping_sub(anchor) as i32;
-        self.expire(now);
+    /// `stamp_us` is the time the unit carries, on the sender's clock;
+    /// `observed_us` is this end's clock at the point being measured -- arrival
+    /// for a receiver, hand-off to the transport for a sender.
+    pub fn observe(&mut self, stamp_us: u64, observed_us: u64) -> u32 {
+        // Both are microsecond counts far below 2^63, so the difference of the
+        // two as signed is exact.
+        let d = observed_us as i64 - stamp_us as i64;
+        let (origin_us, origin_d) = *self.origin.get_or_insert((observed_us, d));
+        let x_us = observed_us.saturating_sub(origin_us);
+        let x = x_us as f64 / 1e6;
+        let y = (d - origin_d) as f64;
 
-        // Anything at or below the running minimum becomes the new baseline, and
-        // supersedes the candidates it beats -- they can only be worse, so
-        // keeping them would let a stale, higher value resurface on expiry.
-        while self.baseline.back().is_some_and(|(_, d)| *d >= delay) {
-            self.baseline.pop_back();
+        let second = x_us / 1_000_000;
+        match self.current {
+            Some((at, _)) if at != second => {
+                self.close_second();
+                self.current = Some((second, y));
+            }
+            Some((_, ref mut low)) => *low = low.min(y),
+            None => self.current = Some((second, y)),
         }
-        self.baseline.push_back((now, delay));
 
-        let best = self.baseline.front().map(|(_, d)| *d).unwrap_or(delay);
-        let lateness = i64::from(delay)
-            .saturating_sub(i64::from(best))
-            .clamp(0, i64::from(u16::MAX)) as u16;
+        let residual = y - self.slope * x;
+        let floor = match self.floor {
+            Some(floor) if floor <= residual => floor,
+            _ => residual,
+        };
+        self.floor = Some(floor);
+
+        let q = (residual - floor).clamp(0.0, f64::from(u32::MAX)) as u32;
         if self.samples.len() < MAX_SAMPLES {
-            self.samples.push(lateness);
+            self.samples.push(q);
         }
+        q
     }
 
-    /// Summarise and clear the frames seen since the last call.
+    /// The skew this path has been measured at, in parts per million: how much
+    /// faster this end's clock runs than the sender's. Zero until there are two
+    /// seconds to measure it from.
+    pub fn skew_ppm(&self) -> f64 {
+        self.slope
+    }
+
+    /// Summarise and clear the units seen since the last call.
     ///
     /// Returns `None` for a second in which nothing arrived. That is not the
-    /// same as a second with no lateness, and reporting zero would say the path
+    /// same as a second with no queueing, and reporting zero would say the path
     /// is behaving perfectly at the moment it has stopped delivering anything.
     pub fn take(&mut self) -> Option<DelaySummary> {
         if self.samples.is_empty() {
@@ -148,29 +184,44 @@ impl DelayTracker {
         let at = |q: f64| self.samples[((self.samples.len() - 1) as f64 * q) as usize];
         let summary = DelaySummary {
             frames: self.samples.len() as u32,
-            p50_ms: at(0.5),
-            p95_ms: at(0.95),
-            max_ms: self.samples[self.samples.len() - 1],
+            p50_us: at(0.5),
+            p95_us: at(0.95),
+            max_us: self.samples[self.samples.len() - 1],
         };
         self.samples.clear();
         Some(summary)
     }
 
-    /// Forget the baseline entirely.
+    /// Forget the path entirely: baseline, skew and every second behind them.
     ///
-    /// For a path change, where the old best case says nothing about the new
-    /// path and keeping it would make every frame look late until it expired.
+    /// For a path change, where the old path's propagation delay says nothing
+    /// about the new one's, and keeping it would read the difference as
+    /// queueing for the rest of the session.
     pub fn reset_baseline(&mut self) {
-        self.baseline.clear();
+        *self = Self {
+            samples: std::mem::take(&mut self.samples),
+            ..Self::default()
+        };
     }
 
-    fn expire(&mut self, now: Instant) {
-        while self
-            .baseline
-            .front()
-            .is_some_and(|(seen, _)| now.duration_since(*seen) > BASELINE_WINDOW)
-        {
-            self.baseline.pop_front();
+    /// Fold the second just finished into the fit, and move the baseline line
+    /// to the new slope.
+    fn close_second(&mut self) {
+        let Some((second, low)) = self.current.take() else {
+            return;
+        };
+        // The minimum is placed at the middle of its second: it could have been
+        // anywhere in it, and the middle is where that error averages out.
+        let x = second as f64 + 0.5;
+        self.minima.push((x, low));
+        self.fit.add(x, low);
+        if let Some(slope) = self.fit.slope() {
+            self.slope = slope;
+            self.floor = self
+                .minima
+                .iter()
+                .map(|(x, y)| y - slope * x)
+                .reduce(f64::min);
         }
     }
 }
@@ -179,132 +230,110 @@ impl DelayTracker {
 mod tests {
     use super::*;
 
-    /// A frame sent at `ts_ms` arriving `transit` milliseconds later, where the
-    /// receiver's clock is offset from the sender's by an arbitrary amount.
-    const OFFSET: u64 = 1_700_000_000_000;
+    /// The receiver's clock is offset from the sender's by an arbitrary amount.
+    const OFFSET: u64 = 1_700_000_000_000_000;
 
-    fn at(j: &mut DelayTracker, ts_ms: u32, transit: u64, now: Instant) {
-        j.observe(ts_ms, OFFSET + u64::from(ts_ms) + transit, now);
+    /// A unit stamped at `sent_us`, `transit_us` in flight, arriving on a
+    /// receiver clock that runs `skew_ppm` fast.
+    fn arrive(j: &mut DelayTracker, sent_us: u64, transit_us: u64, skew_ppm: f64) -> u32 {
+        let true_arrival = sent_us + transit_us;
+        let observed = OFFSET + true_arrival + (true_arrival as f64 * skew_ppm / 1e6) as u64;
+        j.observe(sent_us, observed)
     }
 
     #[test]
-    fn a_constant_delay_is_not_jitter() {
-        // The point of the whole measure. A path that delivers every frame
-        // exactly 300 ms late needs no buffer at all; only variation does.
+    fn a_constant_delay_is_not_queueing() {
         let mut j = DelayTracker::new();
-        let now = Instant::now();
-        for i in 0..120u32 {
-            at(
-                &mut j,
-                i * 16,
-                300,
-                now + Duration::from_millis(u64::from(i) * 16),
-            );
+        for i in 0..120u64 {
+            arrive(&mut j, i * 16_000, 300_000, 0.0);
         }
-        let s = j.take().expect("frames arrived");
-        assert_eq!(s.max_ms, 0, "a constant offset was read as lateness");
+        let s = j.take().expect("units arrived");
+        assert_eq!(s.max_us, 0, "a constant offset was read as queueing");
         assert_eq!(s.frames, 120);
     }
 
     #[test]
-    fn lateness_is_measured_against_the_best_the_path_managed() {
+    fn queueing_is_measured_against_the_best_the_path_managed() {
         let mut j = DelayTracker::new();
-        let now = Instant::now();
-        at(&mut j, 0, 20, now);
-        at(&mut j, 16, 70, now + Duration::from_millis(16));
-        at(&mut j, 32, 20, now + Duration::from_millis(32));
-        let s = j.take().expect("frames arrived");
-        assert_eq!(
-            s.max_ms, 50,
-            "the 70 ms frame is 50 ms above the 20 ms best"
-        );
+        arrive(&mut j, 0, 20_000, 0.0);
+        let q = arrive(&mut j, 16_000, 70_000, 0.0);
+        arrive(&mut j, 32_000, 20_000, 0.0);
+        assert_eq!(q, 50_000, "the 70 ms unit is 50 ms above the 20 ms best");
+        assert_eq!(j.take().unwrap().max_us, 50_000);
     }
 
     #[test]
-    fn a_silent_second_reports_nothing_rather_than_no_jitter() {
-        // Zero would say the path is behaving perfectly at the moment it has
-        // stopped delivering anything at all.
+    fn a_better_unit_becomes_the_baseline_at_once() {
         let mut j = DelayTracker::new();
-        assert_eq!(j.take(), None);
+        arrive(&mut j, 0, 90_000, 0.0);
+        assert_eq!(arrive(&mut j, 16_000, 10_000, 0.0), 0);
+        assert_eq!(arrive(&mut j, 32_000, 50_000, 0.0), 40_000);
     }
 
     #[test]
-    fn the_baseline_expires_so_an_improved_path_is_noticed() {
-        // A minimum that can only fall never recovers: one lucky early frame
-        // would make every later frame look late for the rest of the session.
-        let mut j = DelayTracker::new();
-        let now = Instant::now();
-        at(&mut j, 0, 10, now);
-        j.take();
+    fn a_silent_second_reports_nothing_rather_than_no_queueing() {
+        assert_eq!(DelayTracker::new().take(), None);
+    }
 
-        // Much later, the path settles at a steady 200 ms.
-        let later = now + BASELINE_WINDOW + Duration::from_secs(1);
-        for i in 0..10u32 {
-            at(
-                &mut j,
-                1000 + i * 16,
-                200,
-                later + Duration::from_millis(u64::from(i) * 16),
-            );
+    /// The reason the baseline no longer expires: at 100 ppm a fixed baseline
+    /// would read 0.1 ms a second of drift as queueing, which over ten minutes
+    /// is 60 ms on a path with none at all.
+    #[test]
+    fn clock_skew_is_measured_and_not_read_as_queueing() {
+        let mut j = DelayTracker::new();
+        // Ten minutes at 200 units a second, a steady 40 ms path, 100 ppm.
+        for i in 0..(600 * 200u64) {
+            let q = arrive(&mut j, i * 5_000, 40_000, 100.0);
+            if i > 200 * 5 {
+                assert!(q < 200, "unit {i} read {q} µs of queueing from skew alone");
+            }
         }
-        let s = j.take().expect("frames arrived");
-        assert_eq!(
-            s.max_ms, 0,
-            "a stale best case from a previous path made a steady path look late",
+        assert!(
+            (j.skew_ppm() - 100.0).abs() < 1.0,
+            "measured {} ppm",
+            j.skew_ppm()
         );
     }
 
     #[test]
-    fn a_better_observation_supersedes_worse_ones_still_in_the_window() {
-        // Otherwise a higher candidate resurfaces when the better one expires,
-        // and the baseline walks upwards for no reason the path can account for.
+    fn queueing_on_a_skewed_path_is_still_exact() {
         let mut j = DelayTracker::new();
-        let now = Instant::now();
-        at(&mut j, 0, 90, now);
-        at(&mut j, 16, 10, now + Duration::from_millis(16));
-        // The 90 ms candidate is gone, so this sits 40 ms above the 10 ms best.
-        at(&mut j, 32, 50, now + Duration::from_millis(32));
-        let s = j.take().expect("frames arrived");
-        assert_eq!(s.max_ms, 40);
+        for i in 0..(60 * 200u64) {
+            arrive(&mut j, i * 5_000, 40_000, -150.0);
+        }
+        let stalled = arrive(&mut j, 60 * 200 * 5_000, 40_000 + 25_000, -150.0);
+        assert!((24_500..25_500).contains(&stalled), "read {stalled} µs");
     }
 
     #[test]
     fn a_reset_forgets_the_old_path_entirely() {
         let mut j = DelayTracker::new();
-        let now = Instant::now();
-        at(&mut j, 0, 10, now);
+        arrive(&mut j, 0, 10_000, 0.0);
         j.take();
         j.reset_baseline();
-        at(&mut j, 16, 400, now + Duration::from_millis(16));
-        let s = j.take().expect("frames arrived");
-        assert_eq!(s.max_ms, 0, "the new path was judged against the old one");
+        assert_eq!(
+            arrive(&mut j, 16_000, 400_000, 0.0),
+            0,
+            "the new path was judged against the old one"
+        );
     }
 
     #[test]
     fn the_tail_is_kept_apart_from_the_middle() {
-        // The number that sizes a buffer is the tail. A run of prompt frames
-        // with one bad one must not average into "slightly late".
         let mut j = DelayTracker::new();
-        let now = Instant::now();
-        for i in 0..99u32 {
-            at(
-                &mut j,
-                i * 16,
-                10,
-                now + Duration::from_millis(u64::from(i) * 16),
-            );
+        for i in 0..99u64 {
+            arrive(&mut j, i * 16_000, 10_000, 0.0);
         }
-        at(&mut j, 99 * 16, 260, now + Duration::from_millis(99 * 16));
-        let s = j.take().expect("frames arrived");
-        assert_eq!(s.p50_ms, 0);
-        assert_eq!(s.max_ms, 250);
+        arrive(&mut j, 99 * 16_000, 260_000, 0.0);
+        let s = j.take().expect("units arrived");
+        assert_eq!(s.p50_us, 0);
+        assert_eq!(s.max_us, 250_000);
     }
 
     #[test]
     fn taking_clears_so_each_answer_describes_one_second() {
         let mut j = DelayTracker::new();
-        let now = Instant::now();
-        at(&mut j, 0, 10, now);
+        arrive(&mut j, 0, 10_000, 0.0);
         assert!(j.take().is_some());
         assert_eq!(
             j.take(),
@@ -314,14 +343,17 @@ mod tests {
     }
 
     #[test]
-    fn a_wrapped_sender_timestamp_does_not_poison_the_baseline() {
-        // ts_ms wraps every 49 days. A negative delay taken as the best case
-        // would make every subsequent frame appear weeks late.
-        let mut j = DelayTracker::new();
-        let now = Instant::now();
-        j.observe(u32::MAX - 10, OFFSET, now);
-        j.observe(5, OFFSET + 16, now + Duration::from_millis(16));
-        let s = j.take().expect("frames arrived");
-        assert!(s.max_ms < u16::MAX, "a wrap produced a nonsense lateness");
+    fn a_summary_survives_the_wire() {
+        let s = DelaySummary {
+            frames: 200,
+            p50_us: 1_200,
+            p95_us: 18_000,
+            max_us: 41_200,
+        };
+        let mut buf = Vec::new();
+        s.encode(&mut buf);
+        assert_eq!(buf.len(), DELAY_SUMMARY_LEN);
+        assert_eq!(DelaySummary::decode(&buf), Some(s));
+        assert_eq!(DelaySummary::decode(&buf[..15]), None);
     }
 }

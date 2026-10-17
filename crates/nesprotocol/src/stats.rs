@@ -120,12 +120,18 @@ pub struct VideoBreakdown {
     /// eight seconds old: loss cannot show a queue, only its overflow. Anything
     /// but near-zero here means latency is being spent on backlog.
     pub backlog_ms: u16,
+    /// The bottleneck capacity the controller has measured from frame
+    /// dispersion, in kbps; 0 before any frame has measured it.
+    pub capacity_kbps: u32,
+    /// The rate the path last delivered while it was queueing, in kbps: the
+    /// share it proved it could carry. 0 before it has queued at all.
+    pub delivery_kbps: u32,
 }
 
 /// `[4B key_bps][4B delta_bps][1B keyframes][4B target][4B ceiling][1B reason]
 /// [1B manual][4B box_ceiling][2B pipeline_p50][2B pipeline_p95][2B pipeline_max]
-/// [2B backlog_ms]`
-pub const VIDEO_BREAKDOWN_LEN: usize = 31;
+/// [2B backlog_ms][4B capacity_kbps][4B delivery_kbps]`
+pub const VIDEO_BREAKDOWN_LEN: usize = 39;
 
 pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.reserve(VIDEO_BREAKDOWN_LEN);
@@ -141,6 +147,8 @@ pub fn encode_video_breakdown(buf: &mut Vec<u8>, b: &VideoBreakdown) {
     buf.extend_from_slice(&b.pipeline_p95_ms.to_le_bytes());
     buf.extend_from_slice(&b.pipeline_max_ms.to_le_bytes());
     buf.extend_from_slice(&b.backlog_ms.to_le_bytes());
+    buf.extend_from_slice(&b.capacity_kbps.to_le_bytes());
+    buf.extend_from_slice(&b.delivery_kbps.to_le_bytes());
 }
 
 /// Decoded stats from any source.
@@ -211,6 +219,8 @@ pub fn decode_stats(msg_type: u8, data: &[u8], stats: &mut PipelineStats) {
                     pipeline_p95_ms: u16::from_le_bytes([d[25], d[26]]),
                     pipeline_max_ms: u16::from_le_bytes([d[27], d[28]]),
                     backlog_ms: u16::from_le_bytes([d[29], d[30]]),
+                    capacity_kbps: u32_at(31),
+                    delivery_kbps: u32_at(35),
                 });
             }
         }
@@ -236,6 +246,8 @@ mod breakdown_tests {
             pipeline_p95_ms: 24,
             pipeline_max_ms: 61,
             backlog_ms: 40,
+            capacity_kbps: 23_500,
+            delivery_kbps: 7_800,
         }
     }
 

@@ -50,7 +50,7 @@ fn readiness<'a>(config: &EncodeConfig, packets: impl Iterator<Item = &'a [u8]>)
 /// the network drops.
 fn across_the_wire(frame: &EncodedFrame, lose: impl Fn(usize) -> bool) -> CollectedFrame<Vec<u8>> {
     let meta = FrameMeta {
-        ts_ms: 16,
+        captured_us: 16_000,
         width: 1920,
         height: 1080,
     };
@@ -71,7 +71,7 @@ fn across_the_wire(frame: &EncodedFrame, lose: impl Fn(usize) -> bool) -> Collec
     }
     let whole = whole.expect("the hub never completed the frame");
 
-    let datagrams = pack_datagrams(0, &whole, DATAGRAM).unwrap();
+    let datagrams = pack_datagrams(0, &whole, DATAGRAM, 0).unwrap();
     let mut client = PyroCollector::<Vec<u8>>::new();
     let mut out = Vec::new();
     let mut at = 0;

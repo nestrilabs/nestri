@@ -56,7 +56,7 @@ use std::time::Instant;
 use nesprotocol::{
     CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, CODEC_PYROWAVE, ClientCaps, FLAG_KEYFRAME,
     FLAG_RECONFIG, MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO,
-    decode_client_caps, decode_encode_settings_ext, encode_ipc_frame,
+    decode_client_caps, decode_encode_settings_ext, encode_ipc_frame_from,
 };
 use pixelforge::{
     Codec, ColorConverter, ColorConverterConfig, ColorRange, ColorSpec, EncodeBitDepth,
@@ -129,6 +129,74 @@ pub fn effective_colorspace(vk_colorspace: u32, declared: Option<u32>) -> u32 {
         return declared;
     }
     vk_colorspace
+}
+
+/// Relay commands sent to the shared command socket onto this process's own,
+/// ref(d-0085).
+///
+/// Whatever still sends to the shared path (a compositor's colour message, a
+/// hub before it has heard from any encoder) reaches one encoder through it.
+/// Taken only if nobody holds it: a live socket is another game's, and
+/// unlinking it would cut that game off. One relay per process, however many
+/// times the pipeline is rebuilt, so no thread is left behind. Best effort:
+/// a process that cannot have it still has its own socket.
+fn relay_legacy_commands(own: std::path::PathBuf) {
+    use std::os::unix::net::UnixDatagram;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static RELAYING: AtomicBool = AtomicBool::new(false);
+    if RELAYING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let shared = std::path::Path::new(nesprotocol::CAPTURE_CMD_SOCKET);
+    let live = UnixDatagram::unbound()
+        .and_then(|probe| probe.connect(shared))
+        .is_ok();
+    if live {
+        log::info!("{} belongs to another encoder; leaving it", shared.display());
+        RELAYING.store(false, Ordering::Release);
+        return;
+    }
+    let _ = std::fs::remove_file(shared);
+    let sock = match UnixDatagram::bind(shared) {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!("shared cmd socket bind failed: {e}");
+            RELAYING.store(false, Ordering::Release);
+            return;
+        }
+    };
+    let _ = std::fs::set_permissions(shared, std::os::unix::fs::PermissionsExt::from_mode(0o666));
+    let spawned = std::thread::Builder::new()
+        .name("nescapture-cmd-relay".into())
+        .spawn(move || {
+            let Ok(out) = UnixDatagram::unbound() else {
+                return;
+            };
+            let mut buf = [0u8; 128];
+            while let Ok(n) = sock.recv(&mut buf) {
+                if let Err(e) = out.send_to(&buf[..n], &own) {
+                    log::debug!("relaying a shared-socket command failed: {e}");
+                }
+            }
+        });
+    if let Err(e) = spawned {
+        log::warn!("spawn cmd relay: {e}");
+    }
+}
+
+/// `STREAM_ENCODER_HELLO` for this process: its pid and `NESTRI_LAUNCH_ID`.
+fn encoder_hello() -> Vec<u8> {
+    let launch = std::env::var("NESTRI_LAUNCH_ID").unwrap_or_default();
+    encode_ipc_frame_from(
+        std::process::id(),
+        nesprotocol::STREAM_ENCODER_HELLO,
+        0,
+        0,
+        0,
+        0,
+        0,
+        launch.as_bytes(),
+    )
 }
 
 /// A surface colour from the compositor, as a Vulkan colour space.
@@ -1080,7 +1148,6 @@ impl PipelineHandle {
             encode_ms: encode_avg_ms.clone(),
             dropped: dropped_frames.clone(),
             idr_requested: idr_requested.clone(),
-            epoch: Instant::now(),
             reconfig_tx: reconfig_tx.clone(),
         };
         let ipc_prog = ipc_progress.clone();
@@ -1133,7 +1200,13 @@ impl PipelineHandle {
         thread::Builder::new()
             .name("nescapture-idr".into())
             .spawn(move || {
-                let cmd_path = std::path::PathBuf::from("/tmp/nescapture-cmd.sock");
+                // A socket of this process's own, ref(d-0085): with two games
+                // in one box, one shared path meant the second encoder took it
+                // from the first, and every keyframe request and bitrate change
+                // after that reached only the newer game.
+                let cmd_path = std::path::PathBuf::from(nesprotocol::capture_cmd_socket(
+                    std::process::id(),
+                ));
                 let _ = std::fs::remove_file(&cmd_path);
                 let sock = match std::os::unix::net::UnixDatagram::bind(&cmd_path) {
                     Ok(s) => {
@@ -1149,6 +1222,10 @@ impl PipelineHandle {
                         return;
                     }
                 };
+                // The shared path too, relayed onto this one, so a hub or a
+                // compositor that predates per-process sockets still reaches the
+                // newest encoder exactly as it did.
+                relay_legacy_commands(cmd_path.clone());
                 let mut buf = [0u8; 128];
                 loop {
                     match sock.recv(&mut buf) {
@@ -2709,14 +2786,14 @@ fn bgra_to_yuv420(pixels: &[u8], width: u32, height: u32, vk_format: u32) -> Vec
 /// has: it only has to tell one frame from the next.
 fn pyro_messages(
     frame: &nespyro::EncodedFrame,
-    ts_ms: u32,
+    captured_us: u64,
     width: u16,
     height: u16,
 ) -> Result<Vec<Vec<u8>>, nesprotocol::pyrowave::ChunkError> {
     nesprotocol::pyrowave::chunk_frame(
         frame.index as u32,
         nesprotocol::pyrowave::FrameMeta {
-            ts_ms,
+            captured_us,
             width,
             height,
         },
@@ -2741,8 +2818,6 @@ struct IpcConfig {
     dropped: Arc<AtomicU32>,
     /// Shared with the encoder thread, which honours it on the next frame.
     idr_requested: Arc<AtomicBool>,
-    /// Zero point for wire timestamps.
-    epoch: Instant,
     /// For the rate probe to command its own steps.
     ///
     /// The probe has to live where the encoded sizes are, which is here, and
@@ -2799,9 +2874,6 @@ fn ipc_send_thread(
         }
     };
 
-    // Fixed before the first frame arrives, so every timestamp shares an epoch
-    // even though frames are stamped from their own present.
-    let start_time = cfg.epoch;
     let mut frame_count: u64 = 0;
     // So a PyroWave encoder short of scratch space is said once per episode.
     let mut scratch_overflowing = false;
@@ -2920,9 +2992,11 @@ fn ipc_send_thread(
             // however long the frame spent queued for the encoder into the
             // timestamp, so the receiver could not tell capture time from
             // backlog and had nothing honest to pace on.
-            let timestamp_ms = present_time
-                .saturating_duration_since(start_time)
-                .as_millis() as u32;
+            //
+            // On the clock every media stamp on this machine shares, so the hub
+            // can measure capture-to-send exactly and the client can measure
+            // the path from it.
+            let captured_us = nesprotocol::clock::instant_us(present_time);
             // Set FLAG_RECONFIG on the first frame after an encoder reconfig.
             // Clear it after setting so only the first frame is marked. Taken
             // for a PyroWave frame too, which carries no flags, so that the
@@ -2944,16 +3018,28 @@ fn ipc_send_thread(
                     if reconfig {
                         flags |= FLAG_RECONFIG;
                     }
-                    let ipc_frame = encode_ipc_frame(
+                    // Tagged with this process, so the hub can tell which
+                    // window the frame is, ref(d-0085).
+                    let ipc_frame = encode_ipc_frame_from(
+                        std::process::id(),
                         STREAM_VIDEO,
                         protocol_codec,
                         flags,
-                        timestamp_ms,
+                        captured_us,
                         width,
                         height,
                         &pkt.data,
                     );
-                    (vec![ipc_frame], pkt.is_key_frame, pkt.data.len())
+                    // The launch this encoder draws for goes ahead of every
+                    // keyframe, ref(d-0085): the hub cannot read this
+                    // process's environment, and a keyframe is where a late
+                    // hub starts anyway.
+                    let messages = if pkt.is_key_frame {
+                        vec![encoder_hello(), ipc_frame]
+                    } else {
+                        vec![ipc_frame]
+                    };
+                    (messages, pkt.is_key_frame, pkt.data.len())
                 }
                 Encoded::Pyro(frame) => {
                     let enc_ms = (frame.stats.gpu_ns() / 1e6) as f32;
@@ -2974,7 +3060,7 @@ fn ipc_send_thread(
                         log::info!("PyroWave encoder has scratch space again");
                     }
                     scratch_overflowing = overflowed;
-                    match pyro_messages(frame, timestamp_ms, width, height) {
+                    match pyro_messages(frame, captured_us, width, height) {
                         // Every PyroWave frame stands alone, so none is a key
                         // frame in the sense the counters below mean.
                         Ok(messages) => (messages, false, frame.data.len()),
@@ -4808,7 +4894,7 @@ mod pyrowave_tests {
         assert_eq!(got.frame, 41);
         assert_eq!(got.critical, 4);
         assert_eq!(
-            (got.meta.ts_ms, got.meta.width, got.meta.height),
+            (got.meta.captured_us, got.meta.width, got.meta.height),
             (1234, 2560, 1440)
         );
         assert_eq!(got.packets.len(), frame.packets.len());

@@ -5,6 +5,20 @@ pub const INPUT_KEY: u8 = 0;
 pub const INPUT_MOUSE_MOVE: u8 = 1;
 pub const INPUT_MOUSE_BUTTON: u8 = 2;
 pub const INPUT_MOUSE_WHEEL: u8 = 3;
+/// The client's window is now this many pixels: the box's output follows it.
+/// Not input, but it rides the input path because that is the one road that
+/// already reaches the compositor.
+pub const INPUT_OUTPUT_SIZE: u8 = 4;
+/// `[5][window u16][width u16][height u16]`: one window's output is now this
+/// size. Box-internal (hub → nescope): the hub turns a client's
+/// [`INPUT_OUTPUT_SIZE`] into this for the window the client is subscribed to,
+/// and still sends the old form for window 0. A client never sends it.
+/// See [`crate::window`].
+pub const INPUT_WINDOW_OUTPUT_SIZE: u8 = 5;
+/// `[6][window u16]`: the events after this, until the next one, came from a
+/// client showing this window. Box-internal (hub → nescope); see
+/// [`crate::window`].
+pub const INPUT_WINDOW_FOCUS: u8 = 6;
 
 pub const INPUT_KEY_UP: u8 = 0;
 pub const INPUT_KEY_DOWN: u8 = 1;
@@ -110,6 +124,9 @@ pub enum DecodedInput {
     MouseMove { dx: i16, dy: i16 },
     MouseButton { button: u8, down: bool },
     MouseWheel { dx: i16, dy: i16 },
+    OutputSize { width: u16, height: u16 },
+    WindowOutputSize { window: u16, width: u16, height: u16 },
+    WindowFocus { window: u16 },
 }
 
 /// Decode a single input event from raw wire bytes.
@@ -119,6 +136,9 @@ pub enum DecodedInput {
 /// - type=1 INPUT_MOUSE_MOVE: payload=[dx:2B LE][dy:2B LE]
 /// - type=2 INPUT_MOUSE_BUTTON: payload=[button:1B][down/up:1B] (0=left, 1=middle, 2=right)
 /// - type=3 INPUT_MOUSE_WHEEL: payload=[dx:2B LE][dy:2B LE]
+/// - type=4 INPUT_OUTPUT_SIZE: payload=[width:2B LE][height:2B LE]
+/// - type=5 INPUT_WINDOW_OUTPUT_SIZE: payload=[window:2B LE][width:2B LE][height:2B LE]
+/// - type=6 INPUT_WINDOW_FOCUS: payload=[window:2B LE]
 ///
 /// Returns `None` if the buffer is too short for the given event type or the
 /// type byte is unknown.
@@ -163,6 +183,29 @@ pub fn decode_input_event(data: &[u8]) -> Option<DecodedInput> {
             let dy = i16::from_le_bytes([data[3], data[4]]);
             Some(DecodedInput::MouseWheel { dx, dy })
         }
+        INPUT_OUTPUT_SIZE => {
+            if data.len() < 5 {
+                return None;
+            }
+            let width = u16::from_le_bytes([data[1], data[2]]);
+            let height = u16::from_le_bytes([data[3], data[4]]);
+            Some(DecodedInput::OutputSize { width, height })
+        }
+        INPUT_WINDOW_OUTPUT_SIZE => {
+            if data.len() < 7 {
+                return None;
+            }
+            let window = u16::from_le_bytes([data[1], data[2]]);
+            let width = u16::from_le_bytes([data[3], data[4]]);
+            let height = u16::from_le_bytes([data[5], data[6]]);
+            Some(DecodedInput::WindowOutputSize { window, width, height })
+        }
+        INPUT_WINDOW_FOCUS => {
+            if data.len() < 3 {
+                return None;
+            }
+            Some(DecodedInput::WindowFocus { window: u16::from_le_bytes([data[1], data[2]]) })
+        }
         _ => None,
     }
 }
@@ -193,6 +236,31 @@ pub fn encode_mouse_wheel(buf: &mut Vec<u8>, dx: i16, dy: i16) {
     buf.push(INPUT_MOUSE_WHEEL);
     buf.extend_from_slice(&dx.to_le_bytes());
     buf.extend_from_slice(&dy.to_le_bytes());
+}
+
+/// Encode an output size: [4][width u16 LE][height u16 LE]
+///
+/// Send it in a batch of its own: a hub from before it stops reading a batch
+/// at a type it does not know, and would drop whatever followed.
+pub fn encode_output_size(buf: &mut Vec<u8>, width: u16, height: u16) {
+    buf.push(INPUT_OUTPUT_SIZE);
+    buf.extend_from_slice(&width.to_le_bytes());
+    buf.extend_from_slice(&height.to_le_bytes());
+}
+
+/// Encode a window's output size (hub → nescope only): `[5][window][w][h]`.
+pub fn encode_window_output_size(buf: &mut Vec<u8>, window: u16, width: u16, height: u16) {
+    buf.push(INPUT_WINDOW_OUTPUT_SIZE);
+    buf.extend_from_slice(&window.to_le_bytes());
+    buf.extend_from_slice(&width.to_le_bytes());
+    buf.extend_from_slice(&height.to_le_bytes());
+}
+
+/// Encode a window tag for the events that follow (hub → nescope only):
+/// `[6][window]`.
+pub fn encode_window_focus(buf: &mut Vec<u8>, window: u16) {
+    buf.push(INPUT_WINDOW_FOCUS);
+    buf.extend_from_slice(&window.to_le_bytes());
 }
 
 /// Mapping from `KeyboardEvent.code` strings to Linux input keycodes.
@@ -314,4 +382,21 @@ pub fn keymap_lookup(code: &str) -> Option<u16> {
         "Pause" => 119,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod output_size_tests {
+    use super::*;
+
+    #[test]
+    fn an_output_size_comes_back_as_sent() {
+        let mut buf = Vec::new();
+        encode_output_size(&mut buf, 2560, 1440);
+        assert_eq!(buf.len(), 5);
+        assert!(matches!(
+            decode_input_event(&buf),
+            Some(DecodedInput::OutputSize { width: 2560, height: 1440 })
+        ));
+        assert!(decode_input_event(&buf[..4]).is_none());
+    }
 }
