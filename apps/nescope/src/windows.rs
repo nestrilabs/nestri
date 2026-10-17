@@ -9,7 +9,6 @@
 //! This module holds no compositor objects beyond an opaque key, so the rules
 //! can be tested without one.
 
-use std::collections::HashMap;
 
 use nesprotocol::window::{WindowEvent, WindowId, encode_event_message, encode_window_pid};
 
