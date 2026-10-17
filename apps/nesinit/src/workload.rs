@@ -11,7 +11,9 @@ use std::future::Future;
 use std::io;
 use std::pin::Pin;
 
-use nesprotocol::lifecycle::{AttachId, Exec, Exit, Image, Mount, Overlay, Winsize};
+use nesprotocol::lifecycle::{
+    AttachId, Exec, Exit, Image, LAUNCH_ID_ENV, LaunchId, Mount, Overlay, Winsize,
+};
 
 use std::os::unix::process::CommandExt;
 
@@ -60,14 +62,22 @@ pub trait Workload {
     /// is made in the background.
     fn attach(&mut self, id: AttachId, exec: &Exec, size: Option<Winsize>) -> Result<(), Failure>;
 
-    /// Start the command the descriptor names.
+    /// Start one launch's command, named by its launch.
     ///
     /// Returning the exit as a future, rather than a `wait` method, is what
     /// keeps the caller free to read the channel while the workload runs — a
     /// stop has to arrive during the workload's life or it is not a stop.
-    fn start(&mut self, exec: &Exec) -> Result<Exited, Failure>;
+    ///
+    /// Several launches may be running at once: a box is a person's machine
+    /// with any of their games in it, not one game's. ref(d-0085)
+    fn start(&mut self, id: &LaunchId, exec: &Exec) -> Result<Exited, Failure>;
 
-    /// Ask the workload to stop. Idempotent, and never ends the session by
+    /// Ask one launch to stop. Idempotent, and never ends the session by
+    /// itself. A launch that is not running is not signalled: its pid may
+    /// already belong to something else.
+    fn stop_launch(&mut self, id: &LaunchId);
+
+    /// Ask every launch to stop. Idempotent, and never ends the session by
     /// itself.
     fn signal_stop(&mut self);
 }
@@ -75,7 +85,10 @@ pub trait Workload {
 /// The workload as a local process.
 pub struct Process {
     waiters: Waiters,
-    running: Option<Watched>,
+    /// Every launch started, by id. An entry stays after its exit is
+    /// delivered and `Watched::running` is what tells the two apart; it is
+    /// replaced when the same id is started again (a restart).
+    running: std::collections::BTreeMap<LaunchId, Watched>,
 }
 
 impl Process {
@@ -84,7 +97,7 @@ impl Process {
     pub fn new(waiters: Waiters) -> Self {
         Self {
             waiters,
-            running: None,
+            running: std::collections::BTreeMap::new(),
         }
     }
 
@@ -93,7 +106,12 @@ impl Process {
     /// Nothing here ever signals the process group or every process: the order
     /// a shutdown promises is only true if the workload can be stopped alone.
     pub fn signal(&self, signal: libc::c_int) {
-        let Some(watched) = &self.running else { return };
+        for watched in self.running.values() {
+            Self::signal_one(watched, signal);
+        }
+    }
+
+    fn signal_one(watched: &Watched, signal: libc::c_int) {
         // Nothing is signalled once the exit has been delivered. The pid was
         // freed by the reap that produced it, and the kernel is entitled to
         // give that number to something else — a stop or a kill aimed at it
@@ -113,14 +131,17 @@ impl Process {
     /// one pid rather than for any child, so a slow service cannot be mistaken
     /// for the workload still running.
     pub fn await_exit(&self, grace: std::time::Duration) -> bool {
-        let Some(watched) = &self.running else {
-            return true;
-        };
+        let deadline = std::time::Instant::now() + grace;
+        self.running
+            .values()
+            .all(|watched| Self::await_one(watched, deadline))
+    }
+
+    fn await_one(watched: &Watched, deadline: std::time::Instant) -> bool {
         if !watched.running() {
             return true; // already reaped, and its exit already reported
         }
         let pid = watched.pid;
-        let deadline = std::time::Instant::now() + grace;
         loop {
             let mut status: libc::c_int = 0;
             // SAFETY: waitpid writes only into `status`.
@@ -188,7 +209,7 @@ impl Workload for Process {
         Ok(())
     }
 
-    fn start(&mut self, exec: &Exec) -> Result<Exited, Failure> {
+    fn start(&mut self, id: &LaunchId, exec: &Exec) -> Result<Exited, Failure> {
         let Some((program, args)) = exec.argv.split_first() else {
             return Err(Failure::new("the command is empty"));
         };
@@ -229,7 +250,7 @@ impl Workload for Process {
                 None
             }
         };
-        command.envs(environment(exec, runtime.as_deref()));
+        command.envs(launch_environment(exec, runtime.as_deref(), id));
 
         // SAFETY: the closure runs between fork and exec in the child, where
         // only async-signal-safe calls are allowed. These two are, and it
@@ -267,7 +288,10 @@ impl Workload for Process {
         // The caller gets the exit and reports it; this handle keeps the pid
         // and whether that pid is still this child's.
         let exit = watched.take_exit().expect("a new watch has its exit");
-        self.running = Some(watched);
+        // A launch that ended leaves its entry behind until its id is used
+        // again; dropping those here keeps the map the size of what runs.
+        self.running.retain(|_, watched| watched.running());
+        self.running.insert(id.clone(), watched);
 
         Ok(Box::pin(async move {
             exit.await
@@ -275,9 +299,30 @@ impl Workload for Process {
         }))
     }
 
+    fn stop_launch(&mut self, id: &LaunchId) {
+        if let Some(watched) = self.running.get(id) {
+            Self::signal_one(watched, libc::SIGTERM);
+        }
+    }
+
     fn signal_stop(&mut self) {
         self.signal(libc::SIGTERM);
     }
+}
+
+/// A launch's environment: everything [`environment`] gives, then its id.
+///
+/// The id goes last so nothing in the caller's environment can name a launch
+/// other than the one this is. ref(d-0085)
+pub(crate) fn launch_environment(
+    exec: &Exec,
+    runtime: Option<&str>,
+    id: &LaunchId,
+) -> Vec<(String, String)> {
+    let mut env = environment(exec, runtime);
+    env.retain(|(k, _)| k != LAUNCH_ID_ENV);
+    env.push((LAUNCH_ID_ENV.to_string(), id.as_str().to_string()));
+    env
 }
 
 /// Everything a launch is started with, in the order that decides ties.
@@ -400,16 +445,20 @@ fn mount_overlay(overlay: &Overlay) -> Result<(), Failure> {
     // Everything that can be refused without touching the filesystem is
     // refused first, so a descriptor this cannot act on leaves nothing behind.
     let plan = OverlayPlan::new(overlay)?;
+    let lower = device_for(&plan.lower, true)
+        .map_err(|error| plan.failed("the build image", &plan.lower, error))?;
+    let upper = device_for(&plan.upper, false)
+        .map_err(|error| plan.failed("the writable layer", &plan.upper, error))?;
 
     mount_one(
-        &plan.lower,
+        &lower,
         &plan.lower_at,
         c"erofs",
         plan.lower_flags,
         None,
     )
     .map_err(|error| plan.failed("the build image", &plan.lower_at, error))?;
-    mount_one(&plan.upper, &plan.rw_at, c"ext4", plan.upper_flags, None)
+    mount_one(&upper, &plan.rw_at, c"ext4", plan.upper_flags, None)
         .map_err(|error| plan.failed("the writable layer", &plan.rw_at, error))?;
 
     for dir in [&plan.upper_dir, &plan.work_dir] {
@@ -485,8 +534,113 @@ impl ImagePlan {
 /// Mount one read-only image where the descriptor says.
 fn mount_image(image: &Image) -> Result<(), Failure> {
     let plan = ImagePlan::new(image)?;
-    mount_one(&plan.device, &plan.at, c"erofs", plan.flags, None)
-        .map_err(|error| plan.failed(error))
+    let device = device_for(&plan.device, true).map_err(|error| plan.failed(error))?;
+    mount_one(&device, &plan.at, c"erofs", plan.flags, None).map_err(|error| plan.failed(error))
+}
+
+/// The block device to mount `source` from.
+///
+/// A block device is used as it is, which is every mount made at boot. A
+/// regular file is attached to a free loop device first: that is how content
+/// reaches a box that is already running, as a file in a share, because a
+/// box cannot be given a new block device after it has booted. ref(d-0085)
+///
+/// The loop device clears itself when the filesystem on it is unmounted, so
+/// nothing here has to remember it.
+fn device_for(source: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
+    let meta = std::fs::metadata(as_path(source))?;
+    if !meta.is_file() {
+        return Ok(source.to_owned());
+    }
+    loop_attach(as_path(source), read_only)
+}
+
+/// `struct loop_info64` from `<linux/loop.h>`.
+#[repr(C)]
+struct LoopInfo64 {
+    device: u64,
+    inode: u64,
+    rdevice: u64,
+    offset: u64,
+    sizelimit: u64,
+    number: u32,
+    encrypt_type: u32,
+    encrypt_key_size: u32,
+    flags: u32,
+    file_name: [u8; 64],
+    crypt_name: [u8; 64],
+    encrypt_key: [u8; 32],
+    init: [u64; 2],
+}
+
+/// `struct loop_config` from `<linux/loop.h>`.
+#[repr(C)]
+struct LoopConfig {
+    fd: u32,
+    block_size: u32,
+    info: LoopInfo64,
+    reserved: [u64; 8],
+}
+
+const LOOP_CTL_GET_FREE: libc::c_ulong = 0x4C82;
+const LOOP_CONFIGURE: libc::c_ulong = 0x4C0A;
+const LO_FLAGS_READ_ONLY: u32 = 1;
+const LO_FLAGS_AUTOCLEAR: u32 = 4;
+
+/// Attach a file to a free loop device and name the device.
+///
+/// Retried a few times on `EBUSY`: a device handed out as free can be taken
+/// by somebody else before it is configured.
+fn loop_attach(file: &std::path::Path, read_only: bool) -> io::Result<CString> {
+    use std::os::fd::AsRawFd;
+
+    let backing = std::fs::OpenOptions::new()
+        .read(true)
+        .write(!read_only)
+        .open(file)?;
+    let control = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/loop-control")?;
+
+    let mut last = io::Error::from_raw_os_error(libc::EBUSY);
+    for _ in 0..8 {
+        // SAFETY: an ioctl with no argument on a descriptor this owns.
+        let number = unsafe { libc::ioctl(control.as_raw_fd(), LOOP_CTL_GET_FREE as _) };
+        if number < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let path = format!("/dev/loop{number}");
+        let device = std::fs::OpenOptions::new()
+            .read(true)
+            .write(!read_only)
+            .open(&path)?;
+        let mut flags = LO_FLAGS_AUTOCLEAR;
+        if read_only {
+            flags |= LO_FLAGS_READ_ONLY;
+        }
+        // SAFETY: zero is a valid value for every field of this plain C struct.
+        let mut config: LoopConfig = unsafe { std::mem::zeroed() };
+        config.fd = backing.as_raw_fd() as u32;
+        config.info.flags = flags;
+        // SAFETY: the kernel reads `config` and nothing else, and it outlives
+        // the call.
+        let done = unsafe {
+            libc::ioctl(
+                device.as_raw_fd(),
+                LOOP_CONFIGURE as _,
+                &config as *const LoopConfig,
+            )
+        };
+        if done == 0 {
+            return CString::new(path).map_err(io::Error::other);
+        }
+        last = io::Error::last_os_error();
+        if last.raw_os_error() != Some(libc::EBUSY) {
+            return Err(last);
+        }
+    }
+    Err(last)
 }
 
 /// Mount one filesystem, creating its mount point first.
@@ -682,6 +836,50 @@ fn c_string(text: &str, what: &str) -> Result<CString, Failure> {
 /// did not mount" cannot.
 fn failed(share: &Mount, error: io::Error) -> Failure {
     Failure::new(format!("{}: {error}", share.at))
+}
+
+#[cfg(test)]
+mod loop_tests {
+    use super::*;
+
+    /// The layouts the kernel reads, checked against `<linux/loop.h>`.
+    #[test]
+    fn the_loop_structs_have_the_kernels_layout() {
+        assert_eq!(std::mem::size_of::<LoopInfo64>(), 232);
+        assert_eq!(std::mem::size_of::<LoopConfig>(), 304);
+        assert_eq!(std::mem::offset_of!(LoopConfig, info), 8);
+    }
+
+    /// A block device, which is every mount made at boot, is used as it is.
+    #[test]
+    fn a_device_that_is_not_a_file_is_used_as_it_is() {
+        let device = device_for(c"/dev/null", true).unwrap();
+        assert_eq!(device.as_c_str(), c"/dev/null");
+    }
+
+    #[test]
+    fn a_source_that_is_not_there_names_the_error() {
+        let error = device_for(c"/nonexistent/build.erofs", true).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+    }
+
+    /// The launch id is in the environment, and the caller cannot name
+    /// another launch in its place.
+    #[test]
+    fn a_launch_is_told_its_own_id() {
+        let mut exec = Exec {
+            argv: vec!["/bin/true".into()],
+            env: Default::default(),
+            cwd: None,
+            uid: 1001,
+            gid: 1001,
+        };
+        exec.env.insert(LAUNCH_ID_ENV.into(), "launch_other".into());
+        let env = launch_environment(&exec, None, &LaunchId::new("launch_01"));
+        let ids: Vec<_> = env.iter().filter(|(k, _)| k == LAUNCH_ID_ENV).collect();
+        assert_eq!(ids.len(), 1, "{env:?}");
+        assert_eq!(ids[0].1, "launch_01");
+    }
 }
 
 #[cfg(test)]
@@ -988,12 +1186,19 @@ pub mod double {
         pub attached: Vec<(AttachId, Exec, Option<Winsize>)>,
         pub attach_failure: Option<Failure>,
         pub started: Vec<Exec>,
+        /// Which launch each start was for, in the same order as `started`.
+        pub started_ids: Vec<LaunchId>,
+        /// Every stop asked for, one launch or all (`None`).
+        pub stopped: Vec<Option<LaunchId>>,
         pub stops: usize,
         pub mount_failure: Option<Failure>,
         pub image_failure: Option<Failure>,
+        /// Like `image_failure`, but only for a call that names an image, so a
+        /// box can boot with none and fail a later mount.
+        pub named_image_failure: Option<Failure>,
         pub start_failure: Option<Failure>,
         exit: Exit,
-        on_stop: Option<oneshot::Sender<Exit>>,
+        on_stop: std::collections::BTreeMap<LaunchId, oneshot::Sender<Exit>>,
         holds_until_stopped: bool,
     }
 
@@ -1017,12 +1222,15 @@ pub mod double {
                 attached: Vec::new(),
                 attach_failure: None,
                 started: Vec::new(),
+                started_ids: Vec::new(),
+                stopped: Vec::new(),
                 stops: 0,
                 mount_failure: None,
                 image_failure: None,
+                named_image_failure: None,
                 start_failure: None,
                 exit,
-                on_stop: None,
+                on_stop: Default::default(),
                 holds_until_stopped,
             }
         }
@@ -1054,6 +1262,9 @@ pub mod double {
         fn mount_images(&mut self, images: &[Image]) -> Result<(), Failure> {
             self.order.push("images");
             self.images.push(images.to_vec());
+            if let Some(failure) = self.named_image_failure.as_ref().filter(|_| !images.is_empty()) {
+                return Err(failure.clone());
+            }
             match &self.image_failure {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(()),
@@ -1069,8 +1280,9 @@ pub mod double {
             }
         }
 
-        fn start(&mut self, exec: &Exec) -> Result<Exited, Failure> {
+        fn start(&mut self, id: &LaunchId, exec: &Exec) -> Result<Exited, Failure> {
             self.started.push(exec.clone());
+            self.started_ids.push(id.clone());
             if let Some(failure) = &self.start_failure {
                 return Err(failure.clone());
             }
@@ -1079,16 +1291,25 @@ pub mod double {
                 return Ok(Box::pin(async move { Ok(exit) }));
             }
             let (tx, rx) = oneshot::channel();
-            self.on_stop = Some(tx);
+            self.on_stop.insert(id.clone(), tx);
             Ok(Box::pin(async move {
                 rx.await
                     .map_err(|_| io::Error::other("the workload was dropped"))
             }))
         }
 
+        fn stop_launch(&mut self, id: &LaunchId) {
+            self.stops += 1;
+            self.stopped.push(Some(id.clone()));
+            if let Some(tx) = self.on_stop.remove(id) {
+                let _ = tx.send(self.exit);
+            }
+        }
+
         fn signal_stop(&mut self) {
             self.stops += 1;
-            if let Some(tx) = self.on_stop.take() {
+            self.stopped.push(None);
+            for (_, tx) in std::mem::take(&mut self.on_stop) {
                 let _ = tx.send(self.exit);
             }
         }

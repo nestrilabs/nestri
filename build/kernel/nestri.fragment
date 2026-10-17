@@ -129,6 +129,8 @@ CONFIG_EXT4_FS=y             # output/rootfs.ext4, and a box's writable install 
 CONFIG_MISC_FILESYSTEMS=y    # the menu EROFS lives under; off in base.config, which drops it silently
 CONFIG_EROFS_FS=y            # a game's build image, the install overlay's lower layer
 CONFIG_OVERLAY_FS=y          # the session overlay over a read-only install
+CONFIG_BLK_DEV_LOOP=y        # a game mounted into a running box arrives as a file in a share, ref(d-0085)
+CONFIG_BLK_DEV_LOOP_MIN_COUNT=0  # devices are made on demand through /dev/loop-control
 
 # ── Memory typing ────────────────────────────────────────
 # Page Attribute Table, and the MTRR support it depends on.
