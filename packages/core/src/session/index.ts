@@ -10,8 +10,8 @@ import { ErrorCodes, VisibleError } from '../error.js';
 import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
-import { MachineTable } from '../machine/machine.sql.js';
 import { Identifier } from '../id.js';
+import { MachineTable } from '../machine/machine.sql.js';
 import { Trial } from '../trial/index.js';
 import { Launch } from './launch.js';
 import { LaunchTable } from './launch.sql.js';
@@ -455,8 +455,7 @@ export namespace Session {
 				example: Examples.Session.linkedAccountId
 			}),
 			userId: z.string().meta({
-				description:
-					'Whose run it is: the box owner, whose Steam sign-in on this host plays it',
+				description: 'Whose run it is: the box owner, whose Steam sign-in on this host plays it',
 				example: Examples.User.id
 			}),
 			launchId: z.string().nullable().meta({
@@ -500,7 +499,12 @@ export namespace Session {
 			description: 'One run to end now, as handed to the agent running it'
 		});
 
-	export const Job = z.discriminatedUnion('kind', [StartJob, StopJob, Launch.StartJob, Launch.StopJob]);
+	export const Job = z.discriminatedUnion('kind', [
+		StartJob,
+		StopJob,
+		Launch.StartJob,
+		Launch.StopJob
+	]);
 
 	export type Job = z.infer<typeof Job>;
 
@@ -541,42 +545,49 @@ export namespace Session {
 		await leaveAbandoned(machineId);
 		const free = await freeSlots(machineId);
 		const starts = await Database.use(async (tx) => {
-			return tx
-				.select({ session: SessionTable, box: BoxTable, game: GameTable, launchId: LaunchTable.id })
-				.from(SessionTable)
-				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
-				.innerJoin(GameTable, eq(SessionTable.gameId, GameTable.id))
-				.leftJoin(
-					LaunchTable,
-					and(eq(LaunchTable.sessionId, SessionTable.id), eq(LaunchTable.first, true))
-				)
-				.where(
-					and(
-						eq(BoxTable.machineId, machineId),
-						eq(SessionTable.state, 'requested'),
-						isNull(SessionTable.timeDeleted),
-						isNull(BoxTable.timeDeleted)
+			return (
+				tx
+					.select({
+						session: SessionTable,
+						box: BoxTable,
+						game: GameTable,
+						launchId: LaunchTable.id
+					})
+					.from(SessionTable)
+					.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
+					.innerJoin(GameTable, eq(SessionTable.gameId, GameTable.id))
+					.leftJoin(
+						LaunchTable,
+						and(eq(LaunchTable.sessionId, SessionTable.id), eq(LaunchTable.first, true))
 					)
-				)
-				// Paid ahead of free, then first come first served. See {@link Queue}.
-				.orderBy(SessionTable.trial, SessionTable.timeCreated)
-				.limit(free)
-				.then((rows) =>
-					rows.map(
-						(row): Job => ({
-							kind: 'session.start',
-							sessionId: row.session.id,
-							boxId: row.box.id,
-							// The run's own size when it was given one.
-							boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
-							gameId: row.game.id,
-							steamAppId: row.game.steamAppId,
-							linkedAccountId: row.session.linkedAccountId,
-							userId: row.box.userId,
-							launchId: row.launchId
-						})
+					.where(
+						and(
+							eq(BoxTable.machineId, machineId),
+							eq(SessionTable.state, 'requested'),
+							isNull(SessionTable.timeDeleted),
+							isNull(BoxTable.timeDeleted)
+						)
 					)
-				);
+					// Paid ahead of free, then first come first served. See {@link Queue}.
+					.orderBy(SessionTable.trial, SessionTable.timeCreated)
+					.limit(free)
+					.then((rows) =>
+						rows.map(
+							(row): Job => ({
+								kind: 'session.start',
+								sessionId: row.session.id,
+								boxId: row.box.id,
+								// The run's own size when it was given one.
+								boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
+								gameId: row.game.id,
+								steamAppId: row.game.steamAppId,
+								linkedAccountId: row.session.linkedAccountId,
+								userId: row.box.userId,
+								launchId: row.launchId
+							})
+						)
+					)
+			);
 		});
 		// Launch work after run work: ending a run ends its launches, and a
 		// launch is only added to a box that is already up. ref(d-0085)
@@ -795,9 +806,12 @@ export namespace Session {
 	 *
 	 * Null when the run is not there or not this person's.
 	 */
-	export const requestStop = fn(z.object({ id: Info.shape.id, userId: z.string() }), async (input) => {
-		return stopRun(input.id, input.userId);
-	});
+	export const requestStop = fn(
+		z.object({ id: Info.shape.id, userId: z.string() }),
+		async (input) => {
+			return stopRun(input.id, input.userId);
+		}
+	);
 
 	/**
 	 * The one way a run is asked to end, whoever asks: its owner, or the last
@@ -1297,7 +1311,9 @@ export namespace Session {
 				await stopIfEmpty(run.id);
 				return ended ?? Launch.serialize((await Launch.row(run.id, row.id))!);
 			}
-			return (await Launch.markStop(row.id)) ?? Launch.serialize((await Launch.row(run.id, row.id))!);
+			return (
+				(await Launch.markStop(row.id)) ?? Launch.serialize((await Launch.row(run.id, row.id))!)
+			);
 		}
 	);
 

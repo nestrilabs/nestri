@@ -20,8 +20,12 @@ import { SessionTable } from './session.sql.js';
 export namespace Launch {
 	export const Info = z
 		.object({
-			id: z.string().meta({ description: 'Unique identifier for this launch', example: Examples.Launch.id }),
-			gameId: z.string().meta({ description: 'The game this launch runs', example: Examples.Launch.gameId }),
+			id: z
+				.string()
+				.meta({ description: 'Unique identifier for this launch', example: Examples.Launch.id }),
+			gameId: z
+				.string()
+				.meta({ description: 'The game this launch runs', example: Examples.Launch.gameId }),
 			state: z.enum(LaunchState.enumValues).meta({
 				description:
 					'`requested`: waiting for the host to start it in the box. `running`: started. `ended` and `failed` are over',
@@ -33,14 +37,18 @@ export namespace Launch {
 			}),
 			timeStopped: z.string().nullable().meta({ description: 'When it ended', example: null }),
 			timeStopRequested: z.string().nullable().meta({
-				description: 'When its owner asked for it to end. It stays `running` until its host has stopped it',
+				description:
+					'When its owner asked for it to end. It stays `running` until its host has stopped it',
 				example: null
 			}),
 			endReason: z.string().nullable().meta({
 				description: 'Why it is over, in the words of `Session.endReason`, once it is',
 				example: null
 			}),
-			errorMessage: z.string().nullable().meta({ description: 'Why it failed, when it did', example: null })
+			errorMessage: z
+				.string()
+				.nullable()
+				.meta({ description: 'Why it failed, when it did', example: null })
 		})
 		.meta({ ref: 'Launch', description: 'One game or app started inside a run of a box' });
 
@@ -116,7 +124,9 @@ export namespace Launch {
 					timeStopped: sql`coalesce(${LaunchTable.timeStopped}, now())`,
 					endReason: sql`coalesce(${LaunchTable.endReason}, ${endReason})`
 				})
-				.where(and(inArray(LaunchTable.sessionId, sessionIds), inArray(LaunchTable.state, [...OPEN])))
+				.where(
+					and(inArray(LaunchTable.sessionId, sessionIds), inArray(LaunchTable.state, [...OPEN]))
+				)
 		);
 	}
 
@@ -136,7 +146,12 @@ export namespace Launch {
 		);
 	}
 
-	export async function insert(input: { id: string; sessionId: string; gameId: string; first: boolean }) {
+	export async function insert(input: {
+		id: string;
+		sessionId: string;
+		gameId: string;
+		first: boolean;
+	}) {
 		return Database.use((tx) =>
 			tx
 				.insert(LaunchTable)
@@ -214,15 +229,23 @@ export namespace Launch {
 	 */
 	export const StartJob = z
 		.object({
-			kind: z.literal('launch.start').meta({ description: 'What the agent is being asked to do', example: 'launch.start' }),
-			sessionId: z.string().meta({ description: 'The run the box is in', example: Examples.Session.id }),
+			kind: z
+				.literal('launch.start')
+				.meta({ description: 'What the agent is being asked to do', example: 'launch.start' }),
+			sessionId: z
+				.string()
+				.meta({ description: 'The run the box is in', example: Examples.Session.id }),
 			launchId: z.string().meta({
 				description:
 					'The launch to start. Report against it, and give it to the launched process as `NESTRI_LAUNCH_ID`',
 				example: Examples.Launch.id
 			}),
-			boxId: z.string().meta({ description: 'The running box to start it in', example: Examples.Session.boxId }),
-			gameId: z.string().meta({ description: 'The game to launch', example: Examples.Session.gameId }),
+			boxId: z
+				.string()
+				.meta({ description: 'The running box to start it in', example: Examples.Session.boxId }),
+			gameId: z
+				.string()
+				.meta({ description: 'The game to launch', example: Examples.Session.gameId }),
 			steamAppId: z.number().int().meta({
 				description: 'The same game, in the id the store knows it by',
 				example: Examples.Game.steamAppId
@@ -242,8 +265,12 @@ export namespace Launch {
 	/** A launch its owner asked to end, repeated until the host reports it over. */
 	export const StopJob = z
 		.object({
-			kind: z.literal('launch.stop').meta({ description: 'What the agent is being asked to do', example: 'launch.stop' }),
-			sessionId: z.string().meta({ description: 'The run the box is in', example: Examples.Session.id }),
+			kind: z
+				.literal('launch.stop')
+				.meta({ description: 'What the agent is being asked to do', example: 'launch.stop' }),
+			sessionId: z
+				.string()
+				.meta({ description: 'The run the box is in', example: Examples.Session.id }),
 			launchId: z.string().meta({ description: 'The launch to end', example: Examples.Launch.id }),
 			boxId: z.string().meta({ description: 'The box it runs in', example: Examples.Session.boxId })
 		})
@@ -256,7 +283,9 @@ export namespace Launch {
 	type StartJob = z.infer<typeof StartJob>;
 	type StopJob = z.infer<typeof StopJob>;
 
-	export async function jobsForMachine(machineId: string): Promise<{ stops: StopJob[]; starts: StartJob[] }> {
+	export async function jobsForMachine(
+		machineId: string
+	): Promise<{ stops: StopJob[]; starts: StartJob[] }> {
 		const onHost = and(
 			eq(BoxTable.machineId, machineId),
 			isNull(LaunchTable.timeDeleted),

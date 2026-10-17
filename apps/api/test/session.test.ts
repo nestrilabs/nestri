@@ -847,6 +847,7 @@ describe('POST /session/:id/ticket', () => {
 			'errorMessage',
 			'gameId',
 			'id',
+			'launches',
 			'linkedAccountId',
 			'queue',
 			'state',

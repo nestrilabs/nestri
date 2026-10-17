@@ -494,7 +494,11 @@ export namespace SessionApi {
 				const userId = actingPerson();
 				const game = await Game.fromID(c.req.valid('json').gameId);
 				if (!game) {
-					throw new VisibleError('not_found', ErrorCodes.NotFound.RESOURCE_NOT_FOUND, 'No such game');
+					throw new VisibleError(
+						'not_found',
+						ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+						'No such game'
+					);
 				}
 				// The same check, and the same gaps, as asking for a run.
 				const owned = await Library.findByUserAndGame({ userId, gameId: game.id });
@@ -546,12 +550,18 @@ export namespace SessionApi {
 				'param',
 				z.object({
 					id: z.string().meta({ description: 'The run', example: Examples.Session.id }),
-					launchId: z.string().meta({ description: 'The launch to end', example: Examples.Launch.id })
+					launchId: z
+						.string()
+						.meta({ description: 'The launch to end', example: Examples.Launch.id })
 				})
 			),
 			async (c) => {
 				const { id, launchId } = c.req.valid('param');
-				const launch = await Session.stopLaunch({ sessionId: id, launchId, userId: actingPerson() });
+				const launch = await Session.stopLaunch({
+					sessionId: id,
+					launchId,
+					userId: actingPerson()
+				});
 				if (!launch) {
 					throw new VisibleError(
 						'not_found',
