@@ -91,6 +91,14 @@ pub trait Workload {
     /// launch's stop may reach it. ref(d-0085)
     fn start_compositor(&mut self, compositor: &Compositor) -> Result<(), Failure>;
 
+    /// The compositor's exit, once, after [`Workload::start_compositor`] has
+    /// returned. The session reports it and ends the box: a box that cannot
+    /// draw is no use to anyone in it. `None` when there is no compositor or it
+    /// was already taken.
+    fn compositor_exit(&mut self) -> Option<Exited> {
+        None
+    }
+
     /// Ask one launch to stop: its whole process group, not its top process.
     /// Idempotent, and never ends the session by itself. A launch that is not
     /// running is not signalled: its pid may already belong to something else.
@@ -118,6 +126,9 @@ pub struct Process {
     /// The box's compositor, if it has one. Not a launch: nothing in
     /// `running` is it, and a launch's stop cannot reach it.
     compositor: Option<Watched>,
+    /// The compositor's exit, until the session takes it. See
+    /// [`Workload::compositor_exit`].
+    compositor_exit: Option<Exited>,
 }
 
 /// How long a launch's group has to leave after being asked before it is
@@ -194,7 +205,13 @@ pub(crate) struct Group {
     /// The top process, which is also the session id.
     sid: i32,
     cgroup: Option<std::path::PathBuf>,
+    /// Set when the same id is started again: this group is no longer the
+    /// launch's, and nothing waiting on it may act for the launch.
+    superseded: std::sync::atomic::AtomicBool,
 }
+
+/// Numbers each group, so two launches of one id never share a cgroup.
+static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// An id as a directory name: only what is safe in a path.
 fn sanitise(id: &str) -> String {
@@ -203,23 +220,27 @@ fn sanitise(id: &str) -> String {
         .collect()
 }
 
-/// Make the cgroup for launch `id` under `base`, or `None` when it cannot be
-/// (no cgroup v2, no permission, or a populated one of that name already).
-fn make_cgroup(base: &str, id: &str) -> Option<std::path::PathBuf> {
-    let path = std::path::Path::new(base).join(format!("nestri-launch-{}", sanitise(id)));
+/// Make the cgroup for launch `id`, generation `generation`, under `base`, or
+/// `None` when it cannot be (no cgroup v2, no permission, or one of that name
+/// already). The generation is in the name so a restart never shares a
+/// directory with what is left of the launch before it.
+fn make_cgroup(base: &str, id: &str, generation: u64) -> Option<std::path::PathBuf> {
+    let path = std::path::Path::new(base).join(format!("nestri-launch-{}-{generation}", sanitise(id)));
     match std::fs::create_dir(&path) {
         Ok(()) => Some(path),
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            // A leftover from a launch with this id is reused only when empty:
-            // sharing one would make a stop of one launch the stop of another.
-            let procs = std::fs::read_to_string(path.join("cgroup.procs")).ok()?;
-            procs.trim().is_empty().then_some(path)
-        }
         Err(error) => {
             tracing::warn!(%id, base, "no cgroup for this launch ({error}); its members are found by environment");
             None
         }
     }
+}
+
+/// Whether `pid` is listed in the cgroup at `path`: the proof the launch's
+/// child joined it, which its own unchecked write could not give.
+fn joined(path: &std::path::Path, pid: i32) -> bool {
+    std::fs::read_to_string(path.join("cgroup.procs"))
+        .map(|procs| procs.lines().any(|line| line.trim().parse::<i32>().ok() == Some(pid)))
+        .unwrap_or(false)
 }
 
 /// Whether `pid` is not a zombie.
@@ -239,18 +260,28 @@ fn environ_names(environ: &[u8], id: &str) -> bool {
 impl Group {
     /// The group of a launch whose top process is `sid`.
     fn new(id: &LaunchId, sid: i32, cgroup: Option<std::path::PathBuf>) -> Self {
-        Self { id: id.as_str().to_string(), sid, cgroup }
+        Self { id: id.as_str().to_string(), sid, cgroup, superseded: false.into() }
+    }
+
+    /// Whether the launch has been started again since this group was made.
+    fn is_superseded(&self) -> bool {
+        self.superseded.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Every live process of the launch.
     pub(crate) fn members(&self) -> Vec<i32> {
         if let Some(path) = &self.cgroup {
             if let Ok(procs) = std::fs::read_to_string(path.join("cgroup.procs")) {
-                return procs
+                let found: Vec<i32> = procs
                     .lines()
                     .filter_map(|line| line.trim().parse::<i32>().ok())
                     .filter(|pid| is_live(*pid))
                     .collect();
+                // An empty cgroup with the top process alive is a cgroup the
+                // launch is not in: the scan below is what finds it.
+                if !found.is_empty() || !in_session(self.sid, self.sid) {
+                    return found;
+                }
             }
         }
         let mut members = session_members(self.sid);
@@ -297,22 +328,35 @@ impl Group {
         self.signal(libc::SIGKILL);
     }
 
-    /// Remove the launch's cgroup, once it is empty.
-    fn remove(&self) {
-        if let Some(path) = &self.cgroup {
-            let _ = std::fs::remove_dir(path);
+    /// Remove the launch's cgroup, once it is empty. A zombie still counts as
+    /// a member to the kernel until it is reaped, so `EBUSY` is retried for a
+    /// moment before it is given up on.
+    async fn remove(&self) {
+        let Some(path) = &self.cgroup else { return };
+        let mut error = None;
+        for _ in 0..40 {
+            match std::fs::remove_dir(path) {
+                Ok(()) => return,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => return,
+                Err(e) => error = Some(e),
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        if let Some(error) = error {
+            tracing::warn!(path = %path.display(), "a launch's cgroup was not removed: {error}");
         }
     }
 }
 
 /// Wait for a launch's group to be gone, ending it if it will not go alone.
 ///
-/// Reached once the top process has been reaped. A launch counts as ended only
-/// when nothing of it is left: a window owned by a process still running is a
-/// launch still running, whatever became of the process that started it.
+/// Reached once the top process has been reaped. When it leaves, whatever it
+/// started is ended with it (TERM, then KILL after the grace): a launch is not
+/// reported ended while something of it is still running, and what it left
+/// behind is not kept alive.
 async fn group_gone(group: std::sync::Arc<Group>) {
     if group.members().is_empty() {
-        group.remove();
+        group.remove().await;
         return;
     }
     tracing::info!(sid = group.sid, "a launch's top process has gone and its group has not: ending the group");
@@ -325,12 +369,13 @@ async fn group_gone(group: std::sync::Arc<Group>) {
     let give_up = deadline + STOP_GRACE * 2;
     loop {
         if group.members().is_empty() {
-            group.remove();
+            group.remove().await;
             return;
         }
         let now = std::time::Instant::now();
         if now >= give_up {
             tracing::warn!(sid = group.sid, "a launch's group would not die; reporting the launch ended anyway");
+            group.remove().await;
             return;
         }
         if now >= deadline && !killed {
@@ -349,12 +394,17 @@ fn stop_group(group: std::sync::Arc<Group>) {
     std::thread::spawn(move || {
         let deadline = std::time::Instant::now() + STOP_GRACE;
         while std::time::Instant::now() < deadline {
-            if group.members().is_empty() {
+            // The launch was started again under this id: what is in the
+            // environment-named fallback is now the new launch's, and a kill
+            // here would be its death.
+            if group.is_superseded() || group.members().is_empty() {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        group.kill();
+        if !group.is_superseded() {
+            group.kill();
+        }
     });
 }
 
@@ -368,6 +418,7 @@ impl Process {
             groups: std::collections::BTreeMap::new(),
             cgroup_root: CGROUP_ROOT.to_string(),
             compositor: None,
+            compositor_exit: None,
         }
     }
 
@@ -574,7 +625,8 @@ impl Workload for Process {
         // The launch's cgroup, made here and joined before exec: what a child
         // that makes its own session still cannot leave. The path is built
         // now because the closure below may not allocate.
-        let cgroup = make_cgroup(&self.cgroup_root, id.as_str());
+        let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let cgroup = make_cgroup(&self.cgroup_root, id.as_str(), generation);
         let procs_file = cgroup
             .as_ref()
             .and_then(|path| std::ffi::CString::new(path.join("cgroup.procs").into_os_string().into_vec()).ok());
@@ -592,8 +644,9 @@ impl Workload for Process {
                     return Err(io::Error::last_os_error());
                 }
                 // Into the launch's cgroup, as root, before the uid drops.
-                // A failure is not one: the launch is still found by its
-                // environment.
+                // A failure is not one here, where nothing may be said: the
+                // parent checks the child is in the cgroup after the spawn and
+                // falls back to the environment when it is not.
                 if let Some(file) = &procs_file {
                     let fd = libc::open(file.as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
                     if fd >= 0 {
@@ -643,10 +696,27 @@ impl Workload for Process {
         // The session id is the top pid (`setsid` above), and stays that
         // number for as long as anything is in it.
         let sid = self.running.get(id).map(|w| w.pid).expect("just inserted");
+        // The join was unchecked in the child. A cgroup the child is not in
+        // would read as an empty launch, and a stop of it would do nothing, so
+        // it is dropped for the session-and-environment fallback.
+        let cgroup = match cgroup {
+            Some(path) if !joined(&path, sid) => {
+                tracing::warn!(
+                    %id,
+                    path = %path.display(),
+                    "the launch did not join its cgroup; its members are found by environment"
+                );
+                let _ = std::fs::remove_dir(&path);
+                None
+            }
+            other => other,
+        };
         // Groups with nothing left in them are dropped here, as `running` is.
         self.groups.retain(|_, group| !group.members().is_empty());
         let group = std::sync::Arc::new(Group::new(id, sid, cgroup));
-        self.groups.insert(id.clone(), group.clone());
+        if let Some(old) = self.groups.insert(id.clone(), group.clone()) {
+            old.superseded.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         Ok(Box::pin(async move {
             let exit = exit
                 .await
@@ -706,27 +776,36 @@ impl Workload for Process {
                 Failure::new(format!("{} as {uid}:{gid}: {error}", exec.argv[0]))
             })?;
         let exit = watched.take_exit().expect("a new watch has its exit");
-        // Said when it goes: with it gone no launch has anywhere to draw, and
-        // nothing else in the box would say why.
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                if let Ok(exit) = exit.await {
-                    tracing::error!(?exit, "the compositor has exited: no window in this box can draw");
-                }
-            });
-        }
         let pid = watched.pid;
         let flag = &watched;
-        crate::services::await_path(
+        if let Err(failure) = crate::services::await_path(
             "the compositor",
             &socket,
             before,
             &|| flag.running(),
             COMPOSITOR_READY,
-        )?;
+        ) {
+            // One that never served is not left running behind a box that
+            // reports it could not be made.
+            if watched.running() {
+                // SAFETY: two integers; the pid is still this child's.
+                unsafe { libc::kill(-pid, libc::SIGKILL) };
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+            }
+            return Err(failure);
+        }
         tracing::info!(pid, %socket, "the compositor is serving");
+        // Handed to the session, which reports it and ends the box: with it
+        // gone no launch has anywhere to draw.
+        self.compositor_exit = Some(Box::pin(async move {
+            exit.await.map_err(|_| io::Error::other("the compositor's exit was not delivered"))
+        }));
         self.compositor = Some(watched);
         Ok(())
+    }
+
+    fn compositor_exit(&mut self) -> Option<Exited> {
+        self.compositor_exit.take()
     }
 
     fn stop_launch(&mut self, id: &LaunchId) {
@@ -1465,6 +1544,22 @@ mod tests {
         });
     }
 
+    /// A process whose cgroups are made in a directory of the test's own, so
+    /// no test touches the real `/sys/fs/cgroup`. It is a plain directory with
+    /// no `cgroup.procs`, so a join into it fails, which is the fallback path.
+    fn process_in_tmp(waiters: crate::reap::Waiters) -> (Process, std::path::PathBuf) {
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "nesinit-cg-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut process = Process::new(waiters);
+        process.cgroup_root = root.to_string_lossy().into_owned();
+        (process, root)
+    }
+
     fn me(script: &str) -> Exec {
         // SAFETY: no arguments.
         let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
@@ -1479,7 +1574,7 @@ mod tests {
 
     async fn started(script: &str) -> (Process, LaunchId, i32, Exited) {
         let waiters = crate::reap::Waiters::new();
-        let mut process = Process::new(waiters.clone());
+        let (mut process, _root) = process_in_tmp(waiters.clone());
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         // Unique per test: members are found by the id in their environment.
         let id = LaunchId::new(format!(
@@ -1541,11 +1636,51 @@ mod tests {
         assert!(group.members().is_empty());
     }
 
+    /// A cgroup the child could not join is dropped, not trusted: it would
+    /// read as an empty launch and a stop would do nothing.
+    #[tokio::test]
+    async fn a_launch_that_cannot_join_its_cgroup_falls_back_and_is_still_stopped() {
+        let waiters = crate::reap::Waiters::new();
+        let (mut process, root) = process_in_tmp(waiters.clone());
+        let id = LaunchId::new(format!("join-{}", std::process::id()));
+        let exited = process.start(&id, &me("sleep 300 & wait")).unwrap();
+        reap_for(waiters, process.running[&id].pid);
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let group = process.groups[&id].clone();
+        assert!(group.cgroup.is_none(), "the cgroup was kept");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0, "its directory was left");
+        assert!(group.members().len() >= 2, "{:?}", group.members());
+        process.stop_launch(&id);
+        tokio::time::timeout(std::time::Duration::from_secs(10), exited)
+            .await
+            .expect("the launch did not end")
+            .unwrap();
+        assert!(group.members().is_empty());
+    }
+
+    /// A stop that is still waiting out its grace must not kill a launch that
+    /// has taken the same id since.
+    #[tokio::test]
+    async fn a_pending_stop_does_not_kill_the_launch_that_replaced_it() {
+        let (mut process, id, _top, _exited) = started("sleep 300 & wait").await;
+        let old = process.groups[&id].clone();
+        process.stop_launch(&id);
+        let waiters = process.waiters.clone();
+        let _again = process.start(&id, &me("sleep 300 & wait")).unwrap();
+        reap_for(waiters, process.running[&id].pid);
+        assert!(old.is_superseded());
+        tokio::time::sleep(STOP_GRACE + std::time::Duration::from_secs(1)).await;
+        let new = process.groups[&id].clone();
+        let alive = new.members();
+        new.kill();
+        assert!(alive.len() >= 2, "the new launch was killed by the old stop: {alive:?}");
+    }
+
     /// Two launches are two groups: stopping one leaves the other running.
     #[tokio::test]
     async fn stopping_one_launch_leaves_another_running() {
         let waiters = crate::reap::Waiters::new();
-        let mut process = Process::new(waiters.clone());
+        let (mut process, _root) = process_in_tmp(waiters.clone());
         let (a, b) = (LaunchId::new("iso-a"), LaunchId::new("iso-b"));
         let exited_a = process.start(&a, &me("sleep 300 & wait")).unwrap();
         let _exited_b = process.start(&b, &me("sleep 300 & wait")).unwrap();
@@ -1945,6 +2080,8 @@ pub mod double {
         /// Every compositor asked for.
         pub compositors: Vec<Compositor>,
         pub compositor_failure: Option<Failure>,
+        /// When the compositor "exits": the session takes this after it starts.
+        pub compositor_exit: Option<oneshot::Receiver<Exit>>,
         pub mount_failure: Option<Failure>,
         pub image_failure: Option<Failure>,
         /// Like `image_failure`, but only for a call that names an image, so a
@@ -1984,6 +2121,7 @@ pub mod double {
                 stops: 0,
                 compositors: Vec::new(),
                 compositor_failure: None,
+                compositor_exit: None,
                 mount_failure: None,
                 image_failure: None,
                 named_image_failure: None,
@@ -2080,6 +2218,13 @@ pub mod double {
                 Some(failure) => Err(failure.clone()),
                 None => Ok(()),
             }
+        }
+
+        fn compositor_exit(&mut self) -> Option<Exited> {
+            let rx = self.compositor_exit.take()?;
+            Some(Box::pin(async move {
+                rx.await.map_err(|_| io::Error::other("the compositor was dropped"))
+            }))
         }
 
         fn stop_launch(&mut self, id: &LaunchId) {
