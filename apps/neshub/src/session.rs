@@ -863,10 +863,13 @@ async fn run_control_reader(
                     // does not know that encoder, and there is nothing to pause.
                     match pid_or_all(&subscribe.2) {
                         Some(pid) => {
-                            info!("client pauses encoder {pid}");
+                            info!(client = %subscribe.0.fmt_short(), "pause: client pauses encoder {pid}");
                             pause.pause(pid);
                         }
-                        None => debug!("pause from a client with no encoder yet; ignored"),
+                        None => info!(
+                            client = %subscribe.0.fmt_short(),
+                            "pause: no encoder known for this client yet; ignored"
+                        ),
                     }
                 }
                 MSG_WINDOW_RESUME => {
@@ -874,6 +877,11 @@ async fn run_control_reader(
                     // paused nothing starts nothing; the keyframe is asked for
                     // either way, since the client restarted its picture.
                     awaiting_keyframe.store(true, Ordering::Relaxed);
+                    info!(
+                        client = %subscribe.0.fmt_short(),
+                        "resume: encoder {:?}",
+                        pid_or_all(&subscribe.2)
+                    );
                     pause.resume();
                     if let Some(pid) = pid_or_all(&subscribe.2) {
                         let _ = idr_cmd_tx.send(keyframe_request(Some(pid)));
@@ -1291,6 +1299,15 @@ impl SessionManager {
     }
 
     #[cfg(test)]
+    pub(crate) async fn encoder_pid_of(&self, id: &iroh::EndpointId) -> Option<u32> {
+        self.sessions
+            .lock()
+            .await
+            .get(id)
+            .map(|s| s.encoder_pid.load(Ordering::Relaxed))
+    }
+
+    #[cfg(test)]
     pub(crate) fn encoder_paused(&self, pid: u32) -> bool {
         self.pauses.lock().unwrap().paused(pid)
     }
@@ -1493,7 +1510,20 @@ impl SessionManager {
             }
         }
         for session in sessions.values() {
-            match route(session.subscription(), window, note.primary) {
+            let routed = route(session.subscription(), window, note.primary);
+            // A client shown this frame is shown this encoder, whenever it
+            // subscribed. The pid used to be fixed at subscribe time, and a
+            // client that subscribed before the game drew its first frame (the
+            // usual order: the window opens, the client subscribes, the
+            // encoder draws) kept pid 0 for good, so a pause had no encoder
+            // to go to and was dropped, ref(d-0087).
+            if routed.is_some()
+                && let Some(pid) = source
+                && session.encoder_pid.load(Ordering::Relaxed) != pid
+            {
+                session.encoder_pid.store(pid, Ordering::Relaxed);
+            }
+            match routed {
                 Some(WINDOW_DEFAULT) => session.send_video_frame(MediaItem::Coded(data.clone())),
                 Some(w) => session.send_video_frame(MediaItem::Windowed(w, data.clone())),
                 None => {}

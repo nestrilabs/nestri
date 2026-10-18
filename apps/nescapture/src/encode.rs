@@ -1550,6 +1550,11 @@ pub struct EncodeSettingsChange {
 /// keyframe in the same step, so the first frame after it is one the client
 /// can decode: everything it saw before the pause is stale.
 fn apply_pause_message(msg: u8, paused: &AtomicBool, idr_requested: &AtomicBool) {
+    log::info!(
+        "window {} received (was {})",
+        if msg == MSG_WINDOW_PAUSE { "pause" } else { "resume" },
+        if paused.load(Ordering::Relaxed) { "paused" } else { "running" }
+    );
     if msg == MSG_WINDOW_PAUSE {
         if !paused.swap(true, Ordering::Relaxed) {
             log::info!("paused by the client: capture and encode stopped");
