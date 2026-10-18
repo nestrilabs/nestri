@@ -83,6 +83,9 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Packet>)
         /// Where the accumulator ends when the graph gives no position: a count
         /// of the frames received, so packets still carry a continuous timeline.
         counted_end: u64,
+        /// Frames dropped because the encoder was behind. A stalled encoder
+        /// drops ~50 a second, so only the first and every 250th are logged.
+        dropped: u64,
     }
 
     let state = State {
@@ -93,6 +96,7 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Packet>)
         sample_rate,
         next_ticks: None,
         counted_end: 0,
+        dropped: 0,
     };
 
     let _listener = stream
@@ -174,7 +178,10 @@ pub fn run(sample_rate: u32, channels: u32, frame_size: u32, tx: Sender<Packet>)
                             };
 
                             if state.tx.try_send(packet).is_err() {
-                                tracing::warn!("encoder falling behind, dropping frame");
+                                state.dropped += 1;
+                                if state.dropped % 250 == 1 {
+                                    tracing::warn!(dropped = state.dropped, "encoder falling behind, dropping frames");
+                                }
                             }
                         }
                     }
