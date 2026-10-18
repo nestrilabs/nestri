@@ -294,6 +294,30 @@ pub struct BootDescriptor {
     /// what a workload that draws nothing wants.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compositor: Option<Compositor>,
+    /// One process the box runs for as long as it lives, such as the box's
+    /// Steam client. ref(d-0085)
+    ///
+    /// Started after the compositor and before the box is ready, as a user of
+    /// the workload's: the sign-in it holds is the box's, shared by every launch
+    /// in it, and a launch that signed in for itself would replace the one
+    /// beside it. If it exits the box ends and the host is told which it was,
+    /// as for the compositor. `None` is a box with nothing of the kind, and
+    /// reads the same as a descriptor from before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon: Option<Daemon>,
+}
+
+/// A process the box keeps for its whole life. See [`BootDescriptor::daemon`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Daemon {
+    /// What the host is told it was if it dies, and what the box lists among
+    /// its services once it is started.
+    pub name: String,
+    /// How it is started. The same shape as a launch's, because it is started
+    /// the same way: its user's runtime directory made, the environment cleared
+    /// and this one on top.
+    pub exec: Exec,
 }
 
 /// What the compositor is started with.
@@ -607,6 +631,7 @@ mod tests {
             images: Vec::new(),
             video: VideoLimits::default(),
             compositor: None,
+            daemon: None,
         }
     }
 
@@ -913,6 +938,7 @@ mod video_limits_tests {
             images: Vec::new(),
             video: VideoLimits::default(),
             compositor: None,
+            daemon: None,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(!json.contains("bitrate"), "{json}");
@@ -928,6 +954,7 @@ mod video_limits_tests {
                 bitrate_kbps: Some(8_000),
             },
             compositor: None,
+            daemon: None,
         };
         let back: BootDescriptor =
             serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
@@ -979,6 +1006,7 @@ mod image_tests {
             }],
             video: VideoLimits::default(),
             compositor: None,
+            daemon: None,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(json.contains(r#""images":[{"device":"/dev/vdd","at":"/nestri/compat"}]"#));
@@ -1063,6 +1091,30 @@ mod attach_tests {
         };
         let back: BootDescriptor =
             serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
+        assert_eq!(back, d);
+    }
+
+    /// A daemon is optional and round-trips, so a descriptor from before the
+    /// field reads the same.
+    #[test]
+    fn a_daemon_is_optional_and_round_trips() {
+        let none: BootDescriptor = serde_json::from_str("{}").unwrap();
+        assert!(none.daemon.is_none());
+        assert!(!serde_json::to_string(&none).unwrap().contains("daemon"));
+        let d = BootDescriptor {
+            daemon: Some(Daemon {
+                name: "steam".into(),
+                exec: Exec {
+                    argv: vec!["/bin/x".into()],
+                    env: BTreeMap::from([("A".to_string(), "b".to_string())]),
+                    cwd: None,
+                    uid: 1001,
+                    gid: 1001,
+                },
+            }),
+            ..none
+        };
+        let back: BootDescriptor = serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
         assert_eq!(back, d);
     }
 }
