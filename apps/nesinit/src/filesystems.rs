@@ -87,6 +87,19 @@ const EARLY: &[Early] = &[
         data: "",
         cost: "a workload that looks up a device finds nothing",
     },
+    // One cgroup per launch, so that a stop reaches what a launch started
+    // however many sessions it moved them to (Wine does). `cgroup.kill` needs
+    // no controller. A kernel without cgroup v2 fails this and launches are
+    // found by their environment instead.
+    Early {
+        source: "cgroup2",
+        target: "/sys/fs/cgroup",
+        fstype: "cgroup2",
+        flags: NOSUID_NODEV | libc::MS_NOEXEC,
+        data: "",
+        cost: "a stop cannot reach the processes a launch moved to sessions of \
+               their own, and is left to find them by environment",
+    },
     // Writable, and the reason any of this is here. Both sockets in this
     // component live on a tmpfs because the root they would otherwise sit on
     // is read-only.

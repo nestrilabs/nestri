@@ -9,6 +9,7 @@
 use std::ffi::CString;
 use std::future::Future;
 use std::io;
+use std::os::unix::ffi::OsStringExt as _;
 use std::pin::Pin;
 
 use nesprotocol::lifecycle::{
@@ -110,6 +111,10 @@ pub struct Process {
     /// delivered and `Watched::running` is what tells the two apart; it is
     /// replaced when the same id is started again (a restart).
     running: std::collections::BTreeMap<LaunchId, Watched>,
+    /// The group of each launch in `running`, which outlives its top process.
+    groups: std::collections::BTreeMap<LaunchId, std::sync::Arc<Group>>,
+    /// Where launch cgroups are made: [`CGROUP_ROOT`], except in a test.
+    cgroup_root: String,
     /// The box's compositor, if it has one. Not a launch: nothing in
     /// `running` is it, and a launch's stop cannot reach it.
     compositor: Option<Watched>,
@@ -168,21 +173,135 @@ fn live_session_of(stat: &str) -> Option<i32> {
     (state != "Z" && state != "X").then_some(session)
 }
 
-/// Send `signal` to a launch's whole group: the process group in one call, then
-/// every member of the session by pid, which reaches the ones that left the
-/// group.
-pub(crate) fn signal_session(sid: i32, signal: libc::c_int) {
-    let members = session_members(sid);
-    if members.is_empty() {
-        // Nothing is left to signal, and `sid` is only a number again: a
-        // group call now could reach whatever the kernel gave it to.
-        return;
+/// Where launch cgroups live: the cgroup v2 root, mounted by `filesystems`.
+const CGROUP_ROOT: &str = "/sys/fs/cgroup";
+
+/// Everything that belongs to one launch.
+///
+/// A session is not enough: Wine `setsid`s its own processes (wineserver,
+/// services.exe, explorer.exe and the game itself each have a session of their
+/// own), so a stop that signalled the launch's session left the game running
+/// with its window open. Measured 2026-10-18 on the test box.
+///
+/// What a child cannot leave is a cgroup, so a launch is put in one before it
+/// execs and the kernel's own list of its members is what is signalled. Where
+/// no cgroup could be made (v2 not mounted) the members are the launch's
+/// session plus every process whose environment names the launch, which Wine
+/// cannot drop either: it is inherited.
+#[derive(Debug)]
+pub(crate) struct Group {
+    id: String,
+    /// The top process, which is also the session id.
+    sid: i32,
+    cgroup: Option<std::path::PathBuf>,
+}
+
+/// An id as a directory name: only what is safe in a path.
+fn sanitise(id: &str) -> String {
+    id.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '_' })
+        .collect()
+}
+
+/// Make the cgroup for launch `id` under `base`, or `None` when it cannot be
+/// (no cgroup v2, no permission, or a populated one of that name already).
+fn make_cgroup(base: &str, id: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::Path::new(base).join(format!("nestri-launch-{}", sanitise(id)));
+    match std::fs::create_dir(&path) {
+        Ok(()) => Some(path),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            // A leftover from a launch with this id is reused only when empty:
+            // sharing one would make a stop of one launch the stop of another.
+            let procs = std::fs::read_to_string(path.join("cgroup.procs")).ok()?;
+            procs.trim().is_empty().then_some(path)
+        }
+        Err(error) => {
+            tracing::warn!(%id, base, "no cgroup for this launch ({error}); its members are found by environment");
+            None
+        }
     }
-    // SAFETY: integers only; a group that has gone fails with ESRCH.
-    unsafe { libc::kill(-sid, signal) };
-    for pid in members {
-        // SAFETY: as above.
-        unsafe { libc::kill(pid, signal) };
+}
+
+/// Whether `pid` is not a zombie.
+fn is_live(pid: i32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| live_session_of(&stat))
+        .is_some()
+}
+
+/// Whether the NUL-separated environment `environ` carries `NAME=value`.
+fn environ_names(environ: &[u8], id: &str) -> bool {
+    let want = format!("{LAUNCH_ID_ENV}={id}");
+    environ.split(|b| *b == 0).any(|entry| entry == want.as_bytes())
+}
+
+impl Group {
+    /// The group of a launch whose top process is `sid`.
+    fn new(id: &LaunchId, sid: i32, cgroup: Option<std::path::PathBuf>) -> Self {
+        Self { id: id.as_str().to_string(), sid, cgroup }
+    }
+
+    /// Every live process of the launch.
+    pub(crate) fn members(&self) -> Vec<i32> {
+        if let Some(path) = &self.cgroup {
+            if let Ok(procs) = std::fs::read_to_string(path.join("cgroup.procs")) {
+                return procs
+                    .lines()
+                    .filter_map(|line| line.trim().parse::<i32>().ok())
+                    .filter(|pid| is_live(*pid))
+                    .collect();
+            }
+        }
+        let mut members = session_members(self.sid);
+        if let Ok(dir) = std::fs::read_dir("/proc") {
+            for pid in dir.flatten().filter_map(|e| e.file_name().to_str()?.parse::<i32>().ok()) {
+                if members.contains(&pid) || !is_live(pid) {
+                    continue;
+                }
+                let named = std::fs::read(format!("/proc/{pid}/environ"))
+                    .map(|environ| environ_names(&environ, &self.id))
+                    .unwrap_or(false);
+                if named {
+                    members.push(pid);
+                }
+            }
+        }
+        members
+    }
+
+    /// Signal everything of the launch.
+    pub(crate) fn signal(&self, signal: libc::c_int) {
+        let members = self.members();
+        if members.is_empty() {
+            // Only a number again: a group call now could reach whatever the
+            // kernel gave it to.
+            return;
+        }
+        // SAFETY: integers only; a group that has gone fails with ESRCH.
+        unsafe { libc::kill(-self.sid, signal) };
+        for pid in members {
+            // SAFETY: as above.
+            unsafe { libc::kill(pid, signal) };
+        }
+    }
+
+    /// End everything of the launch now, with no chance to refuse.
+    pub(crate) fn kill(&self) {
+        if let Some(path) = &self.cgroup {
+            if std::fs::write(path.join("cgroup.kill"), "1").is_ok() {
+                return;
+            }
+            // Before Linux 5.14 there is no `cgroup.kill`: kill by pid.
+        }
+        self.signal(libc::SIGKILL);
+    }
+
+    /// Remove the launch's cgroup, once it is empty.
+    fn remove(&self) {
+        if let Some(path) = &self.cgroup {
+            let _ = std::fs::remove_dir(path);
+        }
     }
 }
 
@@ -191,12 +310,13 @@ pub(crate) fn signal_session(sid: i32, signal: libc::c_int) {
 /// Reached once the top process has been reaped. A launch counts as ended only
 /// when nothing of it is left: a window owned by a process still running is a
 /// launch still running, whatever became of the process that started it.
-async fn group_gone(sid: i32) {
-    if session_members(sid).is_empty() {
+async fn group_gone(group: std::sync::Arc<Group>) {
+    if group.members().is_empty() {
+        group.remove();
         return;
     }
-    tracing::info!(sid, "a launch's top process has gone and its group has not: ending the group");
-    signal_session(sid, libc::SIGTERM);
+    tracing::info!(sid = group.sid, "a launch's top process has gone and its group has not: ending the group");
+    group.signal(libc::SIGTERM);
     let deadline = std::time::Instant::now() + STOP_GRACE;
     let mut killed = false;
     // Past the grace plus as long again: a process in uninterruptible sleep
@@ -204,36 +324,37 @@ async fn group_gone(sid: i32) {
     // ended with something stuck in it.
     let give_up = deadline + STOP_GRACE * 2;
     loop {
-        if session_members(sid).is_empty() {
+        if group.members().is_empty() {
+            group.remove();
             return;
         }
         let now = std::time::Instant::now();
         if now >= give_up {
-            tracing::warn!(sid, "a launch's group would not die; reporting the launch ended anyway");
+            tracing::warn!(sid = group.sid, "a launch's group would not die; reporting the launch ended anyway");
             return;
         }
         if now >= deadline && !killed {
             killed = true;
-            signal_session(sid, libc::SIGKILL);
+            group.kill();
         }
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
 
-/// Stop a group: TERM now, KILL after the grace if it is still there. On a
-/// thread of its own, because the caller cannot wait and the runtime may be
-/// busy with the exits it is meant to deliver.
-fn stop_session(sid: i32) {
-    signal_session(sid, libc::SIGTERM);
+/// Stop a group: TERM now, then `cgroup.kill` (or KILL) after the grace if it
+/// is still there. On a thread of its own, because the caller cannot wait and
+/// the runtime may be busy with the exits it is meant to deliver.
+fn stop_group(group: std::sync::Arc<Group>) {
+    group.signal(libc::SIGTERM);
     std::thread::spawn(move || {
         let deadline = std::time::Instant::now() + STOP_GRACE;
         while std::time::Instant::now() < deadline {
-            if session_members(sid).is_empty() {
+            if group.members().is_empty() {
                 return;
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        signal_session(sid, libc::SIGKILL);
+        group.kill();
     });
 }
 
@@ -244,6 +365,8 @@ impl Process {
         Self {
             waiters,
             running: std::collections::BTreeMap::new(),
+            groups: std::collections::BTreeMap::new(),
+            cgroup_root: CGROUP_ROOT.to_string(),
             compositor: None,
         }
     }
@@ -257,10 +380,12 @@ impl Process {
     /// ([`Workload::stop_launch`]).
     pub fn signal(&self, signal: libc::c_int) {
         for watched in self.running.values() {
-            if signal == libc::SIGKILL {
-                signal_session(watched.pid, signal);
-            }
             Self::signal_one(watched, signal);
+        }
+        if signal == libc::SIGKILL {
+            for group in self.groups.values() {
+                group.kill();
+            }
         }
     }
 
@@ -446,8 +571,16 @@ impl Workload for Process {
         };
         command.envs(launch_environment(exec, runtime.as_deref(), id));
 
+        // The launch's cgroup, made here and joined before exec: what a child
+        // that makes its own session still cannot leave. The path is built
+        // now because the closure below may not allocate.
+        let cgroup = make_cgroup(&self.cgroup_root, id.as_str());
+        let procs_file = cgroup
+            .as_ref()
+            .and_then(|path| std::ffi::CString::new(path.join("cgroup.procs").into_os_string().into_vec()).ok());
+
         // SAFETY: the closure runs between fork and exec in the child, where
-        // only async-signal-safe calls are allowed. These two are, and it
+        // only async-signal-safe calls are allowed. These are, and it
         // allocates nothing.
         unsafe {
             command.pre_exec(move || {
@@ -457,6 +590,16 @@ impl Workload for Process {
                 // not care.
                 if libc::setsid() == -1 {
                     return Err(io::Error::last_os_error());
+                }
+                // Into the launch's cgroup, as root, before the uid drops.
+                // A failure is not one: the launch is still found by its
+                // environment.
+                if let Some(file) = &procs_file {
+                    let fd = libc::open(file.as_ptr(), libc::O_WRONLY | libc::O_CLOEXEC);
+                    if fd >= 0 {
+                        libc::write(fd, b"0".as_ptr().cast(), 1);
+                        libc::close(fd);
+                    }
                 }
                 // gid first: dropping the uid first would lose the privilege
                 // needed to set the gid at all.
@@ -474,6 +617,9 @@ impl Workload for Process {
             .waiters
             .watch(|| Ok(command.spawn()?.id() as i32))
             .map_err(|error| {
+                if let Some(path) = &cgroup {
+                    let _ = std::fs::remove_dir(path);
+                }
                 // The program, the user, and what the system said.
                 //
                 // `Permission denied` on its own is the least useful true
@@ -497,13 +643,17 @@ impl Workload for Process {
         // The session id is the top pid (`setsid` above), and stays that
         // number for as long as anything is in it.
         let sid = self.running.get(id).map(|w| w.pid).expect("just inserted");
+        // Groups with nothing left in them are dropped here, as `running` is.
+        self.groups.retain(|_, group| !group.members().is_empty());
+        let group = std::sync::Arc::new(Group::new(id, sid, cgroup));
+        self.groups.insert(id.clone(), group.clone());
         Ok(Box::pin(async move {
             let exit = exit
                 .await
                 .map_err(|_| io::Error::other("the workload's exit was not delivered"))?;
             // The launch ended when its group has, not when its top process
             // did. See `group_gone`.
-            group_gone(sid).await;
+            group_gone(group).await;
             Ok(exit)
         }))
     }
@@ -580,10 +730,10 @@ impl Workload for Process {
     }
 
     fn stop_launch(&mut self, id: &LaunchId) {
-        if let Some(watched) = self.running.get(id) {
+        if let Some(group) = self.groups.get(id) {
             // Whether or not the top process is still there: its children may
             // be, and they are what holds the window.
-            stop_session(watched.pid);
+            stop_group(group.clone());
         }
     }
 
@@ -1330,7 +1480,13 @@ mod tests {
     async fn started(script: &str) -> (Process, LaunchId, i32, Exited) {
         let waiters = crate::reap::Waiters::new();
         let mut process = Process::new(waiters.clone());
-        let id = LaunchId::new("g-1");
+        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        // Unique per test: members are found by the id in their environment.
+        let id = LaunchId::new(format!(
+            "g-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
         let exited = process.start(&id, &me(script)).expect("it starts");
         let top = process.running.get(&id).unwrap().pid;
         reap_for(waiters, top);
@@ -1343,22 +1499,24 @@ mod tests {
     /// everything it had started running, and with it the game's window.
     #[tokio::test]
     async fn stopping_a_launch_ends_its_children_and_it_ends_when_they_have() {
-        let (mut process, id, top, exited) = started("sleep 300 & sleep 300 & wait").await;
-        assert!(session_members(top).len() >= 3, "{:?}", session_members(top));
+        let (mut process, id, _top, exited) = started("sleep 300 & sleep 300 & wait").await;
+        let group = process.groups[&id].clone();
+        assert!(group.members().len() >= 3, "{:?}", group.members());
         process.stop_launch(&id);
         tokio::time::timeout(std::time::Duration::from_secs(10), exited)
             .await
             .expect("the launch did not end")
             .unwrap();
-        assert!(session_members(top).is_empty(), "something of the launch is left");
+        assert!(group.members().is_empty(), "something of the launch is left");
     }
 
     /// A child that ignores SIGTERM is killed after the grace, and the launch
     /// is not reported ended before it has gone.
     #[tokio::test]
     async fn a_child_that_ignores_the_stop_is_killed_after_the_grace() {
-        let (mut process, id, top, exited) =
+        let (mut process, id, _top, exited) =
             started("trap '' TERM; (trap '' TERM; sleep 300) & wait").await;
+        let group = process.groups[&id].clone();
         process.stop_launch(&id);
         let began = std::time::Instant::now();
         tokio::time::timeout(std::time::Duration::from_secs(15), exited)
@@ -1366,20 +1524,21 @@ mod tests {
             .expect("the launch did not end")
             .unwrap();
         assert!(began.elapsed() >= STOP_GRACE.saturating_sub(std::time::Duration::from_millis(500)));
-        assert!(session_members(top).is_empty());
+        assert!(group.members().is_empty());
     }
 
     /// The top process leaving by itself does not end the launch while
     /// something of it runs; the leftovers are ended and then it has ended.
     #[tokio::test]
     async fn a_launch_whose_top_process_left_is_not_ended_until_its_group_is() {
-        let (_process, _id, top, exited) = started("sleep 300 & exit 3").await;
+        let (process, id, _top, exited) = started("sleep 300 & exit 3").await;
+        let group = process.groups[&id].clone();
         let exit = tokio::time::timeout(std::time::Duration::from_secs(10), exited)
             .await
             .expect("the launch did not end")
             .unwrap();
         assert_eq!(exit, Exit::code(3));
-        assert!(session_members(top).is_empty());
+        assert!(group.members().is_empty());
     }
 
     /// Two launches are two groups: stopping one leaves the other running.
@@ -1387,7 +1546,7 @@ mod tests {
     async fn stopping_one_launch_leaves_another_running() {
         let waiters = crate::reap::Waiters::new();
         let mut process = Process::new(waiters.clone());
-        let (a, b) = (LaunchId::new("a"), LaunchId::new("b"));
+        let (a, b) = (LaunchId::new("iso-a"), LaunchId::new("iso-b"));
         let exited_a = process.start(&a, &me("sleep 300 & wait")).unwrap();
         let _exited_b = process.start(&b, &me("sleep 300 & wait")).unwrap();
         let (top_a, top_b) = (
@@ -1402,9 +1561,73 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(session_members(top_a).is_empty());
-        assert!(session_members(top_b).len() >= 2, "the other launch was touched");
-        signal_session(top_b, libc::SIGKILL);
+        assert!(process.groups[&a].members().is_empty());
+        assert!(process.groups[&b].members().len() >= 2, "the other launch was touched");
+        process.groups[&b].kill();
+    }
+
+    /// The case that broke #433: Wine `setsid`s its own processes, so they are
+    /// in no session of the launch's. The launch still owns them, by its
+    /// environment (no cgroup here: the test is not root), and a stop ends
+    /// them.
+    #[tokio::test]
+    async fn a_child_that_makes_its_own_session_is_still_stopped() {
+        let (mut process, id, top, exited) =
+            started("setsid sleep 300 & setsid sh -c 'sleep 300 & wait' & wait").await;
+        let group = process.groups[&id].clone();
+        assert!(
+            session_members(top).len() < group.members().len(),
+            "the setsid children should be outside the launch's session: {:?}",
+            group.members()
+        );
+        process.stop_launch(&id);
+        tokio::time::timeout(std::time::Duration::from_secs(10), exited)
+            .await
+            .expect("the launch did not end")
+            .unwrap();
+        assert!(group.members().is_empty(), "something of the launch is left");
+    }
+
+    /// The same through a real cgroup. Needs a cgroup v2 directory the test
+    /// may create in, named by `NESTRI_TEST_CGROUP_BASE` (a systemd user
+    /// delegation, or `/sys/fs/cgroup` as root).
+    #[tokio::test]
+    #[ignore = "needs a writable cgroup v2 directory in NESTRI_TEST_CGROUP_BASE"]
+    async fn a_cgroup_holds_a_child_that_makes_its_own_session() {
+        let base = std::env::var("NESTRI_TEST_CGROUP_BASE").expect("NESTRI_TEST_CGROUP_BASE");
+        let waiters = crate::reap::Waiters::new();
+        let mut process = Process::new(waiters.clone());
+        process.cgroup_root = base;
+        let id = LaunchId::new(format!("cg-{}", std::process::id()));
+        let exited = process
+            .start(&id, &me("setsid sleep 300 & setsid sh -c 'sleep 300 & wait' & wait"))
+            .unwrap();
+        let top = process.running[&id].pid;
+        reap_for(waiters, top);
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let group = process.groups[&id].clone();
+        let path = group.cgroup.clone().expect("the cgroup was made");
+        assert!(group.members().len() >= 4, "{:?}", group.members());
+        process.stop_launch(&id);
+        tokio::time::timeout(std::time::Duration::from_secs(10), exited)
+            .await
+            .expect("the launch did not end")
+            .unwrap();
+        assert!(group.members().is_empty());
+        assert!(!path.exists(), "the cgroup was not removed");
+    }
+
+    #[test]
+    fn the_launch_id_is_found_whole_in_an_environment() {
+        let env = b"A=1\0NESTRI_LAUNCH_ID=g-10\0B=2\0";
+        assert!(environ_names(env, "g-10"));
+        assert!(!environ_names(env, "g-1"));
+        assert!(!environ_names(b"X_NESTRI_LAUNCH_ID=g-10\0", "g-10"));
+    }
+
+    #[test]
+    fn an_id_becomes_a_safe_directory_name() {
+        assert_eq!(sanitise("a/../b c"), "a_.._b_c");
     }
 
 
