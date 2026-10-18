@@ -1564,6 +1564,27 @@ fn apply_pause_message(msg: u8, paused: &AtomicBool, idr_requested: &AtomicBool)
     }
 }
 
+#[cfg(test)]
+mod pause_tests {
+    use super::*;
+
+    #[test]
+    fn pause_stops_and_resume_starts_with_a_keyframe() {
+        let paused = AtomicBool::new(false);
+        let idr = AtomicBool::new(false);
+        apply_pause_message(MSG_WINDOW_PAUSE, &paused, &idr);
+        assert!(paused.load(Ordering::Relaxed));
+        assert!(!idr.load(Ordering::Relaxed), "a pause asks for nothing");
+        apply_pause_message(MSG_WINDOW_RESUME, &paused, &idr);
+        assert!(!paused.load(Ordering::Relaxed));
+        assert!(idr.load(Ordering::Relaxed));
+        // A resume that was never paused is still a keyframe request, harmless.
+        idr.store(false, Ordering::Relaxed);
+        apply_pause_message(MSG_WINDOW_RESUME, &paused, &idr);
+        assert!(idr.load(Ordering::Relaxed));
+    }
+}
+
 fn encoder_thread(
     mut cfg: EncoderConfig,
     frame_rx: mpsc::Receiver<CapturedFrame>,
@@ -3886,22 +3907,6 @@ mod encoder_identity_tests {
     #[test]
     fn an_unchanged_frame_reuses_the_encoder() {
         assert!(encoder_still_serves(HD, HD));
-    }
-
-    #[test]
-    fn pause_stops_and_resume_starts_with_a_keyframe() {
-        let paused = AtomicBool::new(false);
-        let idr = AtomicBool::new(false);
-        apply_pause_message(MSG_WINDOW_PAUSE, &paused, &idr);
-        assert!(paused.load(Ordering::Relaxed));
-        assert!(!idr.load(Ordering::Relaxed), "a pause asks for nothing");
-        apply_pause_message(MSG_WINDOW_RESUME, &paused, &idr);
-        assert!(!paused.load(Ordering::Relaxed));
-        assert!(idr.load(Ordering::Relaxed));
-        // A resume that was never paused is still a keyframe request, harmless.
-        idr.store(false, Ordering::Relaxed);
-        apply_pause_message(MSG_WINDOW_RESUME, &paused, &idr);
-        assert!(idr.load(Ordering::Relaxed));
     }
 
     #[test]
