@@ -1,12 +1,16 @@
 use std::io::{self, Read};
 use std::os::unix::io::{AsFd, BorrowedFd};
 use std::os::unix::net::UnixStream;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use calloop::{EventSource, Interest, Mode, Poll, PostAction, Readiness, Token, TokenFactory};
 
 pub struct InputIpcSource {
     stream: UnixStream,
     buf: Vec<u8>,
+    /// Set once the hub has closed its end, for the main loop to act on.
+    closed: Arc<AtomicBool>,
 }
 
 impl InputIpcSource {
@@ -16,7 +20,15 @@ impl InputIpcSource {
         Ok(Self {
             stream,
             buf: Vec::new(),
+            closed: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    /// True once the hub has closed the socket. The main loop gives that a
+    /// grace period and then ends nescope: a compositor with no input holds
+    /// the GPU for nothing.
+    pub fn closed_flag(&self) -> Arc<AtomicBool> {
+        self.closed.clone()
     }
 
     pub fn try_clone(&self) -> io::Result<UnixStream> {
@@ -34,6 +46,7 @@ impl InputIpcSource {
                 Ok(n) => self.buf.extend_from_slice(&tmp[..n]),
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(false),
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) if e.kind() == io::ErrorKind::ConnectionReset => return Ok(true),
                 Err(e) => return Err(e),
             }
         }
@@ -81,6 +94,7 @@ impl EventSource for InputIpcSource {
         }
 
         if closed {
+            self.closed.store(true, Ordering::Relaxed);
             tracing::warn!("input IPC socket closed by the hub; no more input from it");
             return Ok(PostAction::Remove);
         }
@@ -112,6 +126,7 @@ mod tests {
             InputIpcSource {
                 stream: a,
                 buf: Vec::new(),
+                closed: Arc::new(AtomicBool::new(false)),
             },
             b,
         )
