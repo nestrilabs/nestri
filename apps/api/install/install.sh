@@ -6,6 +6,7 @@
 #
 #   bash <(curl -fsSL https://api.nestri.io/install.sh)
 #   bash <(curl -fsSL https://api.nestri.io/install.sh) <install-token>
+#   bash <(curl -fsSL https://api.nestri.io/install.sh) <install-token> --gpus 0000:45:00.0
 #   bash <(curl -fsSL https://api.nestri.io/install.sh) -u
 #
 # Piping it works the same way: `curl -fsSL … | sh -s -- -u`.
@@ -37,7 +38,7 @@ set -eu
 API="${NESTRI_API:-https://api.nestri.io}"
 # Pinned, not "latest", so the script and the binary it installs are a pair
 # somebody chose. Bump when cutting a release; NESTRI_HOST_VERSION overrides it.
-DEFAULT_VERSION="0.2.22"
+DEFAULT_VERSION="0.2.23"
 VERSION="${NESTRI_HOST_VERSION:-$DEFAULT_VERSION}"
 BIN_DIR="${NESTRI_BIN_DIR:-/usr/local/bin}"
 STATE_DIR=/var/lib/nestri
@@ -53,6 +54,7 @@ Nestri host installer.
   bash <(curl -fsSL $API/install.sh) <install-token>   make this machine a host with a token from the dashboard
   bash <(curl -fsSL $API/install.sh) -u                update the host agent here
 
+  --gpus SLOTS   the cards boxes run on, by PCI slot (comma separated), instead of every usable one
   -u, --update   install the current host agent on a machine that is already a host
   -h, --help     this
 USAGE
@@ -60,9 +62,13 @@ USAGE
 
 MODE=install
 TOKEN="${NESTRI_INSTALL_TOKEN:-}"
+GPUS="${NESLET_GPUS:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     -u|--update) MODE=update ;;
+    --gpus) [ $# -ge 2 ] || die "--gpus needs the PCI slots to use, e.g. --gpus 0000:45:00.0"
+      GPUS="$2"; shift ;;
+    --gpus=*) GPUS="${1#--gpus=}" ;;
     -h|--help) usage; exit 0 ;;
     --) ;;
     -*) usage; die "unknown option $1" ;;
@@ -103,6 +109,7 @@ if [ "$(id -u)" -ne 0 ]; then
     ${NESTRI_HOST_VERSION:+NESTRI_HOST_VERSION="$NESTRI_HOST_VERSION"} \
     ${NESTRI_BIN_DIR:+NESTRI_BIN_DIR="$NESTRI_BIN_DIR"} \
     ${NESTRI_BOX_STORE:+NESTRI_BOX_STORE="$NESTRI_BOX_STORE"} \
+    ${GPUS:+NESLET_GPUS="$GPUS"} \
     sh "$self" "$@"
 fi
 # The copy fetched above, now open as this shell's script: removing the name
@@ -156,9 +163,24 @@ fi
 # Their own device, xfs or ext4, and never `/`: box images are large, and a
 # filled root filesystem takes the whole machine down with it. The agent's
 # preflight checks this again; asking here is so the default is a good guess.
-# An update keeps the store the machine already has, so it is not asked.
+# An update, or an install over a host that is already configured, keeps the
+# store the machine has: the agent's own environment file says where it is,
+# and a default guessed here would move it and hide everything already in it.
+# Only a first install is asked.
 tty_ok() { [ -e /dev/tty ] && (exec 3</dev/tty) 2>/dev/null; }
 BOX_STORE="${NESTRI_BOX_STORE:-}"
+HOST_ENV=/etc/nestri-host/env
+if [ -z "$BOX_STORE" ] && [ -f "$HOST_ENV" ]; then
+  BOX_STORE="$(sed -n 's/^NESLET_STORE=//p' "$HOST_ENV" | head -n1)"
+  [ -n "$BOX_STORE" ] ||
+    BOX_STORE="$(sed -n 's/^NESLET_BOX_STORE=//p' "$HOST_ENV" | head -n1)"
+  [ -z "$BOX_STORE" ] || say "Keeping this host's box store, $BOX_STORE."
+fi
+# The operator's card selection is kept the same way, so an upgrade neither
+# forgets it nor checks a different set of cards than the agent will use.
+if [ -z "$GPUS" ] && [ -f "$HOST_ENV" ]; then
+  GPUS="$(sed -n 's/^NESLET_GPUS=//p' "$HOST_ENV" | head -n1)"
+fi
 if [ "$MODE" = install ] && [ -z "$BOX_STORE" ]; then
   guess="$(df -P -T -x tmpfs -x devtmpfs -x overlay 2>/dev/null \
     | awk 'NR>1 && ($2=="xfs"||$2=="ext4") && $7!="/" && $7!~/^\/(boot|efi)/ {print $5, $7}' \
@@ -222,13 +244,10 @@ fi
 # the host lock, and onboarding refuses to race it. Stopped here, and started
 # again by onboarding on the new binary. A host with nothing running is
 # unaffected.
-if command -v systemctl >/dev/null 2>&1 &&
-  systemctl is-active --quiet nestri-host.service 2>/dev/null; then
-  say "Stopping the running host agent to upgrade it…"
-  systemctl stop nestri-host.service
-fi
-
-# --- onboard ----------------------------------------------------------------
+#
+# Preflight runs first, beside the running agent (`--check` takes no lock and
+# changes nothing), and the agent is stopped only if it passes: a machine that
+# was serving is never left offline by a check it would fail.
 # The token goes through the environment rather than argv, so it is not in
 # `ps` for the length of the run. With none, it is left out altogether, and
 # onboarding signs in through the browser instead.
@@ -237,9 +256,31 @@ if [ -n "$TOKEN" ]; then
 else
   unset NESTRI_INSTALL_TOKEN
 fi
+if [ -n "$GPUS" ]; then export NESLET_GPUS="$GPUS"; else unset NESLET_GPUS; fi
 export NESTRI_BOX_STORE="$BOX_STORE" NESTRI_API="$API" NESLET_STATE_DIR="$STATE_DIR"
-if tty_ok; then
-  exec "$BIN_DIR/nestri-host" onboard </dev/tty
-else
-  exec "$BIN_DIR/nestri-host" onboard
+STOPPED=0
+if command -v systemctl >/dev/null 2>&1 &&
+  systemctl is-active --quiet nestri-host.service 2>/dev/null; then
+  say "Checking this machine before stopping the running host agent…"
+  "$BIN_DIR/nestri-host" onboard --check ||
+    die "this machine failed the check above, so the running host agent was left alone, on the version it was already running."
+  say "Stopping the running host agent to upgrade it…"
+  systemctl stop nestri-host.service
+  STOPPED=1
 fi
+
+# --- onboard ----------------------------------------------------------------
+# Not `exec`: if onboarding fails after the agent was stopped, the agent is
+# started again on whatever it had, so an upgrade never leaves a host offline.
+rc=0
+if tty_ok; then
+  "$BIN_DIR/nestri-host" onboard </dev/tty || rc=$?
+else
+  "$BIN_DIR/nestri-host" onboard || rc=$?
+fi
+if [ "$rc" -ne 0 ] && [ "$STOPPED" = 1 ]; then
+  say "Onboarding did not finish, so the host agent is being started again."
+  systemctl start nestri-host.service ||
+    say "Could not start it. Run: systemctl start nestri-host"
+fi
+exit "$rc"
