@@ -44,6 +44,17 @@ pub fn keyframe_request(pid: Option<u32>) -> Vec<u8> {
     to_encoder(pid, &[MSG_IDR_REQUEST])
 }
 
+/// Stop `pid`'s encoder capturing and encoding; it keeps its game running.
+/// Never replayed to a later encoder: it is about one window, not a setting.
+pub fn window_pause(pid: Option<u32>) -> Vec<u8> {
+    to_encoder(pid, &[nesprotocol::MSG_WINDOW_PAUSE])
+}
+
+/// Start `pid`'s encoder again; it answers with a keyframe.
+pub fn window_resume(pid: Option<u32>) -> Vec<u8> {
+    to_encoder(pid, &[nesprotocol::MSG_WINDOW_RESUME])
+}
+
 /// Split a queued command into its target and the command itself.
 pub fn target_of(cmd: Vec<u8>) -> (Option<u32>, Vec<u8>) {
     if cmd.len() >= 5 && cmd[0] == TO_ENCODER {
@@ -219,6 +230,25 @@ mod tests {
         let mut f = Fanout::default();
         assert_eq!(f.encoder(10), Some(vec![]));
         assert_eq!(f.encoder(11), Some(vec![vec![MSG_IDR_REQUEST]]));
+    }
+
+    #[test]
+    fn pause_and_resume_go_to_one_encoder_and_are_not_replayed() {
+        let mut f = Fanout::default();
+        f.encoder(10);
+        f.encoder(20);
+        let (target, cmd) = target_of(window_pause(Some(20)));
+        assert_eq!(cmd, vec![nesprotocol::MSG_WINDOW_PAUSE]);
+        assert_eq!(
+            f.destinations_for(target),
+            vec![PathBuf::from("/tmp/nescapture-cmd-20.sock")]
+        );
+        let (target, cmd) = target_of(window_resume(Some(20)));
+        assert_eq!(cmd, vec![nesprotocol::MSG_WINDOW_RESUME]);
+        assert_eq!(target, Some(20));
+        // Targeted commands are not recorded, so a later encoder is not
+        // born paused.
+        assert_eq!(f.encoder(30).map(|r| r.len()), Some(1));
     }
 
     #[test]

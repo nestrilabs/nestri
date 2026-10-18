@@ -103,6 +103,15 @@ pub const MSG_IDR_REQUEST: u8 = 0x10; // request a keyframe (desktop → hub →
 pub const MSG_ENCODE_SETTINGS: u8 = 0x12; // change encoder settings (desktop → hub → nescapture)
 pub const MSG_CLIENT_CAPS: u8 = 0x15; // what the client can decode (desktop → hub → nescapture)
 pub const MSG_SURFACE_COLOR: u8 = 0x16; // what the compositor was told a surface is (nescope → nescapture)
+/// Stop capturing and encoding the window this client is shown (desktop → hub
+/// → that window's nescapture), ref(d-0087). The game keeps running; nothing is
+/// sent for the window until [`MSG_WINDOW_RESUME`]. No payload: the hub already
+/// knows which window the client is subscribed to, as it does for
+/// [`MSG_IDR_REQUEST`]. An old hub logs it as an unknown control message.
+pub const MSG_WINDOW_PAUSE: u8 = 0x18;
+/// Start again, with a keyframe within a second (desktop → hub → nescapture).
+/// Resume is also what forces the keyframe, so the client need not ask for one.
+pub const MSG_WINDOW_RESUME: u8 = 0x19;
 /// What the receiver actually got, once a second (desktop → hub).
 ///
 /// The hub cannot see this. Its own view of the path -- RTT, congestion window,
@@ -1009,6 +1018,9 @@ mod media_control_tests {
             ("MSG_ENCODE_SETTINGS", MSG_ENCODE_SETTINGS),
             ("MSG_CLIENT_CAPS", MSG_CLIENT_CAPS),
             ("MSG_SURFACE_COLOR", MSG_SURFACE_COLOR),
+            ("MSG_WINDOW_PAUSE", MSG_WINDOW_PAUSE),
+            ("MSG_WINDOW_RESUME", MSG_WINDOW_RESUME),
+            ("MSG_WINDOW_SUBSCRIBE", window::MSG_WINDOW_SUBSCRIBE),
             ("MSG_RECEIVER_REPORT", MSG_RECEIVER_REPORT),
             ("MSG_CONTROL_MODE", MSG_CONTROL_MODE),
             ("MSG_INPUT_BATCH", MSG_INPUT_BATCH),

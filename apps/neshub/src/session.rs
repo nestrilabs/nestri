@@ -14,7 +14,7 @@ use nesprotocol::{ControlMode, ReceiverReport, decode_control_mode, decode_recei
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{
     MSG_CLIENT_CAPS, MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_GAMEPAD, MSG_GAMEPAD_FEEDBACK,
-    MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT,
+    MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT, MSG_WINDOW_PAUSE, MSG_WINDOW_RESUME,
 };
 
 use crate::control::{Controller, PathView};
@@ -106,6 +106,9 @@ pub struct ClientSession {
     /// The encoder whose frames this client was last sent (0: none yet), so
     /// its keyframe requests go to that encoder alone.
     encoder_pid: Arc<AtomicU32>,
+    /// This session's pause of an encoder, if any (d-0087); released when it
+    /// goes or looks at another picture.
+    pause: crate::pauses::PauseHandle,
     primary_window: Arc<AtomicU32>,
     /// Where a subscribe request goes: the manager, which holds the windows.
     subscribe_tx: tokio::sync::mpsc::UnboundedSender<(iroh::EndpointId, WindowId)>,
@@ -150,6 +153,8 @@ impl Drop for ClientSession {
         for task in &self.tasks {
             task.abort();
         }
+        // A pause is this client's, and does not outlive it.
+        self.pause.close();
     }
 }
 
@@ -169,6 +174,7 @@ impl ClientSession {
         pyrowave_kbps: u32,
         client: iroh::EndpointId,
         negotiator: Arc<Negotiator>,
+        pauses: Arc<std::sync::Mutex<crate::pauses::PauseBook>>,
     ) -> Self {
         let (gamepad_feedback_tx, gamepad_feedback_rx) = tokio::sync::mpsc::unbounded_channel();
         let (video_tx, video_rx) = tokio::sync::mpsc::unbounded_channel::<MediaItem>();
@@ -176,7 +182,9 @@ impl ClientSession {
         let (cursor_tx, cursor_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (stats_tx, stats_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
         let (windows_tx, windows_rx) = tokio::sync::mpsc::unbounded_channel::<Vec<u8>>();
+        let pause = crate::pauses::PauseHandle::new(pauses, gamepad_session, idr_cmd_tx.clone());
         Self {
+            pause,
             subscription: Arc::new(std::sync::Mutex::new(Subscription::Legacy)),
             encoder_pid: Arc::new(AtomicU32::new(encoder_pid)),
             primary_window,
@@ -349,6 +357,7 @@ impl ClientSession {
                     client: self.client,
                     negotiator: self.negotiator.clone(),
                 };
+                let pause = self.pause.clone();
                 let subscribe = (
                     self.client,
                     self.subscribe_tx.clone(),
@@ -356,7 +365,7 @@ impl ClientSession {
                 );
                 self.tasks.push(tokio::spawn(async move {
                     run_control_reader(
-                        conn, idr, reports, controller, awaiting, pyrowave, caps, subscribe,
+                        conn, idr, reports, controller, awaiting, pyrowave, caps, subscribe, pause,
                     )
                     .await
                 }));
@@ -513,6 +522,9 @@ impl ClientSession {
     /// zero, hold deltas until a keyframe, and forget what it reported about
     /// the old one. The caller asks for the keyframe.
     pub fn restart_picture(&self) {
+        // Another picture: whatever this client paused is no longer the one
+        // it is shown, so it stops holding it.
+        self.pause.release();
         self.awaiting_keyframe.store(true, Ordering::Relaxed);
         if self.pending_video.is_none() {
             let _ = self.send_video.send(MediaItem::Resubscribe);
@@ -812,6 +824,7 @@ async fn run_control_reader(
         tokio::sync::mpsc::UnboundedSender<(iroh::EndpointId, WindowId)>,
         Arc<AtomicU32>,
     ),
+    pause: crate::pauses::PauseHandle,
 ) {
     run_framed_reader(conn, BIDI_CONTROL, "control", None, |msg_type, payload| {
         let idr_cmd_tx = idr_cmd_tx.clone();
@@ -821,6 +834,7 @@ async fn run_control_reader(
         let pyrowave = pyrowave.clone();
         let caps_sink = caps_sink.clone();
         let subscribe = subscribe.clone();
+        let pause = pause.clone();
         async move {
             match msg_type {
                 MSG_WINDOW_SUBSCRIBE => match nesprotocol::window::decode_subscribe(&payload) {
@@ -842,6 +856,28 @@ async fn run_control_reader(
                     // To the encoder of the window this client is shown,
                     // ref(d-0085): the other windows are fine.
                     let _ = idr_cmd_tx.send(keyframe_request(pid_or_all(&subscribe.2)));
+                }
+                MSG_WINDOW_PAUSE => {
+                    // This session's pause of the encoder it is shown, and of
+                    // nothing else. Until it has been sent a frame the hub
+                    // does not know that encoder, and there is nothing to pause.
+                    match pid_or_all(&subscribe.2) {
+                        Some(pid) => {
+                            info!("client pauses encoder {pid}");
+                            pause.pause(pid);
+                        }
+                        None => debug!("pause from a client with no encoder yet; ignored"),
+                    }
+                }
+                MSG_WINDOW_RESUME => {
+                    // Only what this session paused. A resume from one that
+                    // paused nothing starts nothing; the keyframe is asked for
+                    // either way, since the client restarted its picture.
+                    awaiting_keyframe.store(true, Ordering::Relaxed);
+                    pause.resume();
+                    if let Some(pid) = pid_or_all(&subscribe.2) {
+                        let _ = idr_cmd_tx.send(keyframe_request(Some(pid)));
+                    }
                 }
                 MSG_CLIENT_CAPS => {
                     // Passed through untouched, and in particular *without*
@@ -1208,6 +1244,8 @@ pub struct SessionManager {
         std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<(iroh::EndpointId, WindowId)>>>,
     /// The encoder of the primary picture (0: untagged or none yet).
     primary_pid: Arc<AtomicU32>,
+    /// Which sessions have paused which encoders, ref(d-0087).
+    pauses: Arc<std::sync::Mutex<crate::pauses::PauseBook>>,
     /// Where commands for the encoders go; set by `serve_subscriptions`.
     cmd_tx: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
 }
@@ -1239,7 +1277,22 @@ impl SessionManager {
             relay_ms: Arc::new(AtomicU32::new(0)),
             pyrowave_kbps,
             negotiator: Arc::new(Negotiator::new()),
+            pauses: Default::default(),
         }
+    }
+
+    /// A session's pause handle, for tests.
+    #[cfg(test)]
+    pub(crate) async fn pause_handle_of(
+        &self,
+        id: &iroh::EndpointId,
+    ) -> Option<crate::pauses::PauseHandle> {
+        self.sessions.lock().await.get(id).map(|s| s.pause.clone())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn encoder_paused(&self, pid: u32) -> bool {
+        self.pauses.lock().unwrap().paused(pid)
     }
 
     /// Take on one of a client's connections, creating the session if this is
@@ -1273,6 +1326,7 @@ impl SessionManager {
                 self.pyrowave_kbps,
                 id,
                 self.negotiator.clone(),
+                self.pauses.clone(),
             )
         });
         session.attach(carrier, conn);

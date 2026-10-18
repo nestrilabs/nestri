@@ -13,6 +13,7 @@ mod session;
 mod ticket;
 mod windows;
 mod capture_cmd;
+mod pauses;
 
 use std::net::{Ipv4Addr, SocketAddrV4};
 use std::path::PathBuf;
