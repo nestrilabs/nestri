@@ -31,6 +31,9 @@ const hostname = process.env.HOST ?? '127.0.0.1';
 Bun.serve({
 	port,
 	hostname,
+	// A host's job call is held open for up to 25 seconds with nothing sent,
+	// and Bun's default of ten would close it. See `GET /machine/jobs?wait=`.
+	idleTimeout: 60,
 	// A Worker runtime hands the handler a context whose `waitUntil` keeps the
 	// invocation alive past the response. A process does not need convincing to
 	// stay alive, so the equivalent is to let the promise run — with a catch,

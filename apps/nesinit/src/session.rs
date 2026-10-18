@@ -143,8 +143,9 @@ where
     let mut running: BTreeMap<LaunchId, Current> = BTreeMap::new();
     let mut exits: Exits = JoinSet::new();
     // A terminal launch's exit, once it has ended while others were still
-    // running. The box stays up for them, takes no new launches, and ends with
-    // this exit when the last of them has gone.
+    // running. The box stays up for them, still takes new launches (closing
+    // one window is not the person being done, ref(d-0085)), and ends with
+    // this exit when the last launch in it has gone.
     let mut ending: Option<Exit> = None;
     // Each launch's content mounted after boot, by launch, so it can be taken
     // down with the launch. Recorded when asked for, before it has finished.
@@ -157,6 +158,8 @@ where
     // resolves immediately and forever, so an unguarded branch on one turns
     // this loop into a spin that still looks like it is waiting.
     let mut services_open = true;
+    // The box's compositor exit, once there is a compositor.
+    let mut compositor_exit: Option<crate::workload::Exited> = None;
 
     loop {
         // The exits are guarded like the channels below: an empty set resolves
@@ -176,6 +179,9 @@ where
             up = payload.from_workload.recv(), if relay_open => Event::FromWorkload(up),
             found = addresses.recv(), if carrier_open => Event::Address(found),
             gone = services.deaths().recv(), if services_open => Event::ServiceDied(gone),
+            gone = async { compositor_exit.as_mut().expect("guarded").await }, if compositor_exit.is_some() => {
+                Event::CompositorDied(gone)
+            },
         };
 
         let line = match event {
@@ -279,6 +285,18 @@ where
                 tracing::error!(service = %name, ?exit, "a service died");
                 send(&mut writer, &GuestToHost::ServiceDied { name, exit }).await?;
                 continue;
+            }
+            Event::CompositorDied(gone) => {
+                // Every launch draws on it, so with it gone nothing in this box
+                // can show a window: said as a service death, then the box
+                // ends rather than carrying on looking healthy.
+                let exit = gone.unwrap_or_else(|_| Exit::code(1));
+                tracing::error!(?exit, "the compositor has exited: no window in this box can draw");
+                send(&mut writer, &GuestToHost::ServiceDied { name: "nescope".into(), exit }).await?;
+                workload.signal_stop();
+                return Ok(Outcome::Refused(Failure::new(format!(
+                    "the compositor exited ({exit:?}), so the box can no longer draw"
+                ))));
             }
             Event::ServiceDied(None) => {
                 // The supervisor is gone, which on the way down is ordinary.
@@ -400,8 +418,17 @@ where
                 // A box whose own services will not come up cannot be launched
                 // into, so this is refused rather than reported and carried on
                 // from — unlike a launch, which is the caller's to correct.
-                match services.bring_up(descriptor.video) {
+                match services.bring_up(descriptor.video).and_then(|mut up| {
+                    // After the services and before the box is ready: the
+                    // first launch joins it like every other. ref(d-0085)
+                    if let Some(compositor) = &descriptor.compositor {
+                        workload.start_compositor(compositor)?;
+                        up.push("nescope".to_string());
+                    }
+                    Ok(up)
+                }) {
                     Ok(up) => {
+                        compositor_exit = workload.compositor_exit();
                         tracing::info!(services = up.len(), "the box is ready to be launched into");
                         send(&mut writer, &GuestToHost::Initialized { services: up }).await?
                     }
@@ -433,19 +460,6 @@ where
                     refuse(&mut writer, id, &reason).await?;
                     continue;
                 }
-                if ending.is_some() {
-                    // The box was ended by a terminal launch and is waiting
-                    // only for the launches already in it. A new one would
-                    // keep alive a box its person has finished with.
-                    refuse(
-                        &mut writer,
-                        id,
-                        "the box is ending: a launch that ends it has exited",
-                    )
-                    .await?;
-                    continue;
-                }
-
                 let started = start(
                     &mut writer,
                     workload,
@@ -655,6 +669,7 @@ enum Event {
     FromWorkload(Option<Payload>),
     Address(Option<crate::ticket::Found>),
     ServiceDied(Option<Died>),
+    CompositorDied(std::io::Result<Exit>),
 }
 
 /// Hand an envelope to the relay, and treat a relay that is not there as the
@@ -709,6 +724,7 @@ mod tests {
             overlays: Vec::new(),
             images: Vec::new(),
             video: Default::default(),
+            compositor: None,
         }
     }
 
@@ -905,6 +921,105 @@ mod tests {
             workload.started.is_empty(),
             "the descriptor started something, which is a launch's job"
         );
+    }
+
+    /// The box's compositor is the box's, started once with the descriptor and
+    /// before anything is launched. ref(d-0085)
+    #[tokio::test]
+    async fn the_compositor_is_started_by_the_box_and_not_by_a_launch() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given.clone()),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.compositors, vec![given.compositor.unwrap()]);
+        assert!(workload.started.is_empty());
+    }
+
+    /// A box whose compositor will not come up cannot be drawn on, so it is
+    /// refused like a box whose services will not.
+    #[tokio::test]
+    async fn a_compositor_that_will_not_start_refuses_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.compositor_failure = Some(Failure::new("no gpu"));
+        let session = spawn(guest, Given::new(double));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given),
+            })
+            .await;
+        assert_eq!(caller.expect().await, GuestToHost::Mounted);
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::InitFailed {
+                reason: "no gpu".into()
+            }
+        );
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
+    }
+
+    /// A compositor that exits ends the box, and the host is told which
+    /// service it was.
+    #[tokio::test]
+    async fn a_compositor_that_exits_is_reported_and_ends_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.compositor_exit = Some(rx);
+        let session = spawn(guest, Given::new(double));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller.say(&HostToGuest::Boot { descriptor: Box::new(given) }).await;
+        caller.expect_booted().await;
+        tx.send(Exit::signal(11)).unwrap();
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::ServiceDied { name: "nescope".into(), exit: Exit::signal(11) }
+        );
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
     }
 
     #[tokio::test]
@@ -1168,10 +1283,11 @@ mod tests {
         assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(7)));
     }
 
-    /// Once a terminal launch has ended, the box waits only for what is
-    /// already in it: a new launch is refused.
+    /// A terminal launch ending beside another is one window closed, not the
+    /// person done: the box still takes a new launch, and ends only once the
+    /// last launch in it has gone.
     #[tokio::test]
-    async fn an_ending_box_takes_no_new_launch() {
+    async fn a_box_takes_a_new_launch_after_one_of_its_launches_ended() {
         let (mut caller, session) =
             booted(Given::new(Double::exits_when_stopped(Exit::code(0)))).await;
 
@@ -1183,17 +1299,15 @@ mod tests {
         assert_eq!(caller.expect().await, exited("l-1"));
 
         caller.say(&launch_and_stay("l-3")).await;
-        let GuestToHost::StartFailed { id, reason } = caller.expect().await else {
-            panic!("an ending box took a new launch")
-        };
-        assert_eq!(id, LaunchId::new("l-3"));
-        assert!(reason.contains("ending"), "{reason}");
+        assert_eq!(caller.expect().await, started("l-3"));
 
         caller.say(&HostToGuest::Stop { id: LaunchId::new("l-2") }).await;
         assert_eq!(caller.expect().await, exited("l-2"));
+        caller.say(&HostToGuest::Stop { id: LaunchId::new("l-3") }).await;
+        assert_eq!(caller.expect().await, exited("l-3"));
         let (outcome, workload, _) = session.await.unwrap();
         assert_eq!(outcome, Outcome::WorkloadExited(Exit::code(0)));
-        assert_eq!(workload.started.len(), 2);
+        assert_eq!(workload.started.len(), 3);
     }
 
     /// The last launch of an ending box failing to restart leaves nothing to
