@@ -36,6 +36,9 @@ import {
  * credential is a long-lived secret on hardware in somebody's home, and what
  * one leaking can reach is decided here.
  */
+/** The longest a job call is held. Under the server's idle timeout and a tunnel's. */
+const MAX_WAIT_SECONDS = 25;
+
 export namespace SessionApi {
 	/**
 	 * One answer for "no such run" and "not your run".
@@ -732,7 +735,7 @@ export namespace SessionApi {
 			tags: ['Session'],
 			summary: 'Ask for work',
 			description:
-				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked, its last launch is over, or the terms it started under ran out, repeated on every poll until the host reports it ended. `launch.start` is another game to start in a box that is already live; `launch.stop` is one launch to end, both repeated until the host reports that launch. Poll at the cadence the heartbeat hands down. An agent skips a kind it does not know.',
+				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked, its last launch is over, or the terms it started under ran out, repeated on every poll until the host reports it ended. `launch.start` is another game to start in a box that is already live; `launch.stop` is one launch to end, both repeated until the host reports that launch. An agent skips a kind it does not know. With `wait`, a call that finds nothing is held open until work appears or the wait is up, then answers empty, so a host is handed work within a moment of it being asked for; poll again straight away. An API that cannot hold a call answers at once whatever `wait` says, and then the cadence the heartbeat hands down is the one to poll at.',
 			responses: {
 				200: {
 					content: { 'application/json': { schema: Result(z.array(Session.Job)) } },
@@ -741,8 +744,37 @@ export namespace SessionApi {
 				403: ErrorResponses[403]
 			}
 		}),
+		validator(
+			'query',
+			z.object({
+				wait: z.coerce
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.catch(undefined)
+					.meta({
+						description: `Seconds to hold the call open when there is no work, at most ${MAX_WAIT_SECONDS}. A larger value is held for the most; absent or 0 answers at once`,
+						example: 25
+					})
+			})
+		),
 		async (c) => {
-			return c.json({ data: await Session.listJobsForMachine(Actor.machineID) });
+			const { wait } = c.req.valid('query');
+			// A Worker has nowhere to keep a held call that another request can
+			// reach, so there the answer is the plain one and the host's own
+			// interval is what it polls at. Only a long-lived process holds.
+			const holds = typeof (globalThis as { Bun?: unknown }).Bun !== 'undefined';
+			const waitMs = holds ? Math.min(wait ?? 0, MAX_WAIT_SECONDS) * 1000 : 0;
+			return c.json({
+				data:
+					waitMs > 0
+						? await Session.holdJobsForMachine(Actor.machineID, {
+								waitMs,
+								signal: c.req.raw.signal
+							})
+						: await Session.listJobsForMachine(Actor.machineID)
+			});
 		}
 	);
 }
