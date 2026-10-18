@@ -498,9 +498,9 @@ fn mount_overlay(overlay: &Overlay) -> Result<(), Failure> {
     // Everything that can be refused without touching the filesystem is
     // refused first, so a descriptor this cannot act on leaves nothing behind.
     let plan = OverlayPlan::new(overlay)?;
-    let lower = device_for(&plan.lower, true)
+    let (lower, _lower_held) = device_for(&plan.lower, true)
         .map_err(|error| plan.failed("the build image", &plan.lower, error))?;
-    let upper = device_for(&plan.upper, false)
+    let (upper, _upper_held) = device_for(&plan.upper, false)
         .map_err(|error| plan.failed("the writable layer", &plan.upper, error))?;
 
     mount_one(
@@ -587,7 +587,7 @@ impl ImagePlan {
 /// Mount one read-only image where the descriptor says.
 fn mount_image(image: &Image) -> Result<(), Failure> {
     let plan = ImagePlan::new(image)?;
-    let device = device_for(&plan.device, true).map_err(|error| plan.failed(error))?;
+    let (device, _held) = device_for(&plan.device, true).map_err(|error| plan.failed(error))?;
     mount_one(&device, &plan.at, c"erofs", plan.flags, None).map_err(|error| plan.failed(error))
 }
 
@@ -642,12 +642,18 @@ fn unmount_one(target: &std::ffi::CStr) -> Result<(), Failure> {
 /// file in a share is the host's to name, and a link would let whatever wrote
 /// it name another. Anything that is neither a block device nor a regular file
 /// is refused too.
-fn device_for(source: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
+///
+/// A loop device comes back with its descriptor, which the caller holds until
+/// the mount is made: it is attached with autoclear, so the moment nothing
+/// holds it open the kernel detaches it, and the next attach is handed the
+/// same device. Two attaches in a row (a build image, then its writable layer)
+/// then both land on one device and the first mount reads the second file.
+fn device_for(source: &std::ffi::CStr, read_only: bool) -> io::Result<(CString, Option<std::fs::File>)> {
     use std::os::unix::fs::FileTypeExt;
     let probe = open_no_symlinks(source, libc::O_RDONLY)?;
     let kind = probe.metadata()?.file_type();
     if kind.is_block_device() {
-        return Ok(source.to_owned());
+        return Ok((source.to_owned(), None));
     }
     if !kind.is_file() {
         return Err(io::Error::new(
@@ -656,7 +662,7 @@ fn device_for(source: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
         ));
     }
     drop(probe);
-    loop_attach(source, read_only)
+    loop_attach(source, read_only).map(|(path, device)| (path, Some(device)))
 }
 
 /// `struct open_how` from `<linux/openat2.h>`.
@@ -731,7 +737,7 @@ const LO_FLAGS_AUTOCLEAR: u32 = 4;
 ///
 /// Retried a few times on `EBUSY`: a device handed out as free can be taken
 /// by somebody else before it is configured.
-fn loop_attach(file: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
+fn loop_attach(file: &std::ffi::CStr, read_only: bool) -> io::Result<(CString, std::fs::File)> {
     use std::os::fd::AsRawFd;
 
     // Opened again, with the same refusal, because the file may have been
@@ -775,7 +781,7 @@ fn loop_attach(file: &std::ffi::CStr, read_only: bool) -> io::Result<CString> {
             )
         };
         if done == 0 {
-            return CString::new(path).map_err(io::Error::other);
+            return Ok((CString::new(path).map_err(io::Error::other)?, device));
         }
         last = io::Error::last_os_error();
         if last.raw_os_error() != Some(libc::EBUSY) {
