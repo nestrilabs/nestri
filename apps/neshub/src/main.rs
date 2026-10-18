@@ -305,7 +305,18 @@ async fn main() -> Result<()> {
                 if destinations.first() != Some(&cmd_path) {
                     for path in destinations {
                         match sock.send_to(&bytes, &path) {
-                            Ok(_) => {}
+                            Ok(_) => {
+                                if matches!(
+                                    bytes.first(),
+                                    Some(&nesprotocol::MSG_WINDOW_PAUSE | &nesprotocol::MSG_WINDOW_RESUME)
+                                ) {
+                                    tracing::info!(
+                                        "sent {} to {}",
+                                        if bytes[0] == nesprotocol::MSG_WINDOW_PAUSE { "pause" } else { "resume" },
+                                        path.display()
+                                    );
+                                }
+                            }
                             // Refused or absent: that process has gone.
                             Err(e) if capture_cmd::encoder_is_gone(&e) => {
                                 tracing::info!("encoder at {} is gone: {e}", path.display());
