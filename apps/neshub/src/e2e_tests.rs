@@ -577,4 +577,39 @@ mod windows {
         assert_eq!(got.len(), 3);
         assert!(got.iter().all(|g| (g.0, g.1) == (0, 0)));
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_session_that_goes_while_paused_releases_its_pause() {
+        let rig = rig().await;
+        tell(&rig, |m| encode_event_message(m, &opened(0, "launch_a"))).await;
+        tell(&rig, |m| encode_window_pid(m, 0, GAME_A)).await;
+        draw(&rig, GAME_A, 0, true).await;
+        let _ = received(&rig.client).await;
+        let me = rig._client_ep.addr().id;
+        let handle = rig.mgr.pause_handle_of(&me).await.expect("a session");
+        handle.pause(GAME_A);
+        assert!(rig.mgr.encoder_paused(GAME_A));
+        let controller = tokio::sync::Mutex::new(Controller::new(Limits::new(4_000)));
+        let (cmd, _rx) = tokio::sync::mpsc::unbounded_channel();
+        rig.mgr.remove_session(&me, &controller, &cmd).await;
+        assert!(!rig.mgr.encoder_paused(GAME_A), "the pause went with the session");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_resubscribe_while_paused_releases_the_old_encoder() {
+        let rig = rig().await;
+        tell(&rig, |m| encode_event_message(m, &opened(0, "launch_a"))).await;
+        tell(&rig, |m| encode_event_message(m, &opened(1, "launch_b"))).await;
+        tell(&rig, |m| encode_window_pid(m, 0, GAME_A)).await;
+        tell(&rig, |m| encode_window_pid(m, 1, GAME_B)).await;
+        draw(&rig, GAME_A, 0, true).await;
+        let _ = received(&rig.client).await;
+        let me = rig._client_ep.addr().id;
+        let handle = rig.mgr.pause_handle_of(&me).await.expect("a session");
+        handle.pause(GAME_A);
+        assert!(rig.mgr.encoder_paused(GAME_A));
+        let (idr, _rx) = tokio::sync::mpsc::unbounded_channel();
+        rig.mgr.subscribe(me, 1, &idr).await;
+        assert!(!rig.mgr.encoder_paused(GAME_A), "no longer shown, no longer held");
+    }
 }
