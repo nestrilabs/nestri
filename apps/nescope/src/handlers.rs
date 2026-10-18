@@ -537,14 +537,19 @@ impl XwmHandler for CalloopData {
         h: Option<u32>,
         _reorder: Option<Reorder>,
     ) {
-        // Honor size requests within reason but always keep position at (0,0).
-        let mut geo = window.geometry();
-        if let Some(w) = w {
-            geo.size.w = w as i32;
+        // Honor size requests, but never past the output: a window larger
+        // than it is cut off, and the pointer cannot reach the cut part. The
+        // output keeps following the client's window instead.
+        if window.is_override_redirect() {
+            return;
         }
-        if let Some(h) = h {
-            geo.size.h = h as i32;
-        }
+        let cur = window.geometry();
+        let (x, y, w, h) = crate::state::clamp_to_output(
+            (cur.loc.x, cur.loc.y, cur.size.w, cur.size.h),
+            (w, h),
+            (self.state.width as i32, self.state.height as i32),
+        );
+        let geo = Rectangle::new((x, y).into(), (w, h).into());
         let _ = window.configure(geo);
     }
 

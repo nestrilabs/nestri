@@ -91,6 +91,25 @@ impl WinKey {
     }
 }
 
+/// A window's geometry after it asked for `want` (either side may be absent),
+/// held inside an `output` of its own size: no larger, and moved back in if
+/// the request would put part of it outside. Pure so it can be tested.
+pub fn clamp_to_output(
+    cur: (i32, i32, i32, i32),
+    want: (Option<u32>, Option<u32>),
+    output: (i32, i32),
+) -> (i32, i32, i32, i32) {
+    let side = |req: Option<u32>, cur: i32, max: i32| {
+        let v = req.map_or(cur, |v| v.min(i32::MAX as u32) as i32);
+        v.clamp(1, max.max(1))
+    };
+    let w = side(want.0, cur.2, output.0);
+    let h = side(want.1, cur.3, output.1);
+    let x = cur.0.clamp(0, (output.0 - w).max(0));
+    let y = cur.1.clamp(0, (output.1 - h).max(0));
+    (x, y, w, h)
+}
+
 pub struct CalloopData {
     pub state: NescopeState,
     pub display: Display<NescopeState>,
@@ -1211,5 +1230,45 @@ mod fit_output_tests {
     fn odd_and_tiny_sizes_are_made_usable() {
         assert_eq!(fit_output((1281, 721), (1920, 1080)), (1280, 720));
         assert_eq!(fit_output((10, 10), (1920, 1080)), (320, 320));
+    }
+}
+
+#[cfg(test)]
+mod clamp_to_output_tests {
+    use super::clamp_to_output;
+
+    const OUT: (i32, i32) = (1280, 720);
+
+    #[test]
+    fn a_window_that_fits_is_left_alone() {
+        assert_eq!(clamp_to_output((0, 0, 800, 600), (Some(1000), Some(700)), OUT), (0, 0, 1000, 700));
+    }
+
+    #[test]
+    fn a_launch_size_game_is_held_to_the_shrunk_output() {
+        assert_eq!(clamp_to_output((0, 0, 1280, 720), (Some(1920), Some(1080)), OUT), (0, 0, 1280, 720));
+    }
+
+    #[test]
+    fn a_width_only_request_leaves_the_height() {
+        assert_eq!(clamp_to_output((0, 0, 1280, 500), (Some(1920), None), OUT), (0, 0, 1280, 500));
+    }
+
+    #[test]
+    fn a_height_only_request_leaves_the_width() {
+        assert_eq!(clamp_to_output((0, 0, 640, 720), (None, Some(2000)), OUT), (0, 0, 640, 720));
+    }
+
+    #[test]
+    fn a_window_pushed_past_the_edge_is_moved_back() {
+        assert_eq!(clamp_to_output((900, 500, 400, 300), (None, None), OUT), (880, 420, 400, 300));
+    }
+
+    #[test]
+    fn each_window_is_clamped_on_its_own() {
+        let a = clamp_to_output((0, 0, 1920, 1080), (None, None), OUT);
+        let b = clamp_to_output((100, 100, 300, 200), (Some(5000), None), OUT);
+        assert_eq!(a, (0, 0, 1280, 720));
+        assert_eq!(b, (0, 100, 1280, 200));
     }
 }
