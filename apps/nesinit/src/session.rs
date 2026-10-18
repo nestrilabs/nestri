@@ -160,6 +160,9 @@ where
     let mut services_open = true;
     // The box's compositor exit, once there is a compositor.
     let mut compositor_exit: Option<crate::workload::Exited> = None;
+    // The box's daemon exit and name, once there is a daemon.
+    let mut daemon_exit: Option<crate::workload::Exited> = None;
+    let mut daemon_name = String::new();
 
     loop {
         // The exits are guarded like the channels below: an empty set resolves
@@ -181,6 +184,9 @@ where
             gone = services.deaths().recv(), if services_open => Event::ServiceDied(gone),
             gone = async { compositor_exit.as_mut().expect("guarded").await }, if compositor_exit.is_some() => {
                 Event::CompositorDied(gone)
+            },
+            gone = async { daemon_exit.as_mut().expect("guarded").await }, if daemon_exit.is_some() => {
+                Event::DaemonDied(gone)
             },
         };
 
@@ -296,6 +302,20 @@ where
                 workload.signal_stop();
                 return Ok(Outcome::Refused(Failure::new(format!(
                     "the compositor exited ({exit:?}), so the box can no longer draw"
+                ))));
+            }
+            Event::DaemonDied(gone) => {
+                // What every launch shares is gone with it (the box's one
+                // Steam sign-in), and a launch that carried on would have
+                // nothing to say why its game cannot reach it. Said as a
+                // service death, then the box ends.
+                let exit = gone.unwrap_or_else(|_| Exit::code(1));
+                let name = daemon_name.clone();
+                tracing::error!(?exit, %name, "the box's daemon has exited");
+                send(&mut writer, &GuestToHost::ServiceDied { name: name.clone(), exit }).await?;
+                workload.signal_stop();
+                return Ok(Outcome::Refused(Failure::new(format!(
+                    "the {name} daemon exited ({exit:?}), so the box can no longer do what it is for"
                 ))));
             }
             Event::ServiceDied(None) => {
@@ -425,10 +445,21 @@ where
                         workload.start_compositor(compositor)?;
                         up.push("nescope".to_string());
                     }
+                    // After the compositor: what it starts may draw. And the
+                    // daemon is started, not waited on: it says itself when it
+                    // works, to whoever needs it to.
+                    if let Some(daemon) = &descriptor.daemon {
+                        workload.start_daemon(daemon)?;
+                        up.push(daemon.name.clone());
+                    }
                     Ok(up)
                 }) {
                     Ok(up) => {
                         compositor_exit = workload.compositor_exit();
+                        daemon_exit = workload.daemon_exit();
+                        if let Some(daemon) = &descriptor.daemon {
+                            daemon_name = daemon.name.clone();
+                        }
                         tracing::info!(services = up.len(), "the box is ready to be launched into");
                         send(&mut writer, &GuestToHost::Initialized { services: up }).await?
                     }
@@ -670,6 +701,7 @@ enum Event {
     Address(Option<crate::ticket::Found>),
     ServiceDied(Option<Died>),
     CompositorDied(std::io::Result<Exit>),
+    DaemonDied(std::io::Result<Exit>),
 }
 
 /// Hand an envelope to the relay, and treat a relay that is not there as the
@@ -725,6 +757,7 @@ mod tests {
             images: Vec::new(),
             video: Default::default(),
             compositor: None,
+            daemon: None,
         }
     }
 
@@ -1017,6 +1050,86 @@ mod tests {
         assert_eq!(
             caller.expect().await,
             GuestToHost::ServiceDied { name: "nescope".into(), exit: Exit::signal(11) }
+        );
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
+    }
+
+    fn daemon_given() -> nesprotocol::lifecycle::Daemon {
+        nesprotocol::lifecycle::Daemon {
+            name: "steam".into(),
+            exec: Exec {
+                argv: vec!["/payload/client".into()],
+                env: Default::default(),
+                cwd: None,
+                uid: 1001,
+                gid: 1001,
+            },
+        }
+    }
+
+    /// The box's daemon is started by the box, after the compositor, and is
+    /// listed among its services. ref(d-0085)
+    #[tokio::test]
+    async fn the_daemon_is_started_by_the_box_after_the_compositor() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280, height: 720, fps: 30, uid: 1001, gid: 1001, env: Default::default(),
+        });
+        given.daemon = Some(daemon_given());
+        caller.expect_ready().await;
+        caller.say(&HostToGuest::Boot { descriptor: Box::new(given.clone()) }).await;
+        assert_eq!(caller.expect().await, GuestToHost::Mounted);
+        let GuestToHost::Initialized { services } = caller.expect().await else {
+            panic!("the box did not come up")
+        };
+        assert!(services.contains(&"steam".to_string()), "{services:?}");
+        caller.say(&HostToGuest::Shutdown).await;
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.daemons, vec![given.daemon.unwrap()]);
+        let order: Vec<_> = workload.order.iter().filter(|o| ["compositor", "daemon"].contains(o)).collect();
+        assert_eq!(order, vec![&"compositor", &"daemon"]);
+    }
+
+    /// A daemon that will not start refuses the box.
+    #[tokio::test]
+    async fn a_daemon_that_will_not_start_refuses_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.daemon_failure = Some(Failure::new("no client"));
+        let session = spawn(guest, Given::new(double));
+        let mut given = descriptor();
+        given.daemon = Some(daemon_given());
+        caller.expect_ready().await;
+        caller.say(&HostToGuest::Boot { descriptor: Box::new(given) }).await;
+        assert_eq!(caller.expect().await, GuestToHost::Mounted);
+        assert_eq!(caller.expect().await, GuestToHost::InitFailed { reason: "no client".into() });
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
+    }
+
+    /// A daemon that exits is reported by name and ends the box.
+    #[tokio::test]
+    async fn a_daemon_that_exits_is_reported_and_ends_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.daemon_exit = Some(rx);
+        let session = spawn(guest, Given::new(double));
+        let mut given = descriptor();
+        given.daemon = Some(daemon_given());
+        caller.expect_ready().await;
+        caller.say(&HostToGuest::Boot { descriptor: Box::new(given) }).await;
+        caller.expect_booted().await;
+        tx.send(Exit::code(3)).unwrap();
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::ServiceDied { name: "steam".into(), exit: Exit::code(3) }
         );
         let (outcome, _, _) = session.await.unwrap();
         assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
