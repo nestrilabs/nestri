@@ -154,7 +154,7 @@ impl Drop for ClientSession {
             task.abort();
         }
         // A pause is this client's, and does not outlive it.
-        self.pause.release();
+        self.pause.close();
     }
 }
 

@@ -22,6 +22,11 @@ use crate::capture_cmd::{window_pause, window_resume};
 pub struct PauseBook {
     /// The encoder each pausing session paused. One at a time per session.
     paused_by: BTreeMap<u32, u32>,
+    /// Sessions that have gone. Set under the same lock that records pauses,
+    /// so a pause that a still-running reader makes after its session was
+    /// dropped finds it shut and does nothing, rather than holding an encoder
+    /// that nobody is left to resume.
+    closed: BTreeSet<u32>,
 }
 
 impl PauseBook {
@@ -36,6 +41,9 @@ impl PauseBook {
     /// `session` pauses `pid`. The commands to send, in order.
     fn pause(&mut self, session: u32, pid: u32) -> Vec<Vec<u8>> {
         let mut out = Vec::new();
+        if self.closed.contains(&session) {
+            return out;
+        }
         if self.paused_by.get(&session) == Some(&pid) {
             return out;
         }
@@ -60,6 +68,12 @@ impl PauseBook {
         } else {
             Vec::new()
         }
+    }
+
+    /// The session is gone: release what it paused and refuse any more.
+    fn close(&mut self, session: u32) -> Vec<Vec<u8>> {
+        self.closed.insert(session);
+        self.release(session)
     }
 
     pub fn paused(&self, pid: u32) -> bool {
@@ -97,6 +111,13 @@ impl PauseHandle {
     /// all when it paused nothing.
     pub fn resume(&self) {
         self.release();
+    }
+
+    /// The session is being dropped: release its pause and refuse any pause a
+    /// reader that is still running makes after this.
+    pub fn close(&self) {
+        let cmds = self.book.lock().unwrap_or_else(|e| e.into_inner()).close(self.session);
+        self.send(cmds);
     }
 
     /// Let go of whatever this session paused: it is leaving, or looking at
@@ -177,6 +198,31 @@ mod tests {
         a.release(); // restart_picture on moving to another window
         assert_eq!(sent(&mut rx), vec![window_resume(Some(10))]);
         assert!(book.lock().unwrap().paused(20), "someone else's pause is untouched");
+    }
+
+    #[test]
+    fn a_pause_after_the_session_is_closed_is_a_no_op() {
+        let (book, tx, mut rx) = rig();
+        let a = PauseHandle::new(book.clone(), 1, tx);
+        a.pause(10);
+        sent(&mut rx);
+        a.close();
+        assert_eq!(sent(&mut rx), vec![window_resume(Some(10))]);
+        // The control reader, still running on another thread, pauses again.
+        a.pause(10);
+        assert!(sent(&mut rx).is_empty());
+        assert!(!book.lock().unwrap().paused(10));
+    }
+
+    #[test]
+    fn releasing_without_closing_still_allows_a_later_pause() {
+        let (book, tx, mut rx) = rig();
+        let a = PauseHandle::new(book, 1, tx);
+        a.pause(10);
+        a.release();
+        sent(&mut rx);
+        a.pause(20);
+        assert_eq!(sent(&mut rx), vec![window_pause(Some(20))]);
     }
 
     #[test]
