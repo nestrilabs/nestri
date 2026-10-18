@@ -14,13 +14,13 @@ use nesprotocol::{ControlMode, ReceiverReport, decode_control_mode, decode_recei
 use nesprotocol::{FRAME_HDR_LEN, STREAM_VERSION, encode_frame};
 use nesprotocol::{
     MSG_CLIENT_CAPS, MSG_CONTROL_MODE, MSG_ENCODE_SETTINGS, MSG_GAMEPAD, MSG_GAMEPAD_FEEDBACK,
-    MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT,
+    MSG_IDR_REQUEST, MSG_INPUT_BATCH, MSG_RECEIVER_REPORT, MSG_WINDOW_PAUSE, MSG_WINDOW_RESUME,
 };
 
 use crate::control::{Controller, PathView};
 use crate::negotiation::{Negotiator, effective_caps};
 
-use crate::capture_cmd::keyframe_request;
+use crate::capture_cmd::{keyframe_request, window_pause, window_resume};
 use crate::dgram::{MediaItem, run_datagram_writer};
 use crate::windows::{Source, Subscription, WindowTable, route, wants_cursor};
 use nesprotocol::window::{MSG_WINDOW_SUBSCRIBE, STREAM_WINDOWS, WINDOW_DEFAULT, WindowEvent, WindowId};
@@ -842,6 +842,28 @@ async fn run_control_reader(
                     // To the encoder of the window this client is shown,
                     // ref(d-0085): the other windows are fine.
                     let _ = idr_cmd_tx.send(keyframe_request(pid_or_all(&subscribe.2)));
+                }
+                MSG_WINDOW_PAUSE => {
+                    // To the encoder of the window this client is shown, and
+                    // to nobody else. Until the client has been sent a frame
+                    // the hub does not know that encoder, and "every encoder"
+                    // is the wrong answer for a pause: it would stop windows
+                    // nobody asked about.
+                    match pid_or_all(&subscribe.2) {
+                        Some(pid) => {
+                            info!("client pauses encoder {pid}");
+                            let _ = idr_cmd_tx.send(window_pause(Some(pid)));
+                        }
+                        None => debug!("pause from a client with no encoder yet; ignored"),
+                    }
+                }
+                MSG_WINDOW_RESUME => {
+                    // The same gate as a keyframe request: what arrives before
+                    // the keyframe cannot be decoded and starves it.
+                    awaiting_keyframe.store(true, Ordering::Relaxed);
+                    let pid = pid_or_all(&subscribe.2);
+                    info!("client resumes encoder {pid:?}");
+                    let _ = idr_cmd_tx.send(window_resume(pid));
                 }
                 MSG_CLIENT_CAPS => {
                     // Passed through untouched, and in particular *without*

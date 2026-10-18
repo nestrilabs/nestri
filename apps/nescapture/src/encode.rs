@@ -55,7 +55,8 @@ use std::time::Instant;
 
 use nesprotocol::{
     CODEC_AV1, CODEC_H264, CODEC_H265, CODEC_KEEP, CODEC_PYROWAVE, ClientCaps, FLAG_KEYFRAME,
-    FLAG_RECONFIG, MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, STREAM_VIDEO,
+    FLAG_RECONFIG, MSG_CLIENT_CAPS, MSG_ENCODE_SETTINGS, MSG_IDR_REQUEST, MSG_WINDOW_PAUSE,
+    MSG_WINDOW_RESUME, STREAM_VIDEO,
     decode_client_caps, decode_encode_settings_ext, encode_ipc_frame_from,
 };
 use pixelforge::{
@@ -998,6 +999,10 @@ pub struct PipelineHandle {
     stall_probe: StallProbe,
     progress_epoch: Instant,
     idr_requested: Arc<AtomicBool>,
+    /// Set by a pause from the hub (ref d-0087): the present hook captures
+    /// nothing while it is, so nothing is blitted, encoded or sent. The game
+    /// is not touched.
+    paused: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     pub capture_fps: Arc<AtomicU32>,
     pub encode_avg_ms: Arc<AtomicU32>,
@@ -1089,6 +1094,8 @@ impl PipelineHandle {
             shutdown.clone(),
         );
         let idr_requested = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
+        let paused_listener = paused.clone();
         let capture_fps = Arc::new(AtomicU32::new(0));
         let encode_avg_ms = Arc::new(AtomicU32::new(0));
         let capture_ms = Arc::new(AtomicU32::new(0));
@@ -1229,6 +1236,9 @@ impl PipelineHandle {
                 let mut buf = [0u8; 128];
                 loop {
                     match sock.recv(&mut buf) {
+                        Ok(1) if buf[0] == MSG_WINDOW_PAUSE || buf[0] == MSG_WINDOW_RESUME => {
+                            apply_pause_message(buf[0], &paused_listener, &idr_thread);
+                        }
                         Ok(1) if buf[0] == MSG_IDR_REQUEST => {
                             log::info!("IDR requested by client");
                             idr_thread.store(true, Ordering::Relaxed);
@@ -1394,6 +1404,7 @@ impl PipelineHandle {
             stall_probe,
             progress_epoch,
             idr_requested,
+            paused,
             shutdown,
             capture_fps,
             encode_avg_ms,
@@ -1468,6 +1479,17 @@ impl PipelineHandle {
         true
     }
 
+    /// Whether the window is paused: the hook captures nothing.
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Relaxed)
+    }
+
+    /// Say the capture thread is alive while paused, so the stall watchdog
+    /// does not report a stopped capture that was stopped on purpose.
+    pub fn note_paused(&self) {
+        self.capture_progress.note(self.progress_epoch, 7);
+    }
+
     pub fn request_idr(&self) {
         self.idr_requested.store(true, Ordering::Relaxed);
     }
@@ -1522,6 +1544,24 @@ pub struct EncodeSettingsChange {
     pub bit_depth: Option<EncodeBitDepth>,
     /// Set exactly when `codec` is PyroWave.
     pub pyro: Option<PyroSettings>,
+}
+
+/// Apply a pause or resume from the hub. Resume clears the flag and asks for a
+/// keyframe in the same step, so the first frame after it is one the client
+/// can decode: everything it saw before the pause is stale.
+fn apply_pause_message(msg: u8, paused: &AtomicBool, idr_requested: &AtomicBool) {
+    if msg == MSG_WINDOW_PAUSE {
+        if !paused.swap(true, Ordering::Relaxed) {
+            log::info!("paused by the client: capture and encode stopped");
+        }
+    } else if msg == MSG_WINDOW_RESUME {
+        // The keyframe first: the flag lets the next present through, and the
+        // encoder must already know that frame is to be an IDR.
+        idr_requested.store(true, Ordering::Relaxed);
+        if paused.swap(false, Ordering::Relaxed) {
+            log::info!("resumed by the client: keyframe requested");
+        }
+    }
 }
 
 fn encoder_thread(
@@ -3846,6 +3886,22 @@ mod encoder_identity_tests {
     #[test]
     fn an_unchanged_frame_reuses_the_encoder() {
         assert!(encoder_still_serves(HD, HD));
+    }
+
+    #[test]
+    fn pause_stops_and_resume_starts_with_a_keyframe() {
+        let paused = AtomicBool::new(false);
+        let idr = AtomicBool::new(false);
+        apply_pause_message(MSG_WINDOW_PAUSE, &paused, &idr);
+        assert!(paused.load(Ordering::Relaxed));
+        assert!(!idr.load(Ordering::Relaxed), "a pause asks for nothing");
+        apply_pause_message(MSG_WINDOW_RESUME, &paused, &idr);
+        assert!(!paused.load(Ordering::Relaxed));
+        assert!(idr.load(Ordering::Relaxed));
+        // A resume that was never paused is still a keyframe request, harmless.
+        idr.store(false, Ordering::Relaxed);
+        apply_pause_message(MSG_WINDOW_RESUME, &paused, &idr);
+        assert!(idr.load(Ordering::Relaxed));
     }
 
     #[test]
