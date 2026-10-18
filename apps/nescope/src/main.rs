@@ -389,11 +389,15 @@ fn main() {
 
     // ── Input IPC source ─────────────────────────────────────────────────
     // Connect to the neshub input socket and feed events into the
-    // compositor seat. Reconnection is handled in the idle callback.
+    // compositor seat. There is no reconnection: when the hub closes the socket
+    // the source removes itself, and the loop below ends nescope after a short
+    // grace (a signal that arrives first ends it sooner).
     let ipc_path = args.input_ipc.clone();
+    let mut hub_closed_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>> = None;
     match input_ipc::InputIpcSource::connect(&ipc_path) {
         Ok(source) => {
             tracing::info!("Connected to input IPC socket: {ipc_path}");
+            hub_closed_flag = Some(source.closed_flag());
             match source.try_clone() {
                 Ok(write_stream) => {
                     state.ipc_write = Some(write_stream);
@@ -476,6 +480,7 @@ fn main() {
     // never arrives there is nothing to wait for and no game to run.
     let startup = std::time::Instant::now();
     let mut xwayland_timed_out = false;
+    let mut hub_closed_at: Option<std::time::Instant> = None;
 
     event_loop
         .run(Some(Duration::from_secs(1)), &mut data, move |data| {
@@ -575,6 +580,24 @@ fn main() {
                     );
                     kill_all_children();
                     data.loop_signal.stop();
+                }
+            }
+
+            // ── Hub gone ──────────────────────────────────────────────
+            // neshub closing the input socket mid-run leaves a compositor
+            // nobody can drive. The grace lets a shutdown that is already
+            // under way (SIGTERM stops the loop itself) finish its own way;
+            // otherwise nescope ends, and nesinit ends the box on seeing it.
+            if hub_closed_flag
+                .as_ref()
+                .is_some_and(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+            {
+                let since = hub_closed_at.get_or_insert_with(std::time::Instant::now);
+                if since.elapsed() > Duration::from_secs(2) {
+                    tracing::error!("input hub gone for 2 s with no shutdown — exiting");
+                    kill_all_children();
+                    data.loop_signal.stop();
+                    return;
                 }
             }
 
