@@ -16,6 +16,7 @@ import { Trial } from '../trial/index.js';
 import { Launch } from './launch.js';
 import { LaunchTable } from './launch.sql.js';
 import { SessionState, SessionTable } from './session.sql.js';
+import { JobWake } from './wake.js';
 
 /**
  * One run of one box, and the unit that gets billed.
@@ -196,6 +197,9 @@ export namespace Session {
 					gameId: session.gameId,
 					first: true
 				});
+				// A run waiting is work for its host. After the commit, so the
+				// host's next look finds the row.
+				await Database.effect(() => JobWake.wakeBox(input.boxId));
 				return { ...session, launches: [first] };
 			});
 		}
@@ -595,6 +599,49 @@ export namespace Session {
 		return [...stops, ...launches.stops, ...starts, ...launches.starts];
 	});
 
+	/**
+	 * The identity of a job, stable across the repeats of it: its kind, its
+	 * run, and for a launch job its launch. A host names the jobs it already
+	 * has in `?seen=` by these.
+	 */
+	export function jobKey(job: Job): string {
+		return job.kind === 'launch.start' || job.kind === 'launch.stop'
+			? `${job.kind}/${job.sessionId}/${job.launchId}`
+			: `${job.kind}/${job.sessionId}`;
+	}
+
+	/**
+	 * {@link listJobsForMachine}, held open when there is nothing new.
+	 *
+	 * Answers at once when there is work the host has not got. A stop, and a
+	 * launch, are repeated until the host reports them, so work whose
+	 * {@link jobKey} is in `seen` is not new: when every job is in `seen`, or
+	 * there are none, the call waits for a wake (see {@link JobWake}) for up to
+	 * `waitMs`, looking again on every wake and every {@link JobWake.RECHECK_MS},
+	 * and at the deadline answers with whatever there is, the full list. The
+	 * wake is listened for before each look, so one that lands between the look
+	 * and the wait is not lost. `signal` ends the wait early, when the host has
+	 * hung up. No database connection is held while waiting.
+	 */
+	export async function holdJobsForMachine(
+		machineId: string,
+		options: { waitMs: number; signal?: AbortSignal; seen?: ReadonlySet<string> }
+	): Promise<Job[]> {
+		const deadline = Date.now() + options.waitMs;
+		for (;;) {
+			const listener = JobWake.listen(machineId);
+			try {
+				const jobs = await listJobsForMachine(machineId);
+				const remaining = deadline - Date.now();
+				const fresh = jobs.some((job) => !options.seen?.has(jobKey(job)));
+				if (fresh || remaining <= 0 || options.signal?.aborted) return jobs;
+				await listener.until(Math.min(remaining, JobWake.RECHECK_MS), options.signal);
+			} finally {
+				listener.cancel();
+			}
+		}
+	}
+
 	/** The runs a host is holding: claimed and not yet over. */
 	const holding = (machineId: string) =>
 		Database.use((tx) =>
@@ -854,7 +901,10 @@ export namespace Session {
 				.set({ timeStopRequested: sql`coalesce(${SessionTable.timeStopRequested}, now())` })
 				.where(and(scope, inArray(SessionTable.state, ['starting', 'live'])))
 				.returning();
-			if (marked) return serialize(marked);
+			if (marked) {
+				await Database.effect(() => JobWake.wakeBox(marked.boxId));
+				return serialize(marked);
+			}
 			const [over] = await tx.select().from(SessionTable).where(scope);
 			return over ? serialize(over) : null;
 		});
@@ -949,8 +999,13 @@ export namespace Session {
 						)
 					)
 					.returning()
-					.then((rows) => {
+					.then(async (rows) => {
 						const row = rows.at(0);
+						// A run that is over frees a slot, and a run waiting for
+						// one is work the host can now be handed.
+						if (row && (input.to === 'ended' || input.to === 'failed')) {
+							await Database.effect(() => JobWake.wakeBox(row.boxId));
+						}
 						return row ? serialize(row) : null;
 					});
 			});
@@ -1283,6 +1338,7 @@ export namespace Session {
 					gameId: input.gameId,
 					first: false
 				});
+				await Database.effect(() => JobWake.wakeBox(run.boxId));
 				return { outcome: 'created', launch };
 			});
 		}
@@ -1336,9 +1392,9 @@ export namespace Session {
 			}
 			// A host that does not handle launches would never end this one.
 			if (!(await Launch.hostTakesLaunches(run.id))) return 'hostTooOld';
-			return (
-				(await Launch.markStop(row.id)) ?? Launch.serialize((await Launch.row(run.id, row.id))!)
-			);
+			const marked = await Launch.markStop(row.id);
+			if (marked) await JobWake.wakeBox(run.boxId);
+			return marked ?? Launch.serialize((await Launch.row(run.id, row.id))!);
 		}
 	);
 
