@@ -38,7 +38,7 @@ set -eu
 API="${NESTRI_API:-https://api.nestri.io}"
 # Pinned, not "latest", so the script and the binary it installs are a pair
 # somebody chose. Bump when cutting a release; NESTRI_HOST_VERSION overrides it.
-DEFAULT_VERSION="0.2.22"
+DEFAULT_VERSION="0.2.23"
 VERSION="${NESTRI_HOST_VERSION:-$DEFAULT_VERSION}"
 BIN_DIR="${NESTRI_BIN_DIR:-/usr/local/bin}"
 STATE_DIR=/var/lib/nestri
@@ -176,6 +176,11 @@ if [ -z "$BOX_STORE" ] && [ -f "$HOST_ENV" ]; then
     BOX_STORE="$(sed -n 's/^NESLET_BOX_STORE=//p' "$HOST_ENV" | head -n1)"
   [ -z "$BOX_STORE" ] || say "Keeping this host's box store, $BOX_STORE."
 fi
+# The operator's card selection is kept the same way, so an upgrade neither
+# forgets it nor checks a different set of cards than the agent will use.
+if [ -z "$GPUS" ] && [ -f "$HOST_ENV" ]; then
+  GPUS="$(sed -n 's/^NESLET_GPUS=//p' "$HOST_ENV" | head -n1)"
+fi
 if [ "$MODE" = install ] && [ -z "$BOX_STORE" ]; then
   guess="$(df -P -T -x tmpfs -x devtmpfs -x overlay 2>/dev/null \
     | awk 'NR>1 && ($2=="xfs"||$2=="ext4") && $7!="/" && $7!~/^\/(boot|efi)/ {print $5, $7}' \
@@ -253,6 +258,7 @@ else
 fi
 if [ -n "$GPUS" ]; then export NESLET_GPUS="$GPUS"; else unset NESLET_GPUS; fi
 export NESTRI_BOX_STORE="$BOX_STORE" NESTRI_API="$API" NESLET_STATE_DIR="$STATE_DIR"
+STOPPED=0
 if command -v systemctl >/dev/null 2>&1 &&
   systemctl is-active --quiet nestri-host.service 2>/dev/null; then
   say "Checking this machine before stopping the running host agent…"
@@ -260,11 +266,21 @@ if command -v systemctl >/dev/null 2>&1 &&
     die "this machine failed the check above, so the running host agent was left alone, on the version it was already running."
   say "Stopping the running host agent to upgrade it…"
   systemctl stop nestri-host.service
+  STOPPED=1
 fi
 
 # --- onboard ----------------------------------------------------------------
+# Not `exec`: if onboarding fails after the agent was stopped, the agent is
+# started again on whatever it had, so an upgrade never leaves a host offline.
+rc=0
 if tty_ok; then
-  exec "$BIN_DIR/nestri-host" onboard </dev/tty
+  "$BIN_DIR/nestri-host" onboard </dev/tty || rc=$?
 else
-  exec "$BIN_DIR/nestri-host" onboard
+  "$BIN_DIR/nestri-host" onboard || rc=$?
 fi
+if [ "$rc" -ne 0 ] && [ "$STOPPED" = 1 ]; then
+  say "Onboarding did not finish, so the host agent is being started again."
+  systemctl start nestri-host.service ||
+    say "Could not start it. Run: systemctl start nestri-host"
+fi
+exit "$rc"
