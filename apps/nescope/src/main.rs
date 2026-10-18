@@ -30,7 +30,7 @@
 //! | `PROTON_ENABLE_WAYLAND` | Set to `1` always, so Proton renders through Wayland |
 //! | `XCURSOR_THEME`   | XCursor theme name for the software cursor   |
 //! | `XCURSOR_SIZE`    | XCursor size in pixels                       |
-//! | `RUST_LOG`        | Tracing filter (e.g. `nescope=debug`)        |
+//! | `RUST_LOG`        | Tracing filter, default `info` (e.g. `nescope=debug`) |
 //!
 //! # Ctrl+C / shutdown
 //!
@@ -193,9 +193,20 @@ struct Args {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/// Filter from `RUST_LOG`, or `info` when it is unset or unparsable.
+///
+/// `EnvFilter::from_default_env` alone defaults to ERROR, which hid every
+/// info/warn line from the host journal (nesinit only forwards `RUST_LOG` if
+/// it has it itself). Same fallback as neshub, nesinit and nesgamepad.
+fn log_filter(rust_log: Option<&str>) -> tracing_subscriber::EnvFilter {
+    rust_log
+        .and_then(|v| tracing_subscriber::EnvFilter::try_new(v).ok())
+        .unwrap_or_else(|| "info".into())
+}
+
 fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .with_env_filter(log_filter(std::env::var("RUST_LOG").ok().as_deref()))
         .init();
 
     let args = Args::parse();
@@ -832,5 +843,40 @@ fn kill_all_children_sigkill() {
                 libc::kill(child_pid, libc::SIGKILL);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod log_filter_tests {
+    use super::log_filter;
+    use tracing::Level;
+    use tracing_subscriber::filter::LevelFilter;
+
+    #[test]
+    fn unset_defaults_to_info_so_warn_is_visible() {
+        let f = log_filter(None);
+        assert_eq!(f.max_level_hint(), Some(LevelFilter::INFO));
+        assert!(Level::WARN <= Level::INFO);
+    }
+
+    #[test]
+    fn debug_stays_out_of_the_default() {
+        assert_ne!(log_filter(None).max_level_hint(), Some(LevelFilter::DEBUG));
+    }
+
+    #[test]
+    fn explicit_rust_log_wins() {
+        assert_eq!(
+            log_filter(Some("debug")).max_level_hint(),
+            Some(LevelFilter::DEBUG)
+        );
+    }
+
+    #[test]
+    fn garbage_falls_back_to_info() {
+        assert_eq!(
+            log_filter(Some("=== not a filter ===")).max_level_hint(),
+            Some(LevelFilter::INFO)
+        );
     }
 }
