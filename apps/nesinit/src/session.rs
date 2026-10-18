@@ -158,6 +158,8 @@ where
     // resolves immediately and forever, so an unguarded branch on one turns
     // this loop into a spin that still looks like it is waiting.
     let mut services_open = true;
+    // The box's compositor exit, once there is a compositor.
+    let mut compositor_exit: Option<crate::workload::Exited> = None;
 
     loop {
         // The exits are guarded like the channels below: an empty set resolves
@@ -177,6 +179,9 @@ where
             up = payload.from_workload.recv(), if relay_open => Event::FromWorkload(up),
             found = addresses.recv(), if carrier_open => Event::Address(found),
             gone = services.deaths().recv(), if services_open => Event::ServiceDied(gone),
+            gone = async { compositor_exit.as_mut().expect("guarded").await }, if compositor_exit.is_some() => {
+                Event::CompositorDied(gone)
+            },
         };
 
         let line = match event {
@@ -280,6 +285,18 @@ where
                 tracing::error!(service = %name, ?exit, "a service died");
                 send(&mut writer, &GuestToHost::ServiceDied { name, exit }).await?;
                 continue;
+            }
+            Event::CompositorDied(gone) => {
+                // Every launch draws on it, so with it gone nothing in this box
+                // can show a window: said as a service death, then the box
+                // ends rather than carrying on looking healthy.
+                let exit = gone.unwrap_or_else(|_| Exit::code(1));
+                tracing::error!(?exit, "the compositor has exited: no window in this box can draw");
+                send(&mut writer, &GuestToHost::ServiceDied { name: "nescope".into(), exit }).await?;
+                workload.signal_stop();
+                return Ok(Outcome::Refused(Failure::new(format!(
+                    "the compositor exited ({exit:?}), so the box can no longer draw"
+                ))));
             }
             Event::ServiceDied(None) => {
                 // The supervisor is gone, which on the way down is ordinary.
@@ -401,8 +418,17 @@ where
                 // A box whose own services will not come up cannot be launched
                 // into, so this is refused rather than reported and carried on
                 // from — unlike a launch, which is the caller's to correct.
-                match services.bring_up(descriptor.video) {
+                match services.bring_up(descriptor.video).and_then(|mut up| {
+                    // After the services and before the box is ready: the
+                    // first launch joins it like every other. ref(d-0085)
+                    if let Some(compositor) = &descriptor.compositor {
+                        workload.start_compositor(compositor)?;
+                        up.push("nescope".to_string());
+                    }
+                    Ok(up)
+                }) {
                     Ok(up) => {
+                        compositor_exit = workload.compositor_exit();
                         tracing::info!(services = up.len(), "the box is ready to be launched into");
                         send(&mut writer, &GuestToHost::Initialized { services: up }).await?
                     }
@@ -643,6 +669,7 @@ enum Event {
     FromWorkload(Option<Payload>),
     Address(Option<crate::ticket::Found>),
     ServiceDied(Option<Died>),
+    CompositorDied(std::io::Result<Exit>),
 }
 
 /// Hand an envelope to the relay, and treat a relay that is not there as the
@@ -697,6 +724,7 @@ mod tests {
             overlays: Vec::new(),
             images: Vec::new(),
             video: Default::default(),
+            compositor: None,
         }
     }
 
@@ -893,6 +921,105 @@ mod tests {
             workload.started.is_empty(),
             "the descriptor started something, which is a launch's job"
         );
+    }
+
+    /// The box's compositor is the box's, started once with the descriptor and
+    /// before anything is launched. ref(d-0085)
+    #[tokio::test]
+    async fn the_compositor_is_started_by_the_box_and_not_by_a_launch() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given.clone()),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.compositors, vec![given.compositor.unwrap()]);
+        assert!(workload.started.is_empty());
+    }
+
+    /// A box whose compositor will not come up cannot be drawn on, so it is
+    /// refused like a box whose services will not.
+    #[tokio::test]
+    async fn a_compositor_that_will_not_start_refuses_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.compositor_failure = Some(Failure::new("no gpu"));
+        let session = spawn(guest, Given::new(double));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given),
+            })
+            .await;
+        assert_eq!(caller.expect().await, GuestToHost::Mounted);
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::InitFailed {
+                reason: "no gpu".into()
+            }
+        );
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
+    }
+
+    /// A compositor that exits ends the box, and the host is told which
+    /// service it was.
+    #[tokio::test]
+    async fn a_compositor_that_exits_is_reported_and_ends_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.compositor_exit = Some(rx);
+        let session = spawn(guest, Given::new(double));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller.say(&HostToGuest::Boot { descriptor: Box::new(given) }).await;
+        caller.expect_booted().await;
+        tx.send(Exit::signal(11)).unwrap();
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::ServiceDied { name: "nescope".into(), exit: Exit::signal(11) }
+        );
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
     }
 
     #[tokio::test]

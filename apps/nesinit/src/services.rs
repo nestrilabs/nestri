@@ -752,7 +752,7 @@ impl Drop for Stack {
 /// and bind afresh, which is a new inode every time.
 type Identity = (u64, u64);
 
-fn identity_of(path: &str) -> Option<Identity> {
+pub(crate) fn identity_of(path: &str) -> Option<Identity> {
     use std::os::unix::fs::MetadataExt;
     std::fs::metadata(path).ok().map(|at| (at.dev(), at.ino()))
 }
@@ -769,7 +769,7 @@ fn is_alive(pid: i32) -> bool {
 
 /// The waiting itself, with the deadline passed in so a test can assert the
 /// giving-up without waiting out a real one.
-fn await_path(
+pub(crate) fn await_path(
     name: &str,
     path: &str,
     before: Option<Identity>,
