@@ -284,6 +284,35 @@ pub struct BootDescriptor {
     /// A number travels to where the thing that reads it is started.
     #[serde(default)]
     pub video: VideoLimits,
+    /// The box's one compositor, started by the init when the box is ready to
+    /// be launched into. ref(d-0085)
+    ///
+    /// Every launch draws on it, the first as much as the tenth: a launch is a
+    /// process group that can be stopped alone, and a compositor owned by one
+    /// launch could not be, because stopping that launch would take every other
+    /// window with it. `None` is a box with no compositor of its own, which is
+    /// what a workload that draws nothing wants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compositor: Option<Compositor>,
+}
+
+/// What the compositor is started with.
+///
+/// Geometry and rate are the box's, set once: every window in the box is a
+/// stream of its own, but they share one output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Compositor {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    /// Who it runs as: the same user the box's launches run as, because the
+    /// socket it publishes is in that user's runtime directory.
+    pub uid: u32,
+    pub gid: u32,
+    /// Environment on top of the guest's own, sorted like [`Exec::env`].
+    #[serde(default)]
+    pub env: BTreeMap<String, String>,
 }
 
 /// Ceilings on what a box's video may cost.
@@ -577,6 +606,7 @@ mod tests {
             overlays: Vec::new(),
             images: Vec::new(),
             video: VideoLimits::default(),
+            compositor: None,
         }
     }
 
@@ -882,6 +912,7 @@ mod video_limits_tests {
             overlays: Vec::new(),
             images: Vec::new(),
             video: VideoLimits::default(),
+            compositor: None,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(!json.contains("bitrate"), "{json}");
@@ -896,6 +927,7 @@ mod video_limits_tests {
             video: VideoLimits {
                 bitrate_kbps: Some(8_000),
             },
+            compositor: None,
         };
         let back: BootDescriptor =
             serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
@@ -946,6 +978,7 @@ mod image_tests {
                 at: "/nestri/compat".into(),
             }],
             video: VideoLimits::default(),
+            compositor: None,
         };
         let json = serde_json::to_string(&d).unwrap();
         assert!(json.contains(r#""images":[{"device":"/dev/vdd","at":"/nestri/compat"}]"#));
@@ -1007,5 +1040,29 @@ mod attach_tests {
     #[test]
     fn the_data_port_is_its_own() {
         assert_ne!(ATTACH_PORT, CONTROL_PORT);
+    }
+
+    /// A box with no compositor says nothing about one, so a descriptor from
+    /// before the field existed reads the same, and the compositor survives a
+    /// round trip with its environment.
+    #[test]
+    fn a_compositor_is_optional_and_round_trips() {
+        let none: BootDescriptor = serde_json::from_str("{}").unwrap();
+        assert!(none.compositor.is_none());
+        assert!(!serde_json::to_string(&none).unwrap().contains("compositor"));
+        let d = BootDescriptor {
+            compositor: Some(Compositor {
+                width: 1920,
+                height: 1080,
+                fps: 60,
+                uid: 1001,
+                gid: 1001,
+                env: BTreeMap::from([("A".to_string(), "b".to_string())]),
+            }),
+            ..none
+        };
+        let back: BootDescriptor =
+            serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
+        assert_eq!(back, d);
     }
 }

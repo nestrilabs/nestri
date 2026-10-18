@@ -12,7 +12,7 @@ use std::io;
 use std::pin::Pin;
 
 use nesprotocol::lifecycle::{
-    AttachId, Exec, Exit, Image, LAUNCH_ID_ENV, LaunchId, Mount, Overlay, Winsize,
+    AttachId, Compositor, Exec, Exit, Image, LAUNCH_ID_ENV, LaunchId, Mount, Overlay, Winsize,
 };
 
 use std::os::unix::process::CommandExt;
@@ -84,9 +84,18 @@ pub trait Workload {
     /// with any of their games in it, not one game's. ref(d-0085)
     fn start(&mut self, id: &LaunchId, exec: &Exec) -> Result<Exited, Failure>;
 
-    /// Ask one launch to stop. Idempotent, and never ends the session by
-    /// itself. A launch that is not running is not signalled: its pid may
-    /// already belong to something else.
+    /// Start the box's one compositor, and return once it is serving.
+    ///
+    /// Owned by the box and not by any launch: every launch draws on it, so no
+    /// launch's stop may reach it. ref(d-0085)
+    fn start_compositor(&mut self, compositor: &Compositor) -> Result<(), Failure>;
+
+    /// Ask one launch to stop: its whole process group, not its top process.
+    /// Idempotent, and never ends the session by itself. A launch that is not
+    /// running is not signalled: its pid may already belong to something else.
+    ///
+    /// The launch's exit is delivered when its group is gone, so it reports
+    /// the game's window closed rather than only the top process having left.
     fn stop_launch(&mut self, id: &LaunchId);
 
     /// Ask every launch to stop. Idempotent, and never ends the session by
@@ -101,6 +110,131 @@ pub struct Process {
     /// delivered and `Watched::running` is what tells the two apart; it is
     /// replaced when the same id is started again (a restart).
     running: std::collections::BTreeMap<LaunchId, Watched>,
+    /// The box's compositor, if it has one. Not a launch: nothing in
+    /// `running` is it, and a launch's stop cannot reach it.
+    compositor: Option<Watched>,
+}
+
+/// How long a launch's group has to leave after being asked before it is
+/// killed.
+pub(crate) const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The compositor's socket, in its user's runtime directory. nescope's own
+/// default, and what a launch is told to join.
+pub(crate) const COMPOSITOR_SOCKET: &str = "nescope-0";
+
+/// The compositor's binary in the guest image.
+const COMPOSITOR_BIN: &str = "/usr/bin/nescope";
+
+/// How long the compositor has to publish its socket.
+const COMPOSITOR_READY: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Every live process in session `sid`.
+///
+/// A launch is started in a session of its own (`setsid`), so its session id is
+/// its top pid and everything it starts inherits it. Read from `/proc` rather
+/// than asked of the kernel with `kill(-pgid)` alone because a Wine or a
+/// launcher may move its own children to groups of their own, and a group that
+/// has been left is still in the session. Zombies are not members: the reaper
+/// clears them, and waiting on one would wait on nobody.
+pub(crate) fn session_members(sid: i32) -> Vec<i32> {
+    let Ok(dir) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    dir.flatten()
+        .filter_map(|entry| entry.file_name().to_str()?.parse::<i32>().ok())
+        .filter(|pid| in_session(*pid, sid))
+        .collect()
+}
+
+/// Whether `pid` is a live (not zombie) member of session `sid`.
+fn in_session(pid: i32, sid: i32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| live_session_of(&stat))
+        == Some(sid)
+}
+
+/// The session a `/proc/<pid>/stat` line belongs to, or `None` for a process
+/// that is a zombie or whose line cannot be read.
+///
+/// `pid (comm) state ppid pgrp session ...`, with a comm that may hold spaces
+/// and parentheses, so it is the last `)` that ends it.
+fn live_session_of(stat: &str) -> Option<i32> {
+    let (_, after) = stat.rsplit_once(')')?;
+    let mut fields = after.split_whitespace();
+    let state = fields.next()?;
+    let session = fields.nth(2)?.parse::<i32>().ok()?;
+    (state != "Z" && state != "X").then_some(session)
+}
+
+/// Send `signal` to a launch's whole group: the process group in one call, then
+/// every member of the session by pid, which reaches the ones that left the
+/// group.
+pub(crate) fn signal_session(sid: i32, signal: libc::c_int) {
+    let members = session_members(sid);
+    if members.is_empty() {
+        // Nothing is left to signal, and `sid` is only a number again: a
+        // group call now could reach whatever the kernel gave it to.
+        return;
+    }
+    // SAFETY: integers only; a group that has gone fails with ESRCH.
+    unsafe { libc::kill(-sid, signal) };
+    for pid in members {
+        // SAFETY: as above.
+        unsafe { libc::kill(pid, signal) };
+    }
+}
+
+/// Wait for a launch's group to be gone, ending it if it will not go alone.
+///
+/// Reached once the top process has been reaped. A launch counts as ended only
+/// when nothing of it is left: a window owned by a process still running is a
+/// launch still running, whatever became of the process that started it.
+async fn group_gone(sid: i32) {
+    if session_members(sid).is_empty() {
+        return;
+    }
+    tracing::info!(sid, "a launch's top process has gone and its group has not: ending the group");
+    signal_session(sid, libc::SIGTERM);
+    let deadline = std::time::Instant::now() + STOP_GRACE;
+    let mut killed = false;
+    // Past the grace plus as long again: a process in uninterruptible sleep
+    // ignores SIGKILL, and a launch that never ends is worse than one that
+    // ended with something stuck in it.
+    let give_up = deadline + STOP_GRACE * 2;
+    loop {
+        if session_members(sid).is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if now >= give_up {
+            tracing::warn!(sid, "a launch's group would not die; reporting the launch ended anyway");
+            return;
+        }
+        if now >= deadline && !killed {
+            killed = true;
+            signal_session(sid, libc::SIGKILL);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+/// Stop a group: TERM now, KILL after the grace if it is still there. On a
+/// thread of its own, because the caller cannot wait and the runtime may be
+/// busy with the exits it is meant to deliver.
+fn stop_session(sid: i32) {
+    signal_session(sid, libc::SIGTERM);
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + STOP_GRACE;
+        while std::time::Instant::now() < deadline {
+            if session_members(sid).is_empty() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        signal_session(sid, libc::SIGKILL);
+    });
 }
 
 impl Process {
@@ -110,15 +244,22 @@ impl Process {
         Self {
             waiters,
             running: std::collections::BTreeMap::new(),
+            compositor: None,
         }
     }
 
     /// Send a signal to the workload and nothing else.
     ///
-    /// Nothing here ever signals the process group or every process: the order
-    /// a shutdown promises is only true if the workload can be stopped alone.
+    /// The launches' top processes only, never every process: the order a
+    /// shutdown promises is only true if the workload can be stopped alone.
+    /// The one exception is SIGKILL, which is the end of the order and takes
+    /// each launch's whole group; a launch's own stop does too
+    /// ([`Workload::stop_launch`]).
     pub fn signal(&self, signal: libc::c_int) {
         for watched in self.running.values() {
+            if signal == libc::SIGKILL {
+                signal_session(watched.pid, signal);
+            }
             Self::signal_one(watched, signal);
         }
     }
@@ -310,6 +451,13 @@ impl Workload for Process {
         // allocates nothing.
         unsafe {
             command.pre_exec(move || {
+                // A session of its own: the launch is a group that can be
+                // stopped alone, which is what makes one launch's stop leave
+                // another's windows open. Before the drops below, which do
+                // not care.
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
                 // gid first: dropping the uid first would lose the privilege
                 // needed to set the gid at all.
                 if libc::setgid(gid) != 0 {
@@ -346,15 +494,96 @@ impl Workload for Process {
         self.running.retain(|_, watched| watched.running());
         self.running.insert(id.clone(), watched);
 
+        // The session id is the top pid (`setsid` above), and stays that
+        // number for as long as anything is in it.
+        let sid = self.running.get(id).map(|w| w.pid).expect("just inserted");
         Ok(Box::pin(async move {
-            exit.await
-                .map_err(|_| io::Error::other("the workload's exit was not delivered"))
+            let exit = exit
+                .await
+                .map_err(|_| io::Error::other("the workload's exit was not delivered"))?;
+            // The launch ended when its group has, not when its top process
+            // did. See `group_gone`.
+            group_gone(sid).await;
+            Ok(exit)
         }))
+    }
+
+    fn start_compositor(&mut self, compositor: &Compositor) -> Result<(), Failure> {
+        let (uid, gid) = (compositor.uid, compositor.gid);
+        let runtime = crate::system::runtime_dir(uid, gid).map_err(|error| {
+            Failure::new(format!("no runtime directory for the compositor (uid {uid}): {error}"))
+        })?;
+        let exec = Exec {
+            argv: vec![
+                COMPOSITOR_BIN.to_string(),
+                "--width".into(),
+                compositor.width.to_string(),
+                "--height".into(),
+                compositor.height.to_string(),
+                "--fps".into(),
+                compositor.fps.to_string(),
+            ],
+            env: compositor.env.clone(),
+            cwd: None,
+            uid,
+            gid,
+        };
+        let mut command = std::process::Command::new(&exec.argv[0]);
+        command.args(&exec.argv[1..]);
+        command.env_clear();
+        command.envs(environment(&exec, Some(&runtime)));
+        // SAFETY: async-signal-safe calls only, nothing allocated.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setgid(gid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setuid(uid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let socket = format!("{runtime}/{COMPOSITOR_SOCKET}");
+        let before = crate::services::identity_of(&socket);
+        let mut watched = self
+            .waiters
+            .watch(|| Ok(command.spawn()?.id() as i32))
+            .map_err(|error| {
+                Failure::new(format!("{} as {uid}:{gid}: {error}", exec.argv[0]))
+            })?;
+        let exit = watched.take_exit().expect("a new watch has its exit");
+        // Said when it goes: with it gone no launch has anywhere to draw, and
+        // nothing else in the box would say why.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                if let Ok(exit) = exit.await {
+                    tracing::error!(?exit, "the compositor has exited: no window in this box can draw");
+                }
+            });
+        }
+        let pid = watched.pid;
+        let flag = &watched;
+        crate::services::await_path(
+            "the compositor",
+            &socket,
+            before,
+            &|| flag.running(),
+            COMPOSITOR_READY,
+        )?;
+        tracing::info!(pid, %socket, "the compositor is serving");
+        self.compositor = Some(watched);
+        Ok(())
     }
 
     fn stop_launch(&mut self, id: &LaunchId) {
         if let Some(watched) = self.running.get(id) {
-            Self::signal_one(watched, libc::SIGTERM);
+            // Whether or not the top process is still there: its children may
+            // be, and they are what holds the window.
+            stop_session(watched.pid);
         }
     }
 
@@ -1059,6 +1288,126 @@ mod loop_tests {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_stat_line_names_its_session_whatever_the_command_is_called() {
+        assert_eq!(live_session_of("42 (launcher) S 1 42 42 0 -1"), Some(42));
+        assert_eq!(live_session_of("43 (a) b (c) R 42 42 42 0"), Some(42));
+        assert_eq!(live_session_of("44 (x) Z 42 42 42 0"), None);
+        assert_eq!(live_session_of("garbage"), None);
+    }
+
+    /// Reaps one pid, as the guest's reaper does for every child.
+    fn reap_for(waiters: crate::reap::Waiters, pid: i32) {
+        tokio::spawn(async move {
+            loop {
+                let mut status = 0;
+                // SAFETY: writes only into `status`.
+                let seen = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+                if seen == pid {
+                    waiters.deliver(pid, crate::reap::exit_of(status));
+                    return;
+                }
+                if seen == -1 {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        });
+    }
+
+    fn me(script: &str) -> Exec {
+        // SAFETY: no arguments.
+        let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+        Exec {
+            argv: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            env: Default::default(),
+            cwd: None,
+            uid,
+            gid,
+        }
+    }
+
+    async fn started(script: &str) -> (Process, LaunchId, i32, Exited) {
+        let waiters = crate::reap::Waiters::new();
+        let mut process = Process::new(waiters.clone());
+        let id = LaunchId::new("g-1");
+        let exited = process.start(&id, &me(script)).expect("it starts");
+        let top = process.running.get(&id).unwrap().pid;
+        reap_for(waiters, top);
+        // Long enough for the shell to have started its children.
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        (process, id, top, exited)
+    }
+
+    /// The bug this exists for: a stop that reached the top process only left
+    /// everything it had started running, and with it the game's window.
+    #[tokio::test]
+    async fn stopping_a_launch_ends_its_children_and_it_ends_when_they_have() {
+        let (mut process, id, top, exited) = started("sleep 300 & sleep 300 & wait").await;
+        assert!(session_members(top).len() >= 3, "{:?}", session_members(top));
+        process.stop_launch(&id);
+        tokio::time::timeout(std::time::Duration::from_secs(10), exited)
+            .await
+            .expect("the launch did not end")
+            .unwrap();
+        assert!(session_members(top).is_empty(), "something of the launch is left");
+    }
+
+    /// A child that ignores SIGTERM is killed after the grace, and the launch
+    /// is not reported ended before it has gone.
+    #[tokio::test]
+    async fn a_child_that_ignores_the_stop_is_killed_after_the_grace() {
+        let (mut process, id, top, exited) =
+            started("trap '' TERM; (trap '' TERM; sleep 300) & wait").await;
+        process.stop_launch(&id);
+        let began = std::time::Instant::now();
+        tokio::time::timeout(std::time::Duration::from_secs(15), exited)
+            .await
+            .expect("the launch did not end")
+            .unwrap();
+        assert!(began.elapsed() >= STOP_GRACE.saturating_sub(std::time::Duration::from_millis(500)));
+        assert!(session_members(top).is_empty());
+    }
+
+    /// The top process leaving by itself does not end the launch while
+    /// something of it runs; the leftovers are ended and then it has ended.
+    #[tokio::test]
+    async fn a_launch_whose_top_process_left_is_not_ended_until_its_group_is() {
+        let (_process, _id, top, exited) = started("sleep 300 & exit 3").await;
+        let exit = tokio::time::timeout(std::time::Duration::from_secs(10), exited)
+            .await
+            .expect("the launch did not end")
+            .unwrap();
+        assert_eq!(exit, Exit::code(3));
+        assert!(session_members(top).is_empty());
+    }
+
+    /// Two launches are two groups: stopping one leaves the other running.
+    #[tokio::test]
+    async fn stopping_one_launch_leaves_another_running() {
+        let waiters = crate::reap::Waiters::new();
+        let mut process = Process::new(waiters.clone());
+        let (a, b) = (LaunchId::new("a"), LaunchId::new("b"));
+        let exited_a = process.start(&a, &me("sleep 300 & wait")).unwrap();
+        let _exited_b = process.start(&b, &me("sleep 300 & wait")).unwrap();
+        let (top_a, top_b) = (
+            process.running[&a].pid,
+            process.running[&b].pid,
+        );
+        reap_for(waiters.clone(), top_a);
+        reap_for(waiters, top_b);
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        process.stop_launch(&a);
+        tokio::time::timeout(std::time::Duration::from_secs(10), exited_a)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(session_members(top_a).is_empty());
+        assert!(session_members(top_b).len() >= 2, "the other launch was touched");
+        signal_session(top_b, libc::SIGKILL);
+    }
+
+
     /// The driver override has to reach the workload, because nothing else
     /// carries it: the image's profile script never runs for an exec'd
     /// process. Without it a game's OpenGL finds no driver at all.
@@ -1370,6 +1719,9 @@ pub mod double {
         /// Every stop asked for, one launch or all (`None`).
         pub stopped: Vec<Option<LaunchId>>,
         pub stops: usize,
+        /// Every compositor asked for.
+        pub compositors: Vec<Compositor>,
+        pub compositor_failure: Option<Failure>,
         pub mount_failure: Option<Failure>,
         pub image_failure: Option<Failure>,
         /// Like `image_failure`, but only for a call that names an image, so a
@@ -1407,6 +1759,8 @@ pub mod double {
                 started_ids: Vec::new(),
                 stopped: Vec::new(),
                 stops: 0,
+                compositors: Vec::new(),
+                compositor_failure: None,
                 mount_failure: None,
                 image_failure: None,
                 named_image_failure: None,
@@ -1494,6 +1848,15 @@ pub mod double {
                 rx.await
                     .map_err(|_| io::Error::other("the workload was dropped"))
             }))
+        }
+
+        fn start_compositor(&mut self, compositor: &Compositor) -> Result<(), Failure> {
+            self.order.push("compositor");
+            self.compositors.push(compositor.clone());
+            match &self.compositor_failure {
+                Some(failure) => Err(failure.clone()),
+                None => Ok(()),
+            }
         }
 
         fn stop_launch(&mut self, id: &LaunchId) {

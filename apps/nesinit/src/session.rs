@@ -401,7 +401,15 @@ where
                 // A box whose own services will not come up cannot be launched
                 // into, so this is refused rather than reported and carried on
                 // from — unlike a launch, which is the caller's to correct.
-                match services.bring_up(descriptor.video) {
+                match services.bring_up(descriptor.video).and_then(|mut up| {
+                    // After the services and before the box is ready: the
+                    // first launch joins it like every other. ref(d-0085)
+                    if let Some(compositor) = &descriptor.compositor {
+                        workload.start_compositor(compositor)?;
+                        up.push("nescope".to_string());
+                    }
+                    Ok(up)
+                }) {
                     Ok(up) => {
                         tracing::info!(services = up.len(), "the box is ready to be launched into");
                         send(&mut writer, &GuestToHost::Initialized { services: up }).await?
@@ -697,6 +705,7 @@ mod tests {
             overlays: Vec::new(),
             images: Vec::new(),
             video: Default::default(),
+            compositor: None,
         }
     }
 
@@ -893,6 +902,73 @@ mod tests {
             workload.started.is_empty(),
             "the descriptor started something, which is a launch's job"
         );
+    }
+
+    /// The box's compositor is the box's, started once with the descriptor and
+    /// before anything is launched. ref(d-0085)
+    #[tokio::test]
+    async fn the_compositor_is_started_by_the_box_and_not_by_a_launch() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let session = spawn(guest, Given::new(Double::exits_when_stopped(Exit::code(0))));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given.clone()),
+            })
+            .await;
+        caller.expect_booted().await;
+        caller.say(&HostToGuest::Shutdown).await;
+
+        let (_, workload, _) = session.await.unwrap();
+        assert_eq!(workload.compositors, vec![given.compositor.unwrap()]);
+        assert!(workload.started.is_empty());
+    }
+
+    /// A box whose compositor will not come up cannot be drawn on, so it is
+    /// refused like a box whose services will not.
+    #[tokio::test]
+    async fn a_compositor_that_will_not_start_refuses_the_box() {
+        let (guest, host) = tokio::io::duplex(4096);
+        let mut caller = Caller::new(host);
+        let mut double = Double::exits_when_stopped(Exit::code(0));
+        double.compositor_failure = Some(Failure::new("no gpu"));
+        let session = spawn(guest, Given::new(double));
+
+        let mut given = descriptor();
+        given.compositor = Some(nesprotocol::lifecycle::Compositor {
+            width: 1280,
+            height: 720,
+            fps: 30,
+            uid: 1001,
+            gid: 1001,
+            env: Default::default(),
+        });
+        caller.expect_ready().await;
+        caller
+            .say(&HostToGuest::Boot {
+                descriptor: Box::new(given),
+            })
+            .await;
+        assert_eq!(caller.expect().await, GuestToHost::Mounted);
+        assert_eq!(
+            caller.expect().await,
+            GuestToHost::InitFailed {
+                reason: "no gpu".into()
+            }
+        );
+        let (outcome, _, _) = session.await.unwrap();
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
     }
 
     #[tokio::test]
