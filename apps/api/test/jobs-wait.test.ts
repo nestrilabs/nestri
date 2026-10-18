@@ -287,6 +287,48 @@ describe('GET /machine/jobs?wait=', () => {
 		expect(r.took).toBeLessThan(2000);
 	});
 
+	test('a stop the host has seen is held, and answered in full at the deadline', async () => {
+		const { s, id } = await liveRun('wait-seen-hold', 8108);
+		await app.request(`/session/${id}/stop`, { method: 'POST', headers: s.user });
+		const key = `session.stop/${id}`;
+		const unseen = await heldJobs(s, '?wait=20');
+		expect(unseen.took).toBeLessThan(1000);
+		expect(kinds(unseen.data)).toEqual(['session.stop']);
+		const r = await heldJobs(s, `?wait=1&seen=${encodeURIComponent(key)}`);
+		expect(r.took).toBeGreaterThanOrEqual(900);
+		expect(r.took).toBeLessThan(3000);
+		expect(kinds(r.data)).toEqual(['session.stop']);
+		expect(JobWake.held(s.machineId)).toBe(0);
+	});
+
+	test('a new job among the seen ones is answered at once, with all of them', async () => {
+		const { s, id, second } = await liveRun('wait-seen-new', 8109);
+		const added = await app.request(`/session/${id}/launch`, {
+			method: 'POST',
+			headers: s.user,
+			body: JSON.stringify({ gameId: second })
+		});
+		const launch = ((await added.json()) as any).data;
+		const running = await app.request(`/session/${id}/launch/${launch.id}/state`, {
+			method: 'POST',
+			headers: s.host,
+			body: JSON.stringify({ state: 'running', claimToken: HOLDER })
+		});
+		expect(running.status).toBe(200);
+		await app.request(`/session/${id}/launch/${launch.id}/stop`, {
+			method: 'POST',
+			headers: s.user
+		});
+		const seen = encodeURIComponent(`launch.stop/${id}/${launch.id}`);
+		const held = heldJobs(s, `?wait=20&seen=${seen}`);
+		await sleep(300);
+		expect(JobWake.held(s.machineId)).toBe(1);
+		await app.request(`/session/${id}/stop`, { method: 'POST', headers: s.user });
+		const r = await held;
+		expect(r.took).toBeLessThan(2000);
+		expect(kinds(r.data).sort()).toEqual(['launch.stop', 'session.stop']);
+	});
+
 	test('a host that hangs up stops being held', async () => {
 		const s = await scene('wait-abort', 8107);
 		const controller = new AbortController();

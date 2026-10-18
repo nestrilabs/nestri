@@ -600,18 +600,32 @@ export namespace Session {
 	});
 
 	/**
-	 * {@link listJobsForMachine}, held open when there is nothing.
+	 * The identity of a job, stable across the repeats of it: its kind, its
+	 * run, and for a launch job its launch. A host names the jobs it already
+	 * has in `?seen=` by these.
+	 */
+	export function jobKey(job: Job): string {
+		return job.kind === 'launch.start' || job.kind === 'launch.stop'
+			? `${job.kind}/${job.sessionId}/${job.launchId}`
+			: `${job.kind}/${job.sessionId}`;
+	}
+
+	/**
+	 * {@link listJobsForMachine}, held open when there is nothing new.
 	 *
-	 * Answers at once when there is work. Otherwise waits for a wake (see
-	 * {@link JobWake}) for up to `waitMs`, looking again on every wake and every
-	 * {@link JobWake.RECHECK_MS}, and answers empty at the deadline. The wake
-	 * is listened for before each look, so one that lands between the look and
-	 * the wait is not lost. `signal` ends the wait early, when the host has
+	 * Answers at once when there is work the host has not got. A stop, and a
+	 * launch, are repeated until the host reports them, so work whose
+	 * {@link jobKey} is in `seen` is not new: when every job is in `seen`, or
+	 * there are none, the call waits for a wake (see {@link JobWake}) for up to
+	 * `waitMs`, looking again on every wake and every {@link JobWake.RECHECK_MS},
+	 * and at the deadline answers with whatever there is, the full list. The
+	 * wake is listened for before each look, so one that lands between the look
+	 * and the wait is not lost. `signal` ends the wait early, when the host has
 	 * hung up. No database connection is held while waiting.
 	 */
 	export async function holdJobsForMachine(
 		machineId: string,
-		options: { waitMs: number; signal?: AbortSignal }
+		options: { waitMs: number; signal?: AbortSignal; seen?: ReadonlySet<string> }
 	): Promise<Job[]> {
 		const deadline = Date.now() + options.waitMs;
 		for (;;) {
@@ -619,7 +633,8 @@ export namespace Session {
 			try {
 				const jobs = await listJobsForMachine(machineId);
 				const remaining = deadline - Date.now();
-				if (jobs.length > 0 || remaining <= 0 || options.signal?.aborted) return jobs;
+				const fresh = jobs.some((job) => !options.seen?.has(jobKey(job)));
+				if (fresh || remaining <= 0 || options.signal?.aborted) return jobs;
 				await listener.until(Math.min(remaining, JobWake.RECHECK_MS), options.signal);
 			} finally {
 				listener.cancel();

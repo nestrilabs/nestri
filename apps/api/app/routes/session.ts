@@ -735,7 +735,7 @@ export namespace SessionApi {
 			tags: ['Session'],
 			summary: 'Ask for work',
 			description:
-				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked, its last launch is over, or the terms it started under ran out, repeated on every poll until the host reports it ended. `launch.start` is another game to start in a box that is already live; `launch.stop` is one launch to end, both repeated until the host reports that launch. An agent skips a kind it does not know. With `wait`, a call that finds nothing is held open until work appears or the wait is up, then answers empty, so a host is handed work within a moment of it being asked for; poll again straight away. An API that cannot hold a call answers at once whatever `wait` says, and then the cadence the heartbeat hands down is the one to poll at.',
+				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked, its last launch is over, or the terms it started under ran out, repeated on every poll until the host reports it ended. `launch.start` is another game to start in a box that is already live; `launch.stop` is one launch to end, both repeated until the host reports that launch. An agent skips a kind it does not know. With `wait`, a call that finds nothing is held open until work appears or the wait is up, then answers empty, so a host is handed work within a moment of it being asked for; poll again straight away. Add `seen` and a call is held, too, while all the work it would answer is work the host already has, since a stop is repeated until reported. An API that cannot hold a call answers at once whatever `wait` says, and then the cadence the heartbeat hands down is the one to poll at.',
 			responses: {
 				200: {
 					content: { 'application/json': { schema: Result(z.array(Session.Job)) } },
@@ -756,11 +756,21 @@ export namespace SessionApi {
 					.meta({
 						description: `Seconds to hold the call open when there is no work, at most ${MAX_WAIT_SECONDS}. A larger value is held for the most; absent or 0 answers at once`,
 						example: 25
+					}),
+				seen: z
+					.string()
+					.max(4096)
+					.optional()
+					.catch(undefined)
+					.meta({
+						description:
+							'Comma-separated keys of the jobs the host already has, from its last answer: `kind/sessionId`, and `kind/sessionId/launchId` for a launch job. With `wait`, work whose key is listed is not new, so a call is held while all of it is; at the end of the wait the answer is the full list. Absent, every job is new',
+						example: 'session.stop/ses_1,launch.stop/ses_1/lch_1'
 					})
 			})
 		),
 		async (c) => {
-			const { wait } = c.req.valid('query');
+			const { wait, seen } = c.req.valid('query');
 			// A Worker has nowhere to keep a held call that another request can
 			// reach, so there the answer is the plain one and the host's own
 			// interval is what it polls at. Only a long-lived process holds.
@@ -771,7 +781,8 @@ export namespace SessionApi {
 					waitMs > 0
 						? await Session.holdJobsForMachine(Actor.machineID, {
 								waitMs,
-								signal: c.req.raw.signal
+								signal: c.req.raw.signal,
+								seen: new Set(seen?.split(',').filter(Boolean))
 							})
 						: await Session.listJobsForMachine(Actor.machineID)
 			});
