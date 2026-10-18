@@ -13,7 +13,7 @@ use std::os::unix::ffi::OsStringExt as _;
 use std::pin::Pin;
 
 use nesprotocol::lifecycle::{
-    AttachId, Compositor, Exec, Exit, Image, LAUNCH_ID_ENV, LaunchId, Mount, Overlay, Winsize,
+    AttachId, Compositor, Daemon, Exec, Exit, Image, LAUNCH_ID_ENV, LaunchId, Mount, Overlay, Winsize,
 };
 
 use std::os::unix::process::CommandExt;
@@ -99,6 +99,20 @@ pub trait Workload {
         None
     }
 
+    /// Start the box's daemon, and return once it is spawned.
+    ///
+    /// Owned by the box like the compositor, and for the same reason: every
+    /// launch shares what it holds (the box's one Steam sign-in), so no launch's
+    /// stop may reach it. Whether it is *working* is its own to say; this is
+    /// only that it started. ref(d-0085)
+    fn start_daemon(&mut self, daemon: &Daemon) -> Result<(), Failure>;
+
+    /// The daemon's exit, once, after [`Workload::start_daemon`] has returned.
+    /// `None` when there is no daemon or it was already taken.
+    fn daemon_exit(&mut self) -> Option<Exited> {
+        None
+    }
+
     /// Ask one launch to stop: its whole process group, not its top process.
     /// Idempotent, and never ends the session by itself. A launch that is not
     /// running is not signalled: its pid may already belong to something else.
@@ -129,7 +143,24 @@ pub struct Process {
     /// The compositor's exit, until the session takes it. See
     /// [`Workload::compositor_exit`].
     compositor_exit: Option<Exited>,
+    /// The box's daemon, if it has one. Like the compositor, not a launch.
+    daemon: Option<Watched>,
+    /// The daemon's exit, until the session takes it.
+    daemon_exit: Option<Exited>,
+    /// Where the daemon is announced to the box's launches: [`DAEMON_MARKER`],
+    /// except in a test.
+    daemon_marker: String,
 }
+
+/// The file that says this box has a daemon, holding its name.
+///
+/// Written before the daemon is spawned and so before the box is ready, which
+/// is before any launch can exist: a launch that finds it knows the daemon is
+/// there to be waited for, and one that does not find it knows there is none to
+/// wait for. Anything else a launch could look at (the daemon's own state) is
+/// not there yet in the first moments of a box, and a launch that read its
+/// absence as "no daemon" would do what the daemon is for by itself.
+pub const DAEMON_MARKER: &str = "/run/nestri/daemon";
 
 /// How long a launch's group has to leave after being asked before it is
 /// killed.
@@ -419,6 +450,9 @@ impl Process {
             cgroup_root: CGROUP_ROOT.to_string(),
             compositor: None,
             compositor_exit: None,
+            daemon: None,
+            daemon_exit: None,
+            daemon_marker: DAEMON_MARKER.to_string(),
         }
     }
 
@@ -806,6 +840,70 @@ impl Workload for Process {
 
     fn compositor_exit(&mut self) -> Option<Exited> {
         self.compositor_exit.take()
+    }
+
+    fn start_daemon(&mut self, daemon: &Daemon) -> Result<(), Failure> {
+        let exec = &daemon.exec;
+        let Some((program, args)) = exec.argv.split_first() else {
+            return Err(Failure::new(format!("the {} daemon has no command", daemon.name)));
+        };
+        let (uid, gid) = (exec.uid, exec.gid);
+        let runtime = crate::system::runtime_dir(uid, gid).map_err(|error| {
+            Failure::new(format!(
+                "no runtime directory for the {} daemon (uid {uid}): {error}",
+                daemon.name
+            ))
+        })?;
+        // Before the spawn: see [`DAEMON_MARKER`]. A failure here refuses the
+        // box, because a launch that could not tell would start its own.
+        if let Some(directory) = std::path::Path::new(&self.daemon_marker).parent() {
+            std::fs::create_dir_all(directory).map_err(|error| {
+                Failure::new(format!("could not make {}: {error}", directory.display()))
+            })?;
+        }
+        std::fs::write(&self.daemon_marker, &daemon.name).map_err(|error| {
+            Failure::new(format!("could not write {}: {error}", self.daemon_marker))
+        })?;
+
+        let mut command = std::process::Command::new(program);
+        command.args(args);
+        command.env_clear();
+        if let Some(cwd) = &exec.cwd {
+            command.current_dir(cwd);
+        }
+        command.envs(environment(exec, Some(&runtime)));
+        // SAFETY: async-signal-safe calls only, nothing allocated.
+        unsafe {
+            command.pre_exec(move || {
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setgid(gid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                if libc::setuid(uid) != 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut watched = self
+            .waiters
+            .watch(|| Ok(command.spawn()?.id() as i32))
+            .map_err(|error| Failure::new(format!("{program} as {uid}:{gid}: {error}")))?;
+        let exit = watched.take_exit().expect("a new watch has its exit");
+        let name = daemon.name.clone();
+        tracing::info!(pid = watched.pid, %name, "the box's daemon is started");
+        self.daemon_exit = Some(Box::pin(async move {
+            exit.await
+                .map_err(|_| io::Error::other(format!("the {name} daemon's exit was not delivered")))
+        }));
+        self.daemon = Some(watched);
+        Ok(())
+    }
+
+    fn daemon_exit(&mut self) -> Option<Exited> {
+        self.daemon_exit.take()
     }
 
     fn stop_launch(&mut self, id: &LaunchId) {
@@ -2082,6 +2180,11 @@ pub mod double {
         pub compositor_failure: Option<Failure>,
         /// When the compositor "exits": the session takes this after it starts.
         pub compositor_exit: Option<oneshot::Receiver<Exit>>,
+        /// Every daemon asked for.
+        pub daemons: Vec<Daemon>,
+        pub daemon_failure: Option<Failure>,
+        /// When the daemon "exits": the session takes this after it starts.
+        pub daemon_exit: Option<oneshot::Receiver<Exit>>,
         pub mount_failure: Option<Failure>,
         pub image_failure: Option<Failure>,
         /// Like `image_failure`, but only for a call that names an image, so a
@@ -2122,6 +2225,9 @@ pub mod double {
                 compositors: Vec::new(),
                 compositor_failure: None,
                 compositor_exit: None,
+                daemons: Vec::new(),
+                daemon_failure: None,
+                daemon_exit: None,
                 mount_failure: None,
                 image_failure: None,
                 named_image_failure: None,
@@ -2224,6 +2330,22 @@ pub mod double {
             let rx = self.compositor_exit.take()?;
             Some(Box::pin(async move {
                 rx.await.map_err(|_| io::Error::other("the compositor was dropped"))
+            }))
+        }
+
+        fn start_daemon(&mut self, daemon: &Daemon) -> Result<(), Failure> {
+            self.order.push("daemon");
+            self.daemons.push(daemon.clone());
+            match &self.daemon_failure {
+                Some(failure) => Err(failure.clone()),
+                None => Ok(()),
+            }
+        }
+
+        fn daemon_exit(&mut self) -> Option<Exited> {
+            let rx = self.daemon_exit.take()?;
+            Some(Box::pin(async move {
+                rx.await.map_err(|_| io::Error::other("the daemon was dropped"))
             }))
         }
 
