@@ -110,6 +110,24 @@ pub fn clamp_to_output(
     (x, y, w, h)
 }
 
+impl NescopeState {
+    /// Say a request was clamped. A window that keeps asking is fighting the
+    /// configure: warn once when the run passes 50 inside 5 seconds.
+    pub fn note_clamp(&mut self, id: u32, asked: (Option<u32>, Option<u32>), got: (i32, i32)) {
+        let now = std::time::Instant::now();
+        let run = self.clamp_runs.entry(id).or_insert((now, 0));
+        if now.duration_since(run.0) > std::time::Duration::from_secs(5) {
+            *run = (now, 0);
+        }
+        run.1 += 1;
+        let n = run.1;
+        tracing::debug!(window = id, ?asked, clamped = ?got, repeats = n, "configure_request clamped");
+        if n == 50 {
+            tracing::warn!(window = id, ?asked, clamped = ?got, "window keeps asking past the output: configure ping-pong?");
+        }
+    }
+}
+
 pub struct CalloopData {
     pub state: NescopeState,
     pub display: Display<NescopeState>,
@@ -258,6 +276,8 @@ pub struct NescopeState {
     /// counted for, ref(d-0036): a client's window can shrink the output
     /// below it, never grow it past.
     pub launch_size: (u32, u32),
+    /// Per X11 window: when its run of clamped requests began and how many.
+    pub clamp_runs: std::collections::HashMap<u32, (std::time::Instant, u32)>,
     pub fps: u32,
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
@@ -395,6 +415,7 @@ impl NescopeState {
             width,
             height,
             launch_size: (width, height),
+            clamp_runs: std::collections::HashMap::new(),
             fps,
             loop_handle,
             game_launched: false,
