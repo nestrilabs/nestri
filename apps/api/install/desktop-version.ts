@@ -3,4 +3,4 @@
  * release of that version is published, the same way the host installer's
  * default is, so what a person downloads changes only through review.
  */
-export const DESKTOP_VERSION = '0.1.3';
+export const DESKTOP_VERSION = '0.1.4';
