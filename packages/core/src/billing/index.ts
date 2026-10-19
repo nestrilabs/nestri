@@ -1,44 +1,30 @@
 import z from 'zod';
 
 import { Box } from '../box/index.js';
-import { ErrorCodes, VisibleError } from '../error.js';
+import { Env } from '../env.js';
 import { fn } from '../fn.js';
 import { Machine } from '../machine/index.js';
 import { Team } from '../team/index.js';
 import { Burn } from './burn.js';
-import { Limits } from './limits.js';
-import { Window } from './window.js';
+import { Rooms } from './rooms.js';
 
 /**
- * Whether a run may start, and what it will cost to have started it.
+ * What a team is on, and who pays for a box.
  *
- * The one rule this must never break: **a limit refuses the next run, it never
- * stops one already going.** Someone losing a session mid-game to a meter does
- * not come back, and no amount of correct arithmetic makes that a good trade.
- * So everything here is asked before a run begins and never again.
+ * Plans count rooms and nothing else. The weekend trial and the rolling usage
+ * windows (five hours, seven days, thirty days) used to decide here whether a
+ * run could start; they no longer do, and nothing refuses a run for time spent.
+ * `Limits` and `Window` are still in this directory, unused, and burn is still
+ * recorded per run.
  */
 export namespace Billing {
-	export const WindowState = Window.State.extend({
-		window: z.enum(['fiveHour', 'sevenDay', 'thirtyDay']),
-		label: z.string()
-	});
-
 	export const State = z.object({
 		teamId: z.string(),
 		plan: z.string(),
-		/** True when any window is spent. */
-		exhausted: z.boolean(),
-		/**
-		 * What the account is spending per second right now, times a thousand,
-		 * and what it would spend with one more run.
-		 *
-		 * Both, because the rule is that a cost is shown *before* it is
-		 * incurred: a person about to start a third session needs to be told
-		 * what that does to the rate while they can still not do it.
-		 */
-		rateMilli: z.number().int(),
-		rateMilliIfOneMore: z.number().int(),
-		windows: z.array(WindowState)
+		rooms: z.object({
+			used: z.number().int().meta({ description: 'Cloud rooms you hold on Nestri GPUs' }),
+			allowed: z.number().int().meta({ description: 'Cloud rooms your plan allows' })
+		})
 	});
 
 	export type State = z.infer<typeof State>;
@@ -74,88 +60,23 @@ export namespace Billing {
 		};
 	});
 
-	/** Where a team stands, in every window, with the rates to show beside it. */
+	/** How many cloud rooms a person holds: their boxes on fleet machines. */
+	export async function cloudRooms(userId: string): Promise<number> {
+		const organisationId = Env.get().FLEET_ORGANISATION_ID;
+		if (!organisationId) return 0;
+		return (await Box.onFleet({ userId, organisationId })).length;
+	}
+
+	/** The plan, and cloud rooms used against allowed, for one team and person. */
 	export const state = fn(
-		z.object({
-			teamId: z.string(),
-			/** The run being considered, so "one more" can be costed honestly. */
-			nextTier: Burn.Tier.optional(),
-			nextHostClass: Burn.HostClass.optional()
-		}),
+		z.object({ teamId: z.string(), userId: z.string() }),
 		async (input): Promise<State> => {
-			const teamId = input.teamId;
-			const team = await Team.fromID(teamId);
-			const plan = team?.plan ?? 'free';
-			const allowances = Limits.forPlan(plan);
-			const counters = await Burn.counters(teamId);
-			const open = await Burn.openSegments(teamId);
-
-			const windows = Window.ALL.map((window) => {
-				const usage = counters ? Number(counters[`${window.key}Usage`] ?? 0) : 0;
-				const at = counters ? (counters[`${window.key}At`] ?? null) : null;
-				return {
-					window: window.key,
-					label: window.label,
-					...Window.analyze({
-						allowance: allowances[window.key],
-						windowSeconds: window.seconds,
-						usage,
-						timeUpdated: at
-					})
-				};
-			});
-
-			// The account's total is the sum of what each run costs, not a count
-			// times one rate: an `xl` run and an `xs` one alongside it are not
-			// two of anything. Concurrency shows up here, as there being more to
-			// add, rather than as a multiplier on any of them.
-			const rateMilli = open.reduce((total, segment) => total + segment.rateMilli, 0);
-			const next = Burn.baseRateMilli({
-				tier: input.nextTier ?? 'md',
-				hostClass: input.nextHostClass ?? 'byo'
-			});
-
+			const plan = (await Team.fromID(input.teamId))?.plan ?? 'free';
 			return {
-				teamId,
+				teamId: input.teamId,
 				plan,
-				exhausted: windows.some((w) => w.exhausted),
-				rateMilli,
-				rateMilliIfOneMore: rateMilli + next,
-				windows
+				rooms: { used: await Billing.cloudRooms(input.userId), allowed: Rooms.allowed(plan) }
 			};
-		}
-	);
-
-	/**
-	 * Refuse a new run when any window is spent.
-	 *
-	 * Every window is checked, not the shortest: they protect different things
-	 * over different spans, and a set where only one could ever fire is a set
-	 * with two decorative numbers in it.
-	 *
-	 * The refusal names the window and when it clears, because a limit a person
-	 * cannot plan around is the one they resent. `QUOTA_EXCEEDED` maps to 429,
-	 * which is the honest status — this is a rate limit the customer experiences
-	 * as a budget, and it will succeed later without anything changing.
-	 */
-	export const assertMayStart = fn(
-		z.object({
-			teamId: z.string(),
-			nextTier: Burn.Tier.optional(),
-			nextHostClass: Burn.HostClass.optional()
-		}),
-		async (input) => {
-			const current = await state(input);
-			const spent = current.windows.find((w) => w.exhausted);
-			if (!spent) {
-				return current;
-			}
-			const minutes = Math.ceil(spent.resetInSec / 60);
-			throw new VisibleError(
-				'rate_limit',
-				ErrorCodes.RateLimit.QUOTA_EXCEEDED,
-				`Your ${spent.label} allowance is spent. It clears in about ${minutes} minute${minutes === 1 ? '' : 's'}. Runs already going are not affected.`
-			);
 		}
 	);
 }

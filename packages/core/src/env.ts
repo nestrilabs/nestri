@@ -71,6 +71,12 @@ export namespace Env {
 		 */
 		FLEET_ORGANISATION_ID: z.string().optional(),
 		/**
+		 * Fleet GPU models a free plan may create a room on, comma separated.
+		 * Each entry matches a model name as a case-insensitive substring. Unset
+		 * takes the default in `Rooms.DEFAULT_ENTRY_GPUS`.
+		 */
+		FLEET_ENTRY_GPUS: z.string().optional(),
+		/**
 		 * This API's public address, for URLs handed to a browser that must come
 		 * back here (Steam's sign-in). Unset, the request's own host over https.
 		 */

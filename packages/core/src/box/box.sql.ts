@@ -58,6 +58,11 @@ export const BoxTable = pgTable(
 		// it is deliberately not unique: two boxes called "living room" are the
 		// owner's problem, not an error. ref(d-0019)
 		label: text('label').notNull(),
+		/**
+		 * The GPU on that host this box is pinned to, as the host reported it
+		 * (`vendor:device`). Null on boxes made before a box named its card.
+		 */
+		gpuPciId: text('gpu_pci_id'),
 		tier: BoxTier('tier').notNull().default('md'),
 		state: BoxState('state').notNull().default('created'),
 		/** Why it stopped, verbatim from the agent. Null while it has never run. */

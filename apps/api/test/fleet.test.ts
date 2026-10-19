@@ -129,13 +129,14 @@ describe('POST /box on the fleet', () => {
 		expect(((await res.json()) as any).message).toContain('not available');
 	});
 
-	test('one fleet box each: asking again is a 409', async () => {
+	test('a free plan holds one cloud room: asking again is refused with room_limit', async () => {
 		const f = await fleet(1);
 		useFleet(f.organisationId);
 		const p = await person('fleet-twice');
 		expect((await createBox(p.headers, { on: 'fleet' })).status).toBe(201);
 		const again = await createBox(p.headers, { on: 'fleet' });
-		expect(again.status).toBe(409);
+		expect(again.status).toBe(403);
+		expect(((await again.json()) as any).code).toBe('room_limit');
 		expect((await Box.listByUser(p.owner.userId)).length).toBe(1);
 	});
 

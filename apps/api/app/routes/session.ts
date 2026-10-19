@@ -9,7 +9,6 @@ import { Identifier } from '@nestri/core/id';
 import { Session } from '@nestri/core/session/index';
 import { Launch } from '@nestri/core/session/launch';
 import { Team } from '@nestri/core/team/index';
-import { Trial } from '@nestri/core/trial/index';
 import { Library } from '@nestri/core/user/library';
 import { LinkedAccount } from '@nestri/core/user/linked-account';
 import { Hono } from 'hono';
@@ -127,7 +126,9 @@ export namespace SessionApi {
 					'At most one per box, newest first. Read this when asking for a run is refused because a box is busy: the run holding it may be the same game, which a client can rejoin by polling it, or another one it can offer to stop.',
 				responses: {
 					200: {
-						content: { 'application/json': { schema: Result(Session.Info.array()) } },
+						content: {
+							'application/json': { schema: Result(Session.Info.array()) }
+						},
 						description: 'The runs still going, or still asked for'
 					},
 					401: ErrorResponses[401],
@@ -236,7 +237,10 @@ export namespace SessionApi {
 				// The library is also a synced copy, so this refuses a game
 				// bought since the last sync. Both gaps let a launch fail late;
 				// neither is a reason to start runs already known to fail.
-				const owned = await Library.findByUserAndGame({ userId, gameId: game.id });
+				const owned = await Library.findByUserAndGame({
+					userId,
+					gameId: game.id
+				});
 				if (!owned) {
 					throw new VisibleError(
 						'forbidden',
@@ -283,38 +287,17 @@ export namespace SessionApi {
 					conflict(Session.BOX_BUSY);
 				}
 
-				// The allowance is checked here and nowhere later. A limit refuses
-				// the next run; it never stops one already going, so this is the
-				// only moment it may speak. The answer comes back rather than
-				// being discarded, because the caller has to be told what it will
-				// cost and what remains — and asking a second time would let the
-				// number shown and the number billed disagree.
-				//
-				// On rented GPUs without a plan, the free weekend decides instead,
-				// and the run is marked as a trial so it is counted, and stopped,
-				// by the trial's rules rather than the allowance's.
+				// Plans count rooms, not time: nothing here refuses a run for time
+				// spent. The standing is returned so a client can show it.
 				const payer = await Billing.teamForBox(box.id);
-				const trial =
-					payer?.hostClass === 'fleet' && (await Team.fromID(payer.teamId))?.plan !== 'paid';
-				if (trial) {
-					await Trial.assertMayStart({ teamId: payer.teamId, userId, linkedAccountId });
-				}
-				const billing =
-					payer && !trial
-						? await Billing.assertMayStart({
-								teamId: payer.teamId,
-								nextTier: body.tier ?? payer.tier,
-								nextHostClass: payer.hostClass
-							})
-						: null;
+				const billing = payer ? await Billing.state({ teamId: payer.teamId, userId }) : null;
 
 				const session = await Session.request({
 					id: Identifier.ascending('session'),
 					boxId: box.id,
 					gameId: game.id,
 					linkedAccountId,
-					tier: body.tier,
-					trial
+					tier: body.tier
 				});
 				return c.json({ data: session, billing }, 201);
 			}
@@ -340,7 +323,10 @@ export namespace SessionApi {
 			validator(
 				'param',
 				z.object({
-					id: z.string().meta({ description: 'The run to read', example: Examples.Session.id })
+					id: z.string().meta({
+						description: 'The run to read',
+						example: Examples.Session.id
+					})
 				})
 			),
 			async (c) => {
@@ -497,7 +483,9 @@ export namespace SessionApi {
 			}),
 			validator(
 				'param',
-				z.object({ id: z.string().meta({ description: 'The run', example: Examples.Session.id }) })
+				z.object({
+					id: z.string().meta({ description: 'The run', example: Examples.Session.id })
+				})
 			),
 			validator(
 				'json',
@@ -521,7 +509,10 @@ export namespace SessionApi {
 					);
 				}
 				// The same check, and the same gaps, as asking for a run.
-				const owned = await Library.findByUserAndGame({ userId, gameId: game.id });
+				const owned = await Library.findByUserAndGame({
+					userId,
+					gameId: game.id
+				});
 				if (!owned) {
 					throw new VisibleError(
 						'forbidden',
@@ -574,9 +565,10 @@ export namespace SessionApi {
 				'param',
 				z.object({
 					id: z.string().meta({ description: 'The run', example: Examples.Session.id }),
-					launchId: z
-						.string()
-						.meta({ description: 'The launch to end', example: Examples.Launch.id })
+					launchId: z.string().meta({
+						description: 'The launch to end',
+						example: Examples.Launch.id
+					})
 				})
 			),
 			async (c) => {
@@ -738,7 +730,9 @@ export namespace SessionApi {
 				'Returns the work for the calling host, and only that host — it comes from its own credentials and the scope is the query, so a box cannot see work for another. `session.start` is a run waiting to be started; `session.stop` is a run to end now, because its owner asked, its last launch is over, or the terms it started under ran out, repeated on every poll until the host reports it ended. `launch.start` is another game to start in a box that is already live; `launch.stop` is one launch to end, both repeated until the host reports that launch. An agent skips a kind it does not know. With `wait`, a call that finds nothing is held open until work appears or the wait is up, then answers empty, so a host is handed work within a moment of it being asked for; poll again straight away. Add `seen` and a call is held, too, while all the work it would answer is work the host already has, since a stop is repeated until reported. An API that cannot hold a call answers at once whatever `wait` says, and then the cadence the heartbeat hands down is the one to poll at.',
 			responses: {
 				200: {
-					content: { 'application/json': { schema: Result(z.array(Session.Job)) } },
+					content: {
+						'application/json': { schema: Result(z.array(Session.Job)) }
+					},
 					description: 'Work for this host: runs to end first, then runs to start, oldest first'
 				},
 				403: ErrorResponses[403]
@@ -757,16 +751,11 @@ export namespace SessionApi {
 						description: `Seconds to hold the call open when there is no work, at most ${MAX_WAIT_SECONDS}. A larger value is held for the most; absent or 0 answers at once`,
 						example: 25
 					}),
-				seen: z
-					.string()
-					.max(4096)
-					.optional()
-					.catch(undefined)
-					.meta({
-						description:
-							'Comma-separated keys of the jobs the host already has, from its last answer: `kind/sessionId`, and `kind/sessionId/launchId` for a launch job. With `wait`, work whose key is listed is not new, so a call is held while all of it is; at the end of the wait the answer is the full list. Absent, every job is new',
-						example: 'session.stop/ses_1,launch.stop/ses_1/lch_1'
-					})
+				seen: z.string().max(4096).optional().catch(undefined).meta({
+					description:
+						'Comma-separated keys of the jobs the host already has, from its last answer: `kind/sessionId`, and `kind/sessionId/launchId` for a launch job. With `wait`, work whose key is listed is not new, so a call is held while all of it is; at the end of the wait the answer is the full list. Absent, every job is new',
+					example: 'session.stop/ses_1,launch.stop/ses_1/lch_1'
+				})
 			})
 		),
 		async (c) => {

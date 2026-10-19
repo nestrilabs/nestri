@@ -74,7 +74,7 @@ describe('Placement', () => {
 			},
 			async (input) => {
 				asked.push(input);
-				return machineId;
+				return { machineId, gpuPciId: null };
 			}
 		);
 

@@ -1,4 +1,4 @@
-import { and, eq, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import z from 'zod';
 
 import { Database } from '../db/index.js';
@@ -6,6 +6,7 @@ import { Examples } from '../examples.js';
 import { fn } from '../fn.js';
 import { Machine } from '../machine/index.js';
 import { MachineTable } from '../machine/machine.sql.js';
+import { SessionTable } from '../session/session.sql.js';
 import { BoxState, BoxTable, BoxTier } from './box.sql.js';
 import { Placement } from './placement.js';
 
@@ -31,6 +32,11 @@ export namespace Box {
 			machineId: z.string().meta({
 				description: 'The host it is placed on',
 				example: Examples.Box.machineId
+			}),
+			gpuPciId: z.string().nullable().optional().meta({
+				description:
+					'The GPU on its host the box is pinned to (`vendor:device`). Null for a box made before boxes named a card',
+				example: null
 			}),
 			label: z.string().meta({
 				description: 'Editable display name. Not unique, and not the DNS label',
@@ -76,7 +82,14 @@ export namespace Box {
 	export type Info = z.infer<typeof Info>;
 
 	export const create = fn(
-		Info.pick({ id: true, userId: true, machineId: true, label: true, tier: true }),
+		Info.pick({
+			id: true,
+			userId: true,
+			machineId: true,
+			gpuPciId: true,
+			label: true,
+			tier: true
+		}),
 		async (input) => {
 			return Database.use(async (tx) => {
 				return tx
@@ -85,6 +98,7 @@ export namespace Box {
 						id: input.id,
 						userId: input.userId,
 						machineId: input.machineId,
+						gpuPciId: input.gpuPciId ?? null,
 						label: input.label,
 						tier: input.tier
 					})
@@ -107,11 +121,12 @@ export namespace Box {
 		input: { id: string; userId: string; label: string; tier: Info['tier'] },
 		placer?: Placement.Placer
 	) => {
-		const machineId = await Placement.choose({ userId: input.userId, tier: input.tier }, placer);
+		const placed = await Placement.choose({ userId: input.userId, tier: input.tier }, placer);
 		return create({
 			id: input.id,
 			userId: input.userId,
-			machineId,
+			machineId: placed.machineId,
+			gpuPciId: placed.gpuPciId,
 			label: input.label,
 			tier: input.tier
 		});
@@ -145,17 +160,18 @@ export namespace Box {
 				.orderBy(BoxTable.timeCreated)
 				.then((rows) =>
 					rows.map((r) =>
-						serialize(r.box, Machine.gpuName(r.gpus), { host: r.host, fleet: r.organisationId !== null })
+						serialize(r.box, Machine.gpuName(r.gpus), {
+							host: r.host,
+							fleet: r.organisationId !== null
+						})
 					)
 				);
 		});
 	});
 
 	/**
-	 * The box a person already holds on the fleet's hardware, if any.
-	 *
-	 * One each: a rented GPU is the scarce thing, and a second box would be a
-	 * second claim on it that nothing yet prices.
+	 * The boxes a person holds on the fleet's hardware: their cloud rooms.
+	 * What a plan allows is counted from this.
 	 */
 	export const onFleet = fn(
 		z.object({ userId: Info.shape.userId, organisationId: z.string() }),
@@ -173,7 +189,8 @@ export namespace Box {
 							isNull(MachineTable.timeDeleted)
 						)
 					)
-					.then((rows) => (rows[0] ? serialize(rows[0].box) : null));
+					.orderBy(BoxTable.timeCreated)
+					.then((rows) => rows.map((r) => serialize(r.box)));
 			});
 		}
 	);
@@ -217,6 +234,60 @@ export namespace Box {
 			});
 		}
 	);
+
+	/** How long a cloud room may sit with no run before its GPU is released. */
+	export const IDLE_LIMIT_SECONDS = 3 * 60 * 60;
+
+	export const IDLE_REASON = 'idle for 3 hours';
+
+	/**
+	 * Stop the cloud rooms on one host that have had nothing live for
+	 * {@link IDLE_LIMIT_SECONDS}. The record stays; only `state` changes, which
+	 * is what frees the GPU for placement. A person's own hardware is never
+	 * touched: only machines an organisation owns are looked at.
+	 *
+	 * Idle is measured from the end of the room's last run, or from its creation
+	 * when it never had one. A room with a run waiting, starting or live is
+	 * never idle.
+	 */
+	export const stopIdle = fn(z.string(), async (machineId): Promise<string[]> => {
+		return Database.use(async (tx) => {
+			const lastRun = tx
+				.select({
+					boxId: SessionTable.boxId,
+					lastStopped: sql<Date | null>`max(${SessionTable.timeStopped})`.as('last_stopped')
+				})
+				.from(SessionTable)
+				.groupBy(SessionTable.boxId)
+				.as('last_run');
+			const candidates = await tx
+				.select({ id: BoxTable.id })
+				.from(BoxTable)
+				.innerJoin(MachineTable, eq(MachineTable.id, BoxTable.machineId))
+				.leftJoin(lastRun, eq(lastRun.boxId, BoxTable.id))
+				.where(
+					and(
+						eq(BoxTable.machineId, machineId),
+						eq(BoxTable.state, 'running'),
+						isNull(BoxTable.timeDeleted),
+						isNotNull(MachineTable.organisationId),
+						sql`coalesce(${lastRun.lastStopped}, ${BoxTable.timeCreated}) < now() - make_interval(secs => ${IDLE_LIMIT_SECONDS})`,
+						sql`not exists (select 1 from ${SessionTable} where ${SessionTable.boxId} = ${BoxTable.id} and ${SessionTable.state} in ('requested', 'starting', 'live') and ${SessionTable.timeDeleted} is null)`
+					)
+				);
+			if (candidates.length === 0) return [];
+			await tx
+				.update(BoxTable)
+				.set({ state: 'stopped', stopReason: IDLE_REASON, stopClean: true })
+				.where(
+					inArray(
+						BoxTable.id,
+						candidates.map((c) => c.id)
+					)
+				);
+			return candidates.map((c) => c.id);
+		});
+	});
 
 	export const rename = fn(Info.pick({ id: true, userId: true, label: true }), async (input) => {
 		return Database.use(async (tx) => {
@@ -386,7 +457,11 @@ export namespace Box {
 				// holding no boxes — is spelt out instead of relying on that.
 				const missing = await tx
 					.update(BoxTable)
-					.set({ state: 'stopped', stopReason: OMITTED_FROM_REPORT, stopClean: false })
+					.set({
+						state: 'stopped',
+						stopReason: OMITTED_FROM_REPORT,
+						stopClean: false
+					})
 					.where(
 						and(
 							eq(BoxTable.machineId, input.machineId),
@@ -412,6 +487,7 @@ export namespace Box {
 			id: input.id,
 			userId: input.userId,
 			machineId: input.machineId,
+			gpuPciId: input.gpuPciId,
 			label: input.label,
 			tier: input.tier as Info['tier'],
 			state: input.state as Info['state'],

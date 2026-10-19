@@ -142,16 +142,9 @@ describe('POST /session', () => {
 		// start a run has to show what it costs and what remains, and a second
 		// call for that is a call nobody makes.
 		expect(Object.keys(body)).toEqual(['data', 'billing']);
-		expect(body.billing.exhausted).toBe(false);
-		expect(body.billing.windows.map((w: { window: string }) => w.window)).toEqual([
-			'fiveHour',
-			'sevenDay',
-			'thirtyDay'
-		]);
-		// Nothing is live yet, so nothing is being spent — and one more run
-		// would cost exactly one unit per second.
-		expect(body.billing.rateMilli).toBe(0);
-		expect(body.billing.rateMilliIfOneMore).toBe(1000);
+		// Plans count rooms; there are no time windows to report.
+		expect(Object.keys(body.billing).sort()).toEqual(['plan', 'rooms', 'teamId']);
+		expect(body.billing.rooms.allowed).toBe(1);
 		expect(body.data).toEqual({
 			id: body.data.id,
 			boxId: s.box.id,
