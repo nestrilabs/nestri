@@ -57,7 +57,20 @@ export namespace Machine {
 				.meta({
 					description: 'vendor:device, the ids the model was looked up by',
 					example: '1002:7590'
-				})
+				}),
+			slot: z
+				.string()
+				.regex(/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/)
+				.optional()
+				.meta({
+					description:
+						'The card’s PCI address on the host. Tells apart cards of one model; absent from hosts that do not report it',
+					example: '0000:45:00.0'
+				}),
+			renderNode: z.string().max(64).optional().meta({
+				description: 'The card’s DRM render node on the host. Absent when not reported',
+				example: '/dev/dri/renderD132'
+			})
 		})
 		.meta({ ref: 'Gpu' });
 

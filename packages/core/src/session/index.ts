@@ -12,7 +12,6 @@ import { fn } from '../fn.js';
 import { GameTable } from '../game/game.sql.js';
 import { Identifier } from '../id.js';
 import { MachineTable } from '../machine/machine.sql.js';
-import { Trial } from '../trial/index.js';
 import { Launch } from './launch.js';
 import { LaunchTable } from './launch.sql.js';
 import { SessionState, SessionTable } from './session.sql.js';
@@ -171,7 +170,13 @@ export namespace Session {
 	export type Info = z.infer<typeof Info>;
 
 	export const create = fn(
-		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true, tier: true }).extend({
+		Info.pick({
+			id: true,
+			boxId: true,
+			gameId: true,
+			linkedAccountId: true,
+			tier: true
+		}).extend({
 			trial: z.boolean().optional()
 		}),
 		async (input) => {
@@ -227,7 +232,13 @@ export namespace Session {
 	 * answered is a timing detail.
 	 */
 	export const request = fn(
-		Info.pick({ id: true, boxId: true, gameId: true, linkedAccountId: true, tier: true }).extend({
+		Info.pick({
+			id: true,
+			boxId: true,
+			gameId: true,
+			linkedAccountId: true,
+			tier: true
+		}).extend({
 			trial: z.boolean().optional()
 		}),
 		async (input) => {
@@ -340,7 +351,9 @@ export namespace Session {
 								? (input.endReason ?? null)
 								: null,
 						...(input.state === 'live'
-							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
+							? {
+									timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})`
+								}
 							: {}),
 						...(input.state === 'ended' || input.state === 'failed'
 							? {
@@ -466,6 +479,15 @@ export namespace Session {
 				description:
 					'The run’s first launch: the game above. Report its exit against it, and give it to the launched process as `NESTRI_LAUNCH_ID`. Null only for a run older than launches',
 				example: Examples.Launch.id
+			}),
+			gpuSlot: z.string().nullable().optional().meta({
+				description:
+					'The PCI address of the card the box is pinned to. Preferred over `gpuPciId` when present; null when the box or its host never named one',
+				example: null
+			}),
+			gpuPciId: z.string().nullable().optional().meta({
+				description: 'The card as vendor:device, for a host that does not report slots',
+				example: null
 			})
 		})
 		.meta({
@@ -537,16 +559,15 @@ export namespace Session {
 				)
 				.orderBy(SessionTable.timeStopRequested)
 		);
-		// One stop per run: when the owner asked and the trial also ran out,
-		// the owner's reason is the one the run ended for.
-		const seen = new Set(asked.map((r) => r.sessionId));
-		const stops: Job[] = [
-			...asked.map((run): Job => ({ kind: 'session.stop', ...run, reason: 'user' })),
-			...(await Trial.overdue(machineId))
-				.filter((run) => !seen.has(run.sessionId))
-				.map((run): Job => ({ kind: 'session.stop', ...run }))
-		];
+		const stops: Job[] = asked.map((run): Job => ({
+			kind: 'session.stop',
+			...run,
+			reason: 'user'
+		}));
 		await leaveAbandoned(machineId);
+		// Runs on this poll's host, so the idle limit is checked as often as a
+		// host asks for work: cloud rooms with nothing live for 3 hours stop.
+		await Box.stopIdle(machineId);
 		const free = await freeSlots(machineId);
 		const starts = await Database.use(async (tx) => {
 			return (
@@ -576,20 +597,20 @@ export namespace Session {
 					.orderBy(SessionTable.trial, SessionTable.timeCreated)
 					.limit(free)
 					.then((rows) =>
-						rows.map(
-							(row): Job => ({
-								kind: 'session.start',
-								sessionId: row.session.id,
-								boxId: row.box.id,
-								// The run's own size when it was given one.
-								boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
-								gameId: row.game.id,
-								steamAppId: row.game.steamAppId,
-								linkedAccountId: row.session.linkedAccountId,
-								userId: row.box.userId,
-								launchId: row.launchId
-							})
-						)
+						rows.map((row): Job => ({
+							kind: 'session.start',
+							sessionId: row.session.id,
+							boxId: row.box.id,
+							// The run's own size when it was given one.
+							boxTier: (row.session.tier ?? row.box.tier) as z.infer<typeof StartJob>['boxTier'],
+							gameId: row.game.id,
+							steamAppId: row.game.steamAppId,
+							linkedAccountId: row.session.linkedAccountId,
+							userId: row.box.userId,
+							launchId: row.launchId,
+							gpuSlot: row.box.gpuSlot,
+							gpuPciId: row.box.gpuPciId
+						}))
 					)
 			);
 		});
@@ -625,7 +646,11 @@ export namespace Session {
 	 */
 	export async function holdJobsForMachine(
 		machineId: string,
-		options: { waitMs: number; signal?: AbortSignal; seen?: ReadonlySet<string> }
+		options: {
+			waitMs: number;
+			signal?: AbortSignal;
+			seen?: ReadonlySet<string>;
+		}
 	): Promise<Job[]> {
 		const deadline = Date.now() + options.waitMs;
 		for (;;) {
@@ -735,7 +760,10 @@ export namespace Session {
 				.where(eq(BoxTable.id, mine.boxId))
 				.then((rows) => rows[0]!.machineId);
 			const waiting = await tx
-				.select({ trial: SessionTable.trial, timeCreated: SessionTable.timeCreated })
+				.select({
+					trial: SessionTable.trial,
+					timeCreated: SessionTable.timeCreated
+				})
 				.from(SessionTable)
 				.innerJoin(BoxTable, eq(SessionTable.boxId, BoxTable.id))
 				.where(
@@ -898,7 +926,9 @@ export namespace Session {
 			}
 			const [marked] = await tx
 				.update(SessionTable)
-				.set({ timeStopRequested: sql`coalesce(${SessionTable.timeStopRequested}, now())` })
+				.set({
+					timeStopRequested: sql`coalesce(${SessionTable.timeStopRequested}, now())`
+				})
 				.where(and(scope, inArray(SessionTable.state, ['starting', 'live'])))
 				.returning();
 			if (marked) {
@@ -967,7 +997,9 @@ export namespace Session {
 						endReason:
 							input.to === 'ended' || input.to === 'failed' ? (input.endReason ?? null) : null,
 						...(input.to === 'live'
-							? { timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})` }
+							? {
+									timeStarted: sql`coalesce(${SessionTable.timeStarted}, ${now})`
+								}
 							: {}),
 						...(input.to === 'ended' || input.to === 'failed'
 							? {
@@ -1034,12 +1066,7 @@ export namespace Session {
 	 * - `moved` — it happened.
 	 */
 	export type TransitionOutcome =
-		| 'forbidden'
-		| 'unchanged'
-		| 'illegal'
-		| 'notHolder'
-		| 'lost'
-		| 'moved';
+		'forbidden' | 'unchanged' | 'illegal' | 'notHolder' | 'lost' | 'moved';
 
 	export interface TransitionResult {
 		outcome: TransitionOutcome;
@@ -1062,9 +1089,11 @@ export namespace Session {
 	 * distinction `stopClean` exists for: "it is not running" and "it faulted"
 	 * are different facts and the difference lives in the reason.
 	 */
-	function boxStateFor(
-		run: Info
-	): { state: 'running' | 'stopped'; stopReason: string | null; stopClean: boolean | null } | null {
+	function boxStateFor(run: Info): {
+		state: 'running' | 'stopped';
+		stopReason: string | null;
+		stopClean: boolean | null;
+	} | null {
 		switch (run.state) {
 			case 'live':
 				return { state: 'running', stopReason: null, stopClean: null };
@@ -1073,7 +1102,11 @@ export namespace Session {
 			case 'failed':
 				// The run's own reason, so a box explains its stop in the words
 				// the agent used rather than in a second wording of one event.
-				return { state: 'stopped', stopReason: run.errorMessage ?? null, stopClean: false };
+				return {
+					state: 'stopped',
+					stopReason: run.errorMessage ?? null,
+					stopClean: false
+				};
 			default:
 				return null;
 		}
@@ -1371,7 +1404,11 @@ export namespace Session {
 	 * it reports the launch over. Null when the run or launch is not theirs.
 	 */
 	export const stopLaunch = fn(
-		z.object({ sessionId: z.string(), launchId: z.string(), userId: z.string() }),
+		z.object({
+			sessionId: z.string(),
+			launchId: z.string(),
+			userId: z.string()
+		}),
 		async (input): Promise<Launch.Info | null | 'hostTooOld'> => {
 			const run = await forOwner({ id: input.sessionId, userId: input.userId });
 			if (!run) return null;

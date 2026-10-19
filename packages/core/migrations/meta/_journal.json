@@ -204,6 +204,27 @@
       "when": 1792231939946,
       "tag": "0028_machine_capabilities",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792436256695,
+      "tag": "0029_box_gpu_pci_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792436540630,
+      "tag": "0030_box_gpu_slot",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792438603353,
+      "tag": "0031_checkout_room",
+      "breakpoints": true
     }
   ]
 }

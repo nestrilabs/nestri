@@ -17,6 +17,7 @@ export namespace Identifier {
 		trialClaim: 'trc',
 		steamLinkRequest: 'slr',
 		box: 'box',
+		checkoutRoom: 'cor',
 		session: 'ses',
 		launch: 'lch',
 		accessToken: 'pat',

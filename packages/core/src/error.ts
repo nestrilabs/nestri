@@ -61,7 +61,11 @@ export const ErrorCodes = {
 	Permission: {
 		FORBIDDEN: 'forbidden',
 		INSUFFICIENT_PERMISSIONS: 'insufficient_permissions',
-		ACCOUNT_RESTRICTED: 'account_restricted'
+		ACCOUNT_RESTRICTED: 'account_restricted',
+		/** The plan's cloud room allowance is used up. */
+		ROOM_LIMIT: 'room_limit',
+		/** The GPU asked for is beyond the plan's entry models. */
+		GPU_NEEDS_PRO: 'gpu_needs_pro'
 	},
 
 	NotFound: {

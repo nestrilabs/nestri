@@ -173,7 +173,9 @@ export namespace Polar {
 		z.object({
 			teamId: z.string(),
 			email: z.email().optional(),
-			successUrl: z.url().optional()
+			successUrl: z.url().optional(),
+			/** The fleet GPU the person wanted a room on; made when payment lands. */
+			gpu: z.string().min(1).max(128).optional()
 		}),
 		async (input) => {
 			const { productId } = settings();
@@ -191,7 +193,7 @@ export namespace Polar {
 				// subscription. A customer who already existed under this email
 				// keeps the customer record they had, without our id on it, and
 				// this is then the only place the team survives.
-				metadata: { teamId: input.teamId },
+				metadata: input.gpu ? { teamId: input.teamId, gpu: input.gpu } : { teamId: input.teamId },
 				customerEmail: input.email,
 				successUrl: input.successUrl
 			});
@@ -309,6 +311,8 @@ export namespace Polar {
 		 */
 		subscriptionId: string | null;
 		customerId: string | null;
+		/** The fleet GPU the checkout asked a room on, if it named one. */
+		gpu: string | null;
 	}
 
 	/**
@@ -382,7 +386,7 @@ export namespace Polar {
 			// existed before checkout keeps the record they had, without it, so
 			// the team then comes from the checkout's metadata, which the
 			// subscription carries. A delivery with neither was not started here.
-			const metadata = data.metadata as { teamId?: unknown } | undefined;
+			const metadata = data.metadata as { teamId?: unknown; gpu?: unknown } | undefined;
 			const teamId =
 				customer?.externalId ??
 				customer?.external_id ??
@@ -411,7 +415,8 @@ export namespace Polar {
 				teamId,
 				standing: standingFor(event.type, productId),
 				subscriptionId,
-				customerId
+				customerId,
+				gpu: typeof metadata?.gpu === 'string' && metadata.gpu ? metadata.gpu : null
 			};
 		}
 	);
