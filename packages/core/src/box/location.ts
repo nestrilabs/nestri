@@ -16,6 +16,9 @@ export namespace Location {
 		.object({
 			machineId: z.string().meta({ description: 'The host the card is in' }),
 			pciId: z.string().meta({ description: 'vendor:device, as the host reported it' }),
+			slot: z.string().nullable().meta({
+				description: 'PCI address on the host, when it reports one. Tells apart cards of one model'
+			}),
 			model: z.string().meta({ description: 'What the card is called' }),
 			vramMib: z.number().int().nullable().meta({ description: 'Card memory in MiB, if reported' }),
 			online: z.boolean().meta({ description: 'Whether its host is reporting in' })
@@ -48,6 +51,7 @@ export namespace Location {
 				(m.gpus ?? []).map((g) => ({
 					machineId: m.id,
 					pciId: g.pciId,
+					slot: g.slot ?? null,
 					model: g.model,
 					vramMib: g.vramMib ?? null,
 					online: Machine.isOnline(m.lastSeen ?? null)

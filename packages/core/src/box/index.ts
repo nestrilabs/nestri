@@ -38,6 +38,11 @@ export namespace Box {
 					'The GPU on its host the box is pinned to (`vendor:device`). Null for a box made before boxes named a card',
 				example: null
 			}),
+			gpuSlot: z.string().nullable().optional().meta({
+				description:
+					'The PCI address of that card on its host, when the host reports slots. Null otherwise',
+				example: null
+			}),
 			label: z.string().meta({
 				description: 'Editable display name. Not unique, and not the DNS label',
 				example: Examples.Box.label
@@ -87,6 +92,7 @@ export namespace Box {
 			userId: true,
 			machineId: true,
 			gpuPciId: true,
+			gpuSlot: true,
 			label: true,
 			tier: true
 		}),
@@ -99,6 +105,7 @@ export namespace Box {
 						userId: input.userId,
 						machineId: input.machineId,
 						gpuPciId: input.gpuPciId ?? null,
+						gpuSlot: input.gpuSlot ?? null,
 						label: input.label,
 						tier: input.tier
 					})
@@ -119,16 +126,26 @@ export namespace Box {
 	 */
 	export const createPlaced = async (
 		input: { id: string; userId: string; label: string; tier: Info['tier'] },
-		placer?: Placement.Placer
+		placer?: Placement.Placer,
+		guard?: () => Promise<void>
 	) => {
-		const placed = await Placement.choose({ userId: input.userId, tier: input.tier }, placer);
-		return create({
-			id: input.id,
-			userId: input.userId,
-			machineId: placed.machineId,
-			gpuPciId: placed.gpuPciId,
-			label: input.label,
-			tier: input.tier
+		// One transaction under a per-person lock: the limit check, the card
+		// choice and the insert are one step, so two requests from one person
+		// cannot both pass a limit of one. Card booking is locked per machine
+		// inside the placer.
+		return Database.transaction(async () => {
+			await Placement.lock([`user:${input.userId}`]);
+			await guard?.();
+			const placed = await Placement.choose({ userId: input.userId, tier: input.tier }, placer);
+			return create({
+				id: input.id,
+				userId: input.userId,
+				machineId: placed.machineId,
+				gpuPciId: placed.gpuPciId,
+				gpuSlot: placed.gpuSlot ?? null,
+				label: input.label,
+				tier: input.tier
+			});
 		});
 	};
 
@@ -488,6 +505,7 @@ export namespace Box {
 			userId: input.userId,
 			machineId: input.machineId,
 			gpuPciId: input.gpuPciId,
+			gpuSlot: input.gpuSlot,
 			label: input.label,
 			tier: input.tier as Info['tier'],
 			state: input.state as Info['state'],

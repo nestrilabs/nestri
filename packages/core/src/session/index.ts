@@ -479,6 +479,15 @@ export namespace Session {
 				description:
 					'The run’s first launch: the game above. Report its exit against it, and give it to the launched process as `NESTRI_LAUNCH_ID`. Null only for a run older than launches',
 				example: Examples.Launch.id
+			}),
+			gpuSlot: z.string().nullable().optional().meta({
+				description:
+					'The PCI address of the card the box is pinned to. Preferred over `gpuPciId` when present; null when the box or its host never named one',
+				example: null
+			}),
+			gpuPciId: z.string().nullable().optional().meta({
+				description: 'The card as vendor:device, for a host that does not report slots',
+				example: null
 			})
 		})
 		.meta({
@@ -598,7 +607,9 @@ export namespace Session {
 							steamAppId: row.game.steamAppId,
 							linkedAccountId: row.session.linkedAccountId,
 							userId: row.box.userId,
-							launchId: row.launchId
+							launchId: row.launchId,
+							gpuSlot: row.box.gpuSlot,
+							gpuPciId: row.box.gpuPciId
 						}))
 					)
 			);

@@ -52,13 +52,17 @@ export namespace BoxApi {
 					pciId: z.string().optional().meta({
 						description: 'With `on: "own"`: the GPU on that host, as `GET /location` lists it'
 					}),
+					slot: z.string().optional().meta({
+						description:
+							'With `on: "own"`: the card’s PCI address, to tell apart cards of one model'
+					}),
 					model: z.string().optional().meta({
 						description: 'With `on: "fleet"`: the GPU model, as `GET /location` lists it'
 					})
 				})
 			),
 			async (c) => {
-				const { label, tier, on, machineId, pciId, model } = c.req.valid('json');
+				const { label, tier, on, machineId, pciId, slot, model } = c.req.valid('json');
 				const userId = Actor.userID;
 				if (on === 'own' && Boolean(machineId) !== Boolean(pciId)) {
 					throw new VisibleError(
@@ -68,6 +72,8 @@ export namespace BoxApi {
 						machineId ? 'pciId' : 'machineId'
 					);
 				}
+				let guard: (() => Promise<void>) | undefined;
+				let placer: Placement.Placer;
 				if (on === 'fleet') {
 					// Plans count cloud rooms; your own GPUs are never limited.
 					const team = await Team.personalFor(userId);
@@ -75,21 +81,25 @@ export namespace BoxApi {
 					if (model && !Rooms.mayUseModel(plan, model)) {
 						throw Rooms.needsPro(model);
 					}
-					if ((await Billing.cloudRooms(userId)) >= Rooms.allowed(plan)) {
-						throw Rooms.atLimit(model ?? null, plan);
-					}
-				}
-				const placer =
-					on === 'fleet'
-						? model
-							? Placement.onFleetModel(model)
-							: Placement.fleet
-						: machineId && pciId
-							? Placement.onOwn({ machineId, pciId })
+					// Runs inside the creation transaction, under the person's lock.
+					guard = async () => {
+						if ((await Billing.cloudRooms(userId)) >= Rooms.allowed(plan)) {
+							throw Rooms.atLimit(model ?? null, plan);
+						}
+					};
+					placer = model
+						? Placement.onFleetModel(model)
+						: Placement.onFleetAny({ entryOnly: !Rooms.isPro(plan) });
+				} else {
+					placer =
+						machineId && pciId
+							? Placement.onOwn({ machineId, pciId, slot })
 							: Placement.onlyHost;
+				}
 				const box = await Box.createPlaced(
 					{ id: Identifier.ascending('box'), userId, label, tier },
-					placer
+					placer,
+					guard
 				);
 				return c.json({ data: box }, 201);
 			}

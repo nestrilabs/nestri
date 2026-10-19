@@ -6,6 +6,7 @@ import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Examples } from '@nestri/core/examples';
 import { Game } from '@nestri/core/game/index';
 import { Identifier } from '@nestri/core/id';
+import { Placement } from '@nestri/core/box/placement';
 import { Session } from '@nestri/core/session/index';
 import { Launch } from '@nestri/core/session/launch';
 import { Team } from '@nestri/core/team/index';
@@ -286,6 +287,10 @@ export namespace SessionApi {
 				if (active) {
 					conflict(Session.BOX_BUSY);
 				}
+
+				// A stopped cloud room gave its card up: hold one again (its own,
+				// or the same model elsewhere) or refuse with 429.
+				await Placement.reclaim(box.id);
 
 				// Plans count rooms, not time: nothing here refuses a run for time
 				// spent. The standing is returned so a client can show it.

@@ -266,3 +266,95 @@ describe('the idle limit', () => {
 		expect((await Box.fromID(box.id))!.state).toBe('running');
 	});
 });
+
+describe('review blockers on rooms', () => {
+	test('free with no model is placed on an entry card only', async () => {
+		await fleet([[BIG], [V710]]);
+		const p = await person('free-any');
+		const res = await post(p.headers, { on: 'fleet' });
+		expect(res.status).toBe(201);
+		expect((await json(res)).data.gpuPciId).toBe(V710.pciId);
+
+		const only = await fleet([[BIG]]);
+		const q = await person('free-none');
+		const refused = await post(q.headers, { on: 'fleet' });
+		expect(refused.status).toBe(429);
+		expect(only.machines.length).toBe(1);
+	});
+
+	test('two concurrent POST /box for a free user: exactly one room', async () => {
+		await fleet([[V710], [V710], [V710]]);
+		const p = await person('race-limit');
+		const res = await Promise.all([
+			post(p.headers, { on: 'fleet', model: V710.model }),
+			post(p.headers, { on: 'fleet', model: V710.model })
+		]);
+		expect(res.map((r) => r.status).sort()).toEqual([201, 403]);
+		expect(await Box.onFleet({ userId: p.owner.userId, organisationId: Env.get().FLEET_ORGANISATION_ID! }))
+			.toHaveLength(1);
+	});
+
+	test('two people racing for the last card: one gets it', async () => {
+		await fleet([[V710]]);
+		const a = await person('race-a');
+		const b = await person('race-b');
+		const res = await Promise.all([
+			post(a.headers, { on: 'fleet', model: V710.model }),
+			post(b.headers, { on: 'fleet', model: V710.model })
+		]);
+		expect(res.map((r) => r.status).sort()).toEqual([201, 429]);
+	});
+
+	test('a box with no card holds its machine’s first card; slots tell identical cards apart', async () => {
+		const f = await fleet([[V710]]);
+		const legacy = await person('legacy');
+		await Box.create({
+			id: Identifier.ascending('box'),
+			userId: legacy.owner.userId,
+			machineId: f.machines[0]!.id,
+			gpuPciId: null,
+			label: 'old',
+			tier: 'md'
+		});
+		const other = await person('legacy-other', 'paid');
+		expect((await post(other.headers, { on: 'fleet', model: V710.model })).status).toBe(429);
+		const loc = (await json(await app.request('/location', { headers: other.headers }))).data;
+		expect(loc.fleet[0].available).toBe(false);
+
+		const g = await fleet([[
+			{ ...V710, slot: '0000:45:00.0' },
+			{ ...V710, slot: '0000:46:00.0' }
+		]]);
+		const p = await person('slots', 'paid');
+		const one = (await json(await post(p.headers, { on: 'fleet', model: V710.model }))).data;
+		const two = (await json(await post(p.headers, { on: 'fleet', model: V710.model }))).data;
+		expect([one.gpuSlot, two.gpuSlot].sort()).toEqual(['0000:45:00.0', '0000:46:00.0']);
+		expect(g.machines.length).toBe(1);
+		const jobs = (await import('@nestri/core/session/index')).Session;
+		expect(jobs.StartJob.shape.gpuSlot).toBeDefined();
+	});
+
+	test('a stopped room whose card was taken is re-placed on the same model, or refused', async () => {
+		const f = await fleet([[V710], [V710]]);
+		const a = await person('reclaim-a');
+		const room = (await json(await post(a.headers, { on: 'fleet', model: V710.model }))).data;
+		await Box.setState({ id: room.id, state: 'stopped', stopReason: 'idle for 3 hours', stopClean: true });
+		const b = await person('reclaim-b');
+		const bBox = (await json(await post(b.headers, { on: 'fleet', model: V710.model }))).data;
+		const c = await person('reclaim-c', 'paid');
+		const cBox = (await json(await post(c.headers, { on: 'fleet', model: V710.model }))).data;
+		expect(cBox.machineId).toBe(room.machineId);
+		expect(bBox.machineId).not.toBe(room.machineId);
+
+		const { Placement } = await import('@nestri/core/box/placement');
+		await expect(Placement.reclaim(room.id)).rejects.toThrow(/free right now/);
+		expect((await Box.fromID(room.id))!.state).toBe('stopped');
+
+		await Box.setState({ id: bBox.id, state: 'stopped', stopReason: 'x', stopClean: true });
+		await Placement.reclaim(room.id);
+		const moved = (await Box.fromID(room.id))!;
+		expect(moved.machineId).toBe(bBox.machineId);
+		expect(moved.state).toBe('created');
+		expect(f.machines.length).toBe(2);
+	});
+});

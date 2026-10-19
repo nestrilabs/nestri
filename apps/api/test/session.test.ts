@@ -442,7 +442,9 @@ describe('GET /machine/jobs', () => {
 			steamAppId: 5520,
 			linkedAccountId: s.owner.linkedAccountId,
 			userId: s.owner.userId,
-			launchId: body.data.launches[0].id
+			launchId: body.data.launches[0].id,
+			gpuSlot: null,
+			gpuPciId: null
 		});
 	});
 
