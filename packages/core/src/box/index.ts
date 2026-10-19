@@ -177,7 +177,7 @@ export namespace Box {
 				.orderBy(BoxTable.timeCreated)
 				.then((rows) =>
 					rows.map((r) =>
-						serialize(r.box, Machine.gpuName(r.gpus), {
+						serialize(r.box, Machine.pinnedName(r.gpus, r.box), {
 							host: r.host,
 							fleet: r.organisationId !== null
 						})
