@@ -101,7 +101,7 @@ export const MachineTable = pgTable(
 		// calls the machine ("AMD Radeon RX 9060 XT"), and the first measured part
 		// of the capacity a scheduler will place by. Null until a report carries
 		// them; never filled in by guessing.
-		gpus: jsonb('gpus').$type<{ model: string; vramMib?: number; pciId: string }[]>(),
+		gpus: jsonb('gpus').$type<{ model: string; vramMib?: number; pciId: string; slot?: string; renderNode?: string }[]>(),
 		// How many runs this host will hold at once, as its last heartbeat said.
 		// Null for an agent that does not say, which is handed every waiting
 		// run as before; a number is what makes the rest wait their turn.

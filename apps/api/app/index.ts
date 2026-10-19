@@ -11,6 +11,7 @@ import { type ContentfulStatusCode } from 'hono/utils/http-status';
 import { auth } from './middleware/auth.js';
 import { AccessTokenApi } from './routes/access-token.js';
 import { BillingApi } from './routes/billing.js';
+import { LocationApi } from './routes/location';
 import { BoxApi } from './routes/box.js';
 import { EnrolmentApi } from './routes/enrolment.js';
 import { GameApi } from './routes/game.js';
@@ -56,6 +57,7 @@ const routes = app
 	.route('/machine', EnrolmentApi.route)
 	.route('/team', TeamApi.route)
 	.route('/box', BoxApi.route)
+	.route('/location', LocationApi.route)
 	.route('/session', SessionApi.route)
 	.route('/access-token', AccessTokenApi.route)
 	.route('/waitlist', WaitlistApi.route)

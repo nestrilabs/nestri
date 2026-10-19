@@ -1,0 +1,1 @@
+ALTER TABLE "box" ADD COLUMN "gpu_pci_id" text;

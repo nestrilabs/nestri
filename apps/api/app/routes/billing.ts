@@ -144,9 +144,9 @@ export namespace BillingApi {
 			notPublic,
 			describeRoute({
 				tags: ['Billing'],
-				summary: 'What you are on, and what you have spent',
+				summary: 'What you are on, and how many rooms it allows',
 				description:
-					'The plan, and where each of the three windows stands. This is what a meter is drawn from — the percentages here are the same numbers that decide whether a run may start, so a full bar and a refusal cannot disagree.',
+					'The plan, and cloud rooms used against allowed. Rooms are the only limit a plan sets; there are no time windows.',
 				responses: {
 					200: {
 						content: { 'application/json': { schema: Result(Billing.State) } },
@@ -156,7 +156,13 @@ export namespace BillingApi {
 					404: ErrorResponses[404]
 				}
 			}),
-			async (c) => c.json({ data: await Billing.state({ teamId: await payingTeam() }) })
+			async (c) =>
+				c.json({
+					data: await Billing.state({
+						teamId: await payingTeam(),
+						userId: Actor.userID
+					})
+				})
 		)
 		.post(
 			'/checkout',
@@ -232,7 +238,9 @@ export namespace BillingApi {
 			}),
 			async (c) => {
 				mustBeConfigured();
-				return c.json({ data: await Polar.portal({ teamId: await payingTeam() }) });
+				return c.json({
+					data: await Polar.portal({ teamId: await payingTeam() })
+				});
 			}
 		);
 }
