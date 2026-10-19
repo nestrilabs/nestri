@@ -1,5 +1,6 @@
 import { Actor } from '@nestri/core/actor';
 import { Billing } from '@nestri/core/billing/index';
+import { CheckoutRoom } from '@nestri/core/billing/checkout-room';
 import { Polar } from '@nestri/core/billing/polar';
 import { ErrorCodes, VisibleError } from '@nestri/core/error';
 import { Team } from '@nestri/core/team/index';
@@ -134,6 +135,44 @@ export namespace BillingApi {
 					...ids
 				});
 
+				// The room they paid for. Never allowed to fail the delivery:
+				// the plan is already applied, and a retry loop cannot make a
+				// GPU free.
+				if (
+					updated &&
+					delivery.gpu &&
+					delivery.subscriptionId &&
+					delivery.standing.plan === 'paid' &&
+					delivery.standing.status === 'active'
+				) {
+					try {
+						const room = await CheckoutRoom.forSubscription({
+							teamId: delivery.teamId,
+							subscriptionId: delivery.subscriptionId,
+							gpu: delivery.gpu
+						});
+						console.log('billing checkout room', {
+							team: delivery.teamId,
+							requested: delivery.gpu,
+							...room
+						});
+						if (room.reason === 'no gpu free') {
+							console.error('a paid checkout asked for a GPU and none was free', {
+								team: delivery.teamId,
+								requested: delivery.gpu,
+								...ids
+							});
+						}
+					} catch (err) {
+						console.error('a paid checkout room failed to be created', {
+							team: delivery.teamId,
+							requested: delivery.gpu,
+							...ids,
+							err
+						});
+					}
+				}
+
 				return c.json({
 					data: { applied: Boolean(updated), type: delivery.type }
 				});
@@ -197,19 +236,26 @@ export namespace BillingApi {
 					.object({
 						successUrl: z.url().optional().meta({
 							description: 'Where to return to once they have paid'
+						}),
+						gpu: z.string().min(1).max(128).optional().meta({
+							description:
+								'A fleet GPU model, as `GET /location` lists it. When payment lands, a room on it is created (or on the closest free model if none is free)'
 						})
 					})
 					.strict()
 			),
 			async (c) => {
 				mustBeConfigured();
+				const { successUrl, gpu } = c.req.valid('json');
+				if (gpu) await CheckoutRoom.assertKnown(gpu);
 				const teamId = await payingTeam();
 				const user = await User.fromID(Actor.userID);
 				return c.json({
 					data: await Polar.checkout({
 						teamId,
 						email: user?.email ?? undefined,
-						successUrl: c.req.valid('json').successUrl
+						successUrl,
+						gpu
 					})
 				});
 			}

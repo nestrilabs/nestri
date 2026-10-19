@@ -218,6 +218,13 @@
       "when": 1792436540630,
       "tag": "0030_box_gpu_slot",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792438603353,
+      "tag": "0031_checkout_room",
+      "breakpoints": true
     }
   ]
 }
