@@ -207,10 +207,25 @@ export namespace Polar {
 	 * them, which is the one thing this integration exists to avoid.
 	 */
 	export const portal = fn(z.object({ teamId: z.string() }), async (input) => {
-		const session = await client().customerSessions.create({
-			externalCustomerId: input.teamId
-		});
-		return { url: session.customerPortalUrl };
+		try {
+			const session = await client().customerSessions.create({
+				externalCustomerId: input.teamId
+			});
+			return { url: session.customerPortalUrl };
+		} catch (err) {
+			// A team that never checked out has no customer on their side, and
+			// they refuse the session (404, or 422 for an unknown external id).
+			// That is not our failure, so it must not surface as a 500.
+			const status = (err as { statusCode?: number } | null)?.statusCode;
+			if (status === 404 || status === 422) {
+				throw new VisibleError(
+					'not_found',
+					ErrorCodes.NotFound.RESOURCE_NOT_FOUND,
+					'This team has no billing yet'
+				);
+			}
+			throw err;
+		}
 	});
 
 	/** The plan and status a team is on, as far as the provider is concerned. */
