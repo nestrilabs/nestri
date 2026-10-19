@@ -32,6 +32,24 @@ export namespace Rooms {
 		return entryModels().some((m) => name.includes(m.toLowerCase()));
 	}
 
+	/**
+	 * A card's name without the vendor: clients show `RTX 3060` and
+	 * `Radeon RX 9060 XT`, hosts report `NVIDIA GeForce RTX 3060` and
+	 * `AMD Radeon RX 9060 XT`.
+	 */
+	export function bareModel(model: string): string {
+		let m = model.trim();
+		for (const prefix of ['NVIDIA ', 'GeForce ', 'AMD ', 'Intel(R) ', 'Intel ']) {
+			if (m.toLowerCase().startsWith(prefix.toLowerCase())) m = m.slice(prefix.length);
+		}
+		return m.toLowerCase();
+	}
+
+	/** Whether two names are one card, with or without the vendor. */
+	export function sameModel(a: string, b: string): boolean {
+		return bareModel(a) === bareModel(b);
+	}
+
 	export function isPro(plan: string | null | undefined): boolean {
 		return plan === 'paid';
 	}

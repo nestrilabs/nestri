@@ -338,7 +338,9 @@ export namespace Placement {
 	export const onFleetModel =
 		(model: string): Placer =>
 		async () => {
-			const free = (await lockedFreeCards(fleetOrganisation())).filter((c) => c.model === model);
+			const free = (await lockedFreeCards(fleetOrganisation())).filter((c) =>
+				Rooms.sameModel(c.model, model)
+			);
 			if (free.length === 0) {
 				throw new VisibleError(
 					'rate_limit',
