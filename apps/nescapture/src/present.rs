@@ -213,6 +213,17 @@ unsafe fn try_capture(
         (images[image_index], fmt, ext, images.len())
     };
 
+    // A paused window captures nothing (ref d-0087): no blit, no slot, no
+    // encode. Before the gate, so the gate's own bookkeeping does not run
+    // either, and the frame the client resumes on is a fresh one.
+    if let Ok(enc) = ds.encoder.lock()
+        && let Some(ref h) = *enc
+        && h.is_paused()
+    {
+        h.note_paused();
+        return None;
+    }
+
     // Gate before any GPU work is queued. A game presenting faster than the
     // target would otherwise pay a full blit for frames the
     // encoder throws away moments later.
