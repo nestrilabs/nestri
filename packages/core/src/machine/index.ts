@@ -85,6 +85,20 @@ export namespace Machine {
 		return gpus?.[0]?.model ?? null;
 	}
 
+	/**
+	 * The card a box is pinned to, by its slot, else its PCI id; the host's
+	 * first card for a box that names none.
+	 */
+	export function pinnedName(
+		gpus: readonly { model: string; pciId: string; slot?: string }[] | null | undefined,
+		pin: { gpuPciId?: string | null; gpuSlot?: string | null }
+	): string | null {
+		const card =
+			(pin.gpuSlot ? gpus?.find((g) => g.slot === pin.gpuSlot) : undefined) ??
+			(pin.gpuPciId ? gpus?.find((g) => g.pciId === pin.gpuPciId) : undefined);
+		return card?.model ?? gpuName(gpus);
+	}
+
 	export const Info = z
 		.object({
 			id: z.string().meta({

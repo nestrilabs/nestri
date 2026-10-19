@@ -166,6 +166,24 @@ describe('POST /box on a chosen GPU', () => {
 		expect(box.gpuPciId).toBeNull();
 	});
 
+	test('a fleet room is found by the name a client shows, without the vendor', async () => {
+		await fleet([[V710]]);
+		const p = await person('fleet-short-name', 'paid');
+		const res = await post(p.headers, { on: 'fleet', model: 'Radeon Pro V710' });
+		expect(res.status).toBe(201);
+		expect((await json(res)).data.gpuPciId).toBe(V710.pciId);
+	});
+
+	test('a box is named by the card it is pinned to, not its host\'s first card', async () => {
+		const p = await person('pinned-name');
+		const host = await Fixtures.machine(p.owner, 'two-cards');
+		await Machine.setGpus({ id: host, gpus: [BIG, V710] });
+		const res = await post(p.headers, { on: 'own', machineId: host, pciId: V710.pciId });
+		expect(res.status).toBe(201);
+		const listed = (await json(await app.request('/box', { headers: p.headers }))).data;
+		expect(listed.find((b: { machineId: string }) => b.machineId === host).gpu).toBe(V710.model);
+	});
+
 	test('a fleet room is placed by model on the least-loaded machine with one free', async () => {
 		const f = await fleet([[V710], [V710]]);
 		const a = await person('fleet-model-a');

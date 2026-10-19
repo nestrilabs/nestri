@@ -32,7 +32,7 @@ export namespace CheckoutRoom {
 
 	/** Refuse a model the fleet does not have. */
 	export async function assertKnown(model: string): Promise<void> {
-		if (!(await knownModels()).includes(model)) {
+		if (!(await knownModels()).some((m) => Rooms.sameModel(m, model))) {
 			throw new VisibleError(
 				'validation',
 				ErrorCodes.Validation.INVALID_PARAMETER,
@@ -54,9 +54,10 @@ export namespace CheckoutRoom {
 		cards: readonly Placement.Card[]
 	): { model: string; substituted: boolean } | null {
 		const free = cards.filter((c) => c.free);
-		if (free.some((c) => c.model === requested)) return { model: requested, substituted: false };
+		const exact = free.find((c) => Rooms.sameModel(c.model, requested));
+		if (exact) return { model: exact.model, substituted: false };
 		if (free.length === 0) return null;
-		const wanted = cards.find((c) => c.model === requested);
+		const wanted = cards.find((c) => Rooms.sameModel(c.model, requested));
 		const wantedVendor = wanted ? vendor(wanted.pciId) : '';
 		const wantedVram = wanted?.vramMib ?? 0;
 		const rank = (c: Placement.Card) => [
