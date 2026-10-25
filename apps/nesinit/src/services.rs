@@ -193,6 +193,9 @@ pub const SERVICE_GID: u32 = 1000;
 /// workload, which is the property [`crate::ticket::Untrusted`] depends on.
 pub const AUDIO_DIR: &str = "/run/pipewire";
 
+/// The PulseAudio socket PipeWire serves, beside its own in [`AUDIO_DIR`].
+pub const PULSE_SOCKET: &str = "/run/pipewire/pulse-native";
+
 /// Where a service's runtime sockets live.
 pub const RUNTIME_DIR: &str = "/run/user/1000";
 
@@ -352,6 +355,27 @@ pub const STACK: &[Service] = &[
         // Both the session manager and the sender connect here, and so does
         // the workload once it starts.
         ready: Some("/run/pipewire/pipewire-0"),
+        ready_name: None,
+    },
+    Service {
+        name: "pipewire-pulse",
+        argv: &["/usr/bin/pipewire-pulse"],
+        env: &[
+            ("XDG_RUNTIME_DIR", RUNTIME_DIR),
+            ("PIPEWIRE_RUNTIME_DIR", AUDIO_DIR),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
+        ],
+        user: Some((SERVICE_UID, SERVICE_GID)),
+        // Most desktop applications and games speak PulseAudio, not PipeWire.
+        cost: "applications that speak PulseAudio play no sound",
+        required: false,
+        // Beside PipeWire's socket and open to the workload the same way: its
+        // address is set in pipewire-pulse.conf.d and handed to the workload as
+        // PULSE_SERVER.
+        umask: Some(0),
+        // A protocol bridge; the graph's own clock runs in pipewire.
+        realtime: false,
+        ready: Some(PULSE_SOCKET),
         ready_name: None,
     },
     Service {
