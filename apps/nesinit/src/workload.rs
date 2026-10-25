@@ -1005,6 +1005,8 @@ const GRAPHICS: &[(&str, &str)] = &[
     // reach and both are told where. Without this a game renders and plays
     // silently, having looked under its own uid and found nothing.
     ("PIPEWIRE_RUNTIME_DIR", crate::services::AUDIO_DIR),
+    // And the same for PulseAudio, which most applications speak.
+    ("PULSE_SERVER", concat!("unix:", "/run/pipewire/pulse-native")),
 ];
 
 /// Mount one share where the descriptor says to put it.
