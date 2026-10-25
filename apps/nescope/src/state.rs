@@ -888,6 +888,7 @@ impl NescopeState {
         let Some(key) = WinKey::of(window) else {
             return;
         };
+        let native = window.x11_surface().map(|x11| x11.window_id());
         let (pid, title, app_id) = if let Some(x11) = window.x11_surface() {
             // The Wayland client of an Xwayland window is Xwayland itself;
             // the game says who it is in _NET_WM_PID.
@@ -906,6 +907,7 @@ impl NescopeState {
         };
         let new = crate::windows::NewWindow {
             pid,
+            native,
             title,
             app_id,
             size: (clamp16(self.width), clamp16(self.height)),

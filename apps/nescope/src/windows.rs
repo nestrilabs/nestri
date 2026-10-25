@@ -18,6 +18,8 @@ pub struct Tracked<K> {
     pub key: K,
     pub id: WindowId,
     pub pid: Option<u32>,
+    /// The X11 window id, for a window Xwayland draws.
+    native: Option<u32>,
     /// False while an X11 window is unmapped: the hub has been told it closed,
     /// and a map again opens it under the same id.
     mapped: bool,
@@ -48,6 +50,8 @@ impl<K> Default for Registry<K> {
 /// What the compositor knows about a window when it maps.
 pub struct NewWindow {
     pub pid: Option<u32>,
+    /// The X11 window id, for a window Xwayland draws.
+    pub native: Option<u32>,
     pub title: String,
     pub app_id: String,
     pub size: (u16, u16),
@@ -70,6 +74,7 @@ impl<K: PartialEq + Clone> Registry<K> {
             }
             w.mapped = true;
             w.pid = new.pid.or(w.pid);
+            w.native = new.native.or(w.native);
             w.title = new.title;
             w.app_id = new.app_id;
             tracing::info!(window = w.id, "window opened again");
@@ -88,6 +93,7 @@ impl<K: PartialEq + Clone> Registry<K> {
             key,
             id,
             pid: new.pid,
+            native: new.native,
             mapped: true,
             launch_id,
             title: new.title,
@@ -214,8 +220,20 @@ fn announce<K>(w: &Tracked<K>, size: (u16, u16)) -> Vec<Vec<u8>> {
         encode_window_pid(&mut m, w.id, pid);
         out.push(m);
     }
+    // A capture layer names frames by the X11 window they were drawn for when
+    // it knows it, marked by WINDOW_SOURCE_BIT, so a process drawing several
+    // windows streams each as its own.
+    if let Some(native) = w.native {
+        let mut m = Vec::new();
+        encode_window_pid(&mut m, w.id, WINDOW_SOURCE_BIT | native);
+        out.push(m);
+    }
     out
 }
+
+/// Marks a capture source as an X11 window rather than a process. Process ids
+/// stay far below it.
+pub const WINDOW_SOURCE_BIT: u32 = 0x8000_0000;
 
 /// Read a process's `NESTRI_LAUNCH_ID`, which the launch put in its
 /// environment and its children inherit.
@@ -304,6 +322,7 @@ mod tests {
     fn new(pid: Option<u32>, title: &str) -> NewWindow {
         NewWindow {
             pid,
+            native: None,
             title: title.into(),
             app_id: "app".into(),
             size: (1920, 1080),
