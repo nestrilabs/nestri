@@ -398,6 +398,7 @@ RUN pacman -Syu --noconfirm --needed \
         python-xlib python-urllib3 python-pyzstd \
         libvpx speex libtheora libvdpau jsoncpp \
         strace lsof less \
+        chromium xdg-utils \
     && rm -f /usr/share/libalpm/hooks/dbus-reload.hook \
     && pacman -Rdd --noconfirm systemd systemd-sysvcompat \
     && pacman -Scc --noconfirm
