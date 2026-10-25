@@ -1155,6 +1155,7 @@ impl PipelineHandle {
 
         let ipc_path = config.ipc_path.clone();
         let ipc_cfg = IpcConfig {
+            source: config.source,
             ipc_path: config.ipc_path,
             current_codec: current_codec.clone(),
             needs_reconfig_flag: needs_reconfig_flag,
@@ -2681,7 +2682,7 @@ struct HeldSlot {
     guard: crate::slots::SlotGuard,
     slot: usize,
     converted: pixelforge::TimelinePoint,
-    ds: Arc<crate::state::DeviceState>,
+    ds: Arc<crate::state::Window>,
 }
 
 impl HeldSlot {
@@ -2881,6 +2882,8 @@ enum Encoded {
 
 struct IpcConfig {
     ipc_path: std::path::PathBuf,
+    /// What every frame is tagged with. See `PipelineConfig::source`.
+    source: u32,
     current_codec: Arc<AtomicU8>,
     needs_reconfig_flag: Arc<AtomicBool>,
     encode_ms: Arc<AtomicU32>,

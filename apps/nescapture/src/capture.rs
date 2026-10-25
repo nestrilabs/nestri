@@ -322,7 +322,7 @@ fn ring_still_serves(
 }
 
 unsafe fn ensure_capture_ring(
-    ds: &crate::state::DeviceState,
+    ds: &crate::state::Window,
     ring: &mut Option<CaptureRing>,
     w: u32,
     h: u32,
@@ -611,7 +611,16 @@ pub unsafe fn inject_hudless_copy(cb: vk::CommandBuffer, dk: usize) {
         Some(e) => e,
         None => return,
     };
-    let sc = *ds.swapchain_extent.lock().unwrap();
+    // The newest window's size: HUD-less copies are a single-window (game)
+    // feature, and a game's one window is its newest.
+    let Some(sc) = ds
+        .newest_window
+        .lock()
+        .ok()
+        .and_then(|w| w.as_ref().map(|w| *w.swapchain_extent.lock().unwrap()))
+    else {
+        return;
+    };
     if sc.width > 0 && sc.height > 0 && (ext.width != sc.width || ext.height != sc.height) {
         return;
     }
@@ -817,7 +826,7 @@ unsafe fn create_timestamp_pool(
 /// results, when they are not there yet and `wait` is false, or when the
 /// counter wrapped between the pair.
 pub unsafe fn blit_gpu_time_ns(
-    ds: &crate::state::DeviceState,
+    ds: &crate::state::Window,
     slot: usize,
     wait: bool,
 ) -> Option<u64> {
@@ -1046,7 +1055,7 @@ unsafe fn record_blit(
 /// Returns `None` when the frame cannot be captured, in which case the caller
 /// must present unmodified — the application's semaphores have not been touched.
 pub unsafe fn capture_present_frame(
-    ds: &crate::state::DeviceState,
+    ds: &crate::state::Window,
     queue: vk::Queue,
     si: vk::Image,
     fmt: vk::Format,
@@ -1226,7 +1235,7 @@ pub unsafe fn capture_present_frame(
 /// A present that returns an error may or may not have waited on it, so it can
 /// neither be signalled again nor destroyed while it might still be pending.
 /// The next capture for that image index creates a fresh one.
-pub fn retire_present_semaphore(ds: &crate::state::DeviceState, image_index: usize) {
+pub fn retire_present_semaphore(ds: &crate::state::Window, image_index: usize) {
     let Ok(mut ring_guard) = ds.capture_ring.lock() else {
         return;
     };
@@ -1248,7 +1257,7 @@ pub fn retire_present_semaphore(ds: &crate::state::DeviceState, image_index: usi
 /// source `VkImage`, and a recreated swapchain's images are new objects even
 /// when the indices and the extent are unchanged — so submitting a recording
 /// made against the old ones reads destroyed images.
-pub fn invalidate_recorded_blits(ds: &crate::state::DeviceState) {
+pub fn invalidate_recorded_blits(ds: &crate::state::Window) {
     let Ok(mut ring_guard) = ds.capture_ring.lock() else {
         return;
     };
@@ -1257,7 +1266,7 @@ pub fn invalidate_recorded_blits(ds: &crate::state::DeviceState) {
     }
 }
 
-pub fn retire_all_present_semaphores(ds: &crate::state::DeviceState) {
+pub fn retire_all_present_semaphores(ds: &crate::state::Window) {
     let Ok(mut ring_guard) = ds.capture_ring.lock() else {
         return;
     };

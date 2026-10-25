@@ -27,8 +27,8 @@ unsafe fn next<F>(instance: vk::Instance, name: &CStr) -> Option<F> {
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn vkCreateXcbSurfaceKHR(
     instance: vk::Instance,
-    p_create_info: *const vk::XcbSurfaceCreateInfoKHR<'_>,
-    p_allocator: *const vk::AllocationCallbacks<'_>,
+    p_create_info: *const vk::XcbSurfaceCreateInfoKHR,
+    p_allocator: *const vk::AllocationCallbacks,
     p_surface: *mut vk::SurfaceKHR,
 ) -> vk::Result {
     let Some(create) =
@@ -47,8 +47,8 @@ pub unsafe extern "system" fn vkCreateXcbSurfaceKHR(
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn vkCreateXlibSurfaceKHR(
     instance: vk::Instance,
-    p_create_info: *const vk::XlibSurfaceCreateInfoKHR<'_>,
-    p_allocator: *const vk::AllocationCallbacks<'_>,
+    p_create_info: *const vk::XlibSurfaceCreateInfoKHR,
+    p_allocator: *const vk::AllocationCallbacks,
     p_surface: *mut vk::SurfaceKHR,
 ) -> vk::Result {
     let Some(create) =
@@ -69,7 +69,7 @@ pub unsafe extern "system" fn vkCreateXlibSurfaceKHR(
 pub unsafe extern "system" fn vkDestroySurfaceKHR(
     instance: vk::Instance,
     surface: vk::SurfaceKHR,
-    p_allocator: *const vk::AllocationCallbacks<'_>,
+    p_allocator: *const vk::AllocationCallbacks,
 ) {
     // Before the call down: a handle can be reused the moment it is freed.
     SURFACE_WINDOW.remove(&surface.as_raw());
