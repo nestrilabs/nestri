@@ -284,6 +284,8 @@ pub struct NescopeState {
     pub loop_handle: LoopHandle<'static, CalloopData>,
     /// True after the game command has been spawned.
     pub game_launched: bool,
+    /// `--windows`: windows keep their own geometry and are placed one by one.
+    pub desktop: bool,
     /// Time since all mapped windows disappeared (for auto-exit).
     pub no_clients_since: Option<std::time::Instant>,
 }
@@ -419,6 +421,7 @@ impl NescopeState {
             fps,
             loop_handle,
             game_launched: false,
+            desktop: false,
             no_clients_since: None,
         };
 
@@ -592,7 +595,9 @@ impl NescopeState {
                 });
                 tl.send_pending_configure();
             }
-            if let Some(x11) = window.x11_surface() {
+            if let Some(x11) = window.x11_surface()
+                && !self.desktop
+            {
                 let geo = Rectangle::new((0, 0).into(), (width as i32, height as i32).into());
                 if let Err(e) = x11.configure(geo) {
                     tracing::warn!("Failed to reconfigure X11 window on resize: {e}");
@@ -910,7 +915,13 @@ impl NescopeState {
             native,
             title,
             app_id,
-            size: (clamp16(self.width), clamp16(self.height)),
+            size: match window.x11_surface() {
+                Some(x11) if self.desktop => {
+                    let g = x11.geometry();
+                    (clamp16(g.size.w.max(1) as u32), clamp16(g.size.h.max(1) as u32))
+                }
+                _ => (clamp16(self.width), clamp16(self.height)),
+            },
         };
         if let Some(messages) =
             self.windows
@@ -920,6 +931,60 @@ impl NescopeState {
                 self.send_box_message(&m);
             }
         }
+    }
+
+    /// Tell the hub where an X11 window is, what kind, and whose it is.
+    /// Desktop mode only: without it every window fills the output and there
+    /// is nothing to place.
+    pub(crate) fn window_placed(&mut self, x11: &smithay::xwayland::X11Surface) {
+        use nesprotocol::window::{
+            WINDOW_KIND_DIALOG, WINDOW_KIND_NORMAL, WINDOW_KIND_POPUP, WindowEvent,
+            encode_event_message,
+        };
+        if !self.desktop {
+            return;
+        }
+        let Some(window) = self.windows.id_of(&WinKey::X11(x11.window_id())) else {
+            return;
+        };
+        let parent = x11
+            .is_transient_for()
+            .and_then(|p| self.windows.id_of(&WinKey::X11(p)));
+        let kind = if x11.is_override_redirect() {
+            WINDOW_KIND_POPUP
+        } else if parent.is_some()
+            || matches!(
+                x11.window_type(),
+                Some(smithay::xwayland::xwm::WmWindowType::Dialog)
+            )
+        {
+            WINDOW_KIND_DIALOG
+        } else {
+            WINDOW_KIND_NORMAL
+        };
+        // A menu names no parent; it belongs to the window that has focus.
+        let parent = parent.or_else(|| {
+            (kind == WINDOW_KIND_POPUP)
+                .then_some(self.focused_x11_window)
+                .flatten()
+                .and_then(|f| self.windows.id_of(&WinKey::X11(f)))
+                .filter(|p| *p != window)
+        });
+        let g = x11.geometry();
+        let mut m = Vec::new();
+        encode_event_message(
+            &mut m,
+            &WindowEvent::Placed {
+                window,
+                parent,
+                kind,
+                x: g.loc.x.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                y: g.loc.y.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+                width: clamp16(g.size.w.max(1) as u32),
+                height: clamp16(g.size.h.max(1) as u32),
+            },
+        );
+        self.send_box_message(&m);
     }
 
     /// A toplevel was destroyed.

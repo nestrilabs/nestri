@@ -186,6 +186,19 @@ pub const MSG_WINDOW_TITLE: u8 = 0x21;
 pub const MSG_WINDOW_ICON: u8 = 0x22;
 pub const MSG_WINDOW_SIZE: u8 = 0x23;
 pub const MSG_WINDOW_CLOSED: u8 = 0x24;
+/// Where a window is, what kind it is, and which window it belongs to. Sent
+/// after [`MSG_WINDOW_OPENED`] and again whenever it moves or resizes, by a
+/// compositor that lets windows keep their own size. A client that ignores it
+/// still gets every window, just without placement.
+pub const MSG_WINDOW_PLACED: u8 = 0x25;
+
+/// [`WindowEvent::Placed`] `kind`: an ordinary top-level window.
+pub const WINDOW_KIND_NORMAL: u8 = 0;
+/// A dialog: kept above its parent and moved with it.
+pub const WINDOW_KIND_DIALOG: u8 = 1;
+/// A menu, tooltip or other popup: no frame, placed relative to its parent,
+/// gone when it loses the pointer.
+pub const WINDOW_KIND_POPUP: u8 = 2;
 
 /// Largest icon accepted, per side. A window icon is a few dozen pixels; this
 /// bounds the allocation a corrupt length could ask for.
@@ -324,6 +337,19 @@ pub enum WindowEvent {
     Closed {
         window: WindowId,
     },
+    Placed {
+        window: WindowId,
+        /// The window this one belongs to, when it has one.
+        parent: Option<WindowId>,
+        /// One of the `WINDOW_KIND_*` values.
+        kind: u8,
+        /// Position on the box's screen. A client places a child relative
+        /// to its parent by the difference of the two.
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+    },
 }
 
 impl WindowEvent {
@@ -333,7 +359,8 @@ impl WindowEvent {
             | WindowEvent::Title { window, .. }
             | WindowEvent::Icon { window, .. }
             | WindowEvent::Size { window, .. }
-            | WindowEvent::Closed { window } => *window,
+            | WindowEvent::Closed { window }
+            | WindowEvent::Placed { window, .. } => *window,
         }
     }
 
@@ -345,6 +372,7 @@ impl WindowEvent {
             WindowEvent::Icon { .. } => MSG_WINDOW_ICON,
             WindowEvent::Size { .. } => MSG_WINDOW_SIZE,
             WindowEvent::Closed { .. } => MSG_WINDOW_CLOSED,
+            WindowEvent::Placed { .. } => MSG_WINDOW_PLACED,
         }
     }
 
@@ -387,6 +415,23 @@ impl WindowEvent {
                 buf.extend_from_slice(&height.to_le_bytes());
             }
             WindowEvent::Closed { .. } => {}
+            WindowEvent::Placed {
+                parent,
+                kind,
+                x,
+                y,
+                width,
+                height,
+                ..
+            } => {
+                buf.push(u8::from(parent.is_some()));
+                buf.extend_from_slice(&parent.unwrap_or(0).to_le_bytes());
+                buf.push(*kind);
+                buf.extend_from_slice(&x.to_le_bytes());
+                buf.extend_from_slice(&y.to_le_bytes());
+                buf.extend_from_slice(&width.to_le_bytes());
+                buf.extend_from_slice(&height.to_le_bytes());
+            }
         }
     }
 
@@ -439,6 +484,19 @@ impl WindowEvent {
                 height: r.u16()?,
             },
             MSG_WINDOW_CLOSED => WindowEvent::Closed { window },
+            MSG_WINDOW_PLACED => {
+                let has_parent = r.take(1)?[0] != 0;
+                let parent = r.u16()?;
+                WindowEvent::Placed {
+                    window,
+                    parent: has_parent.then_some(parent),
+                    kind: r.take(1)?[0],
+                    x: r.u16()? as i16,
+                    y: r.u16()? as i16,
+                    width: r.u16()?,
+                    height: r.u16()?,
+                }
+            }
             _ => return None,
         })
     }
@@ -620,6 +678,24 @@ mod tests {
 
     fn events() -> Vec<WindowEvent> {
         vec![
+            WindowEvent::Placed {
+                window: 7,
+                parent: Some(5),
+                kind: WINDOW_KIND_DIALOG,
+                x: -12,
+                y: 40,
+                width: 1024,
+                height: 768,
+            },
+            WindowEvent::Placed {
+                window: 8,
+                parent: None,
+                kind: WINDOW_KIND_POPUP,
+                x: 0,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
             WindowEvent::Opened {
                 window: 5,
                 width: 1920,

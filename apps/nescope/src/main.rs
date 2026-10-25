@@ -175,6 +175,13 @@ struct Args {
     #[arg(long, env = "NESCOPE_X_DISPLAY", default_value_t = 1)]
     x_display: u32,
 
+    /// Let every window keep the size and place it asks for, give menus and
+    /// popups ids of their own, and say where each window is. For streaming a
+    /// desktop's windows one by one; without it every window fills the output,
+    /// which is what a single fullscreen game wants.
+    #[arg(long, env = "NESCOPE_WINDOWS")]
+    windows: bool,
+
     /// Game command — everything after '--'.
     ///
     /// **Optional.** With one, nescope launches it and exits once it has
@@ -334,6 +341,7 @@ fn main() {
         args.hdr,
         args.render_device.clone(),
     );
+    state.desktop = args.windows;
     if args.xwayland {
         state.init_xwayland(&loop_handle, Some(args.x_display));
     }

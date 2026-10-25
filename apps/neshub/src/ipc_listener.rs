@@ -208,6 +208,7 @@ fn is_cursor_or_window(kind: u8) -> bool {
             | MSG_WINDOW_ICON
             | MSG_WINDOW_SIZE
             | MSG_WINDOW_CLOSED
+            | MSG_WINDOW_PLACED
             | MSG_WINDOW_PID
             | MSG_CURSOR_WINDOW
     )

@@ -471,10 +471,18 @@ impl XwmHandler for CalloopData {
             class = ?window.class(),
             "X11 map_window_request"
         );
-        let geo = Rectangle::new(
-            (0, 0).into(),
-            (self.state.width as i32, self.state.height as i32).into(),
-        );
+        let output = (self.state.width as i32, self.state.height as i32);
+        let geo = if self.state.desktop {
+            // The size and place the window asked for, kept on the output.
+            let asked = window.geometry();
+            let w = if asked.size.w > 1 { asked.size.w.min(output.0) } else { output.0 };
+            let h = if asked.size.h > 1 { asked.size.h.min(output.1) } else { output.1 };
+            let x = asked.loc.x.clamp(0, output.0 - w);
+            let y = asked.loc.y.clamp(0, output.1 - h);
+            Rectangle::new((x, y).into(), (w, h).into())
+        } else {
+            Rectangle::new((0, 0).into(), output.into())
+        };
         if let Err(e) = window.configure(geo) {
             tracing::warn!("configure failed: {e}");
         }
@@ -482,17 +490,26 @@ impl XwmHandler for CalloopData {
             tracing::error!("set_mapped failed: {e}");
             return;
         }
+        let x11 = window.clone();
         let win = Window::new_x11_window(window);
-        self.state.space.map_element(win.clone(), (0, 0), true);
+        self.state.space.map_element(win.clone(), geo.loc, true);
         // An id on first map; a window unmapped and mapped again keeps it.
         self.state.window_opened(&win);
+        self.state.window_placed(&x11);
         self.state.determine_and_apply_focus();
     }
 
     fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
         let location = window.geometry().loc;
+        let x11 = window.clone();
         let win = Window::new_x11_window(window);
-        self.state.space.map_element(win, location, false);
+        self.state.space.map_element(win.clone(), location, false);
+        // A menu or tooltip is a window of its own when windows are streamed
+        // one by one; otherwise it is drawn into the window below it.
+        if self.state.desktop {
+            self.state.window_opened(&win);
+            self.state.window_placed(&x11);
+        }
     }
 
     fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
@@ -511,6 +528,8 @@ impl XwmHandler for CalloopData {
 
         if !window.is_override_redirect() {
             let _ = window.set_mapped(false);
+        }
+        if !window.is_override_redirect() || self.state.desktop {
             // Closed for the hub; mapped again, it opens under the same id.
             self.state
                 .window_unmapped(&crate::state::WinKey::X11(window.window_id()));
@@ -531,8 +550,8 @@ impl XwmHandler for CalloopData {
         &mut self,
         _xwm: XwmId,
         window: X11Surface,
-        _x: Option<i32>,
-        _y: Option<i32>,
+        x: Option<i32>,
+        y: Option<i32>,
         w: Option<u32>,
         h: Option<u32>,
         _reorder: Option<Reorder>,
@@ -545,8 +564,14 @@ impl XwmHandler for CalloopData {
         }
         let (req_w, req_h) = (w, h);
         let cur = window.geometry();
+        // A desktop window may also move itself; a game's stays at the origin.
+        let (cx, cy) = if self.state.desktop {
+            (x.unwrap_or(cur.loc.x), y.unwrap_or(cur.loc.y))
+        } else {
+            (cur.loc.x, cur.loc.y)
+        };
         let (x, y, w, h) = crate::state::clamp_to_output(
-            (cur.loc.x, cur.loc.y, cur.size.w, cur.size.h),
+            (cx, cy, cur.size.w, cur.size.h),
             (w, h),
             (self.state.width as i32, self.state.height as i32),
         );
@@ -575,6 +600,7 @@ impl XwmHandler for CalloopData {
         if let Some(elem) = target_elem {
             self.state.space.map_element(elem, geometry.loc, false);
         }
+        self.state.window_placed(&window);
     }
 
     fn property_notify(&mut self, _xwm: XwmId, window: X11Surface, property: WmWindowProperty) {

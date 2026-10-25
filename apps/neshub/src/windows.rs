@@ -92,6 +92,8 @@ pub fn wants_cursor(sub: Subscription, cursor_window: WindowId) -> bool {
 struct OpenWindow {
     opened: WindowEvent,
     icon: Option<WindowEvent>,
+    /// The latest placement, so a client that joins late places the window too.
+    placed: Option<WindowEvent>,
 }
 
 /// The box's windows, their owners, and which encoder is primary.
@@ -124,6 +126,7 @@ impl WindowTable {
                     OpenWindow {
                         opened: event.clone(),
                         icon: None,
+                        placed: None,
                     },
                 );
             }
@@ -151,6 +154,11 @@ impl WindowTable {
             WindowEvent::Icon { window, .. } => {
                 if let Some(open) = self.open.get_mut(window) {
                     open.icon = Some(event.clone());
+                }
+            }
+            WindowEvent::Placed { window, .. } => {
+                if let Some(open) = self.open.get_mut(window) {
+                    open.placed = Some(event.clone());
                 }
             }
             WindowEvent::Closed { window } => {
@@ -203,6 +211,7 @@ impl WindowTable {
         for open in self.open.values() {
             out.push(open.opened.clone());
             out.extend(open.icon.clone());
+            out.extend(open.placed.clone());
         }
         out
     }
