@@ -175,12 +175,13 @@ struct Args {
     #[arg(long, env = "NESCOPE_X_DISPLAY", default_value_t = 1)]
     x_display: u32,
 
-    /// Let every window keep the size and place it asks for, give menus and
-    /// popups ids of their own, and say where each window is. For streaming a
-    /// desktop's windows one by one; without it every window fills the output,
-    /// which is what a single fullscreen game wants.
-    #[arg(long, env = "NESCOPE_WINDOWS")]
-    windows: bool,
+    /// Stretch every window over the whole output, the way a single
+    /// fullscreen game was once streamed. By default each window keeps the
+    /// size and place it asks for, menus and popups get ids of their own, and
+    /// every window is placed one by one -- a game started from a launcher is
+    /// then a window of its own, beside the launcher's.
+    #[arg(long, env = "NESCOPE_FILL_OUTPUT")]
+    fill_output: bool,
 
     /// Game command — everything after '--'.
     ///
@@ -341,7 +342,7 @@ fn main() {
         args.hdr,
         args.render_device.clone(),
     );
-    state.desktop = args.windows;
+    state.desktop = !args.fill_output;
     if args.xwayland {
         state.init_xwayland(&loop_handle, Some(args.x_display));
     }
