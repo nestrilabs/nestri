@@ -685,12 +685,23 @@ RUN umu-run --help >/dev/null 2>&1 \
     || { echo "umu-run does not start; run it by hand to see the module or interpreter it lacks" >&2; \
          umu-run --help >&2 || true; exit 1; }
 
-# No 32-bit libraries came with it. The distribution's umu package would have
-# brought a long list of them for the container runtime this image never runs,
-# which is why it is built instead of installed; this is the check that stays
-# true if somebody swaps it back.
-RUN ! pacman -Qq | grep -q '^lib32-' \
-    || { echo "a lib32 package is installed:" >&2; pacman -Qq | grep '^lib32-' >&2; exit 1; }
+# The 32-bit C library, and nothing else 32-bit. A launcher's process helper
+# is still a 32-bit program even in a 64-bit client -- Steam's `reaper`, which
+# every game is started through, needs only libc and libpthread -- and with no
+# 32-bit loader every launch exits 255 before the game runs, with no message.
+# No graphics stack comes with it: games bring their own runtime.
+RUN printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >> /etc/pacman.conf \
+    && pacman -Sy --noconfirm --needed lib32-glibc \
+    && pacman -Scc --noconfirm \
+    && test -x /usr/lib32/ld-linux.so.2
+
+# No other 32-bit libraries. The distribution's umu package would have brought a
+# long list of them for the container runtime this image never runs, which is
+# why it is built instead of installed; this is the check that stays true if
+# somebody swaps it back.
+RUN ! pacman -Qq | grep '^lib32-' | grep -qvx 'lib32-glibc' \
+    || { echo "a lib32 package other than lib32-glibc is installed:" >&2; \
+         pacman -Qq | grep '^lib32-' >&2; exit 1; }
 
 # ───────────────────────────────────────────────────────────
 #  runtime_prod — the default: `make build`
