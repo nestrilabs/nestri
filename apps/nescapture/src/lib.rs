@@ -39,6 +39,7 @@ mod shader;
 mod shared;
 mod slots;
 mod state;
+mod surface;
 mod swapchain;
 mod timing;
 
@@ -56,6 +57,7 @@ use framebuffer::{
 use instance::{vkCreateInstance, vkDestroyInstance};
 use pipeline::{vkCreateGraphicsPipelines, vkDestroyPipeline};
 use present::vkQueuePresentKHR;
+use surface::{vkCreateXcbSurfaceKHR, vkCreateXlibSurfaceKHR, vkDestroySurfaceKHR};
 use shader::{vkCreateShaderModule, vkDestroyShaderModule};
 use swapchain::{
     vkAcquireNextImage2KHR, vkAcquireNextImageKHR, vkCreateSwapchainKHR, vkDestroySwapchainKHR,
@@ -220,6 +222,9 @@ pub unsafe extern "system" fn vkGetInstanceProcAddr(
         b"vkCreateInstance" => layer_fn!(vkCreateInstance),
         b"vkDestroyInstance" => layer_fn!(vkDestroyInstance),
         b"vkCreateDevice" => layer_fn!(vkCreateDevice),
+        b"vkCreateXcbSurfaceKHR" => layer_fn!(vkCreateXcbSurfaceKHR),
+        b"vkCreateXlibSurfaceKHR" => layer_fn!(vkCreateXlibSurfaceKHR),
+        b"vkDestroySurfaceKHR" => layer_fn!(vkDestroySurfaceKHR),
         _ => {}
     }
 

@@ -208,6 +208,51 @@ pub struct DeviceState {
     pub hudless_memory: std::sync::Mutex<Option<vk::DeviceMemory>>,
     pub hudless_size: std::sync::Mutex<(u32, u32, vk::Format)>,
 
+    pub frame_counter: std::sync::atomic::AtomicU64,
+
+    // Phase 3/4: per-frame HUD detection flags
+    pub hud_detected_frame: std::sync::atomic::AtomicBool,
+    pub pending_capture_frame: std::sync::atomic::AtomicBool,
+    pub capture_injected_frame: std::sync::atomic::AtomicBool,
+    pub skipped_draws_frame: std::sync::atomic::AtomicU32,
+
+
+    // ── Frame-rate throttle ───────────────────────────────────────────
+    /// Holds the game to the target rate. The gate decides what is captured;
+    /// this decides how fast the game is allowed to produce frames, which no
+    /// compositor can do once a player turns V-Sync off.
+    pub frame_pacer: std::sync::Mutex<crate::pacing::FramePacer>,
+    /// When the previous `vkQueuePresentKHR` returned to the game.
+    ///
+    /// The base for the `gap` span: time from here to the next present's
+    /// arrival is the game's own, with nothing this layer does inside it.
+    pub last_present_return: std::sync::Mutex<Option<std::time::Instant>>,
+
+    /// One per native window: each window this device draws is captured and
+    /// encoded on its own, so a dialog never takes over the main window's
+    /// stream. Keyed by [`Window::native`]; a swapchain recreated for the same
+    /// window keeps its entry, and with it the stream. Every non-X11 surface
+    /// shares key 0, which is how a single window was always handled.
+    pub windows: DashMap<u32, Arc<Window>>,
+    /// The most recently created swapchain's window. What frame-wide work with
+    /// no swapchain in hand (HUD-less copies, acquire timing) reads.
+    pub newest_window: std::sync::Mutex<Option<Arc<Window>>>,
+}
+
+/// Everything that belongs to one presented window rather than to the device.
+///
+/// Dereferences to its device, so code that captures a window reads device
+/// state (`fp`, `raw`, `shared`) through it unchanged and its own state
+/// directly.
+pub struct Window {
+    pub device: Arc<DeviceState>,
+    /// The native window this swapchain presents to: an X11 window id, or 0
+    /// when the surface was not an X11 one.
+    pub native: u32,
+    /// The id frames and commands are tagged with: the native window marked by
+    /// [`WINDOW_SOURCE_BIT`], or this process's id when there is no native
+    /// window, which is how a lone fullscreen game has always been named.
+    pub source: u32,
     // Phase 4: final-frame capture
     pub capture_ring: std::sync::Mutex<Option<CaptureRing>>,
     /// Which ring slots are free. Held separately from the ring itself so a
@@ -229,41 +274,64 @@ pub struct DeviceState {
     /// stays off for the life of that swapchain.
     pub swapchain_transfer_src: std::sync::atomic::AtomicBool,
 
-    pub frame_counter: std::sync::atomic::AtomicU64,
-    /// Rings built for this device so far. Names the current one; see
+    /// Rings built for this window so far. Names the current one; see
     /// [`CaptureRing::generation`].
     pub ring_generation: std::sync::atomic::AtomicU64,
-
-    // Phase 3/4: per-frame HUD detection flags
-    pub hud_detected_frame: std::sync::atomic::AtomicBool,
-    pub pending_capture_frame: std::sync::atomic::AtomicBool,
-    pub capture_injected_frame: std::sync::atomic::AtomicBool,
-    pub skipped_draws_frame: std::sync::atomic::AtomicU32,
-
-    // Phase 7: encode + IPC pipeline (lazy-init on first frame)
     pub encoder: std::sync::Mutex<Option<PipelineHandle>>,
-
-    // ── Frame-rate throttle ───────────────────────────────────────────
     /// Decides which presented frames are worth capturing. Consulted in the
     /// present hook, before any GPU work is queued, so a dropped frame costs
     /// nothing beyond the comparison.
     pub frame_gate: std::sync::Mutex<crate::pacing::FrameGate>,
-    /// Holds the game to the target rate. The gate decides what is captured;
-    /// this decides how fast the game is allowed to produce frames, which no
-    /// compositor can do once a player turns V-Sync off.
-    pub frame_pacer: std::sync::Mutex<crate::pacing::FramePacer>,
-    /// When the previous `vkQueuePresentKHR` returned to the game.
-    ///
-    /// The base for the `gap` span: time from here to the next present's
-    /// arrival is the game's own, with nothing this layer does inside it.
-    pub last_present_return: std::sync::Mutex<Option<std::time::Instant>>,
-
     /// Whether a thread has already been started to build the encode pipeline.
     ///
     /// The build is slow and happens once; without this latch every present
     /// arriving before it finishes would start another one.
     pub encoder_starting: std::sync::atomic::AtomicBool,
 }
+
+/// Marks a capture source as a window rather than a process. Process ids stay
+/// far below it, so the two never collide.
+pub const WINDOW_SOURCE_BIT: u32 = 0x8000_0000;
+
+impl Window {
+    pub fn new(device: Arc<DeviceState>, native: u32, swapchain: vk::SwapchainKHR) -> Self {
+        Self {
+            device,
+            native,
+            source: if native == 0 {
+                std::process::id()
+            } else {
+                WINDOW_SOURCE_BIT | native
+            },
+            capture_ring: std::sync::Mutex::new(None),
+            capture_slots: crate::slots::SlotPool::new(CAPTURE_SLOTS),
+            swapchain: std::sync::Mutex::new(Some(swapchain)),
+            swapchain_images: std::sync::Mutex::new(Vec::new()),
+            swapchain_format: std::sync::Mutex::new(vk::Format::UNDEFINED),
+            swapchain_colorspace: std::sync::atomic::AtomicU32::new(0),
+            swapchain_extent: std::sync::Mutex::new(vk::Extent2D {
+                width: 0,
+                height: 0,
+            }),
+            swapchain_transfer_src: std::sync::atomic::AtomicBool::new(false),
+            ring_generation: std::sync::atomic::AtomicU64::new(0),
+            encoder: std::sync::Mutex::new(None),
+            frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
+            encoder_starting: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+impl std::ops::Deref for Window {
+    type Target = DeviceState;
+    fn deref(&self) -> &DeviceState {
+        &self.device
+    }
+}
+
+/// `VkSurfaceKHR` → the X11 window it was created for. Surfaces belong to the
+/// instance, swapchains to a device, so this is process-wide.
+pub static SURFACE_WINDOW: Lazy<DashMap<u64, u32>> = Lazy::new(DashMap::new);
 
 impl DeviceState {
     /// The shared device, when the encoder is actually running on it.

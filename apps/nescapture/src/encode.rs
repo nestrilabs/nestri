@@ -185,11 +185,11 @@ fn relay_legacy_commands(own: std::path::PathBuf) {
     }
 }
 
-/// `STREAM_ENCODER_HELLO` for this process: its pid and `NESTRI_LAUNCH_ID`.
-fn encoder_hello() -> Vec<u8> {
+/// `STREAM_ENCODER_HELLO` for one source: its id and `NESTRI_LAUNCH_ID`.
+fn encoder_hello(source: u32) -> Vec<u8> {
     let launch = std::env::var("NESTRI_LAUNCH_ID").unwrap_or_default();
     encode_ipc_frame_from(
-        std::process::id(),
+        source,
         nesprotocol::STREAM_ENCODER_HELLO,
         0,
         0,
@@ -324,6 +324,8 @@ pub struct CapturedFrame {
     /// now does the waiting that a separate capture thread used to do, and that
     /// work is per-device.
     pub ds_key: usize,
+    /// The window this frame was presented to: its ring holds the slot.
+    pub window: std::sync::Arc<crate::state::Window>,
     pub width: u32,
     pub height: u32,
     pub vk_format: u32,
@@ -925,6 +927,9 @@ pub struct PipelineConfig {
     pub codec_request: Option<String>,
     pub ipc_path: std::path::PathBuf,
     pub physical_device: Option<ash::vk::PhysicalDevice>,
+    /// What frames and commands are tagged with: this process, or one of its
+    /// windows. See `Window::source`.
+    pub source: u32,
 }
 impl PipelineConfig {
     pub fn from_env(width: u32, height: u32) -> Option<Self> {
@@ -961,6 +966,7 @@ impl PipelineConfig {
             pixel_format,
             codec_request: std::env::var("NESCAPTURE_CODEC").ok(),
             ipc_path,
+            source: std::process::id(),
             physical_device: None,
         })
     }
@@ -1204,6 +1210,7 @@ impl PipelineHandle {
         // is, so the listener answers a capability message without needing one.
         let listener_host_caps = device_caps;
         let listener_forced = config.codec_request.clone();
+        let cmd_source = config.source;
         thread::Builder::new()
             .name("nescapture-idr".into())
             .spawn(move || {
@@ -1211,9 +1218,10 @@ impl PipelineHandle {
                 // in one box, one shared path meant the second encoder took it
                 // from the first, and every keyframe request and bitrate change
                 // after that reached only the newer game.
-                let cmd_path = std::path::PathBuf::from(nesprotocol::capture_cmd_socket(
-                    std::process::id(),
-                ));
+                // And one per window, so a pause or keyframe request names a
+                // window rather than everything its process draws.
+                let cmd_path =
+                    std::path::PathBuf::from(nesprotocol::capture_cmd_socket(cmd_source));
                 let _ = std::fs::remove_file(&cmd_path);
                 let sock = match std::os::unix::net::UnixDatagram::bind(&cmd_path) {
                     Ok(s) => {
@@ -1232,7 +1240,9 @@ impl PipelineHandle {
                 // The shared path too, relayed onto this one, so a hub or a
                 // compositor that predates per-process sockets still reaches the
                 // newest encoder exactly as it did.
-                relay_legacy_commands(cmd_path.clone());
+                if cmd_source == std::process::id() {
+                    relay_legacy_commands(cmd_path.clone());
+                }
                 let mut buf = [0u8; 128];
                 loop {
                     match sock.recv(&mut buf) {
@@ -1777,13 +1787,7 @@ fn encoder_thread(
         // its own between the present hook and here; it is cheaper on this one,
         // because the blit it waits for was submitted a frame earlier and has
         // already completed, and every frame saves a channel and a wakeup.
-        let Some(ds) = crate::state::DEVICE_STATE
-            .get(&raw.ds_key)
-            .map(|s| s.clone())
-        else {
-            log::error!("encoder: device state gone");
-            break;
-        };
+        let ds = raw.window.clone();
         let Some(mut source) = crate::present::resolve_source(&ds, &raw) else {
             continue;
         };
@@ -3087,7 +3091,7 @@ fn ipc_send_thread(
                     // Tagged with this process, so the hub can tell which
                     // window the frame is, ref(d-0085).
                     let ipc_frame = encode_ipc_frame_from(
-                        std::process::id(),
+                        cfg.source,
                         STREAM_VIDEO,
                         protocol_codec,
                         flags,
@@ -3101,7 +3105,7 @@ fn ipc_send_thread(
                     // process's environment, and a keyframe is where a late
                     // hub starts anyway.
                     let messages = if pkt.is_key_frame {
-                        vec![encoder_hello(), ipc_frame]
+                        vec![encoder_hello(cfg.source), ipc_frame]
                     } else {
                         vec![ipc_frame]
                     };

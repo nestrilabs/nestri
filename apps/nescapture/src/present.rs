@@ -32,6 +32,12 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     // it is the game's own frame time with this layer's cost excluded — the
     // three spans then partition the wall clock between presents exactly.
     let entered = std::time::Instant::now();
+    let pi = unsafe { &*p_present_info };
+    // The window this present draws, when it is one: its own encoder, ring and
+    // gate. A present naming several swapchains is passed through untouched.
+    let window = (pi.swapchain_count == 1 && !pi.p_swapchains.is_null())
+        .then(|| crate::swapchain::window_of(&ds, unsafe { *pi.p_swapchains }))
+        .flatten();
     note_present(&ds, PresentStep::InHook);
 
     ds.frame_counter.fetch_add(1, Ordering::Relaxed);
@@ -40,7 +46,8 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
     ds.capture_injected_frame.store(false, Ordering::Relaxed);
     ds.skipped_draws_frame.store(0, Ordering::Relaxed);
 
-    if let Ok(enc) = ds.encoder.lock()
+    if let Some(window) = &window
+        && let Ok(enc) = window.encoder.lock()
         && let Some(ref h) = *enc
     {
         h.present_attempts.fetch_add(1, Ordering::Relaxed);
@@ -51,18 +58,15 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
         }
     }
 
-    let pi = unsafe { &*p_present_info };
-
     // Rewriting the wait semaphores is only well defined for a single
     // swapchain. A multi-swapchain present is rare enough that passing it
     // through untouched beats getting the interposition subtly wrong.
     let single_swapchain =
         pi.swapchain_count == 1 && !pi.p_swapchains.is_null() && !pi.p_image_indices.is_null();
 
-    let submission = if single_swapchain {
-        unsafe { try_capture(&ds, queue, pi) }
-    } else {
-        None
+    let submission = match &window {
+        Some(window) if single_swapchain => unsafe { try_capture(window, queue, pi) },
+        _ => None,
     };
 
     let down_us = std::cell::Cell::new(std::time::Duration::ZERO);
@@ -80,7 +84,7 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
 
     let Some(submission) = submission else {
         let r = call_down(p_present_info);
-        finish(&ds, entered, down_us.get());
+        finish(&ds, window.as_deref(), entered, down_us.get());
         return r;
     };
 
@@ -105,15 +109,17 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
 
     // Only hand the frame on once the present has been accepted. A failed
     // present drops the job, which returns the slot.
+    // A submission exists only for a window.
+    let window = window.expect("a capture without a window");
     if matches!(result, vk::Result::SUCCESS | vk::Result::SUBOPTIMAL_KHR) {
-        queue_for_encode(&ds, submission);
+        queue_for_encode(&window, submission);
     } else {
         // The blit signalled this semaphore; whether the failed present waited
         // on it is undefined. Set it aside rather than signal it twice.
-        capture::retire_present_semaphore(&ds, image_index);
+        capture::retire_present_semaphore(&window, image_index);
     }
 
-    finish(&ds, entered, down_us.get());
+    finish(&ds, Some(&window), entered, down_us.get());
     result
 }
 
@@ -122,7 +128,12 @@ pub unsafe extern "system" fn vkQueuePresentKHR(
 /// `layer` is everything in this hook that is not the down-call, both sides of
 /// it added together, so `gap + layer + down` accounts for the wall clock
 /// between one present and the next with nothing unattributed.
-fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std::time::Duration) {
+fn finish(
+    ds: &crate::state::DeviceState,
+    window: Option<&crate::state::Window>,
+    entered: std::time::Instant,
+    down: std::time::Duration,
+) {
     // Everything this hook cost, before any deliberate waiting.
     let worked = std::time::Instant::now();
 
@@ -148,7 +159,8 @@ fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std
     // and the overshoot lands nowhere else — the present-return is stamped
     // after it, so `gap` cannot show it either.
     let held = now.saturating_duration_since(worked);
-    if let Ok(enc) = ds.encoder.lock()
+    if let Some(window) = window
+        && let Ok(enc) = window.encoder.lock()
         && let Some(ref h) = *enc
     {
         // `layer` is this layer's cost, so the hold comes out of it: it is
@@ -171,8 +183,14 @@ fn finish(ds: &crate::state::DeviceState, entered: std::time::Instant, down: std
 
 /// Tell the stall watchdog where the game's present thread is. A no-op until
 /// the pipeline exists.
+///
+/// The device's newest window stands for the device: the watchdog asks where
+/// the present thread is, which is one answer however many windows it draws.
 pub fn note_present(ds: &crate::state::DeviceState, step: PresentStep) {
-    if let Ok(enc) = ds.encoder.lock()
+    let Some(window) = ds.newest_window.lock().ok().and_then(|w| w.clone()) else {
+        return;
+    };
+    if let Ok(enc) = window.encoder.lock()
         && let Some(ref h) = *enc
     {
         h.note_present(step);
@@ -191,7 +209,7 @@ struct Submission {
 }
 
 unsafe fn try_capture(
-    ds: &crate::state::DeviceState,
+    ds: &std::sync::Arc<crate::state::Window>,
     queue: vk::Queue,
     pi: &vk::PresentInfoKHR,
 ) -> Option<Submission> {
@@ -240,7 +258,7 @@ unsafe fn try_capture(
     // Before the blit, not after it. A frame captured with nowhere to send it
     // costs a slot, a copy and an export for nothing.
     let ds_key = unsafe { crate::dispatch_key(ds.raw.as_raw() as *const c_void) };
-    if !encoder_ready(ds, ds_key, sc_ext.width, sc_ext.height) {
+    if !encoder_ready(ds, sc_ext.width, sc_ext.height) {
         return None;
     }
 
@@ -283,7 +301,7 @@ unsafe fn try_capture(
     })
 }
 
-fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
+fn queue_for_encode(ds: &std::sync::Arc<crate::state::Window>, submission: Submission) {
     let ds_key = unsafe { crate::dispatch_key(ds.raw.as_raw() as *const c_void) };
 
     let Ok(enc) = ds.encoder.lock() else {
@@ -297,6 +315,7 @@ fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
     // does, which is the backpressure the ring was always providing.
     handle.push_frame(CapturedFrame {
         ds_key,
+        window: ds.clone(),
         width: submission.width,
         height: submission.height,
         vk_format: submission.sc_fmt.as_raw() as u32,
@@ -315,7 +334,10 @@ fn queue_for_encode(ds: &crate::state::DeviceState, submission: Submission) {
 /// and doing it after a blit would waste one. It runs once, on a thread of its
 /// own, and frames presented in the meantime are skipped before any GPU work is
 /// queued for them.
-fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, height: u32) -> bool {
+fn encoder_ready(window: &crate::state::Window, width: u32, height: u32) -> bool {
+    let ds = window;
+    let ds_key = unsafe { crate::dispatch_key(ds.raw.as_raw() as *const c_void) };
+    let native = window.native;
     if let Ok(enc) = ds.encoder.lock() {
         if enc.is_some() {
             return true;
@@ -327,13 +349,17 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
     std::thread::Builder::new()
         .name("nescapture-encoder-init".into())
         .spawn(move || {
-            let Some(ds) = DEVICE_STATE.get(&ds_key).map(|s| s.clone()) else {
+            let Some(ds) = DEVICE_STATE
+                .get(&ds_key)
+                .and_then(|d| d.windows.get(&native).map(|w| w.clone()))
+            else {
                 return;
             };
-            let Some(cfg) = PipelineConfig::from_env(width, height) else {
+            let Some(mut cfg) = PipelineConfig::from_env(width, height) else {
                 log::error!("no encode pipeline configuration; capture disabled");
                 return;
             };
+            cfg.source = ds.source;
             // On the game's own device where it was created for that, and
             // on a device of the encoder's own where it was not, or where
             // adopting it fails.
@@ -359,7 +385,7 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
             let on_shared = shared.is_some();
             match PipelineHandle::new(cfg, shared) {
                 Ok(h) => {
-                    h.set_stall_probe(Box::new(move || describe_gpu(ds_key)));
+                    h.set_stall_probe(Box::new(move || describe_gpu(ds_key, native)));
                     // Before the handle is published: the first capture after
                     // it builds the ring, and must build it for this device.
                     ds.shared_active.store(on_shared, Ordering::Release);
@@ -391,7 +417,7 @@ fn encoder_ready(ds: &crate::state::DeviceState, ds_key: usize, width: u32, heig
 /// submitted a whole frame earlier and has long since completed — and takes a
 /// channel and a wakeup out of every frame's path.
 pub fn resolve_source(
-    ds: &crate::state::DeviceState,
+    ds: &crate::state::Window,
     frame: &CapturedFrame,
 ) -> Option<FrameSource> {
     let slot_index = frame.slot.as_ref()?.index();
@@ -440,8 +466,11 @@ pub fn resolve_source(
 /// it, and whatever the game is waiting for is not GPU work on that queue.
 ///
 /// Never blocks. It runs exactly when something may be holding a lock forever.
-fn describe_gpu(ds_key: usize) -> String {
-    let Some(ds) = DEVICE_STATE.get(&ds_key).map(|s| s.clone()) else {
+fn describe_gpu(ds_key: usize, native: u32) -> String {
+    let Some(ds) = DEVICE_STATE
+        .get(&ds_key)
+        .and_then(|d| d.windows.get(&native).map(|w| w.clone()))
+    else {
         return "device gone".into();
     };
     let slots = format!(

@@ -53,13 +53,30 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
              Blitting from images the driver did not grant transfer usage is undefined."
         );
     }
-    ds.swapchain_transfer_src
+    // One window per native window: a swapchain recreated for the same X11
+    // window keeps the window it had, and with it the stream.
+    let swapchain = unsafe { *p_swapchain };
+    let native = crate::state::SURFACE_WINDOW
+        .get(&ci.surface.as_raw())
+        .map(|w| *w)
+        .unwrap_or(0);
+    let window = match ds.windows.get(&native).map(|w| w.clone()) {
+        Some(window) => window,
+        None => {
+            let window =
+                std::sync::Arc::new(crate::state::Window::new(ds.clone(), native, swapchain));
+            ds.windows.insert(native, window.clone());
+            window
+        }
+    };
+    window
+        .swapchain_transfer_src
         .store(transfer_src, Ordering::Relaxed);
 
     // A fresh swapchain means fresh images behind the same indices. The
     // per-image capture semaphores may still be pending on presents from the
     // outgoing swapchain, so they are set aside rather than reused.
-    crate::capture::retire_all_present_semaphores(&ds);
+    crate::capture::retire_all_present_semaphores(&window);
 
     // Those fresh images also make every recorded blit invalid: a recording
     // names its source image by handle, and the handles behind these indices
@@ -67,11 +84,11 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     // `capture_present_frame` catches a resize on its own, but a swapchain
     // recreated at the same size — which is the common case, on a format or
     // present-mode change — looks identical to it.
-    crate::capture::invalidate_recorded_blits(&ds);
+    crate::capture::invalidate_recorded_blits(&window);
 
-    *ds.swapchain.lock().unwrap() = Some(unsafe { *p_swapchain });
-    *ds.swapchain_format.lock().unwrap() = ci.image_format;
-    *ds.swapchain_extent.lock().unwrap() = ci.image_extent;
+    *window.swapchain.lock().unwrap() = Some(swapchain);
+    *window.swapchain_format.lock().unwrap() = ci.image_format;
+    *window.swapchain_extent.lock().unwrap() = ci.image_extent;
     // The colour space the layer below us was asked for, which is the one the
     // game asked for in every configuration we ship.
     //
@@ -97,8 +114,10 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     // HDR for wrong HDR. Anyone re-enabling it has to give this process a
     // channel to the compositor first, since the true colour space exists only
     // there.
-    ds.swapchain_colorspace
+    window
+        .swapchain_colorspace
         .store(ci.image_color_space.as_raw() as u32, Ordering::Relaxed);
+    *ds.newest_window.lock().unwrap() = Some(window.clone());
 
     // `info`, not `debug`, and the present mode is why. It decides whether the
     // compositor paces this game at all: a FIFO swapchain waits on
@@ -112,8 +131,9 @@ pub unsafe extern "system" fn vkCreateSwapchainKHR(
     // and VKD3D choose the Vulkan present mode themselves, and what they pick
     // from a given setting is theirs to decide.
     log::info!(
-        "swapchain created — format={:?} colorspace={:?} extent={}x{} present_mode={:?} \
-         min_images={}",
+        "swapchain created — window={:#x} format={:?} colorspace={:?} extent={}x{} \
+         present_mode={:?} min_images={}",
+        native,
         ci.image_format,
         ci.image_color_space,
         ci.image_extent.width,
@@ -145,15 +165,51 @@ pub unsafe extern "system" fn vkDestroySwapchainKHR(
         // created and its images fetched, and clearing then would leave the
         // live swapchain with no images: every present after would skip
         // capture, silently, until the next recreation.
-        let mut current = ds.swapchain.lock().unwrap();
-        if is_current(*current, swapchain) {
-            *current = None;
-            *ds.swapchain_images.lock().unwrap() = Vec::new();
+        if let Some(window) = window_of(&ds, swapchain) {
+            *window.swapchain.lock().unwrap() = None;
+            *window.swapchain_images.lock().unwrap() = Vec::new();
         }
-        drop(current);
         if let Some(destroy_fn) = ds.fp.destroy_swapchain_khr {
             unsafe { destroy_fn(device, swapchain, p_allocator) };
         }
+    }
+}
+
+/// The window whose current swapchain is `swapchain`, if any.
+pub fn window_of(
+    ds: &crate::state::DeviceState,
+    swapchain: vk::SwapchainKHR,
+) -> Option<std::sync::Arc<crate::state::Window>> {
+    ds.windows
+        .iter()
+        .find(|w| is_current(*w.swapchain.lock().unwrap(), swapchain))
+        .map(|w| w.value().clone())
+}
+
+/// Stop a window's encoder and free its capture ring.
+///
+/// The encoder is waited for, not just signalled: on a shared device the
+/// encoder, its converter and their images are objects on the device, and
+/// destroying the device under them is a use-after-free. Its receive timeout
+/// bounds how long the thread takes to notice.
+pub fn retire_window(window: &crate::state::Window) {
+    let handle = window.encoder.lock().ok().and_then(|mut g| g.take());
+    if let Some(handle) = handle {
+        if handle.finish(std::time::Duration::from_secs(2)) {
+            log::info!("encoder pipeline stopped (window {:#x})", window.native);
+        } else {
+            log::error!("encoder thread did not stop in time; destroying the device anyway");
+        }
+    }
+    let ring = window.capture_ring.lock().unwrap().take();
+    if let Some(ring) = ring {
+        if !window.capture_slots.all_free() {
+            log::warn!(
+                "window destroyed with {} capture slot(s) still in flight",
+                crate::state::CAPTURE_SLOTS - window.capture_slots.available()
+            );
+        }
+        unsafe { crate::capture::destroy_capture_ring(window, ring) };
     }
 }
 
@@ -188,10 +244,12 @@ pub unsafe extern "system" fn vkGetSwapchainImagesKHR(
     }
 
     // Images of a retired swapchain are not the ones capture reads.
-    if !p_swapchain_images.is_null() && is_current(*ds.swapchain.lock().unwrap(), swapchain) {
+    if !p_swapchain_images.is_null()
+        && let Some(window) = window_of(&ds, swapchain)
+    {
         let count = unsafe { *p_swapchain_image_count as usize };
         let images = unsafe { std::slice::from_raw_parts(p_swapchain_images, count) };
-        *ds.swapchain_images.lock().unwrap() = images.to_vec();
+        *window.swapchain_images.lock().unwrap() = images.to_vec();
         log::debug!("swapchain images — {} images", count);
     }
 
@@ -225,7 +283,10 @@ fn device_for(device: vk::Device) -> Option<std::sync::Arc<crate::state::DeviceS
 }
 
 fn record_acquire(ds: &crate::state::DeviceState, waited: std::time::Duration) {
-    if let Ok(enc) = ds.encoder.lock()
+    let Some(window) = ds.newest_window.lock().ok().and_then(|w| w.clone()) else {
+        return;
+    };
+    if let Ok(enc) = window.encoder.lock()
         && let Some(ref h) = *enc
     {
         h.timing.acquire.record(waited);

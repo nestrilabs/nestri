@@ -249,31 +249,17 @@ pub unsafe extern "system" fn vkCreateDevice(
         hudless_image: std::sync::Mutex::new(None),
         hudless_memory: std::sync::Mutex::new(None),
         hudless_size: std::sync::Mutex::new((0, 0, vk::Format::UNDEFINED)),
-        capture_ring: std::sync::Mutex::new(None),
-        capture_slots: crate::slots::SlotPool::new(crate::state::CAPTURE_SLOTS),
-        swapchain: std::sync::Mutex::new(None),
-        swapchain_images: std::sync::Mutex::new(Vec::new()),
-        swapchain_format: std::sync::Mutex::new(vk::Format::UNDEFINED),
-        swapchain_transfer_src: std::sync::atomic::AtomicBool::new(false),
-        swapchain_extent: std::sync::Mutex::new(vk::Extent2D {
-            width: 0,
-            height: 0,
-        }),
-        swapchain_colorspace: std::sync::atomic::AtomicU32::new(0),
         frame_counter: std::sync::atomic::AtomicU64::new(0),
-        ring_generation: std::sync::atomic::AtomicU64::new(0),
 
         hud_detected_frame: std::sync::atomic::AtomicBool::new(false),
         pending_capture_frame: std::sync::atomic::AtomicBool::new(false),
         capture_injected_frame: std::sync::atomic::AtomicBool::new(false),
         skipped_draws_frame: std::sync::atomic::AtomicU32::new(0),
 
-        encoder: std::sync::Mutex::new(None),
-
-        frame_gate: std::sync::Mutex::new(crate::pacing::FrameGate::from_env()),
         frame_pacer: std::sync::Mutex::new(crate::pacing::FramePacer::from_env()),
         last_present_return: std::sync::Mutex::new(None),
-        encoder_starting: std::sync::atomic::AtomicBool::new(false),
+        windows: DashMap::new(),
+        newest_window: std::sync::Mutex::new(None),
     });
 
     DEVICE_STATE.insert(key, dev_state);
@@ -299,38 +285,12 @@ pub unsafe extern "system" fn vkDestroyDevice(
         ds.pipeline_registry.len(),
     );
 
-    // ── 1. Shut down the encode pipeline ──────────────────────────────────
-    //
-    // Waited for, not just signalled. On a shared device the encoder, its
-    // converter and their images are objects on this very device, and
-    // destroying the device under them is a use-after-free. The receive
-    // timeout bounds how long the thread takes to notice.
-    let handle = ds.encoder.lock().ok().and_then(|mut g| g.take());
-    if let Some(handle) = handle {
-        if handle.finish(std::time::Duration::from_secs(2)) {
-            log::info!("encoder pipeline stopped");
-        } else {
-            log::error!("encoder thread did not stop in time; destroying the device anyway");
-        }
-    }
-
-    // ── 2. Tear down the capture ring ─────────────────────────────────────
-    //
-    // Images, memory, fences, exported fds and the per-swapchain-image
-    // semaphores all belong to the ring now, so one teardown covers what used
-    // to be three separate steps.
-    {
-        let ring = ds.capture_ring.lock().unwrap().take();
-        if let Some(ring) = ring {
-            if !ds.capture_slots.all_free() {
-                log::warn!(
-                    "device destroyed with {} capture slot(s) still in flight",
-                    crate::state::CAPTURE_SLOTS - ds.capture_slots.available()
-                );
-            }
-            unsafe { crate::capture::destroy_capture_ring(&ds, ring) };
-            log::debug!("capture ring destroyed");
-        }
+    // ── 1–2. Every window: its encoder, then its capture ring ─────────────
+    *ds.newest_window.lock().unwrap() = None;
+    let windows: Vec<_> = ds.windows.iter().map(|e| e.value().clone()).collect();
+    ds.windows.clear();
+    for window in windows {
+        crate::swapchain::retire_window(&window);
     }
 
     // ── 3. Free hudless_image / hudless_memory ────────────────────────────
