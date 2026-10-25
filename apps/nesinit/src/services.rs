@@ -373,7 +373,8 @@ pub const STACK: &[Service] = &[
         // address is set in pipewire-pulse.conf.d and handed to the workload as
         // PULSE_SERVER.
         umask: Some(0),
-        realtime: true,
+        // A protocol bridge; the graph's own clock runs in pipewire.
+        realtime: false,
         ready: Some(PULSE_SOCKET),
         ready_name: None,
     },
