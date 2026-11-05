@@ -56,6 +56,7 @@ import { Context } from 'hono';
 
 import { generateUnbiasedDigits, generateUnbiasedString, timingSafeCompare } from '../random.js';
 import { Storage } from '../storage/storage.js';
+import { requestAddress } from '../util.js';
 import { MARK_CODE } from '../ui/mark.js';
 import type { Screen } from '../ui/screen.js';
 import { Provider } from './provider.js';
@@ -121,6 +122,47 @@ export interface CodeProviderConfig<
 	 * @default 30
 	 */
 	resendInterval?: number;
+	/**
+	 * The form fields that make up a claim. Anything else submitted is dropped
+	 * before the claim is counted or sent to.
+	 *
+	 * The send budget is keyed by the claim, so a claim built from every field
+	 * in the form is a budget the caller can mint at will: one extra field
+	 * with a new value each time is a new key, and the same mailbox gets an
+	 * unbounded number of codes.
+	 *
+	 * @default ['email', 'phone']
+	 */
+	claimFields?: string[];
+	/**
+	 * How many codes one caller may have sent, to any claims, inside
+	 * {@link addressWindow}.
+	 *
+	 * The per-claim budget protects a mailbox. This one protects everything
+	 * else: without it a caller with a list of addresses can spend the whole
+	 * sending allowance of the deployment, at five codes each, on strangers.
+	 *
+	 * @default 10
+	 */
+	maxSendsPerAddress?: number;
+	/**
+	 * The window {@link maxSendsPerAddress} is counted over, in seconds.
+	 *
+	 * A day rather than the hour a mailbox gets, because the caller this is
+	 * for paces itself: a handful of addresses an hour stays under any hourly
+	 * budget a person would also fit under, and still adds up to hundreds of
+	 * strangers mailed by the end of the day.
+	 *
+	 * @default 86400
+	 */
+	addressWindow?: number;
+	/**
+	 * Who is asking, for {@link maxSendsPerAddress}. A request it returns
+	 * nothing for is not counted.
+	 *
+	 * @default the address the proxy in front reports
+	 */
+	address?: (req: Request) => string | undefined;
 	/**
 	 * What to ask for at each step of the flow.
 	 *
@@ -210,6 +252,10 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 	const maxSends = config.maxSends ?? 5;
 	const sendWindow = config.sendWindow ?? 60 * 60;
 	const resendInterval = config.resendInterval ?? 30;
+	const claimFields = config.claimFields ?? ['email', 'phone'];
+	const maxSendsPerAddress = config.maxSendsPerAddress ?? 10;
+	const addressWindow = config.addressWindow ?? 60 * 60 * 24;
+	const address = config.address ?? requestAddress;
 
 	function generate() {
 		return generateUnbiasedDigits(length);
@@ -230,11 +276,31 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 	 */
 	function claimKey(claims: Record<string, string>) {
 		const flattened = Object.entries(claims)
-			.filter(([key]) => key !== 'action')
 			.map(([key, value]) => `${key}=${String(value).trim().toLowerCase()}`)
 			.sort()
 			.join('&');
 		return ['oauth:code:claim', flattened];
+	}
+
+	/** Where the sends one caller has asked for are counted. */
+	function addressKey(value: string) {
+		return ['oauth:code:address', value];
+	}
+
+	type SendRecord = { at: number; count: number; since: number };
+
+	/** The record after one more send, opening a new window if the last one closed. */
+	function counted(record: SendRecord | null, now: number, window: number): SendRecord {
+		const open = record && now - record.since < window * 1000;
+		return {
+			at: now,
+			count: open ? record.count + 1 : 1,
+			since: open ? record.since : now
+		};
+	}
+
+	function exhausted(record: SendRecord | null, now: number, limit: number, window: number) {
+		return !!record && now - record.since < window * 1000 && record.count >= limit;
 	}
 
 	return {
@@ -267,29 +333,35 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 				const action = fd.get('action')?.toString();
 
 				if (action === 'request' || action === 'resend') {
-					const claims = Object.fromEntries(fd) as Claims;
-					delete claims.action;
+					const claims = {} as Record<string, string>;
+					for (const field of claimFields) {
+						const value = fd.get(field);
+						if (typeof value === 'string') claims[field] = value;
+					}
 
-					// Asked for too soon, or too many times for this mailbox.
-					// Both answers are the same on purpose: saying which would
-					// tell a caller whether the address they typed has had a
-					// code sent to it lately, which is a fact about somebody
-					// else's mailbox.
+					// Asked for too soon, or too many times for this mailbox,
+					// or too many times from this caller. All three answers are
+					// the same on purpose: saying which would tell a caller
+					// whether the address they typed has had a code sent to it
+					// lately, which is a fact about somebody else's mailbox.
 					const now = Date.now();
-					const sent = await Storage.get<{ at: number; count: number; since: number }>(
-						ctx.storage,
-						claimKey(claims)
-					);
-					const open = sent && now - sent.since < sendWindow * 1000;
+					const sent = await Storage.get<SendRecord>(ctx.storage, claimKey(claims));
 					if (sent && now - sent.at < resendInterval * 1000) {
 						return transition(c, state ?? { type: 'start' }, fd, { type: 'rate_limit' });
 					}
-					if (open && sent.count >= maxSends) {
+					if (exhausted(sent, now, maxSends, sendWindow)) {
+						return transition(c, state ?? { type: 'start' }, fd, { type: 'rate_limit' });
+					}
+					const caller = address(c.req.raw);
+					const fromCaller = caller
+						? await Storage.get<SendRecord>(ctx.storage, addressKey(caller))
+						: null;
+					if (exhausted(fromCaller, now, maxSendsPerAddress, addressWindow)) {
 						return transition(c, state ?? { type: 'start' }, fd, { type: 'rate_limit' });
 					}
 
 					const code = generate();
-					const err = await config.sendCode(claims, code);
+					const err = await config.sendCode(claims as Claims, code);
 					if (err) return transition(c, { type: 'start' }, fd, err);
 
 					// The code that was live until a moment ago stops being
@@ -310,13 +382,17 @@ export function CodeProvider<Claims extends Record<string, string> = Record<stri
 					await Storage.set(
 						ctx.storage,
 						claimKey(claims),
-						{
-							at: now,
-							count: open ? sent.count + 1 : 1,
-							since: open ? sent.since : now
-						},
+						counted(sent, now, sendWindow),
 						sendWindow
 					);
+					if (caller) {
+						await Storage.set(
+							ctx.storage,
+							addressKey(caller),
+							counted(fromCaller, now, addressWindow),
+							addressWindow
+						);
+					}
 
 					return transition(
 						c,

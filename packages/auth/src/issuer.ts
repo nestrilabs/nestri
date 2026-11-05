@@ -234,7 +234,7 @@ import { HtmlRenderer, type Renderer } from './ui/render.js';
 import { type DeviceConfirmWording, IssuerScreens } from './ui/issuer.js';
 import type { ChooseOption, Screen } from './ui/screen.js';
 import type { Theme } from './ui/theme.js';
-import { getRelativeUrl, isDomainMatch, lazy } from './util.js';
+import { getRelativeUrl, isDomainMatch, lazy, requestAddress } from './util.js';
 
 /** @internal */
 export const aws = awsHandle;
@@ -624,13 +624,7 @@ export function issuer<
 	const deviceGuessWindow = input.deviceVerification?.guessWindow ?? 600;
 	const deviceRequestLimit = input.deviceVerification?.requestLimit ?? 10;
 	const deviceRequestWindow = input.deviceVerification?.requestWindow ?? 600;
-	const deviceAddress =
-		input.deviceVerification?.address ??
-		((req: Request) =>
-			req.headers.get('cf-connecting-ip') ??
-			req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-			req.headers.get('x-real-ip') ??
-			undefined);
+	const deviceAddress = input.deviceVerification?.address ?? requestAddress;
 	const renderer = input.renderer ?? HtmlRenderer({ theme: input.theme });
 
 	/** What a token for `clientID` lives for. See {@link IssuerInput.clientTTL}. */

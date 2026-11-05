@@ -23,6 +23,7 @@ const auth = issuer({
 		code: CodeProvider({
 			maxAttempts: 3,
 			maxSends: 2,
+			maxSendsPerAddress: 3,
 			sendWindow: 3600,
 			resendInterval: 0,
 			request: async (_req, _state, _form, error) => ({
@@ -60,10 +61,18 @@ function jar() {
 	};
 }
 
-async function post(cookies: ReturnType<typeof jar>, body: Record<string, string>) {
+async function post(
+	cookies: ReturnType<typeof jar>,
+	body: Record<string, string>,
+	headers: Record<string, string> = {}
+) {
 	const response = await auth.request(`${ORIGIN}/code/authorize`, {
 		method: 'POST',
-		headers: { cookie: cookies.header(), 'content-type': 'application/x-www-form-urlencoded' },
+		headers: {
+			...headers,
+			cookie: cookies.header(),
+			'content-type': 'application/x-www-form-urlencoded'
+		},
 		body: new URLSearchParams(body)
 	});
 	cookies.absorb(response);
@@ -259,6 +268,45 @@ describe('asking for codes', () => {
 		});
 		expect(withOldCode.status).toBe(200);
 		expect(await errorOf(withOldCode)).toBe('rate_limit');
+	});
+
+	// The budget is keyed by the claim. When the claim was every field in the
+	// form, a field with a new value each time was a new key, and so a new
+	// budget for the same mailbox.
+	test('an extra form field does not buy more codes', async () => {
+		const email = 'padded@example.com';
+		for (let i = 0; i < 4; i++) {
+			const cookies = await begin();
+			await post(cookies, { action: 'request', email, pad: String(i) });
+		}
+		expect(sent).toHaveLength(2);
+	});
+
+	test('an extra form field does not reach the claims', async () => {
+		const cookies = await begin();
+		await post(cookies, { action: 'request', email: 'clean@example.com', role: 'admin' });
+		const response = await post(cookies, { action: 'verify', code: sent.at(-1)! });
+		expect(response.status).toBe(302);
+	});
+
+	// A list of addresses walks around a budget held per mailbox. This is the
+	// one that bounds what a single caller can spend.
+	test('one caller cannot mail a list of strangers', async () => {
+		const from = { 'cf-connecting-ip': '198.51.100.20' };
+		for (let i = 0; i < 5; i++) {
+			const cookies = await begin();
+			await post(cookies, { action: 'request', email: `stranger-${i}@example.com` }, from);
+		}
+		expect(sent).toHaveLength(3);
+
+		// Somebody else is not caught by it.
+		const other = await begin();
+		await post(
+			other,
+			{ action: 'request', email: 'neighbour@example.com' },
+			{ 'cf-connecting-ip': '198.51.100.21' }
+		);
+		expect(sent).toHaveLength(4);
 	});
 
 	test('a bad address still gets told it is a bad address', async () => {
