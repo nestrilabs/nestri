@@ -45,6 +45,23 @@ export function isDomainMatch(a: string, b: string): boolean {
 	return tailA === tailB;
 }
 
+/**
+ * The address a request came from, as the proxy in front of this server
+ * reports it.
+ *
+ * Only as trustworthy as that proxy: these headers are whatever the caller
+ * sent unless something in front overwrites them, so a deployment reachable
+ * directly should pass its own function instead.
+ */
+export function requestAddress(req: Request): string | undefined {
+	return (
+		req.headers.get('cf-connecting-ip') ??
+		req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
+		req.headers.get('x-real-ip') ??
+		undefined
+	);
+}
+
 export function lazy<T>(fn: () => T): () => T {
 	let value: T | undefined;
 	return () => {

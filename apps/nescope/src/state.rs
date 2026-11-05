@@ -438,7 +438,15 @@ impl NescopeState {
         let (xwayland, client) = XWayland::spawn(
             &self.display_handle,
             display,
-            std::iter::empty::<(String, String)>(),
+            // The GL selection the box was given, or Xwayland's glamor cannot
+            // find a driver for the card, falls back to software, and offers
+            // no GLX: Steam then dies on glXChooseVisual.
+            std::env::vars().filter(|(k, _)| {
+                matches!(
+                    k.as_str(),
+                    "MESA_LOADER_DRIVER_OVERRIDE" | "GALLIUM_DRIVER" | "__GLX_VENDOR_LIBRARY_NAME"
+                )
+            }),
             true,
             std::process::Stdio::null(), // XWayland stdout (very noisy)
             std::process::Stdio::null(), // XWayland stderr (very noisy)
